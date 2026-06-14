@@ -50,6 +50,7 @@ module MilkTea
         end
 
         facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
+
         unless facts
           branch = 'no-facts'
           return { isIncomplete: false, items: [] }
@@ -148,6 +149,7 @@ module MilkTea
             receiver_label = type_receiver[:label]
             type = type_receiver[:type]
 
+
             # Enum/Flags member access: Color.RED, KeyboardKey.A, etc.
             if type.is_a?(Types::EnumBase)
               branch = 'enum-members'
@@ -186,6 +188,26 @@ module MilkTea
               end
               item_count = items.length
               return { isIncomplete: false, items: items }
+            end
+
+            # Nested struct type members: ShapeGroup.CircleData, etc.
+            if type.is_a?(Types::Struct) && type.respond_to?(:nested_types) && type.nested_types.any?
+              branch = 'nested-types'
+              items = measure_perf_stage(stages, 'build') do
+                type.nested_types.filter_map do |nt_name, _nt_type|
+                  next if !prefix.empty? && !nt_name.start_with?(prefix)
+                  {
+                    label:      nt_name,
+                    kind:       7,  # Class/type
+                    detail:     "#{receiver_label}.#{nt_name}",
+                    insertText: nt_name,
+                    sortText:   "1_#{nt_name}",
+                    data:       completion_data(nt_name),
+                  }
+                end
+              end
+              item_count = items.length
+              return { isIncomplete: false, items: items } unless items.empty?
             end
 
             items = measure_perf_stage(stages, 'build') { completion_items_for_type_receiver(facts, type, prefix) }
