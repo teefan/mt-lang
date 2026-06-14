@@ -485,7 +485,7 @@ function main() -> int:
     assert_match(/if \(\(\(void\)demo_side_effectful_receiver_codegen_Box_build_static\(\), demo_side_effectful_receiver_codegen_Box_echo_bool\(true\)\)\) \{/, generated)
   end
 
-  def test_generate_c_suppresses_unused_emitted_parameters
+  def test_generate_c_emits_declaration_for_unused_parameters
     source = <<~MT
       # module demo.unused_params_codegen
 
@@ -506,7 +506,8 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/static int32_t demo_unused_params_codegen_Title_tick\(demo_unused_params_codegen_Title this, int32_t effect\) \{\s+\(void\)effect;/m, generated)
+    assert_match(/static int32_t demo_unused_params_codegen_Title_tick\(demo_unused_params_codegen_Title this, int32_t effect\)/, generated)
+    refute_match(/\(void\)effect/, generated)
   end
 
   def test_generate_c_for_if_else_if_else_emits_flat_chain
