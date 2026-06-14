@@ -119,8 +119,8 @@ module MilkTea
     LocalDecl = Data.define(:kind, :name, :type, :value, :else_binding, :else_body, :line, :column, :recovered_else, :destructure_bindings, :destructure_type_name) do
       def initialize(kind:, name:, type:, value:, else_binding: nil, else_body: nil, line: nil, column: nil, recovered_else: false, destructure_bindings: nil, destructure_type_name: nil) = super
     end
-    Assignment = Data.define(:target, :operator, :value, :line) do
-      def initialize(target:, operator:, value:, line: nil) = super
+    Assignment = Data.define(:target, :operator, :value, :line, :column) do
+      def initialize(target:, operator:, value:, line: nil, column: nil) = super
     end
     IfBranch = Data.define(:condition, :body, :line, :column, :length) do
       def initialize(condition:, body:, line: nil, column: nil, length: nil) = super

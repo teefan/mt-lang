@@ -1700,9 +1700,10 @@ module MilkTea
       expression = parse_expression
       if match(*Token::ASSIGNMENT_TYPES)
         operator = previous.lexeme
+        column = previous.column
         value = parse_expression
         consume_end_of_statement unless block_expression?(value)
-        AST::Assignment.new(target: expression, operator:, value:, line:)
+        AST::Assignment.new(target: expression, operator:, value:, line:, column:)
       else
         consume_end_of_statement unless block_expression?(expression)
         AST::ExpressionStmt.new(expression:, line:)
