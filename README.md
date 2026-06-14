@@ -407,11 +407,20 @@ Rules:
 - There is no truthy or falsy coercion from integers or pointers.
 - `pass` is an explicit no-op statement for intentionally empty block bodies.
 
-`match` supports:
+`match` supports the following scrutinee types:
 
 - enum scrutinees
 - variant scrutinees
 - integer scrutinees
+
+`match` may also be used as an expression, producing a value from the matched arm:
+
+```mt
+let label = match code:
+    1: "one"
+    2: "two"
+    _: "other"
+```
 
 `match` rules:
 
@@ -432,11 +441,12 @@ match token:
 
 Struct pattern rules:
 
-- Guards (`hp > 0`, `level >= 3`) skip the arm if the condition is false; the match tries the next arm.
+- Guards (`hp > 0`, `level >= 3`) skip the arm if the condition is false; the match tries the next arm. Supported guard operators: `==`, `!=`, `<`, `<=`, `>`, `>=`.
 - Equality patterns (`kind = Kind.boss`) skip the arm if the field does not equal the value.
 - Bindings (`position`) create immutable local variables bound to the field value.
 - Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field collectively cover every member of the enum, the arm is considered exhaustive.
 - For variant payload arms, struct patterns compose with `as name` bindings.
+- When a variant arm has exactly one payload field of struct type, and no pattern argument references that field name, the struct's own fields are transparently destructured. For example, `Entity.positioned(x, y)` where `positioned(loc: Pos)` destructures through `Pos` to bind `x` and `y`.
 
 Loop forms:
 
@@ -546,6 +556,7 @@ inline for field in fields_of(Point):
 - `proc(...) -> T: ...`
 - `proc(...) -> T: expr` for a single expression body, implicitly returned
 - `if cond: a else: b`
+- `match scrutinee: arm: value ...` — produces a value from the matched arm
 
 Postfix forms:
 

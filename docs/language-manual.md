@@ -545,6 +545,17 @@ Rules:
 - Duplicate arm values (or duplicate `_`) are rejected.
 - Match must be exhaustive (enum/variant without `_`) or include `_` (integer or partial enum/variant).
 
+`match` may also be used as an expression. Each arm provides a `:` value instead of an indented body, and all arm values must have compatible types:
+
+```mt
+let label = match code:
+    1: "one"
+    2: "two"
+    _: "other"
+```
+
+Statement form examples:
+
 ```mt
 match kind:
     EventKind.quit:
@@ -593,6 +604,7 @@ Rules for struct patterns:
 - Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field collectively cover every member of the enum, the arm is considered exhaustive. An arm with only bindings and no guards counts as exhaustive.
 - Struct patterns compose with `as name` bindings: `Entity.player(hp > 0) as p` binds both `hp` (guard-checked) and `p` (the full payload struct).
 - Struct patterns do not apply to enum or integer match scrutinees.
+- When a variant arm has exactly one payload field of struct type, and no pattern argument references that field name, the struct's own fields are transparently destructured. For example, `Entity.positioned(x, y)` where `positioned(loc: Pos)` destructures through `Pos` to bind `x` and `y`.
 
 ### 4.3 Loops
 
@@ -773,6 +785,7 @@ Rules:
 - `proc(...) -> T: ...` — anonymous function expression, e.g. `let fn_ptr = proc(x: int) -> int: return x + 1`
 - `proc(...) -> T: expr` — expression-bodied anonymous function, implicitly returning `expr`
 - `if cond: a else: b`
+- `match scrutinee: arm: value ...` — expression form of match; every arm provides a `:` value and all arm values must have compatible types
 
 ### 5.2 Postfix
 
