@@ -294,6 +294,8 @@ module MilkTea
             end
           rescue SemaError => e
             collect_structural_error(e)
+            param_binding = value_binding(name: param.name, type: @error_type, mutable: false, kind: :param)
+            body_params << param_binding
           end
         end
 
