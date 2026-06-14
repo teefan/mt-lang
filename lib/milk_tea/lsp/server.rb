@@ -12,6 +12,7 @@ require 'uri'
 require_relative "server/call_hierarchy"
 require_relative "server/code_actions"
 require_relative "server/code_lens"
+require_relative "server/debug_info"
 require_relative "server/completion"
 require_relative "server/configuration"
 require_relative "server/definition"
@@ -244,6 +245,7 @@ module MilkTea
       include ServerCallHierarchy
       include ServerCodeActions
       include ServerCodeLens
+      include ServerDebugInfo
       include ServerCompletion
       include ServerConfiguration
       include ServerDefinition
@@ -288,6 +290,7 @@ module MilkTea
         @handlers['textDocument/typeDefinition']    = method(:handle_type_definition)
         @handlers['textDocument/implementation']    = method(:handle_implementation)
         @handlers['textDocument/references']        = method(:handle_references)
+        @handlers['milkTea/debugInfo']             = method(:handle_debug_info)
         @handlers['textDocument/documentLink']      = method(:handle_document_link)
         @handlers['documentLink/resolve']           = method(:handle_document_link_resolve)
         @handlers['textDocument/documentHighlight'] = method(:handle_document_highlight)
