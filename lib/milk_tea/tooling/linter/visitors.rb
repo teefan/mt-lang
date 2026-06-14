@@ -10,7 +10,7 @@ module MilkTea
         @declared_directional_functions = declared_directional_functions(source_file)
         profile_phase("seed_module_bindings") { seed_module_bindings(source_file) }
         profile_phase("rule.unused_imports") { check_unused_imports(source_file) }
-        profile_phase("rule.platform_api_drift") { check_platform_api_drift(source_file) }
+        profile_phase("rule.platform_api_drift") { check_platform_api_drift(source_file) } if full_tier?
         source_file.declarations.each do |declaration|
           case declaration
           when AST::FunctionDef
@@ -109,15 +109,14 @@ module MilkTea
             end
           end
           profile_phase("visit_statement_list") { visit_statement_list(function.body) }
-          profile_phase("rule.dead_assignment") { emit_dead_assignment_warnings(function.body) }
-          profile_phase("rule.unreachable") { emit_unreachable_warnings(function.body) }
-          profile_phase("rule.borrow") { emit_borrow_warnings(function.body) }
-          profile_phase("rule.constant_condition") { emit_constant_condition_warnings(function.body) }
-          profile_phase("rule.redundant_null_check") { emit_redundant_null_check_warnings(function.body) }
-          profile_phase("rule.prefer_let_else") { emit_prefer_let_else_warnings(function.body) }
-          profile_phase("rule.prefer_var_else") { emit_prefer_var_else_warnings(function.body) }
-          profile_phase("rule.redundant_return") { emit_redundant_return_warnings(function) }
-          profile_phase("rule.loop_single_iteration") { emit_loop_single_iteration_warnings(function.body) }
+          if full_tier?
+            profile_phase("rule.dead_assignment") { emit_dead_assignment_warnings(function.body) }
+            profile_phase("rule.unreachable") { emit_unreachable_warnings(function.body) }
+            profile_phase("rule.borrow") { emit_borrow_warnings(function.body) }
+            profile_phase("rule.constant_condition") { emit_constant_condition_warnings(function.body) }
+            profile_phase("rule.redundant_null_check") { emit_redundant_null_check_warnings(function.body) }
+            profile_phase("rule.loop_single_iteration") { emit_loop_single_iteration_warnings(function.body) }
+          end
         end
         profile_phase("rule.missing_return") { check_missing_return(function) }
       ensure
@@ -273,14 +272,14 @@ module MilkTea
               )
             end
             visit_statement_list(expression.body)
-            emit_dead_assignment_warnings(expression.body)
-            emit_unreachable_warnings(expression.body)
-            emit_borrow_warnings(expression.body)
-            emit_constant_condition_warnings(expression.body)
-            emit_redundant_null_check_warnings(expression.body)
-            emit_prefer_let_else_warnings(expression.body)
-            emit_prefer_var_else_warnings(expression.body)
-            emit_loop_single_iteration_warnings(expression.body)
+            if full_tier?
+              emit_dead_assignment_warnings(expression.body)
+              emit_unreachable_warnings(expression.body)
+              emit_borrow_warnings(expression.body)
+              emit_constant_condition_warnings(expression.body)
+              emit_redundant_null_check_warnings(expression.body)
+              emit_loop_single_iteration_warnings(expression.body)
+            end
           end
         when AST::AwaitExpr
           visit_expression(expression.expression)
