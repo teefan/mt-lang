@@ -190,7 +190,7 @@ module MilkTea
           end
         when AST::ExpressionStmt
           collect_proc_captures_from_expression(statement.expression, env, local_scopes, captures)
-        when AST::BreakStmt, AST::ContinueStmt
+        when AST::BreakStmt, AST::ContinueStmt, AST::PassStmt
           nil
         else
           raise LoweringError, "unsupported proc capture statement #{statement.class.name}"
