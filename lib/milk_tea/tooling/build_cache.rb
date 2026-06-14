@@ -42,6 +42,9 @@ module MilkTea
     BACKEND_SOURCES = %w[
       lib/milk_tea/core/lowering.rb
       lib/milk_tea/core/lowering/utils.rb
+      lib/milk_tea/core/lowering/async/analysis.rb
+      lib/milk_tea/core/lowering/async/normalization.rb
+      lib/milk_tea/core/lowering/async/lowering.rb
       lib/milk_tea/core/lowering/async.rb
       lib/milk_tea/core/c_backend.rb
       lib/milk_tea/core/c_backend/statements.rb
