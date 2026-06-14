@@ -193,6 +193,8 @@ function compile_time_stress() -> int:
     let ok = compile.verify_sizes()
     let _ok = ok
 
+    total += compile.all_packed_attributes()
+
     return total
 
 # ---------------------------------------------------------------------------

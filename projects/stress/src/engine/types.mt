@@ -210,3 +210,11 @@ struct Velocity:
 public struct Vec2:
     x: double
     y: double
+
+# ---------------------------------------------------------------------------
+# Deprecated function
+# ---------------------------------------------------------------------------
+
+@[deprecated("use Transform instead")]
+public function legacy_position(x: double, y: double) -> Transform:
+    return Transform(x = x, y = y, rotation = 0.0)
