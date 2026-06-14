@@ -2417,4 +2417,193 @@ function main() -> int:
     assert_match(/\.retain = demo_proc_return_proc_codegen__proc_1__retain/, generated)
   end
 
+  def test_generate_c_for_float_suffix_literals
+    source = <<~MT
+
+# module demo.lit_suffix_float
+
+function main() -> float:
+    return 1.0f
+
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/1\.0f/, generated)
+  end
+
+  def test_generate_c_for_double_suffix_literals
+    source = <<~MT
+
+# module demo.lit_suffix_double
+
+function main() -> double:
+    return 1.0d
+
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/1\.0/, generated)
+  end
+
+  def test_generate_c_for_integer_underscore_separators
+    source = <<~MT
+
+# module demo.underscore_codegen
+
+function main() -> int:
+    return 1_000_000 + 0xff_ff + 0b1010_0101
+
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/1000000/, generated)
+    assert_match(/65535/, generated)
+    assert_match(/165/, generated)
+  end
+
+  def test_generate_c_for_deprecated_attribute
+    source = <<~MT
+
+# module demo.deprecated_codegen
+
+@[deprecated("use newer instead")]
+function old_func(x: int) -> int:
+    return x
+
+function main() -> int:
+    return old_func(1)
+
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/old_func/, generated)
+  end
+
+  def test_generate_c_for_attributes_of
+    source = <<~MT
+
+# module demo.attributes_of_codegen
+
+@[packed]
+struct Packed:
+    a: ubyte
+    b: ubyte
+
+function main() -> int:
+    return 0
+
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/Packed/, generated)
+  end
+
+  def test_generate_c_for_members_of_enum
+    source = <<~MT
+
+# module demo.members_of_codegen
+
+enum Fruit: ubyte
+    apple = 1
+    banana = 2
+
+function main() -> int:
+    var count: int = 0
+    inline for member in members_of(Fruit):
+        count += 1
+    return count
+
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/count \+= 1;/, generated)
+  end
+
+  def test_generate_c_for_block_bodied_const
+    source = <<~MT
+
+# module demo.block_const_codegen
+
+const POW2 -> int:
+    var n: int = 1
+    while n < 64:
+        n = n * 2
+    return n
+
+function main() -> int:
+    return POW2
+
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/POW2 = 64/, generated)
+  end
+
+  def test_generate_c_for_vec2_type
+    source = <<~MT
+
+# module demo.vec2_codegen
+
+function main() -> float:
+    let v = vec2(x = 1.0, y = 2.0)
+    return v.x + v.y
+
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/vec2/, generated)
+  end
+
+  def test_generate_c_for_mat3_type
+    source = <<~MT
+
+# module demo.mat3_codegen
+
+function main() -> float:
+    let m = mat3(
+        col0 = vec3(x = 1.0, y = 0.0, z = 0.0),
+        col1 = vec3(x = 0.0, y = 1.0, z = 0.0),
+        col2 = vec3(x = 0.0, y = 0.0, z = 1.0),
+    )
+    return m.col0.x
+
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/mat3/, generated)
+  end
+
+  def test_generate_c_for_ivec3_type
+    source = <<~MT
+
+# module demo.ivec3_codegen
+
+function main() -> int:
+    let v = ivec3(x = 1, y = 2, z = 3)
+    return v.x + v.y + v.z
+
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/ivec3/, generated)
+  end
+
+  def test_generate_c_for_emit_statement
+    source = <<~MT
+
+# module demo.emit_codegen
+
+const function gen() -> void:
+    emit function helper() -> int:
+        return 42
+
+function main() -> int:
+    return helper()
+
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/42/, generated)
+  end
+
 end
