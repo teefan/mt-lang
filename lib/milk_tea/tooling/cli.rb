@@ -805,6 +805,15 @@ module MilkTea
       )
     end
 
+    def compute_semantic_entries(tokens, facts)
+      return nil unless facts
+
+      server = MilkTea::LSP::Server.allocate
+      server.send(:build_semantic_token_entries, tokens, facts)
+    rescue StandardError
+      nil
+    end
+
     def toolchain_command
       ToolchainCLI.start(
         @argv,
@@ -875,6 +884,7 @@ module MilkTea
         facts: facts,
         snapshot: snapshot,
         path: resolved_path,
+        semantic_entries: compute_semantic_entries(tokens, facts),
       )
 
       @out.puts(text)

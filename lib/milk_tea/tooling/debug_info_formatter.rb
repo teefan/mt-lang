@@ -11,10 +11,10 @@ module MilkTea
 
     module_function
 
-    def format_all(content:, tokens:, ast:, parse_errors:, facts:, snapshot:, path:)
+    def format_all(content:, tokens:, ast:, parse_errors:, facts:, snapshot:, path:, semantic_entries: nil)
       sections = []
       sections << format_header(content, path)
-      sections << format_tokens(tokens)
+      sections << format_tokens(tokens, semantic_entries:)
       sections << format_ast(ast)
       sections << format_parse_errors(parse_errors)
       sections << format_facts(facts)
@@ -33,7 +33,7 @@ module MilkTea
 
     # ── Tokens ─────────────────────────────────────────────────────────────────────
 
-    def format_tokens(tokens)
+    def format_tokens(tokens, semantic_entries: nil)
       return '── Tokens  0 ──' if tokens.nil? || tokens.empty?
 
       max_len = tokens.reject { |t| [:newline, :indent, :dedent].include?(t.type) }
@@ -44,20 +44,38 @@ module MilkTea
       type_counts = tokens.group_by(&:type).transform_values(&:length).sort_by { |_k, v| -v }
       summary = type_counts.map { |t, n| "#{n} #{t}" }.join(', ')
 
+      sema_map = build_sema_map(semantic_entries)
+
       lines = ["── Tokens  #{tokens.length}  (#{summary}) " + '─' * 50]
       tokens.each do |tok|
         lex = tok.lexeme.inspect
         type_str = tok.type.to_s
         end_col = tok.type == :eof ? tok.column : tok.column + tok.lexeme.length - 1
         loc = "Ln #{tok.line.to_s.rjust(2)}  Col #{tok.column.to_s.rjust(3)}-#{end_col}"
-        lines << format('  %3d:%-3d  %-*s  %-16s  %s  %s',
+        sema_col = if sema_map.any?
+                     entry = sema_map[[tok.line, tok.column]]
+                     entry ? "#{entry[:type]}#{entry[:modifiers].any? ? " (#{entry[:modifiers].join(',')})" : ''}" : ''
+                   else
+                     ''
+                   end
+        lines << format('  %3d:%-3d  %-*s  %-16s  %s  %-22s  %s',
                         tok.line, tok.column,
                         max_len + 2, lex,
                         type_str,
                         loc,
+                        sema_col,
                         (tok.type == :eof ? '◄' : ''))
       end
       lines.join("\n")
+    end
+
+    def build_sema_map(entries)
+      return {} unless entries.is_a?(Array) && !entries.empty?
+
+      entries.each_with_object({}) do |e, map|
+        key = [e[:line] + 1, e[:start_char] + 1]
+        map[key] = e
+      end
     end
 
     # ── AST ────────────────────────────────────────────────────────────────────────
