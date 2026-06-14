@@ -32,6 +32,7 @@ module MilkTea
             facts: facts,
             snapshot: snapshot,
             path: path,
+            semantic_entries: facts ? build_semantic_token_entries(tokens, facts) : nil,
           )
 
           { text: text }
