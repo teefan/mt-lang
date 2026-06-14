@@ -1,0 +1,13 @@
+[package]
+name = "stress"
+version = "0.1.0"
+source_root = "src"
+
+[profile]
+default = "debug"
+
+[platform]
+default = "linux"
+
+[build]
+entry = "src/main.mt"

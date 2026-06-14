@@ -135,19 +135,48 @@ module MilkTea
                      type: method_binding.return_type,
                    )),
                  ]
-               else
-                 uses_this = method_ast.body ? method_ast.body.to_s.include?("ThisLiteral") || method_ast.body.to_s.include?("this") : false
-                 receiver_args = uses_this ? [
-                   IR::Unary.new(operator: "*", operand: IR::Cast.new(target_type: ptr_to_concrete, expression: IR::Name.new(name: "data", type: void_ptr, pointer: false), type: ptr_to_concrete), type: concrete_type),
-                 ] : []
-                 [
-                   IR::ReturnStmt.new(value: IR::Call.new(
-                     callee: IR::Name.new(name: real_c_name, type: real_binding.type, pointer: false),
-                     arguments: [*receiver_args, *method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) }],
-                     type: method_binding.return_type,
-                   )),
-                 ]
-               end
+                else
+                  if method_ast.kind == :static
+                    [
+                      IR::ReturnStmt.new(value: IR::Call.new(
+                        callee: IR::Name.new(name: real_c_name, type: real_binding.type, pointer: false),
+                        arguments: method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) },
+                        type: method_binding.return_type,
+                      )),
+                    ]
+                  elsif !method_uses_this?(method_ast.body)
+                    # method body does not reference this; C backend omits receiver parameter
+                    [
+                      IR::ReturnStmt.new(value: IR::Call.new(
+                        callee: IR::Name.new(name: real_c_name, type: real_binding.type, pointer: false),
+                        arguments: method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) },
+                        type: method_binding.return_type,
+                      )),
+                    ]
+                  elsif receiver_type_uses_pointer_lowering?(concrete_type)
+                    [
+                      IR::ReturnStmt.new(value: IR::Call.new(
+                        callee: IR::Name.new(name: real_c_name, type: real_binding.type, pointer: false),
+                        arguments: [
+                          IR::Cast.new(target_type: ptr_to_concrete, expression: IR::Name.new(name: "data", type: void_ptr, pointer: false), type: ptr_to_concrete),
+                          *method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) },
+                        ],
+                        type: method_binding.return_type,
+                      )),
+                    ]
+                  else
+                    [
+                      IR::ReturnStmt.new(value: IR::Call.new(
+                        callee: IR::Name.new(name: real_c_name, type: real_binding.type, pointer: false),
+                        arguments: [
+                          IR::Unary.new(operator: "*", operand: IR::Cast.new(target_type: ptr_to_concrete, expression: IR::Name.new(name: "data", type: void_ptr, pointer: false), type: ptr_to_concrete), type: concrete_type),
+                          *method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) },
+                        ],
+                        type: method_binding.return_type,
+                      )),
+                    ]
+                  end
+                end
 
         @synthetic_functions << IR::Function.new(
           name: "__dyn_#{concrete_type_name}_#{method_name}",
@@ -176,6 +205,29 @@ module MilkTea
         type: vtable_full,
         value: IR::AggregateLiteral.new(type: vtable_full, fields:),
       )
+    end
+
+    def method_uses_this?(node)
+      return false unless node
+
+      case node
+      when AST::Identifier
+        node.name == "this"
+      when Array
+        node.any? { |n| method_uses_this?(n) }
+      when AST::ReturnStmt
+        method_uses_this?(node.value)
+      when AST::Assignment
+        method_uses_this?(node.target) || method_uses_this?(node.value)
+      when AST::MemberAccess
+        method_uses_this?(node.receiver)
+      when AST::BinaryOp
+        method_uses_this?(node.left) || method_uses_this?(node.right)
+      when AST::UnaryOp
+        method_uses_this?(node.operand)
+      else
+        false
+      end
     end
   end
 end
