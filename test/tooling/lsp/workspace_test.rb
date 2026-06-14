@@ -196,7 +196,7 @@ class LSPWorkspaceTest < Minitest::Test
       File.write(path, content)
 
       workspace = MilkTea::LSP::Workspace.new
-      stats = workspace.update_document(path_to_uri(path), content)
+      stats = workspace.send(:warm_document_facts, path_to_uri(path), content)
 
       assert_equal true, stats[:eager_facts]
       assert_equal :module_loader, stats[:facts_mode]

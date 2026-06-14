@@ -164,13 +164,14 @@ module MilkTea
                            allow_missing_imports: true,
                            path: path,
                          )
-                       else
-                         ast = get_ast(uri)
-                         return @last_good_tooling_snapshot_cache[uri] if ast.nil?
+                        else
+                          ast = get_ast(uri)
+                          return @last_good_tooling_snapshot_cache[uri] if ast.nil?
 
-                         facts = MilkTea::Sema.check(ast)
-                         MilkTea::Sema::ToolingSnapshot.new(facts:, diagnostics: [].freeze)
-                       end
+                          result = MilkTea::Sema.check_collecting_errors(ast)
+                          facts = result[:analysis]
+                          MilkTea::Sema::ToolingSnapshot.new(facts:, diagnostics: (Array(result[:errors]).map { |e| e.to_diagnostic(path: uri) } || []).freeze)
+                        end
             if snapshot&.facts
               @last_good_tooling_snapshot_cache[uri] = snapshot
               @last_good_facts_cache[uri] = snapshot.facts

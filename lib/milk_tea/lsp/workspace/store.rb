@@ -52,34 +52,10 @@ module MilkTea
               end
             end
           end
-          invalidate_cache(uri, clear_last_good: true)
-        end
-
-        def update_document(uri, content)
-          @document_state_mutex.synchronize do
-            @open_documents[uri] = content
-          end
-          invalidate_cache(uri)
-          enqueue_definition_warmup(uri) unless background_document?(uri)
-          warm_document_facts(uri, content)
-        end
-
-        # Apply one incremental change (LSP textDocumentSync == 2).
-        # change is a Hash with optional 'range' and mandatory 'text'.
-        def apply_incremental_change(uri, change)
-          content = get_content(uri)
-          new_content = apply_incremental_change_to_content(content, change)
-
-          @document_state_mutex.synchronize do
-            @open_documents[uri] = new_content
-          end
           invalidate_cache(uri)
           enqueue_definition_warmup(uri) unless background_document?(uri)
         end
 
-        # Apply a didChange batch. For multi-range batches, apply against the
-        # original snapshot in reverse source order so disjoint edits on the same
-        # line remain stable even when offsets shift.
         def apply_incremental_changes(uri, changes)
           content = get_content(uri)
           edits = Array(changes)
