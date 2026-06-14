@@ -48,6 +48,14 @@ module MilkTea
         import_alias_changes = import_alias_rename_changes(uri, token, lsp_line, lsp_char, nil, new_name)
         return { changes: import_alias_changes } if import_alias_changes
 
+        if (facts = @workspace.get_facts(uri))
+          sc = struct_field_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
+          return { changes: sc } if sc && !sc.empty?
+
+          mc = method_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
+          return { changes: mc } if mc && !mc.empty?
+        end
+
         enum_member_changes = enum_member_rename_changes(uri, token, lsp_line, lsp_char, nil, new_name)
         return { changes: enum_member_changes } if enum_member_changes
 
@@ -446,6 +454,141 @@ module MilkTea
             each_ast_node(node.public_send(member), &block)
           end
         end
+      end
+
+      def struct_field_rename_changes(uri, token, _lsp_line, _lsp_char, facts, new_name)
+        field_name = token.lexeme
+        tokens = @workspace.get_tokens(uri) || []
+        idx = tokens.index { |t| t.line == token.line && t.column == token.column }
+        return nil unless idx
+
+        cursor_in_field_context = struct_field_cursor_context?(tokens, idx)
+        return nil unless cursor_in_field_context
+
+        struct_type = find_struct_containing_field(facts, field_name)
+        return nil unless struct_type
+
+        related_uris = @workspace.related_open_document_uris(uri)
+        changes = {}
+        [uri, *related_uris].uniq.each do |doc_uri|
+          edits = []
+          doc_tokens = @workspace.get_tokens(doc_uri) || []
+          next if doc_tokens.empty?
+
+          doc_tokens.each_with_index do |tok, i|
+            next unless tok.type == :identifier && tok.lexeme == field_name
+            next unless struct_field_edit_context?(doc_tokens, i, struct_type)
+
+            edits << { range: token_to_range(tok), newText: new_name }
+          end
+
+          changes[doc_uri] = edits unless edits.empty?
+        end
+
+        return nil if changes.empty?
+        changes
+      end
+
+      def struct_field_cursor_context?(tokens, index)
+        next_nt = skip_trivia_forward(tokens, index + 1)
+        return true if next_nt && tokens[next_nt]&.type == :colon
+
+        return true if index > 0 && tokens[index - 1].type == :dot
+
+        if index > 0 && (tokens[index - 1].type == :lparen || tokens[index - 1].type == :comma)
+          next_nt = skip_trivia_forward(tokens, index + 1)
+          return true if next_nt && (tokens[next_nt]&.type == :equal || tokens[next_nt]&.type == :colon)
+          return true if next_nt.nil? || !(tokens[next_nt]&.type == :equal || tokens[next_nt]&.type == :colon)
+        end
+
+        false
+      end
+
+      def struct_field_edit_context?(tokens, index, _struct_type)
+        return true if index > 0 && tokens[index - 1].type == :dot
+
+        next_nt = skip_trivia_forward(tokens, index + 1)
+        return true if next_nt && tokens[next_nt]&.type == :colon
+
+        if index > 0 && (tokens[index - 1].type == :lparen || tokens[index - 1].type == :comma)
+          next_nt = skip_trivia_forward(tokens, index + 1)
+          return true if next_nt.nil? || (tokens[next_nt]&.type == :equal || tokens[next_nt]&.type == :colon) || tokens[next_nt]&.type == :comma || tokens[next_nt]&.type == :rparen
+        end
+
+        false
+      end
+
+      def skip_trivia_forward(tokens, start_index)
+        i = start_index
+        while i < tokens.length
+          return i unless tokens[i].type == :whitespace || tokens[i].type == :newline || tokens[i].type == :comment
+          i += 1
+        end
+        nil
+      end
+
+      def find_struct_containing_field(facts, field_name)
+        facts.types.each_value do |type|
+          next unless type.is_a?(Types::Struct) || type.is_a?(Types::StructInstance)
+          target = type.is_a?(Types::StructInstance) ? type.definition : type
+          next unless target.is_a?(Types::Struct)
+          return type if target.fields.key?(field_name)
+        end
+        nil
+      end
+
+      def method_rename_changes(uri, token, _lsp_line, _lsp_char, facts, new_name)
+        method_name = token.lexeme
+        method_info = find_method_at_position(uri, token, facts)
+        return nil unless method_info
+
+        receiver_type = method_info[:receiver_type]
+        return nil unless receiver_type
+
+        related_uris = @workspace.related_open_document_uris(uri)
+        changes = {}
+        [uri, *related_uris].uniq.each do |doc_uri|
+          edits = []
+          doc_tokens = @workspace.get_tokens(doc_uri) || []
+          next if doc_tokens.empty?
+
+          doc_tokens.each_with_index do |tok, i|
+            next unless tok.type == :identifier && tok.lexeme == method_name
+            next unless i > 0 && doc_tokens[i - 1].type == :dot
+
+            edits << { range: token_to_range(tok), newText: new_name }
+          end
+
+          changes[doc_uri] = edits unless edits.empty?
+        end
+
+        return nil if changes.empty?
+        changes
+      end
+
+      def find_method_at_position(uri, token, facts)
+        ast = @workspace.get_ast(uri)
+        return nil unless ast
+
+        each_ast_node(ast) do |node|
+          next unless node.is_a?(AST::MethodDef)
+          next unless node.line == token.line
+          next unless token.column >= node.column && token.column < node.column + node.name.length
+
+          type_name = find_extending_type_for_method(ast, node)
+          next unless type_name
+
+          { receiver_type: facts.types[type_name], method_name: node.name }
+        end
+        nil
+      end
+
+      def find_extending_type_for_method(ast, method_node)
+        each_ast_node(ast) do |node|
+          next unless node.is_a?(AST::ExtendingBlock)
+          return node.type_name if node.methods.any? { |m| m.object_id == method_node.object_id }
+        end
+        nil
       end
       end
     end
