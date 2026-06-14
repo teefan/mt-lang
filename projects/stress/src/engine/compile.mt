@@ -137,6 +137,13 @@ static_assert(
     "Header16 must be packed"
 )
 
+public function all_packed_attributes() -> int:
+    var count: int = 0
+    inline for attr in attributes_of(types.Header16):
+        count += 1
+    inline for attr in attributes_of(types.Header16, packed):
+        count += 1
+    return count
 
 # ---------------------------------------------------------------------------
 # Compile-time generic function using reflection
@@ -170,3 +177,26 @@ public function platform_suffix() -> str:
             return ".dll"
         Platform.wasm:
             return ".wasm"
+
+# ---------------------------------------------------------------------------
+# Literal suffixes, underscores, deprecated, attributes_of
+# ---------------------------------------------------------------------------
+
+public const STRICT_FLOAT: float = 3.14f
+public const STRICT_DOUBLE: double = 3.14d
+public const ONE_MILLION: int = 1_000_000
+public const HEX_WITH_SEP: uint = 0xff_ff_00_00
+
+@[deprecated("use new_identity instead")]
+public function identity_4x4() -> mat4:
+    return mat4(
+        col0 = vec4(x = 1.0, y = 0.0, z = 0.0, w = 0.0),
+        col1 = vec4(x = 0.0, y = 1.0, z = 0.0, w = 0.0),
+        col2 = vec4(x = 0.0, y = 0.0, z = 1.0, w = 0.0),
+        col3 = vec4(x = 0.0, y = 0.0, z = 0.0, w = 1.0),
+    )
+
+# emit: compile-time code generation from const function
+public const function generate_check() -> void:
+    emit function compile_check() -> int:
+        return 1
