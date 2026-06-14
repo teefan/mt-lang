@@ -195,6 +195,7 @@ module MilkTea
                                       lifetime_params: decl.lifetime_params,
                                     )
                                   end
+              register_nested_struct_types(decl)
             when AST::UnionDecl
               validate_explicit_aggregate_c_name!(decl)
               ensure_available_type_name!(decl.name)
@@ -372,10 +373,10 @@ module MilkTea
         raise_sema_error("explicit C names are not supported on generic external structs")
       end
 
-      def resolve_event_decl_type(decl, type_params: {}, type_param_constraints: {}, owner_type_name: nil)
+      def resolve_event_decl_type(decl, type_params: {}, type_param_constraints: {}, owner_type_name: nil, nested_types: nil)
         raise_sema_error("event #{decl.name} capacity must be positive") unless decl.capacity.is_a?(Integer) && decl.capacity.positive?
 
-        payload_type = decl.payload_type ? resolve_type_ref(decl.payload_type, type_params:, type_param_constraints:) : nil
+        payload_type = decl.payload_type ? resolve_type_ref(decl.payload_type, type_params:, type_param_constraints:, nested_types:) : nil
         if payload_type
           raise_sema_error("event #{decl.name} payload cannot be ref[T] in v1") if ref_type?(payload_type)
           validate_stored_ref_type!(payload_type, "event #{decl.name} payload")
@@ -420,6 +421,12 @@ module MilkTea
 
             auto_lifetimes = []
 
+            nested_scope = decl.is_a?(AST::StructDecl) ? resolve_nested_type_bindings(decl) : {}
+            if decl.is_a?(AST::StructDecl) && struct_type.respond_to?(:define_nested_types)
+              struct_type.define_nested_types(nested_scope)
+              define_nested_type_bindings_recursive(decl, parent_name: decl.name)
+            end
+
             decl.fields.each do |field|
               raise_sema_error("duplicate field #{decl.name}.#{field.name}") if fields.key?(field.name)
               raise_sema_error("duplicate member #{decl.name}.#{field.name}") if events.key?(field.name)
@@ -433,7 +440,7 @@ module MilkTea
               end
 
               begin
-                field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:)
+                field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:, nested_types: nested_scope)
 
                 # Auto-generate implicit lifetimes for bare ref[T] in struct fields
                 if ref_type_without_lifetime?(field_type)
@@ -477,6 +484,7 @@ module MilkTea
                     type_params:,
                     type_param_constraints:,
                     owner_type_name: decl.name,
+                    nested_types: nested_scope,
                   )
                 rescue SemaError => e
                   collect_structural_error(e)
@@ -484,6 +492,9 @@ module MilkTea
               end
             end
 
+            if decl.is_a?(AST::StructDecl)
+              resolve_nested_struct_fields(decl, type_params:, type_param_constraints:, external_nested_scope: nested_scope)
+            end
             struct_type.define_fields(fields)
             struct_type.define_events(events) if struct_type.respond_to?(:define_events)
           end
@@ -693,6 +704,79 @@ module MilkTea
       end
 
 
+      def define_nested_type_bindings_recursive(parent_decl, parent_name: parent_decl.name)
+        parent_decl.nested_types.each do |nested|
+          qualified_name = "#{parent_name}.#{nested.name}"
+          nested_type = @types[qualified_name]
+          next unless nested_type.is_a?(Types::Struct)
+          nested_scope = resolve_nested_type_bindings(nested, parent_name: qualified_name)
+          nested_type.define_nested_types(nested_scope)
+          define_nested_type_bindings_recursive(nested, parent_name: qualified_name)
+        end
+      end
+
+      def resolve_nested_struct_fields(parent_decl, parent_name: parent_decl.name, type_params:, type_param_constraints:, external_nested_scope: {})
+        parent_decl.nested_types.each do |nested|
+          next unless nested.type_params.empty?
+          qualified_name = "#{parent_name}.#{nested.name}"
+          nested_type = @types[qualified_name]
+          next unless nested_type.is_a?(Types::Struct)
+          nested_type.ast_declaration = nested
+          nested_scope = nested_type.nested_types.merge(external_nested_scope)
+          fields = {}
+          nested.fields.each do |field|
+            raise_sema_error("duplicate field #{qualified_name}.#{field.name}") if fields.key?(field.name)
+            begin
+              field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:, nested_types: nested_scope)
+              validate_stored_ref_type!(field_type, "field #{qualified_name}.#{field.name}")
+              fields[field.name] = field_type
+            rescue SemaError => e
+              collect_structural_error(e)
+            end
+          end
+          nested_type.define_fields(fields)
+          nested_events = {}
+          nested.events.each do |event_decl|
+            raise_sema_error("duplicate event #{qualified_name}.#{event_decl.name}") if nested_events.key?(event_decl.name)
+            begin
+              nested_events[event_decl.name] = resolve_event_decl_type(event_decl, type_params:, type_param_constraints:, owner_type_name: qualified_name, nested_types: nested_scope)
+            rescue SemaError => e
+              collect_structural_error(e)
+            end
+          end
+          nested_type.define_events(nested_events)
+          resolve_nested_struct_fields(nested, parent_name: qualified_name, type_params:, type_param_constraints:, external_nested_scope: nested_scope)
+        end
+      end
+
+      def resolve_nested_type_bindings(parent_decl, parent_name: parent_decl.name)
+        bindings = {}
+        parent_decl.nested_types.each do |nested|
+          qualified_name = "#{parent_name}.#{nested.name}"
+          nested_type = @types[qualified_name]
+          bindings[nested.name] = nested_type if nested_type
+        end
+        bindings
+      end
+
+      def register_nested_struct_types(parent_decl, parent_name: parent_decl.name)
+        parent_decl.nested_types.each do |nested|
+          qualified_name = "#{parent_name}.#{nested.name}"
+          ensure_available_type_name!(qualified_name)
+          nested_c_name = if @module_name && !raw_module?
+                            "#{@module_name.to_s.tr('.', '_')}_#{qualified_name.tr('.', '_')}"
+                          else
+                            qualified_name.tr('.', '_')
+                          end
+          if nested.type_params.empty?
+            @types[qualified_name] = Types::Struct.new(nested.name, module_name: @module_name, external: raw_module?, packed: nested.packed, alignment: nested.alignment, c_name: nested_c_name, lifetime_params: nested.lifetime_params)
+          else
+            @types[qualified_name] = Types::GenericStructDefinition.new(nested.name, nested.type_params.map(&:name), module_name: @module_name, external: raw_module?, packed: nested.packed, alignment: nested.alignment, c_name: nested_c_name, lifetime_params: nested.lifetime_params)
+          end
+          register_nested_struct_types(nested, parent_name: qualified_name)
+        end
+      end
     end
   end
 end
+

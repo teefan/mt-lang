@@ -118,16 +118,27 @@ module MilkTea
         @analysis.ast.declarations.grep(AST::StructDecl).filter_map do |decl|
           next unless decl.type_params.empty?
 
-          struct_type = @struct_types.fetch(decl.name)
-          fields = decl.fields.map do |field|
-            IR::Field.new(name: field.name, type: struct_type.field(field.name))
-          end
-          decl.events.each do |event_decl|
-            event_type = struct_type.event(event_decl.name)
-            ensure_event_runtime(event_type)
-            fields << IR::Field.new(name: event_type.hidden_field_name, type: event_type)
-          end
-          IR::StructDecl.new(name: decl.name, c_name: c_type_name(struct_type), fields:, packed: decl.packed, alignment: decl.alignment, source_module: @module_name)
+          results = []
+          lower_one_struct(decl, decl.name, results)
+          results
+        end.flatten
+      end
+
+      def lower_one_struct(decl, qualified_name, results)
+        struct_type = @struct_types.fetch(qualified_name)
+        fields = decl.fields.map do |field|
+          IR::Field.new(name: field.name, type: struct_type.field(field.name))
+        end
+        decl.events.each do |event_decl|
+          event_type = struct_type.event(event_decl.name)
+          ensure_event_runtime(event_type)
+          fields << IR::Field.new(name: event_type.hidden_field_name, type: event_type)
+        end
+
+        results << IR::StructDecl.new(name: decl.name, c_name: c_type_name(struct_type), fields:, packed: decl.packed, alignment: decl.alignment, source_module: @module_name)
+
+        decl.nested_types.each do |nested|
+          lower_one_struct(nested, "#{qualified_name}.#{nested.name}", results)
         end
       end
 

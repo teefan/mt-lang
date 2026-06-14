@@ -2890,4 +2890,42 @@ function main() -> int:
     assert_match(/mt_span_ubyte \*data/, generated)
   end
 
+  def test_generate_c_for_nested_struct
+    source = <<~MT
+      struct Rectangle:
+          x: float
+          y: float
+
+          struct Edge:
+              start: float
+              end: float
+
+          top_edge: Edge
+          left_edge: Edge
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/typedef struct \w+_Rectangle_Edge \w+_Rectangle_Edge;/, generated)
+    assert_match(/struct \w+_Rectangle_Edge \{/, generated)
+    assert_match(/\w+_Rectangle_Edge top_edge;/, generated)
+  end
+
+  def test_generate_c_for_deeply_nested_struct
+    source = <<~MT
+      struct A:
+          struct B:
+              struct C:
+                  value: int
+              x: C
+          y: B
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/typedef struct \w+_A_B_C/, generated)
+    assert_match(/typedef struct \w+_A_B\b/, generated)
+    assert_match(/struct \w+_A_B_C \{/, generated)
+    assert_match(/\w+_A_B_C x;/, generated)
+    assert_match(/\w+_A_B y;/, generated)
+  end
+
 end

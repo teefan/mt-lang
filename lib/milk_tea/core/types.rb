@@ -901,7 +901,7 @@ module MilkTea
     end
 
     class Struct < Base
-      attr_reader :name, :module_name, :external, :packed, :alignment, :c_name, :lifetime_params
+      attr_reader :name, :module_name, :external, :packed, :alignment, :c_name, :lifetime_params, :nested_types
       attr_accessor :ast_declaration
 
       def initialize(name, module_name: nil, external: false, packed: false, alignment: nil, c_name: nil, lifetime_params: [])
@@ -914,6 +914,7 @@ module MilkTea
         @lifetime_params = lifetime_params.freeze
         @fields = {}
         @events = {}
+        @nested_types = {}
         @ast_declaration = nil
       end
 
@@ -924,6 +925,16 @@ module MilkTea
 
       def define_events(events)
         @events = events.freeze
+        self
+      end
+
+      def define_nested_type(name, type)
+        @nested_types[name] = type
+        self
+      end
+
+      def define_nested_types(nested)
+        @nested_types = nested.freeze
         self
       end
 
