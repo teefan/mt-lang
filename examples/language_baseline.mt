@@ -46,6 +46,12 @@ const SHADER: cstr = c<<-GLSL
     }
 GLSL
 
+# --- plain heredoc
+const PLAIN_HEREDOC: str = <<-MSG
+    This is a plain heredoc.
+    Leading whitespace is stripped.
+MSG
+
 # --- heredoc format string (exercised in function body)
 
 function heredoc_fmt_demo() -> void:
@@ -675,8 +681,22 @@ function format_demo() -> str:
     let label = "items"
     global_counter = 0
 
+    # --- escape sequences
+    let escaped = "line1\nline2\ttabbed\\ quote \" end"
+    let _esc = escaped
+
+    # --- adjacent string concatenation
+    let adjacent = "hello "
+        "from multiple "
+        "indented lines"
+    let _adj = adjacent
+
     # --- basic interpolation
     let text = f"count=#{count} label=#{label}"
+
+    # --- nested expression in interpolation
+    let calc = f"calc=#{count * 2 + 1:b}"
+    let _calc = calc
 
     # --- format specs: hex, octal, binary
     let hex = f"hex=#{count:x} hex_upper=#{count:X}"
@@ -686,6 +706,12 @@ function format_demo() -> str:
     # --- float precision
     let dist: float = 3.14
     let precise = f"dist=#{dist:.2}"
+
+    # --- plain heredoc in function body
+    let heredoc = <<-MSG
+        Plain heredoc inside function.
+    MSG
+    let _heredoc = heredoc
 
     let _h = hex
     let _o = oct
