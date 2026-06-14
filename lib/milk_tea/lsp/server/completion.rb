@@ -8,8 +8,12 @@ module MilkTea
           let var const function async struct enum flags variant union
           type interface opaque if while for match return import public static
           extending external fn event attribute defer break continue pass
-          unsafe consuming implements include link foreign module proc
-          editable in out inout as
+          unsafe consuming implements include link foreign proc
+          editable in out inout as when inline await static_assert emit
+        ].freeze
+
+        TYPE_CONSTRUCTOR_KEYWORDS = %w[
+          ptr ref span array dyn Option Result Task SoA str_buffer const_ptr
         ].freeze
 
         private
@@ -49,6 +53,38 @@ module MilkTea
         unless facts
           branch = 'no-facts'
           return { isIncomplete: false, items: [] }
+        end
+
+        # Attribute context: complete inside @[...]
+        attr_items = attribute_completions(facts, uri, lsp_line, lsp_char)
+        if attr_items
+          branch = 'attribute'
+          item_count = attr_items.length
+          return { isIncomplete: false, items: attr_items }
+        end
+
+        # Format string interpolation: complete inside f"... #{ }
+        fmt_items = format_string_completions(facts, uri, lsp_line, lsp_char)
+        if fmt_items
+          branch = 'format-string'
+          item_count = fmt_items.length
+          return { isIncomplete: false, items: fmt_items }
+        end
+
+        # Named argument completions: inside function/struct call e.g. Point(x: 1, |)
+        named_items = named_argument_completions(facts, uri, lsp_line, lsp_char)
+        if named_items
+          branch = 'named-arg'
+          item_count = named_items.length
+          return { isIncomplete: false, items: named_items }
+        end
+
+        # Specialization context: inside name[...]
+        spec_items = specialization_completions(facts, uri, lsp_line, lsp_char)
+        if spec_items
+          branch = 'specialization'
+          item_count = spec_items.length
+          return { isIncomplete: false, items: spec_items }
         end
 
         # When user is typing after '.', return module members or method completions.
@@ -298,6 +334,19 @@ module MilkTea
               insertText:   name,
               sortText:     "3_#{name}",
               data:         completion_data(name),
+            }
+          end
+
+          TYPE_CONSTRUCTOR_KEYWORDS.each do |tc|
+            next unless prefix.empty? || tc.start_with?(prefix)
+
+            result << {
+              label:      tc,
+              kind:       14, # Keyword
+              detail:     "type constructor #{tc}",
+              insertText: tc,
+              sortText:   "8_#{tc}",
+              data:       completion_data(tc),
             }
           end
 
@@ -710,6 +759,177 @@ module MilkTea
           full = File.join(dir, name)
           name.end_with?('.mt') || (File.directory?(full) && module_dir_contains_mt?(full))
         end
+      end
+
+      def attribute_completions(facts, uri, line, char)
+        content = @workspace.get_content(uri)
+        return nil unless content
+        lines = content.split("\n", -1)
+        line_text = lines[line] || ''
+        return nil if line_text.empty?
+
+        attr_match = line_text[0...char].match(/@\[([\w_]*)$/)
+        return nil unless attr_match
+
+        prefix = attr_match[1]
+        items = []
+
+        %w[packed align deprecated].each do |name|
+          next unless prefix.empty? || name.start_with?(prefix)
+          items << {
+            label:      name,
+            kind:       14,
+            detail:     "built-in attribute #{name}",
+            insertText: name,
+            sortText:   "0_#{name}",
+            data:       completion_data(name),
+          }
+        end
+
+        if facts
+          facts.attributes&.each do |name, _binding|
+            next unless prefix.empty? || name.start_with?(prefix)
+            items << {
+              label:      name,
+              kind:       14,
+              detail:     "attribute #{name}",
+              insertText: name,
+              sortText:   "1_#{name}",
+              data:       completion_data(name),
+            }
+          end
+        end
+
+        items.empty? ? nil : items
+      end
+
+      def format_string_completions(facts, uri, line, char)
+        return nil unless facts
+
+        content = @workspace.get_content(uri)
+        return nil unless content
+        lines = content.split("\n", -1)
+        line_text = lines[line] || ''
+        return nil if line_text.empty?
+
+        text_before = line_text[0...char]
+        open_pos = text_before.rindex('#{')
+        return nil unless open_pos
+
+        close_pos = text_before.index('}', open_pos)
+        return nil if close_pos && close_pos < char
+
+        prefix = text_before[(open_pos + 2)..] || ''
+        items = []
+
+        facts.values.each do |name, binding|
+          next unless prefix.empty? || name.start_with?(prefix)
+          items << {
+            label:      name,
+            kind:       6,
+            detail:     "#{name}: #{binding.type}",
+            insertText: name,
+            sortText:   "0_#{name}",
+            data:       completion_data(name),
+          }
+        end
+
+        items.empty? ? nil : items
+      end
+
+      def named_argument_completions(facts, uri, line, char)
+        return nil unless facts
+
+        content = @workspace.get_content(uri)
+        return nil unless content
+        lines = content.split("\n", -1)
+        line_text = lines[line] || ''
+        return nil if line_text.empty?
+
+        text_before = line_text[0...char]
+
+        call_match = text_before.match(/([\w.]+)\s*\(\s*(?:[^)]*,\s*)\s*$/)
+        call_match ||= text_before.match(/([\w.]+)\s*\(\s*$/)
+
+        return nil unless call_match
+
+        callable_name = call_match[1]
+        prefix_match = text_before.match(/(?:^|[,\s(])([\w_]*)$/)
+        prefix = prefix_match ? prefix_match[1] : ''
+
+        already_provided = text_before.scan(/(\w+)\s*[=:]/).flatten.to_set
+
+        items = []
+
+        if (func_binding = facts.functions[callable_name])
+          func_binding.type.params.each do |param|
+            next if already_provided.include?(param.name)
+            next unless prefix.empty? || param.name.start_with?(prefix)
+            items << {
+              label:      "#{param.name} = ",
+              kind:       14,
+              detail:     "#{param.name}: #{param.type}",
+              insertText: "#{param.name} = ",
+              sortText:   "0_#{param.name}",
+              data:       completion_data(param.name),
+            }
+          end
+        end
+
+        resolved_type = facts.types[callable_name]
+        if resolved_type.nil? && callable_name.include?('.')
+          parts = callable_name.split('.', 2)
+          mod_binding = facts.imports[parts[0]]
+          resolved_type = mod_binding&.types&.[](parts[1]) if mod_binding
+        end
+
+        if resolved_type&.respond_to?(:fields) && !resolved_type.fields.empty?
+          resolved_type.fields.each do |fname, ftype|
+            next if already_provided.include?(fname)
+            next unless prefix.empty? || fname.start_with?(prefix)
+            items << {
+              label:      "#{fname} = ",
+              kind:       10,
+              detail:     "#{fname}: #{ftype}",
+              insertText: "#{fname} = ",
+              sortText:   "0_#{fname}",
+              data:       completion_data(fname),
+            }
+          end
+        end
+
+        items.empty? ? nil : items
+      end
+
+      def specialization_completions(facts, _uri, line, char)
+        return nil unless facts
+
+        content = @workspace.get_content(_uri)
+        return nil unless content
+        lines = content.split("\n", -1)
+        line_text = lines[line] || ''
+        return nil if line_text.empty?
+
+        text_before = line_text[0...char]
+        sp_match = text_before.match(/([\w.]+)\[(.*)$/)
+        return nil unless sp_match
+
+        prefix = sp_match[2]
+        items = []
+
+        facts.types.each do |name, _type|
+          next unless prefix.empty? || name.start_with?(prefix)
+          items << {
+            label:      name,
+            kind:       7,
+            detail:     "type #{name}",
+            insertText: name,
+            sortText:   "0_#{name}",
+            data:       completion_data(name),
+          }
+        end
+
+        items.empty? ? nil : items
       end
       end
     end
