@@ -337,6 +337,33 @@ module MilkTea
             }
           end
 
+          # Locals (variables and parameters visible in current scope)
+          frame = enclosing_completion_frame(facts, lsp_line + 1)
+          if frame
+            snapshot = latest_completion_snapshot(frame, lsp_line + 1, lsp_char + 1)
+            if snapshot
+              snapshot.bindings.each do |name, binding|
+                next unless prefix.empty? || name.start_with?(prefix)
+                next unless binding.respond_to?(:name) && binding.respond_to?(:type)
+
+                detail_label = case binding.respond_to?(:kind) && binding.kind
+                               when :param then "parameter #{name}: #{binding.type}"
+                               when :local then "local #{name}: #{binding.type}"
+                               else "#{name}: #{binding.type}"
+                               end
+
+                result << {
+                  label:        name,
+                  kind:         6,  # Variable
+                  detail:       detail_label,
+                  insertText:   name,
+                  sortText:     "3_#{name}",
+                  data:         completion_data(name),
+                }
+              end
+            end
+          end
+
           TYPE_CONSTRUCTOR_KEYWORDS.each do |tc|
             next unless prefix.empty? || tc.start_with?(prefix)
 
