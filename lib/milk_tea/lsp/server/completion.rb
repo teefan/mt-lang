@@ -427,12 +427,27 @@ module MilkTea
         end
       end
 
+      def resolve_nested_type_binding(facts, name)
+        return { qualified_name: nil, type: nil } unless facts
+
+        facts.types.each_value do |type|
+          next unless type.respond_to?(:nested_types)
+          if (nested = type.nested_types[name])
+            return { qualified_name: "#{type.name}.#{name}", type: nested }
+          end
+        end
+        { qualified_name: nil, type: nil }
+      end
+
       def resolve_type_receiver_info(facts, receiver_name, receiver_path)
         if facts.types.key?(receiver_name)
           type = facts.types.fetch(receiver_name)
           module_name = type.respond_to?(:module_name) ? type.module_name : facts.module_name
           return { label: receiver_name, type:, module_name: }
         end
+
+        nested = resolve_nested_type_binding(facts, receiver_name)
+        return { label: nested[:qualified_name], type: nested[:type], module_name: nested[:type].module_name } if nested[:type]
 
         return nil unless receiver_path&.include?('.')
 
