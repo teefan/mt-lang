@@ -878,22 +878,59 @@ The `mtc` CLI is the primary tool for checking, building, and running Milk Tea p
 Essential commands:
 
 ```
-mtc check <file.mt>           # Type-check + lint; reports all diagnostics sorted by line
-mtc run   <file.mt>           # Build and execute
-mtc build <file.mt>           # Build only (emit C, compile, link)
+mtc check <path>              # Type-check + lint; reports all diagnostics sorted by line
+mtc run   <path>              # Build and execute
+mtc build <path>              # Build only (emit C, compile, link)
 mtc lex   <file.mt>           # Print lexer token stream
-mtc parse <file.mt>           # Print parsed AST
-mtc lower <file.mt>           # Print lowered IR
+mtc parse <path>              # Print parsed AST
+mtc lower <path>              # Print lowered IR
+mtc debug <file.mt>           # Print debug info (tokens, AST, facts, bindings, diagnostics)
+mtc emit-c <path>             # Emit generated C to stdout
+mtc format <path>             # Format sources in place (--check for dry-run)
+mtc lint <path>               # Run linter (--fix to apply fixes, --select/--ignore to filter)
+mtc new <name>                # Scaffold a new package (package.toml + src/main.mt)
+mtc cache status              # Show build cache stats
 ```
 
-Diagnostic output uses standard compiler format (file:line:column with source context and caret highlighting):
+Package management:
 
 ```
-error: unknown type floa
-  --> file.mt:65:16
+mtc deps tree <path>          # Print the dependency graph
+mtc deps lock <path>          # Write/refresh package.lock
+mtc deps add <path> <name>   # Add a dependency
+mtc deps remove <path> <name> # Remove a dependency
+mtc deps update <path>        # Update dependencies
+mtc deps publish <path>       # Publish a package to the local registry
+mtc deps fetch <path>         # Materialize cache-backed sources
+```
+
+Run a pre-built module (no compilation):
+
+```
+mtc run-module <module>       # Run compiled module by name (e.g. std.fmt.bench)
+```
+
+Toolchain maintenance:
+
+```
+mtc toolchain bootstrap       # Bootstrap the native toolchain
+mtc toolchain doctor          # Diagnose toolchain setup
+mtc toolchain tools           # List available native tools
+```
+
+Build and run commands support `--profile`, `--platform`, `--cc`, `--keep-c`, `--locked`, `--frozen`, and `-I` include paths. Dependency-locked flows support `--locked` (use package.lock) and `--frozen` (require current package.lock).
+
+Diagnostic output uses standard compiler format (file:line:column with source context, error codes, and caret highlighting):
+
+```
+[E0001] error: unknown type floa
+  --> file.mt:1:16
    |
-   65 | type Seconds = floa
+   1 | type Seconds = floa
      |                ^~~~
+  note: did you mean 'float'?
+
+error: could not check due to 1 previous error
 ```
 
 `mtc check` surfaces both errors and linter warnings:
