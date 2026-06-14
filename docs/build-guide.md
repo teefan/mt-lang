@@ -347,6 +347,7 @@ Common options:
 - `--cc COMPILER`
 - `-o OUTPUT`
 - `--keep-c PATH`
+- `--no-cache` — skip the build cache, force a full rebuild from source
 - `--bundle` for native package builds when you want a distributable app directory instead of a bare executable
 - `--archive` for native package builds when you also want a `.tar.gz` archive of the bundle; this implies `--bundle`
 
