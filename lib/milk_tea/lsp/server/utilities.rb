@@ -249,6 +249,24 @@ module MilkTea
         }
       end
 
+      def format_document_symbol(sym)
+        line = sym[:line].to_i
+        col  = sym[:column].to_i
+
+        {
+          name:           sym[:name],
+          kind:           symbol_kind(sym[:kind]),
+          range:          {
+            start: { line: line - 1, character: col - 1 },
+            end:   { line: line - 1, character: col - 1 + sym[:name].length }
+          },
+          selectionRange: {
+            start: { line: line - 1, character: col - 1 },
+            end:   { line: line - 1, character: col - 1 + sym[:name].length }
+          }
+        }
+      end
+
       def symbol_kind(kind)
         case kind
         when 'function'   then 6

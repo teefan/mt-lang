@@ -273,11 +273,12 @@ module MilkTea
                    when :variant then 'struct'
                    when :type    then 'type_alias'
                    when :const   then 'constant'
+                   when :let     then 'variable'
                    when :var     then 'variable'
                    when :event   then 'variable'
                    when :extending then 'struct'
                    when :opaque  then 'struct'
-                 when :interface then 'interface'
+                   when :interface then 'interface'
                    end
 
             symbols << {
