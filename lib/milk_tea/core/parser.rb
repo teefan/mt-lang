@@ -1221,6 +1221,19 @@ module MilkTea
       elsif check_name && check_next(:lparen)
         destructure_type_name = advance.lexeme
         destructure_bindings = parse_destructure_pattern
+      elsif check_name && check_next(:dot)
+        # Module-qualified type name in struct destructure: e.g. `types.Transform(x, y) = ...`
+        parts = [advance.lexeme]
+        while check(:dot)
+          advance
+          parts << consume_name("expected type name after '.' in destructure pattern").lexeme
+        end
+        if match(:lparen)
+          destructure_type_name = parts.length == 1 ? parts[0].dup : parts
+          destructure_bindings = parse_destructure_pattern
+        else
+          raise error(@tokens[@current], "expected '(' after type name in destructure pattern")
+        end
       else
         name_token = consume_name("expected local variable name")
         name = name_token.lexeme

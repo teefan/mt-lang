@@ -261,18 +261,23 @@ module MilkTea
 
       def check_local_decl_struct_destructure(statement, value_type, scopes:)
         type_name = statement.destructure_type_name
-        struct_type = @types[type_name]
-        raise_sema_error("unknown type #{type_name} for struct destructure") unless struct_type
-        raise_sema_error("#{type_name} is not a struct") unless struct_type.is_a?(Types::Struct) || struct_type.is_a?(Types::Tuple)
-        ensure_assignable!(value_type, struct_type, "cannot destructure #{value_type} as #{type_name}")
+        struct_type = if type_name.is_a?(Array)
+                        resolve_qualified_type_name(type_name)
+                      else
+                        @types[type_name]
+                      end
+        display_name = type_name.is_a?(Array) ? type_name.join(".") : type_name
+        raise_sema_error("unknown type #{display_name} for struct destructure") unless struct_type
+        raise_sema_error("#{display_name} is not a struct") unless struct_type.is_a?(Types::Struct) || struct_type.is_a?(Types::Tuple)
+        ensure_assignable!(value_type, struct_type, "cannot destructure #{value_type} as #{display_name}")
 
         fields = struct_type.fields
-        raise_sema_error("destructure pattern has #{statement.destructure_bindings.length} bindings but #{type_name} has #{fields.length} fields") unless statement.destructure_bindings.length == fields.length
+        raise_sema_error("destructure pattern has #{statement.destructure_bindings.length} bindings but #{display_name} has #{fields.length} fields") unless statement.destructure_bindings.length == fields.length
 
         current_scope = current_actual_scope(scopes)
         statement.destructure_bindings.each do |name|
           raise_sema_error("duplicate local #{name} in destructure") if current_scope.key?(name)
-          raise_sema_error("unknown field #{type_name}.#{name}") unless fields.key?(name)
+          raise_sema_error("unknown field #{display_name}.#{name}") unless fields.key?(name)
           ensure_non_reserved_primitive_name!(name, kind_label: "local", line: statement.line, column: statement.column)
           field_type = fields[name]
           current_scope[name] = value_binding(
@@ -284,6 +289,22 @@ module MilkTea
           )
           record_declaration_binding(statement, current_scope[name])
         end
+      end
+
+      def resolve_qualified_type_name(parts)
+        return nil unless parts.length >= 2
+
+        if @imports.key?(parts.first)
+          imported_module = @imports.fetch(parts.first)
+          type = imported_module.types[parts.last]
+          if imported_module.private_type?(parts.last)
+            raise_sema_error("#{parts.first}.#{parts.last} is private to module #{imported_module.name}")
+          end
+          raise_sema_error("unknown type #{parts.join('.')} for struct destructure") unless type
+          return type
+        end
+
+        raise_sema_error("unknown type #{parts.join('.')} for struct destructure")
       end
 
       def check_local_decl_let_else(statement, scopes:, return_type:, allow_return:,
