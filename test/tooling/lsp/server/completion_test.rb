@@ -432,6 +432,32 @@ class CompletionTest < Minitest::Test
     end
   end
 
+  def test_completion_returns_locals_inside_function_body
+    source = <<~MT
+      function test_locals(arg: int) -> int:
+          var local = 42
+          var other = 0
+          return other
+    MT
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_completion_locals_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/completion", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => 3, "character" => 0 }
+      })
+      result = response.fetch("result")
+      labels = result["items"].map { |i| i["label"] }
+      assert_includes labels, "arg"
+      assert_includes labels, "local"
+      assert_includes labels, "other"
+    end
+  end
+
   def test_completion_returns_method_names_after_dot
     with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
