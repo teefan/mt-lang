@@ -25,14 +25,14 @@ module MilkTea
             elsif statement.header_type == :if && statement.header_expression
               validate_consuming_foreign_expression!(statement.header_expression, scopes:, root_allowed: false)
               condition_type = infer_expression(statement.header_expression, scopes:, expected_type: @types.fetch("bool"))
-              ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}")
+              ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}", expression: statement.header_expression, line: statement.line, column: statement.column)
               true_refinements = flow_refinements(statement.header_expression, truthy: true, scopes:)
               check_block(statement.body, scopes: scopes_with_refinements(scopes, true_refinements), return_type:, allow_return:)
               return flow_refinements(statement.header_expression, truthy: false, scopes:) if cfg_block_always_terminates?(statement.body)
             elsif statement.header_type == :while && statement.header_expression
               validate_consuming_foreign_expression!(statement.header_expression, scopes:, root_allowed: false)
               condition_type = infer_expression(statement.header_expression, scopes:, expected_type: @types.fetch("bool"))
-              ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}")
+              ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}", expression: statement.header_expression, line: statement.line, column: statement.column)
               with_loop do
                 body_scopes = scopes_with_refinements(scopes, flow_refinements(statement.header_expression, truthy: true, scopes:))
                 check_block(statement.body, scopes: body_scopes, return_type:, allow_return:)
@@ -72,7 +72,7 @@ module MilkTea
 
               validate_consuming_foreign_expression!(branch.condition, scopes: branch_scopes, root_allowed: false)
               condition_type = infer_expression(branch.condition, scopes: branch_scopes, expected_type: @types.fetch("bool"))
-              ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}")
+              ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}", expression: branch.condition, line: branch.line, column: branch.column)
               true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, scopes: branch_scopes))
               check_block(branch.body, scopes: scopes_with_refinements(scopes, true_refinements), return_type:, allow_return:)
               branch_bodies_terminate << cfg_block_always_terminates?(branch.body)
@@ -115,7 +115,7 @@ module MilkTea
             else
               validate_consuming_foreign_expression!(statement.condition, scopes:, root_allowed: false)
               condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
-              ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}")
+              ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}", expression: statement.condition, line: statement.line, column: statement.column)
               with_loop do
                 body_scopes = scopes_with_refinements(scopes, flow_refinements(statement.condition, truthy: true, scopes:))
                 check_block(statement.body, scopes: body_scopes, return_type:, allow_return:)
