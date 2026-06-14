@@ -134,21 +134,12 @@ module MilkTea
             body = compact_generated_statement_sequence(function.body)
             lines = ["#{function_signature(function)} {"]
             used_labels = collect_used_labels(body)
-            unused_param_lines = emit_unused_param_suppressions(function, INDENT)
             if body.empty?
-              if unused_param_lines.empty?
-                lines << "#{INDENT}(void)0;"
-              else
-                lines.concat(unused_param_lines)
-              end
+              lines << "}"
             else
-              lines.concat(unused_param_lines)
               lines.concat(emit_statement_sequence(body, 1, function:, used_labels:))
+              lines << "}"
             end
-            if function_returns_value_in_c?(function) && body_needs_fallback_return?(body)
-              lines << "#{INDENT}return #{emit_zero_expression(function.return_type)};"
-            end
-            lines << "}"
             lines
           end
 

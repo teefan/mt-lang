@@ -264,14 +264,6 @@ module MilkTea
             omitted_method_receiver_function?(function) ? function.params.drop(1) : function.params
           end
 
-          def emit_unused_param_suppressions(function, indent)
-            emitted_function_params(function).filter_map do |param|
-              next unless name_reference_count_in_statements(function.body, param.c_name).zero?
-
-              "#{indent}(void)#{param.c_name};"
-            end
-          end
-
           def omitted_method_receiver_call?(expression)
             expression.callee.is_a?(String) && omitted_method_receiver_function_names.key?(expression.callee)
           end
