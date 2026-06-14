@@ -390,6 +390,7 @@ module MilkTea
         catch_structural { check_interface_conformances }
 
         errors = @structural_errors.dup
+        structural_errors_exist = !@structural_errors.empty?
 
         begin
           check_top_level_values
@@ -409,9 +410,9 @@ module MilkTea
           errors << e
         end
 
-        check_functions_collecting(errors) if @top_level_functions.any? || @methods.values.any?(&:any?)
+        check_functions_collecting(errors)
 
-        analysis = errors.empty? ? build_analysis : nil
+        analysis = structural_errors_exist ? nil : build_analysis
 
         { analysis: analysis, errors: errors.uniq { |e| [e.message, e.line, e.column, e.length] } }
       end
