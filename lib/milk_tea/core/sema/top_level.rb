@@ -10,10 +10,14 @@ module MilkTea
           with_error_node(decl) do
             case decl
             when AST::ConstDecl
-              if decl.block_body
-                check_block_body_const(decl)
-              else
-                check_expr_const(decl)
+              begin
+                if decl.block_body
+                  check_block_body_const(decl)
+                else
+                  check_expr_const(decl)
+                end
+              rescue SemaError => e
+                collect_structural_error(e)
               end
             when AST::VarDecl
               binding = @top_level_values.fetch(decl.name)

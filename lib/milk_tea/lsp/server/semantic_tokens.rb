@@ -978,7 +978,7 @@ module MilkTea
       end
 
       def constructible_semantic_type?(type)
-        type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || type.is_a?(Types::Task)
+        type.is_a?(Types::Struct) || type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::StringView) || type.is_a?(Types::Task) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
       end
 
       def bare_builtin_specialization?(name, tokens, index)
