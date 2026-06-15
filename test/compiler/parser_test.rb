@@ -3366,4 +3366,61 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal %w[First Second], struct.nested_types.map(&:name)
   end
 
+  def test_parses_expanded_attribute_targets
+    source = <<~MT
+      attribute[const, event, enum, flags, union, variant, struct, field, callable] trace(name: str)
+
+      @[trace("my const")]
+      const C: int = 1
+
+      @[trace("my event")]
+      event e[4]
+
+      @[trace("my enum")]
+      enum E: ubyte
+          a = 0
+
+      @[trace("my flags")]
+      flags F: uint
+          x = 0
+
+      @[trace("my union")]
+      union U:
+          i: int
+
+      @[trace("my variant")]
+      variant V:
+          ok
+
+      function main() -> int:
+          return C
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    trace_attr = ast.declarations[0]
+    assert_instance_of MilkTea::AST::AttributeDecl, trace_attr
+    assert_equal [:const, :event, :enum, :flags, :union, :variant, :struct, :field, :callable].sort, trace_attr.targets.sort
+
+    const_decl = ast.declarations[1]
+    assert_equal "C", const_decl.name
+    assert_equal ["trace"], const_decl.attributes.map { |a| a.name.to_s }
+
+    event_decl = ast.declarations[2]
+    assert_equal "e", event_decl.name
+    assert_equal ["trace"], event_decl.attributes.map { |a| a.name.to_s }
+
+    enum_decl = ast.declarations[3]
+    assert_equal "E", enum_decl.name
+    assert_equal ["trace"], enum_decl.attributes.map { |a| a.name.to_s }
+
+    flags_decl = ast.declarations[4]
+    assert_equal ["trace"], flags_decl.attributes.map { |a| a.name.to_s }
+
+    union_decl = ast.declarations[5]
+    assert_equal ["trace"], union_decl.attributes.map { |a| a.name.to_s }
+
+    variant_decl = ast.declarations[6]
+    assert_equal ["trace"], variant_decl.attributes.map { |a| a.name.to_s }
+  end
+
 end

@@ -150,51 +150,45 @@ module MilkTea
       if legacy_layout_modifier_start?(peek)
         raise error(peek, "layout modifiers must use attributes like @[packed] or @[align(...)]")
       elsif match(:attribute)
-        reject_attributes!(attributes)
+        reject_attributes!(attributes, "attribute")
         parse_attribute_decl(visibility:)
       elsif match(:const)
-        reject_attributes!(attributes)
         if match(:function)
           parse_function_def(visibility:, const: true, attributes:)
         else
-          parse_const_decl(visibility:)
+          parse_const_decl(visibility:, attributes:)
         end
       elsif match(:var)
-        reject_attributes!(attributes)
+        reject_attributes!(attributes, "var")
         parse_var_decl(visibility:)
       elsif match(:event)
-        reject_attributes!(attributes)
-        parse_event_decl(visibility:)
+        parse_event_decl(visibility:, attributes:)
       elsif match(:type)
-        reject_attributes!(attributes)
+        reject_attributes!(attributes, "type")
         parse_type_alias_decl(visibility:)
       elsif match(:struct)
         parse_struct_decl(visibility:, attributes:)
       elsif match(:union)
-        reject_attributes!(attributes)
-        parse_union_decl(visibility:)
+        parse_union_decl(visibility:, attributes:)
       elsif match(:enum)
-        reject_attributes!(attributes)
-        parse_enum_decl(AST::EnumDecl, visibility:)
+        parse_enum_decl(AST::EnumDecl, visibility:, attributes:)
       elsif match(:flags)
-        reject_attributes!(attributes)
-        parse_enum_decl(AST::FlagsDecl, visibility:)
+        parse_enum_decl(AST::FlagsDecl, visibility:, attributes:)
       elsif match(:variant)
-        reject_attributes!(attributes)
-        parse_variant_decl(visibility:)
+        parse_variant_decl(visibility:, attributes:)
       elsif match(:interface)
-        reject_attributes!(attributes)
+        reject_attributes!(attributes, "interface")
         parse_interface_decl(visibility:)
       elsif match(:opaque)
-        reject_attributes!(attributes)
+        reject_attributes!(attributes, "opaque")
         parse_opaque_decl(visibility:)
       elsif match(:extending)
-        reject_attributes!(attributes)
+        reject_attributes!(attributes, "extending")
         raise error(visibility_token, "public is not allowed on extending blocks") if visibility == :public
 
         parse_extending_block
       elsif check(:editable) || check(:static)
-        reject_attributes!(attributes)
+        reject_attributes!(attributes, "standalone method")
         raise error(peek, "#{peek.lexeme} function is only allowed inside extending blocks")
       elsif match(:foreign)
         parse_foreign_decl(visibility:, attributes:)
@@ -208,12 +202,12 @@ module MilkTea
 
         parse_extern_decl(attributes:)
       elsif match(:static_assert)
-        reject_attributes!(attributes)
+        reject_attributes!(attributes, "static_assert")
         raise error(visibility_token, "public is not allowed on static_assert") if visibility == :public
 
         parse_static_assert
       elsif check_when_start?
-        reject_attributes!(attributes)
+        reject_attributes!(attributes, "when")
         raise error(visibility_token, "public is not allowed on when") if visibility == :public
 
         advance
@@ -375,7 +369,7 @@ module MilkTea
       end
     end
 
-    def parse_const_decl(visibility: :private)
+    def parse_const_decl(visibility: :private, attributes: [])
       line = previous.line
       name = nil
       type = nil
@@ -383,7 +377,7 @@ module MilkTea
       if match(:arrow)
         type = parse_type_ref
         body = parse_block
-        return AST::ConstDecl.new(name:, type:, value: nil, block_body: body, visibility:, line:)
+        return AST::ConstDecl.new(name:, type:, value: nil, block_body: body, visibility:, attributes:, line:)
       end
 
       consume(:colon, "expected ':' after constant name")
@@ -391,13 +385,13 @@ module MilkTea
       consume(:equal, "expected '=' after constant type")
       value = parse_expression
       consume_end_of_statement
-      AST::ConstDecl.new(name:, type:, value:, visibility:, line:)
+      AST::ConstDecl.new(name:, type:, value:, visibility:, attributes:, line:)
     rescue ParseError => e
       raise unless @recovery_errors && name
 
       @recovery_errors << e
       synchronize_to_statement_boundary
-      AST::ConstDecl.new(name:, type: type || recovery_error_expr(e), value: recovery_error_expr(e), visibility:, line:)
+      AST::ConstDecl.new(name:, type: type || recovery_error_expr(e), value: recovery_error_expr(e), visibility:, attributes:, line:)
     end
 
     def parse_var_decl(visibility: :private)
@@ -424,7 +418,7 @@ module MilkTea
       AST::VarDecl.new(name:, type: var_type || recovery_error_expr(e), value: recovery_error_expr(e), visibility:, line:)
     end
 
-    def parse_event_decl(visibility: :private)
+    def parse_event_decl(visibility: :private, attributes: [])
       line = previous.line
       name_token = consume_name("expected event name")
       consume(:lbracket, "expected '[' after event name")
@@ -436,7 +430,7 @@ module MilkTea
         consume(:rparen, "expected ')' after event payload type")
       end
       consume_end_of_statement
-      AST::EventDecl.new(name: name_token.lexeme, capacity:, payload_type:, visibility:, line:, column: name_token.column)
+      AST::EventDecl.new(name: name_token.lexeme, capacity:, payload_type:, visibility:, attributes:, line:, column: name_token.column)
     end
 
     def parse_type_alias_decl(visibility: :private)
@@ -453,14 +447,17 @@ module MilkTea
       consume(:lbracket, "expected '[' after attribute")
       targets = parse_comma_separated_until(:rbracket) do
         target_token = consume_path_component("expected attribute target")
-        case target_token.lexeme
-        when "struct"
-          :struct
-        when "field"
-          :field
-        when "callable"
-          :callable
-        else
+    case target_token.lexeme
+            when "struct"        then :struct
+            when "field"         then :field
+            when "callable"      then :callable
+            when "const"         then :const
+            when "event"         then :event
+            when "enum"          then :enum
+            when "flags"         then :flags
+            when "union"         then :union
+            when "variant"       then :variant
+            else
           raise error(target_token, "unknown attribute target #{target_token.lexeme}")
         end
       end
@@ -535,8 +532,7 @@ module MilkTea
       visibility, visibility_token = parse_visibility
 
       if match(:event)
-        reject_attributes!(field_attributes)
-        return [:event, parse_event_decl(visibility:)]
+        return [:event, parse_event_decl(visibility:, attributes: field_attributes)]
       end
 
       if match(:struct)
@@ -560,7 +556,7 @@ module MilkTea
       [:field, AST::Field.new(name: field_name_error, type: recovery_error_expr(e), attributes: field_attributes, line: e.token&.line || 1, column: e.token&.column || 1)]
     end
 
-    def parse_union_decl(visibility: :private)
+    def parse_union_decl(visibility: :private, attributes: [])
       line = previous.line
       name = consume_name("expected union name").lexeme
       c_name = parse_optional_explicit_c_name
@@ -571,7 +567,7 @@ module MilkTea
         consume_end_of_statement
         AST::Field.new(name: field_name, type: field_type)
       end
-      AST::UnionDecl.new(name:, c_name:, fields:, visibility:, line:)
+      AST::UnionDecl.new(name:, c_name:, fields:, visibility:, attributes:, line:)
     end
 
     def parse_optional_explicit_c_name
@@ -580,7 +576,7 @@ module MilkTea
       consume(:cstring, "expected C string literal after '='").literal
     end
 
-    def parse_enum_decl(node_class, visibility: :private)
+    def parse_enum_decl(node_class, visibility: :private, attributes: [])
       line = previous.line
       name = consume_name("expected declaration name").lexeme
       consume(:colon, "expected ':' after declaration name")
@@ -601,10 +597,10 @@ module MilkTea
       end
 
       consume(:dedent, "expected end of declaration body")
-      node_class.new(name:, backing_type:, members:, visibility:, line:)
+      node_class.new(name:, backing_type:, members:, visibility:, attributes:, line:)
     end
 
-    def parse_variant_decl(visibility: :private)
+    def parse_variant_decl(visibility: :private, attributes: [])
       line = previous.line
       name = consume_name("expected variant name").lexeme
       type_params = parse_declaration_type_params
@@ -625,7 +621,7 @@ module MilkTea
         consume_end_of_statement
         AST::VariantArm.new(name: arm_name, fields:)
       end
-      AST::VariantDecl.new(name:, type_params:, arms:, visibility:, line:)
+      AST::VariantDecl.new(name:, type_params:, arms:, visibility:, attributes:, line:)
     end
 
     def parse_opaque_decl(visibility: :private)
@@ -958,10 +954,11 @@ module MilkTea
       [packed, alignment]
     end
 
-    def reject_attributes!(attributes)
+    def reject_attributes!(attributes, kind_label = nil)
       return if attributes.empty?
 
-      raise error(peek, "attributes are only allowed on structs, struct fields, and callable declarations")
+      message = kind_label ? "attributes are not allowed on #{kind_label} declarations" : "attributes are not allowed on this declaration"
+      raise error(peek, message)
     end
 
     def parse_foreign_param

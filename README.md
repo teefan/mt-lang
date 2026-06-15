@@ -275,7 +275,7 @@ variant Token:
 Rules:
 
 - `struct` and `opaque` may declare nominal interface conformance with `implements`.
-- `attribute[target, ...]` declares reusable declaration attributes for `struct`, `field`, and `callable` targets.
+- `attribute[target, ...]` declares reusable declaration attributes for `struct`, `field`, `callable`, `const`, `event`, `enum`, `flags`, `union`, and `variant` targets.
 - Attributes are applied with one or more leading `@[name(...)]` blocks. Built-in `packed`, `align(bytes)`, and `deprecated(message)` are predefined attributes.
 - `variant` arms may carry named payload fields.
 - Payload arm construction uses named fields: `Token.ident(text = "hello")`.
@@ -988,7 +988,8 @@ Current compiler rejects:
 
 ### Attribute restrictions
 
-- user-defined `attribute` declarations target `struct`, `field`, or `callable` only
+- user-defined `attribute` declarations target `struct`, `field`, `callable`, `const`, `event`, `enum`, `flags`, `union`, or `variant`
+- `@[...]` attribute applications are only accepted on the above declaration kinds
 - `attribute` declarations are not allowed in external files
 - only built-in `packed` and `align(...)` struct attributes are allowed in external files
 

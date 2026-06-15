@@ -54,14 +54,14 @@ module MilkTea
     LinkDirective = Data.define(:value)
     IncludeDirective = Data.define(:value)
     CompilerFlagDirective = Data.define(:value)
-    ConstDecl = Data.define(:name, :type, :value, :block_body, :visibility, :line) do
-      def initialize(name:, type:, value:, block_body: nil, visibility:, line: nil) = super
+    ConstDecl = Data.define(:name, :type, :value, :block_body, :visibility, :attributes, :line) do
+      def initialize(name:, type:, value:, block_body: nil, visibility:, attributes: [], line: nil) = super
     end
     VarDecl = Data.define(:name, :type, :value, :visibility, :line) do
       def initialize(name:, type:, value:, visibility:, line: nil) = super
     end
-    EventDecl = Data.define(:name, :capacity, :payload_type, :visibility, :line, :column) do
-      def initialize(name:, capacity:, payload_type: nil, visibility:, line: nil, column: nil) = super
+    EventDecl = Data.define(:name, :capacity, :payload_type, :visibility, :attributes, :line, :column) do
+      def initialize(name:, capacity:, payload_type: nil, visibility:, attributes: [], line: nil, column: nil) = super
     end
     TypeAliasDecl = Data.define(:name, :target, :visibility, :line) do
       def initialize(name:, target:, visibility:, line: nil) = super
@@ -75,17 +75,17 @@ module MilkTea
     StructDecl = Data.define(:name, :type_params, :implements, :c_name, :fields, :events, :nested_types, :attributes, :packed, :alignment, :visibility, :lifetime_params, :line) do
       def initialize(name:, type_params:, implements:, c_name:, fields:, events: [], nested_types: [], attributes: [], packed:, alignment:, visibility:, lifetime_params: [], line: nil) = super
     end
-    UnionDecl = Data.define(:name, :c_name, :fields, :visibility, :line) do
-      def initialize(name:, c_name:, fields:, visibility:, line: nil) = super
+    UnionDecl = Data.define(:name, :c_name, :fields, :visibility, :attributes, :line) do
+      def initialize(name:, c_name:, fields:, visibility:, attributes: [], line: nil) = super
     end
     Field = Data.define(:name, :type, :attributes, :line, :column) do
       def initialize(name:, type:, attributes: [], line: nil, column: nil) = super
     end
-    EnumDecl = Data.define(:name, :backing_type, :members, :visibility, :line) do
-      def initialize(name:, backing_type:, members:, visibility:, line: nil) = super
+    EnumDecl = Data.define(:name, :backing_type, :members, :visibility, :attributes, :line) do
+      def initialize(name:, backing_type:, members:, visibility:, attributes: [], line: nil) = super
     end
-    FlagsDecl = Data.define(:name, :backing_type, :members, :visibility, :line) do
-      def initialize(name:, backing_type:, members:, visibility:, line: nil) = super
+    FlagsDecl = Data.define(:name, :backing_type, :members, :visibility, :attributes, :line) do
+      def initialize(name:, backing_type:, members:, visibility:, attributes: [], line: nil) = super
     end
     EnumMember = Data.define(:name, :value, :line, :column) do
       def initialize(name:, value:, line: nil, column: nil) = super
@@ -130,8 +130,8 @@ module MilkTea
     IfStmt = Data.define(:branches, :else_body, :inline, :line, :else_line, :else_column) do
       def initialize(branches:, else_body:, inline: false, line: nil, else_line: nil, else_column: nil) = super
     end
-    VariantDecl = Data.define(:name, :type_params, :arms, :visibility, :line) do
-      def initialize(name:, type_params:, arms:, visibility:, line: nil) = super
+    VariantDecl = Data.define(:name, :type_params, :arms, :visibility, :attributes, :line) do
+      def initialize(name:, type_params:, arms:, visibility:, attributes: [], line: nil) = super
     end
     VariantArm = Data.define(:name, :fields)
     MatchArm = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :body) do
