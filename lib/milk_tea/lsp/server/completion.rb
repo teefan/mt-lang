@@ -108,7 +108,7 @@ module MilkTea
                 params_str = format_params(binding.type.params)
                 item = {
                   label:      fname,
-                  kind:       3,  # Function
+                  kind:       12, # Function
                   detail:     "function #{fname}(#{params_str}) -> #{binding.type.return_type}",
                   insertText: fname,
                   sortText:   "0_#{fname}",
@@ -124,7 +124,7 @@ module MilkTea
                 next unless prefix.empty? || vname.start_with?(prefix)
                 result << {
                   label:      vname,
-                  kind:       6,  # Variable
+                  kind:       13, # Variable
                   detail:     "#{vname}: #{binding.type}",
                   insertText: vname,
                   sortText:   "1_#{vname}",
@@ -135,7 +135,7 @@ module MilkTea
                 next unless prefix.empty? || tname.start_with?(prefix)
                 result << {
                   label:      tname,
-                  kind:       7,  # Class
+                  kind:       5,  # Class
                   detail:     "type #{tname}",
                   insertText: tname,
                   sortText:   "2_#{tname}",
@@ -160,7 +160,7 @@ module MilkTea
                   next if !prefix.empty? && !mname.start_with?(prefix)
                   {
                     label:      mname,
-                    kind:       20, # EnumMember
+                    kind:       22, # EnumMember
                     detail:     "#{receiver_label}.#{mname}",
                     insertText: mname,
                     sortText:   "0_#{mname}",
@@ -180,7 +180,7 @@ module MilkTea
                   next if !prefix.empty? && !aname.start_with?(prefix)
                   {
                     label:      aname,
-                    kind:       20, # EnumMember
+                    kind:       22, # EnumMember
                     detail:     "#{receiver_label}.#{aname}",
                     insertText: aname,
                     sortText:   "0_#{aname}",
@@ -200,7 +200,7 @@ module MilkTea
                   next if !prefix.empty? && !nt_name.start_with?(prefix)
                   {
                     label:      nt_name,
-                    kind:       7,  # Class/type
+                    kind:       5,  # Class/type
                     detail:     "#{receiver_label}.#{nt_name}",
                     insertText: nt_name,
                     sortText:   "1_#{nt_name}",
@@ -264,7 +264,7 @@ module MilkTea
                 params_str = format_params(binding.type.params)
                 item = {
                   label:      mname,
-                  kind:       2,  # Method
+                  kind:       6,  # Method
                   detail:     "#{mname}(#{params_str}) -> #{binding.type.return_type}",
                   insertText: mname,
                   sortText:   "0_#{mname}",
@@ -300,7 +300,7 @@ module MilkTea
             params_str = format_params(binding.type.params)
             entry = {
               label:        name,
-              kind:         3,  # Function
+              kind:         12, # Function
               detail:       "function #{name}(#{params_str}) -> #{binding.type.return_type}",
               insertText:   name,
               sortText:     "0_#{name}",
@@ -351,7 +351,7 @@ module MilkTea
 
             result << {
               label:        name,
-              kind:         9,  # Module
+              kind:         2,  # Module
               detail:       "module #{module_binding.name}",
               insertText:   name,
               sortText:     "2_#{name}",
@@ -365,7 +365,7 @@ module MilkTea
 
             result << {
               label:        name,
-              kind:         6,  # Variable
+              kind:         13, # Variable
               detail:       "#{name}: #{binding.type}",
               insertText:   name,
               sortText:     "3_#{name}",
@@ -390,7 +390,7 @@ module MilkTea
 
                 result << {
                   label:        name,
-                  kind:         6,  # Variable
+                  kind:         13, # Variable
                   detail:       detail_label,
                   insertText:   name,
                   sortText:     "3_#{name}",
@@ -478,7 +478,7 @@ module MilkTea
           params_str = format_params(binding.type.params)
           item = {
             label:      display_name,
-            kind:       2,  # Method
+            kind:       6,  # Method
             detail:     "#{display_name}(#{params_str}) -> #{binding.type.return_type}",
             insertText: display_name,
             sortText:   "0_#{display_name}",
@@ -661,7 +661,7 @@ module MilkTea
 
             items << {
               label:      fname,
-              kind:       10, # Property
+              kind:       8,  # Field
               detail:     "#{fname}: #{ftype}",
               insertText: fname,
               sortText:   "0_#{fname}",
@@ -678,7 +678,7 @@ module MilkTea
           params_str = format_params(binding.type.params)
           item = {
             label:      mname,
-            kind:       2,  # Method
+            kind:       6,  # Method
             detail:     "#{mname}(#{params_str}) -> #{binding.type.return_type}",
             insertText: mname,
             sortText:   "1_#{mname}",
@@ -851,7 +851,7 @@ module MilkTea
         modules.values.sort.map do |mod_name|
           {
             label:      mod_name,
-            kind:       9,
+            kind:       2,
             detail:     "module #{mod_name}",
             insertText: mod_name,
             sortText:   "0_#{mod_name}",
@@ -933,7 +933,7 @@ module MilkTea
           next unless prefix.empty? || name.start_with?(prefix)
           items << {
             label:      name,
-            kind:       6,
+            kind:       13,
             detail:     "#{name}: #{binding.type}",
             insertText: name,
             sortText:   "0_#{name}",
@@ -996,7 +996,7 @@ module MilkTea
             next unless prefix.empty? || fname.start_with?(prefix)
             items << {
               label:      "#{fname} = ",
-              kind:       10,
+              kind:       8,
               detail:     "#{fname}: #{ftype}",
               insertText: "#{fname} = ",
               sortText:   "0_#{fname}",
@@ -1028,7 +1028,7 @@ module MilkTea
           next unless prefix.empty? || name.start_with?(prefix)
           items << {
             label:      name,
-            kind:       7,
+            kind:       5,
             detail:     "type #{name}",
             insertText: name,
             sortText:   "0_#{name}",

@@ -98,7 +98,7 @@ class CompletionTest < Minitest::Test
         default_width = items.find { |item| item["label"] == "default_width" }
 
         assert_includes labels, "default_width"
-        assert_equal 3, default_width.fetch("kind")
+        assert_equal 12, default_width.fetch("kind")
       end
     end
   end
@@ -155,8 +155,8 @@ class CompletionTest < Minitest::Test
         assert_includes labels, "x"
         assert_includes labels, "y"
         assert_includes labels, "length"
-        assert_equal 10, kinds_by_label["x"]
-        assert_equal 2, kinds_by_label["length"]
+        assert_equal 8, kinds_by_label["x"]
+        assert_equal 6, kinds_by_label["length"]
       end
     end
   end
@@ -428,7 +428,7 @@ class CompletionTest < Minitest::Test
       assert_includes labels, "add"
       assert_includes labels, "main"
       function_items = result["items"].select { |i| %w[add main].include?(i["label"]) }
-      function_items.each { |item| assert_equal 3, item["kind"] }
+      function_items.each { |item| assert_equal 12, item["kind"] }
     end
   end
 
@@ -484,7 +484,7 @@ class CompletionTest < Minitest::Test
       result = response.fetch("result")
       labels = result["items"].map { |i| i["label"] }
       assert_includes labels, "zero"
-      result["items"].each { |item| assert_equal 2, item["kind"] }  # kind 2 = Method
+      result["items"].each { |item| assert_equal 6, item["kind"] }  # kind 6 = Method
     end
   end
 
@@ -572,8 +572,8 @@ class CompletionTest < Minitest::Test
       assert_includes labels, "x"
       assert_includes labels, "y"
       assert_includes labels, "length"
-      assert_equal 10, kinds_by_label["x"]
-      assert_equal 2, kinds_by_label["length"]
+      assert_equal 8, kinds_by_label["x"]
+      assert_equal 6, kinds_by_label["length"]
     end
   end
 

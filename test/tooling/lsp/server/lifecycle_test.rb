@@ -190,6 +190,84 @@ class LifecycleTest < Minitest::Test
     end
   end
 
+  def test_document_symbols_are_wrapped_in_module_hierarchy
+    Dir.mktmpdir("mt-lsp-outline-module") do |dir|
+      engine_dir = File.join(dir, "engine")
+      FileUtils.mkdir_p(engine_dir)
+      path = File.join(engine_dir, "math.mt")
+      source = <<~MT
+        public function add(a: int, b: int) -> int:
+            return a + b
+
+        public struct Vec2:
+            x: float
+            y: float
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/documentSymbol", {
+          "textDocument" => { "uri" => uri }
+        })
+        result = response.fetch("result")
+
+        assert_equal 1, result.length, "top-level should have 1 module node"
+        assert_equal "engine", result[0]["name"]
+        assert_equal 2, result[0]["kind"], "module kind should be 2"
+
+        math = result[0]["children"]
+        assert_equal 1, math.length
+        assert_equal "math", math[0]["name"]
+        assert_equal 2, math[0]["kind"]
+
+        children_names = math[0]["children"].map { |c| c["name"] }
+        assert_includes children_names, "add"
+        assert_includes children_names, "Vec2"
+      end
+    end
+  end
+
+  def test_document_symbols_no_wrapping_for_single_segment_module
+    Dir.mktmpdir("mt-lsp-outline-flat") do |dir|
+      path = File.join(dir, "standalone.mt")
+      source = <<~MT
+        public function add(a: int, b: int) -> int:
+            return a + b
+
+        public struct Vec2:
+            x: float
+            y: float
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/documentSymbol", {
+          "textDocument" => { "uri" => uri }
+        })
+        result = response.fetch("result")
+
+        names = result.map { |s| s["name"] }
+        assert_includes names, "add", "single-segment modules should have flat top-level symbols"
+        assert_includes names, "Vec2"
+        refute names.include?("standalone"), "standalone module name should NOT wrap when single segment"
+      end
+    end
+  end
+
   def test_document_link_resolves_existing_relative_resource_path_string
     Dir.mktmpdir("milk-tea-lsp-doc-link") do |dir|
       assets_dir = File.join(dir, "assets")
