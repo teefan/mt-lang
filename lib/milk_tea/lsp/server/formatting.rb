@@ -80,14 +80,14 @@ module MilkTea
         removed_local_names = []
         removed_method_names = []
         removed_nested_type_names = []
-        lookup = symbols.to_h { |s| [s[:name], s] }
+        name_index = symbols.each_with_object(Hash.new { |h, k| h[k] = [] }) { |s, h| h[s[:name]] << s }
 
         ast.declarations&.each do |decl|
           removed_nested_type_names.concat(collect_nested_type_names(decl)) if decl.is_a?(AST::StructDecl)
 
           case decl
           when AST::FunctionDef
-            parent = lookup[decl.name]
+            parent = name_index[decl.name]&.find { |s| symbol_line(s) == (decl.line || 0) }
             next unless parent
 
             if (detail = type_detail_string(decl.return_type))
@@ -110,16 +110,24 @@ module MilkTea
             end
           when AST::ExtendingBlock
             type_name_str = decl.type_name.name.parts.join('.')
-            line = decl.line || 0
 
-            ext_block = {
-              name: type_name_str,
-              kind: 23,
-              detail: "implementation",
-              range: { start: { line: line - 1, character: 0 }, end: { line: line, character: 0 } },
-              selectionRange: { start: { line: line - 1, character: 0 }, end: { line: line - 1, character: type_name_str.length } },
-              children: [],
-            }
+            # Find the extending block's own flat token symbol by name + line,
+            # enrich it in-place with the implementation detail and methods.
+            parent = name_index[type_name_str]&.find { |s| s[:kind] == 23 && symbol_line(s) == (decl.line || 0) }
+            unless parent
+              line = decl.line || 0
+              parent = {
+                name: type_name_str,
+                kind: 23,
+                detail: 'implementation',
+                range: { start: { line: line - 1, character: 0 }, end: { line: line, character: 0 } },
+                selectionRange: { start: { line: line - 1, character: 0 }, end: { line: line - 1, character: type_name_str.length } },
+                children: [],
+              }
+              symbols << parent
+              name_index[type_name_str] << parent
+            end
+            parent[:detail] = 'implementation'
 
             (decl.methods || []).each do |method|
               next unless method.respond_to?(:name) && method.name
@@ -127,7 +135,9 @@ module MilkTea
               child = child_method_symbol(method)
               next unless child
 
-              ext_block[:children] << child unless ext_block[:children].any? { |pc| pc[:name] == child[:name] }
+              parent[:children] ||= []
+              parent_children = parent[:children]
+              parent_children << child unless parent_children.any? { |pc| pc[:name] == child[:name] }
               removed_method_names << child[:name] if child[:kind] == 6
 
               locals = collect_local_decls(method.respond_to?(:body) ? method.body : nil)
@@ -145,12 +155,8 @@ module MilkTea
                 removed_local_names << local.name
               end
             end
-
-            symbols << ext_block if ext_block[:children].any?
-            # Remove the empty token-extracted entry for this extending block
-            symbols.reject! { |s| s[:name] == type_name_str && s[:kind] == 23 && !s[:detail] && (!s[:children] || s[:children].empty?) }
           when AST::ConstDecl
-            parent = lookup[decl.name]
+            parent = name_index[decl.name]&.find { |s| symbol_line(s) == (decl.line || 0) }
             next unless parent
 
             if decl.respond_to?(:type) && (detail = type_detail_string(decl.type))
@@ -175,11 +181,21 @@ module MilkTea
             end
           else
             parent_name = child_parent_name(decl)
-            parent = parent_name ? lookup[parent_name] : nil
+            parent = parent_name ? name_index[parent_name]&.find { |s| symbol_line(s) == (decl.line || 0) } : nil
             next unless parent
 
             if decl.is_a?(AST::StructDecl) && decl.implements&.any?
-              ifaces = decl.implements.map { |i| i.respond_to?(:parts) ? i.parts.join('.') : i.name.parts.join('.') }.join(', ')
+              ifaces = decl.implements.map { |i|
+                base = i.respond_to?(:parts) ? i.parts.join('.') : i.name.parts.join('.')
+                type_args = i.respond_to?(:type_arguments) ? i.type_arguments : i.respond_to?(:arguments) ? i.arguments : []
+                args = if type_args&.any?
+                         arg_strs = type_args.map { |a| a.respond_to?(:name) ? a.name.parts.join('.') : a.respond_to?(:parts) ? a.parts.join('.') : a.to_s }
+                         "[#{arg_strs.join(', ')}]"
+                       else
+                         ""
+                       end
+                "#{base}#{args}"
+              }.join(', ')
               parent[:detail] = "(#{ifaces})"
             end
 
@@ -214,6 +230,10 @@ module MilkTea
         end
 
         symbols
+      end
+
+      def symbol_line(symbol)
+        symbol.dig(:range, :start, :line)&.+ 1 || 0
       end
 
       def child_parent_name(decl)
