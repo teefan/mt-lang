@@ -55,8 +55,7 @@ module MilkTea
       KEYWORD_TOKEN_TYPES = Token::KEYWORDS.values.to_set.freeze
       DEFAULT_LIBRARY_TYPE_NAMES = Types::BUILTIN_TYPE_NAMES.to_set.freeze
       BUILTIN_FUNCTION_NAMES = %w[
-        ref_of const_ptr_of ptr_of read fatal reinterpret array span zero default
-        field_of callable_of has_attribute attribute_of attribute_arg adapt get
+        ref_of const_ptr_of ptr_of read fatal reinterpret array span zero default adapt get
       ].to_set.freeze
       BUILTIN_ASSOCIATED_HOOK_NAMES = %w[hash equal order].to_set.freeze
       BUILTIN_CALL_HOVER_INFO = {
