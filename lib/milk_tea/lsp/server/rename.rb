@@ -529,10 +529,15 @@ module MilkTea
 
       def find_struct_containing_field(facts, field_name)
         facts.types.each_value do |type|
-          next unless type.is_a?(Types::Struct) || type.is_a?(Types::StructInstance)
-          target = type.is_a?(Types::StructInstance) ? type.definition : type
-          next unless target.is_a?(Types::Struct)
-          return type if target.fields.key?(field_name)
+          target = if type.is_a?(Types::GenericStructDefinition)
+                     type
+                   elsif type.is_a?(Types::Struct) || type.is_a?(Types::StructInstance)
+                     type.is_a?(Types::StructInstance) ? type.definition : type
+                   else
+                     next
+                   end
+          next unless target.respond_to?(:fields) && target.fields.key?(field_name)
+          return type
         end
         nil
       end
