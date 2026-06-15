@@ -64,6 +64,7 @@ module MilkTea
                   @last_good_tooling_snapshot_cache[uri] = snapshot if snapshot&.facts
                   @facts_cache[uri] = facts if facts
                   @last_good_facts_cache[uri] = facts if facts
+                  @document_module_names[uri] = facts.module_name if facts&.module_name
                   update_dependency_index(uri, facts)
                   @diagnostics_cache[uri] = {
                     content_hash: hash,
@@ -80,6 +81,7 @@ module MilkTea
         rescue StandardError => e
           cache_state = 'error'
           log_error("LSP diagnostics error #{uri}: #{e.message}")
+          warn "  #{e.backtrace.first(6).join("\n  ")}" if e.backtrace
           []
         ensure
           if total_start

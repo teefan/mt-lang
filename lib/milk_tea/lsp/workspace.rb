@@ -47,6 +47,7 @@ module MilkTea
         @doc_comments_cache = {} # uri -> {"line:column" => structured_doc_comment_hash}
         @last_good_facts_cache = {} # uri -> last Sema::Facts that succeeded
         @last_good_tooling_snapshot_cache = {} # uri -> last Sema::ToolingSnapshot with facts that succeeded
+        @document_module_names = {} # uri -> module name string (populated from last-good facts)
         @shared_module_cache = {}
         @facts_cache_mutex = Mutex.new
         @facts_generation = Hash.new(0)

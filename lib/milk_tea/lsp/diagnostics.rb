@@ -61,6 +61,20 @@ module MilkTea
           )
           imports_ms = elapsed_ms(imports_start) if imports_start
           unresolved_import_paths = imported_modules.fetch(:unresolved_import_paths)
+          inferred_module_name = imported_modules[:module_name]
+
+          # Wrap AST with module name before sema so facts.module_name is non-nil.
+          unless ast.respond_to?(:module_name) && ast.module_name
+            mn_parts = inferred_module_name ? inferred_module_name.split('.') : []
+            ast = AST::SourceFile.new(
+              module_name: mn_parts.any? ? AST::QualifiedName.new(parts: mn_parts) : nil,
+              module_kind: ast.respond_to?(:module_kind) ? ast.module_kind : nil,
+              imports: ast.respond_to?(:imports) ? (ast.imports || []) : [],
+              directives: ast.respond_to?(:directives) ? (ast.directives || []) : [],
+              declarations: ast.respond_to?(:declarations) ? (ast.declarations || []) : [],
+              line: ast.respond_to?(:line) ? ast.line : 1,
+            )
+          end
 
           # Semantic analysis — collect errors from all functions, not just first.
           begin
@@ -72,6 +86,7 @@ module MilkTea
             sema_ms = elapsed_ms(sema_start) if sema_start
           rescue StandardError => e
             warn "Error collecting diagnostics: #{e.message}"
+            warn "  #{e.backtrace.first(6).join("\n  ")}" if e.backtrace
           end
 
           begin
@@ -94,11 +109,13 @@ module MilkTea
             end
           rescue StandardError => e
             warn "Error collecting strict root diagnostics: #{e.message}"
+            warn "  #{e.backtrace.first(6).join("\n  ")}" if e.backtrace
           end
         rescue MilkTea::LexError => e
           diagnostics << format_error(e)
         rescue StandardError => e
           warn "Error collecting diagnostics: #{e.message}"
+          warn "  #{e.backtrace.first(6).join("\n  ")}" if e.backtrace
         end
 
         # Lint warnings (severity: 2 = Warning)
@@ -120,6 +137,7 @@ module MilkTea
           # already reported by the main diagnostics path.
         rescue StandardError => e
           warn "Error collecting lint diagnostics: #{e.message}"
+          warn "  #{e.backtrace.first(6).join("\n  ")}" if e.backtrace
         end
 
         { diagnostics: diagnostics, facts: sema_facts, sema_snapshot: sema_snapshot }
@@ -140,7 +158,7 @@ module MilkTea
 
       def self.resolve_imported_modules(uri, ast, diagnostics, resolution:, effective_platform:, shared_module_cache: nil, source_overrides: nil, workspace_root_path: nil, content: nil)
         path = uri_to_path(uri)
-        return { modules: {}, unresolved_import_paths: [] } unless path && File.file?(path)
+         return { modules: {}, unresolved_import_paths: [], module_name: nil } unless path && File.file?(path)
 
         loader = ModuleLoader.new(
           module_roots: module_roots_for_path(path, locked: resolution.locked, workspace_root_path: workspace_root_path),
@@ -149,6 +167,7 @@ module MilkTea
           source_overrides: source_overrides,
           platform: effective_platform,
         )
+        module_name = loader.send(:inferred_module_name_for_path, path) rescue nil
         resolution_result = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
         unresolved_import_paths = []
 
@@ -161,7 +180,7 @@ module MilkTea
           end
         end
 
-        { modules: resolution_result.modules, unresolved_import_paths: unresolved_import_paths.uniq }
+        { modules: resolution_result.modules, unresolved_import_paths: unresolved_import_paths.uniq, module_name: module_name }
       rescue ModuleLoadError, PackageLockError => e
         if e.is_a?(ModuleLoadError)
           import = ast.imports.find { |candidate| candidate.path.to_s == e.path }
@@ -169,7 +188,7 @@ module MilkTea
         else
           diagnostics << format_error(SemaError.new(e.message))
         end
-        { modules: {}, unresolved_import_paths: [] }
+        { modules: {}, unresolved_import_paths: [], module_name: nil }
       end
 
       def self.redundant_unknown_import_diagnostic?(diagnostic, unresolved_import_paths)

@@ -1242,6 +1242,8 @@ module MilkTea
       end
 
       def builtin_keyword_hover_info(token)
+        return nil unless token
+
         info = KEYWORD_HOVER_INFO[token.lexeme]
         return nil unless info
         return nil unless [:size_of, :align_of, :offset_of].include?(token.type)

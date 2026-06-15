@@ -149,8 +149,7 @@ module MilkTea
         when AST::SourceFile
           ast_node.declarations.each { |d| results.concat(collect_local_decls(d)) }
         when AST::FunctionDef
-          results.concat([ast_node]) if ast_node.body
-          results.concat(collect_local_decls(ast_node.body))
+          results.concat(collect_local_decls(ast_node.body)) if ast_node.body
         when AST::MethodDef
           results.concat(collect_local_decls(ast_node.body)) if ast_node.body
         when AST::ExtendingBlock

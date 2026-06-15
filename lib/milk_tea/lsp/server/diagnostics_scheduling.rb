@@ -80,6 +80,7 @@ module MilkTea
             end
           rescue StandardError => e
             warn "LSP diagnostics worker error: #{e.message}"
+            warn "  #{e.backtrace.first(8).join("\n  ")}" if e.backtrace
           end
         end
       end
@@ -155,6 +156,7 @@ module MilkTea
         @workspace.collect_diagnostics(uri, lint_tier: lint_tier)
       rescue StandardError => e
         warn "LSP diagnostics error #{uri}: #{e.message}"
+        warn "  #{e.backtrace.first(6).join("\n  ")}" if e.backtrace
         []
       end
 

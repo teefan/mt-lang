@@ -21,8 +21,8 @@ module MilkTea
           enrich_with_children(result, ast)
         end
 
-        facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
-        result = wrap_in_module_hierarchy(result, facts, uri) if facts && result&.any?
+        module_name = resolve_outline_module_name(uri)
+        result = wrap_in_module_hierarchy(result, module_name, uri) if module_name && result&.any?
 
         result
       rescue StandardError => e
@@ -33,8 +33,24 @@ module MilkTea
         log_request_stage_breakdown('textDocument/documentSymbol', total_start, uri: uri, stages: stages, summary: "symbols=#{symbol_count}")
       end
 
-      def wrap_in_module_hierarchy(symbols, facts, uri)
-        module_name = facts.module_name
+      def resolve_outline_module_name(uri)
+        module_name = @workspace.module_name_for_uri(uri) || @workspace.get_facts(uri)&.module_name
+        return nil unless module_name && !module_name.empty?
+
+        segments = module_name.split('.')
+        return nil if segments.length <= 1
+
+        # Only wrap files that live under a real source root: either a
+        # package.toml directory or the std/ library hierarchy.
+        path = @workspace.send(:uri_to_path, uri)
+        if path && !MilkTea::ModuleRoots.package_root_for_path(path) && !path.split('/').include?('std')
+          return nil
+        end
+
+        module_name
+      end
+
+      def wrap_in_module_hierarchy(symbols, module_name, uri)
         return symbols unless module_name && !module_name.empty?
 
         segments = module_name.split('.')
