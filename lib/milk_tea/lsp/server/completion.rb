@@ -232,6 +232,13 @@ module MilkTea
                   return { isIncomplete: false, items: items }
                 end
               end
+            else
+              chain_items = measure_perf_stage(stages, 'value_chain') { value_chain_completions(facts, dot_recv_path, lsp_line, lsp_char, prefix) }
+              if chain_items
+                branch = 'value-chain'
+                item_count = chain_items.length
+                return { isIncomplete: false, items: chain_items }
+              end
             end
           end
 
@@ -423,6 +430,30 @@ module MilkTea
         { isIncomplete: false, items: [] }
       ensure
         log_request_stage_breakdown('textDocument/completion', total_start, uri: uri, stages: stages, summary: "branch=#{branch} items=#{item_count}")
+      end
+
+      def value_chain_completions(facts, dot_recv_path, lsp_line, lsp_char, prefix)
+        return nil unless dot_recv_path&.include?('.')
+
+        chain_segments = dot_recv_path.split('.')
+        return nil if chain_segments.length < 2
+
+        first_seg = chain_segments.first
+        first_type = resolve_dot_receiver_value_type(facts, first_seg, lsp_line + 1, lsp_char + 1)
+        return nil unless first_type
+
+        current_type = first_type
+        chain_segments[1..].each do |seg|
+          field_owner = project_field_receiver_type_for_completion(current_type)
+          if field_owner.respond_to?(:field) && (field_type = field_owner.field(seg))
+            current_type = field_type
+          else
+            return nil
+          end
+        end
+
+        items = completion_items_for_value_receiver(facts, current_type, prefix)
+        items.empty? ? nil : items
       end
 
       def completion_items_for_type_receiver(facts, receiver_type, prefix)

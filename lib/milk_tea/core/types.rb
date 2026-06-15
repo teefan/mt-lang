@@ -1007,6 +1007,7 @@ module MilkTea
         )
         @definition = definition
         @arguments = arguments.freeze
+        @nested_types = definition.respond_to?(:nested_types) ? definition.nested_types.dup : {}
       end
 
       def eql?(other)
