@@ -889,9 +889,11 @@ Built-in event operations:
 - `event.subscribe_once(state: ptr[State], listener: fn(ptr[State], ...)) -> Result[Subscription, EventError]` — stateful one-shot (detected by passing 2 positional arguments)
 - `event.unsubscribe(subscription) -> bool` — returns `true` if the listener was active and removed
 - `event.emit()` or `event.emit(payload)` — only callable from the declaring module
-- `event.wait() -> Task[Result[T, EventError]]` — async wait for the next emission
+- `event.wait() -> Task[Result[T, EventError]]` — async wait for the next emission; for no-payload events the result type is `Result[void, EventError]`
 
-`EventError` is a built-in enum with a single member `full`, returned when listener capacity is exhausted.
+`EventError` is a built-in enum with a single member `full` (value `0`), returned when listener capacity is exhausted.
+
+`Subscription` is a built-in opaque handle type returned by `subscribe` and `subscribe_once`, used to identify a listener for `unsubscribe`.
 
 ## 16. Common Rejections
 
