@@ -447,17 +447,17 @@ module MilkTea
       consume(:lbracket, "expected '[' after attribute")
       targets = parse_comma_separated_until(:rbracket) do
         target_token = consume_path_component("expected attribute target")
-    case target_token.lexeme
-            when "struct"        then :struct
-            when "field"         then :field
-            when "callable"      then :callable
-            when "const"         then :const
-            when "event"         then :event
-            when "enum"          then :enum
-            when "flags"         then :flags
-            when "union"         then :union
-            when "variant"       then :variant
-            else
+        case target_token.lexeme
+        when "struct"        then :struct
+        when "field"         then :field
+        when "callable"      then :callable
+        when "const"         then :const
+        when "event"         then :event
+        when "enum"          then :enum
+        when "flags"         then :flags
+        when "union"         then :union
+        when "variant"       then :variant
+        else
           raise error(target_token, "unknown attribute target #{target_token.lexeme}")
         end
       end

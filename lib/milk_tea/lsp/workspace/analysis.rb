@@ -173,11 +173,11 @@ module MilkTea
                           facts = result[:analysis]
                           MilkTea::Sema::ToolingSnapshot.new(facts:, diagnostics: (Array(result[:errors]).map { |e| e.to_diagnostic(path: uri) } || []).freeze)
                         end
-             if snapshot&.facts
-              @last_good_tooling_snapshot_cache[uri] = snapshot
-              @last_good_facts_cache[uri] = snapshot.facts
-              @document_module_names[uri] = snapshot.facts.module_name
-            end
+              if snapshot&.facts
+                @last_good_tooling_snapshot_cache[uri] = snapshot
+                @last_good_facts_cache[uri] = snapshot.facts
+                @document_module_names[uri] = snapshot.facts.module_name
+              end
             snapshot
           rescue MilkTea::LexError, MilkTea::SemaError, ModuleLoadError, PackageLockError
             @last_good_tooling_snapshot_cache[uri]

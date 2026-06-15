@@ -544,6 +544,10 @@ module MilkTea
         when AST::AwaitExpr then source_column(node.expression)
         when AST::FormatExprPart then source_column(node.expression)
         when AST::PrefixCast then source_column(node.target_type)
+        when AST::Assignment then source_column(node.target) || source_column(node.value)
+        when AST::ExpressionStmt then source_column(node.expression)
+        when AST::StaticAssert then source_column(node.condition)
+        when AST::IfStmt then node.branches.filter_map { |branch| branch.column || source_column(branch.condition) }.first || node.else_column
         else nil
         end
       end
