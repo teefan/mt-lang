@@ -344,7 +344,7 @@ module MilkTea
       def build_event_subscribe_stateful_function(runtime, once:)
         event_expr = IR::Name.new(name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)
         state_expr = IR::Name.new(name: "state", type: runtime.fetch(:void_ptr), pointer: false)
-        listener_expr = IR::Name.new(name: "listener", type: runtime.fetch(:listener_type), pointer: false)
+        listener_expr = IR::Name.new(name: "listener", type: runtime.fetch(:void_ptr), pointer: false)
         slot_index_expr = IR::Name.new(name: "__mt_slot_index", type: @types.fetch("ptr_uint"), pointer: false)
         generation_expr = IR::Name.new(name: "__mt_generation", type: @types.fetch("ptr_uint"), pointer: false)
         slot_pointer_expr = IR::Name.new(name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), pointer: false)
@@ -380,7 +380,7 @@ module MilkTea
                 once: once,
                 state_expr: state_expr,
                 wait_frame_expr: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
-                listener_expr: IR::Cast.new(target_type: runtime.fetch(:void_ptr), expression: listener_expr, type: runtime.fetch(:void_ptr)),
+                listener_expr: listener_expr,
               ),
               IR::ReturnStmt.new(value: event_subscription_success_literal(runtime.fetch(:subscription_result_type), slot_index_expr, generation_expr)),
             ],

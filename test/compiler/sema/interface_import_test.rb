@@ -651,4 +651,76 @@ extending Counter:
     assert_match(/emit is only available inside module demo\.publisher/, error.message)
   end
 
+  def test_type_checks_cross_module_event_subscribe
+    source = <<~MT
+      # module demo.consumer
+
+      import demo.publisher as publisher
+
+      function on_ready() -> void:
+          return
+
+      function main() -> Result[Subscription, EventError]:
+          return publisher.ready.subscribe(on_ready)
+    MT
+
+    program = check_program_source(source, {
+      File.join("demo", "publisher.mt") => <<~PUBLISHER,
+        # module demo.publisher
+
+        public event ready[4]
+      PUBLISHER
+    })
+
+    assert program.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_cross_module_event_subscribe_once
+    source = <<~MT
+      # module demo.consumer
+
+      import demo.publisher as publisher
+
+      function on_ready() -> void:
+          return
+
+      function main() -> Result[Subscription, EventError]:
+          return publisher.ready.subscribe_once(on_ready)
+    MT
+
+    program = check_program_source(source, {
+      File.join("demo", "publisher.mt") => <<~PUBLISHER,
+        # module demo.publisher
+
+        public event ready[4]
+      PUBLISHER
+    })
+
+    assert program.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_cross_module_event_unsubscribe
+    source = <<~MT
+      # module demo.consumer
+
+      import demo.publisher as publisher
+
+      function on_ready() -> void:
+          return
+
+      function main(sub: Subscription) -> bool:
+          return publisher.ready.unsubscribe(sub)
+    MT
+
+    program = check_program_source(source, {
+      File.join("demo", "publisher.mt") => <<~PUBLISHER,
+        # module demo.publisher
+
+        public event ready[4]
+      PUBLISHER
+    })
+
+    assert program.root_analysis.functions.key?("main")
+  end
+
 end

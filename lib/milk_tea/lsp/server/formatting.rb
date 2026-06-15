@@ -80,6 +80,7 @@ module MilkTea
         removed_local_names = []
         removed_method_names = []
         removed_nested_type_names = []
+        removed_event_names = []
         name_index = symbols.each_with_object(Hash.new { |h, k| h[k] = [] }) { |s, h| h[s[:name]] << s }
 
         ast.declarations&.each do |decl|
@@ -214,6 +215,7 @@ module MilkTea
               case c[:kind]
               when 6 then removed_method_names << c[:name]
               when 23 then removed_nested_type_names << c[:name]
+              when 24 then removed_event_names << c[:name]
               end
             end
           end
@@ -230,6 +232,10 @@ module MilkTea
         if removed_nested_type_names.any?
           removed_set = removed_nested_type_names.to_set
           symbols.reject! { |s| s[:kind] == 23 && removed_set.include?(s[:name]) && (!s[:children] || s[:children].empty?) }
+        end
+        if removed_event_names.any?
+          removed_set = removed_event_names.to_set
+          symbols.reject! { |s| s[:kind] == 24 && removed_set.include?(s[:name]) && (!s[:children] || s[:children].empty?) }
         end
 
         symbols
@@ -257,7 +263,8 @@ module MilkTea
         when AST::StructDecl
           field_children = (decl.fields&.map { |f| child_field_symbol(f) } || []).compact
           nested_children = (decl.nested_types&.map { |n| child_nested_struct_symbol(n) } || []).compact
-          field_children + nested_children
+          event_children = (decl.events&.map { |e| child_event_symbol(e) } || []).compact
+          field_children + nested_children + event_children
         when AST::UnionDecl
           (decl.fields&.map { |f| child_field_symbol(f) } || []).compact
         when AST::EnumDecl, AST::FlagsDecl
@@ -307,6 +314,24 @@ module MilkTea
             end: { line: f.line - 1, character: (f.respond_to?(:column) && f.column ? f.column - 1 + f.name.length : 0) },
           },
         }.compact
+      end
+
+      def child_event_symbol(e)
+        return nil unless e.respond_to?(:name) && e.name && e.respond_to?(:line) && e.line
+
+        parts = ["event[#{e.capacity}]"]
+        parts << "(#{type_detail_string(e.payload_type)})" if e.respond_to?(:payload_type) && e.payload_type
+        parts.unshift("public ") if e.respond_to?(:visibility) && e.visibility == :public
+
+        {
+          name: e.name, kind: 24,
+          detail: parts.join,
+          range: { start: { line: e.line - 1, character: 0 }, end: { line: e.line, character: 0 } },
+          selectionRange: {
+            start: { line: e.line - 1, character: (e.respond_to?(:column) && e.column ? e.column - 1 : 0) },
+            end: { line: e.line - 1, character: (e.respond_to?(:column) && e.column ? e.column - 1 + e.name.length : 0) },
+          },
+        }
       end
 
       def child_member_symbol(m, default_line: nil)

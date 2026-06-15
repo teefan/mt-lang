@@ -55,7 +55,18 @@ module MilkTea
             yield declaration, nil
           when AST::StructDecl
             declaration.events.each { |event_decl| yield event_decl, declaration.name }
+            each_nested_struct_event_declaration(declaration, owner_name: declaration.name) { |ev, owner| yield ev, owner }
           end
+        end
+      end
+
+      def each_nested_struct_event_declaration(struct_decl, owner_name:)
+        struct_decl.nested_types.each do |nested|
+          next unless nested.is_a?(AST::StructDecl)
+
+          nested_owner = "#{owner_name}.#{nested.name}"
+          nested.events.each { |event_decl| yield event_decl, nested_owner }
+          each_nested_struct_event_declaration(nested, owner_name: nested_owner) { |ev, owner| yield ev, owner }
         end
       end
       def profile_phase(name)

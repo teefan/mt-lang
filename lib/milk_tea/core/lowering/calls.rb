@@ -145,7 +145,7 @@ module MilkTea
                 arguments: [
                   event_pointer,
                   lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:void_ptr)),
-                  lower_contextual_expression(expression.arguments.fetch(1).value, env:, expected_type: runtime.fetch(:listener_type)),
+                  lower_contextual_expression(expression.arguments.fetch(1).value, env:, expected_type: runtime.fetch(:void_ptr)),
                 ],
                 type:,
               )
@@ -166,7 +166,7 @@ module MilkTea
                 arguments: [
                   event_pointer,
                   lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:void_ptr)),
-                  lower_contextual_expression(expression.arguments.fetch(1).value, env:, expected_type: runtime.fetch(:listener_type)),
+                  lower_contextual_expression(expression.arguments.fetch(1).value, env:, expected_type: runtime.fetch(:void_ptr)),
                 ],
                 type:,
               )

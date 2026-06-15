@@ -697,11 +697,9 @@ module MilkTea
       end
 
       def event_member_type(receiver_type, name)
-        owner_type = receiver_type
-        owner_type = owner_type.definition if owner_type.is_a?(Types::StructInstance)
-        return unless owner_type.respond_to?(:event)
+        return unless receiver_type.respond_to?(:event)
 
-        owner_type.event(name)
+        receiver_type.event(name)
       end
 
       def fresh_noncopyable_event_initializer?(expression, target_type, scopes:)
