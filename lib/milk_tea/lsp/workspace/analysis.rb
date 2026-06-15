@@ -27,7 +27,7 @@ module MilkTea
           tokens = get_tokens(uri)
           return nil if tokens.nil?
 
-          MilkTea::Parser.parse(tokens: tokens, path: uri)
+          MilkTea::Parser.parse_collecting_errors(tokens: tokens, path: uri).ast
         rescue StandardError => e
           log_error("LSP parse error #{uri}: #{e.message}")
           nil
