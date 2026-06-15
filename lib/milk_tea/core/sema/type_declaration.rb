@@ -661,16 +661,26 @@ module MilkTea
           with_error_node(decl) do
             case decl
             when AST::ConstDecl
-              ensure_available_value_name!(decl.name, kind_label: "constant", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
-              type = resolve_type_ref(decl.type)
-              validate_stored_ref_type!(type, "constant #{decl.name}")
-              raise_sema_error("constant #{decl.name} cannot store proc values") if contains_proc_type?(type)
-              @top_level_values[decl.name] = value_binding(
-                name: decl.name,
-                type: type,
-                mutable: false,
-                kind: :const,
-              )
+              begin
+                ensure_available_value_name!(decl.name, kind_label: "constant", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
+                type = resolve_type_ref(decl.type)
+                validate_stored_ref_type!(type, "constant #{decl.name}")
+                raise_sema_error("constant #{decl.name} cannot store proc values") if contains_proc_type?(type)
+                @top_level_values[decl.name] = value_binding(
+                  name: decl.name,
+                  type: type,
+                  mutable: false,
+                  kind: :const,
+                )
+              rescue SemaError => e
+                collect_structural_error(e)
+                @top_level_values[decl.name] = value_binding(
+                  name: decl.name,
+                  type: @error_type,
+                  mutable: false,
+                  kind: :const,
+                ) unless @top_level_values.key?(decl.name)
+              end
             when AST::VarDecl
               ensure_available_value_name!(decl.name, kind_label: "module variable", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
               raise_sema_error("module variable #{decl.name} requires an explicit type") unless decl.type

@@ -1221,7 +1221,7 @@ module MilkTea
       def define_members(backing_type, member_names)
         @backing_type = backing_type
         @members = member_names.each_with_object({}) do |member_name, members|
-          members[member_name] = backing_type
+          members[member_name] = self
         end.freeze
         @member_values = {}
         self
