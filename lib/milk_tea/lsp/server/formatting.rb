@@ -107,6 +107,7 @@ module MilkTea
 
               parent_children << child unless parent_children.any? { |pc| pc[:name] == child[:name] }
               removed_local_names << local.name
+              removed_local_names.concat(descendant_names(child))
             end
           when AST::ExtendingBlock
             type_name_str = decl.type_name.name.parts.join('.')
@@ -153,6 +154,7 @@ module MilkTea
 
                 child_children << local_child unless child_children.any? { |pc| pc[:name] == local_child[:name] }
                 removed_local_names << local.name
+                removed_local_names.concat(descendant_names(local_child))
               end
             end
           when AST::ConstDecl
@@ -178,6 +180,7 @@ module MilkTea
 
               parent_children << child unless parent_children.any? { |pc| pc[:name] == child[:name] }
               removed_local_names << local.name
+              removed_local_names.concat(descendant_names(child))
             end
           else
             parent_name = child_parent_name(decl)
@@ -371,12 +374,35 @@ module MilkTea
         line = decl.line || 0
         col = decl.column || 1
         detail = decl.respond_to?(:type) ? type_detail_string(decl.type) : nil
+
+        children = []
+        nested_names = []
+        if decl.value.is_a?(AST::ProcExpr)
+          detail ||= proc_signature_detail(decl.value)
+          proc_locals = collect_local_decls(decl.value.body)
+          children = proc_locals.filter_map { |l| local_decl_symbol(l) }
+          nested_names = proc_locals.map(&:name).compact
+        end
+
         {
           name: decl.name, kind: 13,
           detail: detail,
           range: { start: { line: line - 1, character: col - 1 }, end: { line: line - 1, character: col - 1 + decl.name.length } },
           selectionRange: { start: { line: line - 1, character: col - 1 }, end: { line: line - 1, character: col - 1 + decl.name.length } },
+          children: children.any? ? children : nil,
         }.compact
+      end
+
+      def descendant_names(symbol)
+        return [] unless symbol[:children]
+
+        symbol[:children].flat_map { |c| [c[:name]] + descendant_names(c) }
+      end
+
+      def proc_signature_detail(proc_expr)
+        params = proc_expr.params&.map { |p| "#{p.name}: #{type_detail_string(p.type)}" }&.join(', ') || ''
+        ret = type_detail_string(proc_expr.return_type) || 'void'
+        "proc(#{params}) -> #{ret}"
       end
 
       def child_method_symbol(m)
