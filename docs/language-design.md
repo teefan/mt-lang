@@ -966,6 +966,58 @@ The model:
 
 This is enough to write fast engine and game code without dragging the user through ownership proofs.
 
+## Events
+
+Milk Tea has a built-in typed publisher/subscriber surface with fixed-capacity listener storage. The design follows the same rule as the rest of the language: no hidden allocation, no hidden heap traffic, and the cost of dispatch is visible in the source.
+
+### Why fixed capacity
+
+Event declarations spell their capacity at the declaration site:
+
+```mt
+public event closed[4]
+public event resized[8](ResizeEvent)
+```
+
+This is deliberate. When `emit()` fires, the runtime snapshots all active listener slots into a **stack-allocated array** (`snapshots[capacity]`). That means:
+
+- **Zero heap allocations** during dispatch — critical for real-time, audio, and embedded contexts
+- **Predictable latency** — dispatch time is bounded by capacity, not by an unbounded growable list
+- **No malloc/free churn** when subscribers join or leave frequently
+
+If capacity were dynamic, every `subscribe()` would potentially need `realloc`, and `emit()` would snapshot a heap-allocated list. That is a hidden cost incompatible with the language's rule that allocation must be spelled in source.
+
+The tradeoff is that `subscribe()` can fail with `EventError.full`. This is the same tradeoff as `array[T, N]` (fixed, stack-suitable) versus `Vec[T]` (growable, heap-managed). The right choice depends on the use case:
+
+- **Single-observer UIs** (button click, window close): use a plain function-pointer field on the struct, not an event
+- **Small fixed fan-out** (game state changed, level loaded): capacity 8–32 is typically generous; the stack cost is negligible
+- **Unbounded observers** (logging hooks, inspector tooling): subscribe one dispatcher handler to the event, and maintain a dynamic observer list inside it
+
+### Why emit is module-private
+
+`emit()` is only callable from within the module that declares the event. This is not about visibility — it is about **predictable side effects**. If any module could trigger emission, every subscriber anywhere in the program would become a potential side effect of that emit call. Restricting emission to the declaring module makes the control flow explicit: you can see who fires the event by looking at one file.
+
+Subscribing and unsubscribing from a public event from another module is always allowed. Observing is safe; triggering is the privileged operation.
+
+### Slot lifetime model
+
+The runtime stores listeners in a fixed array of slots, each with:
+
+- an `active` flag
+- a `once` flag (for one-shot subscribers)
+- a `generation` counter (incremented on each new subscription into that slot)
+- a `listener` pointer
+- an optional `state` pointer (for stateful subscribers)
+- an optional `wait_frame` pointer (for async wait)
+
+When `subscribe()` finds a free slot, it increments that slot's generation counter and returns a `Subscription` handle containing both the slot index and the generation. `unsubscribe(sub)` validates both the index and generation before deactivating the slot. This prevents use-after-free: if a slot is reused after an unsubscribe, old subscription handles become stale because their generation no longer matches.
+
+`subscribe_once()` sets the `once` flag; the slot is automatically deactivated after the next emission fires.
+
+### Why no auto-grow
+
+Growth is allocation. Allocation in the hot path (during `subscribe()` or `emit()`) is exactly what the language was designed to avoid. If you need an unbounded listener list, the idiomatic pattern is to build it yourself on top of the primitives — just as you would use `Vec[T]` when `array[T, N]` is too rigid. The event system is the `array[T, N]` of pub/sub: bounded, predictable, allocation-free.
+
 ## Error handling
 
 Exceptions do not belong here.
