@@ -87,7 +87,9 @@ module MilkTea
     FlagsDecl = Data.define(:name, :backing_type, :members, :visibility, :line) do
       def initialize(name:, backing_type:, members:, visibility:, line: nil) = super
     end
-    EnumMember = Data.define(:name, :value)
+    EnumMember = Data.define(:name, :value, :line, :column) do
+      def initialize(name:, value:, line: nil, column: nil) = super
+    end
     OpaqueDecl = Data.define(:name, :implements, :c_name, :visibility, :line) do
       def initialize(name:, implements:, c_name:, visibility:, line: nil) = super
     end

@@ -540,9 +540,9 @@ module MilkTea
 
                 compatible = types_compatible?(actual_type, backing_type, expression: member.value, scopes: [])
                 compatible ||= const_value.is_a?(Integer) && numeric_constant_fits_type?(const_value, backing_type)
-                raise_sema_error("member #{decl.name}.#{member.name} expects #{backing_type}, got #{actual_type}") unless compatible
+                raise_sema_error("member #{decl.name}.#{member.name} expects #{backing_type}, got #{actual_type}", member) unless compatible
 
-                raise_sema_error("member #{decl.name}.#{member.name} must be a compile-time integer constant") unless const_value.is_a?(Integer)
+                raise_sema_error("member #{decl.name}.#{member.name} must be a compile-time integer constant", member) unless const_value.is_a?(Integer)
 
                 member_values[member.name] = const_value
               rescue SemaError => e

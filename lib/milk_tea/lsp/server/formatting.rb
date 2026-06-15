@@ -80,13 +80,14 @@ module MilkTea
         removed_local_names = []
         removed_method_names = []
         removed_nested_type_names = []
+        lookup = symbols.to_h { |s| [s[:name], s] }
 
         ast.declarations&.each do |decl|
           removed_nested_type_names.concat(collect_nested_type_names(decl)) if decl.is_a?(AST::StructDecl)
 
           case decl
           when AST::FunctionDef
-            parent = symbols.find { |s| s[:name] == decl.name }
+            parent = lookup[decl.name]
             next unless parent
 
             if (detail = type_detail_string(decl.return_type))
@@ -149,7 +150,7 @@ module MilkTea
             # Remove the empty token-extracted entry for this extending block
             symbols.reject! { |s| s[:name] == type_name_str && s[:kind] == 23 && !s[:detail] && (!s[:children] || s[:children].empty?) }
           when AST::ConstDecl
-            parent = symbols.find { |s| s[:name] == decl.name }
+            parent = lookup[decl.name]
             next unless parent
 
             if decl.respond_to?(:type) && (detail = type_detail_string(decl.type))
@@ -174,7 +175,7 @@ module MilkTea
             end
           else
             parent_name = child_parent_name(decl)
-            parent = symbols.find { |s| s[:name] == parent_name }
+            parent = parent_name ? lookup[parent_name] : nil
             next unless parent
 
             if decl.is_a?(AST::StructDecl) && decl.implements&.any?

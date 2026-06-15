@@ -591,11 +591,12 @@ module MilkTea
       members = []
       skip_newlines
       until check(:dedent) || eof?
-        member_name = consume_name("expected member name").lexeme
+        member_token = consume_name("expected member name")
+        member_name = member_token.lexeme
         consume(:equal, "expected '=' after member name")
         value = parse_expression
         consume_end_of_statement
-        members << AST::EnumMember.new(name: member_name, value:)
+        members << AST::EnumMember.new(name: member_name, value:, line: member_token.line, column: member_token.column)
         skip_newlines
       end
 
@@ -1172,6 +1173,27 @@ module MilkTea
       consume(:newline, "expected newline before block")
       consume(:indent, "expected indented block")
 
+      parse_block_body(&block)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      # Recover: if the only missing token was ':', skip to the indent
+      # and try parsing the body.  If we cannot find the indent, return empty.
+      match(:newline)
+      if match(:indent)
+        begin
+          parse_block_body(&block)
+        rescue ParseError => e2
+          @recovery_errors << e2
+          []
+        end
+      else
+        []
+      end
+    end
+
+    def parse_block_body(&block)
       items = []
       skip_newlines
       until check(:dedent) || eof?
@@ -2397,6 +2419,11 @@ module MilkTea
 
       next_token = @tokens[@current + 1]
       next_token.nil? || %i[newline eof].include?(next_token.type)
+    end
+
+    def skip_until(&block)
+      advance until eof? || block.call(peek)
+      advance if block.call(peek) && !eof?
     end
 
     def match(*types)
