@@ -2059,6 +2059,8 @@ module MilkTea
         parse_alignof_expr
       elsif match(:offset_of)
         parse_offsetof_expr
+      elsif match(:members_of) || match(:attributes_of) || match(:field_of) || match(:callable_of) || match(:attribute_of) || match(:has_attribute) || match(:attribute_arg) || match(:fields_of)
+        AST::Identifier.new(name: previous.lexeme, line: previous.line, column: previous.column)
       elsif match(:proc)
         parse_proc_expr
       elsif match_name

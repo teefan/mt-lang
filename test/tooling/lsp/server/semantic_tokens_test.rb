@@ -1458,8 +1458,8 @@ class SemanticTokensTest < Minitest::Test
         end
 
         [has_attribute_call, field_of_call, callable_of_call, attribute_arg_call, attribute_of_call].each do |entry|
-          assert_equal "function", entry.fetch("tokenType")
-          assert_includes entry.fetch("modifierNames"), "defaultLibrary"
+          assert_equal "keyword", entry.fetch("tokenType")
+          assert_empty entry.fetch("modifierNames")
         end
       end
     end
