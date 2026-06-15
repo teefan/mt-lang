@@ -607,7 +607,7 @@ class LSPWorkspaceTest < Minitest::Test
       workspace.open_document(dependency_uri, "")
       workspace.open_document(main_uri, main_source)
 
-      assert_nil workspace.get_facts(main_uri)
+      refute_nil workspace.get_facts(main_uri)
       assert_equal [main_uri], workspace.send(:refresh_import_dependent_caches, changed_uri: dependency_uri)
     ensure
       workspace&.shutdown

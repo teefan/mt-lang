@@ -274,13 +274,13 @@ module MilkTea
             end
 
             if segment[:token_index] == token_index
-            method_receiver_type = project_method_receiver_type_for_completion(current_type)
-            method_info = member_method_info_for_receiver_type(facts, method_receiver_type, segment[:name])
-            return nil unless method_info
+              method_receiver_type = project_method_receiver_type_for_completion(current_type)
+              method_info = member_method_info_for_receiver_type(facts, method_receiver_type, segment[:name])
+              return nil unless method_info
 
-            return module_member_binding_location(current_uri, method_info[:module_name], segment[:name], method_info[:binding]) ||
-              module_member_definition_location(current_uri, method_info[:module_name], segment[:name])
-          end
+              return module_member_binding_location(current_uri, method_info[:module_name], segment[:name], method_info[:binding]) ||
+                module_member_definition_location(current_uri, method_info[:module_name], segment[:name])
+            end
 
           break
         end

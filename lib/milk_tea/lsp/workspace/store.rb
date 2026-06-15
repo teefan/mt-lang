@@ -71,6 +71,15 @@ module MilkTea
           end
           invalidate_cache(uri)
           enqueue_definition_warmup(uri) unless background_document?(uri)
+
+          @shared_module_cache.clear
+          dependent_uris = @facts_cache_mutex.synchronize do
+            all_open = @document_state_mutex.synchronize { @open_documents.keys }
+            dependent_open_document_uris_for(uri, all_open)
+          end
+          dependent_uris.each { |dep_uri| invalidate_cache(dep_uri) }
+
+          warm_document_facts(uri, new_content)
         end
 
         def apply_incremental_change_to_content(content, change)

@@ -401,12 +401,10 @@ module MilkTea
         detail = decl.respond_to?(:type) ? type_detail_string(decl.type) : nil
 
         children = []
-        nested_names = []
         if decl.value.is_a?(AST::ProcExpr)
           detail ||= proc_signature_detail(decl.value)
           proc_locals = collect_local_decls(decl.value.body)
           children = proc_locals.filter_map { |l| local_decl_symbol(l) }
-          nested_names = proc_locals.map(&:name).compact
         end
 
         {
