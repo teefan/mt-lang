@@ -711,7 +711,11 @@ module MilkTea
       raise unless @recovery_errors
 
       @recovery_errors << e
-      AST::MethodDef.new(name:, type_params: [], params: [], return_type: nil, body: nil, kind:, visibility:, async:, attributes:, line:, column: name_token.column)
+      name = name_token&.lexeme || "unknown"
+      col = name_token&.column || 1
+      # Skip to the next function keyword or dedent to avoid cascading errors.
+      advance until eof? || check(:function) || check(:dedent)
+      AST::MethodDef.new(name:, type_params: [], params: [], return_type: nil, body: nil, kind: kind || :plain, visibility: visibility || :private, async: async || false, attributes:, line:, column: col)
     end
 
     def parse_interface_method_decl(attributes: [])
@@ -732,7 +736,14 @@ module MilkTea
       visibility, visibility_token = parse_visibility
       async = match(:async)
       kind = parse_method_kind
-      consume(:function, "expected function declaration")
+      if check(:function)
+        consume(:function, "expected function declaration")
+      elsif check(:identifier)
+        bad_token = advance
+        @recovery_errors << ParseError.new("unknown keyword '#{bad_token.lexeme}'; expected 'function' (did you mean 'editable', 'static', or 'async'?)", token: bad_token, path: @path) if @recovery_errors
+      else
+        raise error(peek, "expected function declaration")
+      end
       line = previous.line
       name_token = consume_name("expected function name")
       [visibility, visibility_token, async, kind, line, name_token]
@@ -1133,10 +1144,28 @@ module MilkTea
       consume(:newline, "expected newline before block")
       consume(:indent, "expected indented block")
 
-      statements = parse_statement_block_body
+      parse_and_dedent_block_body
+    rescue ParseError => e
+      raise unless @recovery_errors
 
+      @recovery_errors << e
+      match(:newline)
+      if match(:indent)
+        parse_and_dedent_block_body
+      else
+        []
+      end
+    end
+
+    def parse_and_dedent_block_body
+      statements = parse_statement_block_body
       consume(:dedent, "expected end of block")
       statements
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      []
     end
 
     def parse_statement_block_body
@@ -2419,11 +2448,6 @@ module MilkTea
 
       next_token = @tokens[@current + 1]
       next_token.nil? || %i[newline eof].include?(next_token.type)
-    end
-
-    def skip_until(&block)
-      advance until eof? || block.call(peek)
-      advance if block.call(peek) && !eof?
     end
 
     def match(*types)

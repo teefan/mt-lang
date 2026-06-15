@@ -537,11 +537,16 @@ module MilkTea
           ensure_assignable!(right_type, @types.fetch("bool"), "operator #{expression.operator} requires bool operands")
           @types.fetch("bool")
         when "|", "&", "^"
-          unless left_type == right_type && bitwise_type?(left_type)
+          # Strip Flags/Enum types to their backing type for comparison
+          # (e.g. CollisionMask.player | CollisionMask.enemy where members
+          # resolve to the flags type itself).
+          left_check = left_type.is_a?(Types::EnumBase) ? left_type.backing_type : left_type
+          right_check = right_type.is_a?(Types::EnumBase) ? right_type.backing_type : right_type
+          unless left_check == right_check && (bitwise_type?(left_type) || left_type.is_a?(Types::EnumBase))
             raise_sema_error("operator #{expression.operator} requires matching integer or flags types, got #{left_type} and #{right_type}")
           end
 
-          left_type
+          left_type.is_a?(Types::EnumBase) ? left_type.backing_type : left_type
         when "+", "-", "*", "/"
           if expression.operator == "+" && (string_like_type?(left_type) || string_like_type?(right_type))
             raise_sema_error("operator + does not support str/cstr concatenation; use continued string literals for static text or string.String/str_buffer for dynamic text")

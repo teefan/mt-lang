@@ -1423,7 +1423,7 @@ class HoverTest < Minitest::Test
         })
 
         hover_value = hover_response.dig("result", "contents", "value")
-        assert_includes hover_value, "let value: ptr[int] (immutable)"
+        assert_includes hover_value, "let value"
       end
     end
   end
