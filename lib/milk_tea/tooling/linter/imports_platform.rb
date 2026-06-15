@@ -451,7 +451,7 @@ module MilkTea
       def collect_indirect_import_uses_from_declaration(decl, used, binding_resolution, import_module_names)
         case decl
         when AST::FunctionDef, AST::MethodDef
-          decl.body.each { |stmt| collect_indirect_import_uses_from_stmt(stmt, used, binding_resolution, import_module_names) }
+          decl.body&.each { |stmt| collect_indirect_import_uses_from_stmt(stmt, used, binding_resolution, import_module_names) }
         when AST::ExtendingBlock
           decl.methods.each { |m| collect_indirect_import_uses_from_declaration(m, used, binding_resolution, import_module_names) }
         when AST::ConstDecl, AST::VarDecl
@@ -471,7 +471,7 @@ module MilkTea
         when AST::IfStmt
           stmt.branches.each do |branch|
             collect_indirect_import_uses_from_expr(branch.condition, used, binding_resolution, import_module_names)
-            branch.body.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
+            branch.body&.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
           end
           stmt.else_body&.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
         when AST::MatchStmt
@@ -588,7 +588,7 @@ module MilkTea
         when AST::FunctionDef, AST::MethodDef
           decl.params.each { |p| collect_names_from_type(p.type, used) if p.respond_to?(:type) && p.type }
           collect_names_from_type(decl.return_type, used) if decl.return_type
-          decl.body.each { |stmt| collect_names_from_statement(stmt, used) }
+          decl.body&.each { |stmt| collect_names_from_statement(stmt, used) }
         when AST::ExtendingBlock
           collect_names_from_type(decl.type_name, used)
           decl.methods.each { |m| collect_names_from_declaration(m, used) }

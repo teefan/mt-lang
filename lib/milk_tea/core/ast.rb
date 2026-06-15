@@ -2,8 +2,8 @@
 
 module MilkTea
   module AST
-    class QualifiedName < Data.define(:parts, :type_arguments)
-      def initialize(parts:, type_arguments: []) = super
+    class QualifiedName < Data.define(:parts, :type_arguments, :line, :column)
+      def initialize(parts:, type_arguments: [], line: nil, column: nil) = super
       def to_s
         parts.join(".")
       end
@@ -233,6 +233,8 @@ module MilkTea
     FormatTextPart = Data.define(:value)
     FormatExprPart = Data.define(:expression, :format_spec)
     BooleanLiteral = Data.define(:value)
-    NullLiteral = Data.define(:type)
+    NullLiteral = Data.define(:type, :line, :column) do
+      def initialize(type:, line: nil, column: nil) = super
+    end
   end
 end

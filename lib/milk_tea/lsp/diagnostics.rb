@@ -79,7 +79,7 @@ module MilkTea
           # Semantic analysis — collect errors from all functions, not just first.
           begin
             sema_start = total_start ? monotonic_time : nil
-            sema_snapshot ||= Sema.tooling_snapshot(ast, imported_modules: imported_modules.fetch(:modules), path: path)
+            sema_snapshot ||= Sema.tooling_snapshot(ast, imported_modules: imported_modules.fetch(:modules), path: path, allow_missing_imports: true)
             sema_facts = sema_snapshot.facts
             sema_snapshot.diagnostics.reject { |diagnostic| redundant_unknown_import_diagnostic?(diagnostic, unresolved_import_paths) }
                            .each { |diagnostic| diagnostics << format_tooling_diagnostic(diagnostic, stage: 'sema') }
