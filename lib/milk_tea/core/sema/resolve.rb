@@ -143,7 +143,7 @@ module MilkTea
                       raw
                     end
 
-        raise_sema_error("unknown interface #{interface_ref}") unless interface
+        raise_sema_error("unknown interface #{interface_ref}", interface_ref) unless interface
 
         if interface_ref.type_arguments.any?
           raise_sema_error("interface #{interface.name} is not generic") unless interface.is_a?(GenericInterfaceBinding)

@@ -106,6 +106,8 @@ module MilkTea
       @pending_leading_trivia = []
       @indent_stack = [0]
       @grouping_depth = 0
+      @grouping_start_line = 0
+      @grouping_start_column = 0
       @line_count = @source.empty? ? 1 : @source.lines.count
       @continuation_pending = false
     end
@@ -132,7 +134,7 @@ module MilkTea
 
       if @grouping_depth.positive?
         if @recovery_errors
-          @recovery_errors << LexError.new("unclosed grouping delimiter", line: @line_count, column: 1, path: @path)
+          @recovery_errors << LexError.new("unclosed grouping delimiter", line: @grouping_start_line, column: @grouping_start_column, path: @path)
           @grouping_depth = 0
         else
           raise LexError.new("unclosed grouping delimiter", line: @line_count, column: 1, path: @path)
@@ -180,7 +182,7 @@ module MilkTea
 
       index = leading_space_count(line)
       if @recovery_errors && @grouping_depth.positive? && index.zero? && top_level_resync_line?(line)
-        @recovery_errors << LexError.new("unclosed grouping delimiter", line: line_number, column: 1, path: @path)
+        @recovery_errors << LexError.new("unclosed grouping delimiter", line: @grouping_start_line, column: @grouping_start_column, path: @path)
         @grouping_depth = 0
       end
 
@@ -259,6 +261,14 @@ module MilkTea
           return lex_heredoc(lines, line_index, index, line_number, line_offset, cstring: true)
         end
 
+        if char == "c" && line[index + 1] == "<" && line[index + 2] == "-" && identifier_start?(line[index + 3])
+          error = LexError.new("expected '<<-' for heredoc string; did you mean 'c<<-#{identifier_start_token(line, index + 3)}'?", line: line_number, column: index + 1, path: @path)
+          if @recovery_errors
+            @recovery_errors << error
+          else
+            raise error
+          end
+        end
         if char == "c" && line[index + 1] == '"'
           result = lex_string(lines, line_index, line, index, line_number, line_offset:, cstring: true)
           return result.consumed_lines if result.consumed_lines > 1
@@ -269,6 +279,15 @@ module MilkTea
 
         if char == "f" && heredoc_start?(line, index, format: true)
           return lex_heredoc(lines, line_index, index, line_number, line_offset, cstring: false, format: true)
+        end
+
+        if char == "f" && line[index + 1] == "<" && line[index + 2] == "-" && identifier_start?(line[index + 3])
+          error = LexError.new("expected '<<-' for heredoc string; did you mean 'f<<-#{identifier_start_token(line, index + 3)}'?", line: line_number, column: index + 1, path: @path)
+          if @recovery_errors
+            @recovery_errors << error
+          else
+            raise error
+          end
         end
 
         if char == "f" && line[index + 1] == '"'
@@ -1051,6 +1070,10 @@ module MilkTea
     def adjust_grouping_depth(type, line_number, column)
       case type
       when :lparen, :lbracket
+        if @grouping_depth.zero?
+          @grouping_start_line = line_number
+          @grouping_start_column = column
+        end
         @grouping_depth += 1
       when :rparen, :rbracket
         @grouping_depth -= 1
@@ -1121,6 +1144,14 @@ module MilkTea
 
     def identifier_part?(char)
       char.match?(/[A-Za-z0-9_]/)
+    end
+
+    def identifier_start_token(line, start_index)
+      return "" unless start_index < line.length && identifier_start?(line[start_index])
+
+      finish = start_index + 1
+      finish += 1 while finish < line.length && identifier_part?(line[finish])
+      line[start_index...finish]
     end
 
     def digit?(char)

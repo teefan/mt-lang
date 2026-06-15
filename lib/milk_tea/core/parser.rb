@@ -52,7 +52,7 @@ module MilkTea
     end
 
     def parse_collecting_errors
-      errors = []
+      errors = @recovery_errors ? @recovery_errors.dup : []
       previous_recovery_errors = @recovery_errors
       @recovery_errors = errors
       ast = parse_source_file(errors:)
@@ -2078,12 +2078,14 @@ module MilkTea
       elsif match(:false)
         AST::BooleanLiteral.new(value: false)
       elsif match(:null)
+        line = previous.line
+        column = previous.column
         type = nil
         if match(:lbracket)
           type = parse_type_ref
           consume(:rbracket, "expected ']' after typed null literal")
         end
-        AST::NullLiteral.new(type:)
+        AST::NullLiteral.new(type:, line:, column:)
       elsif match(:lparen)
         line = previous.line
         column = previous.column
@@ -2206,7 +2208,8 @@ module MilkTea
     end
 
     def parse_qualified_name_with_type_arguments
-      parts = [consume_path_component("expected identifier").lexeme]
+      first_token = consume_path_component("expected identifier")
+      parts = [first_token.lexeme]
       while match(:dot)
         parts << consume_path_component("expected identifier after '.'").lexeme
       end
@@ -2219,7 +2222,7 @@ module MilkTea
                        else
                          []
                        end
-      AST::QualifiedName.new(parts:, type_arguments:)
+      AST::QualifiedName.new(parts:, type_arguments:, line: first_token.line, column: first_token.column)
     end
 
     def consume_path_component(message)
@@ -2467,7 +2470,7 @@ module MilkTea
     def consume(type, message)
       return advance if check(type)
 
-      raise error(peek, message)
+      raise error(%i[rparen rbracket rbrace].include?(type) ? previous : peek, message)
     end
 
     def consume_name(message)

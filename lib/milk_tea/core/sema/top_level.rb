@@ -26,7 +26,6 @@ module MilkTea
                   binding.type,
                   "cannot assign #{actual_type} to module variable #{decl.name}: expected #{binding.type}",
                   expression: decl.value,
-                  line: decl.line,
                 )
                 validate_static_storage_initializer!(decl.value, scopes: [])
               else
@@ -53,7 +52,6 @@ module MilkTea
           binding.type,
           "cannot assign #{actual_type} to constant #{decl.name}: expected #{binding.type}",
           expression: decl.value,
-          line: decl.line,
         )
       end
 
