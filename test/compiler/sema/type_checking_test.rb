@@ -5043,4 +5043,53 @@ class TypeCheckingTest < Minitest::Test
     assert result.functions.key?("main")
   end
 
+  # ── proc in module variable (capture-free, static-storage-safe) ──
+
+  def test_type_checks_module_variable_with_capture_free_proc
+    source = <<~MT
+      # module demo.modvar_proc
+
+      var callback: proc() -> int = proc() -> int: 42
+
+      function main() -> int:
+          return callback()
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_module_variable_with_proc_calling_function
+    source = <<~MT
+      # module demo.modvar_proc_func
+
+      function square(x: int) -> int:
+          return x * x
+
+      var callback: proc(x: int) -> int = proc(x: int) -> int: square(x)
+
+      function main() -> int:
+          return callback(3)
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_module_variable_with_proc_referencing_const
+    source = <<~MT
+      # module demo.modvar_proc_const
+
+      const ANSWER: int = 42
+
+      var callback: proc() -> int = proc() -> int: ANSWER
+
+      function main() -> int:
+          return callback()
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
 end

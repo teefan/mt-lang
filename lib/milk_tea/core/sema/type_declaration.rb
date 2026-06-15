@@ -688,7 +688,6 @@ module MilkTea
 
               type = resolve_type_ref(decl.type)
               validate_stored_ref_type!(type, "module variable #{decl.name}")
-              raise_sema_error("module variable #{decl.name} cannot store proc values") if contains_proc_type?(type)
               @top_level_values[decl.name] = value_binding(
                 name: decl.name,
                 type: type,

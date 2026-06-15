@@ -1313,7 +1313,9 @@ module MilkTea
         when AST::UnsafeExpr
           lower_expression(expression.expression, env:, expected_type: type)
         when AST::ProcExpr
-          raise LoweringError, "proc expressions must be lowered in local initializer context"
+          proc_type = type.is_a?(Types::Proc) ? type : infer_expression_type(expression, env:, expected_type: type)
+          _setup, value = lower_proc_expression_for_local(expression, env:, local_name: fresh_c_temp_name(env, "proc_expr"), proc_type: proc_type)
+          value
         when AST::Call
           lower_call(expression, env:, type:)
         when AST::Specialization

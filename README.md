@@ -916,7 +916,7 @@ Current compiler rejects:
 
 - module variables must have an explicit type; initializer must be static-storage-safe
 - `ref[T]` values are rejected in constants, module variables, and nested local storage such as arrays
-- `proc(...)` values are rejected in constants and module variables
+- `proc(...)` values that capture local state are rejected in constants and module variables; capture-free procs (body only references module-level functions, constants, and types) are allowed in module variables
 - `ref[T]` values are not capturable by `proc`
 - stored callable values (`fn(...)`, `proc(...)`) may use `ref[...]` only in direct callable parameter positions, not in return types
 - bare interface names are not runtime storage types; use `dyn[Interface]`
