@@ -52,7 +52,7 @@ module MilkTea
               end
             end
           end
-          invalidate_cache(uri)
+          invalidate_cache(uri, clear_last_good: true)
           enqueue_definition_warmup(uri) unless background_document?(uri)
         end
 

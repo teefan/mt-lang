@@ -16,6 +16,7 @@ module MilkTea
           tokens = MilkTea::Lexer.lex(content, path: uri, recovery_errors:)
           recovery_errors.each { |error| log_error("LSP lex error #{uri}: #{error.message}") }
           @last_good_tokens_cache[uri] = tokens
+          index_identifier_tokens(uri, tokens) if tokens
           tokens
         rescue StandardError => e
           log_error("LSP lex error #{uri}: #{e.message}")

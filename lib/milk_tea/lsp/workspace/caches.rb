@@ -130,29 +130,80 @@ module MilkTea
         end
 
         # Return all identifier token locations matching +name+ across all known documents.
-        # Each result is { uri:, range: { start: { line:, character: }, end: ... } }.
+        # Uses the identifier index for known documents, falling back to scanning.
         def find_all_references(name)
-          results = []
-          all_documents.each do |doc_uri|
-            toks = get_tokens(doc_uri)
-            next unless toks
-
-            toks.each do |tok|
-              next unless tok.type == :identifier && tok.lexeme == name
-
-              results << {
-                uri:   doc_uri,
+          refs = []
+          indexed_entries = @identifier_index_mutex.synchronize { @identifier_index[name]&.dup }
+          if indexed_entries
+            indexed_entries.each do |entry|
+              refs << {
+                uri: entry[:uri],
                 range: {
-                  start: { line: tok.line - 1, character: tok.column - 1 },
-                  end:   { line: tok.line - 1, character: tok.column - 1 + name.length }
-                }
+                  start: { line: entry[:line] - 1, character: entry[:col] - 1 },
+                  end:   { line: entry[:line] - 1, character: entry[:col] - 1 + name.length },
+                },
               }
             end
           end
-          results
+
+          unindexed = all_documents.reject { |uri| @indexed_uris.include?(uri) }
+          unless unindexed.empty?
+            refs.concat(scan_for_references(name, unindexed))
+          end
+          refs
         end
 
         def find_all_references_in(name, uris)
+          refs = []
+          uriset = uris.to_set
+          indexed_entries = @identifier_index_mutex.synchronize { @identifier_index[name]&.dup }
+          if indexed_entries
+            indexed_entries.each do |entry|
+              next unless uriset.include?(entry[:uri])
+
+              refs << {
+                uri: entry[:uri],
+                range: {
+                  start: { line: entry[:line] - 1, character: entry[:col] - 1 },
+                  end:   { line: entry[:line] - 1, character: entry[:col] - 1 + name.length },
+                },
+              }
+            end
+          end
+
+          unindexed = uris.reject { |uri| @indexed_uris.include?(uri) }
+          unless unindexed.empty?
+            refs.concat(scan_for_references(name, unindexed))
+          end
+          refs
+        end
+
+        def index_identifier_tokens(uri, tokens)
+          return unless tokens
+
+          @identifier_index_mutex.synchronize do
+            @indexed_uris << uri
+            tokens.each do |tok|
+              next unless tok.type == :identifier
+
+              (@identifier_index[tok.lexeme] ||= []) << { uri: uri, line: tok.line, col: tok.column }
+            end
+          end
+        end
+
+        def remove_identifier_index_entries(uri)
+          @identifier_index_mutex.synchronize do
+            @indexed_uris.delete(uri)
+            @identifier_index.each_value do |entries|
+              entries.reject! { |entry| entry[:uri] == uri }
+            end
+            @identifier_index.delete_if { |_name, entries| entries.empty? }
+          end
+        end
+
+        private
+
+        def scan_for_references(name, uris)
           results = []
           uris.each do |doc_uri|
             toks = get_tokens(doc_uri)
@@ -165,15 +216,13 @@ module MilkTea
                 uri:   doc_uri,
                 range: {
                   start: { line: tok.line - 1, character: tok.column - 1 },
-                  end:   { line: tok.line - 1, character: tok.column - 1 + name.length }
-                }
+                  end:   { line: tok.line - 1, character: tok.column - 1 + name.length },
+                },
               }
             end
           end
           results
         end
-
-        private
 
         # ── Cache management ────────────────────────────────────────────────────
 
@@ -192,6 +241,7 @@ module MilkTea
             @last_good_tokens_cache.delete(uri) if clear_last_good
             delete_dependency_index(uri) if clear_last_good
           end
+          remove_identifier_index_entries(uri)
           @definition_cache_mutex.synchronize do
             @definition_index.each_value { |entries| entries.delete_if { |e| e[:uri] == uri } }
             @definition_index.delete_if { |_k, v| v.empty? }

@@ -199,6 +199,12 @@ module MilkTea
         @semantic_tokens_cache.delete(uri)
         @semantic_tokens_delta_cache.delete(uri)
         @fixall_cache.delete(uri)
+        path = uri_to_path(uri)
+        if path
+          prefix = "#{path}:"
+          @definition_file_token_cache.delete_if { |key, _| key.start_with?(prefix) }
+          @definition_file_ast_cache.delete_if { |key, _| key.start_with?(prefix) }
+        end
       end
 
       def invalidate_document_caches_for(uris)

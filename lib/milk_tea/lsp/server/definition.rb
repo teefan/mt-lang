@@ -240,18 +240,40 @@ module MilkTea
           chain[:line],
           chain[:char],
         )
+        unless current_type
+          first_name = chain[:segments].first[:name]
+          current_type = facts.types[first_name]
+        end
         return nil unless current_type
 
-        chain[:segments][1..hovered_segment[:position]].each do |segment|
-          field_receiver_type = project_field_receiver_type_for_completion(current_type)
-          if field_receiver_type.respond_to?(:field) && (field_type = field_receiver_type.field(segment[:name]))
-            return field_definition_location(current_uri, field_receiver_type, segment[:name]) if segment[:token_index] == token_index
+          chain[:segments][1..hovered_segment[:position]].each do |segment|
+            field_receiver_type = project_field_receiver_type_for_completion(current_type)
+            if field_receiver_type.respond_to?(:field) && (field_type = field_receiver_type.field(segment[:name]))
+              return field_definition_location(current_uri, field_receiver_type, segment[:name]) if segment[:token_index] == token_index
 
-            current_type = field_type
-            next
-          end
+              current_type = field_type
+              next
+            end
 
-          if segment[:token_index] == token_index
+            if current_type.respond_to?(:nested_types) && (nested = current_type.nested_types[segment[:name]])
+              if segment[:token_index] == token_index
+                decl = nested.respond_to?(:ast_declaration) ? nested.ast_declaration : nil
+                if decl&.line && decl.respond_to?(:column) && decl.column
+                  return {
+                    uri: current_uri,
+                    range: {
+                      start: { line: decl.line - 1, character: decl.column - 1 },
+                      end: { line: decl.line - 1, character: decl.column - 1 + segment[:name].length },
+                    },
+                  }
+                end
+                return nil
+              end
+              current_type = nested
+              next
+            end
+
+            if segment[:token_index] == token_index
             method_receiver_type = project_method_receiver_type_for_completion(current_type)
             method_info = member_method_info_for_receiver_type(facts, method_receiver_type, segment[:name])
             return nil unless method_info
