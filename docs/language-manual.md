@@ -333,7 +333,7 @@ Arm constructors:
 - Payload arm: `Token.ident(text = "hello")` — field names with `=`.
 - No-payload arm: `Token.eof` — accessed as a bare member expression.
 
-Declaration attributes use a leading `@[name(...)]` surface. User-defined attributes are declared with explicit targets such as `attribute[field] rename(name: str)`. Built-in `packed` and `align(bytes)` are predefined struct attributes; `deprecated(message: str)` is predefined and targets function, struct, const, enum, flags, union, variant, and event:
+Declaration attributes use a leading `@[name(...)]` surface. User-defined attributes are declared with explicit targets such as `attribute[field] rename(name: str)` or `attribute[const, event] trace(name: str)`. Built-in `packed` and `align(bytes)` are predefined struct attributes; `deprecated(message: str)` is predefined and targets function, struct, const, enum, flags, union, variant, and event:
 
 ```mt
 @[packed]
@@ -1364,7 +1364,8 @@ The compiler intentionally rejects the following patterns. These are design cons
 
 ### 13.11 Attribute restrictions
 
-- user-defined `attribute` declarations target `struct`, `field`, or `callable` only
+- user-defined `attribute` declarations target `struct`, `field`, `callable`, `const`, `event`, `enum`, `flags`, `union`, or `variant`
+- `@[...]` attribute applications are only accepted on the above declaration kinds
 - attribute declarations are not allowed in external files
 - only built-in `packed` and `align(...)` struct attributes are allowed in external files
 

@@ -233,6 +233,7 @@ module MilkTea
 
         case declaration
         when AST::ConstDecl
+          emit_attribute_applications(declaration.attributes)
           header = "#{visibility_prefix(declaration)}const #{declaration.name}"
           header += ": #{render_type(declaration.type)}" if declaration.type
           line("#{header} = #{render_expression(declaration.value)}")
@@ -245,6 +246,7 @@ module MilkTea
             line(header)
           end
         when AST::EventDecl
+          emit_attribute_applications(declaration.attributes)
           line(render_event_declaration(declaration))
         when AST::TypeAliasDecl
           line("#{visibility_prefix(declaration)}type #{declaration.name} = #{render_type(declaration.target)}")
@@ -274,6 +276,7 @@ module MilkTea
             end
           end
         when AST::UnionDecl
+          emit_attribute_applications(declaration.attributes)
           header = "#{visibility_prefix(declaration)}union #{declaration.name}"
           header += " = c#{declaration.c_name.inspect}" if declaration.c_name
           line("#{header}:")
@@ -283,9 +286,26 @@ module MilkTea
             end
           end
         when AST::EnumDecl
+          emit_attribute_applications(declaration.attributes)
           emit_enum_like("enum", declaration.name, declaration.backing_type, declaration.members, declaration.visibility)
         when AST::FlagsDecl
+          emit_attribute_applications(declaration.attributes)
           emit_enum_like("flags", declaration.name, declaration.backing_type, declaration.members, declaration.visibility)
+        when AST::VariantDecl
+          emit_attribute_applications(declaration.attributes)
+          header = "#{visibility_prefix(declaration)}variant #{declaration.name}"
+          header += render_type_params(declaration.type_params) if declaration.type_params.any?
+          line("#{header}:")
+          with_indent do
+            declaration.arms.each do |arm|
+              arm_text = +"#{arm.name}"
+              if arm.fields.any?
+                field_strs = arm.fields.map { |f| "#{f.name}: #{render_type(f.type)}" }
+                arm_text += "(#{field_strs.join(', ')})"
+              end
+              line(arm_text)
+            end
+          end
         when AST::OpaqueDecl
           text = "#{visibility_prefix(declaration)}opaque #{declaration.name}"
           text += render_implements_clause(declaration.implements)

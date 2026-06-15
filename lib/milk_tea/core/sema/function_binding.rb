@@ -36,6 +36,18 @@ module MilkTea
                   validate_decl_attribute_applications!(method.attributes, target_kind: :callable, target_label: "callable #{decl.type_name}.#{method.name}", target_node: method)
                 end
               end
+            when AST::ConstDecl
+              validate_decl_attribute_applications!(decl.attributes, target_kind: :const, target_label: "const #{decl.name}", target_node: decl)
+            when AST::EventDecl
+              validate_decl_attribute_applications!(decl.attributes, target_kind: :event, target_label: "event #{decl.name}", target_node: decl)
+            when AST::UnionDecl
+              validate_decl_attribute_applications!(decl.attributes, target_kind: :union, target_label: "union #{decl.name}", target_node: decl)
+            when AST::EnumDecl
+              validate_decl_attribute_applications!(decl.attributes, target_kind: :enum, target_label: "enum #{decl.name}", target_node: decl)
+            when AST::FlagsDecl
+              validate_decl_attribute_applications!(decl.attributes, target_kind: :flags, target_label: "flags #{decl.name}", target_node: decl)
+            when AST::VariantDecl
+              validate_decl_attribute_applications!(decl.attributes, target_kind: :variant, target_label: "variant #{decl.name}", target_node: decl)
             end
           end
         end

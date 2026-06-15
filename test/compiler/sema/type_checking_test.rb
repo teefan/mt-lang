@@ -4906,4 +4906,141 @@ class TypeCheckingTest < Minitest::Test
     assert result.functions.key?("main")
   end
 
+  # ── expanded attribute targets (const, event, enum, flags, union, variant) ──
+
+  def test_type_checks_attribute_on_const
+    source = <<~MT
+      # module demo.attr_const
+
+      @[deprecated("use NEW")]
+      const OLD: int = 42
+
+      function main() -> int:
+          return OLD
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_attribute_on_event
+    source = <<~MT
+      # module demo.attr_event
+
+      @[deprecated("use updated instead")]
+      event old_event[4]
+
+      function main() -> int:
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_attribute_on_enum
+    source = <<~MT
+      # module demo.attr_enum
+
+      @[deprecated("use StateNew")]
+      enum State: ubyte
+          idle = 0
+          active = 1
+
+      function main() -> int:
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_attribute_on_flags
+    source = <<~MT
+      # module demo.attr_flags
+
+      @[deprecated("use PermNew")]
+      flags Perm: uint
+          read = 1 << 0
+          write = 1 << 1
+
+      function main() -> int:
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_attribute_on_union
+    source = <<~MT
+      # module demo.attr_union
+
+      @[deprecated("use ValueNew")]
+      union Value:
+          i: int
+          f: float
+
+      function main() -> int:
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_attribute_on_variant
+    source = <<~MT
+      # module demo.attr_variant
+
+      @[deprecated("use StatusNew")]
+      variant Status:
+          ok
+          error(code: int)
+
+      function main() -> int:
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_rejects_attribute_with_mismatched_target_on_const
+    source = <<~MT
+      # module demo.bad_const_target
+
+      attribute[field] serialize(name: str)
+
+      @[serialize("wrong")]
+      const FOO: int = 42
+
+      function main() -> int:
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/serialize cannot target const/, error.message)
+  end
+
+  def test_parses_user_defined_attribute_with_expanded_targets
+    source = <<~MT
+      # module demo.attr_expand
+
+      attribute[const, event, enum, flags, union, variant] trace(name: str)
+
+      @[trace("my const")]
+      const C: int = 1
+
+      @[trace("my event")]
+      event e[4]
+
+      function main() -> int:
+          return C
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
 end
