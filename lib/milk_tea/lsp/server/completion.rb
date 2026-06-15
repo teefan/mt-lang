@@ -4,6 +4,8 @@ module MilkTea
   module LSP
     class Server
       module ServerCompletion
+        MAX_COMPLETION_ITEMS = 200
+
         COMPLETION_KEYWORDS = %w[
           let var const function async struct enum flags variant union
           type interface opaque if while for match return import public static
@@ -278,7 +280,12 @@ module MilkTea
             result
           end
           item_count = method_items.length
-          return { isIncomplete: false, items: method_items }
+          truncated = item_count > MAX_COMPLETION_ITEMS
+          if truncated
+            method_items = method_items.first(MAX_COMPLETION_ITEMS)
+            item_count = MAX_COMPLETION_ITEMS
+          end
+          return { isIncomplete: truncated, items: method_items }
         end
 
         branch = 'global'
@@ -423,7 +430,12 @@ module MilkTea
         end
 
         item_count = items.length
-        { isIncomplete: false, items: items }
+        truncated = item_count > MAX_COMPLETION_ITEMS
+        if truncated
+          items = items.first(MAX_COMPLETION_ITEMS)
+          item_count = MAX_COMPLETION_ITEMS
+        end
+        { isIncomplete: truncated, items: items }
       rescue StandardError => e
         branch = 'error'
         warn "Error in completion handler: #{e.message}"

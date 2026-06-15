@@ -69,6 +69,10 @@ module MilkTea
         @definition_warmup_queue = Queue.new
         @definition_warmup_enqueued = Set.new
         @definition_warmup_thread = nil
+        # Identifier index: name -> [{uri:, line:, col:}] — lazily populated from tokens
+        @identifier_index = {}
+        @identifier_index_mutex = Mutex.new
+        @indexed_uris = Set.new
       end
 
       include WorkspaceStore

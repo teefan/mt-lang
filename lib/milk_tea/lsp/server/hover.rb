@@ -638,28 +638,43 @@ module MilkTea
           chain[:line],
           chain[:char],
         )
+        unless current_type
+          first_name = chain[:segments].first[:name]
+          current_type = facts.types[first_name]
+        end
         return nil unless current_type
 
-        chain[:segments][1..hovered_segment[:position]].each do |segment|
-          field_receiver_type = project_field_receiver_type_for_completion(current_type)
-          if field_receiver_type.respond_to?(:field) && (field_type = field_receiver_type.field(segment[:name]))
-            source_location = field_definition_location(current_uri, field_receiver_type, segment[:name])
+          chain[:segments][1..hovered_segment[:position]].each do |segment|
+            field_receiver_type = project_field_receiver_type_for_completion(current_type)
+            if field_receiver_type.respond_to?(:field) && (field_type = field_receiver_type.field(segment[:name]))
+              source_location = field_definition_location(current_uri, field_receiver_type, segment[:name])
 
-            if segment[:token_index] == token_index
-              return {
-                signature: field_hover_signature(segment[:name], field_type),
-                docs: nil,
-                source: hover_source_label_from_location(source_location),
-                source_uri: hover_source_uri_from_location(source_location),
-                source_line: hover_source_line_from_location(source_location),
-              }
+              if segment[:token_index] == token_index
+                return {
+                  signature: field_hover_signature(segment[:name], field_type),
+                  docs: nil,
+                  source: hover_source_label_from_location(source_location),
+                  source_uri: hover_source_uri_from_location(source_location),
+                  source_line: hover_source_line_from_location(source_location),
+                }
+              end
+
+              current_type = field_type
+              next
             end
 
-            current_type = field_type
-            next
-          end
+            if current_type.respond_to?(:nested_types) && (nested = current_type.nested_types[segment[:name]])
+              if segment[:token_index] == token_index
+                return {
+                  signature: type_hover_signature(segment[:name], nested),
+                  docs: nil,
+                }
+              end
+              current_type = nested
+              next
+            end
 
-          next unless segment[:token_index] == token_index
+            next unless segment[:token_index] == token_index
 
           method_receiver_type = project_method_receiver_type_for_completion(current_type)
           method_info = member_method_info_for_receiver_type(facts, method_receiver_type, segment[:name])

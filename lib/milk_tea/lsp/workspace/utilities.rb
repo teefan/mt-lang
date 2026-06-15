@@ -298,16 +298,9 @@ module MilkTea
 
           open_documents.each_with_object({}) do |(uri, content), overrides|
             path = uri_to_path(uri)
-            next unless path && File.file?(path)
+            next unless path
 
-            use_override = true
-            begin
-              use_override = File.read(path) != content
-            rescue StandardError
-              use_override = true
-            end
-
-            overrides[File.expand_path(path)] = content if use_override
+            overrides[File.expand_path(path)] = content
           end
         end
 
