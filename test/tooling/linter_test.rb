@@ -298,18 +298,18 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_warns_on_large_event_capacity
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      event reloaded[256]
+      event reloaded[128]
 
       struct Window:
-          public event resized[256](int)
+          public event resized[200](int)
     MT
 
     capacity_warnings = warnings.select { |warning| warning.code == "event-capacity" }
 
     assert_equal 2, capacity_warnings.length
     assert_equal [1, 4], capacity_warnings.map(&:line)
-    assert_match(/event 'reloaded' capacity 256 makes emit\(\) copy up to 256 listeners onto the stack/, capacity_warnings.first.message)
-    assert_match(/event 'Window.resized' capacity 256 makes emit\(\) copy up to 256 listeners onto the stack/, capacity_warnings.last.message)
+    assert_match(/event 'reloaded' capacity 128 makes emit\(\) copy up to 128 listeners onto the stack/, capacity_warnings.first.message)
+    assert_match(/event 'Window.resized' capacity 200 makes emit\(\) copy up to 200 listeners onto the stack/, capacity_warnings.last.message)
   end
 
   def test_does_not_warn_on_small_event_capacity
@@ -317,10 +317,28 @@ class MilkTeaLinterTest < Minitest::Test
       event reloaded[8]
 
       struct Window:
-          public event resized[32](int)
+          public event resized[127](int)
     MT
 
     refute warnings.any? { |warning| warning.code == "event-capacity" }
+  end
+
+  def test_warns_on_large_event_capacity_in_nested_struct
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      struct Container:
+          id: int
+
+          struct Inner:
+              value: int
+              event updated[256](int)
+
+          inner: Inner
+    MT
+
+    capacity_warnings = warnings.select { |warning| warning.code == "event-capacity" }
+    assert_equal 1, capacity_warnings.length
+    assert_equal 6, capacity_warnings.first.line
+    assert_match(/event 'Container.Inner.updated'/, capacity_warnings.first.message)
   end
 
   def test_warns_on_parameter_named_after_reserved_primitive_type

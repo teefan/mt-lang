@@ -183,10 +183,17 @@ class LifecycleTest < Minitest::Test
         "textDocument" => { "uri" => uri }
       })
 
-      names = response.fetch("result").map { |symbol| symbol["name"] }
+      symbols = response.fetch("result")
+      names = symbols.map { |symbol| symbol["name"] }
       assert_includes names, "reloaded"
-      assert_includes names, "closed"
       assert_includes names, "main"
+
+      window = symbols.find { |s| s["name"] == "Window" }
+      refute_nil window
+      refute_nil window["children"]
+      child_names = window["children"].map { |c| c["name"] }
+      assert_includes child_names, "closed"
+      assert_includes child_names, "title"
     end
   end
 

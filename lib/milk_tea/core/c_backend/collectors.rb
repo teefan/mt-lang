@@ -472,10 +472,16 @@ module MilkTea
 
           def collect_generic_struct_decls
             collect_generic_struct_types.map do |type|
+              fields = type.fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) }
+              if type.respond_to?(:events)
+                type.events.each_value do |event_type|
+                  fields << IR::Field.new(name: event_type.hidden_field_name, type: event_type)
+                end
+              end
               IR::StructDecl.new(
                 name: type.to_s,
                 c_name: named_type_c_name(type),
-                fields: type.fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
+                fields:,
                 packed: type.packed,
                 alignment: type.alignment,
               )

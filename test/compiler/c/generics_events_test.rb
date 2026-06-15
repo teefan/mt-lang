@@ -1260,4 +1260,126 @@ function main() -> int:
     assert_equal 10, result.exit_status
   end
 
+  # ── event nested struct / generic struct / subscribe_once stateful runtime ──
+
+  def test_generate_c_for_event_in_nested_struct
+    source = <<~MT
+      # module demo.nested_event_codegen
+
+      struct Container:
+          id: int
+
+          struct Inner:
+              value: int
+              event updated[4](int)
+
+          inner: Inner
+
+      function on_update(value: int) -> void:
+          return
+
+      function main(container: ref[Container]) -> void:
+          container.inner.updated.subscribe(on_update)
+          container.inner.updated.emit(42)
+    MT
+
+    generated = generate_c_from_program_source(source)
+    assert_match(/__event_updated/, generated)
+    assert_match(/updated_int_4__subscribe/, generated)
+    assert_match(/updated_int_4__emit/, generated)
+  end
+
+  def test_generate_c_for_event_in_generic_struct
+    source = <<~MT
+      # module demo.generic_event_codegen
+
+      struct Box[T]:
+          event changed[4](T)
+          value: T
+
+      function on_change_int(value: int) -> void:
+          return
+
+      function main(box: ref[Box[int]]) -> void:
+          box.changed.subscribe(on_change_int)
+          box.changed.emit(1)
+    MT
+
+    generated = generate_c_from_program_source(source)
+    assert_match(/event.*changed.*4.*int/, generated)
+    assert_match(/__event_changed/, generated)
+  end
+
+  def test_run_program_with_event_stateful_subscribe_once
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.stateful_once_runtime
+
+      struct Counter:
+          count: int
+
+      event ticked[4]
+
+      function on_tick(state: ptr[Counter]) -> void:
+          unsafe:
+              state.count += 1
+
+      function main() -> int:
+          var c = Counter(count = 0)
+          let _ = ticked.subscribe_once(ptr_of(c), on_tick) else:
+              return 1
+          ticked.emit()
+          ticked.emit()
+          return c.count
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 1, result.exit_status
+  end
+
+  def test_run_program_with_event_multiple_subscribers
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.multi_sub_runtime
+
+      event signal[4]
+
+      var a: int = 0
+      var b: int = 0
+      var c: int = 0
+
+      function on_a() -> void:
+          a += 1
+
+      function on_b() -> void:
+          b += 2
+
+      function on_c() -> void:
+          c += 3
+
+      function main() -> int:
+          let _ = signal.subscribe(on_a) else:
+              return 1
+          let _ = signal.subscribe(on_b) else:
+              return 1
+          let _ = signal.subscribe(on_c) else:
+              return 1
+          signal.emit()
+          return a + b + c
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 6, result.exit_status
+  end
+
 end
