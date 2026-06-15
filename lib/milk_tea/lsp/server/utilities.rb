@@ -275,15 +275,18 @@ module MilkTea
 
       def symbol_kind(kind)
         case kind
-        when 'function'   then 6
-        when 'interface'  then 11
-        when 'struct'     then 5
-        when 'union'      then 5
-        when 'enum'       then 10
-        when 'type_alias' then 5
-        when 'constant'   then 14
-        when 'variable'   then 13
-        else 1
+        when 'function'   then 12 # Function
+        when 'interface'  then 11 # Interface
+        when 'struct'     then 23 # Struct
+        when 'union'      then 23 # Struct (union is a struct variant)
+        when 'enum'       then 10 # Enum
+        when 'flags'      then 10 # Enum (flags is an enum variant)
+        when 'variant'    then 23 # Struct (variant is a struct variant)
+        when 'type_alias' then 5  # Class
+        when 'constant'   then 14 # Constant
+        when 'variable'   then 13 # Variable
+        when 'event'      then 24 # Event
+        else 1 # File
         end
       end
 

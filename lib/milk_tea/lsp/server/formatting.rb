@@ -21,6 +21,9 @@ module MilkTea
           enrich_with_children(result, ast)
         end
 
+        facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
+        result = wrap_in_module_hierarchy(result, facts, uri) if facts && result&.any?
+
         result
       rescue StandardError => e
         warn "Error in documentSymbol handler: #{e.message}"
@@ -28,6 +31,33 @@ module MilkTea
       ensure
         symbol_count = defined?(result) && result ? result.length : 0
         log_request_stage_breakdown('textDocument/documentSymbol', total_start, uri: uri, stages: stages, summary: "symbols=#{symbol_count}")
+      end
+
+      def wrap_in_module_hierarchy(symbols, facts, uri)
+        module_name = facts.module_name
+        return symbols unless module_name && !module_name.empty?
+
+        segments = module_name.split('.')
+        return symbols if segments.length <= 1
+
+        content = @workspace.get_content(uri)
+        total_lines = content ? content.count("\n") : 0
+        file_range = {
+          start: { line: 0, character: 0 },
+          end: { line: total_lines, character: 0 },
+        }
+
+        children = symbols
+        segments.reverse.each do |seg|
+          children = [{
+            name: seg,
+            kind: 2,
+            range: file_range,
+            selectionRange: file_range,
+            children: children,
+          }]
+        end
+        children
       end
 
       def enrich_with_children(symbols, ast)
@@ -67,7 +97,7 @@ module MilkTea
 
             ext_block = {
               name: type_name_str,
-              kind: 5,
+              kind: 23,
               detail: "implementation",
               range: { start: { line: line - 1, character: 0 }, end: { line: line, character: 0 } },
               selectionRange: { start: { line: line - 1, character: 0 }, end: { line: line - 1, character: type_name_str.length } },
@@ -202,7 +232,7 @@ module MilkTea
 
         grandchildren = child_symbols_for(nested)
         {
-          name: nested.name, kind: 5,
+          name: nested.name, kind: 23,
           range: { start: { line: nested.line - 1, character: 0 }, end: { line: nested.line, character: 0 } },
           selectionRange: {
             start: { line: nested.line - 1, character: (nested.respond_to?(:column) && nested.column ? nested.column - 1 : 0) },
@@ -240,7 +270,7 @@ module MilkTea
 
         col = m.respond_to?(:column) && m.column ? m.column : 1
         {
-          name: m.name, kind: 21,
+          name: m.name, kind: 22,
           range: { start: { line: line - 1, character: 0 }, end: { line: line, character: 0 } },
           selectionRange: {
             start: { line: line - 1, character: col - 1 },
@@ -253,7 +283,7 @@ module MilkTea
         line = (a.respond_to?(:line) && a.line) ? a.line : default_line
         return nil unless a.respond_to?(:name) && a.name && line
         {
-          name: a.name, kind: 21,
+          name: a.name, kind: 22,
           range: { start: { line: line - 1, character: 0 }, end: { line: line, character: 0 } },
           selectionRange: {
             start: { line: line - 1, character: 0 },
