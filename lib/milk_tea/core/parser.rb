@@ -770,13 +770,30 @@ module MilkTea
         params = parse_params
         return_type = match(:arrow) ? parse_type_ref : nil
         if allow_body
-          body = parse_block
+          body = parse_block_body_safe
         else
           consume_end_of_statement
         end
       end
 
       [type_params, params, return_type, body]
+    end
+
+    def parse_block_body_safe
+      parse_block
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      match(:newline)
+      if match(:indent)
+        begin
+          parse_and_dedent_block_body || []
+        rescue ParseError => e2
+          @recovery_errors << e2
+          []
+        end
+      end
     end
 
     def parse_visibility
@@ -1145,16 +1162,6 @@ module MilkTea
       consume(:indent, "expected indented block")
 
       parse_and_dedent_block_body
-    rescue ParseError => e
-      raise unless @recovery_errors
-
-      @recovery_errors << e
-      match(:newline)
-      if match(:indent)
-        parse_and_dedent_block_body
-      else
-        []
-      end
     end
 
     def parse_and_dedent_block_body
