@@ -1352,7 +1352,7 @@ The compiler intentionally rejects the following patterns. These are design cons
 - `main` cannot be generic
 - `async main` pre-lift return type must be `int` or `void`
 - `public` is rejected on `extending` blocks, ordinary `external` declarations, `static_assert`, and in external files
-- `public` is only allowed on struct-level events, not on top-level events (top-level events are always module-local) or struct fields
+- `public` on struct members is only allowed on event declarations, not on fields
 - explicit C names are only allowed on external structs and unions
 - `proc(...)` values are rejected in constants and module variables
 - generic interfaces require type arguments when used with `dyn[Interface]`
