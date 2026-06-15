@@ -194,6 +194,7 @@ class LifecycleTest < Minitest::Test
     Dir.mktmpdir("mt-lsp-outline-module") do |dir|
       engine_dir = File.join(dir, "engine")
       FileUtils.mkdir_p(engine_dir)
+      File.write(File.join(dir, "package.toml"), "[package]\nname = \"test\"\nsource_root = \".\"\n")
       path = File.join(engine_dir, "math.mt")
       source = <<~MT
         public function add(a: int, b: int) -> int:

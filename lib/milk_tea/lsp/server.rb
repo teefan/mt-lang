@@ -203,6 +203,7 @@ module MilkTea
           skipped_unchanged: 0,
           cancelled: 0,
           dequeued: 0,
+          collected_for_pull: 0,
           published: 0,
           dropped_stale: 0,
           requeued: 0,

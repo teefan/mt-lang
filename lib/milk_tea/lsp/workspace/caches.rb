@@ -129,6 +129,10 @@ module MilkTea
           end
         end
 
+        def module_name_for_uri(uri)
+          @document_module_names[uri]
+        end
+
         # Return all identifier token locations matching +name+ across all known documents.
         # Uses the identifier index for known documents, falling back to scanning.
         def find_all_references(name)
@@ -239,6 +243,7 @@ module MilkTea
             @last_good_facts_cache.delete(uri) if clear_last_good
             @last_good_tooling_snapshot_cache.delete(uri) if clear_last_good
             @last_good_tokens_cache.delete(uri) if clear_last_good
+            @document_module_names.delete(uri) if clear_last_good
             delete_dependency_index(uri) if clear_last_good
           end
           remove_identifier_index_entries(uri)
