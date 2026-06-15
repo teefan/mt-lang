@@ -539,6 +539,7 @@ module MilkTea
                 const_value = evaluate_enum_member_const_value(member.value, enum_type:, member_values:)
 
                 compatible = types_compatible?(actual_type, backing_type, expression: member.value, scopes: [])
+                compatible ||= actual_type.is_a?(Types::EnumBase) && types_compatible?(actual_type.backing_type, backing_type, expression: member.value, scopes: [])
                 compatible ||= const_value.is_a?(Integer) && numeric_constant_fits_type?(const_value, backing_type)
                 raise_sema_error("member #{decl.name}.#{member.name} expects #{backing_type}, got #{actual_type}", member) unless compatible
 
