@@ -131,7 +131,7 @@ module MilkTea
 
             symbols << ext_block if ext_block[:children].any?
             # Remove the empty token-extracted entry for this extending block
-            symbols.reject! { |s| s[:name] == type_name_str && s[:kind] == 5 && !s[:detail] && (!s[:children] || s[:children].empty?) }
+            symbols.reject! { |s| s[:name] == type_name_str && s[:kind] == 23 && !s[:detail] && (!s[:children] || s[:children].empty?) }
           when AST::ConstDecl
             parent = symbols.find { |s| s[:name] == decl.name }
             next unless parent
@@ -157,12 +157,17 @@ module MilkTea
               removed_local_names << local.name
             end
           else
-            children = child_symbols_for(decl)
-            next unless children&.any?
-
             parent_name = child_parent_name(decl)
             parent = symbols.find { |s| s[:name] == parent_name }
             next unless parent
+
+            if decl.is_a?(AST::StructDecl) && decl.implements&.any?
+              ifaces = decl.implements.map { |i| i.respond_to?(:parts) ? i.parts.join('.') : i.name.parts.join('.') }.join(', ')
+              parent[:detail] = "(#{ifaces})"
+            end
+
+            children = child_symbols_for(decl)
+            next unless children&.any?
 
             parent[:children] ||= []
             parent_children = parent[:children]
@@ -172,7 +177,7 @@ module MilkTea
               parent_children << c
               case c[:kind]
               when 6 then removed_method_names << c[:name]
-              when 5 then removed_nested_type_names << c[:name]
+              when 23 then removed_nested_type_names << c[:name]
               end
             end
           end
@@ -184,11 +189,11 @@ module MilkTea
         end
         if removed_method_names.any?
           removed_set = removed_method_names.to_set
-          symbols.reject! { |s| s[:kind] == 6 && removed_set.include?(s[:name]) }
+          symbols.reject! { |s| (s[:kind] == 6 || s[:kind] == 12) && removed_set.include?(s[:name]) }
         end
         if removed_nested_type_names.any?
           removed_set = removed_nested_type_names.to_set
-          symbols.reject! { |s| s[:kind] == 5 && removed_set.include?(s[:name]) && (!s[:children] || s[:children].empty?) }
+          symbols.reject! { |s| s[:kind] == 23 && removed_set.include?(s[:name]) && (!s[:children] || s[:children].empty?) }
         end
 
         symbols
