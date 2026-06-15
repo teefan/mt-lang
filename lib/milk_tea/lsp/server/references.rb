@@ -204,19 +204,14 @@ module MilkTea
               },
             }
           elsif node.is_a?(AST::MemberAccess) && node.member == name && node.line && node.column
-            row = get_content_line(uri, node.line - 1)
-            if row
-              member_col = find_member_column_in_line(row, node.column, name)
-              if member_col
-                results << {
-                  uri: uri,
-                  range: {
-                    start: { line: node.line - 1, character: member_col },
-                    end: { line: node.line - 1, character: member_col + name.length },
-                  },
-                }
-              end
-            end
+            member_col = node.column - 1
+            results << {
+              uri: uri,
+              range: {
+                start: { line: node.line - 1, character: member_col },
+                end: { line: node.line - 1, character: member_col + name.length },
+              },
+            }
           end
         end
 
