@@ -184,6 +184,7 @@ module MilkTea
       if @recovery_errors && @grouping_depth.positive? && index.zero? && top_level_resync_line?(line)
         @recovery_errors << LexError.new("unclosed grouping delimiter", line: @grouping_start_line, column: @grouping_start_column, path: @path)
         @grouping_depth = 0
+        @tokens << token(:newline, "\n", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
       end
 
       if with_trivia? && index.positive?

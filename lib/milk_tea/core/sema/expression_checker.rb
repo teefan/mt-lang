@@ -1157,6 +1157,9 @@ module MilkTea
 
           type = @types[callee.name]
           return [:struct, type, nil] if type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
+          if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+            raise_sema_error("generic type #{callee.name} requires type arguments")
+          end
 
           raise_sema_error("unknown callable #{callee.name}")
         when AST::MemberAccess
@@ -1164,7 +1167,7 @@ module MilkTea
             imported_module = @imports.fetch(callee.receiver.name)
             return [:function, imported_module.functions.fetch(callee.member), nil] if imported_module.functions.key?(callee.member)
             imported_type = imported_module.types[callee.member]
-            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type) || imported_type.is_a?(Types::Vector) || imported_type.is_a?(Types::Matrix) || imported_type.is_a?(Types::Quaternion)
+            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::GenericStructDefinition) || imported_type.is_a?(Types::StringView) || task_type?(imported_type) || imported_type.is_a?(Types::Vector) || imported_type.is_a?(Types::Matrix) || imported_type.is_a?(Types::Quaternion)
               return [:struct, imported_module.types.fetch(callee.member), nil]
             end
 

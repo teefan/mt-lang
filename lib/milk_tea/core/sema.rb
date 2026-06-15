@@ -396,6 +396,7 @@ module MilkTea
         rescue SemaError => e
           errors << e
         end
+        errors.concat(@structural_errors.drop(errors.length))
 
         begin
           finalize_top_level_const_values
