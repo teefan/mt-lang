@@ -1924,7 +1924,6 @@ module MilkTea
       return nil unless check_name && known_type_like_name?(peek.lexeme)
 
       expression = nil
-      target_head = peek
       target_type = parse_type_ref
       type_tail = @tokens[@current - 1]
       less_token = peek
@@ -1941,13 +1940,7 @@ module MilkTea
       advance
 
       expression = parse_unary
-      AST::Call.new(
-        callee: AST::Specialization.new(
-          callee: AST::Identifier.new(name: "cast", line: target_head.line, column: target_head.column),
-          arguments: [AST::TypeArgument.new(value: target_type)],
-        ),
-        arguments: [AST::Argument.new(name: nil, value: expression)],
-      )
+      AST::PrefixCast.new(target_type:, expression:)
     rescue ParseError => e
       raise e if parse_diagnostic_hint?(e)
 
@@ -2558,7 +2551,7 @@ module MilkTea
     end
 
     def specialization_call_target?(expression, arguments, call_arguments)
-      if expression.is_a?(AST::Identifier) && %w[cast default zero].include?(expression.name) &&
+      if expression.is_a?(AST::Identifier) && %w[default zero].include?(expression.name) &&
           !known_type_like_name?(expression.name) && !generic_callable_specialization_target?(expression)
         return false
       end

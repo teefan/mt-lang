@@ -240,6 +240,8 @@ module MilkTea
           end
         when AST::UnsafeExpr
           preassign_local_binding_ids_in_expression(expression.expression)
+        when AST::PrefixCast
+          preassign_local_binding_ids_in_expression(expression.expression)
         when AST::AwaitExpr
           preassign_local_binding_ids_in_expression(expression.expression)
         when AST::FormatString

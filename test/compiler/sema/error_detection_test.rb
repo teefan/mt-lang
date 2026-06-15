@@ -1525,7 +1525,7 @@ class ErrorDetectionTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/unknown name cast/, error.message)
+    assert_match(/unknown generic type cast/, error.message)
   end
 
   def test_rejects_default_override_with_parameters

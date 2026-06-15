@@ -178,6 +178,8 @@ module MilkTea
             expression.arms.filter_map { |arm| unsupported_async_await_context(arm.pattern) || unsupported_async_await_context(arm.value) }.first
         when AST::UnsafeExpr
           unsupported_async_await_context(expression.expression)
+        when AST::PrefixCast
+          unsupported_async_await_context(expression.expression)
         when AST::MemberAccess
           unsupported_async_await_context(expression.receiver)
         when AST::IndexAccess
@@ -251,6 +253,8 @@ module MilkTea
         when AST::MatchExpr
           expression_contains_await?(expression.expression) || expression.arms.any? { |arm| expression_contains_await?(arm.pattern) || expression_contains_await?(arm.value) }
         when AST::UnsafeExpr
+          expression_contains_await?(expression.expression)
+        when AST::PrefixCast
           expression_contains_await?(expression.expression)
         when AST::MemberAccess
           expression_contains_await?(expression.receiver)

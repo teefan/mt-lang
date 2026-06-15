@@ -67,6 +67,9 @@ module MilkTea
           proc_type = infer_expression_type(expression, env:, expected_type:)
           setup, value = lower_proc_expression_for_local(expression, env:, local_name: fresh_c_temp_name(env, "proc_expr"), proc_type: proc_type)
           materialize_prepared_expression(setup, value, env:, type: proc_type, prefix: "proc_expr")
+        when AST::PrefixCast
+          setup, prepared_expr = prepare_expression_for_inline_lowering(expression.expression, env:, expected_type:)
+          [setup, AST::PrefixCast.new(target_type: expression.target_type, expression: prepared_expr)]
         else
           [[], expression]
         end
@@ -1318,6 +1321,9 @@ module MilkTea
           value
         when AST::Call
           lower_call(expression, env:, type:)
+        when AST::PrefixCast
+          lowered_arg = lower_expression(expression.expression, env:)
+          IR::Cast.new(target_type: type, expression: lowered_arg, type:)
         when AST::Specialization
           lower_specialization(expression, env:, type:)
         when AST::ExpressionList

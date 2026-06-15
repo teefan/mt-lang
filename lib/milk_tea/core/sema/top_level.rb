@@ -168,7 +168,7 @@ module MilkTea
         if callee.is_a?(AST::Specialization)
           if callee.callee.is_a?(AST::Identifier)
             case callee.callee.name
-            when "array", "span", "zero", "cast", "reinterpret"
+            when "array", "span", "zero", "reinterpret"
               return
             end
           end

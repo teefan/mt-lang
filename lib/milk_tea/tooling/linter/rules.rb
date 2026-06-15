@@ -465,18 +465,13 @@ module MilkTea
         binding_resolution.binding_types[binding_id]
       end
       def pointer_like_cast_expression(expression)
-        return unless expression.is_a?(AST::Call)
-  
-        callee = expression.callee
-        return unless callee.is_a?(AST::Specialization)
-        return unless callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
-        return unless callee.arguments.length == 1 && expression.arguments.length == 1
-  
-        target_type = callee.arguments.first.value
+        return unless expression.is_a?(AST::PrefixCast)
+
+        target_type = expression.target_type
         return unless target_type.is_a?(AST::TypeRef)
         return unless pointer_like_type_ref?(target_type)
-  
-        { target_type:, source: expression.arguments.first.value }
+
+        { target_type:, source: expression.expression }
       end
   
       def pointer_like_type_ref?(type_ref)

@@ -265,10 +265,6 @@ module MilkTea
             lower_contextual_expression(argument.value, env:, expected_type: element_type)
           end
           IR::ArrayLiteral.new(type:, elements:)
-        when :cast
-          argument = expression.arguments.fetch(0)
-          lowered_arg = lower_expression(argument.value, env:)
-          IR::Cast.new(target_type: type, expression: lowered_arg, type:)
         when :reinterpret
           argument = expression.arguments.fetch(0)
           source_type = infer_expression_type(argument.value, env:)
@@ -1099,6 +1095,14 @@ module MilkTea
             ),
             type:,
           )
+        when AST::PrefixCast
+          lowered_expr = lower_inline_foreign_mapping_expression(
+            expression.expression,
+            mapping_env:,
+            replacements:,
+            owner_analysis:,
+          )
+          IR::Cast.new(target_type: type, expression: lowered_expr, type:)
         else
           with_analysis_context(owner_analysis) do
             lower_expression(expression, env: mapping_env, expected_type:)
@@ -1126,15 +1130,6 @@ module MilkTea
             )
           end
           IR::Call.new(callee: callee_name, arguments:, type:)
-        when :cast
-          argument = expression.arguments.fetch(0)
-          lowered_arg = lower_inline_foreign_mapping_expression(
-            argument.value,
-            mapping_env:,
-            replacements:,
-            owner_analysis:,
-          )
-          IR::Cast.new(target_type: type, expression: lowered_arg, type:)
         when :reinterpret
           argument = expression.arguments.fetch(0)
           source_type = with_analysis_context(owner_analysis) do
@@ -1343,6 +1338,8 @@ module MilkTea
             foreign_mapping_uses_inline_replacement?(expression.else_expression, replacements)
         when AST::UnsafeExpr
           foreign_mapping_uses_inline_replacement?(expression.expression, replacements)
+        when AST::PrefixCast
+          foreign_mapping_uses_inline_replacement?(expression.expression, replacements)
         else
           false
         end
@@ -1426,6 +1423,8 @@ module MilkTea
           )
         when AST::UnsafeExpr
           AST::UnsafeExpr.new(expression: substitute_foreign_mapping_expression(expression.expression, replacements))
+        when AST::PrefixCast
+          AST::PrefixCast.new(target_type: expression.target_type, expression: substitute_foreign_mapping_expression(expression.expression, replacements))
         else
           expression
         end
@@ -1453,6 +1452,8 @@ module MilkTea
           foreign_mapping_reference_counts(expression.then_expression, counts)
           foreign_mapping_reference_counts(expression.else_expression, counts)
         when AST::UnsafeExpr
+          foreign_mapping_reference_counts(expression.expression, counts)
+        when AST::PrefixCast
           foreign_mapping_reference_counts(expression.expression, counts)
         end
 

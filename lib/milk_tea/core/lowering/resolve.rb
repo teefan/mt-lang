@@ -540,11 +540,6 @@ module MilkTea
 
           raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
         when AST::Specialization
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
-            target_type = resolve_type_ref(callee.arguments.fetch(0).value)
-            return [:cast, nil, nil, Types::Function.new("cast", params: [Types::Parameter.new("value", @types.fetch("int"))], return_type: target_type)]
-          end
-
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "reinterpret"
             target_type = resolve_type_ref(callee.arguments.fetch(0).value)
             return [:reinterpret, nil, nil, Types::Function.new("reinterpret", params: [Types::Parameter.new("value", target_type)], return_type: target_type)]
@@ -788,7 +783,7 @@ module MilkTea
             :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr,
             :event_subscribe, :event_subscribe_once, :event_unsubscribe, :event_emit, :event_wait,
             :compile_time_builtin,
-            :cast, :reinterpret, :zero, :hash, :equal, :order,
+            :reinterpret, :zero, :hash, :equal, :order,
             :dyn_method
             callee_type.return_type
           when :struct_literal, :struct_with, :array, :variant_arm_ctor, :adapt
@@ -823,10 +818,10 @@ module MilkTea
           else
             raise LoweringError, "unsupported call kind #{kind}"
           end
+        when AST::PrefixCast
+          resolve_type_ref(expression.target_type)
         when AST::Specialization
-          if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "cast"
-            resolve_type_ref(expression.arguments.fetch(0).value)
-          elsif expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
+          if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
             _, _, _, function_type = resolve_callee(expression, env, arguments: [])
             function_type.return_type
           elsif expression.callee.is_a?(AST::Identifier) && expression.callee.name == "default"

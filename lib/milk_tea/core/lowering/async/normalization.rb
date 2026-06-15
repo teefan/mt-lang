@@ -244,6 +244,9 @@ module MilkTea
           AST::TypeArgument.new(value: value)
         end
         [setup, AST::Specialization.new(callee: callee, arguments: arguments)]
+      when AST::PrefixCast
+        setup, expr = normalize_async_expression(expression.expression, counter, env:)
+        [setup, AST::PrefixCast.new(target_type: expression.target_type, expression: expr)]
       when AST::UnaryOp
         setup, operand = normalize_async_expression(expression.operand, counter, env:, expected_type: expected_type)
         [setup, AST::UnaryOp.new(operator: expression.operator, operand: operand)]

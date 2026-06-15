@@ -160,6 +160,8 @@ module MilkTea
           expression_uses_pattern?(expression.expression, &predicate) || expression.arms.any? { |arm| expression_uses_pattern?(arm.pattern, &predicate) || expression_uses_pattern?(arm.value, &predicate) }
         when AST::UnsafeExpr
           expression_uses_pattern?(expression.expression, &predicate)
+        when AST::PrefixCast
+          expression_uses_pattern?(expression.expression, &predicate)
         when AST::UnaryOp
           expression_uses_pattern?(expression.operand, &predicate)
         when AST::MemberAccess

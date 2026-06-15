@@ -236,5 +236,6 @@ module MilkTea
     NullLiteral = Data.define(:type, :line, :column) do
       def initialize(type:, line: nil, column: nil) = super
     end
+    PrefixCast = Data.define(:target_type, :expression)
   end
 end

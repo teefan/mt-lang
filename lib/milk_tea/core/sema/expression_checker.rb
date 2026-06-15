@@ -186,6 +186,10 @@ module MilkTea
             infer_await_expression(expression, scopes:)
           when AST::Call
             infer_call(expression, scopes:, expected_type:)
+          when AST::PrefixCast
+            target_type = resolve_type_ref(expression.target_type)
+            check_cast_call(target_type, [AST::Argument.new(name: nil, value: expression.expression)], scopes:)
+            target_type
           when AST::Specialization
             if expression.callee.is_a?(AST::Identifier)
               if expression.callee.name == "zero"
@@ -871,8 +875,6 @@ module MilkTea
           check_variant_arm_construction(callable, expression.arguments, scopes:)
         when :array
           check_array_construction(callable, expression.arguments, scopes:)
-        when :cast
-          check_cast_call(callable, expression.arguments, scopes:)
         when :reinterpret
           check_reinterpret_call(callable, expression.arguments, scopes:)
         when :hash
@@ -959,6 +961,8 @@ module MilkTea
         when AST::RangeExpr
           validate_consuming_foreign_expression!(expression.start_expr, scopes:, root_allowed: false)
           validate_consuming_foreign_expression!(expression.end_expr, scopes:, root_allowed: false)
+        when AST::PrefixCast
+          validate_consuming_foreign_expression!(expression.expression, scopes:, root_allowed: false)
         end
       end
 
@@ -1008,6 +1012,8 @@ module MilkTea
         when AST::RangeExpr
           validate_hoistable_foreign_expression!(expression.start_expr, scopes:, root_hoistable: false)
           validate_hoistable_foreign_expression!(expression.end_expr, scopes:, root_hoistable: false)
+        when AST::PrefixCast
+          validate_hoistable_foreign_expression!(expression.expression, scopes:, root_hoistable: false)
         end
       end
 
@@ -1086,6 +1092,8 @@ module MilkTea
           foreign_mapping_reference_counts(expression.then_expression, counts)
           foreign_mapping_reference_counts(expression.else_expression, counts)
         when AST::UnsafeExpr
+          foreign_mapping_reference_counts(expression.expression, counts)
+        when AST::PrefixCast
           foreign_mapping_reference_counts(expression.expression, counts)
         end
 
@@ -1247,15 +1255,6 @@ module MilkTea
 
           raise_sema_error("unknown method #{method_receiver_type}.#{callee.member}")
         when AST::Specialization
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
-            raise_sema_error("cast requires exactly one type argument") unless callee.arguments.length == 1
-
-            type_arg = callee.arguments.first.value
-            raise_sema_error("cast type argument must be a type") unless type_arg.is_a?(AST::TypeRef)
-
-            return [:cast, resolve_type_ref(type_arg), nil]
-          end
-
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "reinterpret"
             raise_sema_error("reinterpret requires exactly one type argument") unless callee.arguments.length == 1
 

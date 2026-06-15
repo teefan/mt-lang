@@ -257,6 +257,8 @@ module MilkTea
           lines << expression_end_line(node.expression)
         when AST::FormatExprPart
           lines << expression_end_line(node.expression)
+        when AST::PrefixCast
+          lines << expression_end_line(node.expression)
         end
 
         lines.compact.max

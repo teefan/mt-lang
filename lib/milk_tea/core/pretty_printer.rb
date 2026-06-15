@@ -740,13 +740,9 @@ module MilkTea
         when AST::Specialization
           wrap("#{render_postfix(expression.callee)}[#{expression.arguments.map { |argument| render_type_argument(argument.value) }.join(', ')}]", parent_precedence, POSTFIX_PRECEDENCE)
         when AST::Call
-          if cast_call_expression?(expression)
-            target_type = expression.callee.arguments.first.value
-            argument = expression.arguments.first.value
-            return wrap("#{render_type(target_type)}<-#{render_expression(argument, UNARY_PRECEDENCE)}", parent_precedence, UNARY_PRECEDENCE)
-          end
-
           wrap("#{render_postfix(expression.callee)}(#{expression.arguments.map { |argument| render_argument(argument) }.join(', ')})", parent_precedence, POSTFIX_PRECEDENCE)
+        when AST::PrefixCast
+          wrap("#{render_type(expression.target_type)}<-#{render_expression(expression.expression, UNARY_PRECEDENCE)}", parent_precedence, UNARY_PRECEDENCE)
         when AST::UnaryOp
           if expression.operator == "?"
             return wrap("#{render_postfix(expression.operand)}?", parent_precedence, POSTFIX_PRECEDENCE)
@@ -817,14 +813,6 @@ module MilkTea
         return render_expression(argument.value) unless argument.name
 
         "#{argument.name} = #{render_expression(argument.value)}"
-      end
-
-      def cast_call_expression?(expression)
-        return false unless expression.callee.is_a?(AST::Specialization)
-        return false unless expression.callee.callee.is_a?(AST::Identifier)
-        return false unless expression.callee.callee.name == "cast"
-
-        expression.callee.arguments.length == 1 && expression.arguments.length == 1
       end
 
       def render_format_string_part(part)
