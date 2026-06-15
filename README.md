@@ -895,15 +895,102 @@ Built-in event operations:
 
 `Subscription` is a built-in opaque handle type returned by `subscribe` and `subscribe_once`, used to identify a listener for `unsubscribe`.
 
-## 16. Common Rejections
+## 16. Language Limitations
 
 Current compiler rejects:
 
-- interface methods with `async` or generic signatures
-- legacy `in` / `out` / `inout` markers at call sites
-- consuming foreign calls with `consuming` parameters outside top-level expression statements
-- external functions that are generic, async, or array-taking / array-returning
-- ordinary truthy or falsy conditions on integers and pointers
+### Function and external restrictions
+
+- `external function` cannot be generic, async, or array-taking / array-returning
+- `external function` cannot take `ref[...]` or `proc(...)` parameters
+- `external function` parameters cannot use `as`, `in`, `out`, or `inout`
+- `foreign function` cannot be async and cannot take `proc(...)` parameters
+- a `foreign function` with `consuming` parameter(s) must return `void`
+- `consuming` foreign calls must appear as top-level expression statements
+- `main` cannot be generic
+- `async main` pre-lift return type must be `int` or `void`
+- a function's return type cannot be `ref[T]` or a non-owning struct (contains `ref` via auto-generated lifetime)
+- `const function` bodies follow the same restrictions as block-bodied `const`
+
+### Parameters and variables
+
+- module variables must have an explicit type; initializer must be static-storage-safe
+- `ref[T]` values are rejected in constants, module variables, and nested local storage such as arrays
+- `proc(...)` values are rejected in constants and module variables
+- `ref[T]` values are not capturable by `proc`
+- stored callable values (`fn(...)`, `proc(...)`) may use `ref[...]` only in direct callable parameter positions, not in return types
+- bare interface names are not runtime storage types; use `dyn[Interface]`
+
+### Event restrictions
+
+- `event` declarations are not allowed in external files
+- event payload cannot be `ref[T]` in v1; the payload type must be storable
+- event payload cannot use event storage types or unsupported proc nesting
+- event storage types cannot be returned from functions or passed through non-pointer/non-ref parameters; locals cannot copy event storage
+- `emit` is only callable from within the declaring module
+- event methods (`subscribe`, `subscribe_once`, `unsubscribe`, `emit`, `wait`) do not support named arguments
+
+### Pointer and unsafe requirements
+
+- pointer indexing, raw pointer dereference, pointer arithmetic, and pointer casts require `unsafe`
+- `reinterpret[T]` requires `unsafe` and non-array concrete sized types
+- `ptr_of`, `const_ptr_of`, and `ref_of` require an addressable source expression
+- safe array indexing requires an addressable array value; `get(arr, i)` provides recoverable bounds-checked access
+- legacy call-site markers `in`, `out`, and `inout` are rejected; parameter modes are declared on `foreign function`
+- `ptr_of` / `ref_of` cannot target a `ref` value directly
+- pointer comparison is not treated as boolean truthiness
+
+### Type system restrictions
+
+- conditions must be `bool`; integers and pointers have no implicit truthy or falsy coercion
+- mixed signed and unsigned integer arithmetic requires an explicit cast
+- enum and flags values do not implicitly coerce to their backing integer types outside external-call boundaries
+- `enum` backing types must be integer primitives; `flags` members must be compile-time integer constants
+- `variant` arm payloads cannot use `ref[T]` in v1
+- struct field `ref[T]` auto-generates an implicit lifetime parameter; the struct becomes non-owning
+- `null` must be used instead of `zero[ptr[T]]` in typed nullable pointer-like contexts
+- bare interface names (`Damageable`) are not a valid field, local, parameter, or return type; use `dyn[Interface]`
+- `dyn[Interface]` for a generic interface must be fully specified: `dyn[Mapper[int]]`, not `dyn[Mapper]`
+
+### Interface restrictions
+
+- interface method signatures cannot be `async` or generic
+- interface conformance must be declared on the nominal type, not on an `extending` block
+- a type implementing an interface must match method kinds, receiver editability, parameter types, return type, and asyncness exactly
+
+### Operator and expression restrictions
+
+- `+` does not support `str`/`cstr` concatenation; use format strings or `std.str` helpers
+- `==` and `!=` are not supported on struct types; use `equal[T]`
+- range expressions are restricted to `for`-loop iterables and range-index assignment targets
+- functions, methods, generic functions, and variant arms must be called — they are not usable as bare values
+- `read(...)` of a raw pointer requires `unsafe`
+
+### Control flow restrictions
+
+- `break` and `continue` must be inside loops
+- `return` is not allowed inside `defer` blocks
+- `match` on `enum`/`variant` must be exhaustive unless `_` is present; `match` on integer requires `_`
+- `let ... else:` and `var ... else:` require `T?`, `Option[T]`, or `Result[T, E]`; the `else` block must terminate control flow
+- `?` propagation is only allowed inside function and proc bodies, not in `defer` blocks
+- `await` is only allowed inside async functions
+
+### Format string restrictions
+
+- `:.N` precision is only valid on `float` and `double` interpolations
+- `:x`/`:X`, `:o`/`:O`, and `:b`/`:B` are only valid on integer primitives and integer-backed enums/flags
+
+### External file restrictions
+
+- external files cannot contain `attribute`, `event`, `var`, `variant`, `interface`, `extending`, `foreign function`, ordinary `function`, `async function`, or `static_assert` declarations
+- `public` is rejected in external files (declarations are implicitly exported)
+- `import` statements must appear before directives and declarations
+
+### Attribute restrictions
+
+- user-defined `attribute` declarations target `struct`, `field`, or `callable` only
+- `attribute` declarations are not allowed in external files
+- only built-in `packed` and `align(...)` struct attributes are allowed in external files
 
 ## 17. CLI Commands
 

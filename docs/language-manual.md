@@ -1272,13 +1272,101 @@ var total = 0  # lint: ignore(prefer-let, dead-assignment)
 
 `# lint: ignore` silences all rules on that line. `# lint: ignore(rule1, rule2)` silences only the listed rules.
 
-## 13. Current Unsupported Or Rejected Surfaces
+## 13. Language Limitations
 
-Current extending rejects:
+The compiler intentionally rejects the following patterns. These are design constraints, not missing features.
 
-- interface methods with `async` or generic signatures
-- generic interface declarations
-- runtime interface value types such as `Damageable` as a field, local, parameter, or return type
+### 13.1 Interface restrictions
+
+- interface method signatures cannot be `async` or generic
+- interface conformance must be declared on the nominal type, not on an `extending` block
+- bare interface names are not runtime storage types — `Damageable` as a field, local, parameter, or return type — use `dyn[Interface]`
+- `dyn[Interface]` for a generic interface must be fully specified: `dyn[Mapper[int]]`, not `dyn[Mapper]`
+- a type implementing an interface must match method kinds, receiver editability, parameter types, return type, and asyncness exactly
+
+### 13.2 External and FFI restrictions
+
+- `external function` cannot be generic, async, or array-taking / array-returning
+- `external function` cannot take `ref[...]` or `proc(...)` parameters
+- `external function` parameters cannot use `as`, `in`, `out`, or `inout`
+- `foreign function` cannot be async and cannot take `proc(...)` parameters
+- a `foreign function` with `consuming` parameter(s) must return `void`
+- consuming foreign calls must appear as top-level expression statements
+- external files have a restricted declaration surface: `const`, `type`, `struct`, `union`, `enum`, `flags`, `opaque`, and `external function` only
+- `public` is rejected in external files — declarations are implicitly exported
+- `import` statements in external files must appear before directives and declarations
+
+### 13.3 Event restrictions
+
+- event payload cannot be `ref[T]` in v1; the payload type must be storable
+- event storage types cannot be returned from functions, passed through non-pointer/non-ref parameters, or copied into locals
+- `emit` is only callable from within the declaring module
+- event methods (`subscribe`, `subscribe_once`, `unsubscribe`, `emit`, `wait`) do not support named arguments
+
+### 13.4 ref[T] restrictions
+
+- `ref[T]` values are rejected in constants, module variables, and nested local storage such as arrays or generic containers
+- functions cannot return `ref[T]` or a non-owning struct (one containing `ref` via auto-generated lifetime)
+- `ref[T]` values are not capturable by `proc`
+- `external function` cannot take `ref[...]` parameters
+- `ref[T]` is non-null and cannot be nullable
+- stored callable values (`fn(...)`, `proc(...)`) may use `ref[...]` only in direct callable parameter positions, not in return types
+
+### 13.5 Pointer and safety restrictions
+
+- pointer indexing, raw pointer dereference, pointer arithmetic, and pointer casts require `unsafe`
+- `reinterpret[T]` requires `unsafe` and non-array concrete sized types
+- `ptr_of`, `const_ptr_of`, and `ref_of` require an addressable source expression
+- safe array indexing requires an addressable array value; `get(arr, i)` provides recoverable bounds-checked access
+- legacy call-site markers `in`, `out`, and `inout` are rejected; parameter modes are declared on `foreign function`
+- pointer comparison is not treated as boolean truthiness
+
+### 13.6 Type system restrictions
+
+- conditions must be `bool`; integers and pointers have no implicit truthy or falsy coercion
+- mixed signed and unsigned integer arithmetic requires an explicit cast
+- enum and flags values do not implicitly coerce to their backing integer types outside external-call boundaries
+- `enum` backing types must be integer primitives; flags members must be compile-time integer constants
+- variant arm payloads cannot use `ref[T]` in v1
+- `null` must be used instead of `zero[ptr[T]]` in typed nullable pointer-like contexts
+
+### 13.7 Operator and expression restrictions
+
+- `+` does not support `str`/`cstr` concatenation
+- `==` and `!=` are not supported on struct types; use `equal[T]`
+- range expressions are restricted to `for`-loop iterables and range-index assignment targets
+- functions, methods, generic functions, and variant arms must be called — they are not usable as bare values
+- `read(...)` of a raw pointer requires `unsafe`
+
+### 13.8 Control flow restrictions
+
+- `break` and `continue` must be inside loops
+- `return` is not allowed inside `defer` blocks
+- `match` on enum/variant must be exhaustive unless `_` is present; `match` on integer requires `_`
+- `let ... else:` and `var ... else:` require `T?`, `Option[T]`, or `Result[T, E]`; the `else` block must terminate control flow
+- `?` propagation is only allowed inside function and proc bodies, not in `defer` blocks
+- `await` is only allowed inside async functions
+
+### 13.9 Declaration restrictions
+
+- `main` cannot be generic
+- `async main` pre-lift return type must be `int` or `void`
+- `public` is rejected on `extending` blocks, ordinary `external` declarations, `static_assert`, and in external files
+- `public` is only allowed on struct-level events, not on top-level events (top-level events are always module-local) or struct fields
+- explicit C names are only allowed on external structs and unions
+- `proc(...)` values are rejected in constants and module variables
+- generic interfaces require type arguments when used with `dyn[Interface]`
+
+### 13.10 Format string restrictions
+
+- `:.N` precision is only valid on `float` and `double` interpolations
+- `:x`/`:X`, `:o`/`:O`, and `:b`/`:B` are only valid on integer primitives and integer-backed enums/flags
+
+### 13.11 Attribute restrictions
+
+- user-defined `attribute` declarations target `struct`, `field`, or `callable` only
+- attribute declarations are not allowed in external files
+- only built-in `packed` and `align(...)` struct attributes are allowed in external files
 
 ## 14. Example
 
