@@ -1382,4 +1382,47 @@ function main() -> int:
     assert_equal 6, result.exit_status
   end
 
+  # ── proc in module variable runtime ──
+
+  def test_run_program_with_module_variable_capture_free_proc
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.modvar_proc_runtime
+
+      var callback: proc() -> int = proc() -> int: 42
+
+      function main() -> int:
+          return callback()
+    MT
+
+    result = run_program_from_source(source, compiler:)
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 42, result.exit_status
+  end
+
+  def test_run_program_with_module_variable_proc_calling_function
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.modvar_proc_fn_runtime
+
+      function square(x: int) -> int:
+          return x * x
+
+      var callback: proc(x: int) -> int = proc(x: int) -> int: square(x)
+
+      function main() -> int:
+          return callback(7)
+    MT
+
+    result = run_program_from_source(source, compiler:)
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 49, result.exit_status
+  end
+
 end

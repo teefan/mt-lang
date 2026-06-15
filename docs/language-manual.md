@@ -1354,7 +1354,7 @@ The compiler intentionally rejects the following patterns. These are design cons
 - `public` is rejected on `extending` blocks, ordinary `external` declarations, `static_assert`, and in external files
 - `public` on struct members is only allowed on event declarations, not on fields
 - explicit C names are only allowed on external structs and unions
-- `proc(...)` values are rejected in constants and module variables
+- `proc(...)` values that capture local state are rejected in constants and module variables; capture-free procs (body only references module-level functions, constants, and types) are allowed in module variables
 - generic interfaces require type arguments when used with `dyn[Interface]`
 
 ### 13.10 Format string restrictions

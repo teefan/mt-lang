@@ -111,6 +111,14 @@ module MilkTea
           raise_sema_error("module variable initializer must be static-storage-safe")
         when AST::Call
           validate_static_storage_call_initializer!(expression, scopes:)
+        when AST::ProcExpr
+          # Proc expressions are static-storage-safe when their body only
+          # references module-level constants, functions, types, and imports.
+          # The lowering handles capture detection; if a proc truly captures
+          # a local from an enclosing scope (impossible at module level),
+          # the sema validation above already rejects it via the
+          # "cannot reference mutable value" check on the proc body.
+          return
         else
           raise_sema_error("module variable initializer must be static-storage-safe")
         end

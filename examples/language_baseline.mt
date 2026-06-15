@@ -235,6 +235,52 @@ const ALIGNOF_LABELED: ptr_uint = align_of(Labeled)
 const OFFSET_VALUE: ptr_uint = offset_of(Labeled, value)
 
 # ---------------------------------------------------------------------------
+# 5b  Expanded user-defined attribute targets
+# ---------------------------------------------------------------------------
+#
+# user-defined attributes now target 9 kinds:
+#   struct, field, callable, const, event, enum, flags, union, variant
+
+attribute[const, event, enum, flags, union, variant] tagged(tag: str)
+
+@[tagged("my_const")]
+const TRACED_CONST: int = 999
+
+@[tagged("top_event")]
+event tagged_event[4]
+
+@[tagged("color_enum")]
+enum ColorSet: ubyte
+    red = 1
+    green = 2
+    blue = 3
+
+@[tagged("perm_flags")]
+flags PermSet: uint
+    read = 1 << 0
+    write = 1 << 1
+
+@[tagged("val_union")]
+union TaggedValue:
+    i: int
+    f: float
+
+@[tagged("status")]
+variant OpStatus:
+    ok
+    failed(code: int)
+
+# --- built-in deprecated attribute on expanded targets
+@[deprecated("use ColorSet instead")]
+enum LegacyColor: ubyte
+    r = 0
+    g = 1
+    b = 2
+
+function traced_demo() -> int:
+    return TRACED_CONST
+
+# ---------------------------------------------------------------------------
 # 6  Top-level const, var, events
 # ---------------------------------------------------------------------------
 
@@ -663,6 +709,16 @@ function proc_struct_demo() -> int:
         return offset + 3
     let cb = Callback(invoke = invoke)
     return cb.invoke()
+
+# --- 12g: capture-free proc stored in module variable (static-storage-safe)
+#     A proc that references only module-level functions, constants,
+#     and types has no captures from enclosing scopes.  Its env pointer
+#     is NULL and the value is a static initializer — no heap allocation.
+
+var modvar_proc: proc(x: int) -> int = proc(x: int) -> int: x * 2
+
+function modvar_proc_demo() -> int:
+    return modvar_proc(21)
 
 # ---------------------------------------------------------------------------
 # 13  events usage (within declaring module)
@@ -1315,6 +1371,9 @@ function main() -> int:
     total += tuple_demo()
 
     total += int<-(nested_struct_demo())
+
+    total += traced_demo()
+    total += modvar_proc_demo()
 
     total += aio.wait(async_child())
     total += aio.wait(async_demo())
