@@ -504,6 +504,7 @@ module MilkTea
         when AST::MatchExpr then source_line(node.expression) || node.arms.filter_map { |arm| source_line(arm.pattern) || source_line(arm.value) }.first
         when AST::AwaitExpr then source_line(node.expression)
         when AST::FormatExprPart then source_line(node.expression)
+        when AST::PrefixCast then source_line(node.target_type)
         else nil
         end
       end
@@ -542,10 +543,7 @@ module MilkTea
         when AST::MatchExpr then source_column(node.expression) || node.arms.filter_map { |arm| source_column(arm.pattern) || source_column(arm.value) }.first
         when AST::AwaitExpr then source_column(node.expression)
         when AST::FormatExprPart then source_column(node.expression)
-        when AST::Assignment then source_column(node.target) || source_column(node.value)
-        when AST::ExpressionStmt then source_column(node.expression)
-        when AST::StaticAssert then source_column(node.condition)
-        when AST::IfStmt then node.branches.filter_map { |branch| branch.column || source_column(branch.condition) }.first || node.else_column
+        when AST::PrefixCast then source_column(node.target_type)
         else nil
         end
       end
@@ -791,7 +789,7 @@ module MilkTea
         nil
       end
 
-      BUILTIN_VALUE_SPECIALIZATIONS = %w[zero default reinterpret cast].freeze
+      BUILTIN_VALUE_SPECIALIZATIONS = %w[zero default reinterpret].freeze
 
       def type_ref_from_specialization(expression)
         case expression.callee

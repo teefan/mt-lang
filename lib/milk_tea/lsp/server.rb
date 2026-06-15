@@ -127,10 +127,6 @@ module MilkTea
           signature: 'builtin attribute_of(target, attribute_name) -> attribute_handle',
           docs: '`attribute_of(target, attribute_name)` returns the applied attribute handle for the resolved target-and-attribute pair; use `has_attribute(...)` when absence is expected.'
         },
-        'cast' => {
-          signature: 'builtin cast[T](value) -> T',
-          docs: '`cast[T](value)` performs a C-style type cast of `value` to type `T`. Requires `unsafe`.',
-        },
       }.freeze
       OPERATOR_TOKEN_TYPES = %i[
         amp colon comma caret dot lparen rparen pipe lbracket rbracket question

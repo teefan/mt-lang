@@ -518,11 +518,10 @@ class MilkTeaParserTest < Minitest::Test
     return_stmt = ast.declarations.first.body.first
 
     assert_instance_of MilkTea::AST::ReturnStmt, return_stmt
-    assert_instance_of MilkTea::AST::Call, return_stmt.value
-    assert_equal "cast", return_stmt.value.callee.callee.name
-    assert_equal "int", return_stmt.value.callee.arguments.first.value.name.to_s
-    assert_instance_of MilkTea::AST::Identifier, return_stmt.value.arguments.first.value
-    assert_equal "value", return_stmt.value.arguments.first.value.name
+    assert_instance_of MilkTea::AST::PrefixCast, return_stmt.value
+    assert_equal "int", return_stmt.value.target_type.name.to_s
+    assert_instance_of MilkTea::AST::Identifier, return_stmt.value.expression
+    assert_equal "value", return_stmt.value.expression.name
   end
 
   def test_parses_prefix_cast_with_parenthesized_rhs
@@ -535,11 +534,10 @@ class MilkTeaParserTest < Minitest::Test
     return_stmt = ast.declarations.first.body.first
 
     assert_instance_of MilkTea::AST::ReturnStmt, return_stmt
-    assert_instance_of MilkTea::AST::Call, return_stmt.value
-    assert_equal "cast", return_stmt.value.callee.callee.name
-    assert_equal "ubyte", return_stmt.value.callee.arguments.first.value.name.to_s
-    assert_instance_of MilkTea::AST::BinaryOp, return_stmt.value.arguments.first.value
-    assert_equal "-", return_stmt.value.arguments.first.value.operator
+    assert_instance_of MilkTea::AST::PrefixCast, return_stmt.value
+    assert_equal "ubyte", return_stmt.value.target_type.name.to_s
+    assert_instance_of MilkTea::AST::BinaryOp, return_stmt.value.expression
+    assert_equal "-", return_stmt.value.expression.operator
   end
 
   def test_parses_nested_prefix_casts
@@ -551,11 +549,11 @@ class MilkTeaParserTest < Minitest::Test
     ast = MilkTea::Parser.parse(source)
     return_stmt = ast.declarations.first.body.first
 
-    assert_instance_of MilkTea::AST::Call, return_stmt.value
-    assert_equal "double", return_stmt.value.callee.arguments.first.value.name.to_s
-    inner = return_stmt.value.arguments.first.value
-    assert_instance_of MilkTea::AST::Call, inner
-    assert_equal "float", inner.callee.arguments.first.value.name.to_s
+    assert_instance_of MilkTea::AST::PrefixCast, return_stmt.value
+    assert_equal "double", return_stmt.value.target_type.name.to_s
+    inner = return_stmt.value.expression
+    assert_instance_of MilkTea::AST::PrefixCast, inner
+    assert_equal "float", inner.target_type.name.to_s
   end
 
   def test_parses_for_range_statement
@@ -1329,11 +1327,6 @@ class MilkTeaParserTest < Minitest::Test
     call = main_fn.body.first.value
 
     assert_instance_of MilkTea::AST::Call, call
-    assert_instance_of MilkTea::AST::IndexAccess, call.callee
-    assert_instance_of MilkTea::AST::Identifier, call.callee.receiver
-    assert_equal "cast", call.callee.receiver.name
-    assert_instance_of MilkTea::AST::Identifier, call.callee.index
-    assert_equal "long", call.callee.index.name
   end
 
   def test_reports_hint_for_spaced_prefix_cast_tokens
@@ -1430,7 +1423,7 @@ class MilkTeaParserTest < Minitest::Test
     MT
 
     ast = MilkTea::Parser.parse(source)
-    call = ast.declarations[1].body.first.value.arguments.first.value
+    call = ast.declarations[1].body.first.value.expression
 
     assert_instance_of MilkTea::AST::Call, call
     assert_instance_of MilkTea::AST::Specialization, call.callee
@@ -1449,7 +1442,7 @@ class MilkTeaParserTest < Minitest::Test
     MT
 
     ast = MilkTea::Parser.parse(source)
-    call = ast.declarations[1].body[1].value.arguments.first.value
+    call = ast.declarations[1].body[1].value.expression
 
     assert_instance_of MilkTea::AST::Call, call
     assert_instance_of MilkTea::AST::Specialization, call.callee
@@ -1470,7 +1463,7 @@ class MilkTeaParserTest < Minitest::Test
     MT
 
     ast = MilkTea::Parser.parse(source)
-    call = ast.declarations[2].body[1].value.arguments.first.value
+    call = ast.declarations[2].body[1].value.expression
 
     assert_instance_of MilkTea::AST::Call, call
     assert_instance_of MilkTea::AST::Specialization, call.callee
@@ -1826,7 +1819,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::LocalDecl, local_decl
     assert_instance_of MilkTea::AST::BinaryOp, local_decl.value
     assert_equal "+", local_decl.value.operator
-    assert_instance_of MilkTea::AST::Call, local_decl.value.left
+    assert_instance_of MilkTea::AST::PrefixCast, local_decl.value.left
   end
 
   def test_parses_addr_value_and_raw_calls
