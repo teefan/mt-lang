@@ -87,6 +87,14 @@ module MilkTea
           removed_nested_type_names.concat(collect_nested_type_names(decl)) if decl.is_a?(AST::StructDecl)
 
           case decl
+          when AST::EventDecl
+            parent = name_index[decl.name]&.find { |s| symbol_line(s) == (decl.line || 0) }
+            next unless parent
+
+            parts = ["event[#{decl.capacity}]"]
+            parts << "(#{type_detail_string(decl.payload_type)})" if decl.payload_type
+            parent[:detail] = parts.join
+
           when AST::FunctionDef
             parent = name_index[decl.name]&.find { |s| symbol_line(s) == (decl.line || 0) }
             next unless parent
@@ -321,7 +329,6 @@ module MilkTea
 
         parts = ["event[#{e.capacity}]"]
         parts << "(#{type_detail_string(e.payload_type)})" if e.respond_to?(:payload_type) && e.payload_type
-        parts.unshift("public ") if e.respond_to?(:visibility) && e.visibility == :public
 
         {
           name: e.name, kind: 24,

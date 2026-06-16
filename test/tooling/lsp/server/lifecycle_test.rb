@@ -162,7 +162,7 @@ class LifecycleTest < Minitest::Test
 
   def test_document_symbol_includes_event_declarations
     source = <<~MT
-      event reloaded[4]
+      event reloaded[4](int)
 
       struct Window:
           public event closed[4]
@@ -188,12 +188,18 @@ class LifecycleTest < Minitest::Test
       assert_includes names, "reloaded"
       assert_includes names, "main"
 
+      reloaded = symbols.find { |s| s["name"] == "reloaded" }
+      assert_includes reloaded["detail"], "event[4](int)"
+
       window = symbols.find { |s| s["name"] == "Window" }
       refute_nil window
       refute_nil window["children"]
       child_names = window["children"].map { |c| c["name"] }
       assert_includes child_names, "closed"
       assert_includes child_names, "title"
+
+      closed = window["children"].find { |c| c["name"] == "closed" }
+      assert_equal "event[4]", closed["detail"]
     end
   end
 
