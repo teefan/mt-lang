@@ -219,6 +219,7 @@ module MilkTea
     def build_async_frame_type(frame_c_name, async_info)
       fields = {
         "ready" => @types.fetch("bool"),
+        "cancelled" => @types.fetch("bool"),
         "waiter_frame" => async_info[:void_ptr],
         "waiter" => async_info[:wake_type],
       }
