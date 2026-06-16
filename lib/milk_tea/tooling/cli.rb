@@ -635,21 +635,43 @@ module MilkTea
       input_paths = @argv.dup
       return 1 unless ensure_known_source_operands!("emit-c", input_paths)
 
-      paths = expand_source_paths(input_paths)
-      return 0 if print_no_source_files_if_empty(paths, input_paths)
+      program_paths = input_paths.map { |p| resolve_program_path(p) }
+      return 1 if program_paths.include?(nil)
 
-      ensure_current_lockfiles!(paths) if resolution[:frozen]
+      ensure_current_lockfiles!(input_paths) if resolution[:frozen]
 
-      multiple = paths.length > 1
-      paths.each_with_index do |path, index|
+      multiple = program_paths.length > 1
+      program_paths.each_with_index do |path, index|
         program = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).check_program(path)
         if multiple
           @out.puts("/* --- #{path} --- */")
         end
         @out.write(Codegen.generate_c(program, emit_line_directives: false))
-        @out.puts if multiple && index < paths.length - 1
+        @out.puts if multiple && index < program_paths.length - 1
       end
       0
+    end
+
+    def resolve_program_path(path)
+      return path unless File.directory?(path)
+
+      manifest_path = File.join(path, "package.toml")
+      unless File.file?(manifest_path)
+        @err.puts("no package.toml found in #{path}")
+        return nil
+      end
+
+      manifest = PackageManifest.load(path)
+      entry_path = manifest.source_path
+      unless entry_path && File.file?(entry_path)
+        @err.puts("no build entry found for #{path}")
+        return nil
+      end
+
+      entry_path
+    rescue PackageManifestError => e
+      @err.puts("failed to load package manifest for #{path}: #{e.message}")
+      nil
     end
 
     def build_command
