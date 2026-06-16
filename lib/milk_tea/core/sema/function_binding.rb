@@ -6,7 +6,7 @@ module MilkTea
       private
 
       def validate_attribute_applications
-        @ast.declarations.each do |decl|
+        expanded_declarations.each do |decl|
           with_error_node(decl) do
             case decl
             when AST::StructDecl
@@ -181,7 +181,7 @@ module MilkTea
       end
 
       def declare_functions
-        @ast.declarations.each do |decl|
+        expanded_declarations.each do |decl|
           with_error_node(decl) do
             case decl
             when AST::FunctionDef

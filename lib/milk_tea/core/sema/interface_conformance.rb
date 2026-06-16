@@ -6,7 +6,7 @@ module MilkTea
       private
 
       def check_interface_conformances
-        @ast.declarations.each do |decl|
+        expanded_declarations.each do |decl|
           with_error_node(decl) do
             next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::OpaqueDecl)
             next if decl.implements.empty?

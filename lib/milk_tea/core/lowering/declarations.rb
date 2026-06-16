@@ -4,9 +4,24 @@ module MilkTea
   module LowererDeclarations
     private
 
+      def expanded_declarations
+        @analysis.ast.declarations.flat_map do |decl|
+          case decl
+          when AST::WhenStmt
+            val = compile_time_const_value(decl.discriminant)
+            next [decl] if val.nil?
+
+            chosen = decl.branches.find { |b| val == compile_time_const_value(b.pattern) }
+            body = chosen ? chosen.body : (decl.else_body || [])
+            body
+          else
+            [decl]
+          end
+        end
+      end
 
       def lower_constants
-        @analysis.ast.declarations.grep(AST::ConstDecl).filter_map do |decl|
+        expanded_declarations.grep(AST::ConstDecl).filter_map do |decl|
           type = @values.fetch(decl.name).type
           const_value = @values.fetch(decl.name).const_value
 
@@ -59,7 +74,7 @@ module MilkTea
       end
 
       def lower_globals
-        @analysis.ast.declarations.filter_map do |decl|
+        expanded_declarations.filter_map do |decl|
           next unless decl.is_a?(AST::VarDecl) || decl.is_a?(AST::EventDecl)
 
           type = @values.fetch(decl.name).type
@@ -74,7 +89,7 @@ module MilkTea
       end
 
       def lower_opaques
-        @analysis.ast.declarations.grep(AST::OpaqueDecl).map do |decl|
+        expanded_declarations.grep(AST::OpaqueDecl).map do |decl|
           opaque_type = @opaque_types.fetch(decl.name)
           IR::OpaqueDecl.new(
             name: decl.name,
@@ -99,7 +114,7 @@ module MilkTea
       end
 
       def lower_static_asserts
-        @analysis.ast.declarations.grep(AST::StaticAssert).map do |statement|
+        expanded_declarations.grep(AST::StaticAssert).map do |statement|
           lower_static_assert(statement, env: empty_env)
         end
       end
@@ -115,7 +130,7 @@ module MilkTea
       end
 
       def lower_structs
-        @analysis.ast.declarations.grep(AST::StructDecl).filter_map do |decl|
+        expanded_declarations.grep(AST::StructDecl).filter_map do |decl|
           next unless decl.type_params.empty?
 
           results = []
@@ -143,7 +158,7 @@ module MilkTea
       end
 
       def lower_unions
-        @analysis.ast.declarations.grep(AST::UnionDecl).map do |decl|
+        expanded_declarations.grep(AST::UnionDecl).map do |decl|
           union_type = @union_types.fetch(decl.name)
           fields = decl.fields.map do |field|
             IR::Field.new(name: field.name, type: union_type.field(field.name))
@@ -153,7 +168,7 @@ module MilkTea
       end
 
       def lower_enums
-        @analysis.ast.declarations.filter_map do |decl|
+        expanded_declarations.filter_map do |decl|
           case decl
           when AST::EnumDecl, AST::FlagsDecl
             enum_type = @types.fetch(decl.name)
@@ -175,7 +190,7 @@ module MilkTea
       end
 
       def lower_variants
-        @analysis.ast.declarations.filter_map do |decl|
+        expanded_declarations.filter_map do |decl|
           next unless decl.is_a?(AST::VariantDecl)
 
           variant_type = @types.fetch(decl.name)

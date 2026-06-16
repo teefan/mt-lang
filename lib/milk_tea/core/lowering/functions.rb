@@ -12,7 +12,7 @@ module MilkTea
         while changed
           changed = false
 
-          @analysis.ast.declarations.each do |decl|
+          expanded_declarations.each do |decl|
             case decl
             when AST::FunctionDef
               binding = @functions.fetch(decl.name)

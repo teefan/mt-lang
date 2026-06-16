@@ -2766,6 +2766,34 @@ function main() -> int:
     refute_match(/"b"/, generated)
   end
 
+  def test_generate_c_for_module_level_when_stmt
+    source = <<~MT
+      const TARGET: Kind = Kind.a
+
+      enum Kind: ubyte
+          a = 0
+          b = 1
+
+      when TARGET:
+          Kind.a:
+              function get_value() -> int:
+                  return 1
+              const LABEL: str = "a"
+          Kind.b:
+              function get_value() -> int:
+                  return 2
+              const LABEL: str = "b"
+
+      function main() -> int:
+          return get_value()
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/"a"/, generated)
+    refute_match(/"b"/, generated)
+    assert_match(/get_value/, generated)
+  end
+
   # ── Const function ────────────────────────────────────────────────────────
 
   def test_generate_c_for_const_function_folded

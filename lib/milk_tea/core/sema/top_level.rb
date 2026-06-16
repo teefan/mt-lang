@@ -6,7 +6,7 @@ module MilkTea
       private
 
       def check_top_level_values
-        @ast.declarations.each do |decl|
+        expanded_declarations.each do |decl|
           with_error_node(decl) do
             case decl
             when AST::ConstDecl
@@ -547,7 +547,7 @@ module MilkTea
       end
 
       def check_top_level_static_asserts
-        @ast.declarations.grep(AST::StaticAssert).each do |statement|
+        expanded_declarations.grep(AST::StaticAssert).each do |statement|
           check_static_assert(statement, scopes: [])
         end
       end

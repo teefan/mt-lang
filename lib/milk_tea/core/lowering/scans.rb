@@ -7,6 +7,9 @@ module MilkTea
       def collect_structs
         @analysis.ast.declarations.each do |decl|
           case decl
+          when AST::WhenStmt
+            body = lower_when_chosen_body(decl)
+            body&.each { |nested| collect_struct_from_decl(nested) }
           when AST::OpaqueDecl
             @opaque_types[decl.name] = @types.fetch(decl.name)
           when AST::StructDecl
@@ -16,6 +19,29 @@ module MilkTea
             @union_types[decl.name] = @types.fetch(decl.name)
           end
         end
+      end
+
+      def collect_struct_from_decl(decl)
+        case decl
+        when AST::OpaqueDecl
+          @opaque_types[decl.name] = @types.fetch(decl.name)
+        when AST::StructDecl
+          @struct_types[decl.name] = @types.fetch(decl.name)
+          collect_nested_structs(decl)
+        when AST::UnionDecl
+          @union_types[decl.name] = @types.fetch(decl.name)
+        when AST::WhenStmt
+          body = lower_when_chosen_body(decl)
+          body&.each { |nested| collect_struct_from_decl(nested) }
+        end
+      end
+
+      def lower_when_chosen_body(decl)
+        val = compile_time_const_value(decl.discriminant)
+        return nil if val.nil?
+
+        chosen = decl.branches.find { |b| val == compile_time_const_value(b.pattern) }
+        chosen&.body || decl.else_body
       end
 
       def collect_nested_structs(parent_decl, parent_name: parent_decl.name)

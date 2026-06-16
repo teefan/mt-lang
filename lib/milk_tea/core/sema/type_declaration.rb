@@ -165,8 +165,24 @@ module MilkTea
         end
       end
 
+      def expanded_declarations
+        Enumerator.new do |yielder|
+          @ast.declarations.each do |decl|
+            case decl
+            when AST::WhenStmt
+              body = when_chosen_body(decl)
+              if body
+                body.each { |nested| yielder << nested }
+              end
+            else
+              yielder << decl
+            end
+          end
+        end
+      end
+
       def declare_named_types
-        @ast.declarations.each do |decl|
+        expanded_declarations.each do |decl|
           with_error_node(decl) do
             case decl
             when AST::StructDecl
@@ -236,7 +252,7 @@ module MilkTea
       end
 
       def resolve_generic_type_param_constraints
-        @ast.declarations.each do |decl|
+        expanded_declarations.each do |decl|
           with_error_node(decl) do
             next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::VariantDecl) || decl.is_a?(AST::InterfaceDecl)
             next if decl.type_params.empty?
@@ -261,7 +277,7 @@ module MilkTea
       end
 
       def declare_attributes
-        @ast.declarations.grep(AST::AttributeDecl).each do |decl|
+        expanded_declarations.grep(AST::AttributeDecl).each do |decl|
           with_error_node(decl) do
             raise_sema_error("duplicate attribute #{decl.name}") if @attributes.key?(decl.name)
 
@@ -395,7 +411,7 @@ module MilkTea
       end
 
       def resolve_aggregate_fields
-        @ast.declarations.each do |decl|
+        expanded_declarations.each do |decl|
           with_error_node(decl) do
             next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::UnionDecl)
 
@@ -504,7 +520,7 @@ module MilkTea
       end
 
       def resolve_enum_members
-        @ast.declarations.each do |decl|
+        expanded_declarations.each do |decl|
           with_error_node(decl) do
             next unless decl.is_a?(AST::EnumDecl) || decl.is_a?(AST::FlagsDecl)
 
@@ -559,7 +575,7 @@ module MilkTea
       end
 
       def resolve_variant_arms
-        @ast.declarations.each do |decl|
+        expanded_declarations.each do |decl|
           with_error_node(decl) do
             next unless decl.is_a?(AST::VariantDecl)
 
@@ -658,7 +674,7 @@ module MilkTea
       end
 
       def declare_top_level_values
-        @ast.declarations.each do |decl|
+        expanded_declarations.each do |decl|
           with_error_node(decl) do
             case decl
             when AST::ConstDecl
