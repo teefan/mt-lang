@@ -89,7 +89,8 @@ module MilkTea
         text = params['text']
         @workspace.update_document(uri, text) if text
         invalidate_document_caches(uri)
-        refresh_open_document_dependency_state(uri)
+        affected = refresh_open_document_dependency_state(uri)
+        refresh_client_semantic_tokens if affected.any?
         schedule_diagnostics(uri, force: true, lint_tier: :full) unless @workspace.background_document?(uri)
         nil
       end

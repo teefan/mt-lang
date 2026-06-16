@@ -6,6 +6,31 @@ module MilkTea
       module ServerConfiguration
         private
 
+      def pull_client_configuration
+        items = [
+          { section: 'milkTea.format.mode' },
+          { section: 'milkTea.lsp.dependencyResolution' },
+          { section: 'milkTea.lsp.platform' },
+          { section: 'milkTea.lsp.strictCurrentRootDiagnostics' },
+        ]
+        Protocol.send_request('workspace/configuration', { items: items }) do |result, error|
+          if error
+            warn "Configuration pull failed: #{error['message']}"
+          elsif result.is_a?(Array)
+            settings = {}
+            items.each_with_index do |item, idx|
+              value = result[idx]
+              next if value.nil?
+              section_parts = item[:section].split('.')
+              current = settings
+              section_parts[0...-1].each { |k| current = (current[k] ||= {}) }
+              current[section_parts.last] = value
+            end
+            apply_configuration_settings(settings)
+          end
+        end
+      end
+
       def apply_configuration_settings(settings)
         mode = formatter_mode_from_settings(settings)
         @format_mode = mode if mode
