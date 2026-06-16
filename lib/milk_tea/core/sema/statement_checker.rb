@@ -970,6 +970,18 @@ module MilkTea
         start_type
       end
 
+      def when_chosen_body(decl)
+        discriminant_value = evaluate_compile_time_const_value(decl.discriminant, scopes: [])
+        return nil if discriminant_value.nil?
+
+        chosen_branch = decl.branches.find do |branch|
+          pattern_value = evaluate_compile_time_const_value(branch.pattern, scopes: [])
+          discriminant_value == pattern_value
+        end
+
+        chosen_branch&.body || decl.else_body
+      end
+
       def check_when_stmt(statement, scopes:, return_type:, allow_return:)
         discriminant_value = evaluate_when_discriminant(statement.discriminant)
 

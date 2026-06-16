@@ -211,7 +211,7 @@ module MilkTea
         raise error(visibility_token, "public is not allowed on when") if visibility == :public
 
         advance
-        parse_when_stmt
+        parse_when_decl
       else
         message = visibility == :public ? "expected exportable declaration after public" : "expected declaration"
         raise error(peek, message)
@@ -1650,6 +1650,72 @@ module MilkTea
         consume_end_of_statement unless block_expression?(expression)
         AST::DeferStmt.new(expression:, body: nil, line:, column: token.column, length: token.lexeme.length)
       end
+    end
+
+    def parse_when_decl
+      token = previous
+      line = token.line
+      discriminant = parse_expression
+      branches = parse_decl_when_arms
+      else_body = if check(:else)
+        if check_next(:newline) || check_next(:indent)
+          parse_declaration_block
+        end
+      end
+      AST::WhenStmt.new(discriminant:, branches:, else_body:, line:, column: token.column, length: token.lexeme.length)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_body = synchronize_to_statement_boundary
+      return recovery_error_block_stmt(e, recovered_body, header_type: :when) if recovered_body
+
+      recovery_error_stmt(e)
+    end
+
+    def parse_decl_when_arms
+      consume(:colon, "expected ':' before block")
+      consume(:newline, "expected newline before block")
+      consume(:indent, "expected indented block")
+
+      arms = []
+      skip_newlines
+      until check(:dedent) || eof?
+        pattern = parse_expression
+        binding_name = if match(:as)
+                          binding_token = consume_name("expected binding name after 'as'")
+                          binding_token.lexeme
+                        end
+        body = parse_declaration_block
+        binding_token ||= previous
+        arms << AST::WhenBranch.new(
+          pattern:,
+          binding_name:,
+          binding_line: binding_token.line,
+          binding_column: binding_token.column,
+          body:,
+        )
+        skip_newlines
+      end
+
+      consume(:dedent, "expected end of block")
+      arms
+    end
+
+    def parse_declaration_block
+      consume(:colon, "expected ':' before block")
+      consume(:newline, "expected newline before block")
+      consume(:indent, "expected indented block")
+
+      declarations = []
+      skip_newlines
+      until check(:dedent) || eof?
+        declarations << parse_declaration
+        skip_newlines
+      end
+
+      consume(:dedent, "expected end of block")
+      declarations
     end
 
     def parse_when_stmt

@@ -326,7 +326,7 @@ module MilkTea
       end
 
       def collect_emit_declarations
-        collect_emit_from_declarations(@ast.declarations)
+        collect_emit_from_declarations(expanded_declarations)
       end
 
       def collect_emit_from_declarations(declarations)
@@ -344,6 +344,9 @@ module MilkTea
               @ast.declarations << emit_decl
               collect_emit_from_node(emit_decl)
             end
+          when AST::WhenStmt
+            body = when_chosen_body(decl)
+            collect_emit_from_declarations(body) if body
           when AST::StructDecl, AST::ExtendingBlock
             # no emit in structs/extending blocks (body is fields/methods, not statements)
           end
