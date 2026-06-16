@@ -128,7 +128,8 @@ extending float:
 extending double:
     public static function hash(value: const_ptr[double]) -> uint:
         unsafe:
-            return uint<-reinterpret[uint](read(ptr[double]<-value))
+            let bits: ulong = reinterpret[ulong](read(ptr[double]<-value))
+            return uint<-((bits >> uint<-(32)) ^ bits)
 
 
     public static function equal(a: const_ptr[double], b: const_ptr[double]) -> bool:

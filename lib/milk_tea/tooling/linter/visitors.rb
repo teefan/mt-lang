@@ -300,6 +300,8 @@ module MilkTea
           visit_type_ref(expression.type)
         when AST::OffsetofExpr
           mark_used(expression.field)
+        when AST::PrefixCast
+          visit_expression(expression.expression)
         else
           nil
         end

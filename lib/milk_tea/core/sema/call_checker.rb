@@ -222,6 +222,12 @@ module MilkTea
           raise_sema_error("reinterpret requires non-array concrete sized types, got #{source_type} -> #{target_type}")
         end
 
+        source_size = CompileTime::Layout.size_of(source_type)
+        target_size = CompileTime::Layout.size_of(target_type)
+        if source_size && target_size && source_size != target_size
+          raise_sema_error("reinterpret requires equal-size types, got #{source_type} (#{source_size} byte#{source_size == 1 ? '' : 's'}) -> #{target_type} (#{target_size} byte#{target_size == 1 ? '' : 's'})")
+        end
+
         target_type
       end
 
