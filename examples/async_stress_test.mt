@@ -340,6 +340,59 @@ async function test_manager_host_client() -> int:
                                             host.release()
     return 0
 
+# ---------------------------------------------------------------------------
+# Task cancellation test
+# ---------------------------------------------------------------------------
+
+async function cancellable_worker() -> int:
+    let _ = await aio.sleep(ptr_uint<-50)
+    return 42
+
+
+async function test_task_cancellation() -> int:
+    stdio.print("\n--- Task Cancellation ---\n")
+    let task = cancellable_worker()
+    task.cancel(task.frame)
+    let completed = task.ready(task.frame)
+    check("cancelled task is ready immediately", completed)
+    task.release(task.frame)
+    return 0
+
+# ---------------------------------------------------------------------------
+# Await in expression contexts test
+# ---------------------------------------------------------------------------
+
+async function await_in_call_args_test(x: int, y: int) -> int:
+    return x + y
+
+
+async function test_await_in_expression_contexts() -> int:
+    stdio.print("\n--- Await in Expression Contexts ---\n")
+
+    # await inside call argument
+    let sum = await await_in_call_args_test(
+        await leaf_value(),
+        await leaf_value(),
+    )
+    check("await in call arguments", sum == 84)
+
+    # await inside binary operation
+    let doubled = (await leaf_value()) + (await leaf_value())
+    check("await in binary expression", doubled == 84)
+
+    # await inside if expression
+    let v = await leaf_value()
+    let label = if v > 0: "positive" else: "zero"
+    check("await in if expression context", label == "positive")
+
+    # await inside index (member access chain)
+    let arr = array[int, 4](40, 41, 42, 43)
+    let idx = await leaf_value()
+    let val = arr[idx]
+    check("await in index access", val == 43)
+
+    return 0
+
 
 async function main() -> int:
     stdio.print("\n=== Async/LibUV Stress Tests ===\n\n")
@@ -358,6 +411,8 @@ async function main() -> int:
     let _ = await test_release_during_active_recv()
     let _ = await test_manager_create_release()
     let _ = await test_manager_host_client()
+    let _ = await test_task_cancellation()
+    let _ = await test_await_in_expression_contexts()
 
     let total = test_passed + test_failed
     stdio.print("\n=== %d/%d tests passed ===\n", test_passed, total)
