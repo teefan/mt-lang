@@ -373,11 +373,12 @@ module MilkTea
       line = previous.line
       name = nil
       type = nil
-      name = consume_name("expected constant name").lexeme
+      name_token = consume_name("expected constant name")
+      name = name_token.lexeme
       if match(:arrow)
         type = parse_type_ref
         body = parse_block
-        return AST::ConstDecl.new(name:, type:, value: nil, block_body: body, visibility:, attributes:, line:)
+        return AST::ConstDecl.new(name:, type:, value: nil, block_body: body, visibility:, attributes:, line:, column: name_token.column)
       end
 
       consume(:colon, "expected ':' after constant name")
@@ -385,13 +386,13 @@ module MilkTea
       consume(:equal, "expected '=' after constant type")
       value = parse_expression
       consume_end_of_statement
-      AST::ConstDecl.new(name:, type:, value:, visibility:, attributes:, line:)
+      AST::ConstDecl.new(name:, type:, value:, visibility:, attributes:, line:, column: name_token.column)
     rescue ParseError => e
       raise unless @recovery_errors && name
 
       @recovery_errors << e
       synchronize_to_statement_boundary
-      AST::ConstDecl.new(name:, type: type || recovery_error_expr(e), value: recovery_error_expr(e), visibility:, attributes:, line:)
+      AST::ConstDecl.new(name:, type: type || recovery_error_expr(e), value: recovery_error_expr(e), visibility:, attributes:, line:, column: name_token.column)
     end
 
     def parse_var_decl(visibility: :private)
@@ -409,13 +410,13 @@ module MilkTea
                 nil
               end
       consume_end_of_statement
-      AST::VarDecl.new(name:, type: var_type, value:, visibility:, line:)
+      AST::VarDecl.new(name:, type: var_type, value:, visibility:, line:, column: name_token.column)
     rescue ParseError => e
       raise unless @recovery_errors && name
 
       @recovery_errors << e
       synchronize_to_statement_boundary
-      AST::VarDecl.new(name:, type: var_type || recovery_error_expr(e), value: recovery_error_expr(e), visibility:, line:)
+      AST::VarDecl.new(name:, type: var_type || recovery_error_expr(e), value: recovery_error_expr(e), visibility:, line:, column: name_token.column)
     end
 
     def parse_event_decl(visibility: :private, attributes: [])
@@ -435,11 +436,12 @@ module MilkTea
 
     def parse_type_alias_decl(visibility: :private)
       line = previous.line
-      name = consume_name("expected type alias name").lexeme
+      name_token = consume_name("expected type alias name")
+      name = name_token.lexeme
       consume(:equal, "expected '=' after type alias name")
       target = parse_type_ref
       consume_end_of_statement
-      AST::TypeAliasDecl.new(name:, target:, visibility:, line:)
+      AST::TypeAliasDecl.new(name:, target:, visibility:, line:, column: name_token.column)
     end
 
     def parse_attribute_decl(visibility: :private)
@@ -470,7 +472,8 @@ module MilkTea
 
     def parse_struct_decl(packed: false, alignment: nil, visibility: :private, attributes: [])
       line = previous.line
-      name = consume_name("expected struct name").lexeme
+      name_token = consume_name("expected struct name")
+      name = name_token.lexeme
       lifetime_params, type_params = parse_struct_decl_params
       implements = parse_implements_clause
       c_name = parse_optional_explicit_c_name
@@ -481,7 +484,7 @@ module MilkTea
       fields = members.filter_map { |kind, member| member if kind == :field }
       events = members.filter_map { |kind, member| member if kind == :event }
       nested_types = members.filter_map { |kind, member| member if kind == :nested_type }
-      AST::StructDecl.new(name:, type_params:, implements:, c_name:, fields:, events:, nested_types:, attributes:, packed:, alignment:, visibility:, lifetime_params:, line:)
+      AST::StructDecl.new(name:, type_params:, implements:, c_name:, fields:, events:, nested_types:, attributes:, packed:, alignment:, visibility:, lifetime_params:, line:, column: name_token.column)
     end
 
     def parse_struct_decl_params
@@ -558,7 +561,8 @@ module MilkTea
 
     def parse_union_decl(visibility: :private, attributes: [])
       line = previous.line
-      name = consume_name("expected union name").lexeme
+      name_token = consume_name("expected union name")
+      name = name_token.lexeme
       c_name = parse_optional_explicit_c_name
       fields = parse_named_block do
         field_name = consume_name("expected field name").lexeme
@@ -567,7 +571,7 @@ module MilkTea
         consume_end_of_statement
         AST::Field.new(name: field_name, type: field_type)
       end
-      AST::UnionDecl.new(name:, c_name:, fields:, visibility:, attributes:, line:)
+      AST::UnionDecl.new(name:, c_name:, fields:, visibility:, attributes:, line:, column: name_token.column)
     end
 
     def parse_optional_explicit_c_name
@@ -578,7 +582,8 @@ module MilkTea
 
     def parse_enum_decl(node_class, visibility: :private, attributes: [])
       line = previous.line
-      name = consume_name("expected declaration name").lexeme
+      name_token = consume_name("expected declaration name")
+      name = name_token.lexeme
       consume(:colon, "expected ':' after declaration name")
       backing_type = parse_type_ref
       consume(:newline, "expected newline before declaration body")
@@ -597,12 +602,13 @@ module MilkTea
       end
 
       consume(:dedent, "expected end of declaration body")
-      node_class.new(name:, backing_type:, members:, visibility:, attributes:, line:)
+      node_class.new(name:, backing_type:, members:, visibility:, attributes:, line:, column: name_token.column)
     end
 
     def parse_variant_decl(visibility: :private, attributes: [])
       line = previous.line
-      name = consume_name("expected variant name").lexeme
+      name_token = consume_name("expected variant name")
+      name = name_token.lexeme
       type_params = parse_declaration_type_params
       arms = parse_named_block do
         arm_name = consume_name("expected variant arm name").lexeme
@@ -621,30 +627,32 @@ module MilkTea
         consume_end_of_statement
         AST::VariantArm.new(name: arm_name, fields:)
       end
-      AST::VariantDecl.new(name:, type_params:, arms:, visibility:, attributes:, line:)
+      AST::VariantDecl.new(name:, type_params:, arms:, visibility:, attributes:, line:, column: name_token.column)
     end
 
     def parse_opaque_decl(visibility: :private)
       line = previous.line
-      name = consume_name("expected opaque type name").lexeme
+      name_token = consume_name("expected opaque type name")
+      name = name_token.lexeme
       implements = parse_implements_clause
       c_name = nil
       if match(:equal)
         c_name = consume(:cstring, "expected C string literal after '='").literal
       end
       consume_end_of_statement
-      AST::OpaqueDecl.new(name:, implements:, c_name:, visibility:, line:)
+      AST::OpaqueDecl.new(name:, implements:, c_name:, visibility:, line:, column: name_token.column)
     end
 
     def parse_interface_decl(visibility: :private)
       line = previous.line
-      name = consume_name("expected interface name").lexeme
+      name_token = consume_name("expected interface name")
+      name = name_token.lexeme
       type_params = parse_declaration_type_params
       methods = parse_named_block do
         method_attributes = parse_attribute_applications
         parse_interface_method_decl(attributes: method_attributes)
       end
-      AST::InterfaceDecl.new(name:, type_params:, methods:, visibility:, line:)
+      AST::InterfaceDecl.new(name:, type_params:, methods:, visibility:, line:, column: name_token.column)
     end
 
     def parse_extending_block
@@ -657,7 +665,7 @@ module MilkTea
           parse_method_def(attributes: method_attributes)
         end
       end
-      AST::ExtendingBlock.new(type_name:, methods:, line:)
+      AST::ExtendingBlock.new(type_name:, methods:, line:, column: type_name.column)
     end
 
     def extending_target_type_param_names(type_name)
