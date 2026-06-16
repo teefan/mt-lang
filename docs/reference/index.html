@@ -1,0 +1,1927 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Milk Tea &mdash; Language Reference</title>
+<meta name="description" content="Milk Tea is a statically typed, indentation-based systems language for games. It targets beautiful C.">
+<style>
+/* ── Reset ────────────────────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:4rem}
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,sans-serif;line-height:1.65;color:var(--fg);background:var(--bg);transition:color .2s,background .2s}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+img,svg{max-width:100%}
+pre,code{font-family:"SF Mono","Cascadia Code","JetBrains Mono","Fira Code",Menlo,Consolas,monospace;font-size:.875em}
+table{border-collapse:collapse;width:100%}
+th,td{padding:.5rem .75rem;text-align:left;border:1px solid var(--border)}
+th{font-weight:600;background:var(--surface)}
+
+/* ── Theme variables ──────────────────────────────────────────────────────── */
+:root,.light,[data-theme=light]{
+  --bg:#fefaf5; --surface:#faf3ea; --raised:#fff7ef; --border:#e8d9c5;
+  --fg:#3b2b1e; --fg-dim:#7a6a5c; --fg-faint:#b8a898;
+  --link:#b05a2a; --link-hover:#8a3d18;
+  --primary:#c4713b; --primary-dim:#e8945c; --primary-bg:#fdf0e4;
+  --accent:#4a9a6e; --accent-bg:#eaf7f0;
+  --warn:#c4a035; --warn-bg:#fef9e7;
+  --error:#c04040; --error-bg:#fdf0f0;
+  --code-bg:#fdf6ee; --code-fg:#3b2b1e;
+  --sidebar-bg:#faf3ea; --sidebar-width:17rem;
+  --shadow:0 1px 3px rgba(59,43,30,.08),0 1px 2px rgba(59,43,30,.06);
+  --shadow-lg:0 4px 12px rgba(59,43,30,.1);
+  --radius:.5rem; --radius-sm:.375rem;
+  --kw:#a05020; --type:#2a7a50; --str:#707030; --num:#b05a2a; --cmt:#a89880; --doc:#8a7a60; --op:#5a4a3a; --fn:#5a50a0; --attr:#8a5a20;
+}
+[data-theme=dark],.dark{
+  --bg:#1a1410; --surface:#241c15; --raised:#2a2219; --border:#3a2a1a;
+  --fg:#e8d5c4; --fg-dim:#a89880; --fg-faint:#6a5a4a;
+  --link:#e8945c; --link-hover:#f0a870;
+  --primary:#e8945c; --primary-dim:#f0a870; --primary-bg:#2a1a10;
+  --accent:#5ab882; --accent-bg:#1a2a20;
+  --warn:#d4b048; --warn-bg:#2a2410;
+  --error:#d06060; --error-bg:#2a1010;
+  --code-bg:#241c15; --code-fg:#e8d5c4;
+  --sidebar-bg:#1f1813;
+  --shadow:0 1px 3px rgba(0,0,0,.3),0 1px 2px rgba(0,0,0,.2);
+  --shadow-lg:0 4px 12px rgba(0,0,0,.4);
+  --kw:#f0a870; --type:#5ab882; --str:#c4b858; --num:#e8945c; --cmt:#6a5a4a; --doc:#7a6a5a; --op:#a89880; --fn:#9a90d8; --attr:#c49058;
+}
+
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+body{display:flex;min-height:100vh}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sidebar-width);background:var(--sidebar-bg);border-right:1px solid var(--border);overflow-y:auto;overflow-x:hidden;z-index:100;padding:1rem;display:flex;flex-direction:column;transition:transform .25s ease}
+.sidebar.closed{transform:translateX(-100%)}
+.main{margin-left:var(--sidebar-width);flex:1;min-width:0;padding:2rem 2.5rem 4rem;max-width:56rem}
+.main.expanded{margin-left:0}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+.sidebar-logo{display:flex;align-items:center;gap:.5rem;padding:.5rem 0 1rem;font-size:1.15rem;font-weight:700;color:var(--fg);user-select:none}
+.sidebar-logo .icon{font-size:1.35rem}
+.sidebar-search{margin-bottom:.75rem}
+.sidebar-search input{width:100%;padding:.45rem .75rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--raised);color:var(--fg);font-size:.85rem;outline:none;transition:border-color .2s,box-shadow .2s}
+.sidebar-search input:focus{border-color:var(--primary-dim);box-shadow:0 0 0 3px rgba(196,113,59,.15)}
+.sidebar-nav{flex:1;overflow-y:auto;font-size:.88rem}
+.sidebar-nav details{margin-bottom:.15rem}
+.sidebar-nav summary{padding:.3rem .5rem;border-radius:var(--radius-sm);cursor:pointer;color:var(--fg-dim);font-weight:600;user-select:none;transition:background .15s}
+.sidebar-nav summary:hover{background:var(--raised)}
+.sidebar-nav summary::-webkit-details-marker{display:none}
+.sidebar-nav details[open] > summary{color:var(--fg)}
+.sidebar-nav a{display:block;padding:.25rem .5rem .25rem 1.75rem;border-radius:var(--radius-sm);color:var(--fg-dim);font-size:.83rem;transition:background .15s,color .15s}
+.sidebar-nav a:hover{color:var(--fg);background:var(--raised);text-decoration:none}
+.sidebar-nav a.active{color:var(--primary);background:var(--primary-bg);font-weight:500}
+.sidebar-footer{padding-top:.75rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;font-size:.8rem;color:var(--fg-faint)}
+
+/* ── Topbar (mobile) ───────────────────────────────────────────────────────── */
+.topbar{display:none;position:sticky;top:0;z-index:99;background:var(--bg);border-bottom:1px solid var(--border);padding:.65rem 1rem;align-items:center;gap:.75rem}
+.topbar .menu-btn{background:none;border:none;color:var(--fg);font-size:1.35rem;cursor:pointer;padding:.25rem;line-height:1}
+.topbar .logo-text{font-weight:700;font-size:1rem}
+.topbar .theme-btn{margin-left:auto;background:none;border:none;color:var(--fg-dim);font-size:1.1rem;cursor:pointer;padding:.25rem .35rem;border-radius:var(--radius-sm);transition:background .15s,color .15s}
+.topbar .theme-btn:hover{background:var(--surface);color:var(--fg)}
+.theme-btn{background:none;border:1px solid var(--border);color:var(--fg-dim);font-size:.95rem;cursor:pointer;padding:.3rem .45rem;border-radius:var(--radius-sm);transition:background .15s,border-color .15s;display:flex;align-items:center;gap:.25rem}
+.theme-btn:hover{background:var(--surface);border-color:var(--fg-dim)}
+
+/* ── Hero ──────────────────────────────────────────────────────────────────── */
+.hero{padding:3rem 0 2rem;margin-bottom:1.5rem;border-bottom:1px solid var(--border)}
+.hero h1{font-size:2.8rem;font-weight:800;letter-spacing:-.02em;line-height:1.15;margin-bottom:.5rem}
+.hero h1 span{color:var(--primary)}
+.hero .tagline{font-size:1.2rem;color:var(--fg-dim);margin-bottom:1.25rem;max-width:36rem}
+.hero .badges{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1.5rem}
+.hero .badge{display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .65rem;border-radius:3rem;font-size:.8rem;font-weight:500;background:var(--primary-bg);color:var(--primary)}
+.hero .badge.ac{background:var(--accent-bg);color:var(--accent)}
+.hero code{background:var(--code-bg);padding:.1rem .35rem;border-radius:var(--radius-sm);font-size:.9em}
+
+/* ── Section headings ──────────────────────────────────────────────────────── */
+section{padding:2rem 0;border-bottom:1px solid var(--border)}
+section:last-of-type{border-bottom:none}
+h2{font-size:1.75rem;font-weight:700;letter-spacing:-.01em;margin-bottom:1rem;color:var(--fg)}
+h3{font-size:1.25rem;font-weight:600;margin:1.5rem 0 .75rem;color:var(--fg)}
+h4{font-size:1.05rem;font-weight:600;margin:1.25rem 0 .5rem;color:var(--fg-dim)}
+p{margin-bottom:.75rem;max-width:44rem}
+p + p{margin-top:-.25rem}
+
+/* ── Code blocks ───────────────────────────────────────────────────────────── */
+.code-wrap{position:relative;margin:1rem 0 1.5rem;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);background:var(--code-bg);box-shadow:var(--shadow)}
+.code-wrap .code-label{position:absolute;top:0;right:0;display:flex;gap:.15rem;padding:.3rem .5rem}
+.code-wrap .copy-btn{background:var(--raised);border:1px solid var(--border);color:var(--fg-dim);font-size:.7rem;cursor:pointer;padding:.15rem .45rem;border-radius:var(--radius-sm);opacity:0;transition:opacity .2s}
+.code-wrap:hover .copy-btn{opacity:1}
+.code-wrap .copy-btn.copied{color:var(--accent);border-color:var(--accent)}
+.code-wrap pre{margin:0;padding:1.1rem 1.25rem;overflow-x:auto;line-height:1.55;color:var(--code-fg);tab-size:4;-moz-tab-size:4}
+.code-wrap pre code{font-size:.85rem;white-space:pre}
+.code-inline{background:var(--code-bg);padding:.12rem .4rem;border-radius:var(--radius-sm);font-size:.88em;border:1px solid var(--border)}
+/* Syntax tokens */
+.syn-kw{color:var(--kw);font-weight:600}
+.syn-type{color:var(--type);font-style:italic}
+.syn-str{color:var(--str)}
+.syn-num{color:var(--num)}
+.syn-cmt{color:var(--cmt);font-style:italic}
+.syn-doc{color:var(--doc);font-style:italic}
+.syn-op{color:var(--op)}
+.syn-fn{color:var(--fn)}
+.syn-attr{color:var(--attr)}
+.syn-atom{color:var(--kw);font-weight:500}
+
+/* ── Tables ────────────────────────────────────────────────────────────────── */
+.table-wrap{overflow-x:auto;margin:1rem 0 1.5rem}
+.attr-table th{font-size:.82rem;color:var(--fg-dim);white-space:nowrap}
+.attr-table td{font-size:.85rem}
+.attr-table td:first-child{white-space:nowrap}
+.attr-table td:first-child code{background:var(--code-bg);padding:.08rem .35rem;border-radius:var(--radius-sm);font-size:.88em}
+.attr-table tr:hover td{background:var(--surface)}
+
+/* ── Callouts ──────────────────────────────────────────────────────────────── */
+.callout{margin:1rem 0;padding:.85rem 1rem;border-radius:var(--radius);font-size:.9rem;border-left:3px solid var(--border)}
+.callout.note{border-left-color:var(--primary-dim);background:var(--primary-bg)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-bg)}
+.callout.tip{border-left-color:var(--accent);background:var(--accent-bg)}
+
+/* ── Search result highlight ───────────────────────────────────────────────── */
+.search-highlight{background:rgba(196,161,53,.25);border-radius:2px}
+.section-hidden{display:none!important}
+
+/* ── Overlay (mobile sidebar) ──────────────────────────────────────────────── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:99}
+.overlay.visible{display:block}
+
+/* ── Progress bar ──────────────────────────────────────────────────────────── */
+.progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--primary),var(--accent));z-index:200;transition:width .1s linear}
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
+@media (max-width:1023px){
+  :root{--sidebar-width:16rem}
+}
+@media (max-width:767px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0;padding:1.25rem 1rem 3rem}
+  .topbar{display:flex}
+  .hero h1{font-size:2rem}
+  .hero{padding:1.5rem 0 1.25rem}
+  .code-wrap pre{padding:.85rem 1rem;font-size:.82rem}
+  h2{font-size:1.4rem}
+  h3{font-size:1.1rem}
+}
+@media (min-width:768px){
+  .theme-btn-desktop{display:flex!important}
+}
+
+/* ── Utility ───────────────────────────────────────────────────────────────── */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.flex{display:flex;gap:.5rem;flex-wrap:wrap}
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+<div class="overlay" id="overlay"></div>
+
+<!-- ─── Sidebar ───────────────────────────────────────────────────────────── -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <span class="icon">&#127861;</span>
+    <span>Milk Tea</span>
+  </div>
+  <div class="sidebar-search">
+    <input type="text" id="search" placeholder="Search reference&hellip;" autocomplete="off">
+  </div>
+  <nav class="sidebar-nav" id="sidebar-nav">
+<details open><summary>Introduction</summary>
+<a href="#overview">Overview</a>
+<a href="#getting-started">Getting Started</a>
+</details>
+
+<details open><summary>Language Basics</summary>
+<a href="#source-files">Source Files &amp; Modules</a>
+<a href="#lexical-rules">Lexical Rules</a>
+<a href="#variables-guards">Variables &amp; Guards</a>
+<a href="#data-declarations">Data Declarations</a>
+</details>
+
+<details open><summary>Types &amp; Contracts</summary>
+<a href="#interfaces-methods">Interfaces &amp; Methods</a>
+<a href="#type-system">Type System</a>
+<a href="#generics">Generics</a>
+</details>
+
+<details open><summary>Functions</summary>
+<a href="#functions">Functions</a>
+</details>
+
+<details open><summary>Control Flow</summary>
+<a href="#control-flow">Statements</a>
+<a href="#match">Match Patterns</a>
+<a href="#defer-unsafe">Defer &amp; Unsafe</a>
+<a href="#compile-time">Compile-Time</a>
+</details>
+
+<details open><summary>Expressions &amp; Operators</summary>
+<a href="#expressions">Expressions</a>
+</details>
+
+<details open><summary>Built-in Surface</summary>
+<a href="#builtins">Built-in Callables</a>
+<a href="#reflection">Compile-Time Reflection</a>
+</details>
+
+<details open><summary>Text &amp; Strings</summary>
+<a href="#strings">Strings &amp; Text</a>
+</details>
+
+<details><summary>Advanced</summary>
+<a href="#safety">Safety Rules</a>
+<a href="#async">Async</a>
+<a href="#events">Events</a>
+</details>
+
+<details><summary>Reference</summary>
+<a href="#std-library">Standard Library</a>
+<a href="#cli">CLI Reference</a>
+<a href="#limitations">Language Limitations</a>
+</details>
+  </nav>
+  <div class="sidebar-footer">
+    <button class="theme-btn theme-btn-desktop" id="theme-toggle" aria-label="Toggle theme" style="display:none">
+      <span class="icon-sun">&#9728;</span>
+      <span class="icon-moon">&#127769;</span>
+      <span class="label">Theme</span>
+    </button>
+    <span style="font-size:.75rem">v1 &middot; Language Reference</span>
+  </div>
+</aside>
+
+<!-- ─── Topbar (mobile) ────────────────────────────────────────────────────── -->
+<div class="topbar">
+  <button class="menu-btn" id="menu-btn" aria-label="Toggle menu">&#9776;</button>
+  <span class="logo-text">&#127861; Milk Tea</span>
+  <button class="theme-btn" id="theme-toggle-mbl" aria-label="Toggle theme">&#127769;</button>
+</div>
+
+<!-- ─── Main Content ───────────────────────────────────────────────────────── -->
+<main class="main" id="main">
+
+<!-- ── Hero ────────────────────────────────────────────────────────────────── -->
+<div class="hero">
+  <h1>Milk Tea <span>Reference</span></h1>
+  <p class="tagline">A statically typed, indentation-based systems language for games. Safe by default, explicit by design, compiling to <strong>beautiful C</strong>.</p>
+  <div class="badges">
+    <span class="badge">&#9889; Statically Typed</span>
+    <span class="badge">&#127758; Compiles to C</span>
+    <span class="badge ac">&#128274; Safe by Default</span>
+    <span class="badge">&#128295; Data-Oriented</span>
+    <span class="badge">&#9752; No GC</span>
+    <span class="badge ac">&#128279; First-Class C FFI</span>
+  </div>
+</div>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="overview">
+  <h2>Overview</h2>
+  <p>Milk Tea code looks like code, not punctuation. It uses indentation for blocks, words over symbols, and explicit surface for allocation and unsafe operations. The compiler <code class="code-inline">mtc</code> checks, builds, and runs <code class="code-inline">.mt</code> source files, emitting readable C that a human can debug.</p>
+
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## A minimal Milk Tea program.
+import std.stdio as io
+
+function main() -> int:
+    io.println("Hello, Milk Tea!")
+    return 0</code></pre>
+</div>
+
+  <h3>Core Design</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Principle</th><th>Description</th></tr>
+      <tr><td><strong>What you see is what runs</strong></td><td>No hidden allocation, dispatch, or heap traffic. Every cost is spelled in source.</td></tr>
+      <tr><td><strong>C is the ABI ground truth</strong></td><td>Structs, unions, pointers, and calling conventions map directly without lossy translation.</td></tr>
+      <tr><td><strong>Safe by default, unsafe by choice</strong></td><td>Pointer operations require <code>unsafe</code>. Indexing is bounds-checked. Conversions are explicit.</td></tr>
+      <tr><td><strong>Data-oriented first</strong></td><td>Plain structs, arrays, spans, pools, and arenas matter more than elaborate object systems.</td></tr>
+      <tr><td><strong>One job, one canonical surface</strong></td><td>No duplicated everyday spellings for the same concept.</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="getting-started">
+  <h2>Getting Started</h2>
+
+  <h3>Hello World</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>function main() -> int:
+    return 0</code></pre>
+</div>
+  <p>Save as <code class="code-inline">hello.mt</code> and run:</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>mtc run hello.mt</code></pre>
+</div>
+
+  <h3>Essential CLI</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Command</th><th>Description</th></tr>
+      <tr><td><code>mtc check &lt;path&gt;</code></td><td>Type-check + lint; reports all diagnostics sorted by line</td></tr>
+      <tr><td><code>mtc run &lt;path&gt;</code></td><td>Build and execute</td></tr>
+      <tr><td><code>mtc build &lt;path&gt;</code></td><td>Build only (emit C, compile, link)</td></tr>
+      <tr><td><code>mtc format &lt;path&gt;</code></td><td>Format sources in place (<code>--check</code> for dry-run)</td></tr>
+      <tr><td><code>mtc lint &lt;path&gt;</code></td><td>Run linter (<code>--fix</code> to apply fixes)</td></tr>
+      <tr><td><code>mtc new &lt;name&gt;</code></td><td>Scaffold a new package</td></tr>
+    </table>
+  </div>
+  <p>See <a href="#cli">CLI Reference</a> for the full command surface.</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="source-files">
+  <h2>Source Files &amp; Modules</h2>
+
+  <p>Milk Tea source files use the <code class="code-inline">.mt</code> extension. A file is either an <strong>ordinary</strong> source file or an <strong>external</strong> file for raw ABI bindings.</p>
+
+  <h3>Ordinary Files</h3>
+  <p>The normal source form. No module header; module identity is inferred from the file path relative to <code class="code-inline">package.source_root</code>. <code class="code-inline">import</code> statements appear only at the top.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>import std.math as math
+import std.raylib as rl
+
+function main() -> int:
+    return 0</code></pre>
+</div>
+
+  <h3>External Files</h3>
+  <p>Dedicated raw ABI surface, usually for <code class="code-inline">std.c.*</code> bindings. Start with <code>external</code> and accept <code>include</code>, <code>link</code>, and <code>compiler_flag</code> directives. After directives, only raw ABI declarations are allowed.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>external
+
+include "raylib.h"
+link "raylib"
+
+struct Color:
+    r: ubyte
+    g: ubyte
+    b: ubyte
+    a: ubyte
+
+external function InitWindow(width: int, height: int, title: cstr) -> void</code></pre>
+</div>
+
+  <h3>Module Resolution</h3>
+  <p>Module lookup resolves <code class="code-inline">a.b.c</code> to <code class="code-inline">a/b/c.mt</code>. Platform-specific files (<code class="code-inline">name.linux.mt</code>) still map to module <code class="code-inline">name</code>. Valid platform suffixes: <code>linux</code>, <code>windows</code>, <code>wasm</code>.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>import std.str
+import std.vec
+import mylib.utils</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="lexical-rules">
+  <h2>Lexical Rules</h2>
+
+  <h3>Indentation</h3>
+  <ul style="margin-left:1.25rem;margin-bottom:1rem">
+    <li><code>:</code> starts a block</li>
+    <li>Indentation must be <strong>spaces only</strong> (tabs are rejected)</li>
+    <li>Indentation must be a multiple of <strong>4 spaces</strong></li>
+    <li>Indentation increases by <strong>one level at a time</strong></li>
+    <li>Newlines end statements except inside <code>()</code> and <code>[]</code>, or when the previous line ends with a binary operator</li>
+  </ul>
+
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## Preferred: wrap in delimiters.
+let total = (
+    subtotal
+    + tax
+    - discount
+)
+
+## Also accepted: operator-led continuation.
+let total = subtotal +
+    tax -
+    discount</code></pre>
+</div>
+
+  <h3>Naming Conventions</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Category</th><th>Style</th><th>Example</th></tr>
+      <tr><td>Modules, variables, functions</td><td><code>snake_case</code></td><td><code>player_count</code>, <code>load_level</code></td></tr>
+      <tr><td>Types (struct, enum, variant, etc.)</td><td><code>PascalCase</code></td><td><code>Vec2</code>, <code>LoadError</code>, <code>EventKind</code></td></tr>
+      <tr><td>C binding modules</td><td>Preserve C names exactly</td><td><code>SDL_Window</code>, <code>c.InitWindow</code></td></tr>
+    </table>
+  </div>
+
+  <h3>Comments</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Form</th><th>Description</th></tr>
+      <tr><td><code># text</code></td><td>Line comment</td></tr>
+      <tr><td><code>## text</code></td><td>Documentation comment; attaches to the next declaration (no blank line)</td></tr>
+    </table>
+  </div>
+
+  <h3>Literals</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Kind</th><th>Examples</th><th>Type</th></tr>
+      <tr><td>Integer</td><td><code>42</code>, <code>0xff</code>, <code>0b1010</code>, <code>1_000_000</code></td><td><code>int</code> (default)</td></tr>
+      <tr><td>Float</td><td><code>3.14</code>, <code>1.2e-3</code>, <code>1.0f</code>, <code>1.0d</code></td><td><code>double</code> (default)</td></tr>
+      <tr><td>Boolean</td><td><code>true</code>, <code>false</code></td><td><code>bool</code></td></tr>
+      <tr><td>String</td><td><code>"hello"</code></td><td><code>str</code></td></tr>
+      <tr><td>C String</td><td><code>c"hello"</code></td><td><code>cstr</code></td></tr>
+      <tr><td>Format String</td><td><code>f"count=#{n}"</code></td><td><code>str</code></td></tr>
+      <tr><td>Heredoc String</td><td><code>&lt;&lt;-TAG ... TAG</code></td><td><code>str</code></td></tr>
+      <tr><td>Heredoc C String</td><td><code>c&lt;&lt;-TAG ... TAG</code></td><td><code>cstr</code></td></tr>
+      <tr><td>Heredoc Format</td><td><code>f&lt;&lt;-TAG ... TAG</code></td><td><code>str</code></td></tr>
+      <tr><td>Null</td><td><code>null</code>, <code>null[ptr[char]]</code></td><td><code>T?</code></td></tr>
+    </table>
+  </div>
+
+  <h3>Operators &amp; Punctuation</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Category</th><th>Tokens</th></tr>
+      <tr><td>Delimiters</td><td><code>( ) [ ]</code></td></tr>
+      <tr><td>Separators / Access</td><td><code>: , .</code></td></tr>
+      <tr><td>Type markers</td><td><code>-&gt;</code> <code>?</code></td></tr>
+      <tr><td>Arithmetic</td><td><code>+ - * / %</code></td></tr>
+      <tr><td>Bitwise</td><td><code>~ &amp; | ^ &lt;&lt; &gt;&gt;</code></td></tr>
+      <tr><td>Comparison</td><td><code>== != &lt; &lt;= &gt; &gt;=</code></td></tr>
+      <tr><td>Assignment</td><td><code>= += -= *= /= %= &amp;= |= ^= &lt;&lt;= &gt;&gt;=</code></td></tr>
+      <tr><td>Variadic</td><td><code>...</code></td></tr>
+      <tr><td>Word operators</td><td><code>and</code> <code>or</code> <code>not</code></td></tr>
+      <tr><td>Parameter modes</td><td><code>in</code> <code>out</code> <code>inout</code> (reserved for <code>foreign function</code>)</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="variables-guards">
+  <h2>Variables &amp; Guards</h2>
+
+  <h3>Local Declarations</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>let width: int = 1280       ## immutable
+var score: int = 0           ## mutable
+let dt = rl.get_frame_time() ## type inferred (float)
+var player_count = 0         ## type inferred (int)
+
+## Zero-initialized (explicit type required, must be zero-initializable):
+var scratch: array[ubyte, 256]</code></pre>
+</div>
+
+  <h3>Constants</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>const GRAVITY: float = 9.81
+
+## Block-bodied const (evaluated at compile time)
+const NEXT_POW2 -> int:
+    var n: int = 1
+    while n &lt; 1024:
+        n = n * 2
+    return n</code></pre>
+</div>
+
+  <h3>Destructuring</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## Tuple destructuring
+let (a, b) = pair()
+let (x, y) = (1, 2)
+
+## Struct destructuring
+struct Vec2:
+    x: float
+    y: float
+let p = Vec2(x = 1.0, y = 2.0)
+let Vec2(x, y) = p</code></pre>
+</div>
+
+  <h3>Guard Binding</h3>
+  <p>The initializer must be <code>T?</code>, <code>Option[T]</code>, or <code>Result[T, E]</code>. The <code>else</code> block must terminate control flow.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>let window = maybe_window else:
+    return 1
+
+let image = load_image(path) else:
+    return 1
+
+let config = load_config() else as error:
+    return error
+
+let _ = initialize_runtime() else:
+    return 1</code></pre>
+</div>
+
+  <h3>Postfix Result Propagation (<code>?</code>)</h3>
+  <p><code>expr?</code> unwraps <code>Result[T, E]</code> on success; on failure, returns early from the enclosing function or proc. Only allowed inside function and proc bodies.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>let parsed = parse(input)?
+let lowered = lower(parsed)?
+return Result[Output, Error].success(value = lowered)</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="data-declarations">
+  <h2>Data Declarations</h2>
+
+  <h3>Type Alias</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>type Seconds = float
+type Callback = fn(level: int, message: cstr) -> void</code></pre>
+</div>
+
+  <h3>Struct</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>struct Vec2:
+    x: float
+    y: float
+
+## With attributes
+@[packed]
+struct Header:
+    tag: ubyte
+
+@[align(16)]
+struct Mat4:
+    data: array[float, 16]
+
+## Nested structs (qualified as Parent.Nested)
+struct Rectangle:
+    x: float
+    y: float
+
+    struct Edge:
+        start: float
+        end: float
+
+    top_edge: Edge
+    left_edge: Edge</code></pre>
+</div>
+
+  <h3>Union</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>union Number:
+    i: int
+    f: float</code></pre>
+</div>
+
+  <h3>Enum</h3>
+  <p>Always has an explicit backing type.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>enum State: ubyte
+    idle = 0
+    running = 1
+    paused = 2</code></pre>
+</div>
+
+  <h3>Flags</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>flags Mask: uint
+    a = 1 &lt;&lt; 0
+    b = 1 &lt;&lt; 1
+    both = a | b            ## composite alias</code></pre>
+</div>
+
+  <h3>Variant (Tagged Union)</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>variant Token:
+    ident(text: str)
+    number(value: int)
+    eof
+
+## Constructors
+let t1 = Token.ident(text = "hello")  ## payload arm
+let t2 = Token.eof                     ## no-payload arm
+
+## Generic variants
+variant Option[T]:
+    some(value: T)
+    none
+
+variant Result[T, E]:
+    success(value: T)
+    failure(error: E)</code></pre>
+</div>
+
+  <h3>Opaque</h3>
+  <p>For C handles whose layout is unknown.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>opaque SDL_Window
+opaque ma_engine</code></pre>
+</div>
+
+  <h3>Attributes</h3>
+  <p>User-defined attributes target specific declaration kinds. Built-in attributes: <code>packed</code>, <code>align(bytes)</code>, <code>deprecated(message)</code>.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>attribute[field] rename(name: str)
+attribute[struct, event] trace(name: str)
+
+@[rename(name = "hp")]
+struct Player:
+    @[trace(name = "health")]
+    health: int</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="interfaces-methods">
+  <h2>Interfaces &amp; Methods</h2>
+
+  <h3>Interfaces</h3>
+  <p>Explicit nominal method-set contracts for static polymorphism. No inheritance, no hidden dispatch.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>public interface Damageable:
+    editable function take_damage(amount: int) -> void
+    function is_alive() -> bool
+
+## Generic interface
+interface Mapper[T]:
+    function map(x: T) -> T
+
+## Conformance on nominal type
+struct NPC implements Damageable:
+    hp: int
+    name: str</code></pre>
+</div>
+
+  <h3>Methods (extending)</h3>
+  <p>Three kinds: <code>function</code> (value receiver), <code>editable function</code> (editable receiver), <code>static function</code> (no receiver).</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>extending Counter:
+    function read() -> int:
+        return this.value
+
+    editable function bump() -> void:
+        this.value += 1
+
+    static function zero() -> Counter:
+        return Counter(value = 0)</code></pre>
+</div>
+
+  <h3>Dynamic Dispatch (<code>dyn[I]</code>)</h3>
+  <p>Runtime interface values are fat pointers (data + vtable). Construct with <code>adapt[I](value: ref[T])</code>.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>function render_all(drawables: span[dyn[Drawable]]):
+    for d in drawables:
+        d.draw()
+
+let d: dyn[Drawable] = adapt[Drawable](ref_of(entity))</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="type-system">
+  <h2>Type System</h2>
+
+  <h3>Primitive Types</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Type</th><th>Description</th></tr>
+      <tr><td><code>bool</code></td><td>Boolean</td></tr>
+      <tr><td><code>byte</code> <code>short</code> <code>int</code> <code>long</code></td><td>Signed integers</td></tr>
+      <tr><td><code>ubyte</code> <code>ushort</code> <code>uint</code> <code>ulong</code></td><td>Unsigned integers</td></tr>
+      <tr><td><code>char</code></td><td>Single-byte character (ABI-facing)</td></tr>
+      <tr><td><code>ptr_int</code> <code>ptr_uint</code></td><td>Pointer-sized integers</td></tr>
+      <tr><td><code>float</code> <code>double</code></td><td>Floating-point</td></tr>
+      <tr><td><code>void</code></td><td>No value</td></tr>
+      <tr><td><code>str</code></td><td>UTF-8 string view (borrowed)</td></tr>
+      <tr><td><code>cstr</code></td><td>NUL-terminated C string</td></tr>
+      <tr><td><code>vec2</code> <code>vec3</code> <code>vec4</code></td><td>Float vectors with <code>.x .y .z .w</code></td></tr>
+      <tr><td><code>ivec2</code> <code>ivec3</code> <code>ivec4</code></td><td>Integer vectors</td></tr>
+      <tr><td><code>mat3</code> <code>mat4</code></td><td>Column-major matrices</td></tr>
+      <tr><td><code>quat</code></td><td>Quaternion (layout-compatible with <code>vec4</code>)</td></tr>
+    </table>
+  </div>
+
+  <h3>Native Type Construction</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>let v = vec3(x = 1.0, y = 2.0, z = 3.0)
+let m = mat4(
+    col0 = vec4(x = 1.0, y = 0.0, z = 0.0, w = 0.0),
+    col1 = vec4(x = 0.0, y = 1.0, z = 0.0, w = 0.0),
+    col2 = vec4(x = 0.0, y = 0.0, z = 1.0, w = 0.0),
+    col3 = vec4(x = 0.0, y = 0.0, z = 0.0, w = 1.0),
+)
+let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)</code></pre>
+</div>
+
+  <h3>Type Constructors</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Constructor</th><th>Description</th></tr>
+      <tr><td><code>ptr[T]</code></td><td>Raw writable pointer</td></tr>
+      <tr><td><code>const_ptr[T]</code></td><td>Raw read-only pointer</td></tr>
+      <tr><td><code>ref[T]</code></td><td>Safe non-null writable alias</td></tr>
+      <tr><td><code>span[T]</code></td><td>Pointer + length view (<code>{ data, len }</code>)</td></tr>
+      <tr><td><code>array[T, N]</code></td><td>Fixed-size array</td></tr>
+      <tr><td><code>str_buffer[N]</code></td><td>Fixed-capacity mutable UTF-8 text</td></tr>
+      <tr><td><code>Task[T]</code></td><td>Async task handle</td></tr>
+      <tr><td><code>Option[T]</code></td><td>Optional value variant</td></tr>
+      <tr><td><code>Result[T, E]</code></td><td>Success or failure variant</td></tr>
+      <tr><td><code>fn(params...) -&gt; R</code></td><td>Function pointer type</td></tr>
+      <tr><td><code>proc(params...) -&gt; R</code></td><td>Closure type (value captures)</td></tr>
+      <tr><td><code>SoA[T, N]</code></td><td>Structure-of-Arrays: fields become separate arrays</td></tr>
+      <tr><td><code>dyn[Interface]</code></td><td>Runtime interface value (fat pointer)</td></tr>
+      <tr><td><code>(T, U)</code></td><td>Tuple type</td></tr>
+    </table>
+  </div>
+
+  <h3>Nullability</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>let window: ptr[Window]? = null
+let name: cstr? = null
+
+## Typed null for ambiguous contexts
+let handle = null[ptr[char]]</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="generics">
+  <h2>Generics</h2>
+  <p>Generic structs, variants, functions, methods, interfaces, and foreign functions are supported. Constraints use <code>implements</code>.</p>
+
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## Generic struct
+struct Slice[T]:
+    data: ptr[T]
+    len: ptr_uint
+
+## Generic function with constraint
+function damage_one[T implements Damageable](target: ref[T], amount: int) -> void:
+    if target.is_alive():
+        target.take_damage(amount)
+
+## Multiple constraints
+function update_and_draw[T implements Updatable and Drawable](value: ref[T]):
+    value.update()
+    value.draw()
+
+## Value parameter
+function int_with_bits[N: int]() -> type:
+    if N == 64:
+        return long
+    else:
+        return int
+
+## Specialization
+let big = int_with_bits[64]()
+let s64 = Slice[ubyte](data = ptr, len = 32)</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="functions">
+  <h2>Functions</h2>
+
+  <h3>Ordinary Functions</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>function add(a: int, b: int) -> int:
+    return a + b
+
+## Return type defaults to void
+function say_hello(name: str):
+    io.println(f"Hello, #{name}!")</code></pre>
+</div>
+
+  <h3>const function</h3>
+  <p>Evaluable at compile time. Generates both a compile-time constant-folding path and a normal runtime function.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>const function square(x: int) -> int:
+    return x * x
+
+const RESULT: int = square(5)   ## folded to 25 at compile time</code></pre>
+</div>
+
+  <h3>external function</h3>
+  <p>No body. Raw C ABI declarations. Cannot be generic or async.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>external function printf(format: cstr, ...) -> int</code></pre>
+</div>
+
+  <h3>foreign function</h3>
+  <p>Projects a C function into Milk Tea types with boundary marshalling.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>foreign function init_window(width: int, height: int, title: str as cstr) -> void
+    = c.InitWindow
+
+foreign function load_file_data(file_name: str as cstr, out data_size: int)
+    -> ptr[ubyte]? = c.LoadFileData
+
+foreign function close_window(consuming window: Window) -> void
+    = c.CloseWindow</code></pre>
+</div>
+
+  <h3>Procs (Closures)</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>let multiplier = 2
+let doubler = proc(x: int) -> int:
+    return x * multiplier
+
+## Expression-bodied
+let tripler = proc(x: int) -> int: x * 3</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="control-flow">
+  <h2>Statements</h2>
+
+  <h3>if / else if / else</h3>
+  <p>Condition must be <code>bool</code>. No truthy/falsy coercion.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>if ready:
+    start_game()
+else if wants_menu:
+    open_menu()
+else:
+    show_intro()</code></pre>
+</div>
+
+  <h3>while</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>while running:
+    tick()</code></pre>
+</div>
+
+  <h3>for (Single)</h3>
+  <p>Supports ranges, arrays, spans, and custom iterables.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>for i in 0..count:
+    update_enemy(i)
+
+for item in items:
+    process(item)</code></pre>
+</div>
+
+  <h3>for (Parallel)</h3>
+  <p>Arrays and spans only. Lengths must match.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>for entity, position, velocity in entities, positions, velocities:
+    update(entity, position, velocity)</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="match">
+  <h2>Match Patterns</h2>
+
+  <h3>Statement Form</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## Enum match (must be exhaustive unless _ present)
+match kind:
+    EventKind.quit:
+        return 0
+    _:
+        return 1
+
+## Integer match (_ required)
+match key_code:
+    65:
+        fire()
+    27:
+        quit()
+    _:
+        return
+
+## Variant match with payload binding
+match token:
+    Token.ident(text):
+        use_name(text)
+    Token.number as n:
+        use_value(n.value)
+    Token.eof:
+        return</code></pre>
+</div>
+
+  <h3>Expression Form</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>let label = match code:
+    1: "one"
+    2: "two"
+    _: "other"</code></pre>
+</div>
+
+  <h3>Struct Patterns (Variants)</h3>
+  <p>Inline destructuring with guards and bindings inside variant arm patterns.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>match entity:
+    Entity.player(hp > 0, position):
+        render(position)
+    Entity.player:
+        remove()
+    Entity.enemy:
+        return</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="defer-unsafe">
+  <h2>Defer &amp; Unsafe</h2>
+
+  <h3>defer</h3>
+  <p>Registers cleanup code at scope exit. Lowers to cleanup labels in C.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>function main() -> int:
+    rl.init_window(800, 600, "Game")
+    defer rl.close_window()
+
+    while not rl.window_should_close():
+        rl.begin_drawing()
+        defer rl.end_drawing()
+        render_frame()
+
+    return 0</code></pre>
+</div>
+
+  <h3>unsafe</h3>
+  <p>Required for: pointer indexing, raw dereference, pointer arithmetic, pointer casts, <code>reinterpret[...]</code>.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## Expression form
+let p = unsafe: pixels + offset
+
+## Block form
+unsafe:
+    let pixel = read(ptr[uint]&lt;-p)
+    pointer[0] = 1
+    pointer[1] = 2</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="compile-time">
+  <h2>Compile-Time Control Flow</h2>
+
+  <h3>when</h3>
+  <p>Evaluates discriminant at compile time; only the chosen branch is type-checked and emitted.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>when TARGET_OS:
+    TargetOs.linux:
+        return open_linux(path)
+    TargetOs.windows:
+        return open_windows(path)</code></pre>
+</div>
+
+  <h3>inline for</h3>
+  <p>Unrolls a loop over a compile-time-known array.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>inline for field in fields_of(Particle):
+    static_assert(field.type == float, "Particle fields must be float")</code></pre>
+</div>
+
+  <h3>inline if</h3>
+  <p>Only the chosen branch is emitted; dead branch may reference nonexistent symbols.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>const DEBUG_RENDER: bool = false
+
+function draw() -> void:
+    inline if DEBUG_RENDER:
+        debug_overlay()
+    else:
+        normal_draw()</code></pre>
+</div>
+
+  <h3>inline match</h3>
+  <p>Not required to be exhaustive; only the chosen arm emits code.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>inline match TARGET_BACKEND:
+    Backend.gl:
+        gl_draw(item)
+    Backend.vulkan:
+        vk_draw(item)</code></pre>
+</div>
+
+  <h3>inline while</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>inline while n &lt; 1024:
+    n = n * 2</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="expressions">
+  <h2>Expressions &amp; Operators</h2>
+
+  <h3>Primary Expressions</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## Identifiers, literals, parenthesized expressions
+let x = (a + b) * c
+
+## Tuple literals
+let pair = (42, "hello")          ## positional
+let point = (x = 10, y = 20)      ## named
+
+## Type queries (compile-time)
+let s = size_of(int)
+let a = align_of(Mat4)
+let o = offset_of(Vec2, y)
+
+## If-expressions
+let max = if a > b: a else: b
+
+## Match-expressions
+let label = match code:
+    1: "one"
+    2: "two"
+    _: "other"
+
+## Proc expressions
+let add_one = proc(x: int) -> int: x + 1</code></pre>
+</div>
+
+  <h3>Postfix Expressions</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## Member access, indexing, calls
+value.field
+arr[i]
+func(arg)
+
+## Partial field update (returns copy)
+let moved = v.with(x = 10.0)
+
+## Specialization (bare or module-qualified names only)
+let spec = name[T]
+let sized = name[32]</code></pre>
+</div>
+
+  <h3>Operator Precedence (low to high)</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Precedence</th><th>Operators</th></tr>
+      <tr><td>1 (lowest)</td><td><code>or</code></td></tr>
+      <tr><td>2</td><td><code>and</code></td></tr>
+      <tr><td>3</td><td><code>|</code></td></tr>
+      <tr><td>4</td><td><code>^</code></td></tr>
+      <tr><td>5</td><td><code>&amp;</code></td></tr>
+      <tr><td>6</td><td><code>==</code> <code>!=</code></td></tr>
+      <tr><td>7</td><td><code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code></td></tr>
+      <tr><td>8</td><td><code>&lt;&lt;</code> <code>&gt;&gt;</code></td></tr>
+      <tr><td>9</td><td><code>+</code> <code>-</code></td></tr>
+      <tr><td>10 (highest)</td><td><code>*</code> <code>/</code> <code>%</code></td></tr>
+    </table>
+  </div>
+
+  <h3>Native Type Operators</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Type</th><th>Supported Operators</th></tr>
+      <tr><td><code>vecN</code> / <code>ivecN</code></td><td><code>+ - *</code> (component-wise same-type); <code>* /</code> (scalar); unary <code>-</code></td></tr>
+      <tr><td><code>matN</code></td><td><code>+ -</code> (same-type); <code>* /</code> (scalar); unary <code>-</code></td></tr>
+      <tr><td><code>quat</code></td><td><code>+ - *</code> (component-wise same-type); unary <code>-</code></td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="builtins">
+  <h2>Built-in Callables</h2>
+  <p>Special functions recognized by the compiler that lower to specific backend operations.</p>
+
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Callable</th><th>Description</th></tr>
+      <tr><td><code>fatal(message)</code></td><td>Terminate with message</td></tr>
+      <tr><td><code>ref_of(x)</code></td><td>Writable safe reference to an addressable lvalue</td></tr>
+      <tr><td><code>const_ptr_of(x)</code></td><td>Read-only raw pointer to an addressable lvalue</td></tr>
+      <tr><td><code>ptr_of(x)</code></td><td>Writable raw pointer from a mutable addressable lvalue</td></tr>
+      <tr><td><code>read(r)</code></td><td>Read through a <code>ref[T]</code> or <code>ptr[T]</code> (requires <code>unsafe</code> for raw)</td></tr>
+      <tr><td><code>T&lt;-value</code></td><td>Explicit numeric cast</td></tr>
+      <tr><td><code>reinterpret[T](value)</code></td><td>Bit reinterpretation (requires <code>unsafe</code>)</td></tr>
+      <tr><td><code>zero[T]</code></td><td>Zero-initialized value</td></tr>
+      <tr><td><code>default[T]</code></td><td>Semantic default via <code>T.default()</code></td></tr>
+      <tr><td><code>hash[T](value)</code></td><td>Canonical hash (lowers to <code>T.hash(...)</code>)</td></tr>
+      <tr><td><code>equal[T](left, right)</code></td><td>Canonical equality (lowers to <code>T.equal(...)</code>)</td></tr>
+      <tr><td><code>order[T](left, right)</code></td><td>Canonical ordering (lowers to <code>T.order(...)</code>)</td></tr>
+      <tr><td><code>array[T, N](...)</code></td><td>Array literal constructor</td></tr>
+      <tr><td><code>span[T](data, len)</code></td><td>Span construction</td></tr>
+      <tr><td><code>get(coll, index)</code></td><td>Recoverable bounds-checked access, returns <code>ptr[T]?</code></td></tr>
+      <tr><td><code>adapt[I](value)</code></td><td>Construct <code>dyn[I]</code> runtime interface value</td></tr>
+      <tr><td><code>size_of(T)</code></td><td>Compile-time size in bytes</td></tr>
+      <tr><td><code>align_of(T)</code></td><td>Compile-time alignment</td></tr>
+      <tr><td><code>offset_of(T, field)</code></td><td>Compile-time field offset</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="reflection">
+  <h2>Compile-Time Reflection</h2>
+  <p>Reflection builtins return handle values representing type structure. Handles expose <code>.name</code> (<code>str</code>) and <code>.type</code> (for <code>field_handle</code>).</p>
+
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Built-in</th><th>Returns</th><th>Description</th></tr>
+      <tr><td><code>fields_of(T)</code></td><td><code>array[field_handle, N]</code></td><td>All fields of struct <code>T</code> in declaration order</td></tr>
+      <tr><td><code>members_of(E)</code></td><td><code>array[member_handle, N]</code></td><td>All members of enum or variant <code>E</code></td></tr>
+      <tr><td><code>attributes_of(T)</code></td><td><code>array[attribute_handle, N]</code></td><td>All attributes on <code>T</code></td></tr>
+      <tr><td><code>attributes_of(T, name)</code></td><td><code>array[attribute_handle, N]</code></td><td>Attributes of <code>T</code> matching <code>name</code></td></tr>
+      <tr><td><code>field_of(T, name)</code></td><td><code>field_handle</code></td><td>Named field of <code>T</code></td></tr>
+      <tr><td><code>callable_of(T, name)</code></td><td><code>callable_handle</code></td><td>Named callable of <code>T</code></td></tr>
+      <tr><td><code>attribute_of(T, name)</code></td><td><code>attribute_handle</code></td><td>Named attribute on <code>T</code></td></tr>
+      <tr><td><code>has_attribute(T, name)</code></td><td><code>bool</code></td><td>Whether <code>T</code> has the named attribute</td></tr>
+      <tr><td><code>attribute_arg[T](handle)</code></td><td><code>T</code></td><td>Typed argument of an attribute handle</td></tr>
+    </table>
+  </div>
+
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>inline for field in fields_of(Point):
+    let sz = size_of(field.type)
+    let off = offset_of(Point, field)
+    emit("## field ", field.name, " size=", sz, " offset=", off)</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="strings">
+  <h2>Strings &amp; Text</h2>
+
+  <h3>Text Types</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Type</th><th>Description</th></tr>
+      <tr><td><code>str</code></td><td>Borrowed UTF-8 string view</td></tr>
+      <tr><td><code>cstr</code></td><td>NUL-terminated C ABI string</td></tr>
+      <tr><td><code>str_buffer[N]</code></td><td>Fixed-capacity mutable UTF-8 text buffer</td></tr>
+    </table>
+  </div>
+
+  <h3>Format Strings</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>let text = f"count=#{count} ok=#{ready}"
+
+## Precision for floats
+let info = f"value=#{pi:.4}"
+
+## Hex format for ints
+let hex = f"address=#{ptr_value:x}"
+
+## Owned text (escape stack lifetime)
+import std.fmt
+let owned = fmt.format(f"count=#{count}")  ## -> string.String</code></pre>
+</div>
+
+  <h3>Heredocs</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## str heredoc
+const help: str = &lt;&lt;-HELP
+    Usage: tool [options]
+    Options:
+      --help    Show this message
+HELP
+
+## cstr heredoc
+const shader: cstr = c&lt;&lt;-GLSL
+    #version 330
+    void main() {
+        gl_FragColor = vec4(1.0);
+    }
+GLSL
+
+## Format heredoc
+let msg = f&lt;&lt;-MSG
+    Hello, #{name}!
+    Score: #{score}
+MSG</code></pre>
+</div>
+
+  <h3>str_buffer[M] Methods</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Method</th><th>Description</th></tr>
+      <tr><td><code>.clear()</code></td><td>Clear contents</td></tr>
+      <tr><td><code>.assign(str)</code></td><td>Replace contents (traps if exceeds capacity)</td></tr>
+      <tr><td><code>.append(str)</code></td><td>Extend contents (traps if exceeds capacity)</td></tr>
+      <tr><td><code>.assign_format(str)</code></td><td>Replace via format string</td></tr>
+      <tr><td><code>.append_format(str)</code></td><td>Extend via format string</td></tr>
+      <tr><td><code>.len()</code></td><td>Current text length</td></tr>
+      <tr><td><code>.capacity()</code></td><td>Max writable bytes (excludes trailing NUL)</td></tr>
+      <tr><td><code>.as_str()</code></td><td>Borrow as <code>str</code></td></tr>
+      <tr><td><code>.as_cstr()</code></td><td>Borrow as <code>cstr</code></td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="safety">
+  <h2>Safety Rules</h2>
+
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Rule</th><th>Description</th></tr>
+      <tr><td>Conditions must be <code>bool</code></td><td>No truthy/falsy coercion from integers or pointers</td></tr>
+      <tr><td>Explicit casts for mixed signed/unsigned</td><td>Mixed signed/unsigned arithmetic requires <code>T&lt;-value</code></td></tr>
+      <tr><td>Enum/flags don't auto-coerce</td><td>Outside external-call boundaries, no implicit conversion to backing integers</td></tr>
+      <tr><td>Safe indexing is bounds-checked</td><td><code>arr[i]</code> calls <code>fatal</code> on OOB; use <code>get(arr, i)</code> for recoverable access</td></tr>
+      <tr><td>Pointer indexing requires <code>unsafe</code></td><td>Raw pointer dereference, arithmetic, casts, <code>reinterpret</code> all need <code>unsafe</code></td></tr>
+      <tr><td><code>%</code> requires integer operands</td><td></td></tr>
+      <tr><td>Bitwise ops require matching types</td><td>Integer or flags types</td></tr>
+      <tr><td>Shift ops require integer operands</td><td></td></tr>
+      <tr><td>No implicit struct equality</td><td>Use <code>equal[T](a, b)</code></td></tr>
+      <tr><td>No <code>str</code>/<code>cstr</code> concatenation</td><td>Use format strings or <code>std.str</code> helpers</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="async">
+  <h2>Async</h2>
+  <p><code>async function</code> lifts its return type to <code>Task[T]</code>. <code>await</code> is only allowed inside async functions.</p>
+
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>async function child() -> int:
+    return 41
+
+async function parent() -> int:
+    let v = await child()
+    return v + 1
+
+## async main is compiler-bootstrapped
+async function main() -> int:
+    let result = await do_work()
+    return result</code></pre>
+</div>
+
+  <h3>Task Helpers</h3>
+  <p>Import <code>std.async</code> for runtime control:</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>import std.async as aio
+
+let task = some_async_work()
+aio.wait(task)
+let r = aio.result(task)</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="events">
+  <h2>Events</h2>
+  <p>Built-in typed publisher/subscriber with fixed-capacity listener storage. Zero heap allocation during dispatch.</p>
+
+  <h3>Declaration</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>public event closed[4]
+public event resized[8](ResizeEvent)
+
+## As struct members
+struct Window:
+    public event closed[4]
+    public event resized[8](ResizeEvent)</code></pre>
+</div>
+
+  <h3>Operations</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## Subscribe
+let sub = window.closed.subscribe(on_close)?
+
+## One-shot
+let once = window.resized.subscribe_once(on_resize)?
+
+## Unsubscribe
+window.closed.unsubscribe(sub)
+
+## Emit (only from declaring module)
+closed.emit()
+resized.emit(ResizeEvent(width = 800, height = 600))
+
+## Async wait for next emission
+let payload = await event.wait()</code></pre>
+</div>
+
+  <h3>Full Example</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>struct ResizeEvent:
+    width: int
+    height: int
+
+struct Window:
+    public event closed[4]
+    public event resized[8](ResizeEvent)
+
+function on_close() -> void:
+    io.println("closed")
+
+function attach(window: ref[Window]) -> Result[void, EventError]:
+    let closed_sub = window.closed.subscribe(on_close)?
+    let resized_sub = window.resized.subscribe(on_resize)?
+
+    defer window.closed.unsubscribe(closed_sub)
+    defer window.resized.unsubscribe(resized_sub)
+
+    return Result[void, EventError].success()</code></pre>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="std-library">
+  <h2>Standard Library</h2>
+
+  <h3>Collections</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Module</th><th>Type</th><th>Description</th></tr>
+      <tr><td><code>std.vec</code></td><td><code>Vec[T]</code></td><td>Contiguous growable array</td></tr>
+      <tr><td><code>std.deque</code></td><td><code>Deque[T]</code></td><td>Growable ring buffer</td></tr>
+      <tr><td><code>std.map</code></td><td><code>Map[K, V]</code></td><td>Hash table (keyed by <code>hash</code>/<code>equal</code>)</td></tr>
+      <tr><td><code>std.set</code></td><td><code>Set[T]</code></td><td>Hash set</td></tr>
+      <tr><td><code>std.ordered_map</code></td><td><code>OrderedMap[K,V]</code></td><td>AVL tree (keyed by <code>order</code>)</td></tr>
+      <tr><td><code>std.ordered_set</code></td><td><code>OrderedSet[T]</code></td><td>AVL sorted unique set</td></tr>
+      <tr><td><code>std.linked_map</code></td><td><code>LinkedMap[K,V]</code></td><td>Insertion-ordered hash map</td></tr>
+      <tr><td><code>std.linked_set</code></td><td><code>LinkedSet[T]</code></td><td>Insertion-ordered hash set</td></tr>
+      <tr><td><code>std.binary_heap</code></td><td><code>BinaryHeap[T]</code></td><td>Max-heap (keyed by <code>order</code>)</td></tr>
+      <tr><td><code>std.priority_queue</code></td><td><code>PriorityQueue[T]</code></td><td>Task-oriented facade over heap</td></tr>
+      <tr><td><code>std.counter</code></td><td><code>Counter[T]</code></td><td>Insertion-ordered frequency table</td></tr>
+      <tr><td><code>std.multiset</code></td><td><code>MultiSet[T]</code></td><td>Bag with per-element counts</td></tr>
+      <tr><td><code>std.queue</code></td><td><code>Queue[T]</code></td><td>FIFO facade over Deque</td></tr>
+      <tr><td><code>std.stack</code></td><td><code>Stack[T]</code></td><td>LIFO facade over Deque</td></tr>
+    </table>
+  </div>
+
+  <h3>Core Library Modules</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Module</th><th>Description</th></tr>
+      <tr><td><code>std.str</code></td><td>Borrowed string helpers: validation, equality, slicing, search</td></tr>
+      <tr><td><code>std.string.String</code></td><td>Growable owned UTF-8 text</td></tr>
+      <tr><td><code>std.fmt</code></td><td>Formatting engine (only canonical formatter)</td></tr>
+      <tr><td><code>std.math</code></td><td>Math: <code>sqrt</code>, <code>sin</code>, <code>cos</code>, <code>abs</code>, <code>pow</code></td></tr>
+      <tr><td><code>std.linear_algebra</code></td><td>Vector/matrix/quaternion extensions: <code>dot</code>, <code>cross</code>, <code>normalized</code>, <code>lerp</code>, <code>transpose</code></td></tr>
+      <tr><td><code>std.hash</code></td><td>Canonical <code>hash</code>/<code>equal</code>/<code>order</code> for primitives and structs</td></tr>
+      <tr><td><code>std.mem.heap</code></td><td>General heap allocator</td></tr>
+      <tr><td><code>std.mem.arena</code></td><td>Frame/level/scratch arena allocator</td></tr>
+      <tr><td><code>std.mem.pool</code></td><td>Fixed-size object pool</td></tr>
+      <tr><td><code>std.mem.stack</code></td><td>Explicit temporary allocator</td></tr>
+      <tr><td><code>std.async</code></td><td>Async runtime: <code>sleep</code>, <code>work</code>, <code>completed</code>, <code>result</code>, <code>wait</code>, <code>run</code></td></tr>
+    </table>
+  </div>
+
+  <h3>System &amp; I/O</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Module</th><th>Description</th></tr>
+      <tr><td><code>std.time</code></td><td>Time primitives</td></tr>
+      <tr><td><code>std.fs</code></td><td>File system operations</td></tr>
+      <tr><td><code>std.path</code></td><td>Path manipulation</td></tr>
+      <tr><td><code>std.process</code></td><td>Process management</td></tr>
+      <tr><td><code>std.cli</code></td><td>Command line interface</td></tr>
+      <tr><td><code>std.stdio</code></td><td>Standard I/O: <code>println</code>, <code>print</code></td></tr>
+      <tr><td><code>std.terminal</code></td><td>Terminal control</td></tr>
+      <tr><td><code>std.json</code> <code>std.toml</code></td><td>Serialization</td></tr>
+      <tr><td><code>std.uri</code></td><td>URI parsing</td></tr>
+      <tr><td><code>std.http</code> <code>std.tls</code> <code>std.net</code></td><td>Networking</td></tr>
+      <tr><td><code>std.gzip</code> <code>std.tar</code></td><td>Compression</td></tr>
+      <tr><td><code>std.sync</code> <code>std.thread</code> <code>std.jobs</code></td><td>Concurrency</td></tr>
+      <tr><td><code>std.fsm</code> <code>std.goap</code> <code>std.behavior_tree</code></td><td>AI / State machines</td></tr>
+      <tr><td><code>std.cell</code></td><td>Shared mutable cell allocation</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="cli">
+  <h2>CLI Reference</h2>
+  <p>The <code>mtc</code> CLI is the primary tool for checking, building, and running Milk Tea programs.</p>
+
+  <h3>Essential Commands</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Command</th><th>Description</th></tr>
+      <tr><td><code>mtc check &lt;path&gt;</code></td><td>Type-check + lint; reports all diagnostics sorted by line</td></tr>
+      <tr><td><code>mtc run &lt;path&gt;</code></td><td>Build and execute</td></tr>
+      <tr><td><code>mtc build &lt;path&gt;</code></td><td>Build only (emit C, compile, link)</td></tr>
+      <tr><td><code>mtc lex &lt;file.mt&gt;</code></td><td>Print lexer token stream</td></tr>
+      <tr><td><code>mtc parse &lt;path&gt;</code></td><td>Print parsed AST</td></tr>
+      <tr><td><code>mtc lower &lt;path&gt;</code></td><td>Print lowered IR</td></tr>
+      <tr><td><code>mtc debug &lt;file.mt&gt;</code></td><td>Print debug info (tokens, AST, facts, bindings, diagnostics)</td></tr>
+      <tr><td><code>mtc emit-c &lt;path&gt;</code></td><td>Emit generated C to stdout</td></tr>
+      <tr><td><code>mtc format &lt;path&gt;</code></td><td>Format sources in place (<code>--check</code> for dry-run)</td></tr>
+      <tr><td><code>mtc lint &lt;path&gt;</code></td><td>Run linter (<code>--fix</code>, <code>--select</code>, <code>--ignore</code>)</td></tr>
+      <tr><td><code>mtc new &lt;name&gt;</code></td><td>Scaffold a new package (<code>package.toml</code> + <code>src/main.mt</code>)</td></tr>
+      <tr><td><code>mtc run-module &lt;module&gt;</code></td><td>Run a pre-built module by name</td></tr>
+    </table>
+  </div>
+
+  <h3>Package Commands</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Command</th><th>Description</th></tr>
+      <tr><td><code>mtc deps tree &lt;path&gt;</code></td><td>Print the dependency graph</td></tr>
+      <tr><td><code>mtc deps lock &lt;path&gt;</code></td><td>Write/refresh <code>package.lock</code></td></tr>
+      <tr><td><code>mtc deps add &lt;path&gt; &lt;name&gt;</code></td><td>Add a dependency</td></tr>
+      <tr><td><code>mtc deps remove &lt;path&gt; &lt;name&gt;</code></td><td>Remove a dependency</td></tr>
+      <tr><td><code>mtc deps update &lt;path&gt;</code></td><td>Update dependencies</td></tr>
+      <tr><td><code>mtc deps publish &lt;path&gt;</code></td><td>Publish a package to the local registry</td></tr>
+      <tr><td><code>mtc deps fetch &lt;path&gt;</code></td><td>Materialize cache-backed sources</td></tr>
+    </table>
+  </div>
+
+  <h3>Toolchain</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Command</th><th>Description</th></tr>
+      <tr><td><code>mtc toolchain bootstrap</code></td><td>Bootstrap the native toolchain</td></tr>
+      <tr><td><code>mtc toolchain doctor</code></td><td>Diagnose toolchain setup</td></tr>
+      <tr><td><code>mtc toolchain tools</code></td><td>List available native tools</td></tr>
+      <tr><td><code>mtc cache status</code></td><td>Show build cache stats</td></tr>
+      <tr><td><code>mtc docs [--open] [--port PORT]</code></td><td>Start a local HTTP server serving the language reference</td></tr>
+    </table>
+  </div>
+
+  <h3>Build Flags</h3>
+  <p>Build and run commands support: <code>--profile</code>, <code>--platform</code>, <code>--cc</code>, <code>--keep-c</code>, <code>--locked</code>, <code>--frozen</code>, and <code>-I</code> include paths.</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="limitations">
+  <h2>Language Limitations</h2>
+  <p>This is a quick-reference summary of the current compiler's rejection surface. See the <a href="https://github.com/teefan/mt-lang/blob/main/docs/language-manual.md">full manual</a> for complete rules.</p>
+
+  <h3>Function Restrictions</h3>
+  <ul style="margin-left:1.25rem;margin-bottom:1rem">
+    <li><code>external function</code> cannot be generic, async, or take/return arrays, <code>ref[...]</code>, or <code>proc(...)</code></li>
+    <li><code>foreign function</code> cannot be async, cannot take <code>proc(...)</code></li>
+    <li>Functions cannot return <code>ref[T]</code> or non-owning structs</li>
+    <li>A consuming foreign function must return <code>void</code></li>
+  </ul>
+
+  <h3>Storage Restrictions</h3>
+  <ul style="margin-left:1.25rem;margin-bottom:1rem">
+    <li><code>ref[T]</code> values rejected in constants, module variables, and nested storage</li>
+    <li>Bare interface names are not runtime storage types; use <code>dyn[I]</code></li>
+    <li><code>dyn[I]</code> for generic interfaces must be fully specified: <code>dyn[Mapper[int]]</code></li>
+    <li><code>proc</code> cannot capture <code>ref[T]</code> values</li>
+  </ul>
+
+  <h3>Control Flow Restrictions</h3>
+  <ul style="margin-left:1.25rem;margin-bottom:1rem">
+    <li><code>break</code> and <code>continue</code> must be inside loops</li>
+    <li><code>return</code> not allowed inside <code>defer</code> blocks</li>
+    <li><code>?</code> propagation not allowed inside <code>defer</code> blocks</li>
+    <li><code>match</code> on enum/variant must be exhaustive unless <code>_</code> present</li>
+    <li><code>let ... else:</code> else block must terminate control flow</li>
+  </ul>
+
+  <h3>External File Restrictions</h3>
+  <ul style="margin-left:1.25rem;margin-bottom:1rem">
+    <li>Cannot contain <code>attribute</code>, <code>event</code>, <code>var</code>, <code>variant</code>, <code>interface</code>, <code>extending</code>, <code>foreign function</code>, ordinary <code>function</code>, <code>async function</code>, or <code>static_assert</code></li>
+    <li><code>public</code> is rejected (declarations are implicitly exported)</li>
+  </ul>
+
+  <h3>Expression Restrictions</h3>
+  <ul style="margin-left:1.25rem;margin-bottom:1rem">
+    <li>Conditions must be <code>bool</code>; no truthy/falsy coercion</li>
+    <li>Mixed signed/unsigned arithmetic requires explicit cast</li>
+    <li>Enum and flags values do not implicitly coerce to backing integers</li>
+    <li><code>+</code> does not support <code>str</code>/<code>cstr</code> concatenation</li>
+    <li><code>==</code> and <code>!=</code> not supported on struct types; use <code>equal[T]</code></li>
+    <li>Functions and methods are not usable as bare values</li>
+  </ul>
+
+  <h3>Event Restrictions</h3>
+  <ul style="margin-left:1.25rem;margin-bottom:1rem">
+    <li>Event payload cannot be <code>ref[T]</code></li>
+    <li><code>emit</code> is only callable from within the declaring module</li>
+    <li>Events not allowed in external files</li>
+  </ul>
+</section>
+
+</main>
+
+<!-- ─── Scripts ────────────────────────────────────────────────────────────── -->
+<script>
+/* ── Theme ────────────────────────────────────────────────────────────────── */
+const html = document.documentElement
+const themeBtn = document.getElementById('theme-toggle')
+const themeBtnMbl = document.getElementById('theme-toggle-mbl')
+const STORAGE_KEY = 'mt-lang-theme'
+
+function setTheme(t) {
+  html.setAttribute('data-theme', t)
+  try { localStorage.setItem(STORAGE_KEY, t) } catch (_) {}
+  updateThemeIcons(t)
+}
+
+function updateThemeIcons(t) {
+  const isDark = t === 'dark'
+  document.querySelectorAll('.icon-sun').forEach(el => el.style.display = isDark ? 'inline' : 'none')
+  document.querySelectorAll('.icon-moon').forEach(el => el.style.display = isDark ? 'none' : 'inline')
+}
+
+function toggleTheme() {
+  const cur = html.getAttribute('data-theme')
+  setTheme(cur === 'dark' ? 'light' : 'dark')
+}
+
+themeBtn.addEventListener('click', toggleTheme)
+themeBtnMbl.addEventListener('click', toggleTheme)
+
+const saved = (() => { try { return localStorage.getItem(STORAGE_KEY) } catch (_) { return null } })()
+if (saved) setTheme(saved)
+else if (window.matchMedia('(prefers-color-scheme: dark)').matches) setTheme('dark')
+else updateThemeIcons('light')
+
+/* ── Mobile Sidebar ────────────────────────────────────────────────────────── */
+const sidebar = document.getElementById('sidebar')
+const overlay = document.getElementById('overlay')
+const menuBtn = document.getElementById('menu-btn')
+const main = document.getElementById('main')
+
+function openSidebar() { sidebar.classList.add('open'); overlay.classList.add('visible') }
+function closeSidebar() { sidebar.classList.remove('open'); overlay.classList.remove('visible') }
+
+menuBtn.addEventListener('click', openSidebar)
+overlay.addEventListener('click', closeSidebar)
+
+document.querySelectorAll('.sidebar-nav a').forEach(a => {
+  a.addEventListener('click', () => {
+    if (window.innerWidth < 768) closeSidebar()
+  })
+})
+
+/* ── Scroll Spy ───────────────────────────────────────────────────────────── */
+const sections = document.querySelectorAll('section[id]')
+const navLinks = document.querySelectorAll('.sidebar-nav a[href^="#"]')
+
+function updateActiveLink() {
+  let current = ''
+  sections.forEach(s => {
+    const top = s.getBoundingClientRect().top
+    if (top <= 120) current = s.id
+  })
+  navLinks.forEach(a => {
+    a.classList.toggle('active', a.getAttribute('href') === '#' + current)
+  })
+
+  /* Ensure active link is visible in sidebar scroll */
+  const active = document.querySelector('.sidebar-nav a.active')
+  if (active) {
+    active.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }
+}
+
+window.addEventListener('scroll', updateActiveLink, { passive: true })
+updateActiveLink()
+
+/* ── Progress Bar ─────────────────────────────────────────────────────────── */
+const progress = document.getElementById('progress')
+function updateProgress() {
+  const scrollTop = window.scrollY
+  const docHeight = document.documentElement.scrollHeight - window.innerHeight
+  const pct = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0
+  progress.style.width = pct + '%'
+}
+window.addEventListener('scroll', updateProgress, { passive: true })
+
+/* ── Copy Button ───────────────────────────────────────────────────────────── */
+function copyCode(btn) {
+  const pre = btn.closest('.code-wrap').querySelector('pre')
+  const text = pre.textContent
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!'
+    btn.classList.add('copied')
+    setTimeout(() => {
+      btn.textContent = 'Copy'
+      btn.classList.remove('copied')
+    }, 1800)
+  }).catch(() => {
+    /* Fallback */
+    const ta = document.createElement('textarea')
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
+    document.body.appendChild(ta); ta.select()
+    try { document.execCommand('copy') } catch (_) {}
+    document.body.removeChild(ta)
+    btn.textContent = 'Copied!'
+    btn.classList.add('copied')
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied') }, 1800)
+  })
+}
+
+/* ── Syntax Highlighting ──────────────────────────────────────────────────── */
+const KEYWORDS = new Set([
+  'function','async','await','struct','enum','flags','union','variant','interface',
+  'extending','implements','let','var','const','type','opaque','attribute',
+  'if','else','match','for','while','return','break','continue','pass',
+  'defer','unsafe','when','inline','external','foreign','import','public',
+  'event','emit','not','and','or','in','out','inout','consuming','static_assert',
+  'fn','proc','task','true','false','null','ref_of','ptr_of','const_ptr_of',
+  'read','reinterpret','zero','default','hash','equal','order',
+  'size_of','align_of','offset_of','get','adapt','fatal',
+  'field_of','callable_of','attribute_of','has_attribute','attribute_arg',
+  'fields_of','members_of','attributes_of'
+])
+
+const TYPES = new Set([
+  'bool','byte','short','int','long','ubyte','ushort','uint','ulong',
+  'char','ptr_int','ptr_uint','float','double','void',
+  'str','cstr','vec2','vec3','vec4','ivec2','ivec3','ivec4',
+  'mat3','mat4','quat','ptr','span','array','SoA',
+  'Option','Result','Task','dyn','ref','const_ptr','str_buffer',
+  'field_handle','member_handle','callable_handle','attribute_handle'
+])
+
+const BIFNS = new Set([
+  'println','print','format','append_format','assign_format',
+  'init_window','close_window','begin_drawing','end_drawing','clear_background',
+  'draw_circle_v','get_frame_time','window_should_close','load_texture',
+  'load_file_data','subscribe','subscribe_once','unsubscribe','success','failure',
+  'as_span','to_cstr','as_cstr','as_str','clear','assign','append',
+  'len','capacity','is_empty','iter','contains','push','pop','remove',
+  'sleep','work','completed','result','wait','run'
+])
+
+function highlight(code) {
+  let out = ''
+  let i = 0
+
+  while (i < code.length) {
+    /* Line comments */
+    if (code[i] === '#' && code[i+1] === '#' && code[i+2] !== '#') {
+      let j = i
+      while (j < code.length && code[j] !== '\n') j++
+      out += '<span class="syn-doc">' + esc(code.slice(i, j)) + '</span>'
+      i = j
+      continue
+    }
+    if (code[i] === '#' && code[i+1] !== '#') {
+      let j = i
+      while (j < code.length && code[j] !== '\n') j++
+      out += '<span class="syn-cmt">' + esc(code.slice(i, j)) + '</span>'
+      i = j
+      continue
+    }
+
+    /* Format string / c-string / heredoc */
+    if (code[i] === 'f' && code[i+1] === '"') {
+      let j = i + 2
+      while (j < code.length && code[j] !== '"') {
+        if (code[j] === '\\') { j += 2; continue }
+        j++
+      }
+      if (j < code.length) j++
+      out += '<span class="syn-str">' + esc(code.slice(i, j)) + '</span>'
+      i = j
+      continue
+    }
+    if (code[i] === 'c' && code[i+1] === '"') {
+      let j = i + 2
+      while (j < code.length && code[j] !== '"') {
+        if (code[j] === '\\') { j += 2; continue }
+        j++
+      }
+      if (j < code.length) j++
+      out += '<span class="syn-str">' + esc(code.slice(i, j)) + '</span>'
+      i = j
+      continue
+    }
+    if (code[i] === '"') {
+      let j = i + 1
+      while (j < code.length && code[j] !== '"') {
+        if (code[j] === '\\') { j += 2; continue }
+        if (code[j] === '#' && code[j+1] === '{') {
+          /* skip interpolation */
+          let d = 1, k = j + 2
+          while (k < code.length && d > 0) {
+            if (code[k] === '{') d++
+            if (code[k] === '}') d--
+            k++
+          }
+          j = k
+          continue
+        }
+        j++
+      }
+      if (j < code.length) j++
+      out += '<span class="syn-str">' + esc(code.slice(i, j)) + '</span>'
+      i = j
+      continue
+    }
+
+    /* Heredoc (<<-TAG, c<<-TAG, f<<-TAG) */
+    const hdMatch = code.slice(i).match(/^(c|f)?<<-/)
+    if (hdMatch) {
+      const tagIdx = i + hdMatch[0].length
+      let tagEnd = tagIdx
+      while (tagEnd < code.length && code[tagEnd] !== '\n') tagEnd++
+      const tag = code.slice(tagIdx, tagEnd).trim()
+      const terminator = '\n' + tag
+      const rest = code.slice(tagEnd)
+      const termIdx = rest.indexOf(terminator)
+      if (termIdx !== -1) {
+        const end = tagEnd + termIdx + terminator.length
+        out += '<span class="syn-str">' + esc(code.slice(i, end)) + '</span>'
+        i = end
+        continue
+      }
+    }
+
+    /* Numbers */
+    if (/\d/.test(code[i]) || (code[i] === '.' && i+1 < code.length && /\d/.test(code[i+1]))) {
+      const numMatch = code.slice(i).match(/^(0[xb][0-9a-fA-F_]+|0[oO][0-7_]+|\d[\d_]*(\.[\d_]*)?([eE][+-]?\d+)?[fd]?)/)
+      if (numMatch) {
+        out += '<span class="syn-num">' + esc(numMatch[0]) + '</span>'
+        i += numMatch[0].length
+        continue
+      }
+    }
+
+    /* Words (keywords, types, identifiers) */
+    if (/[a-zA-Z_]/.test(code[i])) {
+      let j = i
+      while (j < code.length && /[a-zA-Z0-9_]/.test(code[j])) j++
+      const word = code.slice(i, j)
+      if (KEYWORDS.has(word)) {
+        out += '<span class="syn-kw">' + esc(word) + '</span>'
+      } else if (TYPES.has(word)) {
+        out += '<span class="syn-type">' + esc(word) + '</span>'
+      } else if (BIFNS.has(word)) {
+        out += '<span class="syn-fn">' + esc(word) + '</span>'
+      } else {
+        out += esc(word)
+      }
+      i = j
+      continue
+    }
+
+    /* Multi-char operators */
+    const mco = code.slice(i, i+3)
+    if (['<<=','>>='].includes(mco)) {
+      out += '<span class="syn-op">' + esc(mco) + '</span>'
+      i += 3; continue
+    }
+    const mc2 = code.slice(i, i+2)
+    if (['->','==','!=','<=','>=','<<','>>','+=','-=','*=','/=','%=','&=','|=','^=','..'].includes(mc2)) {
+      out += '<span class="syn-op">' + esc(mc2) + '</span>'
+      i += 2; continue
+    }
+    /* Single-char operators and punctuation */
+    if ('+-*/%&|^~=<>!?:.,;@[](){}'.includes(code[i])) {
+      out += '<span class="syn-op">' + esc(code[i]) + '</span>'
+      i++; continue
+    }
+
+    /* Whitespace / other */
+    out += esc(code[i])
+    i++
+  }
+  return out
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+}
+
+/* Apply to all code blocks */
+document.querySelectorAll('.code-wrap pre').forEach(pre => {
+  pre.innerHTML = '<code>' + highlight(pre.textContent) + '</code>'
+})
+
+/* ── Search ───────────────────────────────────────────────────────────────── */
+const searchInput = document.getElementById('search')
+const allSections = document.querySelectorAll('section')
+
+searchInput.addEventListener('input', function() {
+  const q = this.value.trim().toLowerCase()
+
+  /* Clear previous highlights */
+  document.querySelectorAll('.search-highlight').forEach(el => {
+    el.replaceWith(el.textContent)
+  })
+
+  allSections.forEach(s => s.classList.remove('section-hidden'))
+
+  if (!q) return
+
+  /* Simple filter: show/hide sections based on text match */
+  allSections.forEach(s => {
+    const text = s.textContent.toLowerCase()
+    const h2 = s.querySelector('h2')
+    const h3s = Array.from(s.querySelectorAll('h3'))
+    const headingMatch = (h2 && h2.textContent.toLowerCase().includes(q)) ||
+                         h3s.some(h => h.textContent.toLowerCase().includes(q))
+    const contentMatch = text.includes(q)
+
+    if (!headingMatch && !contentMatch) {
+      s.classList.add('section-hidden')
+    } else if (headingMatch) {
+      /* Highlight matching text in headings */
+      highlightText(s, q)
+    }
+  })
+
+  /* Expand all open details in sidebar */
+  document.querySelectorAll('.sidebar-nav details').forEach(d => d.open = true)
+})
+
+function highlightText(container, q) {
+  const walk = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
+  })
+
+  const nodes = []
+  while (walk.nextNode()) nodes.push(walk.currentNode)
+
+  nodes.forEach(node => {
+    const parent = node.parentNode
+    if (parent.classList.contains('syn-cmt') ||
+        parent.classList.contains('syn-doc') ||
+        parent.classList.contains('syn-str') ||
+        parent.classList.contains('syn-num') ||
+        parent.closest('pre')) return
+
+    const text = node.textContent
+    const idx = text.toLowerCase().indexOf(q)
+    if (idx === -1) return
+
+    const span = document.createElement('span')
+    span.className = 'search-highlight'
+    span.textContent = text.slice(idx, idx + q.length)
+
+    const frag = document.createDocumentFragment()
+    if (idx > 0) frag.appendChild(document.createTextNode(text.slice(0, idx)))
+    frag.appendChild(span)
+    if (idx + q.length < text.length) frag.appendChild(document.createTextNode(text.slice(idx + q.length)))
+
+    parent.replaceChild(frag, node)
+  })
+}
+
+/* Clear search on Escape */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    searchInput.value = ''
+    searchInput.dispatchEvent(new Event('input'))
+    searchInput.blur()
+  }
+  /* Focus search on / or Ctrl+K */
+  if ((e.key === '/' || (e.key === 'k' && (e.ctrlKey || e.metaKey))) &&
+      document.activeElement !== searchInput) {
+    e.preventDefault()
+    searchInput.focus()
+  }
+})
+
+/* ── Responsive: manage sidebar on resize ─────────────────────────────────── */
+let mediaQuery = window.matchMedia('(min-width: 768px)')
+function handleResize(e) {
+  if (e.matches) {
+    closeSidebar()
+  }
+}
+mediaQuery.addEventListener('change', handleResize)
+</script>
+
+</body>
+</html>
