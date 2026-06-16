@@ -75,12 +75,18 @@
           "patterns": [
             { "include": "#comment" },
             { "include": "#number" },
+            { "include": "#attribute-application" },
+            { "include": "#keyword-control" },
             { "include": "#keyword-operator" },
+            { "include": "#keyword-modifier" },
+            { "include": "#keyword-builtin" },
             { "include": "#type-primitive" },
             { "include": "#constant-language" },
             { "include": "#function-call" },
+            { "include": "#type-name" },
             { "include": "#identifier" },
-            { "include": "#operator" }
+            { "include": "#operator" },
+            { "include": "#punctuation" }
           ]
         },
         {
@@ -272,60 +278,24 @@
           "patterns": [
             { "include": "#comment" },
             { "include": "#number" },
+            { "include": "#attribute-application" },
+            { "include": "#keyword-control" },
             { "include": "#keyword-operator" },
+            { "include": "#keyword-modifier" },
+            { "include": "#keyword-builtin" },
             { "include": "#type-primitive" },
             { "include": "#constant-language" },
             { "include": "#function-call" },
+            { "include": "#type-name" },
             { "include": "#identifier" },
-            { "include": "#operator" }
+            { "include": "#operator" },
+            { "include": "#punctuation" }
           ]
         },
         {
           "name": "constant.character.escape.milk-tea",
           "match": "\\\\[nrt\\\\\"0{]"
         }
-      ]
-    },
-
-    "format-html-heredoc-string": {
-      "name": "string.unquoted.heredoc.milk-tea",
-      "begin": "(?<![A-Za-z0-9_])(f<<-)(HTML)\\s*$",
-      "beginCaptures": {
-        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
-        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
-      },
-      "contentName": "meta.embedded.block.html.milk-tea",
-      "end": "^\\s*\\2\\s*$",
-      "endCaptures": {
-        "0": { "name": "punctuation.definition.string.end.milk-tea" }
-      },
-      "patterns": [
-        {
-          "name": "meta.embedded.expression.milk-tea",
-          "begin": "#\\{",
-          "end": "\\}",
-          "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.milk-tea" } },
-          "endCaptures":   { "0": { "name": "punctuation.section.embedded.end.milk-tea" } },
-          "patterns": [
-            {
-              "name": "constant.numeric.integer.milk-tea",
-              "match": "\\b[0-9][0-9_]*\\b"
-            },
-            {
-              "name": "constant.numeric.float.milk-tea",
-              "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*(?:[eE][+-]?[0-9]+)?\\b"
-            },
-            {
-              "name": "variable.other.milk-tea",
-              "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
-            }
-          ]
-        },
-        {
-          "name": "constant.character.escape.milk-tea",
-          "match": "\\\\[nrt\\\\\"0{]"
-        },
-        { "include": "text.html.basic" }
       ]
     },
 
@@ -430,10 +400,6 @@
           "match": "\\b0x[0-9a-fA-F][0-9a-fA-F_]*\\b"
         },
         {
-          "name": "constant.numeric.octal.milk-tea",
-          "match": "\\b0o[0-7][0-7_]*\\b"
-        },
-        {
           "name": "constant.numeric.binary.milk-tea",
           "match": "\\b0b[01][01_]*\\b"
         },
@@ -483,12 +449,12 @@
 
     "keyword-control": {
       "name": "keyword.control.milk-tea",
-      "match": "\\b(if|else|for|in|while|break|continue|pass|return|match|defer|unsafe|await)\\b"
+      "match": "\\b(if|else|for|in|while|break|continue|pass|return|match|defer|unsafe|await|when)\\b"
     },
 
     "keyword-declaration": {
       "name": "keyword.declaration.milk-tea",
-      "match": "\\b(module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|extending|type|attribute|const|let|var|event|external|foreign|static|static_assert|compiler_flag|include|link|dyn|emit|inline)\\b"
+      "match": "\\b(module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|extending|type|attribute|const|let|var|event|external|foreign|static|static_assert|compiler_flag|include|link|dyn|emit|inline|field_of|fields_of|callable_of|has_attribute|attribute_of|attribute_arg|attributes_of|members_of)\\b"
     },
 
     "keyword-operator": {
@@ -503,7 +469,7 @@
 
     "keyword-builtin": {
       "name": "support.function.builtin.milk-tea",
-      "match": "\\b(ref_of|const_ptr_of|ptr_of|read|fatal|reinterpret|zero|default|field_of|callable_of|has_attribute|attribute_of|attribute_arg|adapt|get)\\b"
+      "match": "\\b(ref_of|const_ptr_of|ptr_of|read|fatal|reinterpret|zero|default|adapt|get)\\b"
     },
 
     "type-primitive": {
@@ -529,8 +495,8 @@
     },
 
     "function-definition": {
-      "comment": "Highlight the name in `function myFunction(...)`",
-      "match": "\\b(function)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b",
+      "comment": "Highlight the name in `function myFunction(...)` including modifiers",
+      "match": "\\b((?:const\\s+|async\\s+|foreign\\s+|external\\s+|editable\\s+)*function)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b",
       "captures": {
         "1": { "name": "keyword.declaration.milk-tea" },
         "2": { "name": "entity.name.function.milk-tea" }
@@ -625,10 +591,6 @@
         {
           "name": "keyword.operator.optional.milk-tea",
           "match": "\\?"
-        },
-        {
-          "name": "keyword.operator.deref.milk-tea",
-          "match": "\\*(?=[a-zA-Z_(])"
         }
       ]
     },
@@ -638,6 +600,7 @@
         { "name": "punctuation.separator.comma.milk-tea",     "match": "," },
         { "name": "punctuation.separator.colon.milk-tea",     "match": ":" },
         { "name": "punctuation.separator.semicolon.milk-tea", "match": ";" },
+        { "name": "punctuation.definition.variadic.milk-tea", "match": "\\.\\.\\." },
         { "name": "punctuation.section.parens.begin.milk-tea","match": "\\(" },
         { "name": "punctuation.section.parens.end.milk-tea",  "match": "\\)" },
         { "name": "punctuation.section.bracket.begin.milk-tea","match": "\\[" },
