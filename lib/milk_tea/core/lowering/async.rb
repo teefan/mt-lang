@@ -532,9 +532,17 @@ module MilkTea
           release_call = IR::ExpressionStmt.new(
             expression: async_task_call(task_field_expr, field_info[:task_type], "release", [task_frame_expr], @types.fetch("void")),
           )
+          cancel_member_expr = IR::Member.new(receiver: task_field_expr, member: "cancel", type: async_info[:task_type].field("cancel"))
           cancel_stmts << IR::IfStmt.new(
             condition: task_frame_expr,
-            then_body: [cancel_call, release_call],
+            then_body: [
+              IR::IfStmt.new(
+                condition: cancel_member_expr,
+                then_body: [cancel_call],
+                else_body: nil,
+              ),
+              release_call,
+            ],
             else_body: nil,
           )
         end

@@ -1505,16 +1505,29 @@ module MilkTea
           when "attributes_of"
             evaluate_attributes_of_call(expression.arguments, env:)
           else
-            evaluate_type_returning_call(expression, env:)
+            func = @functions[expression.callee.name]
+            if func&.ast&.respond_to?(:const) && func.ast.const
+              evaluate_const_function_body_lower(func, expression.arguments)
+            else
+              evaluate_type_returning_call(expression, env:)
+            end
           end
         when AST::Specialization
           if expression.callee.callee.is_a?(AST::Identifier) && expression.callee.callee.name == "attribute_arg"
             evaluate_attribute_arg_call(expression.arguments, env:)
           else
-            evaluate_type_returning_call(expression, env:)
+            callee_name = expression.callee.callee.is_a?(AST::Identifier) ? expression.callee.callee.name : nil
+            if callee_name
+              func = @functions[callee_name]
+              if func&.ast&.respond_to?(:const) && func.ast.const
+                evaluate_const_function_body_lower(func, expression.arguments)
+              else
+                evaluate_type_returning_call(expression, env:)
+              end
+            else
+              evaluate_type_returning_call(expression, env:)
+            end
           end
-        else
-          evaluate_type_returning_call(expression, env:)
         end
       end
 
@@ -1653,6 +1666,43 @@ module MilkTea
         return nil unless param_name && attribute_handle.argument_values
 
         attribute_handle.argument_values[param_name]
+      end
+
+      def evaluate_const_function_body_lower(func, arguments)
+        return nil unless func.ast.params.length == arguments.length
+
+        initial_vars = {}
+        func.ast.params.each_with_index do |param, idx|
+          arg_expr = arguments[idx].value
+          arg_value = compile_time_const_value(arg_expr, env: empty_env)
+          return nil unless arg_value
+
+          initial_vars[param.name] = arg_value
+        end
+
+        evaluator = ConstFnLowerEvaluator.new(self)
+        ctx = CompileTime::BlockContext.new(evaluator, initial_variables: initial_vars)
+        ctx.evaluate_block(func.ast.body, scopes: nil)
+      rescue CompileTime::ReturnValue => e
+        e.value
+      end
+
+      class ConstFnLowerEvaluator
+        def initialize(lowerer)
+          @lowerer = lowerer
+        end
+
+        def evaluate_compile_time_const_value(expression, scopes: nil)
+          @lowerer.send(:compile_time_const_value, expression, env: @lowerer.send(:empty_env))
+        end
+
+        def top_level_function(name)
+          @lowerer.instance_variable_get(:@functions)&.[](name)
+        end
+
+        def raise_sema_error(message)
+          raise CompileTime::Error, message
+        end
       end
 
       def evaluate_reflection_target_argument(expression, env:)

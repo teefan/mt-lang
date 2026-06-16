@@ -1090,7 +1090,7 @@ Custom formatting hook notes:
 - pointer indexing requires `unsafe`
 - `read(...)` of raw pointer requires `unsafe`
 - pointer casts require `unsafe`
-- `reinterpret[...]` requires `unsafe` and non-array concrete sized types
+- `reinterpret[...]` requires `unsafe`, non-array concrete sized types, and equal-size source and target types.
 
 ## 10. Async Semantics
 

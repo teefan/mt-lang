@@ -330,7 +330,17 @@ module MilkTea
           if expression.callee.callee.is_a?(AST::Identifier) && expression.callee.callee.name == "attribute_arg"
             evaluate_attribute_arg_call(expression.arguments, scopes: scopes || [])
           else
-            evaluate_type_returning_call(expression, scopes:)
+            callee_name = expression.callee.callee.is_a?(AST::Identifier) ? expression.callee.callee.name : nil
+            if callee_name
+              func = @top_level_functions[callee_name]
+              if func&.ast&.respond_to?(:const) && func.ast.const
+                evaluate_const_function_body(func, expression.arguments, scopes:)
+              else
+                evaluate_type_returning_call(expression, scopes:)
+              end
+            else
+              evaluate_type_returning_call(expression, scopes:)
+            end
           end
         else
           nil
