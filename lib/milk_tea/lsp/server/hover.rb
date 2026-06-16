@@ -134,22 +134,45 @@ module MilkTea
         if (binding = method_binding_at_token(facts, token))
           signature = method_signature(binding)
           source_location = module_member_binding_location(uri, facts.module_name, name, binding)
-        elsif (binding = facts.functions[name])
-          params_str = format_params(binding.type.params)
-          signature = "function #{name}(#{params_str}) -> #{binding.type.return_type}"
-        elsif (binding = facts.interfaces[name])
-          signature = interface_signature(binding)
-          source_location = module_member_definition_location(uri, binding.module_name, name)
-        elsif facts.types.key?(name)
-          type = facts.types[name]
-          signature = type_hover_signature(name, type)
-        elsif (binding = facts.values[name])
-          signature = value_hover_signature(binding)
-        elsif (import_binding = facts.imports[name])
-          signature = "module #{import_binding.name}"
-          source_location = module_definition_location(uri, import_binding.name)
-        else
-          dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+        end
+
+        unless signature
+          if token_index && (for_binding_info = resolve_for_binding_hover_info(tokens, token_index))
+            signature = for_binding_info[:signature]
+          end
+        end
+
+        unless signature
+          if token_index && match_arm_binding_token?(tokens, token_index)
+            if (local_binding = resolve_as_binding_declaration_hover_binding(facts, name, lsp_line + 1, lsp_char + 1))
+              signature = value_hover_signature(local_binding)
+            end
+          end
+        end
+
+        unless signature
+          if (local_binding = resolve_local_hover_binding(facts, name, lsp_line + 1, lsp_char + 1))
+            signature = value_hover_signature(local_binding)
+          end
+        end
+
+        unless signature
+          if (binding = facts.functions[name])
+            params_str = format_params(binding.type.params)
+            signature = "function #{name}(#{params_str}) -> #{binding.type.return_type}"
+          elsif (binding = facts.interfaces[name])
+            signature = interface_signature(binding)
+            source_location = module_member_definition_location(uri, binding.module_name, name)
+          elsif facts.types.key?(name)
+            type = facts.types[name]
+            signature = type_hover_signature(name, type)
+          elsif (binding = facts.values[name])
+            signature = value_hover_signature(binding)
+          elsif (import_binding = facts.imports[name])
+            signature = "module #{import_binding.name}"
+            source_location = module_definition_location(uri, import_binding.name)
+          else
+            dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
           dot_receiver_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
           if dot_receiver && (module_binding = facts.imports[dot_receiver])
             if (fn = module_binding.functions[name])
@@ -188,26 +211,6 @@ module MilkTea
           end
 
           unless signature
-            if token_index && (for_binding_info = resolve_for_binding_hover_info(tokens, token_index))
-              signature = for_binding_info[:signature]
-            end
-          end
-
-          unless signature
-            if token_index && match_arm_binding_token?(tokens, token_index)
-              if (local_binding = resolve_as_binding_declaration_hover_binding(facts, name, lsp_line + 1, lsp_char + 1))
-                signature = value_hover_signature(local_binding)
-              end
-            end
-          end
-
-          unless signature
-            if (local_binding = resolve_local_hover_binding(facts, name, lsp_line + 1, lsp_char + 1))
-              signature = value_hover_signature(local_binding)
-            end
-          end
-
-          unless signature
             local_def = @workspace.find_definition_token_global(
               name,
               preferred_uri: uri,
@@ -217,6 +220,7 @@ module MilkTea
             if local_def
               signature = resolve_lexical_local_hover_signature(local_def[:uri], name, local_def[:token])
             end
+          end
           end
 
           return nil unless signature
@@ -1036,6 +1040,7 @@ module MilkTea
       end
 
       def method_signature(binding)
+        async_prefix = (binding.respond_to?(:async) && binding.async) || (binding.ast.respond_to?(:async) && binding.ast.async) ? 'async ' : ''
         if binding.respond_to?(:type) && binding.type
           params_str = format_params(binding.type.params)
           keyword = case binding.ast.kind
@@ -1047,7 +1052,7 @@ module MilkTea
                       "function"
                     end
 
-          "#{keyword} #{binding.name}(#{params_str}) -> #{binding.type.return_type}"
+          "#{async_prefix}#{keyword} #{binding.name}(#{params_str}) -> #{binding.type.return_type}"
         else
           params_str = binding.params.map { |p| "#{p.name}: #{p.type}" }.join(', ')
           keyword = case binding.kind
@@ -1059,7 +1064,7 @@ module MilkTea
                       "function"
                     end
 
-          "#{keyword} #{binding.name}(#{params_str}) -> #{binding.return_type}"
+          "#{async_prefix}#{keyword} #{binding.name}(#{params_str}) -> #{binding.return_type}"
         end
       end
 
@@ -1143,17 +1148,29 @@ module MilkTea
                    '`array[T, N](...)` constructs a fixed-length array value of type `array[T, N]`.'
                  elsif name == 'span'
                    '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
-                 elsif name == 'SoA'
-                   '`SoA[T, N](...)` constructs a Struct-of-Arrays value with `N` elements of type `T`. Fields are stored in separate contiguous arrays.'
-                 else
-                   '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
+                  elsif name == 'SoA'
+                    '`SoA[T, N](...)` constructs a Struct-of-Arrays value with `N` elements of type `T`. Fields are stored in separate contiguous arrays.'
+                  elsif name == 'Option'
+                    '`Option[T]` is a built-in optional type with arms `some(value: T)` and `none`.'
+                  elsif name == 'Result'
+                    '`Result[T, E]` is a built-in result type with arms `success(value: T)` and `failure(error: E)`.'
+                  else
+                    '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
                  end
 
           return {
             signature: if name == 'array'
                          "builtin #{specialization}(...) -> #{specialization}"
-                       else
+                       elsif name == 'span'
                          "builtin #{specialization}(data = ..., len = ...) -> #{specialization}"
+                       elsif name == 'SoA'
+                         "builtin #{specialization}(...) -> #{specialization}"
+                       elsif name == 'Option'
+                         "builtin #{specialization}(some: value = ...) / #{specialization}(none:)"
+                       elsif name == 'Result'
+                         "builtin #{specialization}(success: value = ...) / #{specialization}(failure: error = ...)"
+                       else
+                         "builtin #{specialization}"
                        end,
             docs: docs,
           }
