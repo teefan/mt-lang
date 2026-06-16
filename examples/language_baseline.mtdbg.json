@@ -1,0 +1,5973 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "name": "valid_alignment",
+      "cName": "std_mem_heap_valid_alignment",
+      "params": [
+        {
+          "name": "alignment",
+          "cName": "alignment"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 9
+    },
+    {
+      "name": "normalize_alignment",
+      "cName": "std_mem_heap_normalize_alignment",
+      "params": [
+        {
+          "name": "alignment",
+          "cName": "alignment"
+        }
+      ],
+      "locals": [
+        {
+          "name": "minimum",
+          "cName": "minimum",
+          "line": 18
+        }
+      ],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 16
+    },
+    {
+      "name": "mul_overflows",
+      "cName": "std_mem_heap_mul_overflows",
+      "params": [
+        {
+          "name": "left",
+          "cName": "left"
+        },
+        {
+          "name": "right",
+          "cName": "right"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 27
+    },
+    {
+      "name": "alloc_bytes",
+      "cName": "std_mem_heap_alloc_bytes",
+      "params": [
+        {
+          "name": "size_bytes",
+          "cName": "size_bytes"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 34
+    },
+    {
+      "name": "must_alloc_bytes",
+      "cName": "std_mem_heap_must_alloc_bytes",
+      "params": [
+        {
+          "name": "size_bytes",
+          "cName": "size_bytes"
+        }
+      ],
+      "locals": [
+        {
+          "name": "memory",
+          "cName": "memory",
+          "line": 43
+        }
+      ],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 41
+    },
+    {
+      "name": "alloc_bytes_aligned",
+      "cName": "std_mem_heap_alloc_bytes_aligned",
+      "params": [
+        {
+          "name": "size_bytes",
+          "cName": "size_bytes"
+        },
+        {
+          "name": "alignment",
+          "cName": "alignment"
+        }
+      ],
+      "locals": [
+        {
+          "name": "normalized_alignment",
+          "cName": "normalized_alignment",
+          "line": 53
+        },
+        {
+          "name": "mask",
+          "cName": "mask",
+          "line": 57
+        },
+        {
+          "name": "rounded_size",
+          "cName": "rounded_size",
+          "line": 61
+        }
+      ],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 51
+    },
+    {
+      "name": "must_alloc_bytes_aligned",
+      "cName": "std_mem_heap_must_alloc_bytes_aligned",
+      "params": [
+        {
+          "name": "size_bytes",
+          "cName": "size_bytes"
+        },
+        {
+          "name": "alignment",
+          "cName": "alignment"
+        }
+      ],
+      "locals": [
+        {
+          "name": "normalized_alignment",
+          "cName": "normalized_alignment",
+          "line": 69
+        },
+        {
+          "name": "memory",
+          "cName": "memory",
+          "line": 73
+        }
+      ],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 67
+    },
+    {
+      "name": "alloc_zeroed_bytes",
+      "cName": "std_mem_heap_alloc_zeroed_bytes",
+      "params": [
+        {
+          "name": "count",
+          "cName": "count"
+        },
+        {
+          "name": "element_size_bytes",
+          "cName": "element_size_bytes"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 81
+    },
+    {
+      "name": "must_alloc_zeroed_bytes",
+      "cName": "std_mem_heap_must_alloc_zeroed_bytes",
+      "params": [
+        {
+          "name": "count",
+          "cName": "count"
+        },
+        {
+          "name": "element_size_bytes",
+          "cName": "element_size_bytes"
+        }
+      ],
+      "locals": [
+        {
+          "name": "memory",
+          "cName": "memory",
+          "line": 93
+        }
+      ],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 91
+    },
+    {
+      "name": "copy_bytes",
+      "cName": "std_mem_heap_copy_bytes",
+      "params": [
+        {
+          "name": "destination",
+          "cName": "destination"
+        },
+        {
+          "name": "source",
+          "cName": "source"
+        },
+        {
+          "name": "size_bytes",
+          "cName": "size_bytes"
+        }
+      ],
+      "locals": [
+        {
+          "name": "index",
+          "cName": "index",
+          "line": 106
+        }
+      ],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 101
+    },
+    {
+      "name": "resize_bytes",
+      "cName": "std_mem_heap_resize_bytes",
+      "params": [
+        {
+          "name": "memory",
+          "cName": "memory"
+        },
+        {
+          "name": "size_bytes",
+          "cName": "size_bytes"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 115
+    },
+    {
+      "name": "must_resize_bytes",
+      "cName": "std_mem_heap_must_resize_bytes",
+      "params": [
+        {
+          "name": "memory",
+          "cName": "memory"
+        },
+        {
+          "name": "size_bytes",
+          "cName": "size_bytes"
+        }
+      ],
+      "locals": [
+        {
+          "name": "resized",
+          "cName": "resized",
+          "line": 125
+        }
+      ],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 123
+    },
+    {
+      "name": "release_bytes",
+      "cName": "std_mem_heap_release_bytes",
+      "params": [
+        {
+          "name": "memory",
+          "cName": "memory"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 132
+    },
+    {
+      "name": "alloc_zeroed",
+      "cName": "std_mem_heap_alloc_zeroed_std_async_libuv_runtime_SleepState",
+      "params": [
+        {
+          "name": "count",
+          "cName": "count"
+        }
+      ],
+      "locals": [
+        {
+          "name": "alignment",
+          "cName": "alignment",
+          "line": 193
+        },
+        {
+          "name": "memory",
+          "cName": "memory",
+          "line": 197
+        }
+      ],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 193
+    },
+    {
+      "name": "must_alloc_zeroed",
+      "cName": "std_mem_heap_must_alloc_zeroed_std_async_libuv_runtime_SleepState",
+      "params": [
+        {
+          "name": "count",
+          "cName": "count"
+        }
+      ],
+      "locals": [
+        {
+          "name": "element_size",
+          "cName": "element_size",
+          "line": 210
+        },
+        {
+          "name": "memory",
+          "cName": "memory",
+          "line": 214
+        }
+      ],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 205
+    },
+    {
+      "name": "release",
+      "cName": "std_mem_heap_release_std_async_libuv_runtime_SleepState",
+      "params": [
+        {
+          "name": "memory",
+          "cName": "memory"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 260
+    },
+    {
+      "name": "release",
+      "cName": "std_mem_heap_release_std_async_libuv_runtime_WorkStateBase",
+      "params": [
+        {
+          "name": "memory",
+          "cName": "memory"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/mem/heap.mt",
+      "line": 260
+    },
+    {
+      "name": "sleep_state",
+      "cName": "std_async_libuv_runtime_sleep_state",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 55
+    },
+    {
+      "name": "work_state_base",
+      "cName": "std_async_libuv_runtime_work_state_base",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 63
+    },
+    {
+      "name": "timer_as_handle",
+      "cName": "std_async_libuv_runtime_timer_as_handle",
+      "params": [
+        {
+          "name": "timer",
+          "cName": "timer"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 67
+    },
+    {
+      "name": "handle_as_timer",
+      "cName": "std_async_libuv_runtime_handle_as_timer",
+      "params": [
+        {
+          "name": "handle",
+          "cName": "handle"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 71
+    },
+    {
+      "name": "req_as_work",
+      "cName": "std_async_libuv_runtime_req_as_work",
+      "params": [
+        {
+          "name": "req",
+          "cName": "req"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 75
+    },
+    {
+      "name": "work_as_req",
+      "cName": "std_async_libuv_runtime_work_as_req",
+      "params": [
+        {
+          "name": "work",
+          "cName": "work"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 79
+    },
+    {
+      "name": "close_all_handles_cb",
+      "cName": "std_async_libuv_runtime_close_all_handles_cb",
+      "params": [
+        {
+          "name": "handle",
+          "cName": "handle"
+        },
+        {
+          "name": "arg",
+          "cName": "arg"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 85
+    },
+    {
+      "name": "close_all_handles_close_cb",
+      "cName": "std_async_libuv_runtime_close_all_handles_close_cb",
+      "params": [
+        {
+          "name": "handle",
+          "cName": "handle"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 89
+    },
+    {
+      "name": "noop_waiter",
+      "cName": "std_async_libuv_runtime_noop_waiter",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 93
+    },
+    {
+      "name": "require_current_runtime",
+      "cName": "std_async_libuv_runtime_require_current_runtime",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 98
+    },
+    {
+      "name": "require_live_runtime",
+      "cName": "std_async_libuv_runtime_require_live_runtime",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 104
+    },
+    {
+      "name": "live_loop",
+      "cName": "std_async_libuv_runtime_live_loop",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 108
+    },
+    {
+      "name": "current_runtime_handle",
+      "cName": "std_async_libuv_runtime_current_runtime_handle",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 113
+    },
+    {
+      "name": "runtime_loop",
+      "cName": "std_async_libuv_runtime_runtime_loop",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 117
+    },
+    {
+      "name": "activate_current_runtime",
+      "cName": "std_async_libuv_runtime_activate_current_runtime",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "deactivate_current_runtime",
+      "cName": "std_async_libuv_runtime_deactivate_current_runtime",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "sleep_task",
+      "cName": "std_async_libuv_runtime_sleep_task",
+      "params": [
+        {
+          "name": "state",
+          "cName": "state"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 131
+    },
+    {
+      "name": "sleep_timer_close",
+      "cName": "std_async_libuv_runtime_sleep_timer_close",
+      "params": [
+        {
+          "name": "handle",
+          "cName": "handle"
+        }
+      ],
+      "locals": [
+        {
+          "name": "state_raw",
+          "cName": "state_raw",
+          "line": 151
+        },
+        {
+          "name": "state",
+          "cName": "state",
+          "line": 155
+        },
+        {
+          "name": "timer",
+          "cName": "timer",
+          "line": 159
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 151
+    },
+    {
+      "name": "sleep_timer_fire",
+      "cName": "std_async_libuv_runtime_sleep_timer_fire",
+      "params": [
+        {
+          "name": "timer",
+          "cName": "timer"
+        }
+      ],
+      "locals": [
+        {
+          "name": "handle",
+          "cName": "handle",
+          "line": 168
+        },
+        {
+          "name": "state_raw",
+          "cName": "state_raw",
+          "line": 169
+        },
+        {
+          "name": "state",
+          "cName": "state",
+          "line": 172
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 168
+    },
+    {
+      "name": "runtime_create",
+      "cName": "std_async_libuv_runtime_runtime_create",
+      "params": [],
+      "locals": [
+        {
+          "name": "loop_size",
+          "cName": "loop_size",
+          "line": 187
+        },
+        {
+          "name": "loop",
+          "cName": "loop",
+          "line": 188
+        },
+        {
+          "name": "init_status",
+          "cName": "init_status",
+          "line": 189
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 187
+    },
+    {
+      "name": "runtime_activate",
+      "cName": "std_async_libuv_runtime_runtime_activate",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 198
+    },
+    {
+      "name": "runtime_deactivate",
+      "cName": "std_async_libuv_runtime_runtime_deactivate",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 203
+    },
+    {
+      "name": "runtime_release",
+      "cName": "std_async_libuv_runtime_runtime_release",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 208
+    },
+    {
+      "name": "runtime_poll",
+      "cName": "std_async_libuv_runtime_runtime_poll",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 212
+    },
+    {
+      "name": "sleep_ready",
+      "cName": "std_async_libuv_runtime_sleep_ready",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 216
+    },
+    {
+      "name": "sleep_set_waiter",
+      "cName": "std_async_libuv_runtime_sleep_set_waiter",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        },
+        {
+          "name": "waiter_frame",
+          "cName": "waiter_frame"
+        },
+        {
+          "name": "waiter",
+          "cName": "waiter"
+        }
+      ],
+      "locals": [
+        {
+          "name": "state",
+          "cName": "state",
+          "line": 224
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 224
+    },
+    {
+      "name": "sleep_release",
+      "cName": "std_async_libuv_runtime_sleep_release",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [
+        {
+          "name": "state",
+          "cName": "state",
+          "line": 236
+        },
+        {
+          "name": "handle",
+          "cName": "handle",
+          "line": 250
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 236
+    },
+    {
+      "name": "sleep_take_result",
+      "cName": "std_async_libuv_runtime_sleep_take_result",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 255
+    },
+    {
+      "name": "work_execute",
+      "cName": "std_async_libuv_runtime_work_execute",
+      "params": [
+        {
+          "name": "req",
+          "cName": "req"
+        }
+      ],
+      "locals": [
+        {
+          "name": "state_raw",
+          "cName": "state_raw",
+          "line": 263
+        },
+        {
+          "name": "state",
+          "cName": "state",
+          "line": 266
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 263
+    },
+    {
+      "name": "work_complete",
+      "cName": "std_async_libuv_runtime_work_complete",
+      "params": [
+        {
+          "name": "req",
+          "cName": "req"
+        },
+        {
+          "name": "status_code",
+          "cName": "status_code"
+        }
+      ],
+      "locals": [
+        {
+          "name": "state_raw",
+          "cName": "state_raw",
+          "line": 272
+        },
+        {
+          "name": "state",
+          "cName": "state",
+          "line": 276
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 272
+    },
+    {
+      "name": "sleep_on",
+      "cName": "std_async_libuv_runtime_sleep_on",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        },
+        {
+          "name": "timeout",
+          "cName": "timeout"
+        }
+      ],
+      "locals": [
+        {
+          "name": "loop",
+          "cName": "loop",
+          "line": 337
+        },
+        {
+          "name": "state",
+          "cName": "state",
+          "line": 339
+        },
+        {
+          "name": "timer_size",
+          "cName": "timer_size",
+          "line": 351
+        },
+        {
+          "name": "timer",
+          "cName": "timer",
+          "line": 352
+        },
+        {
+          "name": "init_status",
+          "cName": "init_status",
+          "line": 355
+        },
+        {
+          "name": "start_status",
+          "cName": "start_status",
+          "line": 368
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 337
+    },
+    {
+      "name": "sleep",
+      "cName": "std_async_libuv_runtime_sleep",
+      "params": [
+        {
+          "name": "timeout",
+          "cName": "timeout"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 380
+    },
+    {
+      "name": "create_runtime",
+      "cName": "std_async_libuv_runtime_create_runtime",
+      "params": [],
+      "locals": [
+        {
+          "name": "loop_size",
+          "cName": "loop_size",
+          "line": 384
+        },
+        {
+          "name": "loop",
+          "cName": "loop",
+          "line": 385
+        },
+        {
+          "name": "init_status",
+          "cName": "init_status",
+          "line": 386
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 384
+    },
+    {
+      "name": "release_runtime",
+      "cName": "std_async_libuv_runtime_release_runtime",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [
+        {
+          "name": "is_current",
+          "cName": "is_current",
+          "line": 398
+        },
+        {
+          "name": "loop",
+          "cName": "loop",
+          "line": 408
+        },
+        {
+          "name": "dummy",
+          "cName": "dummy",
+          "line": 410
+        },
+        {
+          "name": "close_status",
+          "cName": "close_status",
+          "line": 413
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 396
+    },
+    {
+      "name": "pump",
+      "cName": "std_async_libuv_runtime_pump",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 466
+    },
+    {
+      "name": "wait_on",
+      "cName": "std_async_libuv_runtime_wait_on_int",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        },
+        {
+          "name": "task",
+          "cName": "task"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_return_value_3",
+          "cName": "__mt_return_value_3"
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 483
+    },
+    {
+      "name": "run_on",
+      "cName": "std_async_libuv_runtime_run_on",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        },
+        {
+          "name": "task",
+          "cName": "task"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 492
+    },
+    {
+      "name": "wait",
+      "cName": "std_async_libuv_runtime_wait_int",
+      "params": [
+        {
+          "name": "root",
+          "cName": "root"
+        }
+      ],
+      "locals": [
+        {
+          "name": "runtime",
+          "cName": "runtime",
+          "line": 504
+        },
+        {
+          "name": "__mt_return_value_1",
+          "cName": "__mt_return_value_1"
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 502
+    },
+    {
+      "name": "run",
+      "cName": "std_async_libuv_runtime_run",
+      "params": [
+        {
+          "name": "root",
+          "cName": "root"
+        }
+      ],
+      "locals": [
+        {
+          "name": "runtime",
+          "cName": "runtime",
+          "line": 515
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 512
+    },
+    {
+      "name": "run_with_runtime",
+      "cName": "std_async_libuv_runtime_run_with_runtime",
+      "params": [
+        {
+          "name": "body",
+          "cName": "body"
+        }
+      ],
+      "locals": [
+        {
+          "name": "runtime",
+          "cName": "runtime",
+          "line": 536
+        }
+      ],
+      "sourcePath": "../std/async/libuv_runtime.mt",
+      "line": 533
+    },
+    {
+      "name": "runtime_create",
+      "cName": "std_async_runtime_runtime_create",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 7
+    },
+    {
+      "name": "runtime_activate",
+      "cName": "std_async_runtime_runtime_activate",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 11
+    },
+    {
+      "name": "runtime_deactivate",
+      "cName": "std_async_runtime_runtime_deactivate",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 15
+    },
+    {
+      "name": "runtime_release",
+      "cName": "std_async_runtime_runtime_release",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 19
+    },
+    {
+      "name": "runtime_poll",
+      "cName": "std_async_runtime_runtime_poll",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 23
+    },
+    {
+      "name": "sleep",
+      "cName": "std_async_runtime_sleep",
+      "params": [
+        {
+          "name": "timeout",
+          "cName": "timeout"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 27
+    },
+    {
+      "name": "create_runtime",
+      "cName": "std_async_runtime_create_runtime",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 31
+    },
+    {
+      "name": "release_runtime",
+      "cName": "std_async_runtime_release_runtime",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 35
+    },
+    {
+      "name": "sleep_on",
+      "cName": "std_async_runtime_sleep_on",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        },
+        {
+          "name": "timeout",
+          "cName": "timeout"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 39
+    },
+    {
+      "name": "current_runtime",
+      "cName": "std_async_runtime_current_runtime",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 47
+    },
+    {
+      "name": "pump",
+      "cName": "std_async_runtime_pump",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 55
+    },
+    {
+      "name": "run_on",
+      "cName": "std_async_runtime_run_on",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        },
+        {
+          "name": "task",
+          "cName": "task"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 71
+    },
+    {
+      "name": "wait",
+      "cName": "std_async_runtime_wait_int",
+      "params": [
+        {
+          "name": "root",
+          "cName": "root"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 75
+    },
+    {
+      "name": "run",
+      "cName": "std_async_runtime_run",
+      "params": [
+        {
+          "name": "root",
+          "cName": "root"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 79
+    },
+    {
+      "name": "run_with_runtime",
+      "cName": "std_async_runtime_run_with_runtime",
+      "params": [
+        {
+          "name": "body",
+          "cName": "body"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async/runtime.mt",
+      "line": 87
+    },
+    {
+      "name": "runtime_create",
+      "cName": "std_async_runtime_create",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 7
+    },
+    {
+      "name": "runtime_activate",
+      "cName": "std_async_runtime_activate",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 11
+    },
+    {
+      "name": "runtime_deactivate",
+      "cName": "std_async_runtime_deactivate",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 15
+    },
+    {
+      "name": "runtime_release",
+      "cName": "std_async_runtime_release",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 19
+    },
+    {
+      "name": "runtime_poll",
+      "cName": "std_async_runtime_poll",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 23
+    },
+    {
+      "name": "sleep",
+      "cName": "std_async_sleep",
+      "params": [
+        {
+          "name": "timeout",
+          "cName": "timeout"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 27
+    },
+    {
+      "name": "create_runtime",
+      "cName": "std_async_create_runtime",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 31
+    },
+    {
+      "name": "release_runtime",
+      "cName": "std_async_release_runtime",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 35
+    },
+    {
+      "name": "sleep_on",
+      "cName": "std_async_sleep_on",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        },
+        {
+          "name": "timeout",
+          "cName": "timeout"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 39
+    },
+    {
+      "name": "current_runtime",
+      "cName": "std_async_current_runtime",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 47
+    },
+    {
+      "name": "pump",
+      "cName": "std_async_pump",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 55
+    },
+    {
+      "name": "run_on",
+      "cName": "std_async_run_on",
+      "params": [
+        {
+          "name": "runtime",
+          "cName": "runtime"
+        },
+        {
+          "name": "task",
+          "cName": "task"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 71
+    },
+    {
+      "name": "wait",
+      "cName": "std_async_wait_int",
+      "params": [
+        {
+          "name": "root",
+          "cName": "root"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 75
+    },
+    {
+      "name": "run",
+      "cName": "std_async_run",
+      "params": [
+        {
+          "name": "root",
+          "cName": "root"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 79
+    },
+    {
+      "name": "run_with_runtime",
+      "cName": "std_async_run_with_runtime",
+      "params": [
+        {
+          "name": "body",
+          "cName": "body"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/async.mt",
+      "line": 87
+    },
+    {
+      "name": "zero",
+      "cName": "vec2_zero_static",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 9
+    },
+    {
+      "name": "fill",
+      "cName": "vec2_fill_static",
+      "params": [
+        {
+          "name": "value",
+          "cName": "value"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 13
+    },
+    {
+      "name": "dot",
+      "cName": "vec2_dot",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 17
+    },
+    {
+      "name": "length_squared",
+      "cName": "vec2_length_squared",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 21
+    },
+    {
+      "name": "length",
+      "cName": "vec2_length",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 25
+    },
+    {
+      "name": "normalized",
+      "cName": "vec2_normalized",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [
+        {
+          "name": "len",
+          "cName": "len",
+          "line": 29
+        }
+      ],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 29
+    },
+    {
+      "name": "distance_squared_to",
+      "cName": "vec2_distance_squared_to",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [
+        {
+          "name": "dx",
+          "cName": "dx",
+          "line": 34
+        },
+        {
+          "name": "dy",
+          "cName": "dy",
+          "line": 35
+        }
+      ],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 34
+    },
+    {
+      "name": "distance_to",
+      "cName": "vec2_distance_to",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 40
+    },
+    {
+      "name": "lerp",
+      "cName": "vec2_lerp",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "target",
+          "cName": "target"
+        },
+        {
+          "name": "t",
+          "cName": "t"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 44
+    },
+    {
+      "name": "zero",
+      "cName": "vec3_zero_static",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 52
+    },
+    {
+      "name": "fill",
+      "cName": "vec3_fill_static",
+      "params": [
+        {
+          "name": "value",
+          "cName": "value"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 56
+    },
+    {
+      "name": "dot",
+      "cName": "vec3_dot",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 60
+    },
+    {
+      "name": "length_squared",
+      "cName": "vec3_length_squared",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 64
+    },
+    {
+      "name": "length",
+      "cName": "vec3_length",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 68
+    },
+    {
+      "name": "normalized",
+      "cName": "vec3_normalized",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [
+        {
+          "name": "len",
+          "cName": "len",
+          "line": 72
+        }
+      ],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 72
+    },
+    {
+      "name": "distance_squared_to",
+      "cName": "vec3_distance_squared_to",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [
+        {
+          "name": "dx",
+          "cName": "dx",
+          "line": 77
+        },
+        {
+          "name": "dy",
+          "cName": "dy",
+          "line": 78
+        },
+        {
+          "name": "dz",
+          "cName": "dz",
+          "line": 79
+        }
+      ],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 77
+    },
+    {
+      "name": "distance_to",
+      "cName": "vec3_distance_to",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 84
+    },
+    {
+      "name": "cross",
+      "cName": "vec3_cross",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 88
+    },
+    {
+      "name": "lerp",
+      "cName": "vec3_lerp",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "target",
+          "cName": "target"
+        },
+        {
+          "name": "t",
+          "cName": "t"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 96
+    },
+    {
+      "name": "zero",
+      "cName": "vec4_zero_static",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 104
+    },
+    {
+      "name": "fill",
+      "cName": "vec4_fill_static",
+      "params": [
+        {
+          "name": "value",
+          "cName": "value"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 108
+    },
+    {
+      "name": "dot",
+      "cName": "vec4_dot",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 112
+    },
+    {
+      "name": "length_squared",
+      "cName": "vec4_length_squared",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 116
+    },
+    {
+      "name": "length",
+      "cName": "vec4_length",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 120
+    },
+    {
+      "name": "normalized",
+      "cName": "vec4_normalized",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [
+        {
+          "name": "len",
+          "cName": "len",
+          "line": 124
+        }
+      ],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 124
+    },
+    {
+      "name": "distance_squared_to",
+      "cName": "vec4_distance_squared_to",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [
+        {
+          "name": "dx",
+          "cName": "dx",
+          "line": 129
+        },
+        {
+          "name": "dy",
+          "cName": "dy",
+          "line": 130
+        },
+        {
+          "name": "dz",
+          "cName": "dz",
+          "line": 131
+        },
+        {
+          "name": "dw",
+          "cName": "dw",
+          "line": 132
+        }
+      ],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 129
+    },
+    {
+      "name": "distance_to",
+      "cName": "vec4_distance_to",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 137
+    },
+    {
+      "name": "lerp",
+      "cName": "vec4_lerp",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "target",
+          "cName": "target"
+        },
+        {
+          "name": "t",
+          "cName": "t"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 141
+    },
+    {
+      "name": "zero",
+      "cName": "ivec2_zero_static",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 149
+    },
+    {
+      "name": "dot",
+      "cName": "ivec2_dot",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 153
+    },
+    {
+      "name": "length_squared",
+      "cName": "ivec2_length_squared",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 157
+    },
+    {
+      "name": "zero",
+      "cName": "ivec3_zero_static",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 165
+    },
+    {
+      "name": "dot",
+      "cName": "ivec3_dot",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 169
+    },
+    {
+      "name": "length_squared",
+      "cName": "ivec3_length_squared",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 173
+    },
+    {
+      "name": "zero",
+      "cName": "ivec4_zero_static",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 181
+    },
+    {
+      "name": "dot",
+      "cName": "ivec4_dot",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 185
+    },
+    {
+      "name": "length_squared",
+      "cName": "ivec4_length_squared",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 189
+    },
+    {
+      "name": "identity",
+      "cName": "mat3_identity_static",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 197
+    },
+    {
+      "name": "transpose",
+      "cName": "mat3_transpose",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 205
+    },
+    {
+      "name": "identity",
+      "cName": "mat4_identity_static",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 217
+    },
+    {
+      "name": "transpose",
+      "cName": "mat4_transpose",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 226
+    },
+    {
+      "name": "identity",
+      "cName": "quat_identity_static",
+      "params": [],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 239
+    },
+    {
+      "name": "conjugate",
+      "cName": "quat_conjugate",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "../std/linear_algebra.mt",
+      "line": 243
+    },
+    {
+      "name": "heredoc_fmt_demo",
+      "cName": "examples_language_baseline_heredoc_fmt_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "__mt_fmt_part_1",
+          "cName": "__mt_fmt_part_1"
+        },
+        {
+          "name": "__fmt__rendered_cap",
+          "cName": "__fmt__rendered_cap"
+        },
+        {
+          "name": "__fmt__rendered",
+          "cName": "__fmt__rendered"
+        },
+        {
+          "name": "__fmt__rendered_off",
+          "cName": "__fmt__rendered_off"
+        },
+        {
+          "name": "_rendered",
+          "cName": "_rendered",
+          "line": 58
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 58
+    },
+    {
+      "name": "take_damage",
+      "cName": "examples_language_baseline_NPC_take_damage",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "amount",
+          "cName": "amount"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "is_alive",
+      "cName": "examples_language_baseline_NPC_is_alive",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 161
+    },
+    {
+      "name": "name",
+      "cName": "examples_language_baseline_NPC_name",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 165
+    },
+    {
+      "name": "default",
+      "cName": "examples_language_baseline_NPC_default_static",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 169
+    },
+    {
+      "name": "max_hp",
+      "cName": "examples_language_baseline_NPC_max_hp_static",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 173
+    },
+    {
+      "name": "damage_one",
+      "cName": "examples_language_baseline_damage_one_examples_language_baseline_NPC",
+      "params": [
+        {
+          "name": "target",
+          "cName": "target"
+        },
+        {
+          "name": "amount",
+          "cName": "amount"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 179
+    },
+    {
+      "name": "describe",
+      "cName": "examples_language_baseline_describe_examples_language_baseline_NPC",
+      "params": [
+        {
+          "name": "target",
+          "cName": "target"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 185
+    },
+    {
+      "name": "convert",
+      "cName": "examples_language_baseline_Doubler_convert",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        },
+        {
+          "name": "x",
+          "cName": "x"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 203
+    },
+    {
+      "name": "apply_converter",
+      "cName": "examples_language_baseline_apply_converter_examples_language_baseline_Doubler",
+      "params": [
+        {
+          "name": "c",
+          "cName": "c"
+        },
+        {
+          "name": "v",
+          "cName": "v"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 206
+    },
+    {
+      "name": "identity",
+      "cName": "examples_language_baseline_identity",
+      "params": [
+        {
+          "name": "x",
+          "cName": "x"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 222
+    },
+    {
+      "name": "traced_demo",
+      "cName": "examples_language_baseline_traced_demo",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 281
+    },
+    {
+      "name": "void_returning",
+      "cName": "examples_language_baseline_void_returning",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 303
+    },
+    {
+      "name": "simple_noop",
+      "cName": "examples_language_baseline_simple_noop",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "add",
+      "cName": "examples_language_baseline_add",
+      "params": [
+        {
+          "name": "a",
+          "cName": "a"
+        },
+        {
+          "name": "b",
+          "cName": "b"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 311
+    },
+    {
+      "name": "statements_demo",
+      "cName": "examples_language_baseline_statements_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "x",
+          "cName": "x",
+          "line": 333
+        },
+        {
+          "name": "y",
+          "cName": "y",
+          "line": 334
+        },
+        {
+          "name": "result",
+          "cName": "result",
+          "line": 338
+        },
+        {
+          "name": "nl",
+          "cName": "nl",
+          "line": 341
+        },
+        {
+          "name": "letter",
+          "cName": "letter",
+          "line": 342
+        },
+        {
+          "name": "_nl",
+          "cName": "_nl",
+          "line": 343
+        },
+        {
+          "name": "_letter",
+          "cName": "_letter",
+          "line": 344
+        },
+        {
+          "name": "count",
+          "cName": "count",
+          "line": 355
+        },
+        {
+          "name": "i",
+          "cName": "i"
+        },
+        {
+          "name": "values",
+          "cName": "values",
+          "line": 364
+        },
+        {
+          "name": "__mt_for_items_6",
+          "cName": "__mt_for_items_6"
+        },
+        {
+          "name": "__mt_for_index_7",
+          "cName": "__mt_for_index_7"
+        },
+        {
+          "name": "item",
+          "cName": "item"
+        },
+        {
+          "name": "sp",
+          "cName": "sp",
+          "line": 372
+        },
+        {
+          "name": "__mt_for_items_10",
+          "cName": "__mt_for_items_10"
+        },
+        {
+          "name": "__mt_for_index_11",
+          "cName": "__mt_for_index_11"
+        },
+        {
+          "name": "item",
+          "cName": "item"
+        },
+        {
+          "name": "a",
+          "cName": "a",
+          "line": 377
+        },
+        {
+          "name": "b",
+          "cName": "b",
+          "line": 378
+        },
+        {
+          "name": "__mt_for_items_14",
+          "cName": "__mt_for_items_14"
+        },
+        {
+          "name": "__mt_for_items_15",
+          "cName": "__mt_for_items_15"
+        },
+        {
+          "name": "__mt_for_index_16",
+          "cName": "__mt_for_index_16"
+        },
+        {
+          "name": "left",
+          "cName": "left"
+        },
+        {
+          "name": "right",
+          "cName": "right"
+        },
+        {
+          "name": "i",
+          "cName": "i",
+          "line": 396
+        },
+        {
+          "name": "st",
+          "cName": "st",
+          "line": 405
+        },
+        {
+          "name": "opt",
+          "cName": "opt",
+          "line": 413
+        },
+        {
+          "name": "s",
+          "cName": "s"
+        },
+        {
+          "name": "tk",
+          "cName": "tk",
+          "line": 421
+        },
+        {
+          "name": "iden",
+          "cName": "iden"
+        },
+        {
+          "name": "n",
+          "cName": "n"
+        },
+        {
+          "name": "tk2",
+          "cName": "tk2",
+          "line": 431
+        },
+        {
+          "name": "__mt_match_payload_21",
+          "cName": "__mt_match_payload_21"
+        },
+        {
+          "name": "name",
+          "cName": "name"
+        },
+        {
+          "name": "__mt_match_payload_22",
+          "cName": "__mt_match_payload_22"
+        },
+        {
+          "name": "n",
+          "cName": "n"
+        },
+        {
+          "name": "__mt_return_value_23",
+          "cName": "__mt_return_value_23"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 333
+    },
+    {
+      "name": "guard_demo",
+      "cName": "examples_language_baseline_guard_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "known_ptr",
+          "cName": "known_ptr",
+          "line": 471
+        },
+        {
+          "name": "safe",
+          "cName": "safe",
+          "line": 472
+        },
+        {
+          "name": "value",
+          "cName": "value",
+          "line": 476
+        },
+        {
+          "name": "guarded_arr",
+          "cName": "guarded_arr",
+          "line": 480
+        },
+        {
+          "name": "third",
+          "cName": "third",
+          "line": 481
+        },
+        {
+          "name": "_third",
+          "cName": "_third",
+          "line": 483
+        },
+        {
+          "name": "maybe",
+          "cName": "maybe",
+          "line": 486
+        },
+        {
+          "name": "bound",
+          "cName": "bound",
+          "line": 487
+        },
+        {
+          "name": "__mt_let_else_discard_1",
+          "cName": "__mt_let_else_discard_1",
+          "line": 491
+        },
+        {
+          "name": "__mt_propagate_2",
+          "cName": "__mt_propagate_2"
+        },
+        {
+          "name": "parsed",
+          "cName": "parsed",
+          "line": 495
+        },
+        {
+          "name": "v",
+          "cName": "v",
+          "line": 496
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 471
+    },
+    {
+      "name": "expressions_demo",
+      "cName": "examples_language_baseline_expressions_demo",
+      "params": [
+        {
+          "name": "x",
+          "cName": "x"
+        },
+        {
+          "name": "y",
+          "cName": "y"
+        }
+      ],
+      "locals": [
+        {
+          "name": "a",
+          "cName": "a",
+          "line": 505
+        },
+        {
+          "name": "b",
+          "cName": "b",
+          "line": 506
+        },
+        {
+          "name": "c",
+          "cName": "c",
+          "line": 507
+        },
+        {
+          "name": "d",
+          "cName": "d",
+          "line": 508
+        },
+        {
+          "name": "e",
+          "cName": "e",
+          "line": 509
+        },
+        {
+          "name": "f",
+          "cName": "f",
+          "line": 512
+        },
+        {
+          "name": "g",
+          "cName": "g",
+          "line": 513
+        },
+        {
+          "name": "h",
+          "cName": "h",
+          "line": 514
+        },
+        {
+          "name": "i",
+          "cName": "i",
+          "line": 515
+        },
+        {
+          "name": "j",
+          "cName": "j",
+          "line": 516
+        },
+        {
+          "name": "k",
+          "cName": "k",
+          "line": 517
+        },
+        {
+          "name": "eq",
+          "cName": "eq",
+          "line": 520
+        },
+        {
+          "name": "ne",
+          "cName": "ne",
+          "line": 521
+        },
+        {
+          "name": "lt",
+          "cName": "lt",
+          "line": 522
+        },
+        {
+          "name": "le",
+          "cName": "le",
+          "line": 523
+        },
+        {
+          "name": "gt",
+          "cName": "gt",
+          "line": 524
+        },
+        {
+          "name": "ge",
+          "cName": "ge",
+          "line": 525
+        },
+        {
+          "name": "and_val",
+          "cName": "and_val",
+          "line": 528
+        },
+        {
+          "name": "or_val",
+          "cName": "or_val",
+          "line": 529
+        },
+        {
+          "name": "not_val",
+          "cName": "not_val",
+          "line": 530
+        },
+        {
+          "name": "acc",
+          "cName": "acc",
+          "line": 533
+        },
+        {
+          "name": "chosen",
+          "cName": "chosen",
+          "line": 546
+        },
+        {
+          "name": "v",
+          "cName": "v",
+          "line": 549
+        },
+        {
+          "name": "vx_val",
+          "cName": "vx_val",
+          "line": 550
+        },
+        {
+          "name": "buf",
+          "cName": "buf",
+          "line": 551
+        },
+        {
+          "name": "elem",
+          "cName": "elem",
+          "line": 552
+        },
+        {
+          "name": "pair",
+          "cName": "pair",
+          "line": 555
+        },
+        {
+          "name": "wrapped",
+          "cName": "wrapped",
+          "line": 558
+        },
+        {
+          "name": "continued",
+          "cName": "continued",
+          "line": 565
+        },
+        {
+          "name": "expr_result",
+          "cName": "expr_result",
+          "line": 567
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 505
+    },
+    {
+      "name": "builtins_demo",
+      "cName": "examples_language_baseline_builtins_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "counter",
+          "cName": "counter",
+          "line": 575
+        },
+        {
+          "name": "handle",
+          "cName": "handle",
+          "line": 578
+        },
+        {
+          "name": "const_p",
+          "cName": "const_p",
+          "line": 582
+        },
+        {
+          "name": "raw_p",
+          "cName": "raw_p",
+          "line": 585
+        },
+        {
+          "name": "val_ref",
+          "cName": "val_ref",
+          "line": 588
+        },
+        {
+          "name": "val_ptr",
+          "cName": "val_ptr",
+          "line": 589
+        },
+        {
+          "name": "as_long",
+          "cName": "as_long",
+          "line": 592
+        },
+        {
+          "name": "as_int",
+          "cName": "as_int",
+          "line": 593
+        },
+        {
+          "name": "zeroed",
+          "cName": "zeroed",
+          "line": 596
+        },
+        {
+          "name": "default_npc",
+          "cName": "default_npc",
+          "line": 599
+        },
+        {
+          "name": "arr",
+          "cName": "arr",
+          "line": 606
+        },
+        {
+          "name": "size",
+          "cName": "size",
+          "line": 607
+        },
+        {
+          "name": "align",
+          "cName": "align",
+          "line": 608
+        },
+        {
+          "name": "bits",
+          "cName": "bits",
+          "line": 611
+        },
+        {
+          "name": "_bits_val",
+          "cName": "_bits_val",
+          "line": 612
+        },
+        {
+          "name": "sp",
+          "cName": "sp",
+          "line": 615
+        },
+        {
+          "name": "_sp_copy",
+          "cName": "_sp_copy",
+          "line": 616
+        },
+        {
+          "name": "elem_ptr",
+          "cName": "elem_ptr",
+          "line": 619
+        },
+        {
+          "name": "sp_elem",
+          "cName": "sp_elem",
+          "line": 624
+        },
+        {
+          "name": "_sp_val",
+          "cName": "_sp_val",
+          "line": 626
+        },
+        {
+          "name": "_rd",
+          "cName": "_rd",
+          "line": 630
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 575
+    },
+    {
+      "name": "unsafe_demo",
+      "cName": "examples_language_baseline_unsafe_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "counter",
+          "cName": "counter",
+          "line": 639
+        },
+        {
+          "name": "raw_p",
+          "cName": "raw_p",
+          "line": 640
+        },
+        {
+          "name": "val",
+          "cName": "val",
+          "line": 643
+        },
+        {
+          "name": "_v",
+          "cName": "_v",
+          "line": 644
+        },
+        {
+          "name": "deref",
+          "cName": "deref",
+          "line": 649
+        },
+        {
+          "name": "adjusted",
+          "cName": "adjusted",
+          "line": 653
+        },
+        {
+          "name": "_a",
+          "cName": "_a",
+          "line": 654
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 639
+    },
+    {
+      "name": "proc_demo",
+      "cName": "examples_language_baseline_proc_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "offset",
+          "cName": "offset",
+          "line": 663
+        },
+        {
+          "name": "__mt___mt_proc_expr_1_env_2",
+          "cName": "__mt___mt_proc_expr_1_env_2"
+        },
+        {
+          "name": "__mt_proc_expr_3",
+          "cName": "__mt_proc_expr_3"
+        },
+        {
+          "name": "triple",
+          "cName": "triple",
+          "line": 664
+        },
+        {
+          "name": "result",
+          "cName": "result",
+          "line": 666
+        },
+        {
+          "name": "__mt_return_value_4",
+          "cName": "__mt_return_value_4"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 663
+    },
+    {
+      "name": "proc_array_capture_demo",
+      "cName": "examples_language_baseline_proc_array_capture_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "offsets",
+          "cName": "offsets",
+          "line": 671
+        },
+        {
+          "name": "__mt___mt_proc_expr_1_env_2",
+          "cName": "__mt___mt_proc_expr_1_env_2"
+        },
+        {
+          "name": "__mt_proc_expr_3",
+          "cName": "__mt_proc_expr_3"
+        },
+        {
+          "name": "cb",
+          "cName": "cb",
+          "line": 672
+        },
+        {
+          "name": "__mt_return_value_4",
+          "cName": "__mt_return_value_4"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 671
+    },
+    {
+      "name": "proc_capture_proc_demo",
+      "cName": "examples_language_baseline_proc_capture_proc_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "__mt_proc_expr_2",
+          "cName": "__mt_proc_expr_2"
+        },
+        {
+          "name": "inner",
+          "cName": "inner",
+          "line": 678
+        },
+        {
+          "name": "__mt___mt_proc_expr_3_env_4",
+          "cName": "__mt___mt_proc_expr_3_env_4"
+        },
+        {
+          "name": "__mt_proc_expr_5",
+          "cName": "__mt_proc_expr_5"
+        },
+        {
+          "name": "outer",
+          "cName": "outer",
+          "line": 680
+        },
+        {
+          "name": "__mt_return_value_6",
+          "cName": "__mt_return_value_6"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 678
+    },
+    {
+      "name": "make_multiplier",
+      "cName": "examples_language_baseline_make_multiplier",
+      "params": [
+        {
+          "name": "factor",
+          "cName": "factor"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt___mt_proc_expr_1_env_2",
+          "cName": "__mt___mt_proc_expr_1_env_2"
+        },
+        {
+          "name": "__mt_proc_expr_3",
+          "cName": "__mt_proc_expr_3"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 686
+    },
+    {
+      "name": "proc_factory_demo",
+      "cName": "examples_language_baseline_proc_factory_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "doubler",
+          "cName": "doubler",
+          "line": 690
+        },
+        {
+          "name": "__mt_return_value_1",
+          "cName": "__mt_return_value_1"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 690
+    },
+    {
+      "name": "make_adder",
+      "cName": "examples_language_baseline_make_adder",
+      "params": [
+        {
+          "name": "base",
+          "cName": "base"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt___mt_proc_expr_1_env_2",
+          "cName": "__mt___mt_proc_expr_1_env_2"
+        },
+        {
+          "name": "__mt_proc_expr_3",
+          "cName": "__mt_proc_expr_3"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 695
+    },
+    {
+      "name": "proc_returning_proc_demo",
+      "cName": "examples_language_baseline_proc_returning_proc_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "adder",
+          "cName": "adder",
+          "line": 699
+        },
+        {
+          "name": "__mt_return_value_1",
+          "cName": "__mt_return_value_1"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 699
+    },
+    {
+      "name": "proc_struct_demo",
+      "cName": "examples_language_baseline_proc_struct_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "offset",
+          "cName": "offset",
+          "line": 707
+        },
+        {
+          "name": "__mt___mt_proc_expr_1_env_2",
+          "cName": "__mt___mt_proc_expr_1_env_2"
+        },
+        {
+          "name": "__mt_proc_expr_3",
+          "cName": "__mt_proc_expr_3"
+        },
+        {
+          "name": "invoke",
+          "cName": "invoke",
+          "line": 708
+        },
+        {
+          "name": "cb",
+          "cName": "cb",
+          "line": 710
+        },
+        {
+          "name": "__mt_return_value_4",
+          "cName": "__mt_return_value_4"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 707
+    },
+    {
+      "name": "modvar_proc_demo",
+      "cName": "examples_language_baseline_modvar_proc_demo",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 721
+    },
+    {
+      "name": "emit_ready",
+      "cName": "examples_language_baseline_emit_ready",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 728
+    },
+    {
+      "name": "on_ready_callback",
+      "cName": "examples_language_baseline_on_ready_callback",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "on_ready_once",
+      "cName": "examples_language_baseline_on_ready_once",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "schedule_ready_callback",
+      "cName": "examples_language_baseline_schedule_ready_callback",
+      "params": [],
+      "locals": [
+        {
+          "name": "_h_sub",
+          "cName": "_h_sub",
+          "line": 740
+        },
+        {
+          "name": "_h_once",
+          "cName": "_h_once",
+          "line": 741
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 740
+    },
+    {
+      "name": "format_demo",
+      "cName": "examples_language_baseline_format_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "count",
+          "cName": "count",
+          "line": 749
+        },
+        {
+          "name": "label",
+          "cName": "label",
+          "line": 750
+        },
+        {
+          "name": "escaped",
+          "cName": "escaped",
+          "line": 754
+        },
+        {
+          "name": "_esc",
+          "cName": "_esc",
+          "line": 755
+        },
+        {
+          "name": "adjacent",
+          "cName": "adjacent",
+          "line": 758
+        },
+        {
+          "name": "_adj",
+          "cName": "_adj",
+          "line": 761
+        },
+        {
+          "name": "__mt_fmt_part_1",
+          "cName": "__mt_fmt_part_1"
+        },
+        {
+          "name": "__mt_fmt_part_2",
+          "cName": "__mt_fmt_part_2"
+        },
+        {
+          "name": "__fmt_text_cap",
+          "cName": "__fmt_text_cap"
+        },
+        {
+          "name": "__fmt_text",
+          "cName": "__fmt_text"
+        },
+        {
+          "name": "__fmt_text_off",
+          "cName": "__fmt_text_off"
+        },
+        {
+          "name": "text",
+          "cName": "text",
+          "line": 764
+        },
+        {
+          "name": "__mt_fmt_part_3",
+          "cName": "__mt_fmt_part_3"
+        },
+        {
+          "name": "__fmt_calc_cap",
+          "cName": "__fmt_calc_cap"
+        },
+        {
+          "name": "__fmt_calc",
+          "cName": "__fmt_calc"
+        },
+        {
+          "name": "__fmt_calc_off",
+          "cName": "__fmt_calc_off"
+        },
+        {
+          "name": "calc",
+          "cName": "calc",
+          "line": 767
+        },
+        {
+          "name": "_calc",
+          "cName": "_calc",
+          "line": 768
+        },
+        {
+          "name": "__mt_fmt_part_4",
+          "cName": "__mt_fmt_part_4"
+        },
+        {
+          "name": "__mt_fmt_part_5",
+          "cName": "__mt_fmt_part_5"
+        },
+        {
+          "name": "__fmt_hex_cap",
+          "cName": "__fmt_hex_cap"
+        },
+        {
+          "name": "__fmt_hex",
+          "cName": "__fmt_hex"
+        },
+        {
+          "name": "__fmt_hex_off",
+          "cName": "__fmt_hex_off"
+        },
+        {
+          "name": "hex",
+          "cName": "hex",
+          "line": 771
+        },
+        {
+          "name": "__mt_fmt_part_6",
+          "cName": "__mt_fmt_part_6"
+        },
+        {
+          "name": "__mt_fmt_part_7",
+          "cName": "__mt_fmt_part_7"
+        },
+        {
+          "name": "__fmt_oct_cap",
+          "cName": "__fmt_oct_cap"
+        },
+        {
+          "name": "__fmt_oct",
+          "cName": "__fmt_oct"
+        },
+        {
+          "name": "__fmt_oct_off",
+          "cName": "__fmt_oct_off"
+        },
+        {
+          "name": "oct",
+          "cName": "oct",
+          "line": 772
+        },
+        {
+          "name": "__mt_fmt_part_8",
+          "cName": "__mt_fmt_part_8"
+        },
+        {
+          "name": "__mt_fmt_part_9",
+          "cName": "__mt_fmt_part_9"
+        },
+        {
+          "name": "__fmt_bin_cap",
+          "cName": "__fmt_bin_cap"
+        },
+        {
+          "name": "__fmt_bin",
+          "cName": "__fmt_bin"
+        },
+        {
+          "name": "__fmt_bin_off",
+          "cName": "__fmt_bin_off"
+        },
+        {
+          "name": "bin",
+          "cName": "bin",
+          "line": 773
+        },
+        {
+          "name": "dist",
+          "cName": "dist",
+          "line": 776
+        },
+        {
+          "name": "__mt_fmt_part_10",
+          "cName": "__mt_fmt_part_10"
+        },
+        {
+          "name": "__fmt_precise_cap",
+          "cName": "__fmt_precise_cap"
+        },
+        {
+          "name": "__fmt_precise",
+          "cName": "__fmt_precise"
+        },
+        {
+          "name": "__fmt_precise_off",
+          "cName": "__fmt_precise_off"
+        },
+        {
+          "name": "precise",
+          "cName": "precise",
+          "line": 777
+        },
+        {
+          "name": "heredoc",
+          "cName": "heredoc",
+          "line": 780
+        },
+        {
+          "name": "_heredoc",
+          "cName": "_heredoc",
+          "line": 783
+        },
+        {
+          "name": "_h",
+          "cName": "_h",
+          "line": 785
+        },
+        {
+          "name": "_o",
+          "cName": "_o",
+          "line": 786
+        },
+        {
+          "name": "_b",
+          "cName": "_b",
+          "line": 787
+        },
+        {
+          "name": "_p",
+          "cName": "_p",
+          "line": 788
+        },
+        {
+          "name": "__mt_return_value_11",
+          "cName": "__mt_return_value_11"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 749
+    },
+    {
+      "name": "generics_demo",
+      "cName": "examples_language_baseline_generics_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "pair",
+          "cName": "pair",
+          "line": 798
+        },
+        {
+          "name": "fisth",
+          "cName": "fisth",
+          "line": 799
+        },
+        {
+          "name": "some_opt",
+          "cName": "some_opt",
+          "line": 802
+        },
+        {
+          "name": "none_opt",
+          "cName": "none_opt",
+          "line": 803
+        },
+        {
+          "name": "s",
+          "cName": "s"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 798
+    },
+    {
+      "name": "async_child",
+      "cName": "examples_language_baseline_async_child",
+      "params": [],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "async_demo",
+      "cName": "examples_language_baseline_async_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "interface_demo",
+      "cName": "examples_language_baseline_interface_demo",
+      "params": [
+        {
+          "name": "target",
+          "cName": "target"
+        }
+      ],
+      "locals": [
+        {
+          "name": "alive",
+          "cName": "alive",
+          "line": 848
+        },
+        {
+          "name": "max_hp",
+          "cName": "max_hp",
+          "line": 851
+        },
+        {
+          "name": "_m",
+          "cName": "_m",
+          "line": 852
+        },
+        {
+          "name": "label",
+          "cName": "label",
+          "line": 858
+        },
+        {
+          "name": "_l",
+          "cName": "_l",
+          "line": 859
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 845
+    },
+    {
+      "name": "str_buffer_demo",
+      "cName": "examples_language_baseline_str_buffer_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "buffer",
+          "cName": "buffer",
+          "line": 877
+        },
+        {
+          "name": "__mt_fmt_part_1",
+          "cName": "__mt_fmt_part_1"
+        },
+        {
+          "name": "__mt_fmt_sink_offset_2",
+          "cName": "__mt_fmt_sink_offset_2"
+        },
+        {
+          "name": "s",
+          "cName": "s",
+          "line": 883
+        },
+        {
+          "name": "c",
+          "cName": "c",
+          "line": 884
+        },
+        {
+          "name": "length",
+          "cName": "length",
+          "line": 886
+        },
+        {
+          "name": "capacity",
+          "cName": "capacity",
+          "line": 887
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 877
+    },
+    {
+      "name": "nullability_demo",
+      "cName": "examples_language_baseline_nullability_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "ptr",
+          "cName": "ptr",
+          "line": 899
+        },
+        {
+          "name": "cstr_ptr",
+          "cName": "cstr_ptr",
+          "line": 900
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 899
+    },
+    {
+      "name": "backend_label",
+      "cName": "examples_language_baseline_backend_label",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 950
+    },
+    {
+      "name": "module_when_func",
+      "cName": "examples_language_baseline_module_when_func",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 968
+    },
+    {
+      "name": "favorite_label",
+      "cName": "examples_language_baseline_favorite_label",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 989
+    },
+    {
+      "name": "all_fields_floats",
+      "cName": "examples_language_baseline_all_fields_floats",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 1007
+    },
+    {
+      "name": "color_count",
+      "cName": "examples_language_baseline_color_count",
+      "params": [],
+      "locals": [
+        {
+          "name": "count",
+          "cName": "count",
+          "line": 1020
+        },
+        {
+          "name": "_name",
+          "cName": "_name",
+          "line": 1022
+        },
+        {
+          "name": "_name",
+          "cName": "_name",
+          "line": 1022
+        },
+        {
+          "name": "_name",
+          "cName": "_name",
+          "line": 1022
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1020
+    },
+    {
+      "name": "comptime_demo",
+      "cName": "examples_language_baseline_comptime_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "pow2",
+          "cName": "pow2",
+          "line": 1045
+        },
+        {
+          "name": "hash",
+          "cName": "hash",
+          "line": 1046
+        },
+        {
+          "name": "label",
+          "cName": "label",
+          "line": 1047
+        },
+        {
+          "name": "all_float",
+          "cName": "all_float",
+          "line": 1048
+        },
+        {
+          "name": "rounded",
+          "cName": "rounded",
+          "line": 1049
+        },
+        {
+          "name": "fav",
+          "cName": "fav",
+          "line": 1050
+        },
+        {
+          "name": "colors",
+          "cName": "colors",
+          "line": 1051
+        },
+        {
+          "name": "_label",
+          "cName": "_label",
+          "line": 1052
+        },
+        {
+          "name": "_fav",
+          "cName": "_fav",
+          "line": 1053
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1045
+    },
+    {
+      "name": "vector_demo",
+      "cName": "examples_language_baseline_vector_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "v2",
+          "cName": "v2",
+          "line": 1062
+        },
+        {
+          "name": "v3",
+          "cName": "v3",
+          "line": 1063
+        },
+        {
+          "name": "v4",
+          "cName": "v4",
+          "line": 1064
+        },
+        {
+          "name": "iv2",
+          "cName": "iv2",
+          "line": 1067
+        },
+        {
+          "name": "iv3",
+          "cName": "iv3",
+          "line": 1068
+        },
+        {
+          "name": "v2x",
+          "cName": "v2x",
+          "line": 1071
+        },
+        {
+          "name": "v2y",
+          "cName": "v2y",
+          "line": 1072
+        },
+        {
+          "name": "v3z",
+          "cName": "v3z",
+          "line": 1073
+        },
+        {
+          "name": "v4w",
+          "cName": "v4w",
+          "line": 1074
+        },
+        {
+          "name": "iv2x",
+          "cName": "iv2x",
+          "line": 1075
+        },
+        {
+          "name": "vsum",
+          "cName": "vsum",
+          "line": 1078
+        },
+        {
+          "name": "vdiff",
+          "cName": "vdiff",
+          "line": 1079
+        },
+        {
+          "name": "vmul",
+          "cName": "vmul",
+          "line": 1080
+        },
+        {
+          "name": "vneg",
+          "cName": "vneg",
+          "line": 1081
+        },
+        {
+          "name": "v_scaled",
+          "cName": "v_scaled",
+          "line": 1084
+        },
+        {
+          "name": "sv_scaled",
+          "cName": "sv_scaled",
+          "line": 1085
+        },
+        {
+          "name": "v_divided",
+          "cName": "v_divided",
+          "line": 1086
+        },
+        {
+          "name": "isum",
+          "cName": "isum",
+          "line": 1089
+        },
+        {
+          "name": "iscaled",
+          "cName": "iscaled",
+          "line": 1090
+        },
+        {
+          "name": "ineg",
+          "cName": "ineg",
+          "line": 1091
+        },
+        {
+          "name": "squared",
+          "cName": "squared",
+          "line": 1094
+        },
+        {
+          "name": "dot_val",
+          "cName": "dot_val",
+          "line": 1097
+        },
+        {
+          "name": "len_val",
+          "cName": "len_val",
+          "line": 1098
+        },
+        {
+          "name": "cross_val",
+          "cName": "cross_val",
+          "line": 1099
+        },
+        {
+          "name": "identity_mat",
+          "cName": "identity_mat",
+          "line": 1100
+        },
+        {
+          "name": "identity_quat",
+          "cName": "identity_quat",
+          "line": 1101
+        },
+        {
+          "name": "_v2",
+          "cName": "_v2",
+          "line": 1103
+        },
+        {
+          "name": "_v4",
+          "cName": "_v4",
+          "line": 1104
+        },
+        {
+          "name": "_iv3",
+          "cName": "_iv3",
+          "line": 1105
+        },
+        {
+          "name": "result_a",
+          "cName": "result_a",
+          "line": 1107
+        },
+        {
+          "name": "result_b",
+          "cName": "result_b",
+          "line": 1108
+        },
+        {
+          "name": "result_c",
+          "cName": "result_c",
+          "line": 1109
+        },
+        {
+          "name": "result_d",
+          "cName": "result_d",
+          "line": 1110
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1062
+    },
+    {
+      "name": "squared_len",
+      "cName": "vec3_squared_len",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 1121
+    },
+    {
+      "name": "matrix_demo",
+      "cName": "examples_language_baseline_matrix_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "m4",
+          "cName": "m4",
+          "line": 1128
+        },
+        {
+          "name": "m3",
+          "cName": "m3",
+          "line": 1129
+        },
+        {
+          "name": "col0",
+          "cName": "col0",
+          "line": 1132
+        },
+        {
+          "name": "col0x",
+          "cName": "col0x",
+          "line": 1133
+        },
+        {
+          "name": "msum",
+          "cName": "msum",
+          "line": 1136
+        },
+        {
+          "name": "mdif",
+          "cName": "mdif",
+          "line": 1137
+        },
+        {
+          "name": "mscaled",
+          "cName": "mscaled",
+          "line": 1138
+        },
+        {
+          "name": "mneg",
+          "cName": "mneg",
+          "line": 1139
+        },
+        {
+          "name": "_m3",
+          "cName": "_m3",
+          "line": 1141
+        },
+        {
+          "name": "_col0",
+          "cName": "_col0",
+          "line": 1142
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1128
+    },
+    {
+      "name": "quat_demo",
+      "cName": "examples_language_baseline_quat_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "q",
+          "cName": "q",
+          "line": 1151
+        },
+        {
+          "name": "qx",
+          "cName": "qx",
+          "line": 1154
+        },
+        {
+          "name": "qy",
+          "cName": "qy",
+          "line": 1155
+        },
+        {
+          "name": "qz",
+          "cName": "qz",
+          "line": 1156
+        },
+        {
+          "name": "qw",
+          "cName": "qw",
+          "line": 1157
+        },
+        {
+          "name": "qsum",
+          "cName": "qsum",
+          "line": 1160
+        },
+        {
+          "name": "qdiff",
+          "cName": "qdiff",
+          "line": 1161
+        },
+        {
+          "name": "qmul",
+          "cName": "qmul",
+          "line": 1162
+        },
+        {
+          "name": "qneg",
+          "cName": "qneg",
+          "line": 1163
+        },
+        {
+          "name": "_qdiff",
+          "cName": "_qdiff",
+          "line": 1165
+        },
+        {
+          "name": "_qmul",
+          "cName": "_qmul",
+          "line": 1166
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1151
+    },
+    {
+      "name": "soa_demo",
+      "cName": "examples_language_baseline_soa_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "particles",
+          "cName": "particles",
+          "line": 1181
+        },
+        {
+          "name": "first_x",
+          "cName": "first_x",
+          "line": 1192
+        },
+        {
+          "name": "second_x",
+          "cName": "second_x",
+          "line": 1193
+        },
+        {
+          "name": "first_y",
+          "cName": "first_y",
+          "line": 1194
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1181
+    },
+    {
+      "name": "generate_helpers",
+      "cName": "examples_language_baseline_generate_helpers",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "emit_demo",
+      "cName": "examples_language_baseline_emit_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "meaning",
+          "cName": "meaning",
+          "line": 1211
+        },
+        {
+          "name": "prefix",
+          "cName": "prefix",
+          "line": 1212
+        },
+        {
+          "name": "_p",
+          "cName": "_p",
+          "line": 1213
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1211
+    },
+    {
+      "name": "buffer_advance",
+      "cName": "examples_language_baseline_buffer_advance",
+      "params": [
+        {
+          "name": "buf",
+          "cName": "buf"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "lifetime_demo",
+      "cName": "examples_language_baseline_lifetime_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "storage",
+          "cName": "storage",
+          "line": 1230
+        },
+        {
+          "name": "sp",
+          "cName": "sp",
+          "line": 1231
+        },
+        {
+          "name": "buf",
+          "cName": "buf",
+          "line": 1232
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1230
+    },
+    {
+      "name": "with_demo",
+      "cName": "examples_language_baseline_with_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "v",
+          "cName": "v",
+          "line": 1240
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1240
+    },
+    {
+      "name": "configure",
+      "cName": "examples_language_baseline_configure",
+      "params": [
+        {
+          "name": "host",
+          "cName": "host"
+        },
+        {
+          "name": "port",
+          "cName": "port"
+        },
+        {
+          "name": "debug",
+          "cName": "debug"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "named_args_demo",
+      "cName": "examples_language_baseline_named_args_demo",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 1251
+    },
+    {
+      "name": "area",
+      "cName": "examples_language_baseline_Circle_area",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 1268
+    },
+    {
+      "name": "label",
+      "cName": "examples_language_baseline_Circle_label",
+      "params": [
+        {
+          "name": "this",
+          "cName": "this"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 1271
+    },
+    {
+      "name": "dyn_demo",
+      "cName": "examples_language_baseline_dyn_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "c",
+          "cName": "c",
+          "line": 1274
+        },
+        {
+          "name": "s",
+          "cName": "s",
+          "line": 1275
+        },
+        {
+          "name": "label",
+          "cName": "label",
+          "line": 1276
+        },
+        {
+          "name": "area",
+          "cName": "area",
+          "line": 1277
+        },
+        {
+          "name": "_l",
+          "cName": "_l",
+          "line": 1278
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1274
+    },
+    {
+      "name": "tuple_demo",
+      "cName": "examples_language_baseline_tuple_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "pair",
+          "cName": "pair",
+          "line": 1287
+        },
+        {
+          "name": "sum_pos",
+          "cName": "sum_pos",
+          "line": 1288
+        },
+        {
+          "name": "point",
+          "cName": "point",
+          "line": 1291
+        },
+        {
+          "name": "sum_named",
+          "cName": "sum_named",
+          "line": 1292
+        },
+        {
+          "name": "result",
+          "cName": "result",
+          "line": 1295
+        },
+        {
+          "name": "coords_x",
+          "cName": "coords_x",
+          "line": 1296
+        },
+        {
+          "name": "coords_y",
+          "cName": "coords_y",
+          "line": 1297
+        },
+        {
+          "name": "__mt_destructure_val_1",
+          "cName": "__mt_destructure_val_1"
+        },
+        {
+          "name": "a",
+          "cName": "a"
+        },
+        {
+          "name": "b",
+          "cName": "b"
+        },
+        {
+          "name": "sum_dest",
+          "cName": "sum_dest",
+          "line": 1301
+        },
+        {
+          "name": "v1",
+          "cName": "v1",
+          "line": 1304
+        },
+        {
+          "name": "v2",
+          "cName": "v2",
+          "line": 1305
+        },
+        {
+          "name": "swapped",
+          "cName": "swapped",
+          "line": 1306
+        },
+        {
+          "name": "__mt_destructure_val_2",
+          "cName": "__mt_destructure_val_2"
+        },
+        {
+          "name": "left",
+          "cName": "left"
+        },
+        {
+          "name": "rite",
+          "cName": "rite"
+        },
+        {
+          "name": "ord",
+          "cName": "ord",
+          "line": 1308
+        },
+        {
+          "name": "vec",
+          "cName": "vec",
+          "line": 1311
+        },
+        {
+          "name": "__mt_destructure_val_3",
+          "cName": "__mt_destructure_val_3"
+        },
+        {
+          "name": "x",
+          "cName": "x"
+        },
+        {
+          "name": "y",
+          "cName": "y"
+        },
+        {
+          "name": "sum_struct",
+          "cName": "sum_struct",
+          "line": 1313
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1287
+    },
+    {
+      "name": "get_coords",
+      "cName": "examples_language_baseline_get_coords",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 1319
+    },
+    {
+      "name": "nested_struct_demo",
+      "cName": "examples_language_baseline_nested_struct_demo",
+      "params": [],
+      "locals": [
+        {
+          "name": "r",
+          "cName": "r",
+          "line": 1326
+        },
+        {
+          "name": "width",
+          "cName": "width",
+          "line": 1337
+        },
+        {
+          "name": "area",
+          "cName": "area",
+          "line": 1338
+        },
+        {
+          "name": "qualified",
+          "cName": "qualified",
+          "line": 1340
+        },
+        {
+          "name": "_q",
+          "cName": "_q",
+          "line": 1344
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1326
+    },
+    {
+      "name": "main",
+      "cName": "examples_language_baseline_main",
+      "params": [],
+      "locals": [
+        {
+          "name": "total",
+          "cName": "total",
+          "line": 1353
+        },
+        {
+          "name": "npc",
+          "cName": "npc",
+          "line": 1381
+        },
+        {
+          "name": "__mt_proc_expr_2",
+          "cName": "__mt_proc_expr_2"
+        },
+        {
+          "name": "__mt_proc_expr_4",
+          "cName": "__mt_proc_expr_4"
+        },
+        {
+          "name": "dblr",
+          "cName": "dblr",
+          "line": 1399
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 1353
+    },
+    {
+      "name": "main",
+      "cName": "main",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "zero_meaning",
+      "cName": "examples_language_baseline_zero_meaning",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 1204
+    },
+    {
+      "name": "hex_prefix",
+      "cName": "examples_language_baseline_hex_prefix",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 1207
+    },
+    {
+      "name": "mt_event_examples_language_baseline_tagged_event_4__subscribe_fn",
+      "cName": "mt_event_examples_language_baseline_tagged_event_4__subscribe",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "listener",
+          "cName": "listener"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_tagged_event_4__subscribe_once_fn",
+      "cName": "mt_event_examples_language_baseline_tagged_event_4__subscribe_once",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "listener",
+          "cName": "listener"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_tagged_event_4__subscribe_stateful_fn",
+      "cName": "mt_event_examples_language_baseline_tagged_event_4__subscribe_stateful",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "state",
+          "cName": "state"
+        },
+        {
+          "name": "listener",
+          "cName": "listener"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_tagged_event_4__subscribe_once_stateful_fn",
+      "cName": "mt_event_examples_language_baseline_tagged_event_4__subscribe_once_stateful",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "state",
+          "cName": "state"
+        },
+        {
+          "name": "listener",
+          "cName": "listener"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_tagged_event_4__unsubscribe_fn",
+      "cName": "mt_event_examples_language_baseline_tagged_event_4__unsubscribe",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "subscription",
+          "cName": "subscription"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_tagged_event_4__emit_fn",
+      "cName": "mt_event_examples_language_baseline_tagged_event_4__emit",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_snapshots",
+          "cName": "__mt_snapshots"
+        },
+        {
+          "name": "__mt_snapshot_count",
+          "cName": "__mt_snapshot_count"
+        },
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_dispatch_index",
+          "cName": "__mt_dispatch_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        },
+        {
+          "name": "__mt_waiter_frame",
+          "cName": "__mt_waiter_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_tagged_event_4__wait__ready_fn",
+      "cName": "mt_event_examples_language_baseline_tagged_event_4__wait__ready",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_tagged_event_4__wait__set_waiter_fn",
+      "cName": "mt_event_examples_language_baseline_tagged_event_4__wait__set_waiter",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        },
+        {
+          "name": "waiter_frame",
+          "cName": "waiter_frame"
+        },
+        {
+          "name": "waiter",
+          "cName": "waiter"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_tagged_event_4__wait__release_fn",
+      "cName": "mt_event_examples_language_baseline_tagged_event_4__wait__release",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_tagged_event_4__wait__take_result_fn",
+      "cName": "mt_event_examples_language_baseline_tagged_event_4__wait__take_result",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_tagged_event_4__wait_fn",
+      "cName": "mt_event_examples_language_baseline_tagged_event_4__wait",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        },
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_ready_4__subscribe_fn",
+      "cName": "mt_event_examples_language_baseline_ready_4__subscribe",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "listener",
+          "cName": "listener"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_ready_4__subscribe_once_fn",
+      "cName": "mt_event_examples_language_baseline_ready_4__subscribe_once",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "listener",
+          "cName": "listener"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_ready_4__subscribe_stateful_fn",
+      "cName": "mt_event_examples_language_baseline_ready_4__subscribe_stateful",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "state",
+          "cName": "state"
+        },
+        {
+          "name": "listener",
+          "cName": "listener"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_ready_4__subscribe_once_stateful_fn",
+      "cName": "mt_event_examples_language_baseline_ready_4__subscribe_once_stateful",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "state",
+          "cName": "state"
+        },
+        {
+          "name": "listener",
+          "cName": "listener"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_ready_4__unsubscribe_fn",
+      "cName": "mt_event_examples_language_baseline_ready_4__unsubscribe",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "subscription",
+          "cName": "subscription"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_ready_4__emit_fn",
+      "cName": "mt_event_examples_language_baseline_ready_4__emit",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_snapshots",
+          "cName": "__mt_snapshots"
+        },
+        {
+          "name": "__mt_snapshot_count",
+          "cName": "__mt_snapshot_count"
+        },
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_dispatch_index",
+          "cName": "__mt_dispatch_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        },
+        {
+          "name": "__mt_waiter_frame",
+          "cName": "__mt_waiter_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_ready_4__wait__ready_fn",
+      "cName": "mt_event_examples_language_baseline_ready_4__wait__ready",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_ready_4__wait__set_waiter_fn",
+      "cName": "mt_event_examples_language_baseline_ready_4__wait__set_waiter",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        },
+        {
+          "name": "waiter_frame",
+          "cName": "waiter_frame"
+        },
+        {
+          "name": "waiter",
+          "cName": "waiter"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_ready_4__wait__release_fn",
+      "cName": "mt_event_examples_language_baseline_ready_4__wait__release",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_ready_4__wait__take_result_fn",
+      "cName": "mt_event_examples_language_baseline_ready_4__wait__take_result",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_ready_4__wait_fn",
+      "cName": "mt_event_examples_language_baseline_ready_4__wait",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        },
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_updated_float_8__subscribe_fn",
+      "cName": "mt_event_examples_language_baseline_updated_float_8__subscribe",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "listener",
+          "cName": "listener"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_updated_float_8__subscribe_once_fn",
+      "cName": "mt_event_examples_language_baseline_updated_float_8__subscribe_once",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "listener",
+          "cName": "listener"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_updated_float_8__subscribe_stateful_fn",
+      "cName": "mt_event_examples_language_baseline_updated_float_8__subscribe_stateful",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "state",
+          "cName": "state"
+        },
+        {
+          "name": "listener",
+          "cName": "listener"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_updated_float_8__subscribe_once_stateful_fn",
+      "cName": "mt_event_examples_language_baseline_updated_float_8__subscribe_once_stateful",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "state",
+          "cName": "state"
+        },
+        {
+          "name": "listener",
+          "cName": "listener"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_updated_float_8__unsubscribe_fn",
+      "cName": "mt_event_examples_language_baseline_updated_float_8__unsubscribe",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "subscription",
+          "cName": "subscription"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_updated_float_8__emit_fn",
+      "cName": "mt_event_examples_language_baseline_updated_float_8__emit",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        },
+        {
+          "name": "payload",
+          "cName": "payload"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_snapshots",
+          "cName": "__mt_snapshots"
+        },
+        {
+          "name": "__mt_snapshot_count",
+          "cName": "__mt_snapshot_count"
+        },
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_dispatch_index",
+          "cName": "__mt_dispatch_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        },
+        {
+          "name": "__mt_waiter_frame",
+          "cName": "__mt_waiter_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_updated_float_8__wait__ready_fn",
+      "cName": "mt_event_examples_language_baseline_updated_float_8__wait__ready",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_updated_float_8__wait__set_waiter_fn",
+      "cName": "mt_event_examples_language_baseline_updated_float_8__wait__set_waiter",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        },
+        {
+          "name": "waiter_frame",
+          "cName": "waiter_frame"
+        },
+        {
+          "name": "waiter",
+          "cName": "waiter"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_updated_float_8__wait__release_fn",
+      "cName": "mt_event_examples_language_baseline_updated_float_8__wait__release",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_updated_float_8__wait__take_result_fn",
+      "cName": "mt_event_examples_language_baseline_updated_float_8__wait__take_result",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "frame"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "mt_event_examples_language_baseline_updated_float_8__wait_fn",
+      "cName": "mt_event_examples_language_baseline_updated_float_8__wait",
+      "params": [
+        {
+          "name": "event",
+          "cName": "event"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_slot_index",
+          "cName": "__mt_slot_index"
+        },
+        {
+          "name": "__mt_slot",
+          "cName": "__mt_slot"
+        },
+        {
+          "name": "__mt_generation",
+          "cName": "__mt_generation"
+        },
+        {
+          "name": "__mt_wait_frame",
+          "cName": "__mt_wait_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_1__invoke",
+      "cName": "examples_language_baseline__proc_1__invoke",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        },
+        {
+          "name": "x",
+          "cName": "x"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_1__release",
+      "cName": "examples_language_baseline__proc_1__release",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_1__retain",
+      "cName": "examples_language_baseline__proc_1__retain",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_2__invoke",
+      "cName": "examples_language_baseline__proc_2__invoke",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        },
+        {
+          "name": "x",
+          "cName": "x"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        },
+        {
+          "name": "offset",
+          "cName": "__mt_capture_offset"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_2__release",
+      "cName": "examples_language_baseline__proc_2__release",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_2__retain",
+      "cName": "examples_language_baseline__proc_2__retain",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_3__invoke",
+      "cName": "examples_language_baseline__proc_3__invoke",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        },
+        {
+          "name": "offsets",
+          "cName": "__mt_capture_offsets"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 673
+    },
+    {
+      "name": "examples_language_baseline__proc_3__release",
+      "cName": "examples_language_baseline__proc_3__release",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_3__retain",
+      "cName": "examples_language_baseline__proc_3__retain",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_4__invoke",
+      "cName": "examples_language_baseline__proc_4__invoke",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 679
+    },
+    {
+      "name": "examples_language_baseline__proc_4__release",
+      "cName": "examples_language_baseline__proc_4__release",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_4__retain",
+      "cName": "examples_language_baseline__proc_4__retain",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_5__invoke",
+      "cName": "examples_language_baseline__proc_5__invoke",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        },
+        {
+          "name": "inner",
+          "cName": "__mt_capture_inner"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 681
+    },
+    {
+      "name": "examples_language_baseline__proc_5__release",
+      "cName": "examples_language_baseline__proc_5__release",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_5__retain",
+      "cName": "examples_language_baseline__proc_5__retain",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_6__invoke",
+      "cName": "examples_language_baseline__proc_6__invoke",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        },
+        {
+          "name": "x",
+          "cName": "x"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        },
+        {
+          "name": "factor",
+          "cName": "__mt_capture_factor"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 687
+    },
+    {
+      "name": "examples_language_baseline__proc_6__release",
+      "cName": "examples_language_baseline__proc_6__release",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_6__retain",
+      "cName": "examples_language_baseline__proc_6__retain",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_7__invoke",
+      "cName": "examples_language_baseline__proc_7__invoke",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        },
+        {
+          "name": "add",
+          "cName": "add"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        },
+        {
+          "name": "base",
+          "cName": "__mt_capture_base"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 696
+    },
+    {
+      "name": "examples_language_baseline__proc_7__release",
+      "cName": "examples_language_baseline__proc_7__release",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_7__retain",
+      "cName": "examples_language_baseline__proc_7__retain",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_8__invoke",
+      "cName": "examples_language_baseline__proc_8__invoke",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        },
+        {
+          "name": "offset",
+          "cName": "__mt_capture_offset"
+        }
+      ],
+      "sourcePath": "language_baseline.mt",
+      "line": 709
+    },
+    {
+      "name": "examples_language_baseline__proc_8__release",
+      "cName": "examples_language_baseline__proc_8__release",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_8__retain",
+      "cName": "examples_language_baseline__proc_8__retain",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_proc_env_ptr",
+          "cName": "__mt_proc_env_ptr"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "async_child__resume",
+      "cName": "examples_language_baseline_async_child__resume",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "__mt_frame_raw"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        },
+        {
+          "name": "waiter_frame",
+          "cName": "__mt_waiter_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline_async_child__ready_fn",
+      "cName": "examples_language_baseline_async_child__ready",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "__mt_frame_raw"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline_async_child__set_waiter_fn",
+      "cName": "examples_language_baseline_async_child__set_waiter",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "__mt_frame_raw"
+        },
+        {
+          "name": "waiter_frame",
+          "cName": "waiter_frame"
+        },
+        {
+          "name": "waiter",
+          "cName": "waiter"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline_async_child__release_fn",
+      "cName": "examples_language_baseline_async_child__release",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "__mt_frame_raw"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline_async_child__take_result_fn",
+      "cName": "examples_language_baseline_async_child__take_result",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "__mt_frame_raw"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline_async_child__cancel_fn",
+      "cName": "examples_language_baseline_async_child__cancel",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "__mt_frame_raw"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "async_demo__resume",
+      "cName": "examples_language_baseline_async_demo__resume",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "__mt_frame_raw"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        },
+        {
+          "name": "waiter_frame",
+          "cName": "__mt_waiter_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline_async_demo__ready_fn",
+      "cName": "examples_language_baseline_async_demo__ready",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "__mt_frame_raw"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline_async_demo__set_waiter_fn",
+      "cName": "examples_language_baseline_async_demo__set_waiter",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "__mt_frame_raw"
+        },
+        {
+          "name": "waiter_frame",
+          "cName": "waiter_frame"
+        },
+        {
+          "name": "waiter",
+          "cName": "waiter"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline_async_demo__release_fn",
+      "cName": "examples_language_baseline_async_demo__release",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "__mt_frame_raw"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline_async_demo__take_result_fn",
+      "cName": "examples_language_baseline_async_demo__take_result",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "__mt_frame_raw"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline_async_demo__cancel_fn",
+      "cName": "examples_language_baseline_async_demo__cancel",
+      "params": [
+        {
+          "name": "frame",
+          "cName": "__mt_frame_raw"
+        }
+      ],
+      "locals": [
+        {
+          "name": "__mt_frame",
+          "cName": "__mt_frame"
+        }
+      ],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "__dyn_examples_language_baseline_Circle_area",
+      "cName": "__dyn_examples_language_baseline_Circle_area",
+      "params": [
+        {
+          "name": "data",
+          "cName": "data"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "__dyn_examples_language_baseline_Circle_label",
+      "cName": "__dyn_examples_language_baseline_Circle_label",
+      "params": [
+        {
+          "name": "data",
+          "cName": "data"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_9__invoke",
+      "cName": "examples_language_baseline__proc_9__invoke",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_9__release",
+      "cName": "examples_language_baseline__proc_9__release",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_9__retain",
+      "cName": "examples_language_baseline__proc_9__retain",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_10__invoke",
+      "cName": "examples_language_baseline__proc_10__invoke",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_10__release",
+      "cName": "examples_language_baseline__proc_10__release",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "examples_language_baseline__proc_10__retain",
+      "cName": "examples_language_baseline__proc_10__retain",
+      "params": [
+        {
+          "name": "env",
+          "cName": "__mt_proc_env"
+        }
+      ],
+      "locals": [],
+      "sourcePath": "language_baseline.mt"
+    },
+    {
+      "name": "zero_meaning",
+      "cName": "examples_language_baselinezero_meaning",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 1204
+    },
+    {
+      "name": "hex_prefix",
+      "cName": "examples_language_baselinehex_prefix",
+      "params": [],
+      "locals": [],
+      "sourcePath": "language_baseline.mt",
+      "line": 1207
+    }
+  ],
+  "binaryPath": "language_baseline",
+  "programSourcePath": "language_baseline.mt"
+}

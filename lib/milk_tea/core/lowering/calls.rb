@@ -6,8 +6,14 @@ module MilkTea
 
 
       def lower_call(expression, env:, type:)
-        if (literal = lower_compile_time_literal(compile_time_const_value(expression, env:), type))
-          return literal
+        ct_value = compile_time_const_value(expression, env:)
+        if ct_value && (literal = lower_compile_time_literal(ct_value, type))
+          if expression.callee.is_a?(AST::Identifier)
+            binding = @functions[expression.callee.name]
+            return literal unless binding&.ast&.respond_to?(:const) && binding.ast.const
+          else
+            return literal
+          end
         end
 
         kind, callee_name, receiver, callee_type, callee_binding = resolve_callee(expression.callee, env, arguments: expression.arguments)

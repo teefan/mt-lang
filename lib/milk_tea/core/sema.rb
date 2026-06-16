@@ -336,22 +336,39 @@ module MilkTea
           when AST::FunctionDef
             next unless decl.const && decl.body
 
-            decl.body.each do |stmt|
-              next unless stmt.is_a?(AST::EmitStmt)
-
-              emit_decl = stmt.declaration
-              next if emit_decl.is_a?(AST::ErrorExpr)
-
-              @ast.declarations << emit_decl
-              collect_emit_from_node(emit_decl)
-            end
+            collect_emit_from_statements(decl.body)
           when AST::WhenStmt
             body = when_chosen_body(decl)
             collect_emit_from_declarations(body) if body
           when AST::StructDecl, AST::ExtendingBlock
-            # no emit in structs/extending blocks (body is fields/methods, not statements)
+            # no emit in structs/extending blocks
           end
         end
+      end
+
+      def collect_emit_from_statements(statements)
+        statements.each do |stmt|
+          case stmt
+          when AST::EmitStmt
+            emit_decl = stmt.declaration
+            next if emit_decl.is_a?(AST::ErrorExpr)
+
+            @ast.declarations << emit_decl
+            collect_emit_from_node(emit_decl)
+          when AST::WhenStmt
+            body = when_chosen_body(stmt) || []
+            body.each { |nested| collect_emit_from_statements([nested]) }
+          when AST::ForStmt, AST::WhileStmt, AST::IfStmt, AST::MatchStmt
+            next unless stmt.inline
+            stmt.body&.each { |s| collect_emit_from_statements([s]) }
+            if stmt.is_a?(AST::IfStmt)
+              stmt.else_body&.each { |s| collect_emit_from_statements([s]) }
+            end
+          end
+        end
+      end
+
+      def collect_emit_from_inline_else(stmt)
       end
 
       def collect_emit_from_node(node)

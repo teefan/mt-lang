@@ -816,7 +816,7 @@ Heredoc notes:
 - Pointer indexing requires `unsafe`.
 - `read(ptr)` requires `unsafe`.
 - Pointer casts require `unsafe`.
-- `reinterpret[...]` requires `unsafe` and non-array concrete sized types.
+- `reinterpret[...]` requires `unsafe`, non-array concrete sized types, and equal-size source and target types.
 
 ## 14. Async
 
@@ -842,16 +842,20 @@ Rules:
 Supported `await` contexts include:
 
 - plain expression positions
+- call arguments (normalization hoists to `let` bindings)
+- binary operations (`and`, `or`, arithmetic, comparison)
 - `if` expressions
 - `if` / `else if` / `else` bodies and conditions
 - `while` bodies and conditions
 - single-form and parallel `for` bodies and iterables
 - `match` discriminants and arms
+- member access (`a.b`) and indexing (`a[i]`)
 - `let ... else:` initializers and else bodies
 - `unsafe` blocks
 - short-circuit `and` / `or`
 - assignment targets
 - `defer` cleanup bodies inside async functions
+- format strings (`f"#{await expr}"`)
 
 ## 15. Events
 
