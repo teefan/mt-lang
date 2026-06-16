@@ -973,4 +973,253 @@ class NullabilityUnsafeTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_const_ptr_of_on_lvalue
+    source = <<~MT
+      # module demo.const_ptr
+
+      function const_ptr_read() -> int:
+          var counter: int = 0
+          let c = const_ptr_of(counter)
+          unsafe:
+              return read(c)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("const_ptr_read")
+  end
+
+  def test_rejects_const_ptr_of_on_ref_value
+    source = <<~MT
+      # module demo.const_ptr_bad
+
+      function main() -> void:
+          var value = 1
+          let r = ref_of(value)
+          let _ = const_ptr_of(r)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/const_ptr_of cannot target ref values/, error.message)
+  end
+
+  def test_type_checks_ptr_of_ref_value
+    source = <<~MT
+      # module demo.ptr_of_ref
+
+      function ptr_of_ref_value() -> ptr[int]:
+          var counter: int = 0
+          let r = ref_of(counter)
+          return ptr_of(r)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("ptr_of_ref_value")
+  end
+
+  def test_type_checks_nested_unsafe_blocks
+    source = <<~MT
+      # module demo.nested_unsafe
+
+      function nested_unsafe(outer: ptr[int], inner: ptr[int]) -> int:
+          unsafe:
+              let a = read(outer)
+              unsafe:
+                  let b = read(inner)
+                  return a + b
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("nested_unsafe")
+  end
+
+  def test_type_checks_deeply_nested_unsafe
+    source = <<~MT
+      # module demo.deep_unsafe
+
+      function deep_unsafe(a: ptr[int], b: ptr[int], c: ptr[int]) -> int:
+          unsafe:
+              let x = read(a)
+              unsafe:
+                  let y = read(b)
+                  unsafe:
+                      let z = read(c)
+                      return x + y + z
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("deep_unsafe")
+  end
+
+  def test_type_checks_reinterpret_equal_size
+    source = <<~MT
+      # module demo.reinterpret_eq
+
+      function reinterpret_int_as_uint(value: int) -> uint:
+          unsafe:
+              return reinterpret[uint](value)
+
+      function reinterpret_uint_as_int(value: uint) -> int:
+          unsafe:
+              return reinterpret[int](value)
+
+      function reinterpret_float_as_uint(value: float) -> uint:
+          unsafe:
+              return reinterpret[uint](value)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("reinterpret_int_as_uint")
+    assert_equal true, result.functions.key?("reinterpret_uint_as_int")
+    assert_equal true, result.functions.key?("reinterpret_float_as_uint")
+  end
+
+  def test_rejects_reinterpret_unequal_size
+    source = <<~MT
+      # module demo.reinterpret_bad
+
+      function bad_reinterpret(value: long) -> int:
+          unsafe:
+              return reinterpret[int](value)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/reinterpret requires equal-size types/, error.message)
+  end
+
+  def test_type_checks_const_ptr_field_access_in_unsafe
+    source = <<~MT
+      # module demo.const_ptr_field
+
+      function const_ptr_access(p: const_ptr[int]) -> int:
+          unsafe:
+              return read(p)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("const_ptr_access")
+  end
+
+  def test_rejects_const_ptr_access_outside_unsafe
+    source = <<~MT
+      # module demo.const_ptr_bad
+
+      function bad_access(p: const_ptr[int]) -> int:
+          return read(p)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/raw pointer dereference requires unsafe/, error.message)
+  end
+
+  def test_type_checks_unsafe_statement_block_form
+    source = <<~MT
+      # module demo.unsafe_block
+
+      function unsafe_block(p: ptr[int], value: int) -> void:
+          unsafe:
+              p[0] = value
+              p[1] = value + 1
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("unsafe_block")
+  end
+
+  def test_type_checks_unsafe_expression_form
+    source = <<~MT
+      # module demo.unsafe_expr
+
+      function unsafe_expr(p: ptr[int]) -> int:
+          return unsafe: read(p)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("unsafe_expr")
+  end
+
+  def test_type_checks_get_with_span
+    source = <<~MT
+      # module demo.get_span
+
+      function get_span_item(s: span[int], idx: int) -> int:
+          let item = get(s, idx) else:
+              return -1
+          unsafe:
+              return read(item)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("get_span_item")
+  end
+
+  def test_type_checks_nullable_flow_through_multiple_branches
+    source = <<~MT
+      # module demo.null_branch
+
+      function multi_branch(h: ptr[int]?) -> int:
+          if h == null:
+              return 0
+          unsafe:
+              return read(h)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("multi_branch")
+  end
+
+  def test_rejects_ptr_of_on_non_lvalue
+    source = <<~MT
+      # module demo.bad_ptr_of
+
+      function bad_ptr_of() -> void:
+          let raw = ptr_of(42)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/requires a mutable safe lvalue source/, error.message)
+  end
+
+  def test_type_checks_const_ptr_read_after_mutation
+    source = <<~MT
+      # module demo.const_ptr_chain
+
+      function const_ptr_read_after_mutate() -> int:
+          var counter: int = 0
+          let c = const_ptr_of(counter)
+          read(ref_of(counter)) = 42
+          unsafe:
+              return read(c)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("const_ptr_read_after_mutate")
+  end
+
+  def test_type_checks_nullable_ptr_as_param
+    source = <<~MT
+      # module demo.nullable_param
+
+      function nullable_param(handle: ptr[int]?) -> int:
+          if handle != null:
+              unsafe:
+                  return read(handle)
+          return 0
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("nullable_param")
+  end
+
 end
