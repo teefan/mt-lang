@@ -286,7 +286,7 @@ module MilkTea
               kind:   kind,
               line:   id_tok.line,
               column: id_tok.column
-            }
+            } unless kind == 'variable' && id_tok.lexeme == '_'
           end
           symbols
         end

@@ -21,7 +21,15 @@ module MilkTea
       DOCUMENT_SOURCES = %w[active-editor visible-editor background-document].freeze
       PERF_LOG_THRESHOLD_MS = 1000
 
-      # Token types that introduce a named definition, in order of precedence
+      # Token types that introduce a named definition, in order of precedence.
+      #
+      # NOTE: this list is intentionally minimal. Multi-keyword prefixes such as
+      # 'const function', 'async function', 'external function', 'foreign function',
+      # and visibility modifiers ('public') are captured by the adjacent-token scan
+      # in extract_symbols_from_tokens because the scan relies on every pair of
+      # adjacent tokens, and the inner keyword (e.g. :function) is always followed
+      # by the identifier. If the lexer ever merges a compound keyword into a
+      # single token type (e.g. :const_function), it must be added here.
       DEFINITION_KEYWORDS = %i[function struct union enum flags variant type const var let extending opaque interface event].freeze
       DOC_COMMENT_PREFIX = '##'
       DOC_TAG_PATTERN = /\A\s*@([A-Za-z_][A-Za-z0-9_-]*)(?:\s+(.*))?\z/
