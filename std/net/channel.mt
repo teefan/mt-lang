@@ -4,13 +4,13 @@ import std.net as net
 import std.string as string
 import std.vec as vec
 
-const header_magic: uint = 1297374001
+const header_magic: uint = 0x4D545331
 const header_bytes: ptr_uint = 17
 const reliable_flag: ubyte = 1
 const ack_only_flag: ubyte = 2
 const ack_window_size: ptr_uint = 32
-const max_uint_value: ulong = 4294967295
-const half_sequence_range: uint = 2147483648
+const max_uint_value: ulong = 0xFFFFFFFF
+const half_sequence_range: uint = 0x80000000
 
 public struct Config:
     max_payload_bytes: ptr_uint

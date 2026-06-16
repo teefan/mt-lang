@@ -6,7 +6,7 @@ import std.vec as vec
 
 const frame_header_bytes: ptr_uint = 4
 const discard_chunk_bytes: ptr_uint = 4096
-const max_frame_payload_bytes: ptr_uint = 4294967295
+const max_frame_payload_bytes: ptr_uint = 0xFFFFFFFF
 
 public struct Error:
     code: int
