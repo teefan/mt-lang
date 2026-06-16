@@ -99,9 +99,13 @@ module MilkTea
             parent = name_index[decl.name]&.find { |s| symbol_line(s) == (decl.line || 0) }
             next unless parent
 
-            if (detail = type_detail_string(decl.return_type))
-              parent[:detail] = "-> #{detail}"
+            detail_parts = []
+            detail_parts << 'const' if decl.respond_to?(:const) && decl.const
+            detail_parts << 'async' if decl.respond_to?(:async) && decl.async
+            if (ret = type_detail_string(decl.return_type))
+              detail_parts << "-> #{ret}"
             end
+            parent[:detail] = detail_parts.join(' ') unless detail_parts.empty?
 
             locals = collect_local_decls(decl.body)
             next unless locals&.any?
@@ -359,12 +363,13 @@ module MilkTea
       def child_variant_arm_symbol(a, default_line: nil)
         line = (a.respond_to?(:line) && a.line) ? a.line : default_line
         return nil unless a.respond_to?(:name) && a.name && line
+        col = a.respond_to?(:column) && a.column ? a.column : 1
         {
           name: a.name, kind: 22,
           range: { start: { line: line - 1, character: 0 }, end: { line: line, character: 0 } },
           selectionRange: {
-            start: { line: line - 1, character: 0 },
-            end: { line: line - 1, character: a.name.length },
+            start: { line: line - 1, character: col - 1 },
+            end: { line: line - 1, character: col - 1 + a.name.length },
           },
         }
       end
@@ -383,10 +388,8 @@ module MilkTea
         when AST::WhileStmt
           collect_local_decls(body.body)
         when AST::ForStmt
-          collect_local_decls(body.body)
-        when AST::MatchStmt
-          (body.arms || []).flat_map { |a| collect_local_decls(a.body) }
-        when AST::DeferStmt
+          collect_local_decls(body.body) + body.bindings
+        when AST::WhileStmt
           collect_local_decls(body.body)
         when AST::UnsafeStmt
           collect_local_decls(body.body)
@@ -402,13 +405,14 @@ module MilkTea
 
       def local_decl_symbol(decl)
         return nil unless decl.name
+        return nil if decl.name == '_'
 
         line = decl.line || 0
         col = decl.column || 1
         detail = decl.respond_to?(:type) ? type_detail_string(decl.type) : nil
 
         children = []
-        if decl.value.is_a?(AST::ProcExpr)
+        if decl.respond_to?(:value) && decl.value.is_a?(AST::ProcExpr)
           detail ||= proc_signature_detail(decl.value)
           proc_locals = collect_local_decls(decl.value.body)
           children = proc_locals.filter_map { |l| local_decl_symbol(l) }
@@ -437,7 +441,14 @@ module MilkTea
 
       def child_method_symbol(m)
         return nil unless m.respond_to?(:name) && m.name && m.respond_to?(:line) && m.line
-        detail = type_detail_string(m.return_type) ? "-> #{type_detail_string(m.return_type)}" : nil
+
+        detail_parts = []
+        detail_parts << 'mut' if m.respond_to?(:kind) && m.kind == :editable_function
+        detail_parts << 'static' if m.respond_to?(:kind) && m.kind == :static_function
+        detail_parts << 'async' if m.respond_to?(:async) && m.async
+        if (ret = type_detail_string(m.return_type))
+          detail_parts << "-> #{ret}"
+        end
         {
           name: m.name, kind: 6,
           range: { start: { line: m.line - 1, character: 0 }, end: { line: (m.respond_to?(:end_line) && m.end_line ? m.end_line : m.line), character: 0 } },
@@ -445,7 +456,7 @@ module MilkTea
             start: { line: m.line - 1, character: (m.respond_to?(:column) && m.column ? m.column - 1 : 0) },
             end: { line: m.line - 1, character: (m.respond_to?(:column) && m.column ? m.column - 1 + m.name.length : 0) },
           },
-          detail: detail,
+          detail: detail_parts.empty? ? nil : detail_parts.join(' '),
         }.compact
       end
 
