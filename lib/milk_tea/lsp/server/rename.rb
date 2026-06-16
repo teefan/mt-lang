@@ -204,10 +204,23 @@ module MilkTea
 
       def module_level_symbol_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
         name = token.lexeme
-        module_level = facts.functions.key?(name) || facts.values.key?(name) || facts.types.key?(name)
+        module_level = facts.functions.key?(name) || facts.values.key?(name) || facts.types.key?(name) || facts.interfaces&.key?(name)
         return nil unless module_level
 
-        lexical_rename_changes_in_document(uri, name, new_name)
+        related_uris = @workspace.related_open_document_uris(uri)
+        changes = {}
+        [uri, *related_uris].uniq.each do |doc_uri|
+          edits = []
+          doc_tokens = @workspace.get_tokens(doc_uri) || []
+          doc_tokens.each do |tok|
+            next unless tok.type == :identifier && tok.lexeme == name
+            edits << { range: token_to_range(tok), newText: new_name }
+          end
+          changes[doc_uri] = edits unless edits.empty?
+        end
+
+        return nil if changes.empty?
+        changes
       end
 
       def import_alias_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
@@ -468,25 +481,16 @@ module MilkTea
         struct_type = find_struct_containing_field(facts, field_name)
         return nil unless struct_type
 
-        related_uris = @workspace.related_open_document_uris(uri)
-        changes = {}
-        [uri, *related_uris].uniq.each do |doc_uri|
-          edits = []
-          doc_tokens = @workspace.get_tokens(doc_uri) || []
-          next if doc_tokens.empty?
+        edits = []
+        tokens.each_with_index do |tok, i|
+          next unless tok.type == :identifier && tok.lexeme == field_name
+          next unless struct_field_edit_context?(tokens, i, struct_type)
 
-          doc_tokens.each_with_index do |tok, i|
-            next unless tok.type == :identifier && tok.lexeme == field_name
-            next unless struct_field_edit_context?(doc_tokens, i, struct_type)
-
-            edits << { range: token_to_range(tok), newText: new_name }
-          end
-
-          changes[doc_uri] = edits unless edits.empty?
+          edits << { range: token_to_range(tok), newText: new_name }
         end
 
-        return nil if changes.empty?
-        changes
+        return nil if edits.empty?
+        { uri => edits }
       end
 
       def struct_field_cursor_context?(tokens, index)
@@ -550,25 +554,17 @@ module MilkTea
         receiver_type = method_info[:receiver_type]
         return nil unless receiver_type
 
-        related_uris = @workspace.related_open_document_uris(uri)
-        changes = {}
-        [uri, *related_uris].uniq.each do |doc_uri|
-          edits = []
-          doc_tokens = @workspace.get_tokens(doc_uri) || []
-          next if doc_tokens.empty?
+        edits = []
+        doc_tokens = @workspace.get_tokens(uri) || []
+        doc_tokens.each_with_index do |tok, i|
+          next unless tok.type == :identifier && tok.lexeme == method_name
+          next unless i > 0 && doc_tokens[i - 1].type == :dot
 
-          doc_tokens.each_with_index do |tok, i|
-            next unless tok.type == :identifier && tok.lexeme == method_name
-            next unless i > 0 && doc_tokens[i - 1].type == :dot
-
-            edits << { range: token_to_range(tok), newText: new_name }
-          end
-
-          changes[doc_uri] = edits unless edits.empty?
+          edits << { range: token_to_range(tok), newText: new_name }
         end
 
-        return nil if changes.empty?
-        changes
+        return nil if edits.empty?
+        { uri => edits }
       end
 
       def find_method_at_position(uri, token, facts)
