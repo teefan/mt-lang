@@ -287,6 +287,7 @@ module MilkTea
         when 'constant'   then 14 # Constant
         when 'variable'   then 13 # Variable
         when 'event'      then 24 # Event
+        when 'type_param' then 26 # TypeParameter
         else 1 # File
         end
       end

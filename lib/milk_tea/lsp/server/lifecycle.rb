@@ -37,6 +37,10 @@ module MilkTea
             callHierarchyProvider: true,
             typeHierarchyProvider: true,
             selectionRangeProvider: true,
+            linkedEditingRangeProvider: true,
+            executeCommandProvider: {
+              commands: ['mtc.restartServer']
+            },
             documentOnTypeFormattingProvider: {
               firstTriggerCharacter: "\n",
               moreTriggerCharacter: []
