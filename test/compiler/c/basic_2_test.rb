@@ -2606,4 +2606,32 @@ function main() -> int:
     assert_match(/42/, generated)
   end
 
+  def test_generate_c_for_emit_struct_and_const
+    source = <<~MT
+
+# module demo.emit_struct
+
+struct Point:
+    x: int
+    y: int
+
+const function gen() -> void:
+    emit function make_point() -> Point:
+        return Point(x = 10, y = 20)
+
+    emit const LABEL: str = "emitted"
+
+function main() -> int:
+    let p = make_point()
+    let _ = LABEL
+    return p.x + p.y
+
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/10/, generated)
+    assert_match(/20/, generated)
+    assert_match(/emitted/, generated)
+  end
+
 end
