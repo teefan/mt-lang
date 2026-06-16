@@ -990,9 +990,46 @@ module MilkTea
       def foreign_identity_projection_expression(expression, target_type)
         return expression if expression.type == target_type
         return cast_expression(expression, target_type) if foreign_identity_projection_cast_compatible?(expression.type, target_type)
-        return reinterpret_expression(expression, target_type) if foreign_identity_projection_reinterpret_compatible?(expression.type, target_type)
+
+        if foreign_identity_projection_reinterpret_compatible?(expression.type, target_type)
+          record_external_layout_assertion(expression.type, target_type)
+          return reinterpret_expression(expression, target_type)
+        end
 
         nil
+      end
+
+      def record_external_layout_assertion(source_type, target_type)
+        source_root = ffi_external_layout_root_type(source_type)
+        target_root = ffi_external_layout_root_type(target_type)
+        return unless source_root && target_root
+        return unless source_root.external && target_root.external
+        return if source_root.module_name == target_root.module_name
+
+        pair_key = [[source_root.module_name, source_root.name], [target_root.module_name, target_root.name]].sort.freeze
+        return if @emitted_external_layout_pairs[pair_key]
+
+        @emitted_external_layout_pairs[pair_key] = true
+        @external_layout_assertions << IR::StaticAssert.new(
+          condition: IR::Binary.new(
+            operator: "==",
+            left: IR::SizeofExpr.new(target_type: source_root, type: @types.fetch("ptr_uint")),
+            right: IR::SizeofExpr.new(target_type: target_root, type: @types.fetch("ptr_uint")),
+            type: @types.fetch("bool"),
+          ),
+          message: IR::StringLiteral.new(
+            value: "FFI layout mismatch: #{source_root} vs #{target_root}",
+            type: @types.fetch("str"),
+            cstring: false,
+          ),
+        )
+      end
+
+      def ffi_external_layout_root_type(type)
+        type = type.base while type.is_a?(Types::Nullable)
+        return pointee_type(type) if pointer_type?(type)
+
+        type
       end
 
       def infer_null_literal_type(expression, expected_type)
