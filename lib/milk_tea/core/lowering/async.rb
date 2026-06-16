@@ -503,7 +503,6 @@ module MilkTea
 
       def build_async_cancel_function(frame_type, cancel_c_name, async_info)
         frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
-        raw_frame_expr = IR::Name.new(name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)
 
         body = [async_frame_cast_declaration(frame_type, async_info)]
 
@@ -591,7 +590,6 @@ module MilkTea
         body << IR::ExpressionStmt.new(expression: ready_assign)
 
         waiter_frame_expr = async_frame_field_expression(frame_expr, "waiter_frame", async_info[:void_ptr])
-        waiter_fn_expr = async_frame_field_expression(frame_expr, "waiter", async_info[:wake_type])
         wake_stmts = [
           IR::ExpressionStmt.new(
             expression: IR::Assignment.new(
