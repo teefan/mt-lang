@@ -384,7 +384,7 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal ["reserved-primitive-name", "reserved-primitive-name", "reserved-primitive-name"], warnings.map(&:code)
     assert_equal [1, 2, 3], warnings.map(&:line)
     assert_equal ["float", "double", "int"], warnings.map(&:symbol_name)
-    assert_equal [nil, nil, nil], warnings.map(&:column)
+    assert_equal [7, 5, nil], warnings.map(&:column)
   end
 
   def test_fix_source_renames_reserved_primitive_parameter_and_local_uses
