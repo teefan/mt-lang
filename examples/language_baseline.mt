@@ -953,6 +953,24 @@ function backend_label() -> str:
         TargetBackend.vulkan:
             return "Vulkan"
 
+# --- 21c2: when at module level for conditional declarations
+
+enum Platform: ubyte
+    linux = 1
+    windows = 2
+
+const CURRENT_PLATFORM: Platform = Platform.linux
+
+when CURRENT_PLATFORM:
+    Platform.linux:
+        const MODULE_WHEN_TEST: str = "linux-module-when"
+        function module_when_func() -> int:
+            return 1
+    Platform.windows:
+        const MODULE_WHEN_TEST: str = "windows-module-when"
+        function module_when_func() -> int:
+            return 2
+
 # --- 21d: enum used by inline match and members_of below
 
 enum Palette: ubyte
@@ -1380,5 +1398,8 @@ function main() -> int:
 
     var dblr = Doubler(value = 0)
     total += apply_converter[Doubler](ref_of(dblr), 3)
+
+    # --- module-level when compilation (21c2) ---
+    total += module_when_func()
 
     return total

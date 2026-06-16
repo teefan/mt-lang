@@ -35,7 +35,8 @@ module MilkTea
           local_type, storage_type = async_local_decl_types(statement, env:)
           expected_type = statement.else_body ? storage_type : (statement.type ? resolve_type_ref(statement.type) : nil)
           setup, value = if statement.value.is_a?(AST::AwaitExpr)
-            [[], statement.value]
+            inner_setup, inner_expr = normalize_async_expression(statement.value.expression, counter, env:, expected_type: expected_type)
+            [inner_setup, AST::AwaitExpr.new(expression: inner_expr)]
           else
             normalize_async_expression(statement.value, counter, env:, expected_type: expected_type)
           end
@@ -219,9 +220,10 @@ module MilkTea
     def normalize_async_expression(expression, counter, env:, expected_type: nil)
       case expression
       when AST::AwaitExpr
+        inner_setup, inner = normalize_async_expression(expression.expression, counter, env:)
         temp_name = fresh_async_temp_name(counter)
         [
-          [AST::LocalDecl.new(kind: :let, name: temp_name, type: nil, value: expression)],
+          inner_setup + [AST::LocalDecl.new(kind: :let, name: temp_name, type: nil, value: AST::AwaitExpr.new(expression: inner))],
           AST::Identifier.new(name: temp_name),
         ]
       when AST::Call
