@@ -186,7 +186,7 @@ module MilkTea
         target_numeric_type = cast_numeric_type(target_type)
 
         unless source_numeric_type && target_numeric_type
-          raise_sema_error("cast currently only supports numeric primitive types, got #{source_type} -> #{target_type}")
+          raise_sema_error("cast requires compatible types, got #{source_type} -> #{target_type}")
         end
 
         target_type

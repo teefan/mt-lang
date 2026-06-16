@@ -312,9 +312,9 @@ module MilkTea
         resolve_aggregate_fields
         resolve_enum_members
         resolve_variant_arms
+        collect_emit_declarations
         declare_top_level_values
         validate_attribute_applications
-        collect_emit_declarations
         declare_functions
         check_interface_conformances
         check_top_level_values
@@ -327,6 +327,7 @@ module MilkTea
 
       def collect_emit_declarations
         collect_emit_from_declarations(expanded_declarations)
+        @ast.declarations.grep(AST::ConstDecl).each { |decl| @const_declarations[decl.name] ||= decl }
       end
 
       def collect_emit_from_declarations(declarations)
