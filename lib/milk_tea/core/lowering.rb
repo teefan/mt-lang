@@ -71,6 +71,8 @@ module MilkTea
       @lowered_function_c_names = {}
       @emitted_declarations = []
       @method_definitions = build_method_definitions
+      @external_layout_assertions = []
+      @emitted_external_layout_pairs = {}
     end
 
     def lower
@@ -215,6 +217,7 @@ module MilkTea
       all_enums = modules.values.flat_map(&:enums)
       all_variants = modules.values.flat_map(&:variants)
       all_static_asserts = modules.values.flat_map(&:static_asserts)
+      all_static_asserts.concat(@external_layout_assertions)
       all_functions = modules.values.flat_map(&:functions)
 
       all_opaques.concat(lower_imported_external_opaques)

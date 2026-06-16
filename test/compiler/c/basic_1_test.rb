@@ -1721,6 +1721,7 @@ function main() -> int:
 
     refute_match(/mt_reinterpret_std_c_shared_Matrix_from_std_c_sample_Matrix/, generated)
     refute_match(/mt_reinterpret_std_c_sample_Matrix_from_std_c_shared_Matrix/, generated)
+    assert_match(/_Static_assert\(sizeof\([^)]+\) == sizeof\([^)]+\), "FFI layout mismatch: std.c.shared.Matrix vs std.c.sample.Matrix"\)/, generated)
     assert_match(/SetMatrix\(std_shared_IDENTITY\);/, generated)
     assert_match(/SetMatrixPtr\(&matrix\);/, generated)
     assert_match(/Matrix matrix = GetMatrix\(\);/, generated)
