@@ -107,6 +107,17 @@ module MilkTea
             end
             parent[:detail] = detail_parts.join(' ') unless detail_parts.empty?
 
+            type_params = expand_generic_type_params(decl)
+            if type_params&.any?
+              parent[:children] ||= []
+              parent_children = parent[:children]
+              type_params.each do |tp|
+                child = type_param_child_symbol(tp)
+                next unless child
+                parent_children << child unless parent_children.any? { |pc| pc[:name] == child[:name] }
+              end
+            end
+
             locals = collect_local_decls(decl.body)
             next unless locals&.any?
 
@@ -215,6 +226,17 @@ module MilkTea
               parent[:detail] = "(#{ifaces})"
             end
 
+            type_params = expand_generic_type_params(decl)
+            if type_params&.any?
+              parent[:children] ||= []
+              parent_children = parent[:children]
+              type_params.each do |tp|
+                child = type_param_child_symbol(tp)
+                next unless child
+                parent_children << child unless parent_children.any? { |pc| pc[:name] == child[:name] }
+              end
+            end
+
             children = child_symbols_for(decl)
             next unless children&.any?
 
@@ -228,10 +250,10 @@ module MilkTea
               when 6 then removed_method_names << c[:name]
               when 23 then removed_nested_type_names << c[:name]
               when 24 then removed_event_names << c[:name]
-              end
-            end
-          end
-        end
+      end
+      end
+      end
+    end
 
         if removed_local_names.any?
           removed_set = removed_local_names.to_set
@@ -431,6 +453,33 @@ module MilkTea
         return [] unless symbol[:children]
 
         symbol[:children].flat_map { |c| [c[:name]] + descendant_names(c) }
+      end
+
+      def expand_generic_type_params(decl)
+        return [] unless decl.respond_to?(:type_params) && decl.type_params
+
+        decl.type_params.flat_map do |tp|
+          if tp.respond_to?(:type_params) && tp.type_params&.any?
+            expand_generic_type_params(tp)
+          else
+            [tp]
+          end
+        end
+      end
+
+      def type_param_child_symbol(tp)
+        return nil unless tp.respond_to?(:name) && tp.name
+        return nil unless tp.respond_to?(:line) && tp.line
+
+        col = tp.respond_to?(:column) && tp.column ? tp.column : 1
+        {
+          name: tp.name, kind: 26,
+          range: { start: { line: tp.line - 1, character: col - 1 }, end: { line: tp.line - 1, character: col - 1 + tp.name.length } },
+          selectionRange: {
+            start: { line: tp.line - 1, character: col - 1 },
+            end: { line: tp.line - 1, character: col - 1 + tp.name.length },
+          },
+        }
       end
 
       def proc_signature_detail(proc_expr)

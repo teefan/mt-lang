@@ -17,11 +17,13 @@ require_relative "server/completion"
 require_relative "server/configuration"
 require_relative "server/definition"
 require_relative "server/diagnostics_scheduling"
+require_relative "server/execute_command"
 require_relative "server/folding_range"
 require_relative "server/formatting"
 require_relative "server/hover"
 require_relative "server/inlay_hints"
 require_relative "server/lifecycle"
+require_relative "server/linked_editing_range"
 require_relative "server/on_type_formatting"
 require_relative "server/progress"
 require_relative "server/references"
@@ -254,6 +256,8 @@ module MilkTea
       include ServerOnTypeFormatting
       include ServerProgress
       include ServerReferences
+      include ServerExecuteCommand
+      include ServerLinkedEditingRange
       include ServerRename
       include ServerSelectionRange
       include ServerSemanticTokens
@@ -316,9 +320,11 @@ module MilkTea
         @handlers['typeHierarchy/subtypes']          = method(:handle_subtypes)
         @handlers['textDocument/prepareRename']     = method(:handle_prepare_rename)
         @handlers['textDocument/rename']            = method(:handle_rename)
+        @handlers['textDocument/linkedEditingRange'] = method(:handle_linked_editing_range)
 
         # Workspace
         @handlers['workspace/symbol'] = method(:handle_workspace_symbol)
+        @handlers['workspace/executeCommand'] = method(:handle_execute_command)
         @handlers['workspace/didChangeWorkspaceFolders'] = method(:handle_did_change_workspace_folders)
         @handlers['workspace/didChangeConfiguration'] = method(:handle_did_change_configuration)
         @handlers['workspace/didChangeWatchedFiles'] = method(:handle_did_change_watched_files)
