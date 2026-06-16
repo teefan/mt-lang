@@ -53,7 +53,7 @@ module MilkTea
 
         level_kind = facts ? module_level_name?(facts, token.lexeme) : false
         if level_kind
-          cross_file = level_kind == :function
+          cross_file = true
           refs = measure_perf_stage(stages, 'module_refs') { module_level_reference_locations(uri, token.lexeme, facts, include_declaration: include_declaration, cross_file_allowed: cross_file) }
           result_count = refs.length
           result_state = refs.empty? ? 'miss' : 'hit'
@@ -219,7 +219,7 @@ module MilkTea
           importing_uris = @workspace.reverse_import_dependents_for(facts.module_name)
           if importing_uris && !importing_uris.empty?
             cross_refs = @workspace.find_all_references_in(name, importing_uris.to_a - [uri])
-            results.concat(cross_refs)
+            results.concat(cross_refs) if cross_refs
           end
         end
 
