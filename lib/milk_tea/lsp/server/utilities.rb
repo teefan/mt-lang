@@ -192,6 +192,7 @@ module MilkTea
         affected_uris.each do |affected_uri|
           schedule_diagnostics(affected_uri, force: true, lint_tier: :full) unless @workspace.background_document?(affected_uri)
         end
+        refresh_client_semantic_tokens if affected_uris.any?
         nil
       end
 

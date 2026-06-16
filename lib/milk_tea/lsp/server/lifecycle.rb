@@ -9,6 +9,7 @@ module MilkTea
       def handle_initialize(params)
         @pull_diagnostics_active = true
         @root_uri = params['rootUri']
+        @client_capabilities = params['capabilities'] || {}
         @workspace.workspace_root_path = uri_to_path(@root_uri)
         apply_configuration_settings(params['initializationOptions'])
         apply_configuration_settings(params['settings'])
@@ -88,6 +89,7 @@ module MilkTea
       end
 
       def handle_initialized(_params)
+        pull_client_configuration if @client_capabilities&.dig('workspace', 'configuration')
         progress = create_progress(title: 'Indexing workspace', message: 'Scanning source files...')
         @workspace.index_workspace(@root_uri) { |pct, msg| progress.report(percentage: pct, message: msg) } if @root_uri
         document_count = @workspace.all_documents.length
@@ -159,6 +161,17 @@ module MilkTea
         stop_diagnostics_workers
         @workspace.shutdown
         exit(0)
+      end
+
+      SEMANTIC_TOKENS_REFRESH_THROTTLE_MS = 500
+
+      def refresh_client_semantic_tokens
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        @semantic_tokens_last_refresh ||= 0.0
+        return if (now - @semantic_tokens_last_refresh) * 1000 < SEMANTIC_TOKENS_REFRESH_THROTTLE_MS
+
+        @semantic_tokens_last_refresh = now
+        @protocol.write_notification('workspace/semanticTokens/refresh', nil)
       end
       end
     end
