@@ -70,6 +70,8 @@ module MilkTea
         bindgen_command
       when "cache"
         cache_command
+      when "docs"
+        docs_command
       else
         print_usage(@err)
         1
@@ -838,6 +840,56 @@ module MilkTea
       nil
     end
 
+    def docs_command
+      doc_root = nil
+      port = nil
+      open_flag = false
+
+      while (arg = @argv.first)
+        case arg
+        when "--root", "-r"
+          @argv.shift
+          doc_root = @argv.shift
+        when "--port", "-p"
+          @argv.shift
+          port = @argv.shift.to_i
+          port = nil if port <= 0 || port > 65535
+        when "--open", "-o"
+          open_flag = true
+          @argv.shift
+        else
+          break
+        end
+      end
+
+      doc_root ||= find_default_docs_root
+      unless doc_root && File.directory?(doc_root)
+        @err.puts("docs: reference documentation not found at #{doc_root || '(none)'}")
+        @err.puts("  use --root PATH to specify a custom directory")
+        @err.puts("  generate the reference site into docs/reference/ and try again")
+        return 1
+      end
+
+      begin
+        server = DocsServer.new(root_dir: doc_root, port:)
+        server.start
+        server_url = server.url
+
+        @out.puts("Serving Milk Tea reference at #{server_url}")
+        @out.puts("Press Ctrl+C to stop.")
+
+        if open_flag
+          open_browser(server_url)
+        end
+
+        server.join
+      rescue Interrupt
+        nil
+      end
+
+      0
+    end
+
     def toolchain_command
       ToolchainCLI.start(
         @argv,
@@ -1307,6 +1359,28 @@ module MilkTea
       @argv = remaining
     end
 
+    def find_default_docs_root
+      source_root = File.expand_path("../../../docs/reference", __dir__)
+      return source_root if File.directory?(source_root)
+
+      cwd_root = File.join(Dir.pwd, "docs/reference")
+      return cwd_root if File.directory?(cwd_root)
+
+      nil
+    end
+
+    def open_browser(url)
+      command = host_platform == :windows ? ["cmd", "/c", "start", "", url] : ["xdg-open", url]
+      pid = Process.spawn(*command, out: File::NULL, err: File::NULL)
+      Process.detach(pid)
+    rescue Errno::ENOENT
+      @err.puts("note: could not open browser (#{command.first} not found)")
+    end
+
+    def host_platform
+      MilkTea.host_platform
+    end
+
     def command_supports_include_paths?(command)
       %w[parse lint check lower emit-c build run debug].include?(command)
     end
@@ -1468,6 +1542,16 @@ module MilkTea
             purge        Remove the entire build cache.
             status       Show cache directory, entry counts, and total size.
         HELP
+      "docs"            => <<~HELP,
+        Usage: mtc docs [OPTIONS]
+
+          Start a local HTTP server serving the Milk Tea language reference.
+
+          Options:
+            --open, -o            Open the reference in your default browser.
+            --port, -p PORT       Listen on a specific port (default: random).
+            --root, -r PATH       Serve a custom directory instead of the bundled reference.
+        HELP
     }.freeze
 
     def format_size(bytes)
@@ -1530,6 +1614,7 @@ module MilkTea
       io.puts("       mtc deps fetch [PATH_OR_PACKAGE]")
       io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--nullable-report PATH] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
       io.puts("       mtc cache purge|status")
+      io.puts("       mtc docs [--open] [--port PORT] [--root PATH]")
     end
   end
 end
