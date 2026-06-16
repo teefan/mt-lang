@@ -1,6 +1,6 @@
 import std.vec as vec
 
-const pcg_multiplier: ulong = 6364136223846793005
+const pcg_multiplier: ulong = 0x5851F42D4C957F2D
 
 public struct Rng:
     state: ulong
