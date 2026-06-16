@@ -260,7 +260,7 @@ module MilkTea
       end
 
 
-      def build_async_constructor_function(binding, decl, frame_type, constructor_c_name, resume_c_name, ready_c_name, set_waiter_c_name, release_c_name, take_result_c_name, async_info)
+      def build_async_constructor_function(binding, decl, frame_type, constructor_c_name, resume_c_name, ready_c_name, set_waiter_c_name, release_c_name, take_result_c_name, cancel_c_name, async_info)
         params = []
         body = []
         frame_pointer_type = pointer_to(frame_type)
@@ -314,6 +314,7 @@ module MilkTea
               IR::AggregateField.new(name: "set_waiter", value: IR::Name.new(name: set_waiter_c_name, type: async_info[:task_type].field("set_waiter"), pointer: false)),
               IR::AggregateField.new(name: "release", value: IR::Name.new(name: release_c_name, type: async_info[:task_type].field("release"), pointer: false)),
               IR::AggregateField.new(name: "take_result", value: IR::Name.new(name: take_result_c_name, type: async_info[:task_type].field("take_result"), pointer: false)),
+              IR::AggregateField.new(name: "cancel", value: IR::Name.new(name: cancel_c_name, type: async_info[:task_type].field("cancel"), pointer: false)),
             ],
           ),
         )
@@ -493,6 +494,123 @@ module MilkTea
         IR::Function.new(
           name: "#{release_c_name}_fn",
           c_name: release_c_name,
+          params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
+          return_type: @types.fetch("void"),
+          body:,
+          entry_point: false,
+        )
+      end
+
+      def build_async_cancel_function(frame_type, cancel_c_name, async_info)
+        frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
+        raw_frame_expr = IR::Name.new(name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)
+
+        body = [async_frame_cast_declaration(frame_type, async_info)]
+
+        ready_expr = async_frame_field_expression(frame_expr, "ready", @types.fetch("bool"))
+        if_ready_return = IR::IfStmt.new(
+          condition: ready_expr,
+          then_body: [IR::ReturnStmt.new(value: nil)],
+          else_body: nil,
+        )
+        body << if_ready_return
+
+        cancelled_assign = IR::Assignment.new(
+          target: async_frame_field_expression(frame_expr, "cancelled", @types.fetch("bool")),
+          operator: "=",
+          value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")),
+        )
+        body << IR::ExpressionStmt.new(expression: cancelled_assign)
+
+        cancel_stmts = []
+        async_info[:await_fields].each_value do |field_info|
+          task_field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:task_type])
+          task_frame_expr = async_task_frame_expression(task_field_expr, field_info[:task_type])
+          cancel_call = IR::ExpressionStmt.new(
+            expression: async_task_call(task_field_expr, field_info[:task_type], "cancel", [task_frame_expr], @types.fetch("void")),
+          )
+          release_call = IR::ExpressionStmt.new(
+            expression: async_task_call(task_field_expr, field_info[:task_type], "release", [task_frame_expr], @types.fetch("void")),
+          )
+          cancel_stmts << IR::IfStmt.new(
+            condition: task_frame_expr,
+            then_body: [cancel_call, release_call],
+            else_body: nil,
+          )
+        end
+        body.concat(cancel_stmts) if cancel_stmts.any?
+
+        async_info[:param_fields].each_value do |field_info|
+          next if field_info[:pointer]
+          next unless contains_proc_storage_type?(field_info[:type])
+
+          field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:type])
+          body.concat(lower_async_frame_proc_release_statements(field_expr, field_info[:type]))
+        end
+
+        async_info[:local_fields].each_value do |field_info|
+          next unless contains_proc_storage_type?(field_info[:storage_type])
+
+          field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:storage_type])
+          body.concat(lower_async_frame_proc_release_statements(field_expr, field_info[:storage_type]))
+        end
+
+        (async_info[:format_str_fields] || {}).each_key do |field_name|
+          field_expr = async_frame_field_expression(frame_expr, field_name, @types.fetch("str"))
+          body << IR::ExpressionStmt.new(
+            expression: IR::Call.new(
+              callee: "mt_format_str_release",
+              arguments: [field_expr],
+              type: @types.fetch("void"),
+            ),
+          )
+        end
+
+        async_info[:param_fields].each_value do |field_info|
+          next unless field_info[:pointer]
+
+          param_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:type])
+          body << IR::ExpressionStmt.new(
+            expression: IR::Call.new(callee: "mt_async_free", arguments: [param_expr], type: @types.fetch("void")),
+          )
+        end
+
+        ready_assign = IR::Assignment.new(
+          target: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool")),
+          operator: "=",
+          value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")),
+        )
+        body << IR::ExpressionStmt.new(expression: ready_assign)
+
+        waiter_frame_expr = async_frame_field_expression(frame_expr, "waiter_frame", async_info[:void_ptr])
+        waiter_fn_expr = async_frame_field_expression(frame_expr, "waiter", async_info[:wake_type])
+        wake_stmts = [
+          IR::ExpressionStmt.new(
+            expression: IR::Assignment.new(
+              target: async_frame_field_expression(frame_expr, "waiter_frame", async_info[:void_ptr]),
+              operator: "=",
+              value: IR::NullLiteral.new(type: async_info[:void_ptr]),
+            ),
+          ),
+          IR::ExpressionStmt.new(
+            expression: IR::Call.new(
+              callee: IR::Name.new(name: async_frame_field_c_name("waiter"), type: async_info[:wake_type], pointer: false),
+              arguments: [waiter_frame_expr],
+              type: @types.fetch("void"),
+            ),
+          ),
+        ]
+        body << IR::IfStmt.new(
+          condition: waiter_frame_expr,
+          then_body: wake_stmts,
+          else_body: nil,
+        )
+
+        body << IR::ReturnStmt.new(value: nil)
+
+        IR::Function.new(
+          name: "#{cancel_c_name}_fn",
+          c_name: cancel_c_name,
           params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
           return_type: @types.fetch("void"),
           body:,

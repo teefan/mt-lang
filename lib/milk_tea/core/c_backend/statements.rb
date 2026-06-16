@@ -63,7 +63,11 @@ module MilkTea
                   emit_statement_sequence(statement.body, level, function:, used_labels:, loop_continue_label:, loop_break_label:)
                 end
               when IR::ExpressionStmt
-                ["#{indent}#{emit_expression(statement.expression)};"]
+                if statement.expression.is_a?(IR::Assignment)
+                  emit_assignment_expression(statement.expression, indent)
+                else
+                  ["#{indent}#{emit_expression(statement.expression)};"]
+                end
               when IR::ReturnStmt
                 if statement.value
                   if array_type?(function.return_type)
@@ -509,6 +513,10 @@ module MilkTea
                       end
 
             "_Static_assert(#{emit_expression(statement.condition)}, #{message});"
+          end
+
+          def emit_assignment_expression(assignment, indent)
+            ["#{indent}#{emit_expression(assignment.target)} #{assignment.operator} #{emit_expression(assignment.value)};"]
           end
     end
   end

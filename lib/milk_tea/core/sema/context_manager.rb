@@ -145,6 +145,9 @@ module MilkTea
         when AST::DeferStmt
           validate_async_expression_support!(statement.expression, context: "defer cleanup") if statement.expression
           statement.body&.each { |s| validate_async_statement!(s) }
+        when AST::WhenStmt
+          statement.branches.each { |branch| branch.body.each { |s| validate_async_statement!(s) } }
+          statement.else_body&.each { |s| validate_async_statement!(s) }
         when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert, AST::PassStmt
           nil
         else
@@ -160,39 +163,7 @@ module MilkTea
       end
 
       def unsupported_async_await_context(expression)
-        case expression
-        when AST::AwaitExpr
-          nil
-        when AST::Call, AST::Specialization
-          unsupported_async_await_context(expression.callee) || expression.arguments.filter_map { |argument| unsupported_async_await_context(argument.value) }.first
-        when AST::UnaryOp
-          unsupported_async_await_context(expression.operand)
-        when AST::BinaryOp
-          unsupported_async_await_context(expression.left) || unsupported_async_await_context(expression.right)
-        when AST::IfExpr
-          unsupported_async_await_context(expression.condition) ||
-            unsupported_async_await_context(expression.then_expression) ||
-            unsupported_async_await_context(expression.else_expression)
-        when AST::MatchExpr
-          unsupported_async_await_context(expression.expression) ||
-            expression.arms.filter_map { |arm| unsupported_async_await_context(arm.pattern) || unsupported_async_await_context(arm.value) }.first
-        when AST::UnsafeExpr
-          unsupported_async_await_context(expression.expression)
-        when AST::PrefixCast
-          unsupported_async_await_context(expression.expression)
-        when AST::MemberAccess
-          unsupported_async_await_context(expression.receiver)
-        when AST::IndexAccess
-          unsupported_async_await_context(expression.receiver) || unsupported_async_await_context(expression.index)
-        when AST::FormatString
-          expression.parts.filter_map do |part|
-            next unless part.is_a?(AST::FormatExprPart)
-
-            unsupported_async_await_context(part.expression)
-          end.first
-        else
-          nil
-        end
+        nil
       end
 
       def statement_contains_await?(statement)

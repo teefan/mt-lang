@@ -481,8 +481,10 @@ module MilkTea
 
           def expression_uses_vector_math?(expr)
             return false unless expr
-            return true if type_contains_vector_math?(expr.type)
+            return true if expr.respond_to?(:type) && type_contains_vector_math?(expr.type)
             case expr
+            when IR::Assignment
+              expression_uses_vector_math?(expr.target) || expression_uses_vector_math?(expr.value)
             when IR::AggregateLiteral
               expr.fields.any? { |f| expression_uses_vector_math?(f.value) }
             when IR::Binary

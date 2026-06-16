@@ -179,6 +179,7 @@ module MilkTea
         set_waiter_c_name = "#{constructor_c_name}__set_waiter"
         release_c_name = "#{constructor_c_name}__release"
         take_result_c_name = "#{constructor_c_name}__take_result"
+        cancel_c_name = "#{constructor_c_name}__cancel"
 
         async_info = analyze_async_function(binding, normalized_statements)
         frame_type = build_async_frame_type(frame_c_name, async_info)
@@ -195,6 +196,7 @@ module MilkTea
         @synthetic_functions << build_async_set_waiter_function(frame_type, set_waiter_c_name, async_info)
         @synthetic_functions << build_async_release_function(frame_type, release_c_name, async_info)
         @synthetic_functions << build_async_take_result_function(frame_type, take_result_c_name, async_info)
+        @synthetic_functions << build_async_cancel_function(frame_type, cancel_c_name, async_info)
 
         if root_main_entrypoint_signature(binding)
           @synthetic_functions << build_async_constructor_function(
@@ -207,6 +209,7 @@ module MilkTea
             set_waiter_c_name,
             release_c_name,
             take_result_c_name,
+            cancel_c_name,
             async_info,
           )
 
@@ -223,6 +226,7 @@ module MilkTea
           set_waiter_c_name,
           release_c_name,
           take_result_c_name,
+          cancel_c_name,
           async_info,
         )
       end

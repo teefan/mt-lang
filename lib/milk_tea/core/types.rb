@@ -668,6 +668,11 @@ module MilkTea
             params: [Parameter.new("frame", void_ptr)],
             return_type: result_type,
           ),
+          "cancel" => Function.new(
+            nil,
+            params: [Parameter.new("frame", void_ptr)],
+            return_type: Primitive.new("void"),
+          ),
         }.freeze
         freeze
       end
