@@ -800,8 +800,8 @@ module MilkTea
         import_kw_pos = line.index('import ')
         after_import = line[(import_kw_pos + 7)..].to_s
 
-        if after_import.include?(' as ')
-          alias_pos = after_import.index(' as ')
+        if (as_match = after_import.match(/\s+as\s+/))
+          alias_pos = as_match.begin(0)
           cursor_in_import = lsp_char - import_kw_pos - 7
           return nil if cursor_in_import > alias_pos
           after_import = after_import[0...alias_pos]
@@ -939,6 +939,37 @@ module MilkTea
             sortText:   "0_#{name}",
             data:       completion_data(name),
           }
+        end
+
+        facts.functions.each do |name, _binding|
+          next unless prefix.empty? || name.start_with?(prefix)
+          items << {
+            label:      name,
+            kind:       12,
+            detail:     "function #{name}",
+            insertText: name,
+            sortText:   "1_#{name}",
+            data:       completion_data(name),
+          }
+        end
+
+        frame = enclosing_completion_frame(facts, line + 1)
+        if frame
+          snapshot = latest_completion_snapshot(frame, line + 1, char + 1)
+          if snapshot
+            snapshot.bindings.each do |name, binding|
+              next unless prefix.empty? || name.start_with?(prefix)
+              next unless binding.respond_to?(:name) && binding.respond_to?(:type)
+              items << {
+                label:      name,
+                kind:       13,
+                detail:     "#{name}: #{binding.type}",
+                insertText: name,
+                sortText:   "2_#{name}",
+                data:       completion_data(name),
+              }
+            end
+          end
         end
 
         items.empty? ? nil : items
