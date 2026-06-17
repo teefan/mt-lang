@@ -1205,6 +1205,10 @@ module MilkTea
               return [:variant_arm_ctor, [type_expr, arm_name], nil]
             end
 
+            if type_expr.respond_to?(:nested_types) && type_expr.nested_types.key?(callee.member)
+              return [:struct, type_expr.nested_types[callee.member], nil]
+            end
+
             method = lookup_method(type_expr, callee.member)
             method ||= lookup_static_method(type_expr, callee.member)
             return [:function, method, nil] if method && method.type.receiver_type.nil?

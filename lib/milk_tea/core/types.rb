@@ -17,6 +17,7 @@ module MilkTea
     BUILTIN_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
       ptr const_ptr ref span array str_buffer Task Option Result SoA
       struct_handle field_handle callable_handle attribute_handle member_handle type
+      EventError Subscription
     ]).freeze
     RESERVED_TYPE_BINDING_NAMES = BUILTIN_TYPE_NAMES
 

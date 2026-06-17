@@ -304,6 +304,11 @@ module MilkTea
           return type
         end
 
+        parent_type = @types[parts.first]
+        if parent_type.respond_to?(:nested_types) && parent_type.nested_types.key?(parts.last)
+          return parent_type.nested_types[parts.last]
+        end
+
         raise_sema_error("unknown type #{parts.join('.')} for struct destructure")
       end
 

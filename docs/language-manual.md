@@ -1170,10 +1170,10 @@ struct Window:
     public event resized[8](ResizeEvent)
 
 function on_close() -> void:
-    stdio.println("closed")
+    stdio.print_string("closed")
 
-function on_resize(event: ResizeEvent) -> void:
-    stdio.println(f"resize -> #{event.width}x#{event.height}")
+function on_resize(evt: ResizeEvent) -> void:
+    stdio.print_string(f"resize -> #{evt.width}x#{evt.height}")
 
 function attach(window: ref[Window]) -> Result[void, EventError]:
     let closed_sub = window.closed.subscribe(on_close)?

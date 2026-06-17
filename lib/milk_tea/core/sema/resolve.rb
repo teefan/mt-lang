@@ -958,14 +958,20 @@ module MilkTea
           @types[expression.name]
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
-          return nil unless @imports.key?(expression.receiver.name)
 
-          imported_module = @imports.fetch(expression.receiver.name)
-          if imported_module.private_type?(expression.member)
-            raise_sema_error("#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}")
+          if @imports.key?(expression.receiver.name)
+            imported_module = @imports.fetch(expression.receiver.name)
+            if imported_module.private_type?(expression.member)
+              raise_sema_error("#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}")
+            end
+
+            return imported_module.types[expression.member]
           end
 
-          imported_module.types[expression.member]
+          parent_type = @types[expression.receiver.name]
+          return parent_type.nested_types[expression.member] if parent_type.respond_to?(:nested_types) && parent_type.nested_types.key?(expression.member)
+
+          nil
         when AST::Specialization
           type_ref = type_ref_from_specialization(expression)
           return nil unless type_ref

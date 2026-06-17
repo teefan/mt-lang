@@ -189,6 +189,7 @@ p + p{margin-top:-.25rem}
 <details open><summary>Introduction</summary>
 <a href="#overview">Overview</a>
 <a href="#getting-started">Getting Started</a>
+<a href="#full-example">Full Example</a>
 </details>
 
 <details open><summary>Language Basics</summary>
@@ -285,7 +286,7 @@ p + p{margin-top:-.25rem}
 import std.stdio as io
 
 function main() -> int:
-    io.println("Hello, Milk Tea!")
+    io.print_string("Hello, Milk Tea!")
     return 0</code></pre>
 </div>
 
@@ -331,6 +332,420 @@ function main() -> int:
     </table>
   </div>
   <p>See <a href="#cli">CLI Reference</a> for the full command surface.</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="full-example">
+  <h2>Milk Tea at a Glance</h2>
+  <p>A single program demonstrating the breadth of Milk Tea: data types, interfaces, generics, control flow, error handling, closures, compile-time reflection, unsafe, events, async, and more. Section headers in <code class="code-inline">##</code> doc comments mark each feature.</p>
+
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## ── Imports ──────────────────────────────────────────────────────────
+import std.stdio as io
+import std.hash
+import std.vec
+import std.map
+import std.math
+import std.mem.heap as heap
+import std.fmt
+
+## ── Constants ────────────────────────────────────────────────────────
+const MAX_ENTITIES: int = 256
+const GRAVITY: float = 9.81
+
+## Block-bodied constant (computed at compile time)
+const BUFFER_SIZE -&gt; int:
+    var n: int = 64
+    while n &lt; MAX_ENTITIES:
+        n = n * 2
+    return n
+
+## const function: evaluable at compile time, also callable at runtime
+const function square(x: int) -&gt; int:
+    return x * x
+
+const TILE_AREA: int = square(16)
+
+## ── Type Alias ───────────────────────────────────────────────────────
+type EntityId = uint
+
+## ── Enum (explicit backing type, exhaustive match) ───────────────────
+enum EntityKind: ubyte
+    player = 0
+    enemy = 1
+    npc = 2
+
+## ── Flags (named bitmask with composite alias) ──────────────────────
+flags StatusFlags: uint
+    poisoned = 1 &lt;&lt; 0
+    stunned = 1 &lt;&lt; 1
+    shielded = 1 &lt;&lt; 2
+    debuffed = StatusFlags.poisoned | StatusFlags.stunned
+
+## ── Struct with nested struct ────────────────────────────────────────
+struct Entity:
+    id: EntityId
+    kind: EntityKind
+    name: str
+    hp: int
+    max_hp: int
+    position: vec3
+
+    struct Stats:
+        attack: int
+        defense: int
+        speed: float
+
+    stats: Stats
+
+## ── Variant (tagged union with payload arms) ────────────────────────
+variant Action:
+    move(dx: float, dy: float)
+    attack(target_id: EntityId, damage: int)
+    heal(amount: int)
+    idle
+
+## ── Interfaces (nominal contracts, no hidden dispatch) ──────────────
+public interface Damageable:
+    editable function take_damage(amount: int) -&gt; void
+    function is_alive() -&gt; bool
+
+interface Named:
+    function display_name() -&gt; str
+
+## ── Struct implementing multiple interfaces ─────────────────────────
+struct Player implements Damageable, Named:
+    entity: Entity
+    score: int
+    level: int
+
+## ── User-defined attribute ──────────────────────────────────────────
+attribute[field] column(name: str)
+
+struct SaveData:
+    @[column(name = "lvl")]
+    level: int
+    @[column(name = "pts")]
+    score: int
+
+## ── Opaque type (unknown C layout) ──────────────────────────────────
+opaque NativeHandle
+
+## ── Methods via extending ───────────────────────────────────────────
+## function = value receiver, editable function = mutable, static = no receiver
+extending Entity:
+    function is_alive() -&gt; bool:
+        return this.hp &gt; 0
+
+    editable function apply_damage(amount: int) -&gt; void:
+        let actual = amount - this.stats.defense
+        if actual &gt; 0:
+            this.hp -= actual
+        if this.hp &lt; 0:
+            this.hp = 0
+
+    static function create(id: EntityId, kind: EntityKind, name: str) -&gt; Entity:
+        return Entity(
+            id = id,
+            kind = kind,
+            name = name,
+            hp = 100,
+            max_hp = 100,
+            position = vec3(x = 0.0, y = 0.0, z = 0.0),
+            stats = Entity.Stats(attack = 10, defense = 5, speed = 1.0),
+        )
+
+extending Player:
+    editable function take_damage(amount: int) -&gt; void:
+        this.entity.apply_damage(amount)
+
+    function is_alive() -&gt; bool:
+        return this.entity.is_alive()
+
+    function display_name() -&gt; str:
+        return this.entity.name
+
+    ## .with() returns a copy with specified fields replaced
+    function with_score(new_score: int) -&gt; Player:
+        return this.with(score = new_score)
+
+## ── Hash/equal hooks (enable use as Map/Set keys) ───────────────────
+extending Entity.Stats:
+    static function hash(value: const_ptr[Entity.Stats]) -&gt; uint:
+        return unsafe: uint&lt;-read(value).attack ^ uint&lt;-read(value).defense
+
+    static function equal(a: const_ptr[Entity.Stats], b: const_ptr[Entity.Stats]) -&gt; bool:
+        let la = unsafe: read(a)
+        let ra = unsafe: read(b)
+        return la.attack == ra.attack and la.defense == ra.defense
+
+## ── Generic function with interface constraint ──────────────────────
+function damage_all[T implements Damageable](targets: span[T], amount: int) -&gt; void:
+    for i in 0..targets.len:
+        if targets[i].is_alive():
+            targets[i].take_damage(amount)
+
+## Multiple constraints with 'and'
+function describe[T implements Damageable and Named](target: ref[T]) -&gt; str:
+    let alive = if target.is_alive(): "alive" else: "dead"
+    return f"#{target.display_name()} (#{alive})"
+
+## ── Value parameter generic [N: int] ────────────────────────────────
+function make_buffer[N: int]() -&gt; str_buffer[N]:
+    var buf: str_buffer[N]
+    return buf
+
+## ── Error handling with Result[T, E] ────────────────────────────────
+enum LoadError: ubyte
+    not_found = 1
+    invalid = 2
+
+function load_entity(id: EntityId) -&gt; Result[Entity, LoadError]:
+    if id == 0:
+        return Result[Entity, LoadError].failure(error = LoadError.not_found)
+    return Result[Entity, LoadError].success(
+        value = Entity.create(id, EntityKind.player, "Hero"),
+    )
+
+## Postfix ? propagation (enclosing must return Result[_, E])
+function load_pair() -&gt; Result[void, LoadError]:
+    let first = load_entity(1)?
+    let second = load_entity(2)?
+    io.print_string(f"Loaded #{first.name} and #{second.name}")
+    return Result[void, LoadError].success()
+
+## ── Events (fixed-capacity pub/sub, zero heap during dispatch) ──────
+struct DamageEvent:
+    target_id: EntityId
+    amount: int
+
+event entity_damaged[8](DamageEvent)
+
+function on_damage(evt: DamageEvent) -&gt; void:
+    io.print_string(f"entity #{evt.target_id} took #{evt.amount} damage")
+
+## ── Proc (closure with value captures) ──────────────────────────────
+function make_scaler(factor: float) -&gt; proc(x: float) -&gt; float:
+    return proc(x: float) -&gt; float: x * factor
+
+## ── Async / await ───────────────────────────────────────────────────
+async function fetch_score(id: EntityId) -&gt; int:
+    return 42
+
+async function load_scores() -&gt; int:
+    let a = await fetch_score(1)
+    let b = await fetch_score(2)
+    return a + b
+
+## ── Compile-time constants for inline if ─────────────────────────────
+const DEBUG: bool = false
+
+## ── Main entry point ────────────────────────────────────────────────
+function main() -&gt; int:
+    ## Local declarations: let (immutable), var (mutable)
+    let width: int = 800
+    var score: int = 0
+
+    ## str_buffer: fixed-capacity mutable UTF-8 text
+    var name_buf: str_buffer[64]
+    name_buf.assign("World")
+    name_buf.append("!")
+    io.print_string(name_buf.as_str())
+
+    ## Struct construction with named fields
+    var player = Player(
+        entity = Entity.create(1, EntityKind.player, "Hero"),
+        score = 0,
+        level = 1,
+    )
+
+    ## Tuple construction &amp; destructuring
+    let pair = (42, "hello")
+    let (count, greeting) = pair
+    let named_tuple = (x = 10, y = 20)
+    let (tx, ty) = named_tuple
+
+    ## Struct destructuring
+    let Entity.Stats(attack, defense, speed) = player.entity.stats
+
+    ## Guard binding: let...else: (initializer must be T?, Option[T], or Result[T, E])
+    let entity = load_entity(1) else:
+        return 1
+
+    ## Guard with error binding
+    let _ = load_pair() else as error:
+        io.print_string("load failed")
+        return 1
+
+    ## Native vector types &amp; arithmetic
+    var position = vec3(x = 1.0, y = 2.0, z = 3.0)
+    let direction = vec3(x = 0.0, y = 1.0, z = 0.0)
+    position = position + direction * 0.5
+    let dist = math.sqrt(double&lt;-(position.x * position.x + position.y * position.y))
+
+    ## Array, span, recoverable indexing
+    var scores = array[int, 4](10, 20, 30, 40)
+    scores[0] = 100
+    let view: span[int] = scores.as_span()
+    let maybe_val = get(scores, 99)
+    if maybe_val == null:
+        io.print_string("Index out of bounds (safe)")
+
+    ## Range index assignment
+    var buf: array[float, 4]
+    buf[0..3] = (1.0, 2.0, 3.0)
+
+    ## Collections: Vec and Map (import std.hash for primitive keys)
+    var entities = vec.Vec[Entity].create()
+    defer entities.release()
+    entities.push(Entity.create(1, EntityKind.player, "Hero"))
+    entities.push(Entity.create(2, EntityKind.enemy, "Goblin"))
+
+    var name_counts = map.Map[str, int].create()
+    defer name_counts.release()
+    name_counts.set("player", 1)
+    name_counts.set("enemy", 5)
+
+    ## for loop: range
+    for i in 0..3:
+        io.print_string(f"index #{i}")
+
+    ## for loop: array iteration with break / continue
+    let values = array[int, 5](1, 2, 3, 4, 5)
+    for v in values:
+        if v == 3:
+            continue
+        if v == 5:
+            break
+        io.print_string(f"value #{v}")
+
+    ## Parallel for (arrays/spans only, lengths must match)
+    let xs = array[float, 3](1.0, 2.0, 3.0)
+    let ys = array[float, 3](4.0, 5.0, 6.0)
+    for x, y in xs, ys:
+        io.print_string(f"#{x:.1} + #{y:.1}")
+
+    ## while loop
+    var n: int = 1
+    while n &lt; 100:
+        if n &gt; 50:
+            break
+        n = n * 2
+
+    ## if / else if / else (conditions must be bool, no truthy coercion)
+    if player.level &gt; 10:
+        io.print_string("veteran")
+    else if player.level &gt; 5:
+        io.print_string("experienced")
+    else:
+        io.print_string("novice")
+
+    ## if-expression
+    let rank = if player.level &gt;= 10: "master" else: "apprentice"
+
+    ## match: enum (must be exhaustive or have _)
+    match player.entity.kind:
+        EntityKind.player:
+            io.print_string("is player")
+        EntityKind.enemy:
+            io.print_string("is enemy")
+        _:
+            io.print_string("other")
+
+    ## match: variant with struct patterns and guards
+    let action = Action.attack(target_id = 2, damage = 15)
+    match action:
+        Action.move(dx, dy):
+            io.print_string(f"move #{dx:.2}, #{dy:.2}")
+        Action.attack(target_id, damage &gt; 10):
+            io.print_string(f"heavy attack on #{target_id}")
+        Action.attack(target_id, damage):
+            io.print_string(f"light attack on #{target_id}")
+        Action.heal(amount):
+            io.print_string(f"heal #{amount}")
+        Action.idle:
+            pass
+
+    ## match expression
+    let label = match player.level:
+        1: "beginner"
+        2: "novice"
+        _: "advanced"
+
+    ## Explicit cast: T&lt;-value
+    let raw_kind = ubyte&lt;-player.entity.kind
+    let ratio = float&lt;-score
+
+    ## Format strings: interpolation, precision, hex, owned text
+    io.print_string(f"Player: #{player.entity.name} HP=#{player.entity.hp}")
+    io.print_string(f"Position: #{position.x:.2}, #{position.y:.2}")
+    io.print_string(f"ID hex: #{player.entity.id:x}")
+    var msg = fmt.format(f"Score: #{score}")
+    defer msg.release()
+
+    ## Heredoc string
+    let help = &lt;&lt;-HELP
+        Commands:
+          move, attack, quit
+    HELP
+    io.print_string(help)
+
+    ## Defer: cleanup at scope exit (lowers to C cleanup labels)
+    let data = heap.must_alloc[int](1)
+    defer heap.release[int](data)
+
+    ## Proc / closure
+    let scale = make_scaler(2.5)
+    let scaled = scale(10.0)
+
+    ## Nullability: T? for pointer-like types
+    var maybe_target: ptr[Entity]? = null
+    if maybe_target == null:
+        io.print_string("no target")
+
+    ## unsafe: required for pointer indexing, dereference, arithmetic, casts
+    unsafe:
+        let p = ptr_of(score)
+        read(p) = 42
+
+    ## ref[T]: safe non-null writable alias (implicit borrow at call site)
+    let handle = ref_of(player)
+    handle.take_damage(10)
+    io.print_string(f"HP after damage: #{player.entity.hp}")
+
+    ## dyn[Interface] + adapt: runtime polymorphism (fat pointer)
+    let d: dyn[Damageable] = adapt[Damageable](ref_of(player))
+    d.take_damage(5)
+
+    ## Events: subscribe, emit (emit only from declaring module)
+    let sub = entity_damaged.subscribe(on_damage) else:
+        return 1
+    entity_damaged.emit(DamageEvent(target_id = 1, amount = 25))
+    entity_damaged.unsubscribe(sub)
+
+    ## .with() partial field update
+    let updated = player.with_score(999)
+
+    ## Compile-time reflection: inline for over struct fields
+    inline for field in fields_of(Entity.Stats):
+        io.print_string(f"field: #{field.name}")
+
+    ## inline if: dead branch elimination (dead branch may reference nonexistent symbols)
+    inline if DEBUG:
+        io.print_string("debug mode")
+
+    ## static_assert: compile-time assertions
+    static_assert(size_of(int) == 4, "expected 32-bit int")
+    static_assert(MAX_ENTITIES &gt; 0, "need at least one entity")
+
+    io.print_string(f"All done! Score=#{score}")
+    return 0</code></pre>
+</div>
+
+  <div class="callout tip">
+    <strong>Tip:</strong> This example covers imports, constants, <code>const function</code>, type aliases, enums, flags, structs (nested, attributed), variants, interfaces, <code>extending</code> methods, generics with constraints, value parameter generics, <code>Result</code> error handling with <code>?</code> and guard binding, events, closures (<code>proc</code>), <code>async</code>/<code>await</code>, native vector types, arrays, spans, collections, <code>for</code>/<code>while</code>/<code>match</code>/<code>if</code>, parallel <code>for</code>, <code>defer</code>, <code>unsafe</code>, <code>ref[T]</code>, <code>dyn[Interface]</code>, format strings, heredocs, <code>str_buffer</code>, compile-time reflection, <code>inline for</code>/<code>inline if</code>, <code>static_assert</code>, and explicit casts. See the sections below for full details on each feature.
+  </div>
 </section>
 
 <!-- ────────────────────────────────────────────────────────────────────────── -->
@@ -595,7 +1010,7 @@ struct Rectangle:
 <pre><code>flags Mask: uint
     a = 1 &lt;&lt; 0
     b = 1 &lt;&lt; 1
-    both = a | b            ## composite alias</code></pre>
+    both = Mask.a | Mask.b     ## composite alias</code></pre>
 </div>
 
   <h3>Variant (Tagged Union)</h3>
@@ -635,9 +1050,9 @@ opaque ma_engine</code></pre>
 <pre><code>attribute[field] rename(name: str)
 attribute[struct, event] trace(name: str)
 
-@[rename(name = "hp")]
+@[trace(name = "player")]
 struct Player:
-    @[trace(name = "health")]
+    @[rename(name = "hp")]
     health: int</code></pre>
 </div>
 </section>
@@ -807,7 +1222,7 @@ let s64 = Slice[ubyte](data = ptr, len = 32)</code></pre>
 
 ## Return type defaults to void
 function say_hello(name: str):
-    io.println(f"Hello, #{name}!")</code></pre>
+    io.print_string(f"Hello, #{name}!")</code></pre>
 </div>
 
   <h3>const function</h3>
@@ -831,14 +1246,9 @@ const RESULT: int = square(5)   ## folded to 25 at compile time</code></pre>
   <p>Projects a C function into Milk Tea types with boundary marshalling.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-<pre><code>foreign function init_window(width: int, height: int, title: str as cstr) -> void
-    = c.InitWindow
-
-foreign function load_file_data(file_name: str as cstr, out data_size: int)
-    -> ptr[ubyte]? = c.LoadFileData
-
-foreign function close_window(consuming window: Window) -> void
-    = c.CloseWindow</code></pre>
+<pre><code>foreign function init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
+foreign function load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
+foreign function close_window(consuming window: Window) -> void = c.CloseWindow</code></pre>
 </div>
 
   <h3>Procs (Closures)</h3>
@@ -1352,7 +1762,7 @@ struct Window:
     public event resized[8](ResizeEvent)
 
 function on_close() -> void:
-    io.println("closed")
+    io.print_string("closed")
 
 function attach(window: ref[Window]) -> Result[void, EventError]:
     let closed_sub = window.closed.subscribe(on_close)?
@@ -1417,7 +1827,7 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>std.path</code></td><td>Path manipulation</td></tr>
       <tr><td><code>std.process</code></td><td>Process management</td></tr>
       <tr><td><code>std.cli</code></td><td>Command line interface</td></tr>
-      <tr><td><code>std.stdio</code></td><td>Standard I/O: <code>println</code>, <code>print</code></td></tr>
+      <tr><td><code>std.stdio</code></td><td>Standard I/O: <code>print_string</code>, <code>print</code></td></tr>
       <tr><td><code>std.terminal</code></td><td>Terminal control</td></tr>
       <tr><td><code>std.json</code> <code>std.toml</code></td><td>Serialization</td></tr>
       <tr><td><code>std.uri</code></td><td>URI parsing</td></tr>
@@ -1656,11 +2066,16 @@ const KEYWORDS = new Set([
   'if','else','match','for','while','return','break','continue','pass',
   'defer','unsafe','when','inline','external','foreign','import','public',
   'event','emit','not','and','or','in','out','inout','consuming','static_assert',
-  'fn','proc','task','true','false','null','ref_of','ptr_of','const_ptr_of',
-  'read','reinterpret','zero','default','hash','equal','order',
-  'size_of','align_of','offset_of','get','adapt','fatal',
+  'fn','proc','this','editable','static','as',
+])
+
+const ATOMS = new Set(['true','false','null'])
+
+const BUILTINS = new Set([
+  'ref_of','ptr_of','const_ptr_of','read','reinterpret','zero','default',
+  'hash','equal','order','size_of','align_of','offset_of','get','adapt','fatal',
   'field_of','callable_of','attribute_of','has_attribute','attribute_arg',
-  'fields_of','members_of','attributes_of'
+  'fields_of','members_of','attributes_of',
 ])
 
 const TYPES = new Set([
@@ -1669,17 +2084,14 @@ const TYPES = new Set([
   'str','cstr','vec2','vec3','vec4','ivec2','ivec3','ivec4',
   'mat3','mat4','quat','ptr','span','array','SoA',
   'Option','Result','Task','dyn','ref','const_ptr','str_buffer',
-  'field_handle','member_handle','callable_handle','attribute_handle'
+  'field_handle','member_handle','callable_handle','attribute_handle',
+  'EventError','Subscription',
 ])
 
 const BIFNS = new Set([
-  'println','print','format','append_format','assign_format',
-  'init_window','close_window','begin_drawing','end_drawing','clear_background',
-  'draw_circle_v','get_frame_time','window_should_close','load_texture',
-  'load_file_data','subscribe','subscribe_once','unsubscribe','success','failure',
-  'as_span','to_cstr','as_cstr','as_str','clear','assign','append',
-  'len','capacity','is_empty','iter','contains','push','pop','remove',
-  'sleep','work','completed','result','wait','run'
+  'print_string','print','format','append_format','assign_format',
+  'subscribe','subscribe_once','unsubscribe',
+  'as_span','to_cstr','as_cstr','as_str',
 ])
 
 function highlight(code) {
@@ -1687,7 +2099,7 @@ function highlight(code) {
   let i = 0
 
   while (i < code.length) {
-    /* Line comments */
+    /* Line comments — ## doc comments first, then # regular */
     if (code[i] === '#' && code[i+1] === '#' && code[i+2] !== '#') {
       let j = i
       while (j < code.length && code[j] !== '\n') j++
@@ -1695,7 +2107,7 @@ function highlight(code) {
       i = j
       continue
     }
-    if (code[i] === '#' && code[i+1] !== '#') {
+    if (code[i] === '#') {
       let j = i
       while (j < code.length && code[j] !== '\n') j++
       out += '<span class="syn-cmt">' + esc(code.slice(i, j)) + '</span>'
@@ -1703,7 +2115,20 @@ function highlight(code) {
       continue
     }
 
-    /* Format string / c-string / heredoc */
+    /* @[...] attribute blocks */
+    if (code[i] === '@' && code[i+1] === '[') {
+      let j = i + 2, depth = 1
+      while (j < code.length && depth > 0) {
+        if (code[j] === '[') depth++
+        else if (code[j] === ']') depth--
+        j++
+      }
+      out += '<span class="syn-attr">' + esc(code.slice(i, j)) + '</span>'
+      i = j
+      continue
+    }
+
+    /* Format string f"..." */
     if (code[i] === 'f' && code[i+1] === '"') {
       let j = i + 2
       while (j < code.length && code[j] !== '"') {
@@ -1715,6 +2140,7 @@ function highlight(code) {
       i = j
       continue
     }
+    /* C-string c"..." */
     if (code[i] === 'c' && code[i+1] === '"') {
       let j = i + 2
       while (j < code.length && code[j] !== '"') {
@@ -1726,21 +2152,11 @@ function highlight(code) {
       i = j
       continue
     }
+    /* Regular string "..." */
     if (code[i] === '"') {
       let j = i + 1
       while (j < code.length && code[j] !== '"') {
         if (code[j] === '\\') { j += 2; continue }
-        if (code[j] === '#' && code[j+1] === '{') {
-          /* skip interpolation */
-          let d = 1, k = j + 2
-          while (k < code.length && d > 0) {
-            if (code[k] === '{') d++
-            if (code[k] === '}') d--
-            k++
-          }
-          j = k
-          continue
-        }
         j++
       }
       if (j < code.length) j++
@@ -1769,7 +2185,7 @@ function highlight(code) {
 
     /* Numbers */
     if (/\d/.test(code[i]) || (code[i] === '.' && i+1 < code.length && /\d/.test(code[i+1]))) {
-      const numMatch = code.slice(i).match(/^(0[xb][0-9a-fA-F_]+|0[oO][0-7_]+|\d[\d_]*(\.[\d_]*)?([eE][+-]?\d+)?[fd]?)/)
+      const numMatch = code.slice(i).match(/^(0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(\.[\d_]*)?([eE][+-]?\d+)?[fd]?)/)
       if (numMatch) {
         out += '<span class="syn-num">' + esc(numMatch[0]) + '</span>'
         i += numMatch[0].length
@@ -1777,17 +2193,23 @@ function highlight(code) {
       }
     }
 
-    /* Words (keywords, types, identifiers) */
+    /* Words (keywords, types, builtins, identifiers) */
     if (/[a-zA-Z_]/.test(code[i])) {
       let j = i
       while (j < code.length && /[a-zA-Z0-9_]/.test(code[j])) j++
       const word = code.slice(i, j)
-      if (KEYWORDS.has(word)) {
+      if (ATOMS.has(word)) {
+        out += '<span class="syn-atom">' + esc(word) + '</span>'
+      } else if (KEYWORDS.has(word)) {
         out += '<span class="syn-kw">' + esc(word) + '</span>'
       } else if (TYPES.has(word)) {
         out += '<span class="syn-type">' + esc(word) + '</span>'
+      } else if (BUILTINS.has(word)) {
+        out += '<span class="syn-fn">' + esc(word) + '</span>'
       } else if (BIFNS.has(word)) {
         out += '<span class="syn-fn">' + esc(word) + '</span>'
+      } else if (/^[A-Z]/.test(word) && word !== word.toUpperCase()) {
+        out += '<span class="syn-type">' + esc(word) + '</span>'
       } else {
         out += esc(word)
       }
@@ -1796,13 +2218,13 @@ function highlight(code) {
     }
 
     /* Multi-char operators */
-    const mco = code.slice(i, i+3)
-    if (['<<=','>>='].includes(mco)) {
-      out += '<span class="syn-op">' + esc(mco) + '</span>'
+    const mc3 = code.slice(i, i+3)
+    if (['<<=','>>='].includes(mc3)) {
+      out += '<span class="syn-op">' + esc(mc3) + '</span>'
       i += 3; continue
     }
     const mc2 = code.slice(i, i+2)
-    if (['->','==','!=','<=','>=','<<','>>','+=','-=','*=','/=','%=','&=','|=','^=','..'].includes(mc2)) {
+    if (['<-','->','==','!=','<=','>=','<<','>>','+=','-=','*=','/=','%=','&=','|=','^=','..'].includes(mc2)) {
       out += '<span class="syn-op">' + esc(mc2) + '</span>'
       i += 2; continue
     }
