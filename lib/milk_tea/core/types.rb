@@ -112,6 +112,10 @@ module MilkTea
         false
       end
 
+      def sendable?
+        false
+      end
+
       def field_c_name(name)
         name
       end
@@ -133,6 +137,10 @@ module MilkTea
 
       def hash
         [self.class, name].hash
+      end
+
+      def sendable?
+        true
       end
 
       def to_s
@@ -159,6 +167,10 @@ module MilkTea
 
       def hash
         self.class.hash
+      end
+
+      def sendable?
+        true
       end
 
       def to_s
@@ -255,6 +267,10 @@ module MilkTea
         name == "void"
       end
 
+      def sendable?
+        name != "str"
+      end
+
       def to_s
         name
       end
@@ -276,6 +292,10 @@ module MilkTea
 
       def hash
         [self.class, target_type].hash
+      end
+
+      def sendable?
+        true
       end
 
       def to_s
@@ -318,6 +338,10 @@ module MilkTea
         [self.class, struct_type].hash
       end
 
+      def sendable?
+        true
+      end
+
       def to_s
         "field target #{struct_type}"
       end
@@ -343,6 +367,10 @@ module MilkTea
         [self.class, struct_handle, field_name].hash
       end
 
+      def sendable?
+        true
+      end
+
       def to_s
         "field_of(#{struct_handle.struct_type}, #{field_name})"
       end
@@ -365,6 +393,10 @@ module MilkTea
 
       def hash
         [self.class, display_name].hash
+      end
+
+      def sendable?
+        true
       end
 
       def to_s
@@ -395,6 +427,10 @@ module MilkTea
 
       def hash
         [self.class, attribute_module_name, attribute_name, target].hash
+      end
+
+      def sendable?
+        true
       end
 
       def to_s
@@ -431,6 +467,10 @@ module MilkTea
         [self.class, enum_handle, member_name].hash
       end
 
+      def sendable?
+        true
+      end
+
       def to_s
         "member_of(#{enum_handle}, #{member_name})"
       end
@@ -456,6 +496,10 @@ module MilkTea
 
       def nullable?
         true
+      end
+
+      def sendable?
+        base.sendable?
       end
 
       def to_s
@@ -505,6 +549,20 @@ module MilkTea
         [self.class, name, arguments].hash
       end
 
+      def sendable?
+        case name
+        when "ptr", "const_ptr", "ref"
+          false
+        when "array"
+          el = arguments.first
+          el.is_a?(LiteralTypeArg) ? true : el.sendable?
+        when "str_buffer"
+          true
+        else
+          false
+        end
+      end
+
       def to_s
         "#{name}[#{arguments.join(', ')}]"
       end
@@ -529,6 +587,10 @@ module MilkTea
         @name.hash
       end
 
+      def sendable?
+        true
+      end
+
       def to_s
         name
       end
@@ -550,6 +612,10 @@ module MilkTea
 
       def hash
         @name.hash
+      end
+
+      def sendable?
+        true
       end
 
       def to_s
@@ -700,6 +766,10 @@ module MilkTea
         @fields[name]
       end
 
+      def sendable?
+        result_type.sendable?
+      end
+
       def to_s
         "Task[#{result_type}]"
       end
@@ -740,6 +810,10 @@ module MilkTea
 
       def hash
         self.class.hash
+      end
+
+      def sendable?
+        true
       end
 
       def to_s
@@ -858,6 +932,12 @@ module MilkTea
         !@events.empty?
       end
 
+      def sendable?
+        return false if has_events?
+
+        fields.each_value.all?(&:sendable?)
+      end
+
       def field_c_name(name)
         stripped = name.delete_suffix("_")
         return stripped if stripped != name && Token::KEYWORDS.key?(stripped)
@@ -970,6 +1050,12 @@ module MilkTea
         !@events.empty?
       end
 
+      def sendable?
+        return false if has_events?
+
+        fields.each_value.all?(&:sendable?)
+      end
+
       def field_c_name(name)
         stripped = name.delete_suffix("_")
         return stripped if stripped != name && Token::KEYWORDS.key?(stripped)
@@ -1066,6 +1152,10 @@ module MilkTea
         fields && !fields.empty?
       end
 
+      def sendable?
+        @arm_names.all? { |arm_name| @arms[arm_name].each_value.all?(&:sendable?) }
+      end
+
       def eql?(other)
         other.class == self.class && other.name == name && other.module_name == module_name
       end
@@ -1105,6 +1195,10 @@ module MilkTea
       def define_type_param_constraints(type_param_constraints)
         @type_param_constraints = type_param_constraints.freeze
         self
+      end
+
+      def sendable?
+        @arms.each_value.all? { |fields| fields.each_value.all?(&:sendable?) }
       end
 
       def eql?(other)
@@ -1250,6 +1344,10 @@ module MilkTea
         @members.keys
       end
 
+      def sendable?
+        true
+      end
+
       def eql?(other)
         other.class == self.class &&
           other.name == name &&
@@ -1337,6 +1435,10 @@ module MilkTea
         [self.class, params, return_type, receiver_type, receiver_editable, variadic].hash
       end
 
+      def sendable?
+        true
+      end
+
       def to_s
         pieces = []
         pieces << receiver_type.to_s if receiver_type
@@ -1410,6 +1512,10 @@ module MilkTea
         true
       end
 
+      def sendable?
+        true
+      end
+
       def to_s
         name
       end
@@ -1448,6 +1554,10 @@ module MilkTea
       end
 
       def numeric?
+        true
+      end
+
+      def sendable?
         true
       end
 
@@ -1492,6 +1602,10 @@ module MilkTea
         true
       end
 
+      def sendable?
+        true
+      end
+
       def to_s
         name
       end
@@ -1533,6 +1647,10 @@ module MilkTea
         @fields[name]
       end
 
+      def sendable?
+        fields.each_value.all?(&:sendable?)
+      end
+
       def to_s
         @name
       end
@@ -1566,6 +1684,10 @@ module MilkTea
 
       def field(name)
         @fields[name]
+      end
+
+      def sendable?
+        element_types.all?(&:sendable?)
       end
 
       def to_s
