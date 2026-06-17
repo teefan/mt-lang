@@ -1759,6 +1759,8 @@ module MilkTea
               raise LoweringError, "str_buffer requires exactly one type argument" unless str_buffer_type?(type)
 
               str_buffer_type_name(type)
+            when "atomic"
+              "_Atomic #{c_type(type.arguments.first)}"
             else
               raise LoweringError, "unsupported generic C type #{type.name}"
             end

@@ -204,6 +204,8 @@ module MilkTea
           when :event_wait
             IR::Call.new(callee: runtime.fetch(:wait_c_name), arguments: [event_pointer], type:)
           end
+        when :atomic_load, :atomic_store, :atomic_add, :atomic_sub, :atomic_exchange, :atomic_compare_exchange
+          lower_atomic_method_call(kind, receiver, expression, env:, type:)
         when :associated_method
           arguments = lower_call_arguments(expression.arguments, callee_type, env:)
           IR::Call.new(callee: callee_name, arguments:, type:)
@@ -1567,6 +1569,47 @@ module MilkTea
         raise LoweringError, "specialization #{expression.callee.name} must be called" if expression.callee.is_a?(AST::Identifier)
 
         raise LoweringError, "unsupported specialization #{expression.class.name}"
+      end
+
+      def atomic_method_kind(receiver_type, name)
+        return unless atomic_type?(receiver_type)
+
+        case name
+        when "load" then :atomic_load
+        when "store" then :atomic_store
+        when "add" then :atomic_add
+        when "sub" then :atomic_sub
+        when "exchange" then :atomic_exchange
+        when "compare_exchange" then :atomic_compare_exchange
+        end
+      end
+
+      def lower_atomic_method_call(kind, receiver, expression, env:, type:)
+        receiver_type = infer_expression_type(receiver, env:)
+        elem_type = atomic_element_type(receiver_type)
+        ptr_type = Types::GenericInstance.new("ptr", [elem_type])
+        receiver_ir = lower_expression(receiver, env:)
+        addr = IR::AddressOf.new(expression: receiver_ir, type: ptr_type)
+        seq_cst = IR::IntegerLiteral.new(value: 5, type: @types.fetch("int"))
+
+        case kind
+        when :atomic_load
+          IR::Call.new(callee: "__atomic_load_n", arguments: [addr, seq_cst], type: elem_type)
+        when :atomic_store
+          arg = lower_contextual_expression(expression.arguments.first.value, env:, expected_type: elem_type)
+          IR::Call.new(callee: "__atomic_store_n", arguments: [addr, arg, seq_cst], type:)
+        when :atomic_add
+          arg = lower_contextual_expression(expression.arguments.first.value, env:, expected_type: elem_type)
+          IR::Call.new(callee: "__atomic_fetch_add", arguments: [addr, arg, seq_cst], type: elem_type)
+        when :atomic_sub
+          arg = lower_contextual_expression(expression.arguments.first.value, env:, expected_type: elem_type)
+          IR::Call.new(callee: "__atomic_fetch_sub", arguments: [addr, arg, seq_cst], type: elem_type)
+        when :atomic_exchange
+          arg = lower_contextual_expression(expression.arguments.first.value, env:, expected_type: elem_type)
+          IR::Call.new(callee: "__atomic_exchange_n", arguments: [addr, arg, seq_cst], type: elem_type)
+        when :atomic_compare_exchange
+          raise LoweringError, "atomic compare_exchange is not yet implemented in the built-in surface; use std.sync.AtomicUint for compare-exchange operations"
+        end
       end
   end
 end

@@ -533,6 +533,16 @@ module MilkTea
             return [event_method, nil, callee.receiver, event_method_type(event_method, event_type)]
           end
 
+          if (atomic_method = atomic_method_kind(resolved_receiver_type, callee.member))
+            elem = atomic_element_type(resolved_receiver_type)
+            ret = case atomic_method
+                  when :atomic_load, :atomic_add, :atomic_sub, :atomic_exchange then elem
+                  when :atomic_store then @types.fetch("void")
+                  when :atomic_compare_exchange then @types.fetch("bool")
+                  end
+            return [atomic_method, nil, callee.receiver, Types::Function.new(nil, params: [], return_type: ret)]
+          end
+
           field_receiver_type = infer_field_receiver_type(callee.receiver, env:)
           if array_type?(field_receiver_type) && callee.member == "as_span"
             return [:array_as_span, nil, callee.receiver, Types::Span.new(array_element_type(field_receiver_type))]
@@ -819,6 +829,8 @@ module MilkTea
                           receiver_type.element_type
                         end
             Types::Nullable.new(Types::GenericInstance.new("ptr", [elem_type]))
+          when :atomic_load, :atomic_add, :atomic_sub, :atomic_exchange, :atomic_store, :atomic_compare_exchange
+            callee_type.return_type
           else
             raise LoweringError, "unsupported call kind #{kind}"
           end

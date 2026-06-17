@@ -1263,6 +1263,12 @@ module MilkTea
         parse_emit_stmt
       elsif match(:for)
         parse_for_stmt
+      elsif check_parallel_for_start?
+        advance
+        parse_parallel_for_stmt
+      elsif check_parallel_block_start?
+        advance
+        parse_parallel_block_stmt
       elsif match(:while)
         parse_while_stmt
       elsif match(:pass)
@@ -1592,6 +1598,52 @@ module MilkTea
         header_bindings: bindings.empty? ? nil : bindings,
         header_iterables: iterables&.any? ? iterables : nil,
       ) if recovered_body
+
+      recovery_error_stmt(e)
+    end
+
+    def parse_parallel_for_stmt
+      consume(:for, "expected 'for' after 'parallel'")
+      line = previous.line
+      name_token = consume_name("expected loop variable name")
+      bindings = [AST::ForBinding.new(name: name_token.lexeme, line: name_token.line, column: name_token.column)]
+      consume(:in, "expected 'in' in parallel for loop")
+      iterables = [parse_expression]
+      body = parse_block
+      AST::ForStmt.new(bindings:, iterables:, body:, threaded: true, line:, column: bindings.first.column)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_body = synchronize_to_statement_boundary
+      return recovery_error_block_stmt(e, recovered_body, header_type: :for) if recovered_body
+
+      recovery_error_stmt(e)
+    end
+
+    def parse_parallel_block_stmt
+      line = previous.line
+      column = previous.column
+      consume(:colon, "expected ':' after 'parallel'")
+      consume(:newline, "expected newline after 'parallel:'")
+      consume(:indent, "expected indented block after 'parallel:'")
+      spawn_blocks = []
+      until check(:dedent) || eof?
+        spawn_line = peek.line
+        spawn_column = peek.column
+        raise error(peek, "expected 'spawn' inside parallel block") unless check(:identifier) && peek.lexeme == "spawn"
+        advance
+        body = parse_block
+        spawn_blocks << AST::SpawnBlock.new(body:, line: spawn_line, column: spawn_column)
+      end
+      consume(:dedent, "expected end of parallel block")
+      AST::ParallelBlockStmt.new(spawn_blocks:, line:, column:)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_body = synchronize_to_statement_boundary
+      return recovery_error_block_stmt(e, recovered_body, header_type: :parallel) if recovered_body
 
       recovery_error_stmt(e)
     end
@@ -2575,6 +2627,24 @@ module MilkTea
 
       next_token = @tokens[next_idx]
       %i[for while match if].include?(next_token.type)
+    end
+
+    def check_parallel_for_start?
+      return false unless check(:parallel)
+
+      next_idx = @current + 1
+      return false if next_idx >= @tokens.length
+
+      @tokens[next_idx].type == :for
+    end
+
+    def check_parallel_block_start?
+      return false unless check(:parallel)
+
+      next_idx = @current + 1
+      return false if next_idx >= @tokens.length
+
+      @tokens[next_idx].type == :colon
     end
 
     def check_when_start?

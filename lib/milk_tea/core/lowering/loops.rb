@@ -6,6 +6,7 @@ module MilkTea
 
 
       def lower_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
+        return lower_threaded_for_stmt(statement, env:, active_defers:) if statement.threaded
         return lower_parallel_collection_for_stmt(statement, env:, active_defers:, return_type:, allow_return:) if statement.parallel?
         return lower_range_for_stmt(statement, env:, active_defers:, return_type:, allow_return:) if range_iterable?(statement.iterable)
 
@@ -441,6 +442,558 @@ module MilkTea
         end
 
         statements
+      end
+
+      def lower_threaded_for_stmt(statement, env:, active_defers:)
+        loop_type = infer_range_loop_type(statement.iterable, env:)
+        start_expr_ast = range_start_of(statement.iterable)
+        stop_expr_ast = range_end_of(statement.iterable)
+        start_setup, prepared_start = prepare_expression_for_inline_lowering(start_expr_ast, env:, expected_type: loop_type)
+        stop_setup, prepared_stop = prepare_expression_for_inline_lowering(stop_expr_ast, env:, expected_type: loop_type)
+
+        lowered_stop = lower_expression(prepared_stop, env:, expected_type: loop_type)
+        index_c_name = c_local_name(statement.name)
+
+        body_env = duplicate_env(env)
+        current_actual_scope(body_env[:scopes])[statement.name] = local_binding(
+          type: loop_type, c_name: index_c_name, mutable: false, pointer: false,
+        )
+
+        body = lower_block(
+          statement.body,
+          env: body_env,
+          active_defers:,
+          return_type: @types.fetch("void"),
+          loop_flow: nil,
+          allow_return: false,
+        )
+
+        @parallel_for_counter += 1
+        uid = "#{@module_prefix}_pfor_#{@parallel_for_counter}".gsub(/[^A-Za-z0-9_]/, "_")
+        cap_struct_c_name = "mt_pfor_cap_#{uid}"
+        worker_c_name = "mt_pfor_work_#{uid}"
+
+        all_names = {}
+        body.each { |s| collect_pfor_ir_names_stmt(s, all_names) }
+        local_decls = Set.new
+        body.each { |s| collect_pfor_local_decls(s, local_decls) }
+        excluded = Set.new(local_decls.to_a + [index_c_name])
+        captures = all_names.values.reject { |n| excluded.include?(n.name) }
+
+        validate_pfor_no_ref_captures!(captures)
+
+        void_type = @types.fetch("void")
+        void_ptr_type = Types::GenericInstance.new("ptr", [void_type])
+        long_type = @types.fetch("long")
+
+        array_capture_names = Set.new
+        cap_fields = captures.map do |c|
+          if array_type?(c.type)
+            array_capture_names << c.name
+            elem = array_element_type(c.type)
+            IR::Field.new(name: c.name, type: Types::GenericInstance.new("ptr", [elem]))
+          else
+            IR::Field.new(name: c.name, type: c.type)
+          end
+        end
+        @synthetic_structs << IR::StructDecl.new(
+          name: cap_struct_c_name, c_name: cap_struct_c_name,
+          fields: cap_fields, packed: false, alignment: nil,
+        )
+
+        cap_ptr_type = Types::GenericInstance.new("ptr", [Types::Struct.new(cap_struct_c_name)])
+        cap_name_ir = IR::Name.new(name: "mt_cap", type: cap_ptr_type, pointer: true)
+        worker_body = [
+          IR::LocalDecl.new(
+            name: "mt_cap", c_name: "mt_cap", type: cap_ptr_type,
+            value: IR::Cast.new(
+              target_type: cap_ptr_type,
+              expression: IR::Name.new(name: "mt_pfor_data", type: void_ptr_type, pointer: false),
+              type: cap_ptr_type,
+            ),
+          ),
+        ]
+        captures.each do |c|
+          alias_type = if array_capture_names.include?(c.name)
+                         Types::GenericInstance.new("ptr", [array_element_type(c.type)])
+                       else
+                         c.type
+                       end
+          worker_body << IR::LocalDecl.new(
+            name: c.name, c_name: c.name, type: alias_type,
+            value: IR::Member.new(receiver: cap_name_ir, member: c.name, type: alias_type),
+          )
+        end
+
+        body = rewrite_pfor_array_captures(body, array_capture_names) unless array_capture_names.empty?
+
+        loop_var_ref = IR::Name.new(name: index_c_name, type: loop_type, pointer: false)
+        worker_body << IR::ForStmt.new(
+          init: IR::LocalDecl.new(
+            name: index_c_name, c_name: index_c_name, type: loop_type,
+            value: IR::Name.new(name: "mt_pfor_start", type: long_type, pointer: false),
+          ),
+          condition: IR::Binary.new(
+            operator: "<",
+            left: loop_var_ref,
+            right: IR::Name.new(name: "mt_pfor_end", type: long_type, pointer: false),
+            type: @types.fetch("bool"),
+          ),
+          post: IR::Assignment.new(
+            target: loop_var_ref,
+            operator: "+=",
+            value: IR::IntegerLiteral.new(value: 1, type: loop_type),
+          ),
+          body:,
+        )
+
+        @synthetic_functions << IR::Function.new(
+          name: worker_c_name, c_name: worker_c_name,
+          params: [
+            IR::Param.new(name: "mt_pfor_data", c_name: "mt_pfor_data", type: void_ptr_type, pointer: false),
+            IR::Param.new(name: "mt_pfor_start", c_name: "mt_pfor_start", type: long_type, pointer: false),
+            IR::Param.new(name: "mt_pfor_end", c_name: "mt_pfor_end", type: long_type, pointer: false),
+          ],
+          return_type: void_type,
+          body: worker_body,
+          entry_point: false,
+        )
+
+        cap_struct_type = Types::Struct.new(cap_struct_c_name, c_name: cap_struct_c_name).tap do |s|
+          s.define_fields(captures.each_with_object({}) do |c, h|
+            h[c.name] = if array_capture_names.include?(c.name)
+                          Types::GenericInstance.new("ptr", [array_element_type(c.type)])
+                        else
+                          c.type
+                        end
+          end)
+        end
+        cap_local_name = "mt_pfor_cap"
+        cap_init = IR::AggregateLiteral.new(
+          type: cap_struct_type,
+          fields: captures.map do |c|
+            if array_capture_names.include?(c.name)
+              elem = array_element_type(c.type)
+              ptr_type = Types::GenericInstance.new("ptr", [elem])
+              IR::AggregateField.new(name: c.name, value: IR::Name.new(name: c.name, type: ptr_type, pointer: false))
+            else
+              IR::AggregateField.new(name: c.name, value: c)
+            end
+          end,
+        )
+
+        worker_fn_type = Types::Function.new(nil, params: [], return_type: void_type)
+        call_site = [
+          IR::LocalDecl.new(name: cap_local_name, c_name: cap_local_name, type: cap_struct_type, value: cap_init),
+          IR::ExpressionStmt.new(expression: IR::Call.new(
+            callee: "mt_parallel_for",
+            arguments: [
+              IR::Name.new(name: worker_c_name, type: worker_fn_type, pointer: false),
+              IR::AddressOf.new(
+                expression: IR::Name.new(name: cap_local_name, type: cap_struct_type, pointer: false),
+                type: void_ptr_type,
+              ),
+              lowered_stop,
+            ],
+            type: void_type,
+          )),
+        ]
+
+        IR::BlockStmt.new(body: [*start_setup, *stop_setup, *call_site])
+      end
+
+      def lower_parallel_block_stmt(statement, env:, active_defers:)
+        void_type = @types.fetch("void")
+        void_ptr_type = Types::GenericInstance.new("ptr", [void_type])
+
+        @parallel_for_counter += 1
+        uid_base = "#{@module_prefix}_spawn_#{@parallel_for_counter}".gsub(/[^A-Za-z0-9_]/, "_")
+
+        block_infos = statement.spawn_blocks.each_with_index.map do |spawn_block, idx|
+          block_body = lower_block(
+            spawn_block.body,
+            env: duplicate_env(env),
+            active_defers:,
+            return_type: void_type,
+            loop_flow: nil,
+            allow_return: false,
+          )
+
+          all_names = {}
+          block_body.each { |s| collect_pfor_ir_names_stmt(s, all_names) }
+          local_decls = Set.new
+          block_body.each { |s| collect_pfor_local_decls(s, local_decls) }
+          captures = all_names.values.reject { |n| local_decls.include?(n.name) }
+
+          validate_pfor_no_ref_captures!(captures)
+          written_names = collect_pfor_written_names(block_body, captures)
+
+          cap_struct_c_name = "mt_spawn_cap_#{uid_base}_#{idx}"
+          worker_c_name = "mt_spawn_work_#{uid_base}_#{idx}"
+
+          array_capture_names = Set.new
+          cap_fields = captures.map do |c|
+            if array_type?(c.type)
+              array_capture_names << c.name
+              IR::Field.new(name: c.name, type: Types::GenericInstance.new("ptr", [array_element_type(c.type)]))
+            else
+              IR::Field.new(name: c.name, type: c.type)
+            end
+          end
+
+          @synthetic_structs << IR::StructDecl.new(
+            name: cap_struct_c_name, c_name: cap_struct_c_name,
+            fields: cap_fields, packed: false, alignment: nil,
+          )
+
+          cap_ptr_type = Types::GenericInstance.new("ptr", [Types::Struct.new(cap_struct_c_name)])
+          cap_name_ir = IR::Name.new(name: "mt_cap", type: cap_ptr_type, pointer: true)
+          worker_body = [
+            IR::LocalDecl.new(
+              name: "mt_cap", c_name: "mt_cap", type: cap_ptr_type,
+              value: IR::Cast.new(
+                target_type: cap_ptr_type,
+                expression: IR::Name.new(name: "mt_pfor_data", type: void_ptr_type, pointer: false),
+                type: cap_ptr_type,
+              ),
+            ),
+          ]
+          captures.each do |c|
+            alias_type = if array_capture_names.include?(c.name)
+                           Types::GenericInstance.new("ptr", [array_element_type(c.type)])
+                         else
+                           c.type
+                         end
+            worker_body << IR::LocalDecl.new(
+              name: c.name, c_name: c.name, type: alias_type,
+              value: IR::Member.new(receiver: cap_name_ir, member: c.name, type: alias_type),
+            )
+          end
+
+          rewritten_body = array_capture_names.empty? ? block_body : rewrite_pfor_array_captures(block_body, array_capture_names)
+          worker_body.concat(rewritten_body)
+
+          @synthetic_functions << IR::Function.new(
+            name: worker_c_name, c_name: worker_c_name,
+            params: [IR::Param.new(name: "mt_pfor_data", c_name: "mt_pfor_data", type: void_ptr_type, pointer: false)],
+            return_type: void_type,
+            body: worker_body,
+            entry_point: false,
+          )
+
+          cap_struct_type = Types::Struct.new(cap_struct_c_name, c_name: cap_struct_c_name).tap do |s|
+            s.define_fields(captures.each_with_object({}) do |c, h|
+              h[c.name] = if array_capture_names.include?(c.name)
+                            Types::GenericInstance.new("ptr", [array_element_type(c.type)])
+                          else
+                            c.type
+                          end
+            end)
+          end
+
+          cap_local_name = "mt_spawn_cap_#{idx}"
+          cap_init = IR::AggregateLiteral.new(
+            type: cap_struct_type,
+            fields: captures.map do |c|
+              if array_capture_names.include?(c.name)
+                elem = array_element_type(c.type)
+                ptr_type = Types::GenericInstance.new("ptr", [elem])
+                IR::AggregateField.new(name: c.name, value: IR::Name.new(name: c.name, type: ptr_type, pointer: false))
+              else
+                IR::AggregateField.new(name: c.name, value: c)
+              end
+            end,
+          )
+
+          { worker_c_name:, cap_local_name:, cap_struct_type:, cap_init:, capture_names: Set.new(captures.map(&:name)), written_names: }
+        end
+
+        validate_pfor_write_conflicts!(block_infos)
+
+        fn_type = Types::Function.new(nil, params: [], return_type: void_type)
+        spawn_item_type = Types::Struct.new("mt_spawn_item", c_name: "mt_spawn_item").tap do |s|
+          s.define_fields({ "work" => fn_type, "data" => void_ptr_type })
+        end
+
+        call_site = []
+        block_infos.each do |info|
+          call_site << IR::LocalDecl.new(
+            name: info[:cap_local_name], c_name: info[:cap_local_name],
+            type: info[:cap_struct_type], value: info[:cap_init],
+          )
+        end
+
+        tasks_local = "mt_spawn_tasks"
+        tasks_count = block_infos.length
+        tasks_array_type = Types::GenericInstance.new("array", [spawn_item_type, Types::LiteralTypeArg.new(tasks_count)])
+        tasks_init = IR::ArrayLiteral.new(
+          type: tasks_array_type,
+          elements: block_infos.map { |info|
+            IR::AggregateLiteral.new(
+              type: spawn_item_type,
+              fields: [
+                IR::AggregateField.new(name: "work", value: IR::Name.new(name: info[:worker_c_name], type: fn_type, pointer: false)),
+                IR::AggregateField.new(name: "data", value: IR::AddressOf.new(
+                  expression: IR::Name.new(name: info[:cap_local_name], type: info[:cap_struct_type], pointer: false),
+                  type: void_ptr_type,
+                )),
+              ],
+            )
+          },
+        )
+        call_site << IR::LocalDecl.new(name: tasks_local, c_name: tasks_local, type: tasks_array_type, value: tasks_init)
+        call_site << IR::ExpressionStmt.new(expression: IR::Call.new(
+          callee: "mt_spawn_all",
+          arguments: [
+            IR::Name.new(name: tasks_local, type: tasks_array_type, pointer: false),
+            IR::IntegerLiteral.new(value: tasks_count, type: @types.fetch("int")),
+          ],
+          type: void_type,
+        ))
+
+        IR::BlockStmt.new(body: call_site)
+      end
+
+      def validate_pfor_no_ref_captures!(captures)
+        captures.each do |c|
+          raise LoweringError, "cannot capture '#{c.name}' of type ref across thread boundary — ref values are not safe to share across threads" if ref_type?(c.type)
+        end
+      end
+
+      def validate_pfor_write_conflicts!(block_infos)
+        block_infos.each_with_index do |info, idx|
+          info[:written_names].each do |name|
+            block_infos.each_with_index do |other, other_idx|
+              next if idx == other_idx
+              next unless other[:capture_names].include?(name)
+
+              raise LoweringError, "write conflict in parallel block: '#{name}' is written in spawn block #{idx + 1} and accessed in spawn block #{other_idx + 1}"
+            end
+          end
+        end
+      end
+
+      def collect_pfor_written_names(stmts, captures)
+        capture_names = Set.new(captures.map(&:name))
+        written = Set.new
+        stmts.each { |s| collect_pfor_written_stmt(s, capture_names, written) }
+        written
+      end
+
+      def collect_pfor_written_stmt(stmt, capture_names, written)
+        case stmt
+        when IR::Assignment
+          base = pfor_assignment_base_name(stmt.target)
+          written << base if base && capture_names.include?(base)
+        when IR::IfStmt
+          stmt.then_body.each { |s| collect_pfor_written_stmt(s, capture_names, written) }
+          stmt.else_body&.each { |s| collect_pfor_written_stmt(s, capture_names, written) }
+        when IR::WhileStmt
+          stmt.body.each { |s| collect_pfor_written_stmt(s, capture_names, written) }
+        when IR::ForStmt
+          stmt.body.each { |s| collect_pfor_written_stmt(s, capture_names, written) }
+        when IR::BlockStmt
+          stmt.body.each { |s| collect_pfor_written_stmt(s, capture_names, written) }
+        when IR::SwitchStmt
+          stmt.cases.each { |c| c.body.each { |s| collect_pfor_written_stmt(s, capture_names, written) } }
+        end
+      end
+
+      def pfor_assignment_base_name(expr)
+        case expr
+        when IR::Name
+          expr.name
+        when IR::Member
+          pfor_assignment_base_name(expr.receiver)
+        when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
+          pfor_assignment_base_name(expr.receiver)
+        when IR::AddressOf
+          pfor_assignment_base_name(expr.expression)
+        else
+          nil
+        end
+      end
+
+      def rewrite_pfor_array_captures(stmts, array_names)
+        stmts.map { |s| rewrite_pfor_stmt(s, array_names) }
+      end
+
+      def rewrite_pfor_stmt(stmt, array_names)
+        case stmt
+        when IR::Assignment
+          IR::Assignment.new(
+            target: rewrite_pfor_expr(stmt.target, array_names),
+            operator: stmt.operator,
+            value: rewrite_pfor_expr(stmt.value, array_names),
+          )
+        when IR::LocalDecl
+          stmt.value ? IR::LocalDecl.new(name: stmt.name, c_name: stmt.c_name, type: stmt.type, value: rewrite_pfor_expr(stmt.value, array_names), line: stmt.line, source_path: stmt.source_path) : stmt
+        when IR::ExpressionStmt
+          IR::ExpressionStmt.new(expression: rewrite_pfor_expr(stmt.expression, array_names), line: stmt.line, source_path: stmt.source_path)
+        when IR::IfStmt
+          IR::IfStmt.new(
+            condition: rewrite_pfor_expr(stmt.condition, array_names),
+            then_body: rewrite_pfor_array_captures(stmt.then_body, array_names),
+            else_body: stmt.else_body ? rewrite_pfor_array_captures(stmt.else_body, array_names) : nil,
+          )
+        when IR::ForStmt
+          IR::ForStmt.new(
+            init: stmt.init ? rewrite_pfor_stmt(stmt.init, array_names) : nil,
+            condition: stmt.condition ? rewrite_pfor_expr(stmt.condition, array_names) : nil,
+            post: stmt.post ? rewrite_pfor_stmt(stmt.post, array_names) : nil,
+            body: rewrite_pfor_array_captures(stmt.body, array_names),
+          )
+        when IR::WhileStmt
+          IR::WhileStmt.new(
+            condition: rewrite_pfor_expr(stmt.condition, array_names),
+            body: rewrite_pfor_array_captures(stmt.body, array_names),
+          )
+        when IR::BlockStmt
+          IR::BlockStmt.new(body: rewrite_pfor_array_captures(stmt.body, array_names))
+        when IR::SwitchStmt
+          IR::SwitchStmt.new(
+            expression: rewrite_pfor_expr(stmt.expression, array_names),
+            cases: stmt.cases.map { |c| IR::SwitchCase.new(value: c.value, body: rewrite_pfor_array_captures(c.body, array_names)) },
+            exhaustive: stmt.exhaustive,
+          )
+        when IR::ReturnStmt
+          stmt.value ? IR::ReturnStmt.new(value: rewrite_pfor_expr(stmt.value, array_names), line: stmt.line, source_path: stmt.source_path) : stmt
+        else
+          stmt
+        end
+      end
+
+      def rewrite_pfor_expr(expr, array_names)
+        case expr
+        when IR::CheckedIndex
+          if expr.receiver.is_a?(IR::AddressOf) &&
+             expr.receiver.expression.is_a?(IR::Name) &&
+             array_names.include?(expr.receiver.expression.name)
+            name_node = expr.receiver.expression
+            elem = array_element_type(name_node.type) if array_type?(name_node.type)
+            ptr_type = elem ? Types::GenericInstance.new("ptr", [elem]) : name_node.type
+            IR::Index.new(
+              receiver: IR::Name.new(name: name_node.name, type: ptr_type, pointer: false),
+              index: rewrite_pfor_expr(expr.index, array_names),
+              type: expr.type,
+            )
+          else
+            expr
+          end
+        when IR::Binary
+          IR::Binary.new(operator: expr.operator, left: rewrite_pfor_expr(expr.left, array_names), right: rewrite_pfor_expr(expr.right, array_names), type: expr.type)
+        when IR::Unary
+          IR::Unary.new(operator: expr.operator, operand: rewrite_pfor_expr(expr.operand, array_names), type: expr.type)
+        when IR::Cast
+          IR::Cast.new(target_type: expr.target_type, expression: rewrite_pfor_expr(expr.expression, array_names), type: expr.type)
+        when IR::Call
+          IR::Call.new(
+            callee: expr.callee.is_a?(String) ? expr.callee : rewrite_pfor_expr(expr.callee, array_names),
+            arguments: expr.arguments.map { |a| rewrite_pfor_expr(a, array_names) },
+            type: expr.type,
+          )
+        when IR::AddressOf
+          IR::AddressOf.new(expression: rewrite_pfor_expr(expr.expression, array_names), type: expr.type)
+        when IR::Conditional
+          IR::Conditional.new(
+            condition: rewrite_pfor_expr(expr.condition, array_names),
+            then_expression: rewrite_pfor_expr(expr.then_expression, array_names),
+            else_expression: rewrite_pfor_expr(expr.else_expression, array_names),
+            type: expr.type,
+          )
+        when IR::Member
+          IR::Member.new(receiver: rewrite_pfor_expr(expr.receiver, array_names), member: expr.member, type: expr.type)
+        when IR::Index
+          IR::Index.new(receiver: rewrite_pfor_expr(expr.receiver, array_names), index: rewrite_pfor_expr(expr.index, array_names), type: expr.type)
+        when IR::AggregateLiteral
+          IR::AggregateLiteral.new(type: expr.type, fields: expr.fields.map { |f| IR::AggregateField.new(name: f.name, value: rewrite_pfor_expr(f.value, array_names)) })
+        else
+          expr
+        end
+      end
+
+      def collect_pfor_ir_names_stmt(stmt, result)
+        case stmt
+        when IR::LocalDecl
+          collect_pfor_ir_names_expr(stmt.value, result) if stmt.value
+        when IR::Assignment
+          collect_pfor_ir_names_expr(stmt.target, result)
+          collect_pfor_ir_names_expr(stmt.value, result)
+        when IR::ExpressionStmt
+          collect_pfor_ir_names_expr(stmt.expression, result)
+        when IR::ReturnStmt
+          collect_pfor_ir_names_expr(stmt.value, result) if stmt.value
+        when IR::IfStmt
+          collect_pfor_ir_names_expr(stmt.condition, result)
+          stmt.then_body.each { |s| collect_pfor_ir_names_stmt(s, result) }
+          stmt.else_body&.each { |s| collect_pfor_ir_names_stmt(s, result) }
+        when IR::WhileStmt
+          collect_pfor_ir_names_expr(stmt.condition, result)
+          stmt.body.each { |s| collect_pfor_ir_names_stmt(s, result) }
+        when IR::ForStmt
+          collect_pfor_ir_names_stmt(stmt.init, result) if stmt.init
+          collect_pfor_ir_names_expr(stmt.condition, result) if stmt.condition
+          collect_pfor_ir_names_stmt(stmt.post, result) if stmt.post.is_a?(IR::Assignment) || stmt.post.is_a?(IR::ExpressionStmt)
+          stmt.body.each { |s| collect_pfor_ir_names_stmt(s, result) }
+        when IR::BlockStmt
+          stmt.body.each { |s| collect_pfor_ir_names_stmt(s, result) }
+        when IR::SwitchStmt
+          collect_pfor_ir_names_expr(stmt.expression, result)
+          stmt.cases.each { |c| c.body.each { |s| collect_pfor_ir_names_stmt(s, result) } }
+        end
+      end
+
+      def collect_pfor_ir_names_expr(expr, result)
+        case expr
+        when IR::Name
+          result[expr.name] = expr unless result.key?(expr.name)
+        when IR::Member
+          collect_pfor_ir_names_expr(expr.receiver, result)
+        when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
+          collect_pfor_ir_names_expr(expr.receiver, result)
+          collect_pfor_ir_names_expr(expr.index, result)
+        when IR::Call
+          collect_pfor_ir_names_expr(expr.callee, result)
+          expr.arguments.each { |a| collect_pfor_ir_names_expr(a, result) }
+        when IR::Binary
+          collect_pfor_ir_names_expr(expr.left, result)
+          collect_pfor_ir_names_expr(expr.right, result)
+        when IR::Unary
+          collect_pfor_ir_names_expr(expr.operand, result)
+        when IR::Cast
+          collect_pfor_ir_names_expr(expr.expression, result)
+        when IR::AddressOf
+          collect_pfor_ir_names_expr(expr.expression, result)
+        when IR::Conditional
+          collect_pfor_ir_names_expr(expr.condition, result)
+          collect_pfor_ir_names_expr(expr.then_expression, result)
+          collect_pfor_ir_names_expr(expr.else_expression, result)
+        when IR::AggregateLiteral
+          expr.fields.each { |f| collect_pfor_ir_names_expr(f.value, result) }
+        when IR::ArrayLiteral
+          expr.elements.each { |e| collect_pfor_ir_names_expr(e, result) }
+        when IR::ReinterpretExpr
+          collect_pfor_ir_names_expr(expr.expression, result)
+        end
+      end
+
+      def collect_pfor_local_decls(stmt, decls)
+        case stmt
+        when IR::LocalDecl
+          decls << stmt.c_name
+        when IR::ForStmt
+          decls << stmt.init.c_name if stmt.init.is_a?(IR::LocalDecl)
+          stmt.body.each { |s| collect_pfor_local_decls(s, decls) }
+        when IR::BlockStmt
+          stmt.body.each { |s| collect_pfor_local_decls(s, decls) }
+        when IR::IfStmt
+          stmt.then_body.each { |s| collect_pfor_local_decls(s, decls) }
+          stmt.else_body&.each { |s| collect_pfor_local_decls(s, decls) }
+        when IR::WhileStmt
+          stmt.body.each { |s| collect_pfor_local_decls(s, decls) }
+        when IR::SwitchStmt
+          stmt.cases.each { |c| c.body.each { |s| collect_pfor_local_decls(s, decls) } }
+        end
       end
 
   end

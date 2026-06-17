@@ -65,6 +65,7 @@ module MilkTea
       @synthetic_functions = []
       @synthetic_constants = []
       @synthetic_proc_counter = 0
+      @parallel_for_counter = 0
       @event_runtime_infos = {}
       @subscription_runtime_emitted = false
       @event_error_enum_emitted = false

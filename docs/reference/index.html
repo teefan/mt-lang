@@ -232,6 +232,7 @@ p + p{margin-top:-.25rem}
 <details><summary>Advanced</summary>
 <a href="#safety">Safety Rules</a>
 <a href="#async">Async</a>
+<a href="#concurrency">Concurrency</a>
 <a href="#events">Events</a>
 </details>
 
@@ -1711,6 +1712,68 @@ let task = some_async_work()
 aio.wait(task)
 let r = aio.result(task)</code></pre>
 </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="concurrency">
+  <h2>Concurrency</h2>
+  <p>Milk Tea has first-class compiler support for multithreading using real OS threads (libuv). All concurrency is structured: spawned work completes before the parent scope continues. No hidden thread pool, no GC interaction, no fire-and-forget.</p>
+
+  <h3>Parallel For (data-parallel)</h3>
+  <p>Dispatches loop iterations across CPU cores. Each iteration writes to its own index range &mdash; the bread and butter of data-oriented game programming.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code><span class="syn-kw">parallel for</span> i <span class="syn-kw">in</span> <span class="syn-num">0</span>..entity_count:
+    positions[i] += velocities[i] * dt</code></pre>
+</div>
+  <p>Rules: range iteration only (<code>0..N</code>). No <code>break</code>, <code>continue</code>, <code>return</code>, <code>defer</code>, or nested <code>parallel for</code> in the body. <code>ref[T]</code> captures rejected.</p>
+
+  <h3>Parallel Blocks (structured fork-join)</h3>
+  <p>Run heterogeneous work concurrently. Each <code>spawn:</code> block runs on its own OS thread. The parent blocks until all complete.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code><span class="syn-kw">parallel</span>:
+    <span class="syn-kw">spawn</span>:
+        textures = load_textures(path)
+    <span class="syn-kw">spawn</span>:
+        sounds = load_sounds(path)</code></pre>
+</div>
+  <p>Rules: at least two <code>spawn:</code> blocks. Single-writer-or-multiple-readers enforced: if one block writes a variable, no other block may access it. <code>spawn</code> is contextual (not a reserved keyword).</p>
+
+  <h3>Atomic Types</h3>
+  <p><code class="code-inline">atomic[T]</code> provides lock-free concurrent access to integer values. <code>T</code> must be a primitive integer or <code>bool</code>.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code><span class="syn-kw">var</span> counter: <span class="syn-type">atomic</span>[<span class="syn-type">int</span>]
+counter.store(<span class="syn-num">0</span>)
+<span class="syn-kw">let</span> prev = counter.add(<span class="syn-num">1</span>)     <span class="syn-cmt"># returns previous value</span>
+<span class="syn-kw">let</span> value = counter.load()
+counter.sub(<span class="syn-num">1</span>)
+<span class="syn-kw">let</span> old = counter.exchange(<span class="syn-num">42</span>)</code></pre>
+</div>
+
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+      <tr><td><code>load()</code></td><td><code>-> T</code></td><td>Atomic read</td></tr>
+      <tr><td><code>store(value)</code></td><td><code>-> void</code></td><td>Atomic write (editable receiver)</td></tr>
+      <tr><td><code>add(value)</code></td><td><code>-> T</code></td><td>Fetch-and-add, returns previous (editable)</td></tr>
+      <tr><td><code>sub(value)</code></td><td><code>-> T</code></td><td>Fetch-and-sub, returns previous (editable)</td></tr>
+      <tr><td><code>exchange(value)</code></td><td><code>-> T</code></td><td>Atomic swap, returns previous (editable)</td></tr>
+    </table>
+  </div>
+  <p>All operations use sequential consistency. Lowers to C11 <code class="code-inline">_Atomic T</code> with <code class="code-inline">__atomic_*</code> builtins.</p>
+
+  <h3>Compile-Time Safety</h3>
+  <ul style="margin-left:1.25rem;margin-bottom:1rem">
+    <li><code>ref[T]</code> captures rejected at all thread boundaries</li>
+    <li>Write conflicts detected between <code>spawn:</code> blocks (single-writer-or-multiple-readers)</li>
+    <li><code>atomic[T]</code> is always sendable across thread boundaries</li>
+  </ul>
+
+  <div class="callout tip">
+    <strong>Tip:</strong> For library-level threading, see <code>std.thread</code> (OS threads), <code>std.sync</code> (Mutex, Condition, Semaphore, AtomicUint), and <code>std.jobs</code> (thread pool). The built-in <code>parallel for</code>, <code>parallel:</code>, and <code>atomic[T]</code> are compiler-integrated and provide compile-time safety checks that library threading cannot.
+  </div>
 </section>
 
 <!-- ────────────────────────────────────────────────────────────────────────── -->
