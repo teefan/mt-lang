@@ -15,7 +15,7 @@ module MilkTea
       Option Result
     ].freeze
     BUILTIN_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
-      ptr const_ptr ref span array str_buffer Task Option Result SoA
+      ptr const_ptr ref span array str_buffer atomic Task Option Result SoA
       struct_handle field_handle callable_handle attribute_handle member_handle type
       EventError Subscription
     ]).freeze

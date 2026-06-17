@@ -169,11 +169,8 @@ module MilkTea
       def iterable = iterables.first
       def parallel? = bindings.length > 1 || iterables.length > 1
     end
-    SpawnBlock = Data.define(:body, :line, :column) do
-      def initialize(body:, line: nil, column: nil) = super
-    end
-    ParallelBlockStmt = Data.define(:spawn_blocks, :line, :column) do
-      def initialize(spawn_blocks:, line: nil, column: nil) = super
+    ParallelBlockStmt = Data.define(:bodies, :line, :column) do
+      def initialize(bodies:, line: nil, column: nil) = super
     end
     WhileStmt = Data.define(:condition, :body, :inline, :line, :column, :length) do
       def initialize(condition:, body:, inline: false, line: nil, column: nil, length: nil) = super

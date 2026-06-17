@@ -85,10 +85,8 @@ class AtomicTest < Minitest::Test
       function main() -> int:
           shared_counter.store(0)
           parallel:
-              spawn:
-                  increment()
-              spawn:
-                  increment()
+              increment()
+              increment()
           return shared_counter.load()
     MT
 

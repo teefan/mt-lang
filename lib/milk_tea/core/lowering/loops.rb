@@ -609,9 +609,9 @@ module MilkTea
         @parallel_for_counter += 1
         uid_base = "#{@module_prefix}_spawn_#{@parallel_for_counter}".gsub(/[^A-Za-z0-9_]/, "_")
 
-        block_infos = statement.spawn_blocks.each_with_index.map do |spawn_block, idx|
+        block_infos = statement.bodies.each_with_index.map do |body, idx|
           block_body = lower_block(
-            spawn_block.body,
+            body,
             env: duplicate_env(env),
             active_defers:,
             return_type: void_type,
@@ -627,51 +627,56 @@ module MilkTea
 
           validate_pfor_no_ref_captures!(captures)
           written_names = collect_pfor_written_names(block_body, captures)
+          captureless = captures.empty?
 
           cap_struct_c_name = "mt_spawn_cap_#{uid_base}_#{idx}"
           worker_c_name = "mt_spawn_work_#{uid_base}_#{idx}"
 
-          array_capture_names = Set.new
-          cap_fields = captures.map do |c|
-            if array_type?(c.type)
-              array_capture_names << c.name
-              IR::Field.new(name: c.name, type: Types::GenericInstance.new("ptr", [array_element_type(c.type)]))
-            else
-              IR::Field.new(name: c.name, type: c.type)
+          if captureless
+            worker_body = block_body.dup
+          else
+            array_capture_names = Set.new
+            cap_fields = captures.map do |c|
+              if array_type?(c.type)
+                array_capture_names << c.name
+                IR::Field.new(name: c.name, type: Types::GenericInstance.new("ptr", [array_element_type(c.type)]))
+              else
+                IR::Field.new(name: c.name, type: c.type)
+              end
             end
-          end
 
-          @synthetic_structs << IR::StructDecl.new(
-            name: cap_struct_c_name, c_name: cap_struct_c_name,
-            fields: cap_fields, packed: false, alignment: nil,
-          )
-
-          cap_ptr_type = Types::GenericInstance.new("ptr", [Types::Struct.new(cap_struct_c_name)])
-          cap_name_ir = IR::Name.new(name: "mt_cap", type: cap_ptr_type, pointer: true)
-          worker_body = [
-            IR::LocalDecl.new(
-              name: "mt_cap", c_name: "mt_cap", type: cap_ptr_type,
-              value: IR::Cast.new(
-                target_type: cap_ptr_type,
-                expression: IR::Name.new(name: "mt_pfor_data", type: void_ptr_type, pointer: false),
-                type: cap_ptr_type,
-              ),
-            ),
-          ]
-          captures.each do |c|
-            alias_type = if array_capture_names.include?(c.name)
-                           Types::GenericInstance.new("ptr", [array_element_type(c.type)])
-                         else
-                           c.type
-                         end
-            worker_body << IR::LocalDecl.new(
-              name: c.name, c_name: c.name, type: alias_type,
-              value: IR::Member.new(receiver: cap_name_ir, member: c.name, type: alias_type),
+            @synthetic_structs << IR::StructDecl.new(
+              name: cap_struct_c_name, c_name: cap_struct_c_name,
+              fields: cap_fields, packed: false, alignment: nil,
             )
-          end
 
-          rewritten_body = array_capture_names.empty? ? block_body : rewrite_pfor_array_captures(block_body, array_capture_names)
-          worker_body.concat(rewritten_body)
+            cap_ptr_type = Types::GenericInstance.new("ptr", [Types::Struct.new(cap_struct_c_name)])
+            cap_name_ir = IR::Name.new(name: "mt_cap", type: cap_ptr_type, pointer: true)
+            worker_body = [
+              IR::LocalDecl.new(
+                name: "mt_cap", c_name: "mt_cap", type: cap_ptr_type,
+                value: IR::Cast.new(
+                  target_type: cap_ptr_type,
+                  expression: IR::Name.new(name: "mt_pfor_data", type: void_ptr_type, pointer: false),
+                  type: cap_ptr_type,
+                ),
+              ),
+            ]
+            captures.each do |c|
+              alias_type = if array_capture_names.include?(c.name)
+                             Types::GenericInstance.new("ptr", [array_element_type(c.type)])
+                           else
+                             c.type
+                           end
+              worker_body << IR::LocalDecl.new(
+                name: c.name, c_name: c.name, type: alias_type,
+                value: IR::Member.new(receiver: cap_name_ir, member: c.name, type: alias_type),
+              )
+            end
+
+            rewritten_body = array_capture_names.empty? ? block_body : rewrite_pfor_array_captures(block_body, array_capture_names)
+            worker_body.concat(rewritten_body)
+          end
 
           @synthetic_functions << IR::Function.new(
             name: worker_c_name, c_name: worker_c_name,
@@ -681,31 +686,38 @@ module MilkTea
             entry_point: false,
           )
 
-          cap_struct_type = Types::Struct.new(cap_struct_c_name, c_name: cap_struct_c_name).tap do |s|
-            s.define_fields(captures.each_with_object({}) do |c, h|
-              h[c.name] = if array_capture_names.include?(c.name)
-                            Types::GenericInstance.new("ptr", [array_element_type(c.type)])
-                          else
-                            c.type
-                          end
-            end)
-          end
-
+          cap_struct_type = if captureless
+                              void_ptr_type
+                            else
+                              Types::Struct.new(cap_struct_c_name, c_name: cap_struct_c_name).tap do |s|
+                                s.define_fields(captures.each_with_object({}) do |c, h|
+                                  h[c.name] = if array_capture_names.include?(c.name)
+                                                Types::GenericInstance.new("ptr", [array_element_type(c.type)])
+                                              else
+                                                c.type
+                                              end
+                                end)
+                              end
+                            end
           cap_local_name = "mt_spawn_cap_#{idx}"
-          cap_init = IR::AggregateLiteral.new(
-            type: cap_struct_type,
-            fields: captures.map do |c|
-              if array_capture_names.include?(c.name)
-                elem = array_element_type(c.type)
-                ptr_type = Types::GenericInstance.new("ptr", [elem])
-                IR::AggregateField.new(name: c.name, value: IR::Name.new(name: c.name, type: ptr_type, pointer: false))
-              else
-                IR::AggregateField.new(name: c.name, value: c)
-              end
-            end,
-          )
+          cap_init = if captureless
+                       IR::IntegerLiteral.new(value: 0, type: void_ptr_type)
+                     else
+                       IR::AggregateLiteral.new(
+                         type: cap_struct_type,
+                         fields: captures.map do |c|
+                           if array_capture_names.include?(c.name)
+                             elem = array_element_type(c.type)
+                             ptr_type = Types::GenericInstance.new("ptr", [elem])
+                             IR::AggregateField.new(name: c.name, value: IR::Name.new(name: c.name, type: ptr_type, pointer: false))
+                           else
+                             IR::AggregateField.new(name: c.name, value: c)
+                           end
+                         end,
+                       )
+                     end
 
-          { worker_c_name:, cap_local_name:, cap_struct_type:, cap_init:, capture_names: Set.new(captures.map(&:name)), written_names: }
+          { worker_c_name:, cap_local_name:, cap_struct_type:, cap_init:, capture_names: Set.new(captures.map(&:name)), written_names:, captureless: }
         end
 
         validate_pfor_write_conflicts!(block_infos)
@@ -717,10 +729,12 @@ module MilkTea
 
         call_site = []
         block_infos.each do |info|
-          call_site << IR::LocalDecl.new(
-            name: info[:cap_local_name], c_name: info[:cap_local_name],
-            type: info[:cap_struct_type], value: info[:cap_init],
-          )
+          unless info[:captureless]
+            call_site << IR::LocalDecl.new(
+              name: info[:cap_local_name], c_name: info[:cap_local_name],
+              type: info[:cap_struct_type], value: info[:cap_init],
+            )
+          end
         end
 
         tasks_local = "mt_spawn_tasks"
@@ -729,14 +743,19 @@ module MilkTea
         tasks_init = IR::ArrayLiteral.new(
           type: tasks_array_type,
           elements: block_infos.map { |info|
+            data_expr = if info[:captureless]
+                          IR::IntegerLiteral.new(value: 0, type: void_ptr_type)
+                        else
+                          IR::AddressOf.new(
+                            expression: IR::Name.new(name: info[:cap_local_name], type: info[:cap_struct_type], pointer: false),
+                            type: void_ptr_type,
+                          )
+                        end
             IR::AggregateLiteral.new(
               type: spawn_item_type,
               fields: [
                 IR::AggregateField.new(name: "work", value: IR::Name.new(name: info[:worker_c_name], type: fn_type, pointer: false)),
-                IR::AggregateField.new(name: "data", value: IR::AddressOf.new(
-                  expression: IR::Name.new(name: info[:cap_local_name], type: info[:cap_struct_type], pointer: false),
-                  type: void_ptr_type,
-                )),
+                IR::AggregateField.new(name: "data", value: data_expr),
               ],
             )
           },
