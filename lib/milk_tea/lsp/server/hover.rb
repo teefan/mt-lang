@@ -1148,14 +1148,14 @@ module MilkTea
                    '`array[T, N](...)` constructs a fixed-length array value of type `array[T, N]`.'
                  elsif name == 'span'
                    '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
-                  elsif name == 'SoA'
-                    '`SoA[T, N](...)` constructs a Struct-of-Arrays value with `N` elements of type `T`. Fields are stored in separate contiguous arrays.'
-                  elsif name == 'Option'
-                    '`Option[T]` is a built-in optional type with arms `some(value: T)` and `none`.'
-                  elsif name == 'Result'
-                    '`Result[T, E]` is a built-in result type with arms `success(value: T)` and `failure(error: E)`.'
-                  else
-                    '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
+                 elsif name == 'SoA'
+                   '`SoA[T, N](...)` constructs a Struct-of-Arrays value with `N` elements of type `T`. Fields are stored in separate contiguous arrays.'
+                 elsif name == 'Option'
+                   '`Option[T]` is a built-in optional type with arms `some(value: T)` and `none`.'
+                 elsif name == 'Result'
+                   '`Result[T, E]` is a built-in result type with arms `success(value: T)` and `failure(error: E)`.'
+                 else
+                   '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
                  end
 
           return {

@@ -206,7 +206,7 @@ module MilkTea
       def find_local_decl_node(node, name, before_line, &block)
         return false if node.nil?
 
-        if node.is_a?(AST::LocalDecl) && node.name == name && node.line && node.line < before_line
+        if (node.is_a?(AST::LocalDecl) || node.is_a?(AST::ForBinding)) && node.name == name && node.line && node.line < before_line
           return true if yield node
         end
 
@@ -726,7 +726,7 @@ module MilkTea
         return nil unless tokens
 
         tokens.each_cons(2) do |kw_tok, id_tok|
-          next unless [:struct, :opaque].include?(kw_tok.type)
+          next unless [:struct, :opaque, :enum, :flags, :variant, :union].include?(kw_tok.type)
           next unless id_tok.type == :identifier && id_tok.lexeme == name
 
           return id_tok
@@ -749,6 +749,15 @@ module MilkTea
         return nil unless facts
 
         func = facts.functions[callee_name]
+        unless func
+          facts.methods.each_value do |methods|
+            method = methods[callee_name] || methods["static:#{callee_name}"]
+            if method
+              func = method
+              break
+            end
+          end
+        end
         return nil unless func
 
         param = func.ast.params.find { |p| p.name == name }

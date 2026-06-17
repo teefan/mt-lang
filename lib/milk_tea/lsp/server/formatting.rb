@@ -250,10 +250,10 @@ module MilkTea
               when 6 then removed_method_names << c[:name]
               when 23 then removed_nested_type_names << c[:name]
               when 24 then removed_event_names << c[:name]
-      end
-      end
-      end
-    end
+              end
+            end
+          end
+        end
 
         if removed_local_names.any?
           removed_set = removed_local_names.to_set
