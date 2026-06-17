@@ -175,9 +175,22 @@ module MilkTea
 
         results = []
         binding_ids = facts ? facts.binding_resolution&.identifier_binding_ids : nil
+        local_bid_set = nil
+        if binding_ids && facts&.binding_resolution
+          resolution = facts.binding_resolution
+          local_bid_set = Set.new
+          each_ast_node(ast) do |node|
+            next unless local_binding_declaration_node?(node)
+            bid = resolution.declaration_binding_ids[node.object_id]
+            local_bid_set << bid if bid
+          end
+        end
         each_ast_node(ast) do |node|
           if node.is_a?(AST::Identifier) && node.name == name
-            next if binding_ids&.key?(node.object_id)
+            if binding_ids&.key?(node.object_id)
+              bid = binding_ids[node.object_id]
+              next if local_bid_set&.include?(bid)
+            end
 
             range = ast_name_range(node.name, node.line, node.column)
             next unless range
@@ -373,6 +386,15 @@ module MilkTea
         return nil unless facts
 
         func = facts.functions[callee_name]
+        unless func
+          facts.methods.each_value do |methods|
+            method = methods[callee_name] || methods["static:#{callee_name}"]
+            if method
+              func = method
+              break
+            end
+          end
+        end
         return nil unless func
 
         param = func.ast.params.find { |p| p.name == name }
@@ -398,8 +420,8 @@ module MilkTea
                  []
                end
 
-        token = OpenStruct.new(lexeme: name, type: :identifier, line: param.line, column: param.column)
-        scoped_refs = scoped_local_reference_locations(uri, token, param.line - 1, param.column - 1, facts, include_declaration: false)
+        mock_token = Struct.new(:lexeme, :type, :line, :column).new(name, :identifier, param.line, param.column)
+        scoped_refs = scoped_local_reference_locations(uri, mock_token, param.line - 1, param.column - 1, facts, include_declaration: false)
         if scoped_refs
           refs.concat(scoped_refs)
         else
