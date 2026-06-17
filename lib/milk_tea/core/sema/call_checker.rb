@@ -655,6 +655,53 @@ module MilkTea
         end
       end
 
+      def atomic_method_kind(receiver_type, name)
+        return unless atomic_type?(receiver_type)
+
+        case name
+        when "load" then :atomic_load
+        when "store" then :atomic_store
+        when "add" then :atomic_add
+        when "sub" then :atomic_sub
+        when "exchange" then :atomic_exchange
+        when "compare_exchange" then :atomic_compare_exchange
+        end
+      end
+
+      def check_atomic_method_call(kind, receiver_type, receiver, arguments, scopes:)
+        elem_type = atomic_element_type(receiver_type)
+        raise_sema_error("atomic methods do not support named arguments") if arguments.any?(&:name)
+
+        case kind
+        when :atomic_load
+          raise_sema_error("load expects 0 arguments, got #{arguments.length}") unless arguments.empty?
+          elem_type
+        when :atomic_store
+          raise_sema_error("store expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+          record_editable_receiver_expression(receiver)
+          raise_sema_error("cannot call editable method store on an immutable receiver") unless assignable_receiver?(receiver, scopes)
+          arg_type = infer_expression(arguments.first.value, scopes:, expected_type: elem_type)
+          ensure_assignable!(arg_type, elem_type, "store expects #{elem_type}, got #{arg_type}")
+          @types.fetch("void")
+        when :atomic_add, :atomic_sub, :atomic_exchange
+          raise_sema_error("#{kind.to_s.delete_prefix("atomic_")} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+          record_editable_receiver_expression(receiver)
+          raise_sema_error("cannot call editable method #{kind.to_s.delete_prefix("atomic_")} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
+          arg_type = infer_expression(arguments.first.value, scopes:, expected_type: elem_type)
+          ensure_assignable!(arg_type, elem_type, "#{kind.to_s.delete_prefix("atomic_")} expects #{elem_type}, got #{arg_type}")
+          elem_type
+        when :atomic_compare_exchange
+          raise_sema_error("compare_exchange expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
+          record_editable_receiver_expression(receiver)
+          raise_sema_error("cannot call editable method compare_exchange on an immutable receiver") unless assignable_receiver?(receiver, scopes)
+          exp_type = infer_expression(arguments[0].value, scopes:, expected_type: elem_type)
+          des_type = infer_expression(arguments[1].value, scopes:, expected_type: elem_type)
+          ensure_assignable!(exp_type, elem_type, "compare_exchange expected type #{elem_type}, got #{exp_type}")
+          ensure_assignable!(des_type, elem_type, "compare_exchange desired type #{elem_type}, got #{des_type}")
+          @types.fetch("bool")
+        end
+      end
+
       def event_method_name(kind)
         {
           event_subscribe: "subscribe",

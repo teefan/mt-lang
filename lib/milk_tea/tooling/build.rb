@@ -14,7 +14,7 @@ module MilkTea
   class BuildError < StandardError; end
 
   class Build
-    FrontendModule = Data.define(:name, :kind, :link_libraries, :compiler_flags)
+    FrontendModule = Data.define(:name, :kind, :link_libraries, :compiler_flags, :uses_parallel_for)
 
     class RubyFrontend
       def compile(path:, module_roots:, package_graph:, platform:, emit_line_directives:, binary_path:)
@@ -116,6 +116,7 @@ module MilkTea
           kind: analysis.module_kind,
           link_libraries: analysis.directives.grep(AST::LinkDirective).map(&:value).freeze,
           compiler_flags: analysis.directives.grep(AST::CompilerFlagDirective).map(&:value).freeze,
+          uses_parallel_for: analysis.uses_parallel_for,
         )
       end.freeze
     end
@@ -769,7 +770,7 @@ module MilkTea
     end
 
     def collect_link_flags(frontend_modules)
-      frontend_modules.each_with_object([]) do |mod, flags|
+      flags = frontend_modules.each_with_object([]) do |mod, flags|
         next unless mod.kind == :raw_module
 
         binding = @raw_bindings.find_by_module_name(mod.name)
@@ -790,29 +791,53 @@ module MilkTea
           end
         end
       end
+
+      if frontend_modules.any?(&:uses_parallel_for) && !flags.include?("-luv")
+        libuv_binding = @raw_bindings.find_by_module_name("std.c.libuv")
+        if libuv_binding
+          libuv_binding.link_flags(platform: @platform).each do |flag|
+            flags << flag unless flags.include?(flag)
+          end
+        end
+        flags << "-luv" unless flags.include?("-luv")
+      end
+
+      flags
     end
 
     def collect_compiler_flags(frontend_modules)
       std_c_include_flag = "-I#{MilkTea.root.join('std/c')}"
 
-      frontend_modules.each_with_object([]) do |mod, flags|
+      flags = frontend_modules.each_with_object([]) do |mod, result|
         next unless mod.kind == :raw_module
 
         if mod.name.start_with?("std.c.")
-          flags << std_c_include_flag unless flags.include?(std_c_include_flag)
+          result << std_c_include_flag unless result.include?(std_c_include_flag)
         end
 
         mod.compiler_flags.each do |compiler_flag|
-          flags << compiler_flag unless flags.include?(compiler_flag)
+          result << compiler_flag unless result.include?(compiler_flag)
         end
 
         binding = @raw_bindings.find_by_module_name(mod.name)
         next unless binding
 
         binding.build_flags(platform: @platform).each do |flag|
-          flags << flag unless flags.include?(flag)
+          result << flag unless result.include?(flag)
         end
       end
+
+      if frontend_modules.any?(&:uses_parallel_for)
+        flags << std_c_include_flag unless flags.include?(std_c_include_flag)
+        libuv_binding = @raw_bindings.find_by_module_name("std.c.libuv")
+        if libuv_binding
+          libuv_binding.build_flags(platform: @platform).each do |flag|
+            flags << flag unless flags.include?(flag)
+          end
+        end
+      end
+
+      flags
     rescue RawBindings::Error => e
       raise BuildError, e.message
     end

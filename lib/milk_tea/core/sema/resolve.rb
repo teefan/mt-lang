@@ -665,6 +665,7 @@ module MilkTea
         return true if matrix_type?(type)
         return true if quaternion_type?(type)
         return true if soa_type?(type)
+        return true if atomic_type?(type)
 
         raise_sema_error("#{operation} does not support type #{type}")
       end
@@ -725,6 +726,14 @@ module MilkTea
 
       def event_type?(type)
         type.is_a?(Types::Event)
+      end
+
+      def atomic_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "atomic" && type.arguments.length == 1
+      end
+
+      def atomic_element_type(type)
+        type.arguments.first
       end
 
       def subscription_type?(type)

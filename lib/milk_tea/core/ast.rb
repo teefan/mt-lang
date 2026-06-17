@@ -161,13 +161,19 @@ module MilkTea
     ForBinding = Data.define(:name, :line, :column) do
       def initialize(name:, line: nil, column: nil) = super
     end
-    ForStmt = Data.define(:bindings, :iterables, :body, :inline, :line, :column) do
-      def initialize(bindings:, iterables:, body:, inline: false, line: nil, column: nil) = super
+    ForStmt = Data.define(:bindings, :iterables, :body, :inline, :threaded, :line, :column) do
+      def initialize(bindings:, iterables:, body:, inline: false, threaded: false, line: nil, column: nil) = super
       def name = bindings.first.name
       def names = bindings.map(&:name)
       def binding = bindings.first
       def iterable = iterables.first
       def parallel? = bindings.length > 1 || iterables.length > 1
+    end
+    SpawnBlock = Data.define(:body, :line, :column) do
+      def initialize(body:, line: nil, column: nil) = super
+    end
+    ParallelBlockStmt = Data.define(:spawn_blocks, :line, :column) do
+      def initialize(spawn_blocks:, line: nil, column: nil) = super
     end
     WhileStmt = Data.define(:condition, :body, :inline, :line, :column, :length) do
       def initialize(condition:, body:, inline: false, line: nil, column: nil, length: nil) = super

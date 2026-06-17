@@ -553,6 +553,14 @@ module MilkTea
             emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_async_alloc mt_async_free]) }
           end
 
+          def uses_parallel_for_helper?
+            emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_parallel_for]) }
+          end
+
+          def uses_spawn_all_helper?
+            emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_spawn_all]) }
+          end
+
           def format_helper_callees
             %w[
               mt_format_str_make

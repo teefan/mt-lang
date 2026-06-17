@@ -374,6 +374,14 @@ module MilkTea
       type.is_a?(Types::GenericInstance) && type.name == "ref" && [1, 2].include?(type.arguments.length)
     end
 
+    def atomic_type?(type)
+      type.is_a?(Types::GenericInstance) && type.name == "atomic" && type.arguments.length == 1
+    end
+
+    def atomic_element_type(type)
+      type.arguments.first
+    end
+
     def ref_type_without_lifetime?(type)
       type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 1
     end
@@ -592,6 +600,11 @@ module MilkTea
       when "Task"
         error.call("Task requires exactly one type argument") unless arguments.length == 1
         error.call("Task result type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+      when "atomic"
+        error.call("atomic requires exactly one type argument") unless arguments.length == 1
+        arg = arguments.first
+        error.call("atomic type argument must be a type") if arg.is_a?(Types::LiteralTypeArg)
+        error.call("atomic type argument must be a primitive integer or bool") unless arg.is_a?(Types::Primitive) && (arg.integer? || arg.boolean?)
       else
         error.call("unknown generic type #{name}")
       end

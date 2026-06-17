@@ -480,6 +480,45 @@ Current implemented shape:
 
 The default async model is a language-integrated entry boundary. `std.async` remains the explicit high-level helper surface for operations such as `sleep`, `work`, `completed`, `result`, `wait`, `wait_on`, and `with_runtime`, while the normal runtime model stays the single integrated libuv-backed runtime.
 
+#### Concurrency: `parallel for` and `parallel:` blocks
+
+Milk Tea has first-class compiler support for multithreading. The threading model is structured: all spawned work completes before the parent scope continues. There is no hidden thread pool, no garbage collector interaction, and no fire-and-forget. Every thread boundary is visible in source.
+
+```mt
+# Data-parallel: each iteration runs on a separate CPU core
+parallel for i in 0..entity_count:
+    positions[i] += velocities[i] * dt
+
+# Structured fork-join: each spawn block runs on a separate thread
+parallel:
+    spawn:
+        textures = load_textures(path)
+    spawn:
+        sounds = load_sounds(path)
+```
+
+Design choices:
+
+- **Structured, not fire-and-forget.** All `parallel for` and `parallel:` blocks are synchronous barriers — the calling thread blocks until all work completes. This guarantees that captured local variables remain alive for the duration and eliminates lifetime concerns without ownership annotations.
+- **Compile-time safety.** `ref[T]` captures are rejected because mutable aliases across thread boundaries create data races. The `parallel:` block enforces single-writer-or-multiple-readers: if one `spawn:` block writes a variable, no other block may read or write it.
+- **Value capture, pointer-based arrays.** Scalars and spans are captured by value (the span's data pointer still references the original storage). Arrays are captured as pointers to their first element, so writes in the worker affect the original array.
+- **`spawn` is contextual.** It is only recognized inside `parallel:` blocks. It is not a reserved keyword, so existing code using `spawn` as a function name (like `std.libuv.spawn`) continues to work.
+- **Real OS threads via libuv.** Thread dispatch uses `uv_thread_create` / `uv_thread_join`, consistent with `std.thread` and `std.sync`. CPU count is detected at runtime via `uv_cpu_info`. The first chunk runs on the calling thread to avoid unnecessary dispatch when the workload is small.
+- **No forced dependency.** The build system automatically detects `parallel for` and `parallel:` usage via a sema-level flag and links libuv only when needed.
+
+#### Atomics: `atomic[T]`
+
+`atomic[T]` is a built-in type constructor for lock-free concurrent access to integer values. It lowers to C11 `_Atomic T` with `__atomic_*` builtins (GCC/Clang). All operations use sequential consistency.
+
+```mt
+var counter: atomic[int]
+counter.store(0)
+let prev = counter.add(1)
+let value = counter.load()
+```
+
+`atomic[T]` is deliberately narrow: it supports only primitive integer types and `bool`. This avoids the complexity of atomic struct operations and keeps the C lowering simple and efficient. For more complex synchronization patterns, use `std.sync.Mutex`, `std.sync.Condition`, and `std.sync.Semaphore`.
+
 ## Type system
 
 The type system must stay simple, explicit, and close to C.

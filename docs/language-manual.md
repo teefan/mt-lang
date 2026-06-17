@@ -513,6 +513,8 @@ Supported statements:
 - `static_assert`
 - `for`
 - `while`
+- `parallel for` — data-parallel loop dispatched across CPU cores
+- `parallel:` — structured fork-join block with `spawn:` sub-blocks
 - `pass`
 - `break`
 - `continue`
@@ -635,6 +637,45 @@ Rules for parallel `for`:
 - static array lengths must match; span lengths are checked at runtime
 
 `break` and `continue` must be inside loops.
+
+### 4.3a Parallel For (data-parallel)
+
+`parallel for` dispatches loop iterations across multiple CPU cores using real OS threads (libuv):
+
+```mt
+parallel for i in 0..entity_count:
+    positions[i] += velocities[i] * dt
+```
+
+Rules:
+
+- Only range iteration is supported (`0..N`).
+- The loop body must not contain `break`, `continue`, `return`, `defer`, or nested `parallel for`.
+- Captured `ref[T]` values are rejected at compile time.
+- Array captures are passed by pointer (writes affect the original); span and scalar captures are passed by value.
+- The compiler automatically detects `parallel for` usage and links libuv for thread dispatch.
+- Thread count is determined at runtime via CPU core detection; one chunk runs on the calling thread.
+
+### 4.3b Parallel Blocks (structured fork-join)
+
+`parallel:` blocks run multiple `spawn:` sub-blocks concurrently, blocking the caller until all complete:
+
+```mt
+parallel:
+    spawn:
+        textures = load_textures(path)
+    spawn:
+        sounds = load_sounds(path)
+```
+
+Rules:
+
+- A `parallel:` block must contain at least two `spawn:` sub-blocks.
+- `spawn` is a contextual keyword — only recognized inside `parallel:` blocks, not reserved globally.
+- Each `spawn:` block must not contain `break`, `continue`, `return`, or `defer`.
+- The compiler enforces single-writer-or-multiple-readers: if a variable is written in one `spawn:` block, no other block may access it.
+- Captured `ref[T]` values are rejected at compile time.
+- Each `spawn:` block runs on its own OS thread (one on the calling thread, the rest on worker threads).
 
 ### 4.4 Defer
 
@@ -864,6 +905,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 - `Result[T, E]`
 - `SoA[T, N]` — Structure-of-Arrays: transforms `T`'s fields into separate arrays of length `N`; access as `soa[i].field`
 - `dyn[InterfaceName]` — runtime interface value (fat pointer: data + vtable). Constructed via `adapt[Interface](value: ref[T])`. @see §3.5.
+- `atomic[T]` — atomic value for lock-free concurrent access. `T` must be a primitive integer or `bool`. Methods: `load() -> T`, `store(value: T)`, `add(value: T) -> T`, `sub(value: T) -> T`, `exchange(value: T) -> T`. All operations use sequential consistency. Lowers to C11 `_Atomic T` with `__atomic_*` builtins. `atomic[T]` is zero-initializable and sendable.
 - `(T, U)` — tuple type. Positional fields auto-named `_0`, `_1`. Named fields use `(x = T, y = U)`. Copy by value, returns supported.
 
 ### 6.3 Nullability

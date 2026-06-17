@@ -40,7 +40,7 @@ module MilkTea
   end
 
   class Sema
-    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :attributes, :attribute_applications, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines)
+    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :attributes, :attribute_applications, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines, :uses_parallel_for)
     Facts = Analysis
     ToolingSnapshot = Data.define(:facts, :diagnostics) do
       def analysis
@@ -294,6 +294,7 @@ module MilkTea
         @callable_value_identifier_sites = {}
         @callable_value_member_access_sites = {}
         @required_unsafe_lines = []
+        @uses_parallel_for = false
         @current_specialization_owner = nil
         @return_context_stack = []
         @resolved_attribute_applications = {}

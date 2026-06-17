@@ -105,6 +105,8 @@ module MilkTea
             else
               check_for_stmt(statement, scopes:, return_type:, allow_return:)
             end
+          when AST::ParallelBlockStmt
+            check_parallel_block_stmt(statement, scopes:, return_type:)
           when AST::WhileStmt
             if statement.inline
               check_inline_while_stmt(statement, scopes:, return_type:, allow_return:)
@@ -863,6 +865,11 @@ module MilkTea
       end
 
       def check_for_stmt(statement, scopes:, return_type:, allow_return:)
+        if statement.threaded
+          check_threaded_for_stmt(statement, scopes:, return_type:, allow_return:)
+          return
+        end
+
         statement.iterables.each do |iterable|
           validate_consuming_foreign_expression!(iterable, scopes:, root_allowed: false)
         end
@@ -930,6 +937,70 @@ module MilkTea
         return if lengths.empty? || lengths.all? { |length| length == lengths.first }
 
         raise_sema_error("parallel for iterables must have matching lengths")
+      end
+
+      def check_threaded_for_stmt(statement, scopes:, return_type:, allow_return:)
+        @uses_parallel_for = true
+        raise_sema_error("parallel for requires a range expression (start..end)") unless range_expr?(statement.iterable)
+
+        loop_type = check_range_expr_loop(statement.iterable, scopes:)
+        validate_threaded_for_body!(statement.body)
+
+        with_nested_scope(scopes) do |loop_scopes|
+          binding = statement.binding
+          ensure_non_reserved_primitive_name!(binding.name, kind_label: "for binding", line: binding.line, column: binding.column)
+          current_actual_scope(loop_scopes)[binding.name] = value_binding(
+            name: binding.name,
+            type: loop_type,
+            mutable: false,
+            kind: :let,
+            id: @preassigned_local_binding_ids[binding.object_id],
+          )
+          record_declaration_binding(binding, current_actual_scope(loop_scopes)[binding.name])
+          check_block(statement.body, scopes: loop_scopes, return_type:, allow_return: false)
+        end
+      end
+
+      def validate_threaded_for_body!(body)
+        body.each { |stmt| validate_threaded_for_statement!(stmt) }
+      end
+
+      def validate_threaded_for_statement!(stmt)
+        case stmt
+        when AST::BreakStmt
+          raise_sema_error("break is not allowed inside parallel for", line: stmt.line, column: stmt.column)
+        when AST::ContinueStmt
+          raise_sema_error("continue is not allowed inside parallel for", line: stmt.line, column: stmt.column)
+        when AST::ReturnStmt
+          raise_sema_error("return is not allowed inside parallel for", line: stmt.line, column: stmt.column)
+        when AST::DeferStmt
+          raise_sema_error("defer is not allowed inside parallel for", line: stmt.line, column: stmt.column)
+        when AST::AwaitExpr
+          raise_sema_error("await is not allowed inside parallel for", line: stmt.line, column: stmt.column)
+        when AST::IfStmt
+          validate_threaded_for_body!(stmt.then_body)
+          stmt.else_if_clauses&.each { |clause| validate_threaded_for_body!(clause.body) }
+          validate_threaded_for_body!(stmt.else_body) if stmt.else_body
+        when AST::WhileStmt
+          validate_threaded_for_body!(stmt.body)
+        when AST::ForStmt
+          raise_sema_error("nested for loops are not allowed inside parallel for", line: stmt.line, column: stmt.column) if stmt.threaded
+          validate_threaded_for_body!(stmt.body)
+        when AST::MatchStmt
+          stmt.arms&.each { |arm| validate_threaded_for_body!(arm.body) }
+        when AST::UnsafeStmt
+          validate_threaded_for_body!(stmt.body) if stmt.body.is_a?(Array)
+        end
+      end
+
+      def check_parallel_block_stmt(statement, scopes:, return_type:)
+        @uses_parallel_for = true
+        raise_sema_error("parallel block must contain at least two spawn blocks", line: statement.line, column: statement.column) if statement.spawn_blocks.length < 2
+
+        statement.spawn_blocks.each do |spawn_block|
+          validate_threaded_for_body!(spawn_block.body)
+          check_block(spawn_block.body, scopes:, return_type:, allow_return: false)
+        end
       end
 
 

@@ -408,6 +408,7 @@ Supported statements:
 - `unsafe`
 - `static_assert`
 - `for`
+- `parallel for` — data-parallel loop dispatched across CPU cores
 - `while`
 - `when` — compile-time conditional; only the chosen branch is type-checked and emitted
 - `inline for` — loop over a compile-time-known array, unrolled at compile time
@@ -477,6 +478,39 @@ Loop forms:
 - Iterator forms: either `next() ->` nullable pointer-like item, or `next() -> bool` together with `current() -> T`.
 - `for left, right in xs, ys:` for parallel array/span iteration
 - Parallel `for` does not accept ranges.
+
+`parallel for` dispatches loop iterations across multiple CPU cores using real OS threads:
+
+```mt
+parallel for i in 0..entity_count:
+    positions[i] += velocities[i] * dt
+```
+
+Rules:
+
+- Only range iteration is supported (`0..N`).
+- The loop body must not contain `break`, `continue`, `return`, `defer`, or nested `parallel for`.
+- Captured `ref[T]` values are rejected at compile time.
+- Array captures are passed by pointer; span and scalar captures are passed by value.
+- The compiler automatically links libuv for thread dispatch when `parallel for` is used.
+
+`parallel:` blocks run multiple `spawn:` sub-blocks concurrently, blocking the caller until all complete:
+
+```mt
+parallel:
+    spawn:
+        textures = load_textures(path)
+    spawn:
+        sounds = load_sounds(path)
+```
+
+Rules:
+
+- A `parallel:` block must contain at least two `spawn:` sub-blocks.
+- `spawn` is a contextual keyword, only recognized inside `parallel:` blocks.
+- Each `spawn:` block must not contain `break`, `continue`, `return`, or `defer`.
+- The compiler enforces single-writer-or-multiple-readers: if a variable is written in one `spawn:` block, no other block may access it.
+- Captured `ref[T]` values are rejected at compile time.
 
 `defer`:
 
@@ -655,6 +689,7 @@ Type constructors:
 - `proc(params...) -> R`
 - `SoA[T, N]` — Structure-of-Arrays: each struct field becomes a separate array of length `N`; access `soa[i].field` reads from column `field` at row `i`
 - `dyn[InterfaceName]` — runtime interface value (fat pointer: `{ void* data, void* vtable }`). Constructed via `adapt[Interface](value: ref[T])`. @see §6.
+- `atomic[T]` — atomic value for lock-free concurrent access. `T` must be a primitive integer or `bool`. Methods: `load() -> T`, `store(value: T)`, `add(value: T) -> T`, `sub(value: T) -> T`, `exchange(value: T) -> T`. All operations use sequential consistency. Lowers to C11 `_Atomic T` with `__atomic_*` builtins.
 - `(T, U)` — tuple type. Positional fields auto-named `_0`, `_1`. Named fields use `(x = T, y = U)`. Copy by value, returns supported.
 
 When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly via implicit boundary coercion. For explicit conversion, `array.as_span()` returns `span[T]` without requiring a boundary context.
@@ -996,6 +1031,16 @@ Current compiler rejects:
 - `@[...]` attribute applications are only accepted on the above declaration kinds
 - `attribute` declarations are not allowed in external files
 - only built-in `packed` and `align(...)` struct attributes are allowed in external files
+
+### Concurrency restrictions
+
+- `parallel for` only supports range iteration (`0..N`); collection iteration is not supported
+- `parallel for` and `spawn:` bodies reject `break`, `continue`, `return`, `defer`, and nested `parallel for`
+- `ref[T]` captures are rejected at thread boundaries in both `parallel for` and `parallel:` blocks
+- `parallel:` blocks enforce single-writer-or-multiple-readers: a variable written in one `spawn:` block cannot be accessed by another
+- `atomic[T]` requires `T` to be a primitive integer type or `bool`
+- `atomic[T]` methods (`store`, `add`, `sub`, `exchange`) require an editable (mutable) receiver
+- `atomic[T].compare_exchange` is accepted by the type checker but not yet implemented in the lowering; use `std.sync.AtomicUint` for compare-exchange operations
 
 ## 17. CLI Commands
 

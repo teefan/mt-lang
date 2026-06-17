@@ -558,6 +558,8 @@ module MilkTea
           el.is_a?(LiteralTypeArg) ? true : el.sendable?
         when "str_buffer"
           true
+        when "atomic"
+          true
         else
           false
         end

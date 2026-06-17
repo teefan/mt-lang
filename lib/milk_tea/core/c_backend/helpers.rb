@@ -77,6 +77,83 @@ module MilkTea
             ]
           end
 
+          def emit_parallel_for_helper
+            [
+              "typedef struct {",
+              "#{INDENT}void (*work)(void* data, int64_t start, int64_t end);",
+              "#{INDENT}void* data;",
+              "#{INDENT}int64_t start;",
+              "#{INDENT}int64_t end;",
+              "} mt_pfor_chunk;",
+              "",
+              "static void mt_pfor_runner(void* arg) {",
+              "#{INDENT}mt_pfor_chunk* chunk = (mt_pfor_chunk*)arg;",
+              "#{INDENT}chunk->work(chunk->data, chunk->start, chunk->end);",
+              "}",
+              "",
+              "static void mt_parallel_for(void (*work)(void* data, int64_t start, int64_t end), void* data, int64_t count) {",
+              "#{INDENT}if (count <= 0) return;",
+              "#{INDENT}uv_cpu_info_t* cpu_info;",
+              "#{INDENT}int ncpu = 1;",
+              "#{INDENT}if (uv_cpu_info(&cpu_info, &ncpu) == 0) {",
+              "#{INDENT * 2}uv_free_cpu_info(cpu_info, ncpu);",
+              "#{INDENT}}",
+              "#{INDENT}if (ncpu < 1) ncpu = 1;",
+              "#{INDENT}if (ncpu > 64) ncpu = 64;",
+              "#{INDENT}if (count < (int64_t)ncpu) ncpu = (int)count;",
+              "#{INDENT}int64_t chunk_size = (count + ncpu - 1) / ncpu;",
+              "#{INDENT}mt_pfor_chunk chunks[64];",
+              "#{INDENT}uv_thread_t threads[64];",
+              "#{INDENT}int nworkers = 0;",
+              "#{INDENT}for (int t = 1; t < ncpu; t++) {",
+              "#{INDENT * 2}int64_t s = t * chunk_size;",
+              "#{INDENT * 2}int64_t e = s + chunk_size;",
+              "#{INDENT * 2}if (e > count) e = count;",
+              "#{INDENT * 2}if (s >= count) break;",
+              "#{INDENT * 2}chunks[nworkers].work = work;",
+              "#{INDENT * 2}chunks[nworkers].data = data;",
+              "#{INDENT * 2}chunks[nworkers].start = s;",
+              "#{INDENT * 2}chunks[nworkers].end = e;",
+              "#{INDENT * 2}uv_thread_create(&threads[nworkers], mt_pfor_runner, &chunks[nworkers]);",
+              "#{INDENT * 2}nworkers++;",
+              "#{INDENT}}",
+              "#{INDENT}int64_t first_end = chunk_size < count ? chunk_size : count;",
+              "#{INDENT}work(data, 0, first_end);",
+              "#{INDENT}for (int t = 0; t < nworkers; t++) {",
+              "#{INDENT * 2}uv_thread_join(&threads[t]);",
+              "#{INDENT}}",
+              "}",
+            ]
+          end
+
+          def emit_spawn_all_helper
+            [
+              "typedef struct {",
+              "#{INDENT}void (*work)(void* data);",
+              "#{INDENT}void* data;",
+              "} mt_spawn_item;",
+              "",
+              "static void mt_spawn_item_runner(void* arg) {",
+              "#{INDENT}mt_spawn_item* item = (mt_spawn_item*)arg;",
+              "#{INDENT}item->work(item->data);",
+              "}",
+              "",
+              "static void mt_spawn_all(mt_spawn_item* items, int count) {",
+              "#{INDENT}if (count <= 0) return;",
+              "#{INDENT}uv_thread_t threads[64];",
+              "#{INDENT}int nworkers = 0;",
+              "#{INDENT}for (int t = 1; t < count && nworkers < 63; t++) {",
+              "#{INDENT * 2}uv_thread_create(&threads[nworkers], mt_spawn_item_runner, &items[t]);",
+              "#{INDENT * 2}nworkers++;",
+              "#{INDENT}}",
+              "#{INDENT}items[0].work(items[0].data);",
+              "#{INDENT}for (int t = 0; t < nworkers; t++) {",
+              "#{INDENT * 2}uv_thread_join(&threads[t]);",
+              "#{INDENT}}",
+              "}",
+            ]
+          end
+
           def emit_format_helpers
             helpers = used_format_helpers
             lines = []

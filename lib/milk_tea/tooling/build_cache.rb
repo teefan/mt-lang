@@ -17,6 +17,7 @@ module MilkTea
             kind: mod.fetch(:kind).to_sym,
             link_libraries: mod.fetch(:link_libraries),
             compiler_flags: mod.fetch(:compiler_flags),
+            uses_parallel_for: mod.fetch(:uses_parallel_for, false),
           )
         end
         new(c_source:, frontend_modules: modules)
@@ -32,6 +33,7 @@ module MilkTea
               kind: mod.kind.to_s,
               link_libraries: mod.link_libraries,
               compiler_flags: mod.compiler_flags,
+              uses_parallel_for: mod.uses_parallel_for,
             }
           end,
         }
