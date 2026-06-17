@@ -514,7 +514,7 @@ Supported statements:
 - `for`
 - `while`
 - `parallel for` — data-parallel loop dispatched across CPU cores
-- `parallel:` — structured fork-join block with `spawn:` sub-blocks
+- `parallel:` — structured fork-join block with statements
 - `pass`
 - `break`
 - `continue`
@@ -658,24 +658,22 @@ Rules:
 
 ### 4.3b Parallel Blocks (structured fork-join)
 
-`parallel:` blocks run multiple `spawn:` sub-blocks concurrently, blocking the caller until all complete:
+`parallel:` blocks run each statement concurrently, blocking the caller until all complete:
 
 ```mt
 parallel:
-    spawn:
-        textures = load_textures(path)
-    spawn:
-        sounds = load_sounds(path)
+    textures = load_textures(path)
+    sounds = load_sounds(path)
 ```
 
 Rules:
 
-- A `parallel:` block must contain at least two `spawn:` sub-blocks.
-- `spawn` is a contextual keyword — only recognized inside `parallel:` blocks, not reserved globally.
-- Each `spawn:` block must not contain `break`, `continue`, `return`, or `defer`.
-- The compiler enforces single-writer-or-multiple-readers: if a variable is written in one `spawn:` block, no other block may access it.
+- A `parallel:` block must contain at least two statements.
+- `do` is a contextual keyword — only recognized inside `parallel:` blocks, not reserved globally.
+- Each statement must not contain `break`, `continue`, `return`, or `defer`.
+- The compiler enforces single-writer-or-multiple-readers: if a variable is written in one statement, no other block may access it.
 - Captured `ref[T]` values are rejected at compile time.
-- Each `spawn:` block runs on its own OS thread (one on the calling thread, the rest on worker threads).
+- Each statement runs on its own OS thread (one on the calling thread, the rest on worker threads).
 
 ### 4.4 Defer
 

@@ -995,11 +995,11 @@ module MilkTea
 
       def check_parallel_block_stmt(statement, scopes:, return_type:)
         @uses_parallel_for = true
-        raise_sema_error("parallel block must contain at least two spawn blocks", line: statement.line, column: statement.column) if statement.spawn_blocks.length < 2
+        raise_sema_error("parallel block must contain at least two statements", line: statement.line, column: statement.column) if statement.bodies.length < 2
 
-        statement.spawn_blocks.each do |spawn_block|
-          validate_threaded_for_body!(spawn_block.body)
-          check_block(spawn_block.body, scopes:, return_type:, allow_return: false)
+        statement.bodies.each do |body|
+          validate_threaded_for_body!(body)
+          check_block(body, scopes:, return_type:, allow_return: false)
         end
       end
 

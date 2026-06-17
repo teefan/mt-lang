@@ -29,7 +29,7 @@ function compute_b() -> void:
 
 
 function increment_many(n: int) -> void:
-    for i in 0..n:
+    for _ in 0..n:
         atomic_counter.add(1)
 
 
@@ -50,10 +50,8 @@ function run_tests() -> int:
     stdio.print_string("  pass: parallel for — span capture, 1000 elements verified")
 
     parallel:
-        spawn:
-            compute_a()
-        spawn:
-            compute_b()
+        compute_a()
+        compute_b()
 
     let total = fork_result_a + fork_result_b
 
@@ -66,10 +64,8 @@ function run_tests() -> int:
     atomic_counter.store(0)
 
     parallel:
-        spawn:
-            increment_many(5000)
-        spawn:
-            increment_many(5000)
+        increment_many(5000)
+        increment_many(5000)
 
     let counter_value = atomic_counter.load()
     if counter_value != 10000:

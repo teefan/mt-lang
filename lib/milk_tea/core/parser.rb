@@ -1627,17 +1627,10 @@ module MilkTea
       consume(:colon, "expected ':' after 'parallel'")
       consume(:newline, "expected newline after 'parallel:'")
       consume(:indent, "expected indented block after 'parallel:'")
-      spawn_blocks = []
-      until check(:dedent) || eof?
-        spawn_line = peek.line
-        spawn_column = peek.column
-        raise error(peek, "expected 'spawn' inside parallel block") unless check(:identifier) && peek.lexeme == "spawn"
-        advance
-        body = parse_block
-        spawn_blocks << AST::SpawnBlock.new(body:, line: spawn_line, column: spawn_column)
-      end
+      statements = parse_statement_block_body
       consume(:dedent, "expected end of parallel block")
-      AST::ParallelBlockStmt.new(spawn_blocks:, line:, column:)
+      bodies = statements.map { |stmt| [stmt] }
+      AST::ParallelBlockStmt.new(bodies:, line:, column:)
     rescue ParseError => e
       raise unless @recovery_errors
 

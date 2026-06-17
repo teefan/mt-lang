@@ -19,10 +19,8 @@ class ParallelBlockTest < Minitest::Test
 
       function main() -> int:
           parallel:
-              spawn:
-                  work_a()
-              spawn:
-                  work_b()
+              work_a()
+              work_b()
           return 0
     MT
 
@@ -36,10 +34,8 @@ class ParallelBlockTest < Minitest::Test
 
       function main() -> int:
           parallel:
-              spawn:
-                  return 0
-              spawn:
-                  pass
+              return 0
+              pass
           return 0
     MT
 
@@ -51,18 +47,14 @@ class ParallelBlockTest < Minitest::Test
     source = <<~MT
       # module demo.pblock_gen
 
-      function work_a() -> void:
-          pass
-
-      function work_b() -> void:
+      function use_value(x: int) -> void:
           pass
 
       function main() -> int:
+          var n = 42
           parallel:
-              spawn:
-                  work_a()
-              spawn:
-                  work_b()
+              use_value(n)
+              use_value(n)
           return 0
     MT
 
@@ -71,5 +63,27 @@ class ParallelBlockTest < Minitest::Test
     assert_includes c_code, "mt_spawn_work_"
     assert_includes c_code, "mt_spawn_cap_"
     assert_includes c_code, "mt_spawn_item"
+  end
+
+  def test_captureless_block_has_no_capture_struct
+    source = <<~MT
+      # module demo.pblock_nocap
+
+      function work_a() -> void:
+          pass
+
+      function work_b() -> void:
+          pass
+
+      function main() -> int:
+          parallel:
+              work_a()
+              work_b()
+          return 0
+    MT
+
+    c_code = generate_c_from_program_source(source)
+    assert_includes c_code, "mt_spawn_all"
+    refute_match(/struct mt_spawn_cap.*\{\s*\}/, c_code)
   end
 end

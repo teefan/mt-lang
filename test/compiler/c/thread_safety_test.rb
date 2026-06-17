@@ -29,10 +29,8 @@ class ThreadSafetyTest < Minitest::Test
 
       function bad(r: ref[int]) -> void:
           parallel:
-              spawn:
-                  noop(r)
-              spawn:
-                  pass
+              noop(r)
+              pass
     MT
 
     error = assert_raises(MilkTea::LoweringError) { generate_c_from_program_source(source) }
@@ -48,10 +46,8 @@ class ThreadSafetyTest < Minitest::Test
       function main() -> int:
           var x = 0
           parallel:
-              spawn:
-                  x = 1
-              spawn:
-                  x = 2
+              x = 1
+              x = 2
           return x
     MT
 
@@ -67,10 +63,8 @@ class ThreadSafetyTest < Minitest::Test
           var a = 0
           var b = 0
           parallel:
-              spawn:
-                  a = 1
-              spawn:
-                  b = 2
+              a = 1
+              b = 2
           return a + b
     MT
 
@@ -88,10 +82,8 @@ class ThreadSafetyTest < Minitest::Test
       function main() -> int:
           let value = 42
           parallel:
-              spawn:
-                  use(value)
-              spawn:
-                  use(value)
+              use(value)
+              use(value)
           return 0
     MT
 
@@ -109,10 +101,8 @@ class ThreadSafetyTest < Minitest::Test
       function main() -> int:
           var x = 0
           parallel:
-              spawn:
-                  x = 1
-              spawn:
-                  use(x)
+              x = 1
+              use(x)
           return x
     MT
 

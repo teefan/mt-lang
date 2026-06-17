@@ -494,22 +494,20 @@ Rules:
 - Array captures are passed by pointer; span and scalar captures are passed by value.
 - The compiler automatically links libuv for thread dispatch when `parallel for` is used.
 
-`parallel:` blocks run multiple `spawn:` sub-blocks concurrently, blocking the caller until all complete:
+`parallel:` blocks run each statement concurrently, blocking the caller until all complete:
 
 ```mt
 parallel:
-    spawn:
-        textures = load_textures(path)
-    spawn:
-        sounds = load_sounds(path)
+    textures = load_textures(path)
+    sounds = load_sounds(path)
 ```
 
 Rules:
 
-- A `parallel:` block must contain at least two `spawn:` sub-blocks.
-- `spawn` is a contextual keyword, only recognized inside `parallel:` blocks.
-- Each `spawn:` block must not contain `break`, `continue`, `return`, or `defer`.
-- The compiler enforces single-writer-or-multiple-readers: if a variable is written in one `spawn:` block, no other block may access it.
+- A `parallel:` block must contain at least two statements.
+- `do` is a contextual keyword, only recognized inside `parallel:` blocks.
+- Each statement must not contain `break`, `continue`, `return`, or `defer`.
+- The compiler enforces single-writer-or-multiple-readers: if a variable is written in one statement, no other block may access it.
 - Captured `ref[T]` values are rejected at compile time.
 
 `defer`:
@@ -1035,9 +1033,9 @@ Current compiler rejects:
 ### Concurrency restrictions
 
 - `parallel for` only supports range iteration (`0..N`); collection iteration is not supported
-- `parallel for` and `spawn:` bodies reject `break`, `continue`, `return`, `defer`, and nested `parallel for`
+- `parallel for` and bodies reject `break`, `continue`, `return`, `defer`, and nested `parallel for`
 - `ref[T]` captures are rejected at thread boundaries in both `parallel for` and `parallel:` blocks
-- `parallel:` blocks enforce single-writer-or-multiple-readers: a variable written in one `spawn:` block cannot be accessed by another
+- `parallel:` blocks enforce single-writer-or-multiple-readers: a variable written in one statement cannot be accessed by another
 - `atomic[T]` requires `T` to be a primitive integer type or `bool`
 - `atomic[T]` methods (`store`, `add`, `sub`, `exchange`) require an editable (mutable) receiver
 - `atomic[T].compare_exchange` is accepted by the type checker but not yet implemented in the lowering; use `std.sync.AtomicUint` for compare-exchange operations

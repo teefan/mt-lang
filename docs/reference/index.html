@@ -1729,16 +1729,14 @@ let r = aio.result(task)</code></pre>
   <p>Rules: range iteration only (<code>0..N</code>). No <code>break</code>, <code>continue</code>, <code>return</code>, <code>defer</code>, or nested <code>parallel for</code> in the body. <code>ref[T]</code> captures rejected.</p>
 
   <h3>Parallel Blocks (structured fork-join)</h3>
-  <p>Run heterogeneous work concurrently. Each <code>spawn:</code> block runs on its own OS thread. The parent blocks until all complete.</p>
+  <p>Run heterogeneous work concurrently. Each statement runs on its own OS thread. The parent blocks until all complete.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code><span class="syn-kw">parallel</span>:
-    <span class="syn-kw">spawn</span>:
-        textures = load_textures(path)
-    <span class="syn-kw">spawn</span>:
-        sounds = load_sounds(path)</code></pre>
+    load_textures(path)
+    load_sounds(path)</code></pre>
 </div>
-  <p>Rules: at least two <code>spawn:</code> blocks. Single-writer-or-multiple-readers enforced: if one block writes a variable, no other block may access it. <code>spawn</code> is contextual (not a reserved keyword).</p>
+  <p>Rules: at least two statements. Single-writer-or-multiple-readers enforced: if one statement writes a variable, no other may access it.</p>
 
   <h3>Atomic Types</h3>
   <p><code class="code-inline">atomic[T]</code> provides lock-free concurrent access to integer values. <code>T</code> must be a primitive integer or <code>bool</code>.</p>
@@ -1767,7 +1765,7 @@ counter.sub(<span class="syn-num">1</span>)
   <h3>Compile-Time Safety</h3>
   <ul style="margin-left:1.25rem;margin-bottom:1rem">
     <li><code>ref[T]</code> captures rejected at all thread boundaries</li>
-    <li>Write conflicts detected between <code>spawn:</code> blocks (single-writer-or-multiple-readers)</li>
+    <li>Write conflicts detected between <code>parallel:</code> statements (single-writer-or-multiple-readers)</li>
     <li><code>atomic[T]</code> is always sendable across thread boundaries</li>
   </ul>
 
