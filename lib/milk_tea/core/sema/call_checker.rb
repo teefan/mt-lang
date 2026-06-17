@@ -134,6 +134,7 @@ module MilkTea
         end
 
         missing = fields.keys - provided.keys
+        missing.reject! { |name| fields[name].void? }
         raise_sema_error("variant arm #{variant_type}.#{arm_name} is missing fields: #{missing.join(', ')}") unless missing.empty?
 
         variant_type

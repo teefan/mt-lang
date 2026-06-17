@@ -252,6 +252,7 @@ module MilkTea
         when :variant_arm_ctor
           _, _, _, variant_type, (_, arm_name) = resolve_callee(expression.callee, env, arguments: expression.arguments)
           arm_fields = variant_type.arm(arm_name)
+          provided_names = expression.arguments.map(&:name).to_set
           payload_fields = expression.arguments.map do |argument|
             field_type = arm_fields.fetch(argument.name)
             IR::AggregateField.new(
@@ -262,6 +263,15 @@ module MilkTea
                 expected_type: field_type,
                 contextual_int_to_float: contextual_int_to_float_target?(field_type),
               ),
+            )
+          end
+          arm_fields.each do |field_name, field_type|
+            next if provided_names.include?(field_name)
+            next unless field_type.void?
+
+            payload_fields << IR::AggregateField.new(
+              name: field_name,
+              value: IR::IntegerLiteral.new(type: @types.fetch("ubyte"), value: 0),
             )
           end
           IR::VariantLiteral.new(type: variant_type, arm_name:, fields: payload_fields)

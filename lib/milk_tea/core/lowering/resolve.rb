@@ -465,6 +465,10 @@ module MilkTea
               return [:variant_arm_ctor, nil, nil, type_expr, [type_expr, arm_name]]
             end
 
+            if type_expr.respond_to?(:nested_types) && type_expr.nested_types.key?(callee.member)
+              return [:struct_literal, nil, nil, type_expr.nested_types[callee.member]]
+            end
+
             dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
             method_entry_receiver_type = type_expr
             method_entry = @method_definitions[[type_expr, callee.member]]
@@ -1112,9 +1116,15 @@ module MilkTea
           @types[expression.name]
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
-          return nil unless @imports.key?(expression.receiver.name)
 
-          @imports.fetch(expression.receiver.name).types[expression.member]
+          if @imports.key?(expression.receiver.name)
+            return @imports.fetch(expression.receiver.name).types[expression.member]
+          end
+
+          parent_type = @types[expression.receiver.name]
+          return parent_type.nested_types[expression.member] if parent_type.respond_to?(:nested_types) && parent_type.nested_types.key?(expression.member)
+
+          nil
         when AST::Specialization
           type_ref = type_ref_from_specialization(expression)
           return nil unless type_ref
@@ -1772,11 +1782,16 @@ module MilkTea
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
 
-          imported_module = @imports[expression.receiver.name]
-          return nil unless imported_module
-          return nil if imported_module.private_type?(expression.member)
+          if @imports.key?(expression.receiver.name)
+            imported_module = @imports[expression.receiver.name]
+            return nil if imported_module.private_type?(expression.member)
+            return imported_module.types[expression.member]
+          end
 
-          imported_module.types[expression.member]
+          parent_type = @types[expression.receiver.name]
+          return parent_type.nested_types[expression.member] if parent_type.respond_to?(:nested_types) && parent_type.nested_types.key?(expression.member)
+
+          nil
         else
           nil
         end
@@ -1788,12 +1803,22 @@ module MilkTea
         return nil unless base_type.respond_to?(:module_name)
 
         analysis = analysis_for_module(base_type.module_name)
-        declaration = analysis.ast.declarations.find do |decl|
-          decl.is_a?(AST::StructDecl) && decl.name == base_type.name
-        end
+        declaration = find_struct_decl_by_name(analysis.ast.declarations, base_type.name)
         return nil unless declaration
 
         Types::StructHandle.new(base_type, declaration)
+      end
+
+      def find_struct_decl_by_name(declarations, name)
+        declarations.each do |decl|
+          next unless decl.is_a?(AST::StructDecl)
+          return decl if decl.name == name
+          if decl.nested_types&.any?
+            found = find_struct_decl_by_name(decl.nested_types, name)
+            return found if found
+          end
+        end
+        nil
       end
 
       def resolve_callable_handle_argument(expression)
