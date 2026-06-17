@@ -466,7 +466,7 @@ Struct pattern rules:
 - Guards (`hp > 0`, `level >= 3`) skip the arm if the condition is false; the match tries the next arm. Supported guard operators: `==`, `!=`, `<`, `<=`, `>`, `>=`.
 - Equality patterns (`kind = Kind.boss`) skip the arm if the field does not equal the value.
 - Bindings (`position`) create immutable local variables bound to the field value.
-- Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field collectively cover every member of the enum, the arm is considered exhaustive.
+- Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field gatherively cover every member of the enum, the arm is considered exhaustive.
 - For variant payload arms, struct patterns compose with `as name` bindings.
 - When a variant arm has exactly one payload field of struct type, and no pattern argument references that field name, the struct's own fields are transparently destructured. For example, `Entity.positioned(x, y)` where `positioned(loc: Pos)` destructures through `Pos` to bind `x` and `y`.
 
@@ -505,10 +505,26 @@ parallel:
 Rules:
 
 - A `parallel:` block must contain at least two statements.
-- `do` is a contextual keyword, only recognized inside `parallel:` blocks.
 - Each statement must not contain `break`, `continue`, `return`, or `defer`.
 - The compiler enforces single-writer-or-multiple-readers: if a variable is written in one statement, no other block may access it.
 - Captured `ref[T]` values are rejected at compile time.
+
+`detach` spawns work on a separate thread and returns a `Handle`. `gather` blocks until all handles complete:
+
+```mt
+let a = detach load_textures(path)
+let b = detach load_sounds(path)
+process_other_stuff()
+gather a, b
+```
+
+Rules:
+
+- `detach` is an expression returning a `Handle` — must be bound with `let` or `var`.
+- Currently only supports global function calls with no captured local variables.
+- `gather` takes one or more `Handle` values, joined in order.
+- Captured `ref[T]` values are rejected at compile time.
+- The compiler automatically links libuv for thread dispatch.
 
 `defer`:
 

@@ -823,6 +823,38 @@ module MilkTea
       end
     end
 
+    class Handle < Base
+      def name
+        "Handle"
+      end
+
+      def module_name
+        nil
+      end
+
+      def c_name
+        "void*"
+      end
+
+      def eql?(other)
+        other.is_a?(Handle)
+      end
+
+      alias == eql?
+
+      def hash
+        self.class.hash
+      end
+
+      def sendable?
+        true
+      end
+
+      def to_s
+        "Handle"
+      end
+    end
+
     class Event < Base
       attr_reader :name, :capacity, :payload_type, :module_name, :visibility, :owner_type_name, :c_name
 

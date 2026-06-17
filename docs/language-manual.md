@@ -603,7 +603,7 @@ match entity:
 Rules for struct patterns:
 
 - Each field name must appear at most once per arm.
-- Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field collectively cover every member of the enum, the arm is considered exhaustive. An arm with only bindings and no guards counts as exhaustive.
+- Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field gatherively cover every member of the enum, the arm is considered exhaustive. An arm with only bindings and no guards counts as exhaustive.
 - Struct patterns compose with `as name` bindings: `Entity.player(hp > 0) as p` binds both `hp` (guard-checked) and `p` (the full payload struct).
 - Struct patterns do not apply to enum or integer match scrutinees.
 - When a variant arm has exactly one payload field of struct type, and no pattern argument references that field name, the struct's own fields are transparently destructured. For example, `Entity.positioned(x, y)` where `positioned(loc: Pos)` destructures through `Pos` to bind `x` and `y`.
@@ -674,6 +674,25 @@ Rules:
 - The compiler enforces single-writer-or-multiple-readers: if a variable is written in one statement, no other block may access it.
 - Captured `ref[T]` values are rejected at compile time.
 - Each statement runs on its own OS thread (one on the calling thread, the rest on worker threads).
+
+### 4.3c Detach and Collect (detached concurrency)
+
+`detach` spawns work on a separate OS thread and returns a `Handle`. `gather` blocks until all handles complete:
+
+```mt
+let a = detach load_textures(path)
+let b = detach load_sounds(path)
+process_other_stuff()
+gather a, b
+```
+
+Rules:
+
+- `detach` is an expression returning a `Handle` — must be bound with `let` or `var`.
+- Currently supports global function calls with no captured local variables.
+- `gather` takes one or more `Handle` values, joined in order.
+- Captured `ref[T]` values are rejected at compile time.
+- `detach` and `gather` are keywords. The compiler automatically links libuv for thread dispatch.
 
 ### 4.4 Defer
 

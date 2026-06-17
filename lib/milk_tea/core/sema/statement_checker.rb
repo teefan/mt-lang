@@ -107,6 +107,8 @@ module MilkTea
             end
           when AST::ParallelBlockStmt
             check_parallel_block_stmt(statement, scopes:, return_type:)
+          when AST::GatherStmt
+            check_gather_stmt(statement, scopes:)
           when AST::WhileStmt
             if statement.inline
               check_inline_while_stmt(statement, scopes:, return_type:, allow_return:)
@@ -1000,6 +1002,15 @@ module MilkTea
         statement.bodies.each do |body|
           validate_threaded_for_body!(body)
           check_block(body, scopes:, return_type:, allow_return: false)
+        end
+      end
+
+      def check_gather_stmt(statement, scopes:)
+        raise_sema_error("gather requires at least one handle", line: statement.line, column: statement.column) if statement.handles.empty?
+
+        statement.handles.each do |handle|
+          handle_type = infer_expression(handle, scopes:)
+          raise_sema_error("gather expects Handle, got #{handle_type}", line: statement.line, column: statement.column) unless handle_type.is_a?(Types::Handle)
         end
       end
 

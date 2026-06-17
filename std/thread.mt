@@ -114,22 +114,6 @@ extending Thread:
         return Result[bool, Error].success(value = true)
 
 
-    public editable function detach() -> Result[bool, Error]:
-        let handle = this.handle else:
-            return Result[bool, Error].failure(error = Error(
-                code = -1,
-                message = string.String.from_str("thread handle is released")
-            ))
-
-        let status_code = libuv.thread_detach(handle)
-        if status_code != 0:
-            return Result[bool, Error].failure(error = libuv_error(status_code))
-
-        heap.release(handle)
-        this.handle = null
-        return Result[bool, Error].success(value = true)
-
-
 public function sleep_ms(milliseconds: uint) -> void:
     usleep(milliseconds * uint<-1000)
 

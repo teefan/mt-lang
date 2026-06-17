@@ -866,6 +866,8 @@ module MilkTea
           end
           has_named = names.any?
           Types::Tuple.new(element_types, field_names: has_named ? names : nil)
+        when AST::DetachExpr
+          Types::Handle.new
         else
           raise LoweringError, "unsupported expression type #{expression.class.name}"
         end

@@ -773,6 +773,64 @@ module MilkTea
         IR::BlockStmt.new(body: call_site)
       end
 
+      def lower_gather_stmt(statement, env:)
+        call_site = statement.handles.map do |handle_expr|
+          handle_ir = lower_expression(handle_expr, env:)
+          IR::ExpressionStmt.new(expression: IR::Call.new(
+            callee: "mt_detach_join",
+            arguments: [handle_ir],
+            type: @types.fetch("void"),
+          ))
+        end
+        IR::BlockStmt.new(body: call_site)
+      end
+
+      def lower_detach_expr(expression, env:)
+        @parallel_for_counter += 1
+        uid = "#{@module_prefix}_detach_#{@parallel_for_counter}".gsub(/[^A-Za-z0-9_]/, "_")
+        worker_c_name = "mt_detach_work_#{uid}"
+
+        block_body = lower_block(
+          expression.body,
+          env: duplicate_env(env),
+          active_defers: nil,
+          return_type: @types.fetch("void"),
+          loop_flow: nil,
+          allow_return: false,
+        )
+
+        all_names = {}
+        block_body.each { |s| collect_pfor_ir_names_stmt(s, all_names) }
+        local_decls = Set.new
+        block_body.each { |s| collect_pfor_local_decls(s, local_decls) }
+        captures = all_names.values.reject { |n| local_decls.include?(n.name) }
+        validate_pfor_no_ref_captures!(captures)
+
+        if captures.empty?
+          worker_body = block_body.dup
+        else
+          raise LoweringError, "detach with captured variables is not yet supported; use a global function call or module-level variables"
+        end
+
+        @synthetic_functions << IR::Function.new(
+          name: worker_c_name, c_name: worker_c_name,
+          params: [IR::Param.new(name: "mt_pfor_data", c_name: "mt_pfor_data", type: @types.fetch("void").then { |v| Types::GenericInstance.new("ptr", [v]) }, pointer: false)],
+          return_type: @types.fetch("void"),
+          body: worker_body,
+          entry_point: false,
+        )
+
+        void_ptr_type = Types::GenericInstance.new("ptr", [@types.fetch("void")])
+        IR::Call.new(
+          callee: "mt_detach_run",
+          arguments: [
+            IR::Name.new(name: worker_c_name, type: Types::Function.new(nil, params: [], return_type: @types.fetch("void")), pointer: false),
+            IR::IntegerLiteral.new(value: 0, type: void_ptr_type),
+          ],
+          type: void_ptr_type,
+        )
+      end
+
       def validate_pfor_no_ref_captures!(captures)
         captures.each do |c|
           raise LoweringError, "cannot capture '#{c.name}' of type ref across thread boundary — ref values are not safe to share across threads" if ref_type?(c.type)

@@ -196,6 +196,8 @@ module MilkTea
         when AST::ExpressionStmt
           visit_expression(statement.expression)
           check_useless_expression(statement)
+        when AST::GatherStmt
+          statement.handles.each { |handle| mark_used(handle.name) if handle.is_a?(AST::Identifier) }
         when AST::StaticAssert
           visit_expression(statement.condition)
         when AST::BreakStmt, AST::ContinueStmt

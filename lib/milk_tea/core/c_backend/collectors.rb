@@ -141,6 +141,8 @@ module MilkTea
             when Types::Tuple
               base = tuple_type_name(type)
               pointer ? "#{base}*" : base
+            when Types::Handle
+              "void*"
             else
               raise LoweringError, "unsupported C type #{type.class.name}"
             end

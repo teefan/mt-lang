@@ -172,6 +172,12 @@ module MilkTea
     ParallelBlockStmt = Data.define(:bodies, :line, :column) do
       def initialize(bodies:, line: nil, column: nil) = super
     end
+    DetachExpr = Data.define(:body, :line, :column) do
+      def initialize(body:, line: nil, column: nil) = super
+    end
+    GatherStmt = Data.define(:handles, :line, :column) do
+      def initialize(handles:, line: nil, column: nil) = super
+    end
     WhileStmt = Data.define(:condition, :body, :inline, :line, :column, :length) do
       def initialize(condition:, body:, inline: false, line: nil, column: nil, length: nil) = super
     end

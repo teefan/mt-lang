@@ -38,7 +38,6 @@ module MilkTea
     end
     WhileStmt = Data.define(:condition, :body)
     ForStmt = Data.define(:init, :condition, :post, :body)
-    ParallelForStmt = Data.define(:loop_var_name, :loop_var_c_name, :loop_var_type, :start_expr, :end_expr, :body, :unique_id)
     BreakStmt = Data.define()
     ContinueStmt = Data.define()
     GotoStmt = Data.define(:label)

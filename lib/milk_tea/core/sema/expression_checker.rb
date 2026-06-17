@@ -184,6 +184,10 @@ module MilkTea
             infer_proc_expression(expression, scopes:, expected_type:)
           when AST::AwaitExpr
             infer_await_expression(expression, scopes:)
+          when AST::DetachExpr
+            @uses_parallel_for = true
+            check_block(expression.body, scopes:, return_type: @types.fetch("void"), allow_return: false)
+            Types::Handle.new
           when AST::Call
             infer_call(expression, scopes:, expected_type:)
           when AST::PrefixCast

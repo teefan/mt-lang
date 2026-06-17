@@ -561,6 +561,10 @@ module MilkTea
             emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_spawn_all]) }
           end
 
+          def uses_detach_helper?
+            emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_detach_run mt_detach_join]) }
+          end
+
           def format_helper_callees
             %w[
               mt_format_str_make
