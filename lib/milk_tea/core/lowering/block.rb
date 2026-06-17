@@ -519,6 +519,8 @@ module MilkTea
             end
           when AST::ParallelBlockStmt
             lowered << lower_parallel_block_stmt(statement, env: local_env, active_defers: active_defers + local_defers)
+          when AST::GatherStmt
+            lowered << lower_gather_stmt(statement, env: local_env)
           when AST::WhileStmt
             if statement.inline
               lowered.concat(lower_inline_while_stmt(statement, env: local_env, active_defers:, return_type:, allow_return:))

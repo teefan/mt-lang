@@ -30,7 +30,7 @@ module MilkTea
       lines = []
       constants = emitted_constants
       headers = @program.includes.map(&:header)
-      if headers.include?("\"fs_support.h\"") || headers.include?("\"tls_support.h\"") || uses_parallel_for_helper? || uses_spawn_all_helper?
+      if headers.include?("\"fs_support.h\"") || headers.include?("\"tls_support.h\"") || uses_parallel_for_helper? || uses_spawn_all_helper? || uses_detach_helper?
         lines << "#ifndef _GNU_SOURCE"
         lines << "#define _GNU_SOURCE"
         lines << "#endif"
@@ -42,10 +42,10 @@ module MilkTea
       if uses_fatal_helper? || uses_format_helpers?
         headers << "<stdio.h>"
       end
-      if uses_fatal_helper? || uses_format_helpers? || uses_async_memory_helpers? || uses_foreign_temp_cstr_helpers?
+      if uses_fatal_helper? || uses_format_helpers? || uses_async_memory_helpers? || uses_foreign_temp_cstr_helpers? || uses_detach_helper?
         headers << "<stdlib.h>"
       end
-      if uses_parallel_for_helper? || uses_spawn_all_helper?
+      if uses_parallel_for_helper? || uses_spawn_all_helper? || uses_detach_helper?
         headers << "\"uv.h\""
       end
       headers.uniq.each do |header|
@@ -100,6 +100,11 @@ module MilkTea
 
       if uses_spawn_all_helper?
         lines.concat(emit_spawn_all_helper)
+        lines << ""
+      end
+
+      if uses_detach_helper?
+        lines.concat(emit_detach_helpers)
         lines << ""
       end
 

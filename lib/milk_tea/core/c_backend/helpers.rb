@@ -154,6 +154,27 @@ module MilkTea
             ]
           end
 
+          def emit_detach_helpers
+            [
+              "typedef struct {",
+              "#{INDENT}uv_thread_t thread;",
+              "} mt_detach_handle;",
+              "",
+              "static void* mt_detach_run(void (*work)(void*), void* cap) {",
+              "#{INDENT}mt_detach_handle* h = (mt_detach_handle*)malloc(sizeof(mt_detach_handle));",
+              "#{INDENT}uv_thread_create(&h->thread, work, cap);",
+              "#{INDENT}return h;",
+              "}",
+              "",
+              "static void mt_detach_join(void* handle) {",
+              "#{INDENT}if (!handle) return;",
+              "#{INDENT}mt_detach_handle* h = (mt_detach_handle*)handle;",
+              "#{INDENT}uv_thread_join(&h->thread);",
+              "#{INDENT}free(h);",
+              "}",
+            ]
+          end
+
           def emit_format_helpers
             helpers = used_format_helpers
             lines = []

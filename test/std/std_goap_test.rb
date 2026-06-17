@@ -64,7 +64,7 @@ function move_cost(context: ptr[Context], world: World) -> float:
 function can_gather(context: ptr[Context], world: World) -> bool:
     return world.at_resource and not world.has_resource
 
-function gather(context: ptr[Context], world: World) -> World:
+function gather_resources(context: ptr[Context], world: World) -> World:
     var next = world
     next.has_resource = true
     return next
@@ -108,7 +108,7 @@ function main() -> int:
     defer planner.release()
 
     planner.add_action(goap.Action[World, Context].create("move_to_resource", can_move_to_resource, move_to_resource, move_cost))
-    planner.add_action(goap.Action[World, Context].create("gather", can_gather, gather, gather_cost))
+    planner.add_action(goap.Action[World, Context].create("gather_resources", can_gather, gather_resources, gather_cost))
     planner.add_action(goap.Action[World, Context].create("move_to_workbench", can_move_to_workbench, move_to_workbench, move_cost))
     planner.add_action(goap.Action[World, Context].create("craft", can_craft, craft, craft_cost))
     planner.add_action(goap.Action[World, Context].create("buy_shortcut", can_buy, buy_shortcut, expensive_cost))
@@ -156,7 +156,7 @@ function main() -> int:
             unsafe:
                 if not read(step0).action_name.equal(str_mod.cstr_as_str(c"move_to_resource")):
                     return 13
-                if not read(step1).action_name.equal(str_mod.cstr_as_str(c"gather")):
+                if not read(step1).action_name.equal(str_mod.cstr_as_str(c"gather_resources")):
                     return 14
                 if not read(step2).action_name.equal(str_mod.cstr_as_str(c"move_to_workbench")):
                     return 15
@@ -167,7 +167,7 @@ function main() -> int:
     defer limited_planner.release()
     limited_planner.set_max_iterations(1)
     limited_planner.add_action(goap.Action[World, Context].create("move_to_resource", can_move_to_resource, move_to_resource, move_cost))
-    limited_planner.add_action(goap.Action[World, Context].create("gather", can_gather, gather, gather_cost))
+    limited_planner.add_action(goap.Action[World, Context].create("gather_resources", can_gather, gather_resources, gather_cost))
     limited_planner.add_action(goap.Action[World, Context].create("move_to_workbench", can_move_to_workbench, move_to_workbench, move_cost))
     limited_planner.add_action(goap.Action[World, Context].create("craft", can_craft, craft, craft_cost))
 

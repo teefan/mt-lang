@@ -63,16 +63,16 @@ function run_tests() -> int:
 
     atomic_counter.store(0)
 
-    parallel:
-        increment_many(5000)
-        increment_many(5000)
+    let a = detach increment_many(5000)
+    let b = detach increment_many(5000)
+    gather a, b
 
     let counter_value = atomic_counter.load()
     if counter_value != 10000:
-        stdio.print_string("FAIL: atomic counter")
+        stdio.print_string("FAIL: detach + gather")
         return 1
 
-    stdio.print_string("  pass: atomic[int] — 10000 concurrent increments correct")
+    stdio.print_string("  pass: detach + gather — concurrent increments correct")
 
     return 0
 

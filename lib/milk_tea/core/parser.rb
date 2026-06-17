@@ -1269,6 +1269,8 @@ module MilkTea
       elsif check_parallel_block_start?
         advance
         parse_parallel_block_stmt
+      elsif match(:gather)
+        parse_gather_stmt
       elsif match(:while)
         parse_while_stmt
       elsif match(:pass)
@@ -1639,6 +1641,19 @@ module MilkTea
       return recovery_error_block_stmt(e, recovered_body, header_type: :parallel) if recovered_body
 
       recovery_error_stmt(e)
+    end
+
+    def parse_gather_stmt
+      line = previous.line
+      column = previous.column
+      handles = []
+      handle = parse_expression
+      handles << handle
+      while match(:comma)
+        handle = parse_expression
+        handles << handle
+      end
+      AST::GatherStmt.new(handles:, line:, column:)
     end
 
     def parse_while_stmt
@@ -2029,6 +2044,10 @@ module MilkTea
         parse_unsafe_expression
       elsif match(:await)
         AST::AwaitExpr.new(expression: parse_unary)
+      elsif match(:detach)
+        line = previous.line
+        column = previous.column
+        AST::DetachExpr.new(body: [AST::ExpressionStmt.new(expression: parse_unary)], line:, column:)
       elsif match(:not, :minus, :plus, :tilde, :out, :in, :inout)
         operator = previous.lexeme
         operand = parse_unary

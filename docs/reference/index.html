@@ -736,6 +736,28 @@ function main() -&gt; int:
     inline if DEBUG:
         io.print_string("debug mode")
 
+    ## ── Concurrency ─────────────────────────────────────────────────────
+    ## parallel for: data-parallel loop dispatched across CPU cores
+    var positions = array[<span class="syn-type">float</span>, <span class="syn-num">4</span>](<span class="syn-num">0.0</span>, <span class="syn-num">1.0</span>, <span class="syn-num">2.0</span>, <span class="syn-num">3.0</span>)
+    var velocities = array[<span class="syn-type">float</span>, <span class="syn-num">4</span>](<span class="syn-num">0.1</span>, <span class="syn-num">0.2</span>, <span class="syn-num">0.3</span>, <span class="syn-num">0.4</span>)
+    let dt: <span class="syn-type">float</span> = <span class="syn-num">0.016</span>
+    <span class="syn-kw">parallel for</span> i <span class="syn-kw">in</span> <span class="syn-num">0</span>..<span class="syn-num">4</span>:
+        positions[i] += velocities[i] * dt
+
+    ## parallel: block for structured fork-join
+    var pa: <span class="syn-type">int</span> = <span class="syn-num">0</span>
+    var pb: <span class="syn-type">int</span> = <span class="syn-num">0</span>
+    <span class="syn-kw">parallel</span>:
+        pa = <span class="syn-num">42</span>
+        pb = <span class="syn-num">99</span>
+
+    ## detach + gather: detached concurrency with explicit join
+    var counter: <span class="syn-type">atomic</span>[<span class="syn-type">int</span>]
+    counter.store(<span class="syn-num">0</span>)
+    let h1 = <span class="syn-kw">detach</span> counter.add(<span class="syn-num">1</span>)
+    let h2 = <span class="syn-kw">detach</span> counter.add(<span class="syn-num">2</span>)
+    <span class="syn-kw">gather</span> h1, h2
+
     ## static_assert: compile-time assertions
     static_assert(size_of(int) == 4, "expected 32-bit int")
     static_assert(MAX_ENTITIES &gt; 0, "need at least one entity")
@@ -745,7 +767,7 @@ function main() -&gt; int:
 </div>
 
   <div class="callout tip">
-    <strong>Tip:</strong> This example covers imports, constants, <code>const function</code>, type aliases, enums, flags, structs (nested, attributed), variants, interfaces, <code>extending</code> methods, generics with constraints, value parameter generics, <code>Result</code> error handling with <code>?</code> and guard binding, events, closures (<code>proc</code>), <code>async</code>/<code>await</code>, native vector types, arrays, spans, collections, <code>for</code>/<code>while</code>/<code>match</code>/<code>if</code>, parallel <code>for</code>, <code>defer</code>, <code>unsafe</code>, <code>ref[T]</code>, <code>dyn[Interface]</code>, format strings, heredocs, <code>str_buffer</code>, compile-time reflection, <code>inline for</code>/<code>inline if</code>, <code>static_assert</code>, and explicit casts. See the sections below for full details on each feature.
+    <strong>Tip:</strong> This example covers imports, constants, <code>const function</code>, type aliases, enums, flags, structs (nested, attributed), variants, interfaces, <code>extending</code> methods, generics with constraints, value parameter generics, <code>Result</code> error handling with <code>?</code> and guard binding, events, closures (<code>proc</code>), <code>async</code>/<code>await</code>, concurrency (<code>parallel for</code>, <code>parallel:</code>, <code>detach</code> + <code>gather</code>, <code>atomic[T]</code>), native vector types, arrays, spans, collections, <code>for</code>/<code>while</code>/<code>match</code>/<code>if</code>, parallel <code>for</code>, <code>defer</code>, <code>unsafe</code>, <code>ref[T]</code>, <code>dyn[Interface]</code>, format strings, heredocs, <code>str_buffer</code>, compile-time reflection, <code>inline for</code>/<code>inline if</code>, <code>static_assert</code>, and explicit casts. See the sections below for full details on each feature.
   </div>
 </section>
 
@@ -1761,6 +1783,17 @@ counter.sub(<span class="syn-num">1</span>)
     </table>
   </div>
   <p>All operations use sequential consistency. Lowers to C11 <code class="code-inline">_Atomic T</code> with <code class="code-inline">__atomic_*</code> builtins.</p>
+
+  <h3>Detach &amp; Collect</h3>
+  <p><code class="code-inline">detach</code> spawns work on a separate thread and returns a <code>Handle</code>. <code>gather</code> blocks until all handles complete.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code><span class="syn-kw">let</span> a = <span class="syn-kw">detach</span> load_textures(path)
+<span class="syn-kw">let</span> b = <span class="syn-kw">detach</span> load_sounds(path)
+process_other_stuff()
+<span class="syn-kw">gather</span> a, b</code></pre>
+</div>
+  <p>Rules: <code>detach</code> returns a <code>Handle</code> — must be bound with <code>let</code> or <code>var</code>. Currently supports global function calls with no captured local variables. <code>gather</code> joins handles in order. <code>ref[T]</code> captures rejected.</p>
 
   <h3>Compile-Time Safety</h3>
   <ul style="margin-left:1.25rem;margin-bottom:1rem">

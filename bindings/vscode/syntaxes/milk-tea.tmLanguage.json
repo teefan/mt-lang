@@ -449,7 +449,7 @@
 
     "keyword-control": {
       "name": "keyword.control.milk-tea",
-      "match": "\\b(if|else|for|in|while|break|continue|pass|return|match|defer|unsafe|await|when|parallel)\\b"
+      "match": "\\b(if|else|for|in|while|break|continue|pass|return|match|defer|unsafe|await|when|parallel|gather|detach)\\b"
     },
 
     "keyword-declaration": {
