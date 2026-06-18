@@ -33,15 +33,15 @@ module MilkTea
       def str_buffer_method_type(kind, receiver_type)
         return_type, params = case kind
                               when :str_buffer_clear
-                                [@types.fetch("void"), []]
+                                [@ctx.types.fetch("void"), []]
                               when :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format
-                                [@types.fetch("void"), [Types::Parameter.new("value", @types.fetch("str"))]]
+                                [@ctx.types.fetch("void"), [Types::Parameter.new("value", @ctx.types.fetch("str"))]]
                               when :str_buffer_len, :str_buffer_capacity
-                                [@types.fetch("ptr_uint"), []]
+                                [@ctx.types.fetch("ptr_uint"), []]
                               when :str_buffer_as_str
-                                [@types.fetch("str"), []]
+                                [@ctx.types.fetch("str"), []]
                               when :str_buffer_as_cstr
-                                [@types.fetch("cstr"), []]
+                                [@ctx.types.fetch("cstr"), []]
                               else
                                 raise LoweringError, "unsupported str_buffer method #{kind}"
                               end
@@ -61,10 +61,10 @@ module MilkTea
         IR::AddressOf.new(
           expression: IR::Index.new(
             receiver: lowered_receiver,
-            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
-            type: @types.fetch("char"),
+            index: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint")),
+            type: @ctx.types.fetch("char"),
           ),
-          type: pointer_to(@types.fetch("char")),
+          type: pointer_to(@ctx.types.fetch("char")),
         )
       end
 
@@ -80,13 +80,13 @@ module MilkTea
               member: "data",
               type: Types::GenericInstance.new(
                 "array",
-                [@types.fetch("char"), Types::LiteralTypeArg.new(str_buffer_storage_capacity(lowered_receiver.type))],
+                [@ctx.types.fetch("char"), Types::LiteralTypeArg.new(str_buffer_storage_capacity(lowered_receiver.type))],
               ),
             ),
-            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
-            type: @types.fetch("char"),
+            index: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint")),
+            type: @ctx.types.fetch("char"),
           ),
-          type: pointer_to(@types.fetch("char")),
+          type: pointer_to(@ctx.types.fetch("char")),
         )
       end
 
@@ -96,8 +96,8 @@ module MilkTea
 
       def lower_str_buffer_len_pointer_from_lowered(lowered_receiver)
         IR::AddressOf.new(
-          expression: IR::Member.new(receiver: lowered_receiver, member: "len", type: @types.fetch("ptr_uint")),
-          type: pointer_to(@types.fetch("ptr_uint")),
+          expression: IR::Member.new(receiver: lowered_receiver, member: "len", type: @ctx.types.fetch("ptr_uint")),
+          type: pointer_to(@ctx.types.fetch("ptr_uint")),
         )
       end
 
@@ -107,8 +107,8 @@ module MilkTea
 
       def lower_str_buffer_dirty_pointer_from_lowered(lowered_receiver)
         IR::AddressOf.new(
-          expression: IR::Member.new(receiver: lowered_receiver, member: "dirty", type: @types.fetch("bool")),
-          type: pointer_to(@types.fetch("bool")),
+          expression: IR::Member.new(receiver: lowered_receiver, member: "dirty", type: @ctx.types.fetch("bool")),
+          type: pointer_to(@ctx.types.fetch("bool")),
         )
       end
   end

@@ -19,6 +19,7 @@ require_relative "lowering/resolve"
 require_relative "lowering/dyn"
 require_relative "lowering/utils"
 require_relative "lowering/artifacts"
+require_relative "lowering/module_context"
 
 module MilkTea
   class LoweringError < StandardError; end
@@ -51,16 +52,7 @@ module MilkTea
 
     def initialize(program)
       @program = program
-      @analysis = nil
-      @current_analysis_path = nil
-      @module_name = nil
-      @module_prefix = nil
-      @imports = {}
-      @types = {}
-      @values = {}
-      @functions = {}
-      @struct_types = {}
-      @union_types = {}
+      @ctx = ModuleContext.new
       @artifacts = Artifacts.new
       @synthetic_proc_counter = 0
       @parallel_for_counter = 0

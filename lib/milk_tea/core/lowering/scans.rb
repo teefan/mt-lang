@@ -5,18 +5,18 @@ module MilkTea
     private
 
       def collect_structs
-        @ast.declarations.each do |decl|
+        @ctx.ast.declarations.each do |decl|
           case decl
           when AST::WhenStmt
             body = lower_when_chosen_body(decl)
             body&.each { |nested| collect_struct_from_decl(nested) }
           when AST::OpaqueDecl
-            @opaque_types[decl.name] = @types.fetch(decl.name)
+            @ctx.opaque_types[decl.name] = @ctx.types.fetch(decl.name)
           when AST::StructDecl
-            @struct_types[decl.name] = @types.fetch(decl.name)
+            @ctx.struct_types[decl.name] = @ctx.types.fetch(decl.name)
             collect_nested_structs(decl)
           when AST::UnionDecl
-            @union_types[decl.name] = @types.fetch(decl.name)
+            @ctx.union_types[decl.name] = @ctx.types.fetch(decl.name)
           end
         end
       end
@@ -24,12 +24,12 @@ module MilkTea
       def collect_struct_from_decl(decl)
         case decl
         when AST::OpaqueDecl
-          @opaque_types[decl.name] = @types.fetch(decl.name)
+          @ctx.opaque_types[decl.name] = @ctx.types.fetch(decl.name)
         when AST::StructDecl
-          @struct_types[decl.name] = @types.fetch(decl.name)
+          @ctx.struct_types[decl.name] = @ctx.types.fetch(decl.name)
           collect_nested_structs(decl)
         when AST::UnionDecl
-          @union_types[decl.name] = @types.fetch(decl.name)
+          @ctx.union_types[decl.name] = @ctx.types.fetch(decl.name)
         when AST::WhenStmt
           body = lower_when_chosen_body(decl)
           body&.each { |nested| collect_struct_from_decl(nested) }
@@ -47,7 +47,7 @@ module MilkTea
       def collect_nested_structs(parent_decl, parent_name: parent_decl.name)
         parent_decl.nested_types.each do |nested|
           qualified_name = "#{parent_name}.#{nested.name}"
-          @struct_types[qualified_name] = @types.fetch(qualified_name)
+          @ctx.struct_types[qualified_name] = @ctx.types.fetch(qualified_name)
           collect_nested_structs(nested, parent_name: qualified_name)
         end
       end
@@ -202,25 +202,9 @@ module MilkTea
       end
 
       def prepare_analysis(analysis, source_path: nil)
-        @analysis = analysis
-        @current_analysis_path = source_path
-        @module_name = analysis.module_name
-        @module_prefix = module_c_prefix(@module_name)
-        @ast = analysis.ast
-        @current_module_kind = analysis.module_kind
-        @imports = analysis.imports
-        @types = analysis.types
-        @values = analysis.values
-        @functions = analysis.functions
-        @interfaces = analysis.interfaces
-        @current_methods = analysis.methods
-        @current_attributes = analysis.attributes
-        @current_attribute_applications = analysis.attribute_applications
-        @current_implemented_interfaces = analysis.implemented_interfaces
-        @directives = analysis.directives
-        @opaque_types = {}
-        @struct_types = {}
-        @union_types = {}
+        @ctx.install(analysis)
+        @ctx.current_analysis_path = source_path
+        @ctx.module_prefix = module_c_prefix(@ctx.module_name)
       end
 
       def collect_tuple_structs(analysis)

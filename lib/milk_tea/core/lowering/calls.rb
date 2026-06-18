@@ -9,7 +9,7 @@ module MilkTea
         ct_value = compile_time_const_value(expression, env:)
         if ct_value && (literal = lower_compile_time_literal(ct_value, type))
           if expression.callee.is_a?(AST::Identifier)
-            binding = @functions[expression.callee.name]
+            binding = @ctx.functions[expression.callee.name]
             return literal unless binding&.ast&.respond_to?(:const) && binding.ast.const
           else
             return literal
@@ -54,7 +54,7 @@ module MilkTea
             callee: "mt_str_buffer_clear",
             arguments: [
               lower_str_buffer_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @types.fetch("ptr_uint")),
+              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
               lower_str_buffer_len_pointer(receiver, env:),
               lower_str_buffer_dirty_pointer(receiver, env:),
             ],
@@ -65,9 +65,9 @@ module MilkTea
           IR::Call.new(
             callee: "mt_str_buffer_assign",
             arguments: [
-              lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @types.fetch("str")),
+              lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @ctx.types.fetch("str")),
               lower_str_buffer_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @types.fetch("ptr_uint")),
+              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
               lower_str_buffer_len_pointer(receiver, env:),
               lower_str_buffer_dirty_pointer(receiver, env:),
             ],
@@ -78,9 +78,9 @@ module MilkTea
           IR::Call.new(
             callee: "mt_str_buffer_append",
             arguments: [
-              lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @types.fetch("str")),
+              lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @ctx.types.fetch("str")),
               lower_str_buffer_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @types.fetch("ptr_uint")),
+              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
               lower_str_buffer_len_pointer(receiver, env:),
               lower_str_buffer_dirty_pointer(receiver, env:),
             ],
@@ -92,7 +92,7 @@ module MilkTea
             callee: "mt_str_buffer_len",
             arguments: [
               lower_str_buffer_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @types.fetch("ptr_uint")),
+              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
               lower_str_buffer_len_pointer(receiver, env:),
               lower_str_buffer_dirty_pointer(receiver, env:),
             ],
@@ -114,11 +114,11 @@ module MilkTea
                   callee: "mt_str_buffer_len",
                   arguments: [
                     data_pointer,
-                    IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @types.fetch("ptr_uint")),
+                    IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
                     lower_str_buffer_len_pointer(receiver, env:),
                     lower_str_buffer_dirty_pointer(receiver, env:),
                   ],
-                  type: @types.fetch("ptr_uint"),
+                  type: @ctx.types.fetch("ptr_uint"),
                 ),
               ),
             ],
@@ -129,7 +129,7 @@ module MilkTea
             callee: "mt_str_buffer_as_cstr",
             arguments: [
               lower_str_buffer_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @types.fetch("ptr_uint")),
+              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
               lower_str_buffer_len_pointer(receiver, env:),
               lower_str_buffer_dirty_pointer(receiver, env:),
             ],
@@ -191,7 +191,7 @@ module MilkTea
               callee: runtime.fetch(:unsubscribe_c_name),
               arguments: [
                 event_pointer,
-                lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @types.fetch("Subscription")),
+                lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @ctx.types.fetch("Subscription")),
               ],
               type:,
             )
@@ -273,7 +273,7 @@ module MilkTea
 
             payload_fields << IR::AggregateField.new(
               name: field_name,
-              value: IR::IntegerLiteral.new(type: @types.fetch("ubyte"), value: 0),
+              value: IR::IntegerLiteral.new(type: @ctx.types.fetch("ubyte"), value: 0),
             )
           end
           IR::VariantLiteral.new(type: variant_type, arm_name:, fields: payload_fields)
@@ -329,7 +329,7 @@ module MilkTea
         when :fatal
           argument = expression.arguments.fetch(0)
           message_type = infer_expression_type(argument.value, env:)
-          callee = message_type == @types.fetch("cstr") ? "mt_fatal" : "mt_fatal_str"
+          callee = message_type == @ctx.types.fetch("cstr") ? "mt_fatal" : "mt_fatal_str"
           IR::Call.new(callee:, arguments: [lower_expression(argument.value, env:, expected_type: message_type)], type:)
         when :get
           receiver_arg = expression.arguments.fetch(0)
@@ -498,8 +498,8 @@ module MilkTea
         binding = foreign_call.fetch(:binding)
         raise LoweringError, "consuming foreign calls must be top-level expression statements" if foreign_call_consumes_binding?(binding) && !statement_position
 
-        previous_type_substitutions = @current_type_substitutions
-        @current_type_substitutions = binding.type_substitutions
+        previous_type_substitutions = @ctx.current_type_substitutions
+        @ctx.current_type_substitutions = binding.type_substitutions
 
         owner_analysis = analysis_for_module(binding.owner.module_name)
         mapping_expression = foreign_mapping_expression(binding.ast)
@@ -530,7 +530,7 @@ module MilkTea
 
         [lowered, lowered_call, call_type, release_assignments, cleanup_statements]
       ensure
-        @current_type_substitutions = previous_type_substitutions
+        @ctx.current_type_substitutions = previous_type_substitutions
       end
 
       def lower_foreign_call_statement(foreign_call, env:, expected_type:, statement_position:, discard_result: false)
@@ -541,7 +541,7 @@ module MilkTea
           statement_position:,
         )
 
-        if call_type == @types.fetch("void")
+        if call_type == @ctx.types.fetch("void")
           lowered << IR::ExpressionStmt.new(expression: lowered_call)
           lowered.concat(release_assignments)
           lowered.concat(cleanup_statements)
@@ -692,7 +692,7 @@ module MilkTea
                 expression: IR::Call.new(
                   callee: "mt_free_foreign_cstr_temp",
                   arguments: [IR::Name.new(name: temp_name, type: temp_type, pointer: false)],
-                  type: @types.fetch("void"),
+                  type: @ctx.types.fetch("void"),
                 ),
               )
             end
@@ -733,19 +733,19 @@ module MilkTea
         when :plain, :consuming
           if parameter.boundary_type.nil? || parameter.boundary_type == parameter.type
             lower_contextual_expression(argument.value, env:, expected_type: parameter.type)
-          elsif parameter.boundary_type == @types.fetch("cstr") && parameter.type == @types.fetch("str")
+          elsif parameter.boundary_type == @ctx.types.fetch("cstr") && parameter.type == @ctx.types.fetch("str")
             if argument.value.is_a?(AST::StringLiteral) && !argument.value.cstring
               return IR::StringLiteral.new(value: argument.value.value, type: parameter.boundary_type, cstring: true)
             end
 
             actual_type = infer_expression_type(argument.value, env:)
-            if actual_type == @types.fetch("cstr")
+            if actual_type == @ctx.types.fetch("cstr")
               return lower_expression(argument.value, env:, expected_type: parameter.boundary_type)
             end
 
             if cstr_backed_expression?(argument.value, env)
               lowered_value = lower_contextual_expression(argument.value, env:, expected_type: parameter.type)
-              data_expression = IR::Member.new(receiver: lowered_value, member: "data", type: pointer_to(@types.fetch("char")))
+              data_expression = IR::Member.new(receiver: lowered_value, member: "data", type: pointer_to(@ctx.types.fetch("char")))
               converted = foreign_identity_projection_expression(data_expression, parameter.boundary_type)
               return converted if converted
             end
@@ -788,7 +788,7 @@ module MilkTea
         converted_data = foreign_identity_projection_expression(data_expression, pointer_to(boundary_element_type))
         raise LoweringError, "unsupported foreign boundary mapping #{public_type} as #{boundary_type}" unless converted_data
 
-        len_expression = IR::Member.new(receiver: lowered_value, member: "len", type: @types.fetch("ptr_uint"))
+        len_expression = IR::Member.new(receiver: lowered_value, member: "len", type: @ctx.types.fetch("ptr_uint"))
         IR::AggregateLiteral.new(
           type: boundary_type,
           fields: [
@@ -863,7 +863,7 @@ module MilkTea
             callee: "mt_str_buffer_prepare_write",
             arguments: [
               lower_str_buffer_data_pointer(argument.value, env:),
-              IR::IntegerLiteral.new(value: str_buffer_capacity(public_type), type: @types.fetch("ptr_uint")),
+              IR::IntegerLiteral.new(value: str_buffer_capacity(public_type), type: @ctx.types.fetch("ptr_uint")),
               lower_str_buffer_dirty_pointer(argument.value, env:),
             ],
             type: parameter.boundary_type,
@@ -871,7 +871,7 @@ module MilkTea
         end
 
         lowered_value = lower_contextual_expression(argument.value, env:, expected_type: public_type)
-        return IR::Member.new(receiver: lowered_value, member: "data", type: parameter.boundary_type) if public_type.is_a?(Types::Span) && public_type.element_type == @types.fetch("char")
+        return IR::Member.new(receiver: lowered_value, member: "data", type: parameter.boundary_type) if public_type.is_a?(Types::Span) && public_type.element_type == @ctx.types.fetch("char")
 
         converted = foreign_identity_projection_expression(lowered_value, parameter.boundary_type)
         return converted if converted
@@ -880,8 +880,8 @@ module MilkTea
       end
 
       def lower_foreign_call_inline(expression, binding, env:, type:)
-        previous_type_substitutions = @current_type_substitutions
-        @current_type_substitutions = binding.type_substitutions
+        previous_type_substitutions = @ctx.current_type_substitutions
+        @ctx.current_type_substitutions = binding.type_substitutions
 
         owner_analysis = analysis_for_module(binding.owner.module_name)
         mapping_expression = foreign_mapping_expression(binding.ast)
@@ -957,7 +957,7 @@ module MilkTea
 
         lowered_expression
       ensure
-        @current_type_substitutions = previous_type_substitutions
+        @ctx.current_type_substitutions = previous_type_substitutions
       end
 
       def append_variadic_foreign_call_arguments(lowered_expression, arguments, function_type, env:, lowered: nil, cleanup: nil)
@@ -976,10 +976,10 @@ module MilkTea
 
       def lower_variadic_foreign_argument(argument, env:, lowered:, cleanup:)
         actual_type = infer_expression_type(argument.value, env:)
-        return lower_contextual_expression(argument.value, env:, expected_type: nil) unless actual_type == @types.fetch("str")
+        return lower_contextual_expression(argument.value, env:, expected_type: nil) unless actual_type == @ctx.types.fetch("str")
 
         lowered_argument = lower_foreign_argument_value(
-          Types::Parameter.new("__mt_variadic", actual_type, passing_mode: :plain, boundary_type: @types.fetch("cstr")),
+          Types::Parameter.new("__mt_variadic", actual_type, passing_mode: :plain, boundary_type: @ctx.types.fetch("cstr")),
           argument,
           env:,
         )
@@ -991,17 +991,17 @@ module MilkTea
         lowered << IR::LocalDecl.new(
           name: temp_name,
           c_name: temp_name,
-          type: @types.fetch("cstr"),
+          type: @ctx.types.fetch("cstr"),
           value: lowered_argument,
         )
         cleanup << IR::ExpressionStmt.new(
           expression: IR::Call.new(
             callee: "mt_free_foreign_cstr_temp",
-            arguments: [IR::Name.new(name: temp_name, type: @types.fetch("cstr"), pointer: false)],
-            type: @types.fetch("void"),
+            arguments: [IR::Name.new(name: temp_name, type: @ctx.types.fetch("cstr"), pointer: false)],
+            type: @ctx.types.fetch("void"),
           ),
         )
-        IR::Name.new(name: temp_name, type: @types.fetch("cstr"), pointer: false)
+        IR::Name.new(name: temp_name, type: @ctx.types.fetch("cstr"), pointer: false)
       end
 
       def lower_inline_foreign_mapping_expression(expression, mapping_env:, replacements:, owner_analysis:, expected_type: nil)
@@ -1095,7 +1095,7 @@ module MilkTea
               mapping_env:,
               replacements:,
               owner_analysis:,
-              expected_type: @types.fetch("bool"),
+              expected_type: @ctx.types.fetch("bool"),
             ),
             then_expression: lower_inline_foreign_mapping_expression(
               expression.then_expression,
@@ -1507,26 +1507,26 @@ module MilkTea
       end
 
       def automatic_foreign_cstr_list_temp_needed?(parameter, _expression, env: nil)
-        return false unless parameter.type.is_a?(Types::Span) && parameter.type.element_type == @types.fetch("str")
+        return false unless parameter.type.is_a?(Types::Span) && parameter.type.element_type == @ctx.types.fetch("str")
         return false unless parameter.boundary_type.is_a?(Types::Span)
 
         boundary_element_type = parameter.boundary_type.element_type
-        boundary_element_type == @types.fetch("cstr") || char_pointer_type?(boundary_element_type)
+        boundary_element_type == @ctx.types.fetch("cstr") || char_pointer_type?(boundary_element_type)
       end
 
       def automatic_foreign_cstr_temp_needed?(parameter, expression, env:)
-        return false unless parameter.boundary_type == @types.fetch("cstr") && parameter.type == @types.fetch("str")
+        return false unless parameter.boundary_type == @ctx.types.fetch("cstr") && parameter.type == @ctx.types.fetch("str")
         return false if expression.is_a?(AST::StringLiteral) && !expression.cstring
         return false if cstr_backed_expression?(expression, env)
 
-        infer_expression_type(expression, env:) != @types.fetch("cstr")
+        infer_expression_type(expression, env:) != @ctx.types.fetch("cstr")
       end
 
       def automatic_variadic_foreign_cstr_temp_needed?(expression, env:)
         return false if expression.is_a?(AST::StringLiteral) && !expression.cstring
         return false if cstr_backed_expression?(expression, env)
 
-        infer_expression_type(expression, env:) == @types.fetch("str")
+        infer_expression_type(expression, env:) == @ctx.types.fetch("str")
       end
 
       def temporary_foreign_cstr_expression?(expression)
@@ -1590,7 +1590,7 @@ module MilkTea
         ptr_type = Types::GenericInstance.new("ptr", [elem_type])
         receiver_ir = lower_expression(receiver, env:)
         addr = IR::AddressOf.new(expression: receiver_ir, type: ptr_type)
-        seq_cst = IR::IntegerLiteral.new(value: 5, type: @types.fetch("int"))
+        seq_cst = IR::IntegerLiteral.new(value: 5, type: @ctx.types.fetch("int"))
 
         case kind
         when :atomic_load

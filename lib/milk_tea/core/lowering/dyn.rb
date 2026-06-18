@@ -17,7 +17,7 @@ module MilkTea
       vtable_struct_full = dyn_vtable_struct_type(interface)
       vtable_c_name = ensure_dyn_vtable(interface, concrete_type)
 
-      void_ptr = Types::GenericInstance.new("ptr", [@types.fetch("void")])
+      void_ptr = Types::GenericInstance.new("ptr", [@ctx.types.fetch("void")])
       vtable_field = IR::Cast.new(
         target_type: void_ptr,
         expression: IR::AddressOf.new(
@@ -40,7 +40,7 @@ module MilkTea
 
     def lower_dyn_method_call(expression, receiver, method_binding, env:, type:)
       ir_expr = lower_expression(receiver, env:)
-      void_ptr = Types::GenericInstance.new("ptr", [@types.fetch("void")])
+      void_ptr = Types::GenericInstance.new("ptr", [@ctx.types.fetch("void")])
       dyn_type = infer_expression_type(receiver, env:)
       interface = dyn_type.interface_binding
 
@@ -59,7 +59,7 @@ module MilkTea
     end
 
     def dyn_vtable_struct_type(interface)
-      void_ptr = Types::GenericInstance.new("ptr", [@types.fetch("void")])
+      void_ptr = Types::GenericInstance.new("ptr", [@ctx.types.fetch("void")])
       fields = {}
       interface.methods.each do |method_name, method_binding|
         fn_params = [Types::Parameter.new("data", void_ptr), *method_binding.params]

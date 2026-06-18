@@ -77,10 +77,10 @@ module MilkTea
                 statement_position: false,
               )
               lowered.concat(setup)
-              raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @types.fetch("void")
+              raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @ctx.types.fetch("void")
               raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
 
-              lowered << IR::LocalDecl.new(name: decl_name, c_name:, type: storage_type, value:, line: statement.line, source_path: @current_analysis_path)
+              lowered << IR::LocalDecl.new(name: decl_name, c_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path)
               lowered.concat(cleanup_statements)
               emitted_decl = true
             elsif prepared_value.is_a?(AST::ProcExpr)
@@ -109,7 +109,7 @@ module MilkTea
                 const_value: statement.else_body ? nil : statement.kind == :let && prepared_value ? compile_time_const_value(prepared_value, env: local_env) : nil,
               )
             end
-            lowered << IR::LocalDecl.new(name: decl_name, c_name:, type: storage_type, value:, line: statement.line, source_path: @current_analysis_path) unless emitted_decl
+            lowered << IR::LocalDecl.new(name: decl_name, c_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path) unless emitted_decl
             if statement.else_body
               else_env = if statement.else_binding
                            duplicate_env(local_env).tap do |env_with_error|
@@ -175,7 +175,7 @@ module MilkTea
                 statement_position: false,
               )
               lowered.concat(setup)
-              raise LoweringError, "foreign call used in assignment must return a value" if call_type == @types.fetch("void")
+              raise LoweringError, "foreign call used in assignment must return a value" if call_type == @ctx.types.fetch("void")
               raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
 
               lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
@@ -234,14 +234,14 @@ module MilkTea
               condition_setup, prepared_condition, condition_cleanups = prepare_expression_with_cleanups(
                 branch.condition,
                 env: branch_env,
-                expected_type: @types.fetch("bool"),
+                expected_type: @ctx.types.fetch("bool"),
               )
               true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, env: branch_env))
 
               branch_entries << [
                 condition_setup,
                 condition_cleanups,
-                lower_expression(prepared_condition, env: branch_env, expected_type: @types.fetch("bool")),
+                lower_expression(prepared_condition, env: branch_env, expected_type: @ctx.types.fetch("bool")),
                 lower_block(
                   branch.body,
                   env: env_with_refinements(local_env, true_refinements),
@@ -306,7 +306,7 @@ module MilkTea
 
             if scrutinee_type.is_a?(Types::Variant)
               if statement.arms.any? { |arm| arm.pattern.is_a?(AST::Call) }
-                kind_type = @types.fetch("int")
+                kind_type = @ctx.types.fetch("int")
                 arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
                 @match_label_counter ||= 0
                 @match_label_counter += 1
@@ -331,7 +331,7 @@ module MilkTea
                                  else
                                    arm_next_label
                                  end
-                    tag_check = IR::Binary.new(operator: "!=", left: tag_expr, right: tag_value, type: @types.fetch("bool"))
+                    tag_check = IR::Binary.new(operator: "!=", left: tag_expr, right: tag_value, type: @ctx.types.fetch("bool"))
                     lowered << IR::IfStmt.new(condition: tag_check, then_body: [IR::GotoStmt.new(label: goto_label)], else_body: [])
                   end
 
@@ -377,7 +377,7 @@ module MilkTea
                           field_type = pattern_fields[field_name]
                           field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
                           rhs_expr = lower_expression(arg.value.right, env: arm_local_env, expected_type: field_type)
-                          guard_condition = IR::Binary.new(operator: arg.value.operator, left: field_expr, right: rhs_expr, type: @types.fetch("bool"))
+                          guard_condition = IR::Binary.new(operator: arg.value.operator, left: field_expr, right: rhs_expr, type: @ctx.types.fetch("bool"))
                           arm_body_ir << IR::IfStmt.new(condition: guard_condition, then_body: [], else_body: [IR::GotoStmt.new(label: goto_label)])
                         end
 
@@ -389,7 +389,7 @@ module MilkTea
                           field_type = pattern_fields[field_name]
                           field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
                           value_expr = lower_expression(arg.value, env: arm_local_env, expected_type: field_type)
-                          eq_check = IR::Binary.new(operator: "!=", left: field_expr, right: value_expr, type: @types.fetch("bool"))
+                          eq_check = IR::Binary.new(operator: "!=", left: field_expr, right: value_expr, type: @ctx.types.fetch("bool"))
                           arm_body_ir << IR::IfStmt.new(condition: eq_check, then_body: [IR::GotoStmt.new(label: goto_label)], else_body: [])
                         end
                       end
@@ -452,7 +452,7 @@ module MilkTea
                 lowered << IR::LabelStmt.new(name: arm_next_label)
                 lowered << IR::LabelStmt.new(name: match_end_label)
               else
-              kind_type = @types.fetch("int")
+              kind_type = @ctx.types.fetch("int")
               kind_expr = IR::Member.new(receiver: expression, member: "kind", type: kind_type)
               arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
               cases = statement.arms.map do |arm|
@@ -578,7 +578,7 @@ module MilkTea
             end
             lowered.concat(lower_proc_contained_retain_statements(value, return_type)) if needs_proc_retain
             lowered.concat(cleanup)
-            lowered << IR::ReturnStmt.new(value:, line: statement.line, source_path: @current_analysis_path)
+            lowered << IR::ReturnStmt.new(value:, line: statement.line, source_path: @ctx.current_analysis_path)
           when AST::ExpressionStmt
             if (format_sink_statements = lower_explicit_format_sink_expression_statement(statement.expression, env: local_env, line: statement.line))
               lowered.concat(format_sink_statements)
@@ -610,7 +610,7 @@ module MilkTea
               lowered.concat(prepared_cleanups.flat_map(&:itself))
               local_env[:scopes] = scopes_with_refinements(local_env[:scopes], consuming_foreign_call_refinements(foreign_call, local_env))
             elsif prepared_expression
-              lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env), line: statement.line, source_path: @current_analysis_path)
+              lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env), line: statement.line, source_path: @ctx.current_analysis_path)
               lowered.concat(prepared_cleanups.flat_map(&:itself))
             else
               lowered.concat(prepared_cleanups.flat_map(&:itself))
@@ -662,22 +662,22 @@ module MilkTea
         end
 
         proc_id = fresh_proc_symbol
-        invoke_c_name = "#{@module_prefix}__proc_#{proc_id}__invoke"
-        release_c_name = "#{@module_prefix}__proc_#{proc_id}__release"
-        retain_c_name = "#{@module_prefix}__proc_#{proc_id}__retain"
+        invoke_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__invoke"
+        release_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__release"
+        retain_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__retain"
         env_struct_type = nil
         setup = []
 
         env_value = if captures.empty?
                       IR::NullLiteral.new(type: proc_env_pointer_type)
                     else
-                      env_struct_type = Types::Struct.new("#{@module_prefix}__proc_#{proc_id}__env").define_fields(
-                        { "__mt_ref_count" => @types.fetch("ptr_uint") }.merge(captures.each_with_object({}) { |capture, fields| fields[capture[:field_name]] = capture[:type] }),
+                      env_struct_type = Types::Struct.new("#{@ctx.module_prefix}__proc_#{proc_id}__env").define_fields(
+                        { "__mt_ref_count" => @ctx.types.fetch("ptr_uint") }.merge(captures.each_with_object({}) { |capture, fields| fields[capture[:field_name]] = capture[:type] }),
                       )
                       @artifacts.synthetic_structs << IR::StructDecl.new(
                         name: env_struct_type.name,
                         c_name: env_struct_type.name,
-                        fields: [IR::Field.new(name: "__mt_ref_count", type: @types.fetch("ptr_uint")), *captures.map { |capture| IR::Field.new(name: capture[:field_name], type: capture[:type]) }],
+                        fields: [IR::Field.new(name: "__mt_ref_count", type: @ctx.types.fetch("ptr_uint")), *captures.map { |capture| IR::Field.new(name: capture[:field_name], type: capture[:type]) }],
                         packed: false,
                         alignment: nil,
                       )
@@ -686,7 +686,7 @@ module MilkTea
                       env_name = fresh_c_temp_name(env, "#{local_name}_env")
                       raw_allocation = IR::Call.new(
                         callee: "mt_async_alloc",
-                        arguments: [IR::SizeofExpr.new(target_type: env_struct_type, type: @types.fetch("ptr_uint"))],
+                        arguments: [IR::SizeofExpr.new(target_type: env_struct_type, type: @ctx.types.fetch("ptr_uint"))],
                         type: proc_env_pointer_type,
                       )
                       setup << IR::LocalDecl.new(
@@ -697,9 +697,9 @@ module MilkTea
                       )
                       env_pointer = IR::Name.new(name: env_name, type: env_pointer_type, pointer: false)
                       setup << IR::Assignment.new(
-                        target: IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("ptr_uint")),
+                        target: IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @ctx.types.fetch("ptr_uint")),
                         operator: "=",
-                        value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint")),
+                        value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint")),
                       )
                       captures.each do |capture|
                         setup << IR::Assignment.new(
@@ -810,17 +810,17 @@ module MilkTea
 
       def inline_loop_element_type(element)
         if element.is_a?(Types::FieldHandle)
-          @types.fetch("field_handle")
+          @ctx.types.fetch("field_handle")
         elsif element.is_a?(Types::CallableHandle)
-          @types.fetch("callable_handle")
+          @ctx.types.fetch("callable_handle")
         elsif element.is_a?(Types::AttributeHandle)
-          @types.fetch("attribute_handle")
+          @ctx.types.fetch("attribute_handle")
         elsif element.is_a?(Types::MemberHandle)
-          @types.fetch("member_handle")
+          @ctx.types.fetch("member_handle")
         elsif element.is_a?(Types::StructHandle)
-          @types.fetch("struct_handle")
+          @ctx.types.fetch("struct_handle")
         else
-          @types.fetch("int")
+          @ctx.types.fetch("int")
         end
       end
 
@@ -841,11 +841,11 @@ module MilkTea
       def lower_emitted_function(decl, env:)
         params = []
         param_setup = []
-        return_type = decl.return_type ? resolve_type_ref(decl.return_type) : @types.fetch("void")
-        c_name = "#{@module_prefix}#{decl.name}"
+        return_type = decl.return_type ? resolve_type_ref(decl.return_type) : @ctx.types.fetch("void")
+        c_name = "#{@ctx.module_prefix}#{decl.name}"
 
         decl.params.each do |param|
-          param_type = param.type ? resolve_type_ref(param.type) : @types.fetch("int")
+          param_type = param.type ? resolve_type_ref(param.type) : @ctx.types.fetch("int")
           param_c_name = c_local_name(param.name)
           params << IR::Param.new(name: param.name, c_name: param_c_name, type: param_type, pointer: false)
           env[:scopes].last[param.name] = local_binding(type: param_type, c_name: param_c_name, mutable: false, pointer: false)
@@ -860,10 +860,10 @@ module MilkTea
 
       def lower_emitted_struct(decl)
         fields = decl.fields.map do |field|
-          field_type = field.type ? resolve_type_ref(field.type) : @types.fetch("int")
+          field_type = field.type ? resolve_type_ref(field.type) : @ctx.types.fetch("int")
           IR::Field.new(name: field.name, type: field_type)
         end
-        c_name = "#{@module_prefix}#{decl.name}"
+        c_name = "#{@ctx.module_prefix}#{decl.name}"
         struct_decl = IR::StructDecl.new(name: decl.name, c_name:, fields:, packed: decl.respond_to?(:packed) ? decl.packed : false, alignment: nil)
         @artifacts.emitted_declarations << struct_decl
         []

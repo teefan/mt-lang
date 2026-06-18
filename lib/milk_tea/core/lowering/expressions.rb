@@ -116,13 +116,13 @@ module MilkTea
         end
 
         setup, temp_name = build_dynamic_format_string_temp_setup(format_string, env:)
-        temp_value = IR::Name.new(name: temp_name, type: @types.fetch("str"), pointer: false)
+        temp_value = IR::Name.new(name: temp_name, type: @ctx.types.fetch("str"), pointer: false)
         (env[:prepared_expression_cleanups] ||= []) << [
           IR::ExpressionStmt.new(
             expression: IR::Call.new(
               callee: "mt_format_str_release",
               arguments: [temp_value],
-              type: @types.fetch("void"),
+              type: @ctx.types.fetch("void"),
             ),
           ),
         ]
@@ -131,7 +131,7 @@ module MilkTea
       end
 
       def build_dynamic_format_string_temp_setup(format_string, env:)
-        string_type = @types.fetch("str")
+        string_type = @ctx.types.fetch("str")
         dest_name = env[:current_local_name] || env[:lowering_target_name]
         if dest_name
           env[:fmt_counter] ||= {}
@@ -145,16 +145,16 @@ module MilkTea
         cap_name = "#{base}_cap"
         off_name = "#{base}_off"
         register_prepared_temp!(env, temp_name, string_type, cstr_backed: true)
-        total_cap_value = IR::Name.new(name: cap_name, type: @types.fetch("ptr_uint"), pointer: false)
+        total_cap_value = IR::Name.new(name: cap_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
         result_value = IR::Name.new(name: temp_name, type: string_type, pointer: false)
-        offset_value = IR::Name.new(name: off_name, type: @types.fetch("ptr_uint"), pointer: false)
+        offset_value = IR::Name.new(name: off_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
 
         setup, format_parts = build_dynamic_format_string_parts(format_string, env:)
         literal_capacity = format_parts.sum { |part| part[:kind] == :text ? part[:value].bytesize : 0 }
 
         setup << IR::LocalDecl.new(
-          name: cap_name, c_name: cap_name, type: @types.fetch("ptr_uint"),
-          value: IR::IntegerLiteral.new(value: literal_capacity, type: @types.fetch("ptr_uint")),
+          name: cap_name, c_name: cap_name, type: @ctx.types.fetch("ptr_uint"),
+          value: IR::IntegerLiteral.new(value: literal_capacity, type: @ctx.types.fetch("ptr_uint")),
         )
 
         format_parts.each do |part|
@@ -162,7 +162,7 @@ module MilkTea
           part_len = format_string_part_length_expression(part, env:)
           setup << IR::Assignment.new(
             target: total_cap_value, operator: "=",
-            value: IR::Binary.new(operator: "+", left: total_cap_value, right: part_len, type: @types.fetch("ptr_uint")),
+            value: IR::Binary.new(operator: "+", left: total_cap_value, right: part_len, type: @ctx.types.fetch("ptr_uint")),
           )
         end
 
@@ -171,8 +171,8 @@ module MilkTea
           value: IR::Call.new(callee: "mt_format_str_make", arguments: [total_cap_value], type: string_type),
         )
         setup << IR::LocalDecl.new(
-          name: off_name, c_name: off_name, type: @types.fetch("ptr_uint"),
-          value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
+          name: off_name, c_name: off_name, type: @ctx.types.fetch("ptr_uint"),
+          value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint")),
         )
 
         format_parts.each do |part|
@@ -210,7 +210,7 @@ module MilkTea
             case part.format_spec[:kind]
             when :precision
               precision = part.format_spec[:value]
-              append_argument_type = @types.fetch("double")
+              append_argument_type = @ctx.types.fetch("double")
               parameter_c_name = fresh_c_temp_name(env, "fmt_part")
               setup << IR::LocalDecl.new(
                 name: parameter_c_name,
@@ -311,11 +311,11 @@ module MilkTea
               setup << IR::LocalDecl.new(
                 name: expected_length_c_name,
                 c_name: expected_length_c_name,
-                type: @types.fetch("ptr_uint"),
+                type: @ctx.types.fetch("ptr_uint"),
                 value: IR::Call.new(
                   callee: append_plan[:binding].length_callee_name,
                   arguments: [format_string_custom_receiver_argument(part_info, hook: :length, env:)],
-                  type: @types.fetch("ptr_uint"),
+                  type: @ctx.types.fetch("ptr_uint"),
                 ),
               )
               format_parts << part_info.merge(expected_length_c_name:)
@@ -431,7 +431,7 @@ module MilkTea
             data_pointer: lower_str_buffer_data_pointer_from_lowered(lowered_receiver),
             len_pointer: lower_str_buffer_len_pointer_from_lowered(lowered_receiver),
             dirty_pointer: lower_str_buffer_dirty_pointer_from_lowered(lowered_receiver),
-            capacity: IR::IntegerLiteral.new(value: str_buffer_capacity(lowered_receiver.type), type: @types.fetch("ptr_uint")),
+            capacity: IR::IntegerLiteral.new(value: str_buffer_capacity(lowered_receiver.type), type: @ctx.types.fetch("ptr_uint")),
           }
         else
           raise LoweringError, "unsupported explicit format sink #{info[:sink_kind]}"
@@ -444,7 +444,7 @@ module MilkTea
           sink_target[:value]
         when :str_buffer
           IR::AggregateLiteral.new(
-            type: @types.fetch("str"),
+            type: @ctx.types.fetch("str"),
             fields: [
               IR::AggregateField.new(name: "data", value: sink_target[:data_pointer]),
               IR::AggregateField.new(name: "len", value: sink_target[:capacity]),
@@ -475,12 +475,12 @@ module MilkTea
                 sink_target:,
                 text_value: IR::StringLiteral.new(
                   value: format_string_static_text(info[:format_string]),
-                  type: @types.fetch("str"),
+                  type: @ctx.types.fetch("str"),
                   cstring: false,
                 ),
               ),
               line:,
-              source_path: @current_analysis_path,
+              source_path: @ctx.current_analysis_path,
             ),
             *sink_cleanups.flat_map(&:itself),
           ]
@@ -501,9 +501,9 @@ module MilkTea
         when :string
           if info[:operation] == :assign
             sink_statements << IR::ExpressionStmt.new(
-              expression: IR::Call.new(callee: "std_string_String_clear", arguments: [sink_target[:value]], type: @types.fetch("void")),
+              expression: IR::Call.new(callee: "std_string_String_clear", arguments: [sink_target[:value]], type: @ctx.types.fetch("void")),
               line:,
-              source_path: @current_analysis_path,
+              source_path: @ctx.current_analysis_path,
             )
           end
 
@@ -511,7 +511,7 @@ module MilkTea
             sink_statements << IR::ExpressionStmt.new(
               expression: explicit_format_sink_append_call(part, sink_value: sink_target[:value], env:),
               line:,
-              source_path: @current_analysis_path,
+              source_path: @ctx.current_analysis_path,
             )
           end
         when :str_buffer
@@ -525,17 +525,17 @@ module MilkTea
                   sink_target[:len_pointer],
                   sink_target[:dirty_pointer],
                 ],
-                type: @types.fetch("void"),
+                type: @ctx.types.fetch("void"),
               ),
               line:,
-              source_path: @current_analysis_path,
+              source_path: @ctx.current_analysis_path,
             )
           end
 
           offset_name = fresh_c_temp_name(env, "fmt_sink_offset")
-          offset_value = IR::Name.new(name: offset_name, type: @types.fetch("ptr_uint"), pointer: false)
+          offset_value = IR::Name.new(name: offset_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
           offset_init = if info[:operation] == :assign
-                          IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))
+                          IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))
                         else
                           IR::Call.new(
                             callee: "mt_str_buffer_len",
@@ -545,17 +545,17 @@ module MilkTea
                               sink_target[:len_pointer],
                               sink_target[:dirty_pointer],
                             ],
-                            type: @types.fetch("ptr_uint"),
+                            type: @ctx.types.fetch("ptr_uint"),
                           )
                         end
-          sink_statements << IR::LocalDecl.new(name: offset_name, c_name: offset_name, type: @types.fetch("ptr_uint"), value: offset_init)
+          sink_statements << IR::LocalDecl.new(name: offset_name, c_name: offset_name, type: @ctx.types.fetch("ptr_uint"), value: offset_init)
 
           target_value = explicit_format_sink_target_buffer_view(sink_target)
           copied_parts.each do |part|
             sink_statements.concat(format_string_part_append_statements(part, target_value, offset_value, env:))
           end
           sink_statements << IR::Assignment.new(
-            target: IR::Unary.new(operator: "*", operand: sink_target[:len_pointer], type: @types.fetch("ptr_uint")),
+            target: IR::Unary.new(operator: "*", operand: sink_target[:len_pointer], type: @ctx.types.fetch("ptr_uint")),
             operator: "=",
             value: offset_value,
           )
@@ -573,7 +573,7 @@ module MilkTea
         case sink_target[:kind]
         when :string
           callee = operation == :assign ? "std_string_String_assign" : "std_string_String_append"
-          IR::Call.new(callee:, arguments: [sink_target[:value], text_value], type: @types.fetch("void"))
+          IR::Call.new(callee:, arguments: [sink_target[:value], text_value], type: @ctx.types.fetch("void"))
         when :str_buffer
           callee = operation == :assign ? "mt_str_buffer_assign" : "mt_str_buffer_append"
           IR::Call.new(
@@ -585,7 +585,7 @@ module MilkTea
               sink_target[:len_pointer],
               sink_target[:dirty_pointer],
             ],
-            type: @types.fetch("void"),
+            type: @ctx.types.fetch("void"),
           )
         else
           raise LoweringError, "unsupported explicit format sink #{sink_target[:kind]}"
@@ -605,38 +605,38 @@ module MilkTea
 
           parameter = format_string_part_parameter_expression(part)
           copy_name = fresh_c_temp_name(env, "fmt_sink_str")
-          copy_value = IR::Name.new(name: copy_name, type: @types.fetch("str"), pointer: false)
-          register_prepared_temp!(env, copy_name, @types.fetch("str"), cstr_backed: true)
+          copy_value = IR::Name.new(name: copy_name, type: @ctx.types.fetch("str"), pointer: false)
+          register_prepared_temp!(env, copy_name, @ctx.types.fetch("str"), cstr_backed: true)
 
           length_value = if part[:append_function_name] == "append"
-                           IR::Member.new(receiver: parameter, member: "len", type: @types.fetch("ptr_uint"))
+                           IR::Member.new(receiver: parameter, member: "len", type: @ctx.types.fetch("ptr_uint"))
                          else
-                           IR::Call.new(callee: "mt_format_cstr_len", arguments: [parameter], type: @types.fetch("ptr_uint"))
+                           IR::Call.new(callee: "mt_format_cstr_len", arguments: [parameter], type: @ctx.types.fetch("ptr_uint"))
                          end
           append_callee = part[:append_function_name] == "append" ? "mt_format_append_str" : "mt_format_append_cstr"
 
           setup << IR::LocalDecl.new(
             name: copy_name,
             c_name: copy_name,
-            type: @types.fetch("str"),
+            type: @ctx.types.fetch("str"),
             value: IR::Call.new(
               callee: "mt_format_str_make",
               arguments: [length_value],
-              type: @types.fetch("str"),
+              type: @ctx.types.fetch("str"),
             ),
           )
           setup << IR::ExpressionStmt.new(
             expression: IR::Call.new(
               callee: append_callee,
-              arguments: [copy_value, IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")), parameter],
-              type: @types.fetch("ptr_uint"),
+              arguments: [copy_value, IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint")), parameter],
+              type: @ctx.types.fetch("ptr_uint"),
             ),
           )
           cleanup << IR::ExpressionStmt.new(
-            expression: IR::Call.new(callee: "mt_format_str_release", arguments: [copy_value], type: @types.fetch("void")),
+            expression: IR::Call.new(callee: "mt_format_str_release", arguments: [copy_value], type: @ctx.types.fetch("void")),
           )
 
-          part.merge(parameter_c_name: copy_name, parameter_type: @types.fetch("str"), append_function_name: "append")
+          part.merge(parameter_c_name: copy_name, parameter_type: @ctx.types.fetch("str"), append_function_name: "append")
         end
 
         [setup, copied_parts, cleanup]
@@ -646,8 +646,8 @@ module MilkTea
         if part[:kind] == :text
           return IR::Call.new(
             callee: "std_string_String_append",
-            arguments: [sink_value, IR::StringLiteral.new(value: part[:value], type: @types.fetch("str"), cstring: false)],
-            type: @types.fetch("void"),
+            arguments: [sink_value, IR::StringLiteral.new(value: part[:value], type: @ctx.types.fetch("str"), cstring: false)],
+            type: @ctx.types.fetch("void"),
           )
         end
 
@@ -656,8 +656,8 @@ module MilkTea
         if part[:kind] == :precision_expression
           return IR::Call.new(
             callee: "std_fmt_append_double_precision",
-            arguments: [sink_value, parameter, IR::IntegerLiteral.new(value: part[:precision], type: @types.fetch("int"))],
-            type: @types.fetch("void"),
+            arguments: [sink_value, parameter, IR::IntegerLiteral.new(value: part[:precision], type: @ctx.types.fetch("int"))],
+            type: @ctx.types.fetch("void"),
           )
         end
 
@@ -668,7 +668,7 @@ module MilkTea
               format_string_custom_receiver_argument(part, hook: :append, env:),
               sink_value,
             ],
-            type: @types.fetch("void"),
+            type: @ctx.types.fetch("void"),
           )
         end
 
@@ -681,7 +681,7 @@ module MilkTea
                    "std_fmt_#{part[:append_function_name]}"
                  end
 
-        IR::Call.new(callee:, arguments: [sink_value, parameter], type: @types.fetch("void"))
+        IR::Call.new(callee:, arguments: [sink_value, parameter], type: @ctx.types.fetch("void"))
       end
 
       def format_string_part_length_expression(part, env:)
@@ -690,22 +690,22 @@ module MilkTea
         if part[:kind] == :precision_expression
           return IR::Call.new(
             callee: "mt_format_double_precision_len",
-            arguments: [parameter, IR::IntegerLiteral.new(value: part[:precision], type: @types.fetch("int"))],
-            type: @types.fetch("ptr_uint"),
+            arguments: [parameter, IR::IntegerLiteral.new(value: part[:precision], type: @ctx.types.fetch("int"))],
+            type: @ctx.types.fetch("ptr_uint"),
           )
         end
 
         if part[:kind] == :custom_expression
-          return IR::Name.new(name: part[:expected_length_c_name], type: @types.fetch("ptr_uint"), pointer: false)
+          return IR::Name.new(name: part[:expected_length_c_name], type: @ctx.types.fetch("ptr_uint"), pointer: false)
         end
 
         case part[:append_function_name]
         when "append"
-          IR::Member.new(receiver: parameter, member: "len", type: @types.fetch("ptr_uint"))
+          IR::Member.new(receiver: parameter, member: "len", type: @ctx.types.fetch("ptr_uint"))
         when "append_cstr"
-          IR::Call.new(callee: "mt_format_cstr_len", arguments: [parameter], type: @types.fetch("ptr_uint"))
+          IR::Call.new(callee: "mt_format_cstr_len", arguments: [parameter], type: @ctx.types.fetch("ptr_uint"))
         else
-          IR::Call.new(callee: mt_format_length_c_name(part[:append_function_name]), arguments: [parameter], type: @types.fetch("ptr_uint"))
+          IR::Call.new(callee: mt_format_length_c_name(part[:append_function_name]), arguments: [parameter], type: @ctx.types.fetch("ptr_uint"))
         end
       end
 
@@ -715,11 +715,11 @@ module MilkTea
           output_ref_type = Types::GenericInstance.new("ref", [output_type])
           output_value_name = fresh_c_temp_name(env, "fmt_part_output")
           output_value = IR::Name.new(name: output_value_name, type: output_type, pointer: false)
-          output_len = IR::Member.new(receiver: output_value, member: "len", type: @types.fetch("ptr_uint"))
-          expected_length = IR::Name.new(name: part[:expected_length_c_name], type: @types.fetch("ptr_uint"), pointer: false)
+          output_len = IR::Member.new(receiver: output_value, member: "len", type: @ctx.types.fetch("ptr_uint"))
+          expected_length = IR::Name.new(name: part[:expected_length_c_name], type: @ctx.types.fetch("ptr_uint"), pointer: false)
           data_pointer = format_string_result_data_pointer(result_value)
           slice_data_pointer = cast_expression(
-            IR::Binary.new(operator: "+", left: data_pointer, right: offset_value, type: pointer_to(@types.fetch("char"))),
+            IR::Binary.new(operator: "+", left: data_pointer, right: offset_value, type: pointer_to(@ctx.types.fetch("char"))),
             output_type.field("data"),
           )
 
@@ -751,11 +751,11 @@ module MilkTea
                   format_string_custom_receiver_argument(part, hook: :append, env:),
                   IR::AddressOf.new(expression: output_value, type: output_ref_type),
                 ],
-                type: @types.fetch("void"),
+                type: @ctx.types.fetch("void"),
               ),
             ),
             IR::IfStmt.new(
-              condition: IR::Binary.new(operator: "!=", left: output_len, right: expected_length, type: @types.fetch("bool")),
+              condition: IR::Binary.new(operator: "!=", left: output_len, right: expected_length, type: @ctx.types.fetch("bool")),
               then_body: [
                 IR::ExpressionStmt.new(
                   expression: IR::Call.new(
@@ -763,11 +763,11 @@ module MilkTea
                     arguments: [
                       IR::StringLiteral.new(
                         value: "custom format hook length mismatch",
-                        type: @types.fetch("cstr"),
+                        type: @ctx.types.fetch("cstr"),
                         cstring: true,
                       ),
                     ],
-                    type: @types.fetch("void"),
+                    type: @ctx.types.fetch("void"),
                   ),
                 ),
               ],
@@ -780,13 +780,13 @@ module MilkTea
                 operator: "+",
                 left: offset_value,
                 right: output_len,
-                type: @types.fetch("ptr_uint"),
+                type: @ctx.types.fetch("ptr_uint"),
               ),
             ),
             IR::Assignment.new(
-              target: IR::Index.new(receiver: data_pointer, index: offset_value, type: @types.fetch("char")),
+              target: IR::Index.new(receiver: data_pointer, index: offset_value, type: @ctx.types.fetch("char")),
               operator: "=",
-              value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("char")),
+              value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("char")),
             ),
           ]
         end
@@ -804,8 +804,8 @@ module MilkTea
         if part[:kind] == :text
           return IR::Call.new(
             callee: "mt_format_append_str",
-            arguments: [result_value, offset_value, IR::StringLiteral.new(value: part[:value], type: @types.fetch("str"), cstring: false)],
-            type: @types.fetch("ptr_uint"),
+            arguments: [result_value, offset_value, IR::StringLiteral.new(value: part[:value], type: @ctx.types.fetch("str"), cstring: false)],
+            type: @ctx.types.fetch("ptr_uint"),
           )
         end
 
@@ -814,8 +814,8 @@ module MilkTea
         if part[:kind] == :precision_expression
           return IR::Call.new(
             callee: "mt_format_append_double_precision",
-            arguments: [result_value, offset_value, parameter, IR::IntegerLiteral.new(value: part[:precision], type: @types.fetch("int"))],
-            type: @types.fetch("ptr_uint"),
+            arguments: [result_value, offset_value, parameter, IR::IntegerLiteral.new(value: part[:precision], type: @ctx.types.fetch("int"))],
+            type: @ctx.types.fetch("ptr_uint"),
           )
         end
 
@@ -826,7 +826,7 @@ module MilkTea
         IR::Call.new(
           callee: mt_format_append_c_name(part[:append_function_name]),
           arguments: [result_value, offset_value, parameter],
-          type: @types.fetch("ptr_uint"),
+          type: @ctx.types.fetch("ptr_uint"),
         )
       end
 
@@ -848,7 +848,7 @@ module MilkTea
       end
 
       def format_string_result_data_pointer(result_value)
-        IR::Member.new(receiver: result_value, member: "data", type: pointer_to(@types.fetch("char")))
+        IR::Member.new(receiver: result_value, member: "data", type: pointer_to(@ctx.types.fetch("char")))
       end
 
       def format_string_part_parameter_expression(part)
@@ -856,18 +856,18 @@ module MilkTea
       end
 
       def format_string_append_plan(type, context:)
-        return { kind: :builtin, append_function_name: "append", append_argument_type: @types.fetch("str") } if type == @types.fetch("str")
-        return { kind: :builtin, append_function_name: "append_cstr", append_argument_type: @types.fetch("cstr") } if type == @types.fetch("cstr")
-        return { kind: :builtin, append_function_name: "append_bool", append_argument_type: @types.fetch("bool") } if type == @types.fetch("bool")
-        return { kind: :builtin, append_function_name: "append_float", append_argument_type: @types.fetch("float") } if type == @types.fetch("float")
-        return { kind: :builtin, append_function_name: "append_double", append_argument_type: @types.fetch("double") } if type == @types.fetch("double")
+        return { kind: :builtin, append_function_name: "append", append_argument_type: @ctx.types.fetch("str") } if type == @ctx.types.fetch("str")
+        return { kind: :builtin, append_function_name: "append_cstr", append_argument_type: @ctx.types.fetch("cstr") } if type == @ctx.types.fetch("cstr")
+        return { kind: :builtin, append_function_name: "append_bool", append_argument_type: @ctx.types.fetch("bool") } if type == @ctx.types.fetch("bool")
+        return { kind: :builtin, append_function_name: "append_float", append_argument_type: @ctx.types.fetch("float") } if type == @ctx.types.fetch("float")
+        return { kind: :builtin, append_function_name: "append_double", append_argument_type: @ctx.types.fetch("double") } if type == @ctx.types.fetch("double")
 
         if type.is_a?(Types::Primitive) && type.integer?
-          return { kind: :builtin, append_function_name: "append_int", append_argument_type: @types.fetch("int") } if %w[byte short int].include?(type.name)
-          return { kind: :builtin, append_function_name: "append_uint", append_argument_type: @types.fetch("uint") } if %w[ubyte ushort uint].include?(type.name)
-          return { kind: :builtin, append_function_name: "append_ptr_uint", append_argument_type: @types.fetch("ptr_uint") } if type.name == "ptr_uint"
-          return { kind: :builtin, append_function_name: "append_long", append_argument_type: @types.fetch("long") } if %w[long ptr_int].include?(type.name)
-          return { kind: :builtin, append_function_name: "append_ulong", append_argument_type: @types.fetch("ulong") } if type.name == "ulong"
+          return { kind: :builtin, append_function_name: "append_int", append_argument_type: @ctx.types.fetch("int") } if %w[byte short int].include?(type.name)
+          return { kind: :builtin, append_function_name: "append_uint", append_argument_type: @ctx.types.fetch("uint") } if %w[ubyte ushort uint].include?(type.name)
+          return { kind: :builtin, append_function_name: "append_ptr_uint", append_argument_type: @ctx.types.fetch("ptr_uint") } if type.name == "ptr_uint"
+          return { kind: :builtin, append_function_name: "append_long", append_argument_type: @ctx.types.fetch("long") } if %w[long ptr_int].include?(type.name)
+          return { kind: :builtin, append_function_name: "append_ulong", append_argument_type: @ctx.types.fetch("ulong") } if type.name == "ulong"
         end
 
         if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
@@ -896,11 +896,11 @@ module MilkTea
         end
 
         if %w[byte short int long ptr_int].include?(type.name)
-          return [uppercase ? "append_long_hex_upper" : "append_long_hex", @types.fetch("long")]
+          return [uppercase ? "append_long_hex_upper" : "append_long_hex", @ctx.types.fetch("long")]
         end
 
         if %w[ubyte ushort uint ulong ptr_uint].include?(type.name)
-          return [uppercase ? "append_ulong_hex_upper" : "append_ulong_hex", @types.fetch("ulong")]
+          return [uppercase ? "append_ulong_hex_upper" : "append_ulong_hex", @ctx.types.fetch("ulong")]
         end
 
         raise LoweringError, "format spec ':x' and ':X' require integer interpolation, got #{type}"
@@ -917,11 +917,11 @@ module MilkTea
         end
 
         if %w[byte short int long ptr_int].include?(type.name)
-          return ["append_long_oct", @types.fetch("long")]
+          return ["append_long_oct", @ctx.types.fetch("long")]
         end
 
         if %w[ubyte ushort uint ulong ptr_uint].include?(type.name)
-          return ["append_ulong_oct", @types.fetch("ulong")]
+          return ["append_ulong_oct", @ctx.types.fetch("ulong")]
         end
 
         raise LoweringError, "format spec ':o' and ':O' require integer interpolation, got #{type}"
@@ -938,11 +938,11 @@ module MilkTea
         end
 
         if %w[byte short int long ptr_int].include?(type.name)
-          return ["append_long_bin", @types.fetch("long")]
+          return ["append_long_bin", @ctx.types.fetch("long")]
         end
 
         if %w[ubyte ushort uint ulong ptr_uint].include?(type.name)
-          return ["append_ulong_bin", @types.fetch("ulong")]
+          return ["append_ulong_bin", @ctx.types.fetch("ulong")]
         end
 
         raise LoweringError, "format spec ':b' and ':B' require integer interpolation, got #{type}"
@@ -1015,7 +1015,7 @@ module MilkTea
         result_ref = IR::Name.new(name: result_name, type: result_type, pointer: false)
         left_value = lower_contextual_expression(left, env:, expected_type: result_type)
         right_value = lower_contextual_expression(right, env: right_env, expected_type: result_type)
-        branch_condition = expression.operator == "and" ? result_ref : IR::Unary.new(operator: "not", operand: result_ref, type: @types.fetch("bool"))
+        branch_condition = expression.operator == "and" ? result_ref : IR::Unary.new(operator: "not", operand: result_ref, type: @ctx.types.fetch("bool"))
 
         [
           left_setup + [
@@ -1067,7 +1067,7 @@ module MilkTea
       end
 
       def prepare_if_expression_for_inline_lowering(expression, env:, expected_type: nil)
-        condition_setup, condition = prepare_expression_for_inline_lowering(expression.condition, env:, expected_type: @types.fetch("bool"))
+        condition_setup, condition = prepare_expression_for_inline_lowering(expression.condition, env:, expected_type: @ctx.types.fetch("bool"))
         then_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: true, env:))
         else_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: false, env:))
         result_type = infer_expression_type(expression, env:, expected_type:)
@@ -1084,7 +1084,7 @@ module MilkTea
           condition_setup + [
             IR::LocalDecl.new(name: result_name, c_name: result_name, type: result_type, value: IR::ZeroInit.new(type: result_type)),
             IR::IfStmt.new(
-              condition: lower_expression(condition, env:, expected_type: @types.fetch("bool")),
+              condition: lower_expression(condition, env:, expected_type: @ctx.types.fetch("bool")),
               then_body: then_setup + [
                 IR::Assignment.new(
                   target: result_ref,
@@ -1125,7 +1125,7 @@ module MilkTea
 
         switch_expression = lowered_expression
         cases = if scrutinee_type.is_a?(Types::Variant)
-                  kind_type = @types.fetch("int")
+                  kind_type = @ctx.types.fetch("int")
                   switch_expression = IR::Member.new(receiver: lowered_expression, member: "kind", type: kind_type)
                   expression.arms.map do |arm|
                     arm_env = duplicate_env(env)
@@ -1259,12 +1259,12 @@ module MilkTea
           binding = lookup_value(expression.name, env)
           if binding
             lower_bound_identifier(binding)
-          elsif @functions.key?(expression.name)
-            function_binding = @functions.fetch(expression.name)
+          elsif @ctx.functions.key?(expression.name)
+            function_binding = @ctx.functions.fetch(expression.name)
             raise LoweringError, "generic function #{expression.name} cannot be used as a value" if function_binding.type_params.any?
             raise LoweringError, "foreign function #{expression.name} cannot be used as a value" if foreign_function_binding?(function_binding)
 
-            IR::Name.new(name: function_binding_c_name(function_binding, module_name: @module_name), type: type, pointer: false)
+            IR::Name.new(name: function_binding_c_name(function_binding, module_name: @ctx.module_name), type: type, pointer: false)
           else
             raise LoweringError, "unsupported identifier #{expression.name}"
           end
@@ -1306,7 +1306,7 @@ module MilkTea
           then_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: true, env:))
           else_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: false, env:))
           IR::Conditional.new(
-            condition: lower_expression(expression.condition, env:, expected_type: @types.fetch("bool")),
+            condition: lower_expression(expression.condition, env:, expected_type: @ctx.types.fetch("bool")),
             then_expression: lower_contextual_expression(expression.then_expression, env: then_env, expected_type: type),
             else_expression: lower_contextual_expression(expression.else_expression, env: else_env, expected_type: type),
             type:,
@@ -1360,8 +1360,8 @@ module MilkTea
           return IR::Name.new(name: member_name, type:, pointer: false)
         end
 
-        if expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
-          imported_module = @imports.fetch(expression.receiver.name)
+        if expression.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(expression.receiver.name)
+          imported_module = @ctx.imports.fetch(expression.receiver.name)
           if imported_module.functions.key?(expression.member)
             function_binding = imported_module.functions.fetch(expression.member)
             raise LoweringError, "generic function #{expression.receiver.name}.#{expression.member} cannot be used as a value" if function_binding.type_params.any?
@@ -1382,11 +1382,11 @@ module MilkTea
           end
         end
 
-        if receiver_type == @types["field_handle"]
+        if receiver_type == @ctx.types["field_handle"]
           handle = compile_time_const_value(expression.receiver, env:)
           return lower_compile_time_handle_member(handle, expression.member, type) if handle.is_a?(Types::FieldHandle)
         end
-        if receiver_type == @types["member_handle"]
+        if receiver_type == @ctx.types["member_handle"]
           handle = compile_time_const_value(expression.receiver, env:)
           return lower_compile_time_handle_member(handle, expression.member, type) if handle.is_a?(Types::MemberHandle)
         end
@@ -1403,14 +1403,14 @@ module MilkTea
         case handle
         when Types::FieldHandle
           case member
-          when "name" then IR::StringLiteral.new(value: handle.field_name, type: @types["str"], cstring: false)
+          when "name" then IR::StringLiteral.new(value: handle.field_name, type: @ctx.types["str"], cstring: false)
           when "type" then nil # handled via compile_time_const_value before lowering
           end
         when Types::MemberHandle
           case member
-          when "name" then IR::StringLiteral.new(value: handle.member_name, type: @types["str"], cstring: false)
+          when "name" then IR::StringLiteral.new(value: handle.member_name, type: @ctx.types["str"], cstring: false)
           when "value"
-            value_type = @types["int"]
+            value_type = @ctx.types["int"]
             IR::IntegerLiteral.new(value: handle.member_value || 0, type: value_type)
           end
         end

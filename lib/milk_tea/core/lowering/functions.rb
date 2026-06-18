@@ -15,11 +15,11 @@ module MilkTea
           expanded_declarations.each do |decl|
             case decl
             when AST::FunctionDef
-              binding = @functions.fetch(decl.name)
+              binding = @ctx.functions.fetch(decl.name)
               next if binding.body_return_type == Types::BUILTIN_TYPE_META_TYPE
               if binding.type_params.any?
                 binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
-                  c_name = function_binding_c_name(instance, module_name: @module_name)
+                  c_name = function_binding_c_name(instance, module_name: @ctx.module_name)
                   next if @artifacts.lowered_function_c_names[c_name]
 
                   lowered << lower_function_decl(instance)
@@ -27,7 +27,7 @@ module MilkTea
                   changed = true
                 end
               else
-                c_name = function_binding_c_name(binding, module_name: @module_name)
+                c_name = function_binding_c_name(binding, module_name: @ctx.module_name)
                 next if @artifacts.lowered_function_c_names[c_name]
 
                 lowered << lower_function_decl(binding)
@@ -41,12 +41,12 @@ module MilkTea
                 changed = true
               end
             when AST::ExtendingBlock
-              receiver_type = resolve_extending_receiver_type(@analysis, decl.type_name)
+              receiver_type = resolve_extending_receiver_type(@ctx.analysis, decl.type_name)
               decl.methods.each do |method|
-                binding = @current_methods.fetch(receiver_type).fetch(method.kind == :static ? "static:#{method.name}" : method.name)
+                binding = @ctx.methods.fetch(receiver_type).fetch(method.kind == :static ? "static:#{method.name}" : method.name)
                 if binding.type_params.any?
                   binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
-                    c_name = function_binding_c_name(instance, module_name: @module_name, receiver_type:)
+                    c_name = function_binding_c_name(instance, module_name: @ctx.module_name, receiver_type:)
                     next if @artifacts.lowered_function_c_names[c_name]
 
                     lowered << lower_function_decl(instance, receiver_type:)
@@ -54,7 +54,7 @@ module MilkTea
                     changed = true
                   end
                 else
-                  c_name = function_binding_c_name(binding, module_name: @module_name, receiver_type:)
+                  c_name = function_binding_c_name(binding, module_name: @ctx.module_name, receiver_type:)
                   next if @artifacts.lowered_function_c_names[c_name]
 
                   lowered << lower_function_decl(binding, receiver_type:)
@@ -107,8 +107,8 @@ module MilkTea
         params = []
         env = empty_env
         parameter_setup = []
-        previous_type_substitutions = @current_type_substitutions
-        @current_type_substitutions = binding.type_substitutions
+        previous_type_substitutions = @ctx.current_type_substitutions
+        @ctx.current_type_substitutions = binding.type_substitutions
 
         return lower_async_function_decl(binding, receiver_type:) if binding.async
 
@@ -158,7 +158,7 @@ module MilkTea
 
         IR::Function.new(
           name: decl.name,
-          c_name: function_binding_c_name(binding, module_name: @module_name, receiver_type:),
+          c_name: function_binding_c_name(binding, module_name: @ctx.module_name, receiver_type:),
           params:,
           return_type:,
           body:,
@@ -166,13 +166,13 @@ module MilkTea
           method_receiver_param: !binding.type.receiver_type.nil?,
         )
       ensure
-        @current_type_substitutions = previous_type_substitutions
+        @ctx.current_type_substitutions = previous_type_substitutions
       end
 
       def lower_async_function_decl(binding, receiver_type: nil)
         decl = binding.ast
         normalized_statements = normalize_async_body(binding, decl.body)
-        constructor_c_name = function_binding_c_name(binding, module_name: @module_name, receiver_type:)
+        constructor_c_name = function_binding_c_name(binding, module_name: @ctx.module_name, receiver_type:)
         frame_c_name = "#{constructor_c_name}__frame"
         resume_c_name = "#{constructor_c_name}__resume"
         ready_c_name = "#{constructor_c_name}__ready"

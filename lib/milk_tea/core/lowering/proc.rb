@@ -66,7 +66,7 @@ module MilkTea
 
         env_pointer_type = pointer_to(env_struct_type)
         env_pointer = IR::Name.new(name: "__mt_proc_env_ptr", type: env_pointer_type, pointer: false)
-        ref_count = IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("ptr_uint"))
+        ref_count = IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @ctx.types.fetch("ptr_uint"))
 
         free_body = []
 
@@ -83,7 +83,7 @@ module MilkTea
           expression: IR::Call.new(
             callee: "mt_async_free",
             arguments: [IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
-            type: @types.fetch("void"),
+            type: @ctx.types.fetch("void"),
           ),
         )
 
@@ -91,7 +91,7 @@ module MilkTea
           name: release_c_name,
           c_name: release_c_name,
           params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           body: [
             IR::LocalDecl.new(
               name: "__mt_proc_env_ptr",
@@ -99,9 +99,9 @@ module MilkTea
               type: env_pointer_type,
               value: IR::Cast.new(target_type: env_pointer_type, expression: IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false), type: env_pointer_type),
             ),
-            IR::Assignment.new(target: ref_count, operator: "-=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+            IR::Assignment.new(target: ref_count, operator: "-=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
             IR::IfStmt.new(
-              condition: IR::Binary.new(operator: "==", left: ref_count, right: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")), type: @types.fetch("bool")),
+              condition: IR::Binary.new(operator: "==", left: ref_count, right: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint")), type: @ctx.types.fetch("bool")),
               then_body: free_body,
               else_body: nil,
             ),
@@ -116,12 +116,12 @@ module MilkTea
 
         env_pointer_type = pointer_to(env_struct_type)
         env_pointer = IR::Name.new(name: "__mt_proc_env_ptr", type: env_pointer_type, pointer: false)
-        ref_count = IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("ptr_uint"))
+        ref_count = IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @ctx.types.fetch("ptr_uint"))
         IR::Function.new(
           name: retain_c_name,
           c_name: retain_c_name,
           params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           body: [
             IR::LocalDecl.new(
               name: "__mt_proc_env_ptr",
@@ -129,7 +129,7 @@ module MilkTea
               type: env_pointer_type,
               value: IR::Cast.new(target_type: env_pointer_type, expression: IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false), type: env_pointer_type),
             ),
-            IR::Assignment.new(target: ref_count, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+            IR::Assignment.new(target: ref_count, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
             IR::ReturnStmt.new(value: nil),
           ],
           entry_point: false,
@@ -264,7 +264,7 @@ module MilkTea
         IR::Call.new(
           callee: IR::Member.new(receiver: proc_expression, member: "release", type: proc_release_function_type),
           arguments: [IR::Member.new(receiver: proc_expression, member: "env", type: proc_env_pointer_type)],
-          type: @types.fetch("void"),
+          type: @ctx.types.fetch("void"),
         )
       end
 
@@ -272,7 +272,7 @@ module MilkTea
         IR::Call.new(
           callee: IR::Member.new(receiver: proc_expression, member: "retain", type: proc_retain_function_type),
           arguments: [IR::Member.new(receiver: proc_expression, member: "env", type: proc_env_pointer_type)],
-          type: @types.fetch("void"),
+          type: @ctx.types.fetch("void"),
         )
       end
 
@@ -399,7 +399,7 @@ module MilkTea
           name: release_c_name,
           c_name: release_c_name,
           params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           body: [IR::ReturnStmt.new(value: nil)],
           entry_point: false,
         )
@@ -410,7 +410,7 @@ module MilkTea
           name: retain_c_name,
           c_name: retain_c_name,
           params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           body: [IR::ReturnStmt.new(value: nil)],
           entry_point: false,
         )

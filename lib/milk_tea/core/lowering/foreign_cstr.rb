@@ -12,9 +12,9 @@ module MilkTea
 
         public_type = parameter.type
         boundary_type = parameter.boundary_type
-        items_type = pointer_to(pointer_to(@types.fetch("char")))
-        data_type = pointer_to(@types.fetch("char"))
-        len_type = @types.fetch("ptr_uint")
+        items_type = pointer_to(pointer_to(@ctx.types.fetch("char")))
+        data_type = pointer_to(@ctx.types.fetch("char"))
+        len_type = @ctx.types.fetch("ptr_uint")
         lowered_value = lower_contextual_expression(argument_value, env:, expected_type: public_type)
         items_name = fresh_c_temp_name(env, "foreign_cstr_items")
         data_name = fresh_c_temp_name(env, "foreign_cstr_data")
@@ -47,7 +47,7 @@ module MilkTea
               IR::AddressOf.new(expression: IR::Name.new(name: data_name, type: data_type, pointer: false), type: pointer_to(data_type)),
               IR::AddressOf.new(expression: IR::Name.new(name: len_name, type: len_type, pointer: false), type: pointer_to(len_type)),
             ],
-            type: @types.fetch("void"),
+            type: @ctx.types.fetch("void"),
           ),
         )
         cleanup << IR::ExpressionStmt.new(
@@ -57,7 +57,7 @@ module MilkTea
               IR::Name.new(name: items_name, type: items_type, pointer: false),
               IR::Name.new(name: data_name, type: data_type, pointer: false),
             ],
-            type: @types.fetch("void"),
+            type: @ctx.types.fetch("void"),
           ),
         )
 
@@ -84,7 +84,7 @@ module MilkTea
         boundary_type = parameter.boundary_type
         boundary_element_type = boundary_type.element_type
         len = array_length(actual_type)
-        len_type = @types.fetch("ptr_uint")
+        len_type = @ctx.types.fetch("ptr_uint")
 
         if len.zero?
           return IR::AggregateLiteral.new(
@@ -106,7 +106,7 @@ module MilkTea
             index: IR::IntegerLiteral.new(value: index, type: len_type),
             type: item_type,
           )
-          item = IR::Member.new(receiver: item, member: "data", type: pointer_to(@types.fetch("char"))) if item_type == @types.fetch("str")
+          item = IR::Member.new(receiver: item, member: "data", type: pointer_to(@ctx.types.fetch("char"))) if item_type == @ctx.types.fetch("str")
 
           converted = foreign_identity_projection_expression(item, boundary_element_type)
           raise LoweringError, "unsupported foreign boundary mapping #{parameter.type} as #{boundary_type}" unless converted
