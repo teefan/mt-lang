@@ -39,7 +39,7 @@ module MilkTea
       methods, private_methods = exported_methods(analysis, types)
       implemented_interfaces, private_implemented_interfaces = exported_interface_implementations(analysis, types, interfaces)
 
-      Sema::ModuleBinding.new(
+      ModuleBinding.new(
         name: analysis.module_name,
         types:,
         type_declarations:,
