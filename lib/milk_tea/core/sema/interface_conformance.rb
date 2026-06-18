@@ -11,7 +11,7 @@ module MilkTea
             next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::OpaqueDecl)
             next if decl.implements.empty?
 
-            receiver_type = @types.fetch(decl.name)
+            receiver_type = @ctx.types.fetch(decl.name)
             resolved_interfaces = []
             seen = {}
 
@@ -24,7 +24,7 @@ module MilkTea
               validate_interface_conformance!(receiver_type, interface)
             end
 
-            @implemented_interfaces[interface_implementation_key(receiver_type)] = resolved_interfaces.freeze
+            @ctx.implemented_interfaces[interface_implementation_key(receiver_type)] = resolved_interfaces.freeze
           end
         end
       end
@@ -41,11 +41,11 @@ module MilkTea
       def lookup_local_method_for_interface(receiver_type, name)
         dispatch_receiver_type = method_dispatch_receiver_type(receiver_type)
 
-        method = @methods.fetch(receiver_type, {})[name]
-        method ||= @methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
+        method = @ctx.methods.fetch(receiver_type, {})[name]
+        method ||= @ctx.methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
         static_name = "static:#{name}"
-        method ||= @methods.fetch(receiver_type, {})[static_name]
-        method ||= @methods.fetch(dispatch_receiver_type, {})[static_name] unless dispatch_receiver_type == receiver_type
+        method ||= @ctx.methods.fetch(receiver_type, {})[static_name]
+        method ||= @ctx.methods.fetch(dispatch_receiver_type, {})[static_name] unless dispatch_receiver_type == receiver_type
         method
       end
 

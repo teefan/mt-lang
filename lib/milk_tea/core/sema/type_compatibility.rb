@@ -65,7 +65,7 @@ module MilkTea
         return true if external && external_void_pointer_argument_compatibility?(actual_type, expected_type)
         return true if external && extern_enum_integer_argument_compatibility?(actual_type, expected_type)
         if external && foreign_mapping_context? && foreign_identity_projection_compatible?(actual_type, expected_type)
-          return false if actual_type == @types.fetch("cstr") && char_pointer_type?(expected_type)
+          return false if actual_type == @ctx.types.fetch("cstr") && char_pointer_type?(expected_type)
 
           return true
         end
@@ -92,14 +92,14 @@ module MilkTea
         case expression
         when AST::Identifier
           return false if lookup_value(expression.name, scopes)
-          return false unless @top_level_functions.key?(expression.name)
+          return false unless @ctx.top_level_functions.key?(expression.name)
 
-          binding = @top_level_functions.fetch(expression.name)
+          binding = @ctx.top_level_functions.fetch(expression.name)
           !binding.type_params.any? && !foreign_function_binding?(binding)
         when AST::MemberAccess
-          return false unless expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
+          return false unless expression.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(expression.receiver.name)
 
-          imported_module = @imports.fetch(expression.receiver.name)
+          imported_module = @ctx.imports.fetch(expression.receiver.name)
           return false unless imported_module.functions.key?(expression.member)
 
           binding = imported_module.functions.fetch(expression.member)
@@ -125,7 +125,7 @@ module MilkTea
         actual_pointee = pointee_type(actual_type)
         expected_pointee = pointee_type(expected_type)
 
-        actual_pointee == @types.fetch("void") || expected_pointee == @types.fetch("void")
+        actual_pointee == @ctx.types.fetch("void") || expected_pointee == @ctx.types.fetch("void")
       end
 
       def exact_compile_time_numeric_compatibility?(actual_type, expression, expected_type, scopes: nil)
@@ -259,7 +259,7 @@ module MilkTea
 
       def pointer_cast_type?(type)
         return typed_null_target_type?(type.target_type) if type.is_a?(Types::Null)
-        return true if type == @types.fetch("cstr")
+        return true if type == @ctx.types.fetch("cstr")
         if type.is_a?(Types::Nullable)
           return true if function_pointer_type?(type.base)
 
@@ -272,7 +272,7 @@ module MilkTea
       end
 
       def typed_null_target_type?(type)
-        type == @types.fetch("cstr") || pointer_type?(type) || function_pointer_type?(type)
+        type == @ctx.types.fetch("cstr") || pointer_type?(type) || function_pointer_type?(type)
       end
 
       def function_pointer_type?(type)

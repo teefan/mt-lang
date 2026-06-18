@@ -11,7 +11,7 @@ module MilkTea
             case decl
             when AST::StructDecl
               packed, alignment = validate_decl_attribute_applications!(decl.attributes, target_kind: :struct, target_label: "struct #{decl.name}", target_node: decl)
-              @types.fetch(decl.name).set_layout(packed:, alignment:)
+              @ctx.types.fetch(decl.name).set_layout(packed:, alignment:)
 
               decl.fields.each do |field|
                 with_error_node(field) do
@@ -77,8 +77,8 @@ module MilkTea
             seen[binding_key] = true
             argument_values = validate_attribute_arguments!(binding, application)
             argument_values = argument_values.freeze
-            @attribute_application_bindings[application.object_id] = binding
-            @validated_attribute_arguments[application.object_id] = argument_values
+            @ctx.attribute_application_bindings[application.object_id] = binding
+            @ctx.validated_attribute_arguments[application.object_id] = argument_values
             resolved_applications << ResolvedAttributeApplication.new(binding:, argument_values:)
 
             case binding.name
@@ -94,7 +94,7 @@ module MilkTea
           end
         end
 
-        @resolved_attribute_applications[target_node.object_id] = resolved_applications.freeze
+        @ctx.resolved_attribute_applications[target_node.object_id] = resolved_applications.freeze
 
         [packed, alignment]
       end
@@ -161,14 +161,14 @@ module MilkTea
         parts = name.parts
 
         if parts.length == 1
-          binding = @attributes[parts.first]
+          binding = @ctx.attributes[parts.first]
           raise_sema_error("unknown attribute #{name}") unless binding
 
           return binding
         end
 
-        if parts.length == 2 && @imports.key?(parts.first)
-          imported_module = @imports.fetch(parts.first)
+        if parts.length == 2 && @ctx.imports.key?(parts.first)
+          imported_module = @ctx.imports.fetch(parts.first)
           raise_sema_error("#{parts.first}.#{parts.last} is private to module #{imported_module.name}") if imported_module.private_attribute?(parts.last)
 
           binding = imported_module.attributes[parts.last]
@@ -186,16 +186,16 @@ module MilkTea
             case decl
             when AST::FunctionDef
               ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
-              @top_level_functions[decl.name] = declare_function_binding(decl)
+              @ctx.top_level_functions[decl.name] = declare_function_binding(decl)
             when AST::ExternFunctionDecl
               ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
               if decl.mapping && !decl.mapping.is_a?(AST::StringLiteral)
                 raise_sema_error("external function #{decl.name} mapping must be a c-string literal")
               end
-              @top_level_functions[decl.name] = declare_function_binding(decl, external: true)
+              @ctx.top_level_functions[decl.name] = declare_function_binding(decl, external: true)
             when AST::ForeignFunctionDecl
               ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
-              @top_level_functions[decl.name] = declare_function_binding(decl)
+              @ctx.top_level_functions[decl.name] = declare_function_binding(decl)
             when AST::ExtendingBlock
               dispatch_receiver_type, receiver_type, receiver_type_param_names, receiver_type_param_constraints = resolve_methods_receiver_target(decl.type_name)
 
@@ -212,9 +212,9 @@ module MilkTea
                   end
                   instance_method = receiver_type && method.kind != :static
                   method_key = instance_method ? binding.name : "static:#{binding.name}"
-                  raise_sema_error("duplicate method #{decl.type_name}.#{binding.name}") if @methods[dispatch_receiver_type].key?(method_key)
+                  raise_sema_error("duplicate method #{decl.type_name}.#{binding.name}") if @ctx.methods[dispatch_receiver_type].key?(method_key)
 
-                  @methods[dispatch_receiver_type][method_key] = binding
+                  @ctx.methods[dispatch_receiver_type][method_key] = binding
                 rescue SemaError => e
                   collect_structural_error(e)
                 end
@@ -329,14 +329,14 @@ module MilkTea
           seen[param.name] = true
         end
 
-        body_return_type = decl.return_type ? resolve_type_ref(decl.return_type, type_params:, type_param_constraints:) : @types.fetch("void")
+        body_return_type = decl.return_type ? resolve_type_ref(decl.return_type, type_params:, type_param_constraints:) : @ctx.types.fetch("void")
         validate_return_ref_type!(body_return_type, function_name: decl.name)
         validate_return_proc_type!(body_return_type, function_name: decl.name)
         raise_sema_error("function #{decl.name} cannot return event storage type #{body_return_type}") if noncopyable_event_storage_type?(body_return_type)
-        if decl.name == "main" && async_function && body_return_type != @types.fetch("int") && body_return_type != @types.fetch("void")
+        if decl.name == "main" && async_function && body_return_type != @ctx.types.fetch("int") && body_return_type != @ctx.types.fetch("void")
           raise_sema_error("async main must return int or void")
         end
-        if foreign && public_params.any? { |param| param.passing_mode == :consuming } && body_return_type != @types.fetch("void")
+        if foreign && public_params.any? { |param| param.passing_mode == :consuming } && body_return_type != @ctx.types.fetch("void")
           raise_sema_error("foreign function #{decl.name} with consuming parameters must return void")
         end
         if external && array_type?(body_return_type)
@@ -418,11 +418,11 @@ module MilkTea
       end
 
       def check_functions
-        @top_level_functions.each_value do |binding|
+        @ctx.top_level_functions.each_value do |binding|
           check_function(binding)
         end
 
-        @methods.each_value do |method_map|
+        @ctx.methods.each_value do |method_map|
           method_map.each_value do |binding|
             check_function(binding)
           end
@@ -432,7 +432,7 @@ module MilkTea
       # Per-function error collection used by check_collecting_errors.
       # Continues past individual function failures, accumulating SemaErrors.
       def check_functions_collecting(errors)
-        @top_level_functions.each_value do |binding|
+        @ctx.top_level_functions.each_value do |binding|
           next if @checked_function_bindings[binding.object_id]
 
           prev_count = @structural_errors.length
@@ -444,7 +444,7 @@ module MilkTea
           errors.concat(@structural_errors[prev_count..].to_a)
         end
 
-        @methods.each_value do |method_map|
+        @ctx.methods.each_value do |method_map|
           method_map.each_value do |binding|
             next if @checked_function_bindings[binding.object_id]
 

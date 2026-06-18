@@ -20,7 +20,7 @@ module MilkTea
                 collect_structural_error(e)
               end
             when AST::VarDecl
-              binding = @top_level_values.fetch(decl.name)
+              binding = @ctx.top_level_values.fetch(decl.name)
               if decl.value
                 validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
                 validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
@@ -41,7 +41,7 @@ module MilkTea
       end
 
       def check_expr_const(decl)
-        binding = @top_level_values.fetch(decl.name)
+        binding = @ctx.top_level_values.fetch(decl.name)
         validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
         validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
 
@@ -82,7 +82,7 @@ module MilkTea
             raise_sema_error("module variable initializer cannot reference mutable value #{expression.name}")
           end
 
-          function = @top_level_functions[expression.name]
+          function = @ctx.top_level_functions[expression.name]
           return if function && static_storage_function_value?(function)
 
           raise_sema_error("module variable initializer must be static-storage-safe")
@@ -130,9 +130,9 @@ module MilkTea
         end
 
         return false unless expression.receiver.is_a?(AST::Identifier)
-        return false unless @imports.key?(expression.receiver.name)
+        return false unless @ctx.imports.key?(expression.receiver.name)
 
-        imported_module = @imports.fetch(expression.receiver.name)
+        imported_module = @ctx.imports.fetch(expression.receiver.name)
         if imported_module.private_value?(expression.member) || imported_module.private_function?(expression.member) || imported_module.private_type?(expression.member)
           raise_sema_error("#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}")
         end
@@ -187,15 +187,15 @@ module MilkTea
       end
 
       def finalize_top_level_const_values
-        @const_declarations.each_key { |name| evaluate_top_level_const_value(name) }
+        @ctx.const_declarations.each_key { |name| evaluate_top_level_const_value(name) }
       end
 
       def evaluate_top_level_const_value(name)
-        return @top_level_values.fetch(name).const_value if @evaluated_const_values.key?(name)
+        return @ctx.top_level_values.fetch(name).const_value if @evaluated_const_values.key?(name)
 
         raise_sema_error("cyclic constant value dependency involving #{name}") if @evaluating_const_values.include?(name)
 
-        decl = @const_declarations.fetch(name)
+        decl = @ctx.const_declarations.fetch(name)
         if decl.block_body
           return evaluate_block_body_const(decl, name)
         end
@@ -222,8 +222,8 @@ module MilkTea
       end
 
       def set_const_value(name, value)
-        binding = @top_level_values.fetch(name)
-        @top_level_values[name] = ValueBinding.new(
+        binding = @ctx.top_level_values.fetch(name)
+        @ctx.top_level_values[name] = ValueBinding.new(
           id: binding.id,
           name: binding.name,
           storage_type: binding.storage_type,
@@ -257,7 +257,7 @@ module MilkTea
             value = resolve_current_module_const_value(identifier_expression.name)
             return value if value
 
-            @types[identifier_expression.name]
+            @ctx.types[identifier_expression.name]
           end,
           resolve_member_access: lambda do |member_access_expression|
             if member_access_expression.receiver.is_a?(AST::Identifier) && scopes
@@ -319,7 +319,7 @@ module MilkTea
           when "attributes_of"
             evaluate_attributes_of_call(expression.arguments, scopes: scopes || [])
           else
-            func = @top_level_functions[expression.callee.name]
+            func = @ctx.top_level_functions[expression.callee.name]
             if func&.ast&.respond_to?(:const) && func.ast.const
               evaluate_const_function_body(func, expression.arguments, scopes:)
             else
@@ -332,7 +332,7 @@ module MilkTea
           else
             callee_name = expression.callee.callee.is_a?(AST::Identifier) ? expression.callee.callee.name : nil
             if callee_name
-              func = @top_level_functions[callee_name]
+              func = @ctx.top_level_functions[callee_name]
               if func&.ast&.respond_to?(:const) && func.ast.const
                 evaluate_const_function_body(func, expression.arguments, scopes:)
               else
@@ -357,7 +357,7 @@ module MilkTea
           resolve_type_ref: ->(tr) { resolve_type_ref(tr) },
           pointer_to: ->(t) { pointer_to(t) },
           const_pointer_to: ->(t) { const_pointer_to(t) },
-          top_level_functions: ->(name) { @top_level_functions[name] },
+          top_level_functions: ->(name) { @ctx.top_level_functions[name] },
           evaluate_type_returning_function_body: ->(func, targs) { evaluate_type_returning_function_body(func, targs) },
         )
       end

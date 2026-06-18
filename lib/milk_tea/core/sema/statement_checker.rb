@@ -24,15 +24,15 @@ module MilkTea
               end
             elsif statement.header_type == :if && statement.header_expression
               validate_consuming_foreign_expression!(statement.header_expression, scopes:, root_allowed: false)
-              condition_type = infer_expression(statement.header_expression, scopes:, expected_type: @types.fetch("bool"))
-              ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}", expression: statement.header_expression, line: statement.line, column: statement.column)
+              condition_type = infer_expression(statement.header_expression, scopes:, expected_type: @ctx.types.fetch("bool"))
+              ensure_assignable!(condition_type, @ctx.types.fetch("bool"), "if condition must be bool, got #{condition_type}", expression: statement.header_expression, line: statement.line, column: statement.column)
               true_refinements = flow_refinements(statement.header_expression, truthy: true, scopes:)
               check_block(statement.body, scopes: scopes_with_refinements(scopes, true_refinements), return_type:, allow_return:)
               return flow_refinements(statement.header_expression, truthy: false, scopes:) if cfg_block_always_terminates?(statement.body)
             elsif statement.header_type == :while && statement.header_expression
               validate_consuming_foreign_expression!(statement.header_expression, scopes:, root_allowed: false)
-              condition_type = infer_expression(statement.header_expression, scopes:, expected_type: @types.fetch("bool"))
-              ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}", expression: statement.header_expression, line: statement.line, column: statement.column)
+              condition_type = infer_expression(statement.header_expression, scopes:, expected_type: @ctx.types.fetch("bool"))
+              ensure_assignable!(condition_type, @ctx.types.fetch("bool"), "while condition must be bool, got #{condition_type}", expression: statement.header_expression, line: statement.line, column: statement.column)
               with_loop do
                 body_scopes = scopes_with_refinements(scopes, flow_refinements(statement.header_expression, truthy: true, scopes:))
                 check_block(statement.body, scopes: body_scopes, return_type:, allow_return:)
@@ -71,8 +71,8 @@ module MilkTea
               end
 
               validate_consuming_foreign_expression!(branch.condition, scopes: branch_scopes, root_allowed: false)
-              condition_type = infer_expression(branch.condition, scopes: branch_scopes, expected_type: @types.fetch("bool"))
-              ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}", expression: branch.condition, line: branch.line, column: branch.column)
+              condition_type = infer_expression(branch.condition, scopes: branch_scopes, expected_type: @ctx.types.fetch("bool"))
+              ensure_assignable!(condition_type, @ctx.types.fetch("bool"), "if condition must be bool, got #{condition_type}", expression: branch.condition, line: branch.line, column: branch.column)
               true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, scopes: branch_scopes))
               check_block(branch.body, scopes: scopes_with_refinements(scopes, true_refinements), return_type:, allow_return:)
               branch_bodies_terminate << cfg_block_always_terminates?(branch.body)
@@ -118,8 +118,8 @@ module MilkTea
               end
             else
               validate_consuming_foreign_expression!(statement.condition, scopes:, root_allowed: false)
-              condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
-              ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}", expression: statement.condition, line: statement.line, column: statement.column)
+              condition_type = infer_expression(statement.condition, scopes:, expected_type: @ctx.types.fetch("bool"))
+              ensure_assignable!(condition_type, @ctx.types.fetch("bool"), "while condition must be bool, got #{condition_type}", expression: statement.condition, line: statement.line, column: statement.column)
               with_loop do
                 body_scopes = scopes_with_refinements(scopes, flow_refinements(statement.condition, truthy: true, scopes:))
                 check_block(statement.body, scopes: body_scopes, return_type:, allow_return:)
@@ -135,7 +135,7 @@ module MilkTea
             raise_sema_error("return is not allowed inside defer blocks") unless allow_return
 
             validate_consuming_foreign_expression!(statement.value, scopes:, root_allowed: false) if statement.value
-            value_type = statement.value ? infer_expression(statement.value, scopes:, expected_type: return_type) : @types.fetch("void")
+            value_type = statement.value ? infer_expression(statement.value, scopes:, expected_type: return_type) : @ctx.types.fetch("void")
             ensure_assignable!(
               value_type,
               return_type,
@@ -268,7 +268,7 @@ module MilkTea
         struct_type = if type_name.is_a?(Array)
                         resolve_qualified_type_name(type_name)
                       else
-                        @types[type_name]
+                        @ctx.types[type_name]
                       end
         display_name = type_name.is_a?(Array) ? type_name.join(".") : type_name
         raise_sema_error("unknown type #{display_name} for struct destructure") unless struct_type
@@ -298,8 +298,8 @@ module MilkTea
       def resolve_qualified_type_name(parts)
         return nil unless parts.length >= 2
 
-        if @imports.key?(parts.first)
-          imported_module = @imports.fetch(parts.first)
+        if @ctx.imports.key?(parts.first)
+          imported_module = @ctx.imports.fetch(parts.first)
           type = imported_module.types[parts.last]
           if imported_module.private_type?(parts.last)
             raise_sema_error("#{parts.first}.#{parts.last} is private to module #{imported_module.name}")
@@ -308,7 +308,7 @@ module MilkTea
           return type
         end
 
-        parent_type = @types[parts.first]
+        parent_type = @ctx.types[parts.first]
         if parent_type.respond_to?(:nested_types) && parent_type.nested_types.key?(parts.last)
           return parent_type.nested_types[parts.last]
         end
@@ -490,7 +490,7 @@ module MilkTea
           require_mutable_pointer: true,
           allow_span_param_identifier: true,
         )
-        element_type = infer_index_result_type(receiver_type, @types.fetch("ptr_uint"))
+        element_type = infer_index_result_type(receiver_type, @ctx.types.fetch("ptr_uint"))
 
         statement.value.elements.each_with_index do |elem, i|
           elem = elem.is_a?(AST::Argument) ? elem.value : elem
@@ -1020,13 +1020,13 @@ module MilkTea
         validate_consuming_foreign_expression!(statement.message, scopes:, root_allowed: false)
         validate_hoistable_foreign_expression!(statement.condition, scopes:, root_hoistable: false)
         validate_hoistable_foreign_expression!(statement.message, scopes:, root_hoistable: false)
-        condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
-        ensure_assignable!(condition_type, @types.fetch("bool"), "static_assert condition must be bool, got #{condition_type}")
+        condition_type = infer_expression(statement.condition, scopes:, expected_type: @ctx.types.fetch("bool"))
+        ensure_assignable!(condition_type, @ctx.types.fetch("bool"), "static_assert condition must be bool, got #{condition_type}")
         condition_value = evaluate_compile_time_const_value(statement.condition, scopes:)
         raise_sema_error("static_assert condition must be a compile-time bool constant") unless condition_value == true || condition_value == false
         raise_sema_error("static_assert message must be a string literal") unless statement.message.is_a?(AST::StringLiteral)
 
-        message_type = infer_expression(statement.message, scopes:, expected_type: @types.fetch("str"))
+        message_type = infer_expression(statement.message, scopes:, expected_type: @ctx.types.fetch("str"))
         return if string_like_type?(message_type)
 
         raise_sema_error("static_assert message must be str or cstr, got #{message_type}")
@@ -1111,7 +1111,7 @@ module MilkTea
                        elsif element.is_a?(Types::StructHandle)
                          builtin_struct_handle_type
                        else
-                         @types.fetch("int")
+                         @ctx.types.fetch("int")
                        end
 
         with_nested_scope(scopes) do |loop_scopes|
