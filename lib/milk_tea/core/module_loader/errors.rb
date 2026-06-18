@@ -11,6 +11,7 @@ module MilkTea
   end
 
   class ModuleLoader
+    ImportResolution = Data.define(:modules, :errors)
     ImportResolutionError = Data.define(:import, :error)
   end
 end
