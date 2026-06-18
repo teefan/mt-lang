@@ -3,10 +3,15 @@
 module MilkTea
   # Pure type-compatibility predicates shared by sema and lowering.
   module TypeCompatibilityPredicates
+    BUILTIN_VOID = Types::Primitive.new("void")
+    BUILTIN_CHAR = Types::Primitive.new("char")
+    BUILTIN_CSTR = Types::Primitive.new("cstr")
+    BUILTIN_STR  = Types::StringView.new
+
     private
 
     def string_literal_cstr_compatibility?(expression, expected_type)
-      expression.is_a?(AST::StringLiteral) && !expression.cstring && expected_type == @types.fetch("cstr")
+      expression.is_a?(AST::StringLiteral) && !expression.cstring && expected_type == BUILTIN_CSTR
     end
 
     def task_root_proc_type?(type)
@@ -38,7 +43,7 @@ module MilkTea
       return false unless actual_type.is_a?(Types::Null)
       return false unless actual_type.target_type
       return false if expected_type.is_a?(Types::Nullable)
-      return true if expected_type == @types.fetch("cstr") && char_pointer_type?(actual_type.target_type)
+      return true if expected_type == BUILTIN_CSTR && char_pointer_type?(actual_type.target_type)
       return false unless pointer_type?(expected_type)
 
       actual_type.target_type == expected_type
@@ -159,7 +164,7 @@ module MilkTea
     def foreign_char_pointer_buffer_boundary_compatible?(public_type, boundary_type)
       return false unless char_pointer_type?(boundary_type)
 
-      return true if public_type.is_a?(Types::Span) && public_type.element_type == @types.fetch("char")
+      return true if public_type.is_a?(Types::Span) && public_type.element_type == BUILTIN_CHAR
       return true if char_array_text_type?(public_type)
       return true if str_buffer_type?(public_type)
 
@@ -168,8 +173,8 @@ module MilkTea
 
     def foreign_boundary_element_compatible?(public_type, boundary_type)
       return true if public_type == boundary_type
-      return true if public_type == @types.fetch("str") && boundary_type == @types.fetch("cstr")
-      return true if public_type == @types.fetch("str") && char_pointer_type?(boundary_type)
+      return true if public_type == BUILTIN_STR && boundary_type == BUILTIN_CSTR
+      return true if public_type == BUILTIN_STR && char_pointer_type?(boundary_type)
 
       foreign_identity_projection_compatible?(public_type, boundary_type)
     end
@@ -208,8 +213,8 @@ module MilkTea
 
       return true if void_pointer_type?(actual_type) && opaque_type?(expected_type)
       return true if opaque_type?(actual_type) && void_pointer_type?(expected_type)
-      return true if char_pointer_type?(actual_type) && expected_type == @types.fetch("cstr")
-      return true if actual_type == @types.fetch("cstr") && char_pointer_type?(expected_type)
+      return true if char_pointer_type?(actual_type) && expected_type == BUILTIN_CSTR
+      return true if actual_type == BUILTIN_CSTR && char_pointer_type?(expected_type)
 
       false
     end
@@ -306,7 +311,7 @@ module MilkTea
     end
 
     def void_pointer_type?(type)
-      pointer_type?(type) && type.arguments.first == @types.fetch("void")
+      pointer_type?(type) && type.arguments.first == BUILTIN_VOID
     end
 
     def native_foreign_layout_compatible?(native_type, foreign_type)
@@ -351,7 +356,7 @@ module MilkTea
     end
 
     def char_pointer_type?(type)
-      pointer_type?(type) && type.arguments.first == @types.fetch("char")
+      pointer_type?(type) && type.arguments.first == BUILTIN_CHAR
     end
 
     def opaque_type?(type)
