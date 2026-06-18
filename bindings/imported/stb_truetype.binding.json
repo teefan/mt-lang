@@ -1,0 +1,14 @@
+{
+  "module_name": "std.stb_truetype",
+  "raw_module_name": "std.c.stb_truetype",
+  "raw_import_alias": "c",
+  "types": {
+    "strip_prefix": "stbtt_"
+  },
+  "constants": {
+    "strip_prefix": "STBTT_"
+  },
+  "functions": {
+    "strip_prefix": "stbtt_"
+  }
+}

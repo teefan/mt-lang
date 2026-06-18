@@ -1,0 +1,76 @@
+{
+  "module_name": "std.stb_image",
+  "raw_module_name": "std.c.stb_image",
+  "raw_import_alias": "c",
+  "types": {
+    "strip_prefix": "stbi_"
+  },
+  "constants": {
+    "strip_prefix": "STBI_"
+  },
+  "functions": {
+    "strip_prefix": "stbi_",
+    "overrides": [
+      {
+        "raw": "stbi_load_from_memory",
+        "return_type": "ptr[uc]?"
+      },
+      {
+        "raw": "stbi_load_from_callbacks",
+        "return_type": "ptr[uc]?"
+      },
+      {
+        "raw": "stbi_load",
+        "return_type": "ptr[uc]?"
+      },
+      {
+        "raw": "stbi_load_gif_from_memory",
+        "return_type": "ptr[uc]?"
+      },
+      {
+        "raw": "stbi_load_16_from_memory",
+        "return_type": "ptr[us]?"
+      },
+      {
+        "raw": "stbi_load_16_from_callbacks",
+        "return_type": "ptr[us]?"
+      },
+      {
+        "raw": "stbi_load_16",
+        "return_type": "ptr[us]?"
+      },
+      {
+        "raw": "stbi_loadf_from_memory",
+        "return_type": "ptr[float]?"
+      },
+      {
+        "raw": "stbi_loadf_from_callbacks",
+        "return_type": "ptr[float]?"
+      },
+      {
+        "raw": "stbi_loadf",
+        "return_type": "ptr[float]?"
+      },
+      {
+        "raw": "stbi_failure_reason",
+        "return_type": "cstr?"
+      },
+      {
+        "raw": "stbi_zlib_decode_malloc_guesssize",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "stbi_zlib_decode_malloc_guesssize_headerflag",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "stbi_zlib_decode_malloc",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "stbi_zlib_decode_noheader_malloc",
+        "return_type": "ptr[char]?"
+      }
+    ]
+  }
+}
