@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../compile_time"
+require_relative "../const_eval"
 
 module MilkTea
   module CFG
@@ -108,7 +108,7 @@ module MilkTea
       def self.eval_expr_const(expr, state, binding_resolution:, strict_binding_ids:)
         return NAC if expr.nil?
 
-        value = CompileTime.evaluate(
+        value = ConstEval.evaluate(
           expr,
           resolve_identifier: lambda do |identifier_expression|
             key = identifier_key(identifier_expression, binding_resolution:, strict_binding_ids:)
