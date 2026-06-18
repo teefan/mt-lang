@@ -151,6 +151,20 @@ module MilkTea
           raw_module_name: "std.c.rpng",
           policy_path: root.join("bindings/imported/rpng.binding.json"),
         ),
+        Binding.new(
+          name: "stb_image",
+          module_name: "std.stb_image",
+          binding_path: root.join("std/stb_image.mt"),
+          raw_module_name: "std.c.stb_image",
+          policy_path: root.join("bindings/imported/stb_image.binding.json"),
+        ),
+        Binding.new(
+          name: "stb_truetype",
+          module_name: "std.stb_truetype",
+          binding_path: root.join("std/stb_truetype.mt"),
+          raw_module_name: "std.c.stb_truetype",
+          policy_path: root.join("bindings/imported/stb_truetype.binding.json"),
+        ),
       ]
     end
 

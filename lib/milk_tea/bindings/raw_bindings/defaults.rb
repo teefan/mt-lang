@@ -1235,6 +1235,32 @@ module MilkTea
             UpstreamSources.default_sources(root:).find { |source| source.name == "rpng" }&.bootstrap!
           end,
         ),
+        Binding.new(
+          name: "stb_image",
+          module_name: "std.c.stb_image",
+          binding_path: root.join("std/c/stb_image.mt"),
+          include_directives: ["stb_image.h"],
+          declaration_name_prefixes: ["stbi_", "STBI_"],
+          header_candidates: [
+            MilkTea.data_root.join("third_party/stb-upstream/stb_image.h").to_s,
+          ],
+          prepare: lambda do |_binding, **|
+            UpstreamSources.default_sources(root:).find { |source| source.name == "stb" }&.bootstrap!
+          end,
+        ),
+        Binding.new(
+          name: "stb_truetype",
+          module_name: "std.c.stb_truetype",
+          binding_path: root.join("std/c/stb_truetype.mt"),
+          include_directives: ["stb_truetype.h"],
+          declaration_name_prefixes: ["stbtt_", "STBTT_"],
+          header_candidates: [
+            MilkTea.data_root.join("third_party/stb-upstream/stb_truetype.h").to_s,
+          ],
+          prepare: lambda do |_binding, **|
+            UpstreamSources.default_sources(root:).find { |source| source.name == "stb" }&.bootstrap!
+          end,
+        ),
       ]
     end
   end
