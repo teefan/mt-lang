@@ -343,7 +343,7 @@ module MilkTea
 
       def replace_binding_cstr_metadata!(name, env, cstr_backed:, cstr_list_backed:)
         env[:scopes].reverse_each do |scope|
-          next if scope.is_a?(Sema::FlowScope)
+          next if scope.is_a?(FlowScope)
           next unless scope.key?(name)
 
           scope[name] = scope.fetch(name).merge(cstr_backed:, cstr_list_backed:)
@@ -353,7 +353,7 @@ module MilkTea
 
       def trackable_binding_names(env)
         env[:scopes].each_with_object([]) do |scope, names|
-          next if scope.is_a?(Sema::FlowScope)
+          next if scope.is_a?(FlowScope)
 
           scope.each do |name, binding|
             next unless cstr_trackable_type?(binding[:type]) || cstr_list_trackable_type?(binding[:type])
@@ -2010,7 +2010,7 @@ module MilkTea
 
         substitutions = binding.type_params.zip(type_arguments).to_h
         validate_function_type_param_constraints!(binding, substitutions)
-        instance = Sema::FunctionBinding.new(
+        instance = FunctionBinding.new(
           name: binding.name,
           type: substitute_type(binding.type, substitutions),
           body_params: binding.body_params.map { |param| substitute_value_binding(param, substitutions) },
@@ -2274,7 +2274,7 @@ module MilkTea
       end
 
       def substitute_value_binding(binding, substitutions)
-        Sema::ValueBinding.new(
+        ValueBinding.new(
           id: binding.id,
           name: binding.name,
           storage_type: substitute_type(binding.storage_type, substitutions),

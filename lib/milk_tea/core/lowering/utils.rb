@@ -615,7 +615,7 @@ module MilkTea
 
       def current_actual_scope(scopes)
         scopes.reverse_each do |scope|
-          return scope unless scope.is_a?(Sema::FlowScope)
+          return scope unless scope.is_a?(FlowScope)
         end
 
         raise LoweringError, "missing lexical scope"
@@ -630,10 +630,10 @@ module MilkTea
       def scopes_with_refinements(scopes, refinements)
         return scopes if refinements.nil? || refinements.empty?
 
-        base_scopes = scopes.last.is_a?(Sema::FlowScope) ? scopes[0...-1] : scopes
-        merged_refinements = scopes.last.is_a?(Sema::FlowScope) ? scopes.last.each_with_object({}) { |(name, binding), result| result[name] = binding[:type] } : {}
+        base_scopes = scopes.last.is_a?(FlowScope) ? scopes[0...-1] : scopes
+        merged_refinements = scopes.last.is_a?(FlowScope) ? scopes.last.each_with_object({}) { |(name, binding), result| result[name] = binding[:type] } : {}
         merged_refinements = merge_refinements(merged_refinements, refinements)
-        flow_scope = Sema::FlowScope.new
+        flow_scope = FlowScope.new
 
         merged_refinements.each do |name, refined_type|
           binding = lookup_value(name, { scopes: base_scopes })
