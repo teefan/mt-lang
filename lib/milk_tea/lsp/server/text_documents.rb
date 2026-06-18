@@ -86,8 +86,6 @@ module MilkTea
         uri = params.dig('textDocument', 'uri')
         return nil unless uri
 
-        text = params['text']
-        @workspace.update_document(uri, text) if text
         invalidate_document_caches(uri)
         affected = refresh_open_document_dependency_state(uri)
         refresh_client_semantic_tokens if affected.any?

@@ -16,13 +16,12 @@
     { "open": "[", "close": "]" },
     { "open": "\"", "close": "\"" }
   ],
-  "indentationRules": {
-    "increaseIndentPattern": ":\\s*(#.*)?$",
-    "decreaseIndentPattern": "^\\s*else\\b"
+  "folding": {
+    "offSide": true
   },
   "onEnterRules": [
     {
-      "beforeText": ":\\s*(#.*)?$",
+      "beforeText": "^\\s*(public\\s+)?(const\\s+)?(function|async|editable|struct|enum|flags|variant|union|interface|if|elif|else|while|for|match|unsafe|extending|defer|when)\\b.*:\\s*$",
       "action": { "indent": "indent" }
     }
   ],

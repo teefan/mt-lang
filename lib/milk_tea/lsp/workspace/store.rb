@@ -127,8 +127,7 @@ module MilkTea
               progress.call(pct, "#{idx + 1}/#{total} files")
             end
           end
-        rescue StandardError => e
-          log_error("LSP workspace index error #{root_uri}: #{e.message}")
+        rescue StandardError
         end
 
         def rename_indexed_file(old_uri, new_uri)
