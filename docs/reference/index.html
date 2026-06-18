@@ -287,7 +287,7 @@ p + p{margin-top:-.25rem}
 import std.stdio as io
 
 function main() -> int:
-    io.print_string("Hello, Milk Tea!")
+    io.print_line("Hello, Milk Tea!")
     return 0</code></pre>
 </div>
 
@@ -513,7 +513,7 @@ function load_entity(id: EntityId) -&gt; Result[Entity, LoadError]:
 function load_pair() -&gt; Result[void, LoadError]:
     let first = load_entity(1)?
     let second = load_entity(2)?
-    io.print_string(f"Loaded #{first.name} and #{second.name}")
+    io.print_line(f"Loaded #{first.name} and #{second.name}")
     return Result[void, LoadError].success()
 
 ## ── Events (fixed-capacity pub/sub, zero heap during dispatch) ──────
@@ -524,7 +524,7 @@ struct DamageEvent:
 event entity_damaged[8](DamageEvent)
 
 function on_damage(evt: DamageEvent) -&gt; void:
-    io.print_string(f"entity #{evt.target_id} took #{evt.amount} damage")
+    io.print_line(f"entity #{evt.target_id} took #{evt.amount} damage")
 
 ## ── Proc (closure with value captures) ──────────────────────────────
 function make_scaler(factor: float) -&gt; proc(x: float) -&gt; float:
@@ -552,7 +552,7 @@ function main() -&gt; int:
     var name_buf: str_buffer[64]
     name_buf.assign("World")
     name_buf.append("!")
-    io.print_string(name_buf.as_str())
+    io.print_line(name_buf.as_str())
 
     ## Struct construction with named fields
     var player = Player(
@@ -576,7 +576,7 @@ function main() -&gt; int:
 
     ## Guard with error binding
     let _ = load_pair() else as error:
-        io.print_string("load failed")
+        io.print_line("load failed")
         return 1
 
     ## Native vector types &amp; arithmetic
@@ -591,7 +591,7 @@ function main() -&gt; int:
     let view: span[int] = scores.as_span()
     let maybe_val = get(scores, 99)
     if maybe_val == null:
-        io.print_string("Index out of bounds (safe)")
+        io.print_line("Index out of bounds (safe)")
 
     ## Range index assignment
     var buf: array[float, 4]
@@ -610,7 +610,7 @@ function main() -&gt; int:
 
     ## for loop: range
     for i in 0..3:
-        io.print_string(f"index #{i}")
+        io.print_line(f"index #{i}")
 
     ## for loop: array iteration with break / continue
     let values = array[int, 5](1, 2, 3, 4, 5)
@@ -619,13 +619,13 @@ function main() -&gt; int:
             continue
         if v == 5:
             break
-        io.print_string(f"value #{v}")
+        io.print_line(f"value #{v}")
 
     ## Parallel for (arrays/spans only, lengths must match)
     let xs = array[float, 3](1.0, 2.0, 3.0)
     let ys = array[float, 3](4.0, 5.0, 6.0)
     for x, y in xs, ys:
-        io.print_string(f"#{x:.1} + #{y:.1}")
+        io.print_line(f"#{x:.1} + #{y:.1}")
 
     ## while loop
     var n: int = 1
@@ -636,11 +636,11 @@ function main() -&gt; int:
 
     ## if / else if / else (conditions must be bool, no truthy coercion)
     if player.level &gt; 10:
-        io.print_string("veteran")
+        io.print_line("veteran")
     else if player.level &gt; 5:
-        io.print_string("experienced")
+        io.print_line("experienced")
     else:
-        io.print_string("novice")
+        io.print_line("novice")
 
     ## if-expression
     let rank = if player.level &gt;= 10: "master" else: "apprentice"
@@ -648,23 +648,23 @@ function main() -&gt; int:
     ## match: enum (must be exhaustive or have _)
     match player.entity.kind:
         EntityKind.player:
-            io.print_string("is player")
+            io.print_line("is player")
         EntityKind.enemy:
-            io.print_string("is enemy")
+            io.print_line("is enemy")
         _:
-            io.print_string("other")
+            io.print_line("other")
 
     ## match: variant with struct patterns and guards
     let action = Action.attack(target_id = 2, damage = 15)
     match action:
         Action.move(dx, dy):
-            io.print_string(f"move #{dx:.2}, #{dy:.2}")
+            io.print_line(f"move #{dx:.2}, #{dy:.2}")
         Action.attack(target_id, damage &gt; 10):
-            io.print_string(f"heavy attack on #{target_id}")
+            io.print_line(f"heavy attack on #{target_id}")
         Action.attack(target_id, damage):
-            io.print_string(f"light attack on #{target_id}")
+            io.print_line(f"light attack on #{target_id}")
         Action.heal(amount):
-            io.print_string(f"heal #{amount}")
+            io.print_line(f"heal #{amount}")
         Action.idle:
             pass
 
@@ -679,9 +679,9 @@ function main() -&gt; int:
     let ratio = float&lt;-score
 
     ## Format strings: interpolation, precision, hex, owned text
-    io.print_string(f"Player: #{player.entity.name} HP=#{player.entity.hp}")
-    io.print_string(f"Position: #{position.x:.2}, #{position.y:.2}")
-    io.print_string(f"ID hex: #{player.entity.id:x}")
+    io.print_line(f"Player: #{player.entity.name} HP=#{player.entity.hp}")
+    io.print_line(f"Position: #{position.x:.2}, #{position.y:.2}")
+    io.print_line(f"ID hex: #{player.entity.id:x}")
     var msg = fmt.format(f"Score: #{score}")
     defer msg.release()
 
@@ -690,7 +690,7 @@ function main() -&gt; int:
         Commands:
           move, attack, quit
     HELP
-    io.print_string(help)
+    io.print_line(help)
 
     ## Defer: cleanup at scope exit (lowers to C cleanup labels)
     let data = heap.must_alloc[int](1)
@@ -703,7 +703,7 @@ function main() -&gt; int:
     ## Nullability: T? for pointer-like types
     var maybe_target: ptr[Entity]? = null
     if maybe_target == null:
-        io.print_string("no target")
+        io.print_line("no target")
 
     ## unsafe: required for pointer indexing, dereference, arithmetic, casts
     unsafe:
@@ -713,7 +713,7 @@ function main() -&gt; int:
     ## ref[T]: safe non-null writable alias (implicit borrow at call site)
     let handle = ref_of(player)
     handle.take_damage(10)
-    io.print_string(f"HP after damage: #{player.entity.hp}")
+    io.print_line(f"HP after damage: #{player.entity.hp}")
 
     ## dyn[Interface] + adapt: runtime polymorphism (fat pointer)
     let d: dyn[Damageable] = adapt[Damageable](ref_of(player))
@@ -730,11 +730,11 @@ function main() -&gt; int:
 
     ## Compile-time reflection: inline for over struct fields
     inline for field in fields_of(Entity.Stats):
-        io.print_string(f"field: #{field.name}")
+        io.print_line(f"field: #{field.name}")
 
     ## inline if: dead branch elimination (dead branch may reference nonexistent symbols)
     inline if DEBUG:
-        io.print_string("debug mode")
+        io.print_line("debug mode")
 
     ## ── Concurrency ─────────────────────────────────────────────────────
     ## parallel for: data-parallel loop dispatched across CPU cores
@@ -751,18 +751,21 @@ function main() -&gt; int:
         pa = <span class="syn-num">42</span>
         pb = <span class="syn-num">99</span>
 
-    ## detach + gather: detached concurrency with explicit join
+    ## atomic[T]: lock-free concurrent access
     var counter: <span class="syn-type">atomic</span>[<span class="syn-type">int</span>]
     counter.store(<span class="syn-num">0</span>)
-    let h1 = <span class="syn-kw">detach</span> counter.add(<span class="syn-num">1</span>)
-    let h2 = <span class="syn-kw">detach</span> counter.add(<span class="syn-num">2</span>)
-    <span class="syn-kw">gather</span> h1, h2
+    <span class="syn-kw">let</span> prev = counter.add(<span class="syn-num">1</span>)
+
+    ## detach + gather: detached concurrency with explicit join
+    <span class="syn-kw">let</span> a = <span class="syn-kw">detach</span> load_entity(<span class="syn-num">100</span>)
+    <span class="syn-kw">let</span> b = <span class="syn-kw">detach</span> load_entity(<span class="syn-num">200</span>)
+    <span class="syn-kw">gather</span> a, b
 
     ## static_assert: compile-time assertions
     static_assert(size_of(int) == 4, "expected 32-bit int")
     static_assert(MAX_ENTITIES &gt; 0, "need at least one entity")
 
-    io.print_string(f"All done! Score=#{score}")
+    io.print_line(f"All done! Score=#{score}")
     return 0</code></pre>
 </div>
 
@@ -1245,7 +1248,7 @@ let s64 = Slice[ubyte](data = ptr, len = 32)</code></pre>
 
 ## Return type defaults to void
 function say_hello(name: str):
-    io.print_string(f"Hello, #{name}!")</code></pre>
+    io.print_line(f"Hello, #{name}!")</code></pre>
 </div>
 
   <h3>const function</h3>
@@ -1856,7 +1859,7 @@ struct Window:
     public event resized[8](ResizeEvent)
 
 function on_close() -> void:
-    io.print_string("closed")
+    io.print_line("closed")
 
 function attach(window: ref[Window]) -> Result[void, EventError]:
     let closed_sub = window.closed.subscribe(on_close)?
@@ -1921,7 +1924,7 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>std.path</code></td><td>Path manipulation</td></tr>
       <tr><td><code>std.process</code></td><td>Process management</td></tr>
       <tr><td><code>std.cli</code></td><td>Command line interface</td></tr>
-      <tr><td><code>std.stdio</code></td><td>Standard I/O: <code>print_string</code>, <code>print</code></td></tr>
+      <tr><td><code>std.stdio</code></td><td>Standard I/O: <code>print_line</code>, <code>print_format</code>, <code>file_open</code>, <code>file_read_line</code></td></tr>
       <tr><td><code>std.terminal</code></td><td>Terminal control</td></tr>
       <tr><td><code>std.json</code> <code>std.toml</code></td><td>Serialization</td></tr>
       <tr><td><code>std.uri</code></td><td>URI parsing</td></tr>
@@ -2160,7 +2163,7 @@ const KEYWORDS = new Set([
   'if','else','match','for','while','return','break','continue','pass',
   'defer','unsafe','when','inline','external','foreign','import','public',
   'event','emit','not','and','or','in','out','inout','consuming','static_assert',
-  'fn','proc','this','editable','static','as',
+  'fn','proc','this','editable','static','as','parallel','detach','gather',
 ])
 
 const ATOMS = new Set(['true','false','null'])
@@ -2179,11 +2182,11 @@ const TYPES = new Set([
   'mat3','mat4','quat','ptr','span','array','SoA',
   'Option','Result','Task','dyn','ref','const_ptr','str_buffer',
   'field_handle','member_handle','callable_handle','attribute_handle',
-  'EventError','Subscription',
+  'EventError','Subscription','atomic',
 ])
 
 const BIFNS = new Set([
-  'print_string','print','format','append_format','assign_format',
+  'print_line','print_format','format','append_format','assign_format',
   'subscribe','subscribe_once','unsubscribe',
   'as_span','to_cstr','as_cstr','as_str',
 ])
