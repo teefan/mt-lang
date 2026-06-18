@@ -580,7 +580,7 @@ module MilkTea
         binding = lookup_value(first_part, scopes)
         return false unless binding && !binding.const_value.nil?
 
-        expression = build_expression_from_qualified_name(type_ref.name)
+        expression = AST.build_chain_from_parts(type_ref.name.parts)
         return false unless expression
 
         ct_value = evaluate_compile_time_const_value(expression, scopes:)
@@ -595,16 +595,7 @@ module MilkTea
         false
       end
 
-      def build_expression_from_qualified_name(qualified_name)
-        parts = qualified_name.parts
-        return unless parts.length >= 1
 
-        expr = AST::Identifier.new(name: parts.first)
-        parts[1..].each do |part|
-          expr = AST::MemberAccess.new(receiver: expr, member: part)
-        end
-        expr
-      end
 
 
       def infer_offsetof_type(type_ref, field_name, scopes: nil)
@@ -802,24 +793,7 @@ module MilkTea
         nil
       end
 
-      BUILTIN_VALUE_SPECIALIZATIONS = %w[zero default reinterpret].freeze
 
-      def type_ref_from_specialization(expression)
-        case expression.callee
-        when AST::Identifier
-          return nil if BUILTIN_VALUE_SPECIALIZATIONS.include?(expression.callee.name)
-
-          AST::TypeRef.new(name: AST::QualifiedName.new(parts: [expression.callee.name]), arguments: expression.arguments, nullable: false)
-        when AST::MemberAccess
-          return nil unless expression.callee.receiver.is_a?(AST::Identifier)
-
-          AST::TypeRef.new(
-            name: AST::QualifiedName.new(parts: [expression.callee.receiver.name, expression.callee.member]),
-            arguments: expression.arguments,
-            nullable: false,
-          )
-        end
-      end
 
       def aggregate_display_name(type)
         type.is_a?(Types::StructInstance) ? type.to_s : type.name
@@ -1007,24 +981,7 @@ module MilkTea
         nil
       end
 
-      def method_dispatch_receiver_type(receiver_type)
-        return receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
-        if receiver_type.is_a?(Types::Nullable)
-          dispatch_base_type = method_dispatch_receiver_type(receiver_type.base)
-          return receiver_type if dispatch_base_type == receiver_type.base
 
-          return Types::Nullable.new(dispatch_base_type)
-        end
-        return receiver_type unless receiver_type.is_a?(Types::GenericInstance)
-
-        dispatch_receiver_type = Types::GenericInstance.new(
-          receiver_type.name,
-          receiver_type.arguments.each_with_index.map do |argument, index|
-            argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
-          end,
-        )
-        dispatch_receiver_type == receiver_type ? receiver_type : dispatch_receiver_type
-      end
 
       def resolve_methods_receiver_target(type_ref)
         if type_ref.is_a?(AST::TypeRef)

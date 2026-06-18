@@ -246,5 +246,15 @@ module MilkTea
       def initialize(type:, line: nil, column: nil) = super
     end
     PrefixCast = Data.define(:target_type, :expression)
+
+    def self.build_chain_from_parts(parts)
+      return nil unless parts.length >= 1
+
+      expr = Identifier.new(name: parts.first)
+      parts[1..].each do |part|
+        expr = MemberAccess.new(receiver: expr, member: part)
+      end
+      expr
+    end
   end
 end

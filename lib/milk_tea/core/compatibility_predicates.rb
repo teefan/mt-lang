@@ -8,6 +8,85 @@ module MilkTea
     BUILTIN_CSTR = Types::Primitive.new("cstr")
     BUILTIN_STR  = Types::StringView.new
 
+    EVENT_METHOD_KINDS = {
+      "subscribe" => :event_subscribe,
+      "subscribe_once" => :event_subscribe_once,
+      "unsubscribe" => :event_unsubscribe,
+      "emit" => :event_emit,
+      "wait" => :event_wait,
+    }.freeze
+
+    EVENT_METHOD_NAMES = EVENT_METHOD_KINDS.invert.freeze
+
+    STR_BUFFER_METHOD_KINDS = {
+      "clear" => :str_buffer_clear,
+      "assign" => :str_buffer_assign,
+      "append" => :str_buffer_append,
+      "assign_format" => :str_buffer_assign_format,
+      "append_format" => :str_buffer_append_format,
+      "len" => :str_buffer_len,
+      "capacity" => :str_buffer_capacity,
+      "as_str" => :str_buffer_as_str,
+      "as_cstr" => :str_buffer_as_cstr,
+    }.freeze
+
+    STR_BUFFER_METHOD_NAMES = STR_BUFFER_METHOD_KINDS.invert.freeze
+
+    ATOMIC_METHOD_KINDS = {
+      "load" => :atomic_load,
+      "store" => :atomic_store,
+      "add" => :atomic_add,
+      "sub" => :atomic_sub,
+      "exchange" => :atomic_exchange,
+      "compare_exchange" => :atomic_compare_exchange,
+    }.freeze
+
+    ATOMIC_METHOD_NAMES = ATOMIC_METHOD_KINDS.invert.freeze
+
+    def type_ref_from_specialization(expression)
+      case expression.callee
+      when AST::Identifier
+        return nil if %w[zero default reinterpret].include?(expression.callee.name)
+
+        AST::TypeRef.new(name: AST::QualifiedName.new(parts: [expression.callee.name]), arguments: expression.arguments, nullable: false)
+      when AST::MemberAccess
+        return nil unless expression.callee.receiver.is_a?(AST::Identifier)
+
+        AST::TypeRef.new(
+          name: AST::QualifiedName.new(parts: [expression.callee.receiver.name, expression.callee.member]),
+          arguments: expression.arguments,
+          nullable: false,
+        )
+      end
+    end
+
+    def method_dispatch_receiver_type(receiver_type)
+      return receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
+      if receiver_type.is_a?(Types::Nullable)
+        dispatch_base_type = method_dispatch_receiver_type(receiver_type.base)
+        return receiver_type if dispatch_base_type == receiver_type.base
+
+        return Types::Nullable.new(dispatch_base_type)
+      end
+      return receiver_type unless receiver_type.is_a?(Types::GenericInstance)
+
+      dispatch_receiver_type = Types::GenericInstance.new(
+        receiver_type.name,
+        receiver_type.arguments.each_with_index.map do |argument, index|
+          argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
+        end,
+      )
+      dispatch_receiver_type == receiver_type ? receiver_type : dispatch_receiver_type
+    end
+
+    def event_subscription_result_type
+      @ctx.types.fetch("Result").instantiate([@ctx.types.fetch("Subscription"), @ctx.types.fetch("EventError")])
+    end
+
+    def event_wait_result_type(event_type)
+      @ctx.types.fetch("Result").instantiate([event_type.payload_type || @ctx.types.fetch("void"), @ctx.types.fetch("EventError")])
+    end
+
     private
 
     def string_literal_cstr_compatibility?(expression, expected_type)

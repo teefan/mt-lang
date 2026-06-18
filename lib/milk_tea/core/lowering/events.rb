@@ -4,22 +4,10 @@ module MilkTea
   module LowererEvents
     private
 
-
       def event_method_kind(receiver_type, member_name)
         return unless receiver_type.is_a?(Types::Event)
 
-        case member_name
-        when "subscribe"
-          :event_subscribe
-        when "subscribe_once"
-          :event_subscribe_once
-        when "unsubscribe"
-          :event_unsubscribe
-        when "emit"
-          :event_emit
-        when "wait"
-          :event_wait
-        end
+        TypeCompatibilityPredicates::EVENT_METHOD_KINDS[member_name]
       end
 
       def event_method_type(kind, event_type)
@@ -96,14 +84,6 @@ module MilkTea
         params = [Types::Parameter.new("state", pointer_to(@ctx.types.fetch("void")))]
         params << Types::Parameter.new("payload", event_type.payload_type) if event_type.payload_type
         Types::Function.new("#{event_type.name}__stateful_listener", params:, return_type: @ctx.types.fetch("void"))
-      end
-
-      def event_subscription_result_type
-        @ctx.types.fetch("Result").instantiate([@ctx.types.fetch("Subscription"), @ctx.types.fetch("EventError")])
-      end
-
-      def event_wait_result_type(event_type)
-        @ctx.types.fetch("Result").instantiate([event_type.payload_type || @ctx.types.fetch("void"), @ctx.types.fetch("EventError")])
       end
 
       def array_of(type, length)

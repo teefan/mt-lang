@@ -2089,24 +2089,7 @@ module MilkTea
         end
       end
 
-      def method_dispatch_receiver_type(receiver_type)
-        return receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
-        if receiver_type.is_a?(Types::Nullable)
-          dispatch_base_type = method_dispatch_receiver_type(receiver_type.base)
-          return receiver_type if dispatch_base_type == receiver_type.base
 
-          return Types::Nullable.new(dispatch_base_type)
-        end
-        return receiver_type unless receiver_type.is_a?(Types::GenericInstance)
-
-        dispatch_receiver_type = Types::GenericInstance.new(
-          receiver_type.name,
-          receiver_type.arguments.each_with_index.map do |argument, index|
-            argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
-          end,
-        )
-        dispatch_receiver_type == receiver_type ? receiver_type : dispatch_receiver_type
-      end
 
       def resolve_named_generic_type_for_analysis(analysis, parts)
         if parts.length == 1
