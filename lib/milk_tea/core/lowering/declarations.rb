@@ -5,7 +5,7 @@ module MilkTea
     private
 
       def expanded_declarations
-        @analysis.ast.declarations.flat_map do |decl|
+        @ast.declarations.flat_map do |decl|
           case decl
           when AST::WhenStmt
             val = compile_time_const_value(decl.discriminant)

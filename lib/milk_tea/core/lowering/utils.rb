@@ -355,29 +355,53 @@ module MilkTea
 
       def with_analysis_context(analysis)
         saved_analysis = @analysis
+        saved_ast = @ast
         saved_module_name = @module_name
         saved_module_prefix = @module_prefix
+        saved_module_kind = @current_module_kind
         saved_imports = @imports
         saved_types = @types
         saved_values = @values
         saved_functions = @functions
+        saved_interfaces = @interfaces
+        saved_methods = @current_methods
+        saved_attributes = @current_attributes
+        saved_attribute_applications = @current_attribute_applications
+        saved_implemented_interfaces = @current_implemented_interfaces
+        saved_directives = @directives
 
         @analysis = analysis
         @module_name = analysis.module_name
         @module_prefix = module_c_prefix(@module_name)
+        @ast = analysis.ast
+        @current_module_kind = analysis.module_kind
         @imports = analysis.imports
         @types = analysis.types
         @values = analysis.values
         @functions = analysis.functions
+        @interfaces = analysis.interfaces
+        @current_methods = analysis.methods
+        @current_attributes = analysis.attributes
+        @current_attribute_applications = analysis.attribute_applications
+        @current_implemented_interfaces = analysis.implemented_interfaces
+        @directives = analysis.directives
         yield
       ensure
         @analysis = saved_analysis
+        @ast = saved_ast
         @module_name = saved_module_name
         @module_prefix = saved_module_prefix
+        @current_module_kind = saved_module_kind
         @imports = saved_imports
         @types = saved_types
         @values = saved_values
         @functions = saved_functions
+        @interfaces = saved_interfaces
+        @current_methods = saved_methods
+        @current_attributes = saved_attributes
+        @current_attribute_applications = saved_attribute_applications
+        @current_implemented_interfaces = saved_implemented_interfaces
+        @directives = saved_directives
       end
 
       def lookup_value(name, env)
