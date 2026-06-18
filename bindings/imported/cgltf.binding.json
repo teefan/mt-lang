@@ -1,0 +1,12 @@
+{
+  "module_name": "std.cgltf",
+  "raw_module_name": "std.c.cgltf",
+  "raw_import_alias": "c",
+  "types": {
+    "strip_prefix": "cgltf_"
+  },
+  "constants": {},
+  "functions": {
+    "strip_prefix": "cgltf_"
+  }
+}

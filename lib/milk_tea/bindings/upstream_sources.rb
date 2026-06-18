@@ -207,6 +207,15 @@ module MilkTea
             stb_truetype.h
           ],
         ),
+        Source.new(
+          name: "cgltf",
+          checkout_root: data.join("third_party/cgltf-upstream"),
+          repository_url: "https://github.com/jkuhlmann/cgltf.git",
+          revision: "85cd62382dfea638278962690cf515023f33ed00",
+          sentinel_paths: %w[
+            cgltf.h
+          ],
+        ),
       ]
     end
 

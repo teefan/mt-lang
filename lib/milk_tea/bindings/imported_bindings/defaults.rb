@@ -165,6 +165,41 @@ module MilkTea
           raw_module_name: "std.c.stb_truetype",
           policy_path: root.join("bindings/imported/stb_truetype.binding.json"),
         ),
+        Binding.new(
+          name: "stb_image_write",
+          module_name: "std.stb_image_write",
+          binding_path: root.join("std/stb_image_write.mt"),
+          raw_module_name: "std.c.stb_image_write",
+          policy_path: root.join("bindings/imported/stb_image_write.binding.json"),
+        ),
+        Binding.new(
+          name: "stb_image_resize2",
+          module_name: "std.stb_image_resize2",
+          binding_path: root.join("std/stb_image_resize2.mt"),
+          raw_module_name: "std.c.stb_image_resize2",
+          policy_path: root.join("bindings/imported/stb_image_resize2.binding.json"),
+        ),
+        Binding.new(
+          name: "stb_rect_pack",
+          module_name: "std.stb_rect_pack",
+          binding_path: root.join("std/stb_rect_pack.mt"),
+          raw_module_name: "std.c.stb_rect_pack",
+          policy_path: root.join("bindings/imported/stb_rect_pack.binding.json"),
+        ),
+        Binding.new(
+          name: "stb_vorbis",
+          module_name: "std.stb_vorbis",
+          binding_path: root.join("std/stb_vorbis.mt"),
+          raw_module_name: "std.c.stb_vorbis",
+          policy_path: root.join("bindings/imported/stb_vorbis.binding.json"),
+        ),
+        Binding.new(
+          name: "cgltf",
+          module_name: "std.cgltf",
+          binding_path: root.join("std/cgltf.mt"),
+          raw_module_name: "std.c.cgltf",
+          policy_path: root.join("bindings/imported/cgltf.binding.json"),
+        ),
       ]
     end
 

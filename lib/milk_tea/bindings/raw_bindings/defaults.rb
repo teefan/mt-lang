@@ -1261,6 +1261,71 @@ module MilkTea
             UpstreamSources.default_sources(root:).find { |source| source.name == "stb" }&.bootstrap!
           end,
         ),
+        Binding.new(
+          name: "stb_image_write",
+          module_name: "std.c.stb_image_write",
+          binding_path: root.join("std/c/stb_image_write.mt"),
+          include_directives: ["stb_image_write.h"],
+          declaration_name_prefixes: ["stbi_write_", "stbi_flip_", "stbiw_", "stbi_zlib_"],
+          header_candidates: [
+            MilkTea.data_root.join("third_party/stb-upstream/stb_image_write.h").to_s,
+          ],
+          prepare: lambda do |_binding, **|
+            UpstreamSources.default_sources(root:).find { |source| source.name == "stb" }&.bootstrap!
+          end,
+        ),
+        Binding.new(
+          name: "stb_image_resize2",
+          module_name: "std.c.stb_image_resize2",
+          binding_path: root.join("std/c/stb_image_resize2.mt"),
+          include_directives: ["stb_image_resize2.h"],
+          declaration_name_prefixes: ["stbir_", "STBIR_"],
+          header_candidates: [
+            MilkTea.data_root.join("third_party/stb-upstream/stb_image_resize2.h").to_s,
+          ],
+          prepare: lambda do |_binding, **|
+            UpstreamSources.default_sources(root:).find { |source| source.name == "stb" }&.bootstrap!
+          end,
+        ),
+        Binding.new(
+          name: "stb_rect_pack",
+          module_name: "std.c.stb_rect_pack",
+          binding_path: root.join("std/c/stb_rect_pack.mt"),
+          include_directives: ["stb_rect_pack.h"],
+          declaration_name_prefixes: ["stbrp_", "STBRP_"],
+          header_candidates: [
+            MilkTea.data_root.join("third_party/stb-upstream/stb_rect_pack.h").to_s,
+          ],
+          prepare: lambda do |_binding, **|
+            UpstreamSources.default_sources(root:).find { |source| source.name == "stb" }&.bootstrap!
+          end,
+        ),
+        Binding.new(
+          name: "stb_vorbis",
+          module_name: "std.c.stb_vorbis",
+          binding_path: root.join("std/c/stb_vorbis.mt"),
+          include_directives: ["stb_vorbis.c"],
+          declaration_name_prefixes: ["stb_vorbis_", "STB_VORBIS_"],
+          header_candidates: [
+            MilkTea.data_root.join("third_party/stb-upstream/stb_vorbis.c").to_s,
+          ],
+          prepare: lambda do |_binding, **|
+            UpstreamSources.default_sources(root:).find { |source| source.name == "stb" }&.bootstrap!
+          end,
+        ),
+        Binding.new(
+          name: "cgltf",
+          module_name: "std.c.cgltf",
+          binding_path: root.join("std/c/cgltf.mt"),
+          include_directives: ["cgltf.h"],
+          declaration_name_prefixes: ["cgltf_"],
+          header_candidates: [
+            MilkTea.data_root.join("third_party/cgltf-upstream/cgltf.h").to_s,
+          ],
+          prepare: lambda do |_binding, **|
+            UpstreamSources.default_sources(root:).find { |source| source.name == "cgltf" }&.bootstrap!
+          end,
+        ),
       ]
     end
   end
