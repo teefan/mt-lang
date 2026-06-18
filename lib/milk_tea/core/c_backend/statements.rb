@@ -134,7 +134,7 @@ module MilkTea
                 lines
                 end
               else
-                raise LoweringError, "unsupported IR statement #{statement.class.name}"
+                raise CBackendError, "unsupported IR statement #{statement.class.name}"
               end
             end
 
@@ -457,7 +457,7 @@ module MilkTea
             when IR::CheckedSpanIndex
               "#{checked_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)})"
             else
-              raise LoweringError, "unsupported checked index alias expression #{expression.class.name}"
+              raise CBackendError, "unsupported checked index alias expression #{expression.class.name}"
             end
           end
 
@@ -489,19 +489,19 @@ module MilkTea
           def emit_for_clause_statement(statement)
             case statement
             when IR::LocalDecl
-              raise LoweringError, "array for-loop init declarations are unsupported" if array_type?(statement.type)
+              raise CBackendError, "array for-loop init declarations are unsupported" if array_type?(statement.type)
 
               "#{c_declaration(statement.type, statement.c_name)} = #{emit_initializer(statement.value)}"
             when IR::Assignment
               if array_type?(statement.target.type) && statement.operator == "="
-                raise LoweringError, "array for-loop assignment clauses are unsupported"
+                raise CBackendError, "array for-loop assignment clauses are unsupported"
               end
 
               "#{emit_expression(statement.target)} #{statement.operator} #{emit_expression(statement.value)}"
             when IR::ExpressionStmt
               emit_expression(statement.expression)
             else
-              raise LoweringError, "unsupported for-loop clause #{statement.class.name}"
+              raise CBackendError, "unsupported for-loop clause #{statement.class.name}"
             end
           end
 

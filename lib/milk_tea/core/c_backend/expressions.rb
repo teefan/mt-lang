@@ -32,7 +32,7 @@ module MilkTea
             when IR::NullableSpanIndex
               "#{nullable_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)})"
             when IR::Call
-              raise LoweringError, "array-return call must be materialized before C emission" if array_type?(expression.type)
+              raise CBackendError, "array-return call must be materialized before C emission" if array_type?(expression.type)
 
               emit_call_expression(expression)
             when IR::Unary
@@ -95,7 +95,7 @@ module MilkTea
             when IR::VariantLiteral
               emit_variant_literal(expression)
             else
-              raise LoweringError, "unsupported IR expression #{expression.class.name}"
+              raise CBackendError, "unsupported IR expression #{expression.class.name}"
             end
           end
 
@@ -153,7 +153,7 @@ module MilkTea
             when "+", "-" then 9
             when "*", "/", "%" then 10
             else
-              raise LoweringError, "unsupported binary operator #{operator}"
+              raise CBackendError, "unsupported binary operator #{operator}"
             end
           end
 
@@ -349,7 +349,7 @@ module MilkTea
             return proc_field_types(type).fetch(field_name) if type.is_a?(Types::Proc)
             return type.field(field_name) if type.respond_to?(:field)
 
-            raise LoweringError, "unsupported aggregate field lookup for #{type}"
+            raise CBackendError, "unsupported aggregate field lookup for #{type}"
           end
 
           def emit_aggregate_field_initializer(type, field)
