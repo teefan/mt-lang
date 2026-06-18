@@ -107,17 +107,6 @@ module MilkTea
             end
             parent[:detail] = detail_parts.join(' ') unless detail_parts.empty?
 
-            type_params = expand_generic_type_params(decl)
-            if type_params&.any?
-              parent[:children] ||= []
-              parent_children = parent[:children]
-              type_params.each do |tp|
-                child = type_param_child_symbol(tp)
-                next unless child
-                parent_children << child unless parent_children.any? { |pc| pc[:name] == child[:name] }
-              end
-            end
-
             locals = collect_local_decls(decl.body)
             next unless locals&.any?
 
