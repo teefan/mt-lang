@@ -111,10 +111,10 @@ module MilkTea
       end
 
       def ensure_subscription_runtime
-        return if @subscription_runtime_emitted
+        return if @artifacts.subscription_runtime_emitted
 
         subscription_type = @types.fetch("Subscription")
-        @synthetic_structs << IR::StructDecl.new(
+        @artifacts.synthetic_structs << IR::StructDecl.new(
           name: subscription_type.name,
           c_name: subscription_type.c_name,
           fields: [
@@ -124,14 +124,14 @@ module MilkTea
           packed: false,
           alignment: nil,
         )
-        @subscription_runtime_emitted = true
+        @artifacts.subscription_runtime_emitted = true
       end
 
       def ensure_event_error_enum
-        return if @event_error_enum_emitted
+        return if @artifacts.event_error_enum_emitted
 
         event_error_type = @types.fetch("EventError")
-        @synthetic_enums << IR::EnumDecl.new(
+        @artifacts.synthetic_enums << IR::EnumDecl.new(
           name: event_error_type.name,
           c_name: c_type_name(event_error_type),
           backing_type: event_error_type.backing_type,
@@ -144,11 +144,11 @@ module MilkTea
           ],
           flags: false,
         )
-        @event_error_enum_emitted = true
+        @artifacts.event_error_enum_emitted = true
       end
 
       def ensure_event_runtime(event_type)
-        return @event_runtime_infos.fetch(event_type) if @event_runtime_infos.key?(event_type)
+        return @artifacts.event_runtime_infos.fetch(event_type) if @artifacts.event_runtime_infos.key?(event_type)
 
         ensure_subscription_runtime
         ensure_event_error_enum
@@ -187,7 +187,7 @@ module MilkTea
         slots_type = array_of(slot_type, event_type.capacity)
         snapshots_type = array_of(snapshot_type, event_type.capacity)
 
-        @synthetic_structs << IR::StructDecl.new(
+        @artifacts.synthetic_structs << IR::StructDecl.new(
           name: slot_type.name,
           c_name: slot_type.name,
           fields: [
@@ -201,7 +201,7 @@ module MilkTea
           packed: false,
           alignment: nil,
         )
-        @synthetic_structs << IR::StructDecl.new(
+        @artifacts.synthetic_structs << IR::StructDecl.new(
           name: snapshot_type.name,
           c_name: snapshot_type.name,
           fields: [
@@ -216,7 +216,7 @@ module MilkTea
           packed: false,
           alignment: nil,
         )
-        @synthetic_structs << IR::StructDecl.new(
+        @artifacts.synthetic_structs << IR::StructDecl.new(
           name: wait_frame_type.name,
           c_name: wait_frame_type.name,
           fields: [
@@ -230,7 +230,7 @@ module MilkTea
           packed: false,
           alignment: nil,
         )
-        @synthetic_structs << IR::StructDecl.new(
+        @artifacts.synthetic_structs << IR::StructDecl.new(
           name: event_type.name,
           c_name: event_type.c_name,
           fields: [IR::Field.new(name: "slots", type: slots_type)],
@@ -268,19 +268,19 @@ module MilkTea
           wait_take_result_c_name: "#{event_type.c_name}__wait__take_result",
         }
 
-        @synthetic_functions << build_event_subscribe_function(runtime, once: false)
-        @synthetic_functions << build_event_subscribe_function(runtime, once: true)
-        @synthetic_functions << build_event_subscribe_stateful_function(runtime, once: false)
-        @synthetic_functions << build_event_subscribe_stateful_function(runtime, once: true)
-        @synthetic_functions << build_event_unsubscribe_function(runtime)
-        @synthetic_functions << build_event_emit_function(runtime)
-        @synthetic_functions << build_event_wait_ready_function(runtime)
-        @synthetic_functions << build_event_wait_set_waiter_function(runtime)
-        @synthetic_functions << build_event_wait_release_function(runtime)
-        @synthetic_functions << build_event_wait_take_result_function(runtime)
-        @synthetic_functions << build_event_wait_function(runtime)
+        @artifacts.synthetic_functions << build_event_subscribe_function(runtime, once: false)
+        @artifacts.synthetic_functions << build_event_subscribe_function(runtime, once: true)
+        @artifacts.synthetic_functions << build_event_subscribe_stateful_function(runtime, once: false)
+        @artifacts.synthetic_functions << build_event_subscribe_stateful_function(runtime, once: true)
+        @artifacts.synthetic_functions << build_event_unsubscribe_function(runtime)
+        @artifacts.synthetic_functions << build_event_emit_function(runtime)
+        @artifacts.synthetic_functions << build_event_wait_ready_function(runtime)
+        @artifacts.synthetic_functions << build_event_wait_set_waiter_function(runtime)
+        @artifacts.synthetic_functions << build_event_wait_release_function(runtime)
+        @artifacts.synthetic_functions << build_event_wait_take_result_function(runtime)
+        @artifacts.synthetic_functions << build_event_wait_function(runtime)
 
-        @event_runtime_infos[event_type] = runtime
+        @artifacts.event_runtime_infos[event_type] = runtime
       end
 
       def build_event_subscribe_function(runtime, once:)

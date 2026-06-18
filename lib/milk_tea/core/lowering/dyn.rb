@@ -84,7 +84,7 @@ module MilkTea
 
     def ensure_dyn_vtable_struct(interface)
       vtable_c_name = "mt_vtable_#{interface.name}"
-      return if @synthetic_structs.any? { |s| s.c_name == vtable_c_name }
+      return if @artifacts.synthetic_structs.any? { |s| s.c_name == vtable_c_name }
 
       void_ptr = Types::GenericInstance.new("ptr", [Types::Primitive.new("void")])
       fields = interface.methods.map do |method_name, method_binding|
@@ -93,7 +93,7 @@ module MilkTea
         IR::Field.new(name: method_name, type: fn_type)
       end
 
-      @synthetic_structs << IR::StructDecl.new(
+      @artifacts.synthetic_structs << IR::StructDecl.new(
         name: "vtable_#{interface.name}",
         c_name: vtable_c_name,
         fields:,
@@ -178,7 +178,7 @@ module MilkTea
                   end
                 end
 
-        @synthetic_functions << IR::Function.new(
+        @artifacts.synthetic_functions << IR::Function.new(
           name: "__dyn_#{concrete_type_name}_#{method_name}",
           c_name: wrapper_c_name,
           params:,
@@ -199,7 +199,7 @@ module MilkTea
         field_type = vtable_full.field(method_name)
         IR::AggregateField.new(name: method_name, value: IR::Name.new(name: wrapper_c_name, type: field_type || @error_type, pointer: false))
       end
-      @synthetic_constants << IR::Constant.new(
+      @artifacts.synthetic_constants << IR::Constant.new(
         name: vtable_c_name,
         c_name: vtable_c_name,
         type: vtable_full,

@@ -18,6 +18,7 @@ require_relative "lowering/str_buffer"
 require_relative "lowering/resolve"
 require_relative "lowering/dyn"
 require_relative "lowering/utils"
+require_relative "lowering/artifacts"
 
 module MilkTea
   class LoweringError < StandardError; end
@@ -60,20 +61,10 @@ module MilkTea
       @functions = {}
       @struct_types = {}
       @union_types = {}
-      @synthetic_structs = []
-      @synthetic_enums = []
-      @synthetic_functions = []
-      @synthetic_constants = []
+      @artifacts = Artifacts.new
       @synthetic_proc_counter = 0
       @parallel_for_counter = 0
-      @event_runtime_infos = {}
-      @subscription_runtime_emitted = false
-      @event_error_enum_emitted = false
-      @lowered_function_c_names = {}
-      @emitted_declarations = []
       @method_definitions = build_method_definitions
-      @external_layout_assertions = []
-      @emitted_external_layout_pairs = {}
     end
 
     def lower
@@ -96,16 +87,16 @@ module MilkTea
       modules = {}
 
       cached_synthetics&.each do |_module_name, synths|
-        @synthetic_structs.concat(synths[:structs] || [])
-        @synthetic_enums.concat(synths[:enums] || [])
-        @synthetic_functions.concat(synths[:functions] || [])
-        @synthetic_constants.concat(synths[:constants] || [])
+        @artifacts.synthetic_structs.concat(synths[:structs] || [])
+        @artifacts.synthetic_enums.concat(synths[:enums] || [])
+        @artifacts.synthetic_functions.concat(synths[:functions] || [])
+        @artifacts.synthetic_constants.concat(synths[:constants] || [])
       end
 
       cached&.each do |module_name, cached_ir|
         modules[module_name] = cached_ir.with(functions: [])
         per_module_funcs[module_name] = cached_ir.functions.dup
-        cached_ir.functions.each { |f| @lowered_function_c_names[f.c_name] = true }
+        cached_ir.functions.each { |f| @artifacts.lowered_function_c_names[f.c_name] = true }
       end
 
       @program.analyses_by_path.each_pair do |path, analysis|
@@ -115,10 +106,10 @@ module MilkTea
         prepare_analysis(analysis, source_path: path)
         collect_structs
 
-        synth_before_s = @synthetic_structs.length
-        synth_before_e = @synthetic_enums.length
-        synth_before_f = @synthetic_functions.length
-        synth_before_c = @synthetic_constants.length
+        synth_before_s = @artifacts.synthetic_structs.length
+        synth_before_e = @artifacts.synthetic_enums.length
+        synth_before_f = @artifacts.synthetic_functions.length
+        synth_before_c = @artifacts.synthetic_constants.length
 
         modules[analysis.module_name] = IR::Program.new(
           module_name: analysis.module_name,
@@ -137,10 +128,10 @@ module MilkTea
         per_module_funcs[analysis.module_name].concat(lower_functions)
 
         per_module_synthetics[analysis.module_name] = {
-          structs: @synthetic_structs[synth_before_s..] || [],
-          enums: @synthetic_enums[synth_before_e..] || [],
-          functions: @synthetic_functions[synth_before_f..] || [],
-          constants: @synthetic_constants[synth_before_c..] || [],
+          structs: @artifacts.synthetic_structs[synth_before_s..] || [],
+          enums: @artifacts.synthetic_enums[synth_before_e..] || [],
+          functions: @artifacts.synthetic_functions[synth_before_f..] || [],
+          constants: @artifacts.synthetic_constants[synth_before_c..] || [],
         }
       end
 
@@ -154,10 +145,10 @@ module MilkTea
           prepare_analysis(analysis, source_path: path)
           ensure_events_for_analysis(analysis)
 
-          synth_before_s = @synthetic_structs.length
-          synth_before_e = @synthetic_enums.length
-          synth_before_f = @synthetic_functions.length
-          synth_before_c = @synthetic_constants.length
+          synth_before_s = @artifacts.synthetic_structs.length
+          synth_before_e = @artifacts.synthetic_enums.length
+          synth_before_f = @artifacts.synthetic_functions.length
+          synth_before_c = @artifacts.synthetic_constants.length
 
           newly_lowered = lower_functions
           next if newly_lowered.empty?
@@ -165,10 +156,10 @@ module MilkTea
           per_module_funcs[analysis.module_name].concat(newly_lowered)
 
           delta = {
-            structs: @synthetic_structs[synth_before_s..] || [],
-            enums: @synthetic_enums[synth_before_e..] || [],
-            functions: @synthetic_functions[synth_before_f..] || [],
-            constants: @synthetic_constants[synth_before_c..] || [],
+            structs: @artifacts.synthetic_structs[synth_before_s..] || [],
+            enums: @artifacts.synthetic_enums[synth_before_e..] || [],
+            functions: @artifacts.synthetic_functions[synth_before_f..] || [],
+            constants: @artifacts.synthetic_constants[synth_before_c..] || [],
           }
           existing = per_module_synthetics[analysis.module_name]
           per_module_synthetics[analysis.module_name] = existing ? merge_synthetics(existing, delta) : delta
@@ -210,7 +201,7 @@ module MilkTea
       includes = collect_includes
 
       all_constants = modules.values.flat_map(&:constants)
-      all_constants.concat(@synthetic_constants)
+      all_constants.concat(@artifacts.synthetic_constants)
       all_globals = modules.values.flat_map(&:globals)
       all_opaques = modules.values.flat_map(&:opaques)
       all_structs = modules.values.flat_map(&:structs)
@@ -218,16 +209,16 @@ module MilkTea
       all_enums = modules.values.flat_map(&:enums)
       all_variants = modules.values.flat_map(&:variants)
       all_static_asserts = modules.values.flat_map(&:static_asserts)
-      all_static_asserts.concat(@external_layout_assertions)
+      all_static_asserts.concat(@artifacts.external_layout_assertions)
       all_functions = modules.values.flat_map(&:functions)
 
       all_opaques.concat(lower_imported_external_opaques)
-      all_structs.concat(@synthetic_structs.uniq { |s| s.c_name })
-      all_enums.concat(@synthetic_enums.uniq { |e| e.c_name })
-      all_functions.concat(@synthetic_functions.uniq { |f| f.c_name })
+      all_structs.concat(@artifacts.synthetic_structs.uniq { |s| s.c_name })
+      all_enums.concat(@artifacts.synthetic_enums.uniq { |e| e.c_name })
+      all_functions.concat(@artifacts.synthetic_functions.uniq { |f| f.c_name })
 
       # Add emit-generated declarations
-      @emitted_declarations.each do |emitted|
+      @artifacts.emitted_declarations.each do |emitted|
         case emitted
         when IR::Function
           all_functions << emitted
