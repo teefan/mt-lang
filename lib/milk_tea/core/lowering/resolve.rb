@@ -1936,7 +1936,7 @@ module MilkTea
       end
 
       def builtin_attribute_binding(name)
-        Sema.builtin_attribute_binding(name, @ctx.types)
+        MilkTea.builtin_attribute_binding(name, @ctx.types)
       end
 
       def attribute_argument_values(binding, application, env:)

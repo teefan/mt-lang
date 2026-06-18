@@ -120,7 +120,7 @@ module MilkTea
 
       def install_builtin_attributes
         BUILTIN_ATTRIBUTE_NAMES.each do |name|
-          @ctx.attributes[name] = Sema.builtin_attribute_binding(name, @ctx.types)
+          @ctx.attributes[name] = MilkTea.builtin_attribute_binding(name, @ctx.types)
         end
       end
 
