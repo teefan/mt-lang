@@ -1225,21 +1225,6 @@ module MilkTea
         type.external && opaque_forward_declarable?(type)
       end
 
-      def type_ref_from_specialization(expression)
-        case expression.callee
-        when AST::Identifier
-          AST::TypeRef.new(name: AST::QualifiedName.new(parts: [expression.callee.name]), arguments: expression.arguments, nullable: false)
-        when AST::MemberAccess
-          return nil unless expression.callee.receiver.is_a?(AST::Identifier)
-
-          AST::TypeRef.new(
-            name: AST::QualifiedName.new(parts: [expression.callee.receiver.name, expression.callee.member]),
-            arguments: expression.arguments,
-            nullable: false,
-          )
-        end
-      end
-
       def validate_generic_type!(name, arguments)
         super(name, arguments) { |msg| raise LoweringError, msg }
       end

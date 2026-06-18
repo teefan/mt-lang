@@ -1574,14 +1574,7 @@ module MilkTea
       def atomic_method_kind(receiver_type, name)
         return unless atomic_type?(receiver_type)
 
-        case name
-        when "load" then :atomic_load
-        when "store" then :atomic_store
-        when "add" then :atomic_add
-        when "sub" then :atomic_sub
-        when "exchange" then :atomic_exchange
-        when "compare_exchange" then :atomic_compare_exchange
-        end
+        TypeCompatibilityPredicates::ATOMIC_METHOD_KINDS[name]
       end
 
       def lower_atomic_method_call(kind, receiver, expression, env:, type:)

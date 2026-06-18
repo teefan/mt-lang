@@ -47,40 +47,21 @@ module MilkTea
       end
 
       def check_aggregate_construction(struct_type, arguments, scopes:)
-        display_name = aggregate_display_name(struct_type)
+        require_unsafe!("str construction requires unsafe") if struct_type.is_a?(Types::StringView)
 
-        if struct_type.is_a?(Types::StringView)
-          require_unsafe!("str construction requires unsafe")
-        end
-
-        raise_sema_error("aggregate construction for #{display_name} requires named arguments") unless arguments.all?(&:name)
-
-        provided = {}
-        arguments.each do |argument|
-          field_type = struct_type.field(argument.name)
-          raise_sema_error("unknown field #{display_name}.#{argument.name}") unless field_type
-          raise_sema_error("duplicate field #{display_name}.#{argument.name}") if provided.key?(argument.name)
-
-          actual_type = infer_expression(argument.value, scopes:, expected_type: field_type)
-          ensure_assignable!(
-            actual_type,
-            field_type,
-            "field #{display_name}.#{argument.name} expects #{field_type}, got #{actual_type}",
-            expression: argument.value,
-            external_numeric: struct_type.respond_to?(:external) && struct_type.external,
-            external_pointer_null: struct_type.respond_to?(:external) && struct_type.external,
-            contextual_int_to_float: contextual_int_to_float_target?(field_type),
-          )
-          provided[argument.name] = true
-        end
-
+        check_aggregate_field_arguments(struct_type, arguments, scopes:, context: "aggregate construction")
         struct_type
       end
 
       def check_struct_with_call(struct_type, _receiver_expression, arguments, scopes:)
+        check_aggregate_field_arguments(struct_type, arguments, scopes:, context: "struct.with()")
+        struct_type
+      end
+
+      def check_aggregate_field_arguments(struct_type, arguments, scopes:, context:)
         display_name = aggregate_display_name(struct_type)
 
-        raise_sema_error("struct.with() requires named arguments") unless arguments.all?(&:name)
+        raise_sema_error("#{context} for #{display_name} requires named arguments") unless arguments.all?(&:name)
 
         provided = {}
         arguments.each do |argument|
@@ -100,8 +81,6 @@ module MilkTea
           )
           provided[argument.name] = true
         end
-
-        struct_type
       end
 
       def check_variant_arm_construction(callable, arguments, scopes:)
@@ -629,43 +608,16 @@ module MilkTea
         )
       end
 
-      def event_subscription_result_type
-        @ctx.types.fetch("Result").instantiate([@ctx.types.fetch("Subscription"), @ctx.types.fetch("EventError")])
-      end
-
-      def event_wait_result_type(event_type)
-        payload_type = event_type.payload_type || @ctx.types.fetch("void")
-        @ctx.types.fetch("Result").instantiate([payload_type, @ctx.types.fetch("EventError")])
-      end
-
       def event_method_kind(receiver_type, name)
         return unless event_type?(receiver_type)
 
-        case name
-        when "subscribe"
-          :event_subscribe
-        when "subscribe_once"
-          :event_subscribe_once
-        when "unsubscribe"
-          :event_unsubscribe
-        when "emit"
-          :event_emit
-        when "wait"
-          :event_wait
-        end
+        EVENT_METHOD_KINDS[name]
       end
 
       def atomic_method_kind(receiver_type, name)
         return unless atomic_type?(receiver_type)
 
-        case name
-        when "load" then :atomic_load
-        when "store" then :atomic_store
-        when "add" then :atomic_add
-        when "sub" then :atomic_sub
-        when "exchange" then :atomic_exchange
-        when "compare_exchange" then :atomic_compare_exchange
-        end
+        ATOMIC_METHOD_KINDS[name]
       end
 
       def check_atomic_method_call(kind, receiver_type, receiver, arguments, scopes:)
@@ -703,13 +655,7 @@ module MilkTea
       end
 
       def event_method_name(kind)
-        {
-          event_subscribe: "subscribe",
-          event_subscribe_once: "subscribe_once",
-          event_unsubscribe: "unsubscribe",
-          event_emit: "emit",
-          event_wait: "wait",
-        }.fetch(kind)
+        EVENT_METHOD_NAMES.fetch(kind)
       end
 
       def event_visible_from_current_module?(event_type)
@@ -786,40 +732,11 @@ module MilkTea
       def str_buffer_method_kind(receiver_type, name)
         return unless str_buffer_type?(receiver_type)
 
-        case name
-        when "clear"
-          :str_buffer_clear
-        when "assign"
-          :str_buffer_assign
-        when "append"
-          :str_buffer_append
-        when "assign_format"
-          :str_buffer_assign_format
-        when "append_format"
-          :str_buffer_append_format
-        when "len"
-          :str_buffer_len
-        when "capacity"
-          :str_buffer_capacity
-        when "as_str"
-          :str_buffer_as_str
-        when "as_cstr"
-          :str_buffer_as_cstr
-        end
+        STR_BUFFER_METHOD_KINDS[name]
       end
 
       def str_buffer_method_name(kind)
-        {
-          str_buffer_clear: "clear",
-          str_buffer_assign: "assign",
-          str_buffer_append: "append",
-          str_buffer_assign_format: "assign_format",
-          str_buffer_append_format: "append_format",
-          str_buffer_len: "len",
-          str_buffer_capacity: "capacity",
-          str_buffer_as_str: "as_str",
-          str_buffer_as_cstr: "as_cstr",
-        }.fetch(kind)
+        STR_BUFFER_METHOD_NAMES.fetch(kind)
       end
 
       def check_function_call(binding, arguments, scopes:)

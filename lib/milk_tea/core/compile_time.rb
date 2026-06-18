@@ -234,7 +234,7 @@ module MilkTea
       rescue
         return unless type_ref.respond_to?(:name) && type_ref.name.parts.length >= 1
 
-        expression = build_compile_time_expression_from_qualified_name(type_ref.name)
+        expression = ::MilkTea::AST.build_chain_from_parts(type_ref.name.parts)
         return unless expression
 
         value = evaluate(expression)
@@ -245,16 +245,7 @@ module MilkTea
         nil
       end
 
-      def build_compile_time_expression_from_qualified_name(qualified_name)
-        parts = qualified_name.parts
-        return unless parts.length >= 1
 
-        expr = ::MilkTea::AST::Identifier.new(name: parts.first)
-        parts[1..].each do |part|
-          expr = ::MilkTea::AST::MemberAccess.new(receiver: expr, member: part)
-        end
-        expr
-      end
     end
 
     module_function

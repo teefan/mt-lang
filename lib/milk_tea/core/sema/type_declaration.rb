@@ -656,22 +656,22 @@ module MilkTea
         raise_sema_error("duplicate value #{name}") if @ctx.top_level_values.key?(name) || @ctx.top_level_functions.key?(name)
       end
 
-      def ensure_non_reserved_value_type_name!(name, kind_label:, line: nil, column: nil, length: nil)
-        return unless Types::RESERVED_VALUE_TYPE_NAMES.include?(name)
+      def ensure_non_reserved_name!(name, reserved_names, kind_label:, line: nil, column: nil, length: nil)
+        return unless reserved_names.include?(name)
 
         raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:, length:)
+      end
+
+      def ensure_non_reserved_value_type_name!(name, kind_label:, line: nil, column: nil, length: nil)
+        ensure_non_reserved_name!(name, Types::RESERVED_VALUE_TYPE_NAMES, kind_label:, line:, column:, length:)
       end
 
       def ensure_non_reserved_import_alias_name!(name, kind_label:, line: nil, column: nil, length: nil)
-        return unless Types::RESERVED_IMPORT_ALIAS_NAMES.include?(name)
-
-        raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:, length:)
+        ensure_non_reserved_name!(name, Types::RESERVED_IMPORT_ALIAS_NAMES, kind_label:, line:, column:, length:)
       end
 
       def ensure_non_reserved_type_binding_name!(name, kind_label:, line: nil, column: nil, length: nil)
-        return unless Types::RESERVED_TYPE_BINDING_NAMES.include?(name)
-
-        raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:, length:)
+        ensure_non_reserved_name!(name, Types::RESERVED_TYPE_BINDING_NAMES, kind_label:, line:, column:, length:)
       end
 
       def declare_top_level_values
