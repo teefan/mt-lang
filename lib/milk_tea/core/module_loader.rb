@@ -1,10 +1,9 @@
 # frozen_string_literal: true
 
 require_relative "module_loader/errors"
-require_relative "module_loader/resolution"
-require_relative "module_loader/package_graph"
-require_relative "module_loader/binding"
-require_relative "module_loader/async_runtime"
+require_relative "module_path_resolver"
+require_relative "module_binder"
+require_relative "async_runtime_installer"
 
 module MilkTea
   class ModuleLoader
@@ -102,6 +101,20 @@ module MilkTea
       @package_manifest_cache = {}
       @shared_cache = shared_cache # Hash or nil; mutated in-place to persist across calls
       @source_overrides = normalize_source_overrides(source_overrides)
+
+      @path_resolver = ModulePathResolver.new(
+        module_roots: @module_roots,
+        platform: @platform,
+        package_graph: @package_graph,
+        source_overrides: @source_overrides,
+        package_manifest_cache: @package_manifest_cache,
+      )
+      @binder = ModuleBinder.new
+      @async_runtime_installer = AsyncRuntimeInstaller.new(
+        resolve_module_path: @path_resolver.method(:resolve_module_path),
+        check_block: ->(path, collecting) { collecting ? check_path_collecting_errors(path) : check_path(path) },
+        bind_block: @binder.method(:module_binding),
+      )
     end
 
     def load_file(path)
@@ -147,7 +160,7 @@ module MilkTea
       @parse_cache.each_key do |resolved_path|
         ast = @parse_cache[resolved_path]
         deps = ast.imports.map do |import|
-          resolve_module_path(import.path.to_s, importer_path: resolved_path, importer_module_name: ast.module_name.to_s)
+          @path_resolver.resolve_module_path(import.path.to_s, importer_path: resolved_path, importer_module_name: ast.module_name.to_s)
         end
         graph[resolved_path] = deps
       end
@@ -177,7 +190,7 @@ module MilkTea
       @parse_cache[resolved_path] = ast
 
       ast.imports.each do |import|
-        import_path = resolve_module_path(import.path.to_s, importer_path: resolved_path, importer_module_name: ast.module_name.to_s)
+        import_path = @path_resolver.resolve_module_path(import.path.to_s, importer_path: resolved_path, importer_module_name: ast.module_name.to_s)
         parse_all(import_path)
       end
     ensure
@@ -256,12 +269,12 @@ module MilkTea
       modules = {}
 
       ast.imports.each do |import|
-        import_path = resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
+        import_path = @path_resolver.resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
         import_analysis = check_path(import_path)
-        modules[import.path.to_s] = module_binding(import_analysis)
+        modules[import.path.to_s] = @binder.module_binding(import_analysis)
       end
 
-      install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: false)
+      @async_runtime_installer.install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: false)
       modules.freeze
     end
 
@@ -294,16 +307,16 @@ module MilkTea
 
       ast.imports.each do |import|
         begin
-          import_path = resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
+          import_path = @path_resolver.resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
           import_analysis = check_path_collecting_errors(import_path)
-          modules[import.path.to_s] = module_binding(import_analysis)
+          modules[import.path.to_s] = @binder.module_binding(import_analysis)
         rescue ModuleLoadError, PackageLockError, SemaError => e
           errors << ImportResolutionError.new(import:, error: e)
         end
       end
 
       begin
-        install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: true)
+        @async_runtime_installer.install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: true)
       rescue ModuleLoadError, PackageLockError => e
         errors << ImportResolutionError.new(import: nil, error: e)
       end
@@ -322,11 +335,6 @@ module MilkTea
       raise(error_class || ArgumentError, message)
     end
     private_class_method :raise_platform_conflict!
-
-    include Resolution
-    include PackageGraph
-    include Binding
-    include AsyncRuntime
 
     def check_path(path)
       resolved_path = self.class.resolve_source_path(path, platform: @platform, error_class: ModuleLoadError)
