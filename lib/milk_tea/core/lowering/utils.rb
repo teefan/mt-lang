@@ -229,7 +229,7 @@ module MilkTea
         end
 
         nil
-      rescue SemaError
+      rescue LoweringError
         nil
       end
 

@@ -85,4 +85,41 @@ module MilkTea
       receiver_type.is_a?(Types::StructInstance) && private_methods.fetch(receiver_type.definition, {}).key?(name)
     end
   end
+
+  AttributeBinding = Data.define(:name, :targets, :params, :module_name, :builtin, :ast)
+  BUILTIN_ATTRIBUTE_NAMES = %w[packed align deprecated].freeze
+
+  module_function
+
+  def builtin_attribute_binding(name, types)
+    case name
+    when "packed"
+      AttributeBinding.new(
+        name: "packed",
+        targets: [:struct].freeze,
+        params: [].freeze,
+        module_name: nil,
+        builtin: true,
+        ast: nil,
+      )
+    when "align"
+      AttributeBinding.new(
+        name: "align",
+        targets: [:struct].freeze,
+        params: [Types::Parameter.new("bytes", types.fetch("ptr_uint"))].freeze,
+        module_name: nil,
+        builtin: true,
+        ast: nil,
+      )
+    when "deprecated"
+      AttributeBinding.new(
+        name: "deprecated",
+        targets: %i[callable struct const enum flags union variant event].freeze,
+        params: [Types::Parameter.new("message", types.fetch("str"))].freeze,
+        module_name: nil,
+        builtin: true,
+        ast: nil,
+      )
+    end
+  end
 end

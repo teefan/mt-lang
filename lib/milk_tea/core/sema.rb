@@ -92,7 +92,6 @@ module MilkTea
         )
       end
     end
-    AttributeBinding = Data.define(:name, :targets, :params, :module_name, :builtin, :ast)
     ResolvedAttributeApplication = Data.define(:binding, :argument_values)
     AttributePresenceKey = Data.define(:target, :attribute_module_name, :attribute_name)
     TypeParamConstraintBinding = Data.define(:interfaces) do
@@ -102,40 +101,6 @@ module MilkTea
     HashResolution = Data.define(:target_type, :binding)
     EqualResolution = Data.define(:target_type, :binding)
     OrderResolution = Data.define(:target_type, :binding)
-
-    BUILTIN_ATTRIBUTE_NAMES = %w[packed align deprecated].freeze
-
-    def self.builtin_attribute_binding(name, types)
-      case name
-      when "packed"
-        AttributeBinding.new(
-          name: "packed",
-          targets: [:struct].freeze,
-          params: [].freeze,
-          module_name: nil,
-          builtin: true,
-          ast: nil,
-        )
-      when "align"
-        AttributeBinding.new(
-          name: "align",
-          targets: [:struct].freeze,
-          params: [Types::Parameter.new("bytes", types.fetch("ptr_uint"))].freeze,
-          module_name: nil,
-          builtin: true,
-          ast: nil,
-        )
-      when "deprecated"
-        AttributeBinding.new(
-          name: "deprecated",
-          targets: %i[callable struct const enum flags union variant event].freeze,
-          params: [Types::Parameter.new("message", types.fetch("str"))].freeze,
-          module_name: nil,
-          builtin: true,
-          ast: nil,
-        )
-      end
-    end
 
     INSTALLABLE_BUILTIN_TYPE_NAMES = (Types::BUILTIN_PRIMITIVE_NAMES + %w[
       Option Result Subscription EventError
