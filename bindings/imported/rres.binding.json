@@ -1,0 +1,49 @@
+{
+  "module_name": "std.rres",
+  "raw_module_name": "std.c.rres",
+  "raw_import_alias": "c",
+  "types": {
+    "strip_prefix": "rres"
+  },
+  "constants": {
+    "strip_prefix": "RRES_",
+    "exclude": [
+      "RRES_SUPPORT_LOG_INFO",
+      "RRES_MAX_FILENAME_SIZE"
+    ]
+  },
+  "functions": {
+    "strip_prefix": "rres",
+    "overrides": [
+      {
+        "raw": "rresSetCipherPassword",
+        "params": [
+          {
+            "name": "password",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "rresGetCipherPassword",
+        "return_type": "cstr?"
+      },
+      {
+        "raw": "rresLoadResourceChunkInfoAll",
+        "params": [
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "chunk_count",
+            "type": "ptr[uint]"
+          }
+        ],
+        "return_type": "ptr[ResourceChunkInfo]?"
+      }
+    ]
+  }
+}

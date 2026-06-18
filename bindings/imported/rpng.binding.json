@@ -1,0 +1,75 @@
+{
+  "module_name": "std.rpng",
+  "raw_module_name": "std.c.rpng",
+  "raw_import_alias": "c",
+  "types": {
+    "strip_prefix": "rpng_"
+  },
+  "constants": {
+    "strip_prefix": "RPNG_"
+  },
+  "functions": {
+    "strip_prefix": "rpng_",
+    "exclude": [
+      "rpng_chunk_print_info"
+    ],
+    "overrides": [
+      {
+        "raw": "rpng_load_image",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "rpng_load_image_indexed",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "rpng_load_image_from_memory",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "rpng_load_image_indexed_from_memory",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "rpng_save_image_to_memory",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "rpng_save_image_indexed_to_memory",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "rpng_unindex_image_data",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "rpng_chunk_read_all",
+        "return_type": "ptr[chunk]?"
+      },
+      {
+        "raw": "rpng_chunk_read_all_from_memory",
+        "return_type": "ptr[chunk]?"
+      },
+      {
+        "raw": "rpng_chunk_remove_from_memory",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "rpng_chunk_remove_ancillary_from_memory",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "rpng_chunk_write_from_memory",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "rpng_chunk_combine_image_data_from_memory",
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "rpng_chunk_split_image_data_from_memory",
+        "return_type": "ptr[char]?"
+      }
+    ]
+  }
+}
