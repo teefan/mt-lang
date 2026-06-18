@@ -357,7 +357,7 @@ module MilkTea
         lines << "```"
 
         unless modules.empty?
-          prefix = modules.length == 1 ? 'From' : 'From'
+          prefix = 'From'
           lines << "*#{prefix} #{modules.join(', ')}*"
         end
 
@@ -1144,33 +1144,31 @@ module MilkTea
         after_bracket_index = next_non_trivia_token_index(tokens, rbracket_index + 1)
 
         if after_bracket_index && tokens[after_bracket_index].type == :lparen
-          docs = if name == 'array'
-                   '`array[T, N](...)` constructs a fixed-length array value of type `array[T, N]`.'
-                 elsif name == 'span'
-                   '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
-                 elsif name == 'SoA'
-                   '`SoA[T, N](...)` constructs a Struct-of-Arrays value with `N` elements of type `T`. Fields are stored in separate contiguous arrays.'
-                 elsif name == 'Option'
-                   '`Option[T]` is a built-in optional type with arms `some(value: T)` and `none`.'
-                 elsif name == 'Result'
-                   '`Result[T, E]` is a built-in result type with arms `success(value: T)` and `failure(error: E)`.'
-                 else
-                   '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
-                 end
+           docs = case name
+                   when 'array'
+                    '`array[T, N](...)` constructs a fixed-length array value of type `array[T, N]`.'
+                   when 'span'
+                    '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
+                   when 'SoA'
+                    '`SoA[T, N](...)` constructs a Struct-of-Arrays value with `N` elements of type `T`. Fields are stored in separate contiguous arrays.'
+                   when 'Option'
+                    '`Option[T]` is a built-in optional type with arms `some(value: T)` and `none`.'
+                   when 'Result'
+                    '`Result[T, E]` is a built-in result type with arms `success(value: T)` and `failure(error: E)`.'
+                   end
 
           return {
-            signature: if name == 'array'
+            signature: case name
+                       when 'array'
                          "builtin #{specialization}(...) -> #{specialization}"
-                       elsif name == 'span'
+                       when 'span'
                          "builtin #{specialization}(data = ..., len = ...) -> #{specialization}"
-                       elsif name == 'SoA'
+                       when 'SoA'
                          "builtin #{specialization}(...) -> #{specialization}"
-                       elsif name == 'Option'
+                       when 'Option'
                          "builtin #{specialization}(some: value = ...) / #{specialization}(none:)"
-                       elsif name == 'Result'
+                       when 'Result'
                          "builtin #{specialization}(success: value = ...) / #{specialization}(failure: error = ...)"
-                       else
-                         "builtin #{specialization}"
                        end,
             docs: docs,
           }
@@ -1185,7 +1183,7 @@ module MilkTea
                  '`SoA[T, N]` is the built-in Struct-of-Arrays type. Each struct field is stored in a separate contiguous array of `N` elements, improving SIMD/cache behavior for parallel field access.'
                when 'Option'
                  '`Option[T]` is the built-in optional value type with `some(value = ...)` and `none` arms.'
-               else
+               when 'Result'
                  '`Result[T, E]` is the built-in success/failure type with `success(value = ...)` and `failure(error = ...)` arms.'
                end
 
