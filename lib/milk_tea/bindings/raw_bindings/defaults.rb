@@ -1209,6 +1209,32 @@ module MilkTea
             File.read(binding.binding_path)
           end,
         ),
+        Binding.new(
+          name: "rres",
+          module_name: "std.c.rres",
+          binding_path: root.join("std/c/rres.mt"),
+          include_directives: ["rres.h"],
+          declaration_name_prefixes: ["rres", "RRES_"],
+          header_candidates: [
+            MilkTea.data_root.join("third_party/rres-upstream/src/rres.h").to_s,
+          ],
+          prepare: lambda do |_binding, **|
+            UpstreamSources.default_sources(root:).find { |source| source.name == "rres" }&.bootstrap!
+          end,
+        ),
+        Binding.new(
+          name: "rpng",
+          module_name: "std.c.rpng",
+          binding_path: root.join("std/c/rpng.mt"),
+          include_directives: ["rpng.h"],
+          declaration_name_prefixes: ["rpng", "RPNG_"],
+          header_candidates: [
+            MilkTea.data_root.join("third_party/rpng-upstream/src/rpng.h").to_s,
+          ],
+          prepare: lambda do |_binding, **|
+            UpstreamSources.default_sources(root:).find { |source| source.name == "rpng" }&.bootstrap!
+          end,
+        ),
       ]
     end
   end

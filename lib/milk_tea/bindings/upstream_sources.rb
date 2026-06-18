@@ -179,6 +179,24 @@ module MilkTea
             public/tracy/TracyC.h
           ],
         ),
+        Source.new(
+          name: "rres",
+          checkout_root: data.join("third_party/rres-upstream"),
+          repository_url: "https://github.com/raysan5/rres.git",
+          revision: "5f2a7310197f8b7843ab5b024277a14da83f68f9",
+          sentinel_paths: %w[
+            src/rres.h
+          ],
+        ),
+        Source.new(
+          name: "rpng",
+          checkout_root: data.join("third_party/rpng-upstream"),
+          repository_url: "https://github.com/raysan5/rpng.git",
+          revision: "b8c05ae4e9d7535f8bceac9ea365211ae7401cee",
+          sentinel_paths: %w[
+            src/rpng.h
+          ],
+        ),
       ]
     end
 

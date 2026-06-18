@@ -137,6 +137,20 @@ module MilkTea
           raw_module_name: "std.c.tracy",
           policy_path: root.join("bindings/imported/tracy.binding.json"),
         ),
+        Binding.new(
+          name: "rres",
+          module_name: "std.rres",
+          binding_path: root.join("std/rres.mt"),
+          raw_module_name: "std.c.rres",
+          policy_path: root.join("bindings/imported/rres.binding.json"),
+        ),
+        Binding.new(
+          name: "rpng",
+          module_name: "std.rpng",
+          binding_path: root.join("std/rpng.mt"),
+          raw_module_name: "std.c.rpng",
+          policy_path: root.join("bindings/imported/rpng.binding.json"),
+        ),
       ]
     end
 
