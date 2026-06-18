@@ -496,7 +496,7 @@ module MilkTea
             IR::Field.new(name: c.name, type: c.type)
           end
         end
-        @synthetic_structs << IR::StructDecl.new(
+        @artifacts.synthetic_structs << IR::StructDecl.new(
           name: cap_struct_c_name, c_name: cap_struct_c_name,
           fields: cap_fields, packed: false, alignment: nil,
         )
@@ -547,7 +547,7 @@ module MilkTea
           body:,
         )
 
-        @synthetic_functions << IR::Function.new(
+        @artifacts.synthetic_functions << IR::Function.new(
           name: worker_c_name, c_name: worker_c_name,
           params: [
             IR::Param.new(name: "mt_pfor_data", c_name: "mt_pfor_data", type: void_ptr_type, pointer: false),
@@ -645,7 +645,7 @@ module MilkTea
               end
             end
 
-            @synthetic_structs << IR::StructDecl.new(
+            @artifacts.synthetic_structs << IR::StructDecl.new(
               name: cap_struct_c_name, c_name: cap_struct_c_name,
               fields: cap_fields, packed: false, alignment: nil,
             )
@@ -678,7 +678,7 @@ module MilkTea
             worker_body.concat(rewritten_body)
           end
 
-          @synthetic_functions << IR::Function.new(
+          @artifacts.synthetic_functions << IR::Function.new(
             name: worker_c_name, c_name: worker_c_name,
             params: [IR::Param.new(name: "mt_pfor_data", c_name: "mt_pfor_data", type: void_ptr_type, pointer: false)],
             return_type: void_type,
@@ -812,7 +812,7 @@ module MilkTea
           raise LoweringError, "detach with captured variables is not yet supported; use a global function call or module-level variables"
         end
 
-        @synthetic_functions << IR::Function.new(
+        @artifacts.synthetic_functions << IR::Function.new(
           name: worker_c_name, c_name: worker_c_name,
           params: [IR::Param.new(name: "mt_pfor_data", c_name: "mt_pfor_data", type: @types.fetch("void").then { |v| Types::GenericInstance.new("ptr", [v]) }, pointer: false)],
           return_type: @types.fetch("void"),

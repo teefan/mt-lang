@@ -245,9 +245,9 @@ module MilkTea
           @collected_tuple_types[type.object_id] = true
 
           c_name = "mt_tuple_" + type.element_types.map { |et| sanitize_type_name_for_tuple(et) }.join("_")
-          return if @synthetic_structs.any? { |s| s.c_name == c_name }
+          return if @artifacts.synthetic_structs.any? { |s| s.c_name == c_name }
 
-          @synthetic_structs << IR::StructDecl.new(
+          @artifacts.synthetic_structs << IR::StructDecl.new(
             name: type.to_s,
             c_name: c_name,
             fields: type.element_types.each_with_index.map { |et, i| IR::Field.new(name: "_#{i}", type: et) },

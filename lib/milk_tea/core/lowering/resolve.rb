@@ -47,9 +47,9 @@ module MilkTea
         release_c_name = "#{@module_prefix}__proc_#{proc_id}__release"
         retain_c_name = "#{@module_prefix}__proc_#{proc_id}__retain"
 
-        @synthetic_functions << build_direct_function_proc_invoke_function(source_expression, source_function.name, source_function.type, expected_type, invoke_c_name)
-        @synthetic_functions << build_proc_noop_release_function(release_c_name)
-        @synthetic_functions << build_proc_noop_retain_function(retain_c_name)
+        @artifacts.synthetic_functions << build_direct_function_proc_invoke_function(source_expression, source_function.name, source_function.type, expected_type, invoke_c_name)
+        @artifacts.synthetic_functions << build_proc_noop_release_function(release_c_name)
+        @artifacts.synthetic_functions << build_proc_noop_retain_function(retain_c_name)
 
         IR::AggregateLiteral.new(
           type: expected_type,
@@ -431,7 +431,7 @@ module MilkTea
           elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
             [ :struct_literal, nil, nil, type ]
           else
-            emit_fn = @emitted_declarations.find { |d| d.is_a?(IR::Function) && d.name == callee.name }
+            emit_fn = @artifacts.emitted_declarations.find { |d| d.is_a?(IR::Function) && d.name == callee.name }
             if emit_fn
               return [:function, emit_fn.c_name, nil, emit_fn.return_type, nil]
             end
@@ -1025,10 +1025,10 @@ module MilkTea
         return if source_root.module_name == target_root.module_name
 
         pair_key = [[source_root.module_name, source_root.name], [target_root.module_name, target_root.name]].sort.freeze
-        return if @emitted_external_layout_pairs[pair_key]
+        return if @artifacts.emitted_external_layout_pairs[pair_key]
 
-        @emitted_external_layout_pairs[pair_key] = true
-        @external_layout_assertions << IR::StaticAssert.new(
+        @artifacts.emitted_external_layout_pairs[pair_key] = true
+        @artifacts.external_layout_assertions << IR::StaticAssert.new(
           condition: IR::Binary.new(
             operator: "==",
             left: IR::SizeofExpr.new(target_type: source_root, type: @types.fetch("ptr_uint")),

@@ -674,7 +674,7 @@ module MilkTea
                       env_struct_type = Types::Struct.new("#{@module_prefix}__proc_#{proc_id}__env").define_fields(
                         { "__mt_ref_count" => @types.fetch("ptr_uint") }.merge(captures.each_with_object({}) { |capture, fields| fields[capture[:field_name]] = capture[:type] }),
                       )
-                      @synthetic_structs << IR::StructDecl.new(
+                      @artifacts.synthetic_structs << IR::StructDecl.new(
                         name: env_struct_type.name,
                         c_name: env_struct_type.name,
                         fields: [IR::Field.new(name: "__mt_ref_count", type: @types.fetch("ptr_uint")), *captures.map { |capture| IR::Field.new(name: capture[:field_name], type: capture[:type]) }],
@@ -717,9 +717,9 @@ module MilkTea
                       IR::Cast.new(target_type: proc_env_pointer_type, expression: env_pointer, type: proc_env_pointer_type)
                     end
 
-        @synthetic_functions << build_proc_invoke_function(expression, proc_type, captures, env_struct_type, invoke_c_name)
-        @synthetic_functions << build_proc_release_function(release_c_name, env_struct_type)
-        @synthetic_functions << build_proc_retain_function(retain_c_name, env_struct_type)
+        @artifacts.synthetic_functions << build_proc_invoke_function(expression, proc_type, captures, env_struct_type, invoke_c_name)
+        @artifacts.synthetic_functions << build_proc_release_function(release_c_name, env_struct_type)
+        @artifacts.synthetic_functions << build_proc_retain_function(retain_c_name, env_struct_type)
 
         [
           setup,
@@ -854,7 +854,7 @@ module MilkTea
         body = lower_block(decl.body, env:, active_defers: [], return_type:, loop_flow: nil, allow_return: true)
         body = param_setup + body
         func = IR::Function.new(name: decl.name, c_name:, params:, return_type:, body:, entry_point: false, method_receiver_param: false)
-        @emitted_declarations << func
+        @artifacts.emitted_declarations << func
         []
       end
 
@@ -865,7 +865,7 @@ module MilkTea
         end
         c_name = "#{@module_prefix}#{decl.name}"
         struct_decl = IR::StructDecl.new(name: decl.name, c_name:, fields:, packed: decl.respond_to?(:packed) ? decl.packed : false, alignment: nil)
-        @emitted_declarations << struct_decl
+        @artifacts.emitted_declarations << struct_decl
         []
       end
 
@@ -907,7 +907,7 @@ module MilkTea
         type = decl.type ? resolve_type_ref(decl.type) : infer_expression_type(decl.value, env:)
         c_name = value_c_name(decl.name)
         constant = IR::Constant.new(name: decl.name, c_name:, type:, value:)
-        @emitted_declarations << constant
+        @artifacts.emitted_declarations << constant
         []
       end
   end

@@ -1037,12 +1037,12 @@ module MilkTea
         return if @registered_tuple_types[tuple_type]
 
         c_name = tuple_type_name(tuple_type)
-        return if @synthetic_structs.any? { |s| s.c_name == c_name }
+        return if @artifacts.synthetic_structs.any? { |s| s.c_name == c_name }
 
         fields = tuple_type.element_types.each_with_index.map do |et, i|
           IR::Field.new(name: tuple_type.field_names[i], type: et)
         end
-        @synthetic_structs << IR::StructDecl.new(
+        @artifacts.synthetic_structs << IR::StructDecl.new(
           name: tuple_type.to_s,
           c_name: c_name,
           fields: fields,

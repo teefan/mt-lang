@@ -20,23 +20,23 @@ module MilkTea
               if binding.type_params.any?
                 binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
                   c_name = function_binding_c_name(instance, module_name: @module_name)
-                  next if @lowered_function_c_names[c_name]
+                  next if @artifacts.lowered_function_c_names[c_name]
 
                   lowered << lower_function_decl(instance)
-                  @lowered_function_c_names[c_name] = true
+                  @artifacts.lowered_function_c_names[c_name] = true
                   changed = true
                 end
               else
                 c_name = function_binding_c_name(binding, module_name: @module_name)
-                next if @lowered_function_c_names[c_name]
+                next if @artifacts.lowered_function_c_names[c_name]
 
                 lowered << lower_function_decl(binding)
-                @lowered_function_c_names[c_name] = true
+                @artifacts.lowered_function_c_names[c_name] = true
                 if (entrypoint = build_root_main_entrypoint(binding))
-                  next if @lowered_function_c_names[entrypoint.c_name]
+                  next if @artifacts.lowered_function_c_names[entrypoint.c_name]
 
                   lowered << entrypoint
-                  @lowered_function_c_names[entrypoint.c_name] = true
+                  @artifacts.lowered_function_c_names[entrypoint.c_name] = true
                 end
                 changed = true
               end
@@ -47,18 +47,18 @@ module MilkTea
                 if binding.type_params.any?
                   binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
                     c_name = function_binding_c_name(instance, module_name: @module_name, receiver_type:)
-                    next if @lowered_function_c_names[c_name]
+                    next if @artifacts.lowered_function_c_names[c_name]
 
                     lowered << lower_function_decl(instance, receiver_type:)
-                    @lowered_function_c_names[c_name] = true
+                    @artifacts.lowered_function_c_names[c_name] = true
                     changed = true
                   end
                 else
                   c_name = function_binding_c_name(binding, module_name: @module_name, receiver_type:)
-                  next if @lowered_function_c_names[c_name]
+                  next if @artifacts.lowered_function_c_names[c_name]
 
                   lowered << lower_function_decl(binding, receiver_type:)
-                  @lowered_function_c_names[c_name] = true
+                  @artifacts.lowered_function_c_names[c_name] = true
                   changed = true
                 end
               end
@@ -184,22 +184,22 @@ module MilkTea
         async_info = analyze_async_function(binding, normalized_statements)
         frame_type = build_async_frame_type(frame_c_name, async_info)
 
-        @synthetic_structs << IR::StructDecl.new(
+        @artifacts.synthetic_structs << IR::StructDecl.new(
           name: frame_c_name,
           c_name: frame_c_name,
           fields: frame_type.fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
           packed: false,
           alignment: nil,
         )
-        @synthetic_functions << build_async_resume_function(binding, normalized_statements, frame_type, resume_c_name, async_info)
-        @synthetic_functions << build_async_ready_function(frame_type, ready_c_name, async_info)
-        @synthetic_functions << build_async_set_waiter_function(frame_type, set_waiter_c_name, async_info)
-        @synthetic_functions << build_async_release_function(frame_type, release_c_name, async_info)
-        @synthetic_functions << build_async_take_result_function(frame_type, take_result_c_name, async_info)
-        @synthetic_functions << build_async_cancel_function(frame_type, cancel_c_name, async_info)
+        @artifacts.synthetic_functions << build_async_resume_function(binding, normalized_statements, frame_type, resume_c_name, async_info)
+        @artifacts.synthetic_functions << build_async_ready_function(frame_type, ready_c_name, async_info)
+        @artifacts.synthetic_functions << build_async_set_waiter_function(frame_type, set_waiter_c_name, async_info)
+        @artifacts.synthetic_functions << build_async_release_function(frame_type, release_c_name, async_info)
+        @artifacts.synthetic_functions << build_async_take_result_function(frame_type, take_result_c_name, async_info)
+        @artifacts.synthetic_functions << build_async_cancel_function(frame_type, cancel_c_name, async_info)
 
         if root_main_entrypoint_signature(binding)
-          @synthetic_functions << build_async_constructor_function(
+          @artifacts.synthetic_functions << build_async_constructor_function(
             binding,
             decl,
             frame_type,
