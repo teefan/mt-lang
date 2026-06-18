@@ -1861,7 +1861,7 @@ module MilkTea
       def resolve_attribute_name_argument(expression)
         case expression
         when AST::Identifier
-          @analysis.attributes[expression.name] || builtin_attribute_binding(expression.name)
+          @current_attributes[expression.name] || builtin_attribute_binding(expression.name)
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
 
@@ -1899,7 +1899,7 @@ module MilkTea
         end
         return [] unless target_id
 
-        applications = @analysis.attribute_applications[target_id]
+        applications = @current_attribute_applications[target_id]
         return applications if applications
 
         @imports.each_value do |imported_module|
@@ -1919,7 +1919,7 @@ module MilkTea
       def resolve_attribute_binding_for_name(name)
         case name.parts.length
         when 1
-          @analysis.attributes[name.parts.first] || builtin_attribute_binding(name.parts.first)
+          @current_attributes[name.parts.first] || builtin_attribute_binding(name.parts.first)
         when 2
           imported_module = @imports[name.parts.first]
           return nil unless imported_module
@@ -2051,7 +2051,7 @@ module MilkTea
 
       def type_implements_interface?(type, interface)
         key = interface_implementation_key(type)
-        return true if @analysis.implemented_interfaces.fetch(key, []).include?(interface)
+        return true if @current_implemented_interfaces.fetch(key, []).include?(interface)
 
         @imports.each_value do |module_binding|
           return true if module_binding.implemented_interfaces.fetch(key, []).include?(interface)
@@ -2344,29 +2344,53 @@ module MilkTea
 
       def resolve_type_ref_for_analysis(type_ref, analysis, type_params: current_type_params)
         saved_analysis = @analysis
+        saved_ast = @ast
         saved_module_name = @module_name
         saved_module_prefix = @module_prefix
+        saved_module_kind = @current_module_kind
         saved_imports = @imports
         saved_types = @types
         saved_values = @values
         saved_functions = @functions
+        saved_interfaces = @interfaces
+        saved_methods = @current_methods
+        saved_attributes = @current_attributes
+        saved_attribute_applications = @current_attribute_applications
+        saved_implemented_interfaces = @current_implemented_interfaces
+        saved_directives = @directives
 
         @analysis = analysis
+        @ast = analysis.ast
         @module_name = analysis.module_name
         @module_prefix = module_c_prefix(@module_name)
+        @current_module_kind = analysis.module_kind
         @imports = analysis.imports
         @types = analysis.types
         @values = analysis.values
         @functions = analysis.functions
+        @interfaces = analysis.interfaces
+        @current_methods = analysis.methods
+        @current_attributes = analysis.attributes
+        @current_attribute_applications = analysis.attribute_applications
+        @current_implemented_interfaces = analysis.implemented_interfaces
+        @directives = analysis.directives
         resolve_type_ref(type_ref, type_params:)
       ensure
         @analysis = saved_analysis
+        @ast = saved_ast
         @module_name = saved_module_name
         @module_prefix = saved_module_prefix
+        @current_module_kind = saved_module_kind
         @imports = saved_imports
         @types = saved_types
         @values = saved_values
         @functions = saved_functions
+        @interfaces = saved_interfaces
+        @current_methods = saved_methods
+        @current_attributes = saved_attributes
+        @current_attribute_applications = saved_attribute_applications
+        @current_implemented_interfaces = saved_implemented_interfaces
+        @directives = saved_directives
       end
 
       def current_type_params

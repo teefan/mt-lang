@@ -5,7 +5,7 @@ module MilkTea
     private
 
       def collect_structs
-        @analysis.ast.declarations.each do |decl|
+        @ast.declarations.each do |decl|
           case decl
           when AST::WhenStmt
             body = lower_when_chosen_body(decl)
@@ -206,11 +206,18 @@ module MilkTea
         @current_analysis_path = source_path
         @module_name = analysis.module_name
         @module_prefix = module_c_prefix(@module_name)
+        @ast = analysis.ast
+        @current_module_kind = analysis.module_kind
         @imports = analysis.imports
         @types = analysis.types
         @values = analysis.values
         @functions = analysis.functions
         @interfaces = analysis.interfaces
+        @current_methods = analysis.methods
+        @current_attributes = analysis.attributes
+        @current_attribute_applications = analysis.attribute_applications
+        @current_implemented_interfaces = analysis.implemented_interfaces
+        @directives = analysis.directives
         @opaque_types = {}
         @struct_types = {}
         @union_types = {}
