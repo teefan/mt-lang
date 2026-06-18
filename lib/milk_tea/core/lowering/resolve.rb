@@ -16,14 +16,14 @@ module MilkTea
         case expression
         when AST::Identifier
           return false if lookup_value(expression.name, env)
-          return false unless @functions.key?(expression.name)
+          return false unless @ctx.functions.key?(expression.name)
 
-          binding = @functions.fetch(expression.name)
+          binding = @ctx.functions.fetch(expression.name)
           !binding.type_params.any? && !foreign_function_binding?(binding)
         when AST::MemberAccess
-          return false unless expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
+          return false unless expression.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(expression.receiver.name)
 
-          imported_module = @imports.fetch(expression.receiver.name)
+          imported_module = @ctx.imports.fetch(expression.receiver.name)
           return false unless imported_module.functions.key?(expression.member)
 
           binding = imported_module.functions.fetch(expression.member)
@@ -43,9 +43,9 @@ module MilkTea
         raise LoweringError, "function-to-proc coercion requires a direct function name" unless source_function.is_a?(IR::Name)
 
         proc_id = fresh_proc_symbol
-        invoke_c_name = "#{@module_prefix}__proc_#{proc_id}__invoke"
-        release_c_name = "#{@module_prefix}__proc_#{proc_id}__release"
-        retain_c_name = "#{@module_prefix}__proc_#{proc_id}__retain"
+        invoke_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__invoke"
+        release_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__release"
+        retain_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__retain"
 
         @artifacts.synthetic_functions << build_direct_function_proc_invoke_function(source_expression, source_function.name, source_function.type, expected_type, invoke_c_name)
         @artifacts.synthetic_functions << build_proc_noop_release_function(release_c_name)
@@ -89,7 +89,7 @@ module MilkTea
         end
 
         call = IR::Call.new(callee: function_c_name, arguments: call_arguments, type: proc_type.return_type)
-        body = if proc_type.return_type == @types.fetch("void")
+        body = if proc_type.return_type == @ctx.types.fetch("void")
                  parameter_setup + [IR::ExpressionStmt.new(expression: call), IR::ReturnStmt.new(value: nil)]
                else
                  parameter_setup + [IR::ReturnStmt.new(value: call)]
@@ -107,7 +107,7 @@ module MilkTea
               value: IR::AddressOf.new(
                 expression: IR::Index.new(
                   receiver: expression,
-                  index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
+                  index: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint")),
                   type: target_type.element_type,
                 ),
                 type: pointer_to(target_type.element_type),
@@ -115,7 +115,7 @@ module MilkTea
             ),
             IR::AggregateField.new(
               name: "len",
-              value: IR::IntegerLiteral.new(value: array_length(expression.type), type: @types.fetch("ptr_uint")),
+              value: IR::IntegerLiteral.new(value: array_length(expression.type), type: @ctx.types.fetch("ptr_uint")),
             ),
           ],
         )
@@ -131,7 +131,7 @@ module MilkTea
                 callee: "mt_str_buffer_prepare_write",
                 arguments: [
                   lower_str_buffer_data_pointer_from_lowered(expression),
-                  IR::IntegerLiteral.new(value: str_buffer_capacity(expression.type), type: @types.fetch("ptr_uint")),
+                  IR::IntegerLiteral.new(value: str_buffer_capacity(expression.type), type: @ctx.types.fetch("ptr_uint")),
                   lower_str_buffer_dirty_pointer_from_lowered(expression),
                 ],
                 type: pointer_to(target_type.element_type),
@@ -139,7 +139,7 @@ module MilkTea
             ),
             IR::AggregateField.new(
               name: "len",
-              value: IR::IntegerLiteral.new(value: str_buffer_storage_capacity(expression.type), type: @types.fetch("ptr_uint")),
+              value: IR::IntegerLiteral.new(value: str_buffer_storage_capacity(expression.type), type: @ctx.types.fetch("ptr_uint")),
             ),
           ],
         )
@@ -155,7 +155,7 @@ module MilkTea
       end
 
       def cstr_backed_expression?(expression, env)
-        return true if infer_expression_type(expression, env:) == @types.fetch("cstr")
+        return true if infer_expression_type(expression, env:) == @ctx.types.fetch("cstr")
 
         case expression
         when AST::StringLiteral
@@ -181,7 +181,7 @@ module MilkTea
         return false unless array_type?(actual_type)
 
         element_type = array_element_type(actual_type)
-        return false unless element_type == @types.fetch("str") || element_type == @types.fetch("cstr")
+        return false unless element_type == @ctx.types.fetch("str") || element_type == @ctx.types.fetch("cstr")
 
         case expression
         when AST::Identifier
@@ -204,8 +204,8 @@ module MilkTea
 
       def cstr_backed_storage_value?(type, expression, env)
         return false unless expression
-        return true if type == @types.fetch("cstr")
-        return false unless type == @types.fetch("str")
+        return true if type == @ctx.types.fetch("cstr")
+        return false unless type == @ctx.types.fetch("str")
 
         cstr_backed_expression?(expression, env)
       end
@@ -400,12 +400,12 @@ module MilkTea
             raise LoweringError, "#{callee.name} is not callable"
           end
 
-          if @functions.key?(callee.name)
-            binding = specialize_function_binding(@functions.fetch(callee.name), arguments, env)
+          if @ctx.functions.key?(callee.name)
+            binding = specialize_function_binding(@ctx.functions.fetch(callee.name), arguments, env)
             callee_name = if binding.external
                             external_function_c_name(binding)
                           else
-                            function_binding_c_name(binding, module_name: @module_name)
+                            function_binding_c_name(binding, module_name: @ctx.module_name)
                           end
             [ :function, callee_name, nil, binding.type, binding ]
           elsif callee.name == "fatal"
@@ -428,7 +428,7 @@ module MilkTea
             [:compile_time_builtin, "attribute_of", nil, compile_time_builtin_function_type("attribute_of", arguments, env)]
           elsif callee.name == "get"
             [:get, nil, nil, nil]
-          elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
+          elsif (type = @ctx.types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
             [ :struct_literal, nil, nil, type ]
           else
             emit_fn = @artifacts.emitted_declarations.find { |d| d.is_a?(IR::Function) && d.name == callee.name }
@@ -439,8 +439,8 @@ module MilkTea
             raise LoweringError, "unknown callee #{callee.name}"
           end
         when AST::MemberAccess
-          if callee.receiver.is_a?(AST::Identifier) && @imports.key?(callee.receiver.name)
-            imported_module = @imports.fetch(callee.receiver.name)
+          if callee.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(callee.receiver.name)
+            imported_module = @ctx.imports.fetch(callee.receiver.name)
 
             if imported_module.functions.key?(callee.member)
               binding = specialize_function_binding(imported_module.functions.fetch(callee.member), arguments, env)
@@ -537,8 +537,8 @@ module MilkTea
             elem = atomic_element_type(resolved_receiver_type)
             ret = case atomic_method
                   when :atomic_load, :atomic_add, :atomic_sub, :atomic_exchange then elem
-                  when :atomic_store then @types.fetch("void")
-                  when :atomic_compare_exchange then @types.fetch("bool")
+                  when :atomic_store then @ctx.types.fetch("void")
+                  when :atomic_compare_exchange then @ctx.types.fetch("bool")
                   end
             return [atomic_method, nil, callee.receiver, Types::Function.new(nil, params: [], return_type: ret)]
           end
@@ -576,7 +576,7 @@ module MilkTea
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "hash"
             resolution = resolve_hash_specialization(callee, env:)
-            return [:hash, resolution.callee_name, nil, Types::Function.new("hash", params: [Types::Parameter.new("value", resolution.target_type)], return_type: @types.fetch("uint")), resolution.binding]
+            return [:hash, resolution.callee_name, nil, Types::Function.new("hash", params: [Types::Parameter.new("value", resolution.target_type)], return_type: @ctx.types.fetch("uint")), resolution.binding]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "equal"
@@ -585,7 +585,7 @@ module MilkTea
               Types::Parameter.new("left", resolution.target_type),
               Types::Parameter.new("right", resolution.target_type),
             ]
-            return [:equal, resolution.callee_name, nil, Types::Function.new("equal", params:, return_type: @types.fetch("bool")), resolution.binding]
+            return [:equal, resolution.callee_name, nil, Types::Function.new("equal", params:, return_type: @ctx.types.fetch("bool")), resolution.binding]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "order"
@@ -594,7 +594,7 @@ module MilkTea
               Types::Parameter.new("left", resolution.target_type),
               Types::Parameter.new("right", resolution.target_type),
             ]
-            return [:order, resolution.callee_name, nil, Types::Function.new("order", params:, return_type: @types.fetch("int")), resolution.binding]
+            return [:order, resolution.callee_name, nil, Types::Function.new("order", params:, return_type: @ctx.types.fetch("int")), resolution.binding]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "attribute_arg"
@@ -658,28 +658,28 @@ module MilkTea
           if expected_type.is_a?(Types::Primitive) && expected_type.integer?
             expected_type
           else
-            @types.fetch("int")
+            @ctx.types.fetch("int")
           end
         when AST::FloatLiteral
           if expected_type.is_a?(Types::Primitive) && expected_type.float?
             expected_type
           else
-            @types.fetch("double")
+            @ctx.types.fetch("double")
           end
         when AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr
-          @types.fetch("ptr_uint")
+          @ctx.types.fetch("ptr_uint")
         when AST::StringLiteral
-          @types.fetch(expression.cstring ? "cstr" : "str")
+          @ctx.types.fetch(expression.cstring ? "cstr" : "str")
         when AST::FormatString
-          @types.fetch("str")
+          @ctx.types.fetch("str")
         when AST::BooleanLiteral
-          @types.fetch("bool")
+          @ctx.types.fetch("bool")
         when AST::NullLiteral
           infer_null_literal_type(expression, expected_type)
         when AST::Identifier
           binding = lookup_value(expression.name, env)
           return binding[:type] if binding
-          return function_type_for_name(expression.name) if @functions.key?(expression.name)
+          return function_type_for_name(expression.name) if @ctx.functions.key?(expression.name)
 
           raise LoweringError, "unknown identifier #{expression.name}"
         when AST::MemberAccess
@@ -702,8 +702,8 @@ module MilkTea
               return method_binding.type if method_binding.type.receiver_type.nil?
             end
           end
-          if expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
-            imported_module = @imports.fetch(expression.receiver.name)
+          if expression.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(expression.receiver.name)
+            imported_module = @ctx.imports.fetch(expression.receiver.name)
             return imported_module.values.fetch(expression.member).type if imported_module.values.key?(expression.member)
             return imported_module.functions.fetch(expression.member).type if imported_module.functions.key?(expression.member)
           end
@@ -712,10 +712,10 @@ module MilkTea
             return event_type
           end
 
-          if receiver_type == @types["field_handle"]
+          if receiver_type == @ctx.types["field_handle"]
             return infer_field_handle_member_type(expression)
           end
-          if receiver_type == @types["member_handle"]
+          if receiver_type == @ctx.types["member_handle"]
             return infer_member_handle_member_type(expression)
           end
 
@@ -731,7 +731,7 @@ module MilkTea
           operand_type = infer_expression_type(expression.operand, env:, expected_type:)
           case expression.operator
           when "not"
-            @types.fetch("bool")
+            @ctx.types.fetch("bool")
           else
             operand_type
           end
@@ -740,7 +740,7 @@ module MilkTea
 
           case expression.operator
           when "and", "or", "<", "<=", ">", ">=", "==", "!="
-            @types.fetch("bool")
+            @ctx.types.fetch("bool")
           when "+", "-", "*", "/"
             aggregate_arithmetic_result_type(expression.operator, left_type, right_type) || pointer_arithmetic_result_type(expression.operator, left_type, right_type) || common_numeric_type(left_type, right_type) || left_type
           when "%"
@@ -820,7 +820,7 @@ module MilkTea
           when :array_as_span
             callee_type
           when :fatal
-            @types.fetch("void")
+            @ctx.types.fetch("void")
           when :get
             receiver_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
             elem_type = if array_type?(receiver_type)
@@ -1031,13 +1031,13 @@ module MilkTea
         @artifacts.external_layout_assertions << IR::StaticAssert.new(
           condition: IR::Binary.new(
             operator: "==",
-            left: IR::SizeofExpr.new(target_type: source_root, type: @types.fetch("ptr_uint")),
-            right: IR::SizeofExpr.new(target_type: target_root, type: @types.fetch("ptr_uint")),
-            type: @types.fetch("bool"),
+            left: IR::SizeofExpr.new(target_type: source_root, type: @ctx.types.fetch("ptr_uint")),
+            right: IR::SizeofExpr.new(target_type: target_root, type: @ctx.types.fetch("ptr_uint")),
+            type: @ctx.types.fetch("bool"),
           ),
           message: IR::StringLiteral.new(
             value: "FFI layout mismatch: #{source_root} vs #{target_root}",
-            type: @types.fetch("str"),
+            type: @ctx.types.fetch("str"),
             cstring: false,
           ),
         )
@@ -1127,15 +1127,15 @@ module MilkTea
         when AST::Identifier
           return current_type_params[expression.name] if current_type_params.key?(expression.name)
 
-          @types[expression.name]
+          @ctx.types[expression.name]
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
 
-          if @imports.key?(expression.receiver.name)
-            return @imports.fetch(expression.receiver.name).types[expression.member]
+          if @ctx.imports.key?(expression.receiver.name)
+            return @ctx.imports.fetch(expression.receiver.name).types[expression.member]
           end
 
-          parent_type = @types[expression.receiver.name]
+          parent_type = @ctx.types[expression.receiver.name]
           return parent_type.nested_types[expression.member] if parent_type.respond_to?(:nested_types) && parent_type.nested_types.key?(expression.member)
 
           nil
@@ -1157,7 +1157,7 @@ module MilkTea
       end
 
       def function_type_for_name(name)
-        binding = @functions.fetch(name)
+        binding = @ctx.functions.fetch(name)
         raise LoweringError, "generic function #{name} cannot be used as a value" if binding.type_params.any?
         raise LoweringError, "foreign function #{name} cannot be used as a value" if foreign_function_binding?(binding)
 
@@ -1170,10 +1170,10 @@ module MilkTea
         receiver_type = nil
         binding = case expression.callee
                   when AST::Identifier
-                    @functions[expression.callee.name]
+                    @ctx.functions[expression.callee.name]
                   when AST::MemberAccess
-                    if expression.callee.receiver.is_a?(AST::Identifier) && @imports.key?(expression.callee.receiver.name)
-                      @imports.fetch(expression.callee.receiver.name).functions[expression.callee.member]
+                    if expression.callee.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(expression.callee.receiver.name)
+                      @ctx.imports.fetch(expression.callee.receiver.name).functions[expression.callee.member]
                     elsif (type_expr = resolve_type_expression(expression.callee.receiver))
                       dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
                       method_entry_receiver_type = type_expr
@@ -1265,7 +1265,7 @@ module MilkTea
           unless method_binding.type.params.map(&:type) == [const_pointer_to(target_type)]
             raise LoweringError, "#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint"
           end
-          unless method_binding.type.return_type == @types.fetch("uint")
+          unless method_binding.type.return_type == @ctx.types.fetch("uint")
             raise LoweringError, "#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint, got #{method_binding.type.return_type}"
           end
         end
@@ -1278,7 +1278,7 @@ module MilkTea
           unless method_binding.type.params.map(&:type) == expected_param_types
             raise LoweringError, "#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool"
           end
-          unless method_binding.type.return_type == @types.fetch("bool")
+          unless method_binding.type.return_type == @ctx.types.fetch("bool")
             raise LoweringError, "#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool, got #{method_binding.type.return_type}"
           end
         end
@@ -1291,7 +1291,7 @@ module MilkTea
           unless method_binding.type.params.map(&:type) == expected_param_types
             raise LoweringError, "#{context} requires #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int"
           end
-          unless method_binding.type.return_type == @types.fetch("int")
+          unless method_binding.type.return_type == @ctx.types.fetch("int")
             raise LoweringError, "#{context} requires #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int, got #{method_binding.type.return_type}"
           end
         end
@@ -1320,7 +1320,7 @@ module MilkTea
         resolve_explicit_instance_binding(target_type, "format_len", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
           raise LoweringError, "#{context} requires #{target_type}.format_len() to take 0 arguments" unless method_binding.type.params.empty?
           raise LoweringError, "#{context} requires #{target_type}.format_len() to be non-editable" if method_binding.type.receiver_editable
-          unless method_binding.type.return_type == @types.fetch("ptr_uint")
+          unless method_binding.type.return_type == @ctx.types.fetch("ptr_uint")
             raise LoweringError, "#{context} requires #{target_type}.format_len() -> ptr_uint, got #{method_binding.type.return_type}"
           end
         end
@@ -1333,7 +1333,7 @@ module MilkTea
           unless method_binding.type.params.length == 1 && string_builder_ref_type?(method_binding.type.params.first.type)
             raise LoweringError, "#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void"
           end
-          unless method_binding.type.return_type == @types.fetch("void")
+          unless method_binding.type.return_type == @ctx.types.fetch("void")
             raise LoweringError, "#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void, got #{method_binding.type.return_type}"
           end
         end
@@ -1458,14 +1458,14 @@ module MilkTea
       end
 
       def resolve_current_module_const_value(name)
-        binding = @values[name]
+        binding = @ctx.values[name]
         return unless binding&.kind == :const
 
         binding.const_value
       end
 
       def resolve_imported_module_const_value(import_name, value_name)
-        imported_module = @imports[import_name]
+        imported_module = @ctx.imports[import_name]
         return unless imported_module
         if imported_module.private_value?(value_name)
           raise LoweringError, "#{import_name}.#{value_name} is private to module #{imported_module.name}"
@@ -1501,7 +1501,7 @@ module MilkTea
             value = resolve_current_module_const_value(identifier_expression.name)
             return value if value
 
-            @types[identifier_expression.name]
+            @ctx.types[identifier_expression.name]
           end,
           resolve_member_access: lambda do |member_access_expression|
             if (receiver_value = CompileTime.evaluate(
@@ -1566,7 +1566,7 @@ module MilkTea
           when "attributes_of"
             evaluate_attributes_of_call(expression.arguments, env:)
           else
-            func = @functions[expression.callee.name]
+            func = @ctx.functions[expression.callee.name]
             if func&.ast&.respond_to?(:const) && func.ast.const
               evaluate_const_function_body_lower(func, expression.arguments)
             else
@@ -1579,7 +1579,7 @@ module MilkTea
           else
             callee_name = expression.callee.callee.is_a?(AST::Identifier) ? expression.callee.callee.name : nil
             if callee_name
-              func = @functions[callee_name]
+              func = @ctx.functions[callee_name]
               if func&.ast&.respond_to?(:const) && func.ast.const
                 evaluate_const_function_body_lower(func, expression.arguments)
               else
@@ -1758,7 +1758,7 @@ module MilkTea
         end
 
         def top_level_function(name)
-          @lowerer.instance_variable_get(:@functions)&.[](name)
+          @lowerer.instance_variable_get(:@ctx.functions)&.[](name)
         end
 
         def raise_sema_error(message)
@@ -1792,17 +1792,17 @@ module MilkTea
         when AST::Identifier
           return nil if env && lookup_value(expression.name, env)
 
-          current_type_params[expression.name] || @types[expression.name]
+          current_type_params[expression.name] || @ctx.types[expression.name]
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
 
-          if @imports.key?(expression.receiver.name)
-            imported_module = @imports[expression.receiver.name]
+          if @ctx.imports.key?(expression.receiver.name)
+            imported_module = @ctx.imports[expression.receiver.name]
             return nil if imported_module.private_type?(expression.member)
             return imported_module.types[expression.member]
           end
 
-          parent_type = @types[expression.receiver.name]
+          parent_type = @ctx.types[expression.receiver.name]
           return parent_type.nested_types[expression.member] if parent_type.respond_to?(:nested_types) && parent_type.nested_types.key?(expression.member)
 
           nil
@@ -1838,14 +1838,14 @@ module MilkTea
       def resolve_callable_handle_argument(expression)
         case expression
         when AST::Identifier
-          binding = @functions[expression.name]
+          binding = @ctx.functions[expression.name]
           return nil unless binding&.ast
 
           Types::CallableHandle.new(expression.name, binding.ast)
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
 
-          imported_module = @imports[expression.receiver.name]
+          imported_module = @ctx.imports[expression.receiver.name]
           return nil unless imported_module
           return nil if imported_module.private_function?(expression.member)
 
@@ -1861,11 +1861,11 @@ module MilkTea
       def resolve_attribute_name_argument(expression)
         case expression
         when AST::Identifier
-          @current_attributes[expression.name] || builtin_attribute_binding(expression.name)
+          @ctx.attributes[expression.name] || builtin_attribute_binding(expression.name)
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
 
-          imported_module = @imports[expression.receiver.name]
+          imported_module = @ctx.imports[expression.receiver.name]
           return nil unless imported_module
           return nil if imported_module.private_attribute?(expression.member)
 
@@ -1899,10 +1899,10 @@ module MilkTea
         end
         return [] unless target_id
 
-        applications = @current_attribute_applications[target_id]
+        applications = @ctx.attribute_applications[target_id]
         return applications if applications
 
-        @imports.each_value do |imported_module|
+        @ctx.imports.each_value do |imported_module|
           applications = imported_module.attribute_applications[target_id]
           return applications if applications
         end
@@ -1919,9 +1919,9 @@ module MilkTea
       def resolve_attribute_binding_for_name(name)
         case name.parts.length
         when 1
-          @current_attributes[name.parts.first] || builtin_attribute_binding(name.parts.first)
+          @ctx.attributes[name.parts.first] || builtin_attribute_binding(name.parts.first)
         when 2
-          imported_module = @imports[name.parts.first]
+          imported_module = @ctx.imports[name.parts.first]
           return nil unless imported_module
           return nil if imported_module.private_attribute?(name.parts.last)
 
@@ -1936,7 +1936,7 @@ module MilkTea
       end
 
       def builtin_attribute_binding(name)
-        Sema.builtin_attribute_binding(name, @types)
+        Sema.builtin_attribute_binding(name, @ctx.types)
       end
 
       def attribute_argument_values(binding, application, env:)
@@ -2051,9 +2051,9 @@ module MilkTea
 
       def type_implements_interface?(type, interface)
         key = interface_implementation_key(type)
-        return true if @current_implemented_interfaces.fetch(key, []).include?(interface)
+        return true if @ctx.implemented_interfaces.fetch(key, []).include?(interface)
 
-        @imports.each_value do |module_binding|
+        @ctx.imports.each_value do |module_binding|
           return true if module_binding.implemented_interfaces.fetch(key, []).include?(interface)
         end
 
@@ -2343,58 +2343,16 @@ module MilkTea
       end
 
       def resolve_type_ref_for_analysis(type_ref, analysis, type_params: current_type_params)
-        saved_analysis = @analysis
-        saved_ast = @ast
-        saved_module_name = @module_name
-        saved_module_prefix = @module_prefix
-        saved_module_kind = @current_module_kind
-        saved_imports = @imports
-        saved_types = @types
-        saved_values = @values
-        saved_functions = @functions
-        saved_interfaces = @interfaces
-        saved_methods = @current_methods
-        saved_attributes = @current_attributes
-        saved_attribute_applications = @current_attribute_applications
-        saved_implemented_interfaces = @current_implemented_interfaces
-        saved_directives = @directives
-
-        @analysis = analysis
-        @ast = analysis.ast
-        @module_name = analysis.module_name
-        @module_prefix = module_c_prefix(@module_name)
-        @current_module_kind = analysis.module_kind
-        @imports = analysis.imports
-        @types = analysis.types
-        @values = analysis.values
-        @functions = analysis.functions
-        @interfaces = analysis.interfaces
-        @current_methods = analysis.methods
-        @current_attributes = analysis.attributes
-        @current_attribute_applications = analysis.attribute_applications
-        @current_implemented_interfaces = analysis.implemented_interfaces
-        @directives = analysis.directives
+        saved = @ctx.save
+        @ctx.install(analysis)
+        @ctx.module_prefix = module_c_prefix(@ctx.module_name)
         resolve_type_ref(type_ref, type_params:)
       ensure
-        @analysis = saved_analysis
-        @ast = saved_ast
-        @module_name = saved_module_name
-        @module_prefix = saved_module_prefix
-        @current_module_kind = saved_module_kind
-        @imports = saved_imports
-        @types = saved_types
-        @values = saved_values
-        @functions = saved_functions
-        @interfaces = saved_interfaces
-        @current_methods = saved_methods
-        @current_attributes = saved_attributes
-        @current_attribute_applications = saved_attribute_applications
-        @current_implemented_interfaces = saved_implemented_interfaces
-        @directives = saved_directives
+        @ctx.restore(saved)
       end
 
       def current_type_params
-        @current_type_substitutions || {}
+        @ctx.current_type_substitutions || {}
       end
 
       def resolve_type_ref(type_ref, type_params: current_type_params)
@@ -2460,7 +2418,7 @@ module MilkTea
                elsif parts.length == 1 && type_params.key?(parts.first)
                  type_params.fetch(parts.first)
                elsif parts.length == 1
-                 type = @types[parts.first]
+                 type = @ctx.types[parts.first]
                  raise LoweringError, "unknown type #{parts.first}" unless type
                  raise LoweringError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
@@ -2469,8 +2427,8 @@ module MilkTea
            type = resolve_nested_type_ref(parts)
 
            unless type
-             if @imports.key?(parts.first)
-               imported_module = @imports.fetch(parts.first)
+             if @ctx.imports.key?(parts.first)
+               imported_module = @ctx.imports.fetch(parts.first)
                if imported_module.private_type?(parts.last)
                  raise LoweringError, "#{parts.first}.#{parts.last} is private to module #{imported_module.name}"
                end
@@ -2494,7 +2452,7 @@ module MilkTea
       end
 
       def resolve_nested_type_ref(parts)
-        current = @types[parts.first]
+        current = @ctx.types[parts.first]
         return nil unless current.is_a?(Types::Struct) || current.is_a?(Types::GenericStructDefinition)
 
         parts[1..].each do |part|
@@ -2507,13 +2465,13 @@ module MilkTea
 
       def resolve_named_generic_type(parts)
         if parts.length == 1
-          type = @types[parts.first]
+          type = @ctx.types[parts.first]
           return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
         elsif parts.length >= 2
           type = resolve_nested_type_ref(parts)
           return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
-          if @imports.key?(parts.first)
-            type = @imports.fetch(parts.first).types[parts.last]
+          if @ctx.imports.key?(parts.first)
+            type = @ctx.imports.fetch(parts.first).types[parts.last]
             return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
           end
         end
@@ -2523,7 +2481,7 @@ module MilkTea
 
       def infer_field_handle_member_type(expression)
         case expression.member
-        when "name" then @types["str"]
+        when "name" then @ctx.types["str"]
         when "type"
           handle = compile_time_const_value(expression.receiver, env: nil)
           return @error_type unless handle.is_a?(Types::FieldHandle)
@@ -2536,8 +2494,8 @@ module MilkTea
 
       def infer_member_handle_member_type(expression)
         case expression.member
-        when "name" then @types["str"]
-        when "value" then @types["int"]
+        when "name" then @ctx.types["str"]
+        when "value" then @ctx.types["int"]
         else @error_type
         end
       end
@@ -2545,9 +2503,9 @@ module MilkTea
       def resolve_interface_ref(interface_ref)
         parts = interface_ref.parts
         interface = if parts.length == 1
-                      @interfaces[parts.first]
-                    elsif parts.length == 2 && @imports.key?(parts.first)
-                      @imports.fetch(parts.first).interfaces[parts.last]
+                      @ctx.interfaces[parts.first]
+                    elsif parts.length == 2 && @ctx.imports.key?(parts.first)
+                      @ctx.imports.fetch(parts.first).interfaces[parts.last]
                     end
         raise LoweringError, "unknown interface #{interface_ref}" unless interface
 

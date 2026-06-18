@@ -22,7 +22,7 @@ module MilkTea
         condition_setup, prepared_condition, condition_cleanups = prepare_expression_with_cleanups(
           statement.condition,
           env:,
-          expected_type: @types.fetch("bool"),
+          expected_type: @ctx.types.fetch("bool"),
         )
 
         body = lower_block(
@@ -35,7 +35,7 @@ module MilkTea
         )
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
-        condition = lower_expression(prepared_condition, env:, expected_type: @types.fetch("bool"))
+        condition = lower_expression(prepared_condition, env:, expected_type: @ctx.types.fetch("bool"))
 
         if condition_setup.empty? && condition_cleanups.empty?
           statements = [
@@ -51,7 +51,7 @@ module MilkTea
         loop_body = [
           *condition_setup,
           IR::IfStmt.new(
-            condition: IR::Unary.new(operator: "not", operand: condition, type: @types.fetch("bool")),
+            condition: IR::Unary.new(operator: "not", operand: condition, type: @ctx.types.fetch("bool")),
             then_body: condition_cleanups.flat_map(&:itself) + [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
             else_body: condition_cleanups.flat_map(&:itself),
           ),
@@ -60,7 +60,7 @@ module MilkTea
 
         statements = [
           IR::WhileStmt.new(
-            condition: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")),
+            condition: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool")),
             body: loop_body,
           ),
         ]
@@ -105,7 +105,7 @@ module MilkTea
 
         for_statement = IR::ForStmt.new(
           init: IR::LocalDecl.new(name: statement.name, c_name: index_c_name, type: loop_type, value: lower_expression(prepared_start, env:, expected_type: loop_type)),
-          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
           post: IR::Assignment.new(
             target: index_ref,
             operator: "+=",
@@ -142,7 +142,7 @@ module MilkTea
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
         iterable_ref = IR::Name.new(name: iterable_c_name, type: iterable_type, pointer: false)
-        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("ptr_uint"), pointer: false)
+        index_ref = IR::Name.new(name: index_c_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
 
         item_value = if array_type?(iterable_type)
                        IR::Index.new(receiver: iterable_ref, index: index_ref, type: element_type)
@@ -152,9 +152,9 @@ module MilkTea
                      end
 
         stop_value = if array_type?(iterable_type)
-                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("ptr_uint"))
+                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @ctx.types.fetch("ptr_uint"))
                      else
-                       IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("ptr_uint"))
+                       IR::Member.new(receiver: iterable_ref, member: "len", type: @ctx.types.fetch("ptr_uint"))
                      end
 
         loop_item_value = if ref_type?(binding_type)
@@ -182,12 +182,12 @@ module MilkTea
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
-          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
           post: IR::Assignment.new(
             target: index_ref,
             operator: "+=",
-            value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint")),
+            value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint")),
           ),
           body:,
         )
@@ -232,7 +232,7 @@ module MilkTea
         index_c_name = fresh_c_temp_name(env, "for_index")
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
-        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("ptr_uint"), pointer: false)
+        index_ref = IR::Name.new(name: index_c_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
         stop_value = collection_loop_stop_value(iterable_entries.first[:iterable_ref], iterable_entries.first[:iterable_type])
 
         while_env = duplicate_env(env)
@@ -265,7 +265,7 @@ module MilkTea
               operator: "!=",
               left: collection_loop_stop_value(entry[:iterable_ref], entry[:iterable_type]),
               right: stop_value,
-              type: @types.fetch("bool"),
+              type: @ctx.types.fetch("bool"),
             ),
             then_body: [lower_fatal_statement("parallel for iterables must have matching lengths", env:)],
             else_body: nil,
@@ -273,12 +273,12 @@ module MilkTea
         end
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
-          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
           post: IR::Assignment.new(
             target: index_ref,
             operator: "+=",
-            value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint")),
+            value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint")),
           ),
           body:,
         )
@@ -353,7 +353,7 @@ module MilkTea
                        operator: "==",
                        left: item_ref,
                        right: IR::NullLiteral.new(type: iterator_info[:item_storage_type]),
-                       type: @types.fetch("bool"),
+                       type: @ctx.types.fetch("bool"),
                      ),
                      then_body: [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
                      else_body: nil,
@@ -361,7 +361,7 @@ module MilkTea
                  ]
                else
                  ready_c_name = fresh_c_temp_name(env, "for_ready")
-                 ready_ref = IR::Name.new(name: ready_c_name, type: @types.fetch("bool"), pointer: false)
+                 ready_ref = IR::Name.new(name: ready_c_name, type: @ctx.types.fetch("bool"), pointer: false)
                  current_call = AST::Call.new(
                    callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iterator_name), member: "current"),
                    arguments: [],
@@ -370,11 +370,11 @@ module MilkTea
                    IR::LocalDecl.new(
                      name: ready_c_name,
                      c_name: ready_c_name,
-                     type: @types.fetch("bool"),
-                     value: lower_expression(next_call, env: iterator_env, expected_type: @types.fetch("bool")),
+                     type: @ctx.types.fetch("bool"),
+                     value: lower_expression(next_call, env: iterator_env, expected_type: @ctx.types.fetch("bool")),
                    ),
                    IR::IfStmt.new(
-                     condition: IR::Unary.new(operator: "not", operand: ready_ref, type: @types.fetch("bool")),
+                     condition: IR::Unary.new(operator: "not", operand: ready_ref, type: @ctx.types.fetch("bool")),
                      then_body: [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
                      else_body: nil,
                    ),
@@ -407,7 +407,7 @@ module MilkTea
             value: lower_expression(iter_call, env:, expected_type: iterator_info[:iterator_type]),
           ),
           IR::WhileStmt.new(
-            condition: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")),
+            condition: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool")),
             body:,
           ),
         ]
@@ -420,13 +420,13 @@ module MilkTea
         range = statement.target.index
         start_val = range.start_expr.value
         receiver_type = infer_expression_type(statement.target.receiver, env:)
-        element_type = infer_index_result_type(receiver_type, @types.fetch("ptr_uint"))
+        element_type = infer_index_result_type(receiver_type, @ctx.types.fetch("ptr_uint"))
 
         receiver_setup, prepared_receiver = prepare_expression_for_inline_lowering(statement.target.receiver, env:, expected_type: receiver_type)
         statements = receiver_setup.dup
 
         statement.value.elements.each_with_index do |elem, i|
-          index_ir = IR::IntegerLiteral.new(value: start_val + i, type: @types.fetch("ptr_uint"))
+          index_ir = IR::IntegerLiteral.new(value: start_val + i, type: @ctx.types.fetch("ptr_uint"))
           target_ir = IR::Index.new(
             receiver: lower_expression(prepared_receiver, env:, expected_type: receiver_type),
             index: index_ir,
@@ -463,13 +463,13 @@ module MilkTea
           statement.body,
           env: body_env,
           active_defers:,
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           loop_flow: nil,
           allow_return: false,
         )
 
         @parallel_for_counter += 1
-        uid = "#{@module_prefix}_pfor_#{@parallel_for_counter}".gsub(/[^A-Za-z0-9_]/, "_")
+        uid = "#{@ctx.module_prefix}_pfor_#{@parallel_for_counter}".gsub(/[^A-Za-z0-9_]/, "_")
         cap_struct_c_name = "mt_pfor_cap_#{uid}"
         worker_c_name = "mt_pfor_work_#{uid}"
 
@@ -482,9 +482,9 @@ module MilkTea
 
         validate_pfor_no_ref_captures!(captures)
 
-        void_type = @types.fetch("void")
+        void_type = @ctx.types.fetch("void")
         void_ptr_type = Types::GenericInstance.new("ptr", [void_type])
-        long_type = @types.fetch("long")
+        long_type = @ctx.types.fetch("long")
 
         array_capture_names = Set.new
         cap_fields = captures.map do |c|
@@ -537,7 +537,7 @@ module MilkTea
             operator: "<",
             left: loop_var_ref,
             right: IR::Name.new(name: "mt_pfor_end", type: long_type, pointer: false),
-            type: @types.fetch("bool"),
+            type: @ctx.types.fetch("bool"),
           ),
           post: IR::Assignment.new(
             target: loop_var_ref,
@@ -603,11 +603,11 @@ module MilkTea
       end
 
       def lower_parallel_block_stmt(statement, env:, active_defers:)
-        void_type = @types.fetch("void")
+        void_type = @ctx.types.fetch("void")
         void_ptr_type = Types::GenericInstance.new("ptr", [void_type])
 
         @parallel_for_counter += 1
-        uid_base = "#{@module_prefix}_spawn_#{@parallel_for_counter}".gsub(/[^A-Za-z0-9_]/, "_")
+        uid_base = "#{@ctx.module_prefix}_spawn_#{@parallel_for_counter}".gsub(/[^A-Za-z0-9_]/, "_")
 
         block_infos = statement.bodies.each_with_index.map do |body, idx|
           block_body = lower_block(
@@ -765,7 +765,7 @@ module MilkTea
           callee: "mt_spawn_all",
           arguments: [
             IR::Name.new(name: tasks_local, type: tasks_array_type, pointer: false),
-            IR::IntegerLiteral.new(value: tasks_count, type: @types.fetch("int")),
+            IR::IntegerLiteral.new(value: tasks_count, type: @ctx.types.fetch("int")),
           ],
           type: void_type,
         ))
@@ -779,7 +779,7 @@ module MilkTea
           IR::ExpressionStmt.new(expression: IR::Call.new(
             callee: "mt_detach_join",
             arguments: [handle_ir],
-            type: @types.fetch("void"),
+            type: @ctx.types.fetch("void"),
           ))
         end
         IR::BlockStmt.new(body: call_site)
@@ -787,14 +787,14 @@ module MilkTea
 
       def lower_detach_expr(expression, env:)
         @parallel_for_counter += 1
-        uid = "#{@module_prefix}_detach_#{@parallel_for_counter}".gsub(/[^A-Za-z0-9_]/, "_")
+        uid = "#{@ctx.module_prefix}_detach_#{@parallel_for_counter}".gsub(/[^A-Za-z0-9_]/, "_")
         worker_c_name = "mt_detach_work_#{uid}"
 
         block_body = lower_block(
           expression.body,
           env: duplicate_env(env),
           active_defers: nil,
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           loop_flow: nil,
           allow_return: false,
         )
@@ -814,17 +814,17 @@ module MilkTea
 
         @artifacts.synthetic_functions << IR::Function.new(
           name: worker_c_name, c_name: worker_c_name,
-          params: [IR::Param.new(name: "mt_pfor_data", c_name: "mt_pfor_data", type: @types.fetch("void").then { |v| Types::GenericInstance.new("ptr", [v]) }, pointer: false)],
-          return_type: @types.fetch("void"),
+          params: [IR::Param.new(name: "mt_pfor_data", c_name: "mt_pfor_data", type: @ctx.types.fetch("void").then { |v| Types::GenericInstance.new("ptr", [v]) }, pointer: false)],
+          return_type: @ctx.types.fetch("void"),
           body: worker_body,
           entry_point: false,
         )
 
-        void_ptr_type = Types::GenericInstance.new("ptr", [@types.fetch("void")])
+        void_ptr_type = Types::GenericInstance.new("ptr", [@ctx.types.fetch("void")])
         IR::Call.new(
           callee: "mt_detach_run",
           arguments: [
-            IR::Name.new(name: worker_c_name, type: Types::Function.new(nil, params: [], return_type: @types.fetch("void")), pointer: false),
+            IR::Name.new(name: worker_c_name, type: Types::Function.new(nil, params: [], return_type: @ctx.types.fetch("void")), pointer: false),
             IR::IntegerLiteral.new(value: 0, type: void_ptr_type),
           ],
           type: void_ptr_type,

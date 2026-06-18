@@ -91,18 +91,18 @@ module MilkTea
       end
 
       def cstr_trackable_type?(type)
-        type == @types.fetch("str") || type == @types.fetch("cstr")
+        type == @ctx.types.fetch("str") || type == @ctx.types.fetch("cstr")
       end
 
       def cstr_list_trackable_type?(type)
         return false unless array_type?(type)
 
         element_type = array_element_type(type)
-        element_type == @types.fetch("str") || element_type == @types.fetch("cstr")
+        element_type == @ctx.types.fetch("str") || element_type == @ctx.types.fetch("cstr")
       end
 
       def str_buffer_to_span_compatible?(actual_type, expected_type)
-        str_buffer_type?(actual_type) && expected_type.is_a?(Types::Span) && expected_type.element_type == @types.fetch("char")
+        str_buffer_type?(actual_type) && expected_type.is_a?(Types::Span) && expected_type.element_type == @ctx.types.fetch("char")
       end
 
       def array_length(type)
@@ -112,7 +112,7 @@ module MilkTea
       end
 
       def char_array_text_type?(type)
-        array_type?(type) && array_element_type(type) == @types.fetch("char")
+        array_type?(type) && array_element_type(type) == @ctx.types.fetch("char")
       end
 
       def str_buffer_type?(type)
@@ -214,7 +214,7 @@ module MilkTea
           }
         end
 
-        if item_storage_type == @types.fetch("bool")
+        if item_storage_type == @ctx.types.fetch("bool")
           current_call = AST::Call.new(
             callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iterator_name), member: "current"),
             arguments: [],
@@ -234,7 +234,7 @@ module MilkTea
       end
 
       def nullable_iterator_item_type?(type)
-        type == @types.fetch("cstr") || pointer_type?(type)
+        type == @ctx.types.fetch("cstr") || pointer_type?(type)
       end
 
       def collection_loop_item_value(iterable_ref, iterable_type, index_ref, element_type)
@@ -248,9 +248,9 @@ module MilkTea
 
       def collection_loop_stop_value(iterable_ref, iterable_type)
         if array_type?(iterable_type)
-          IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("ptr_uint"))
+          IR::IntegerLiteral.new(value: array_length(iterable_type), type: @ctx.types.fetch("ptr_uint"))
         else
-          IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("ptr_uint"))
+          IR::Member.new(receiver: iterable_ref, member: "len", type: @ctx.types.fetch("ptr_uint"))
         end
       end
 
@@ -262,7 +262,7 @@ module MilkTea
               arguments: [AST::Argument.new(name: nil, value: AST::StringLiteral.new(lexeme: message.inspect, value: message, cstring: false))],
             ),
             env:,
-            expected_type: @types.fetch("void"),
+            expected_type: @ctx.types.fetch("void"),
           ),
         )
       end
@@ -354,54 +354,12 @@ module MilkTea
       end
 
       def with_analysis_context(analysis)
-        saved_analysis = @analysis
-        saved_ast = @ast
-        saved_module_name = @module_name
-        saved_module_prefix = @module_prefix
-        saved_module_kind = @current_module_kind
-        saved_imports = @imports
-        saved_types = @types
-        saved_values = @values
-        saved_functions = @functions
-        saved_interfaces = @interfaces
-        saved_methods = @current_methods
-        saved_attributes = @current_attributes
-        saved_attribute_applications = @current_attribute_applications
-        saved_implemented_interfaces = @current_implemented_interfaces
-        saved_directives = @directives
-
-        @analysis = analysis
-        @module_name = analysis.module_name
-        @module_prefix = module_c_prefix(@module_name)
-        @ast = analysis.ast
-        @current_module_kind = analysis.module_kind
-        @imports = analysis.imports
-        @types = analysis.types
-        @values = analysis.values
-        @functions = analysis.functions
-        @interfaces = analysis.interfaces
-        @current_methods = analysis.methods
-        @current_attributes = analysis.attributes
-        @current_attribute_applications = analysis.attribute_applications
-        @current_implemented_interfaces = analysis.implemented_interfaces
-        @directives = analysis.directives
+        saved = @ctx.save
+        @ctx.install(analysis)
+        @ctx.module_prefix = module_c_prefix(@ctx.module_name)
         yield
       ensure
-        @analysis = saved_analysis
-        @ast = saved_ast
-        @module_name = saved_module_name
-        @module_prefix = saved_module_prefix
-        @current_module_kind = saved_module_kind
-        @imports = saved_imports
-        @types = saved_types
-        @values = saved_values
-        @functions = saved_functions
-        @interfaces = saved_interfaces
-        @current_methods = saved_methods
-        @current_attributes = saved_attributes
-        @current_attribute_applications = saved_attribute_applications
-        @current_implemented_interfaces = saved_implemented_interfaces
-        @directives = saved_directives
+        @ctx.restore(saved)
       end
 
       def lookup_value(name, env)
@@ -409,8 +367,8 @@ module MilkTea
           return scope[name] if scope.key?(name)
         end
 
-        if @values.key?(name)
-          binding = @values.fetch(name)
+        if @ctx.values.key?(name)
+          binding = @ctx.values.fetch(name)
           {
             type: binding.type,
             storage_type: binding.storage_type,
@@ -442,8 +400,8 @@ module MilkTea
         when Float
           return IR::FloatLiteral.new(value:, type:) if type.is_a?(Types::Primitive) && type.float?
         when String
-          if type == @types.fetch("str") || type == @types.fetch("cstr")
-            return IR::StringLiteral.new(value:, type:, cstring: type == @types.fetch("cstr"))
+          if type == @ctx.types.fetch("str") || type == @ctx.types.fetch("cstr")
+            return IR::StringLiteral.new(value:, type:, cstring: type == @ctx.types.fetch("cstr"))
           end
         end
 
@@ -453,13 +411,13 @@ module MilkTea
       def compile_time_builtin_function_type(name, arguments, env)
         return_type = case name
         when "field_of"
-          @types.fetch("field_handle")
+          @ctx.types.fetch("field_handle")
         when "callable_of"
-          @types.fetch("callable_handle")
+          @ctx.types.fetch("callable_handle")
         when "has_attribute"
-          @types.fetch("bool")
+          @ctx.types.fetch("bool")
         when "attribute_of"
-          @types.fetch("attribute_handle")
+          @ctx.types.fetch("attribute_handle")
         else
           nil
         end
@@ -476,16 +434,16 @@ module MilkTea
       def rewrite_static_storage_initializer(expression)
         case expression
         when AST::Identifier
-          binding = @values[expression.name]
+          binding = @ctx.values[expression.name]
           if binding&.kind == :const
-            declaration = const_declaration_for(analysis_for_module(@module_name), expression.name)
+            declaration = const_declaration_for(analysis_for_module(@ctx.module_name), expression.name)
             return rewrite_static_storage_initializer(declaration.value)
           end
 
           expression
         when AST::MemberAccess
-          if expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
-            imported_module = @imports.fetch(expression.receiver.name)
+          if expression.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(expression.receiver.name)
+            imported_module = @ctx.imports.fetch(expression.receiver.name)
             if (binding = imported_module.values[expression.member])&.kind == :const
               imported_analysis = analysis_for_module(imported_module.name)
               declaration = const_declaration_for(imported_analysis, expression.member)
@@ -582,7 +540,7 @@ module MilkTea
       end
 
       def proc_env_pointer_type
-        @proc_env_pointer_type ||= pointer_to(@types.fetch("void"))
+        @proc_env_pointer_type ||= pointer_to(@ctx.types.fetch("void"))
       end
 
       def proc_invoke_function_type(proc_type)
@@ -597,7 +555,7 @@ module MilkTea
         @proc_release_function_type ||= Types::Function.new(
           nil,
           params: [Types::Parameter.new("env", proc_env_pointer_type)],
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
         )
       end
 
@@ -605,7 +563,7 @@ module MilkTea
         @proc_retain_function_type ||= Types::Function.new(
           nil,
           params: [Types::Parameter.new("env", proc_env_pointer_type)],
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
         )
       end
 
@@ -740,7 +698,7 @@ module MilkTea
       end
 
       def nullable_candidate?(type)
-        !ref_type?(type) && type != @types.fetch("void")
+        !ref_type?(type) && type != @ctx.types.fetch("void")
       end
 
       def conditional_null_common_type(null_type, other_type)
@@ -1005,27 +963,27 @@ module MilkTea
             operator: "==",
             left: storage_expr,
             right: IR::NullLiteral.new(type: storage_type),
-            type: @types.fetch("bool"),
+            type: @ctx.types.fetch("bool"),
           )
         end
 
         if result_let_else_type?(storage_type)
-          kind_type = @types.fetch("int")
+          kind_type = @ctx.types.fetch("int")
           return IR::Binary.new(
             operator: "==",
             left: IR::Member.new(receiver: storage_expr, member: "kind", type: kind_type),
             right: IR::Name.new(name: "#{c_type_name(storage_type)}_kind_failure", type: kind_type, pointer: false),
-            type: @types.fetch("bool"),
+            type: @ctx.types.fetch("bool"),
           )
         end
 
         if option_let_else_type?(storage_type)
-          kind_type = @types.fetch("int")
+          kind_type = @ctx.types.fetch("int")
           return IR::Binary.new(
             operator: "==",
             left: IR::Member.new(receiver: storage_expr, member: "kind", type: kind_type),
             right: IR::Name.new(name: "#{c_type_name(storage_type)}_kind_none", type: kind_type, pointer: false),
-            type: @types.fetch("bool"),
+            type: @ctx.types.fetch("bool"),
           )
         end
 
@@ -1095,7 +1053,7 @@ module MilkTea
       def infer_result_propagation_details(storage_type, env:, allow_void_success:)
         success_type = let_else_success_type(storage_type)
         error_type = let_else_error_type(storage_type)
-        raise LoweringError, "propagation requires a non-void Result success type" if success_type == @types.fetch("void") && !allow_void_success
+        raise LoweringError, "propagation requires a non-void Result success type" if success_type == @ctx.types.fetch("void") && !allow_void_success
 
         context = env[:return_context]
         raise LoweringError, "propagation is only allowed inside function and proc bodies" unless context
@@ -1116,7 +1074,7 @@ module MilkTea
 
       def infer_option_propagation_details(storage_type, env:, allow_void_success:)
         success_type = let_else_success_type(storage_type)
-        raise LoweringError, "propagation requires a non-void Option success type" if success_type == @types.fetch("void") && !allow_void_success
+        raise LoweringError, "propagation requires a non-void Option success type" if success_type == @ctx.types.fetch("void") && !allow_void_success
 
         context = env[:return_context]
         raise LoweringError, "propagation is only allowed inside function and proc bodies" unless context
@@ -1181,10 +1139,10 @@ module MilkTea
                              else
                                failure_cleanup +
                                  cleanup_statements(return_context[:local_defers], return_context[:active_defers]) +
-                                 [IR::ReturnStmt.new(value: failure_return, source_path: @current_analysis_path)]
+                                 [IR::ReturnStmt.new(value: failure_return, source_path: @ctx.current_analysis_path)]
                              end
 
-        if success_type == @types.fetch("void")
+        if success_type == @ctx.types.fetch("void")
           return [
             operand_setup + [
               IR::LocalDecl.new(
@@ -1299,7 +1257,7 @@ module MilkTea
       end
 
       def local_named_type?(type)
-        type.respond_to?(:module_name) && (type.module_name == @module_name || type.module_name.nil?)
+        type.respond_to?(:module_name) && (type.module_name == @ctx.module_name || type.module_name.nil?)
       end
 
       def function_binding_c_name(binding, module_name:, receiver_type: nil)
@@ -1322,7 +1280,7 @@ module MilkTea
       end
 
       def value_c_name(name)
-        module_value_c_name(@module_name, name)
+        module_value_c_name(@ctx.module_name, name)
       end
 
       def imported_value_c_name(imported_module, name)

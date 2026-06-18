@@ -6,11 +6,11 @@ module MilkTea
 
     def analyze_async_function(binding, statements)
       env = empty_env
-      void_ptr = pointer_to(@types.fetch("void"))
+      void_ptr = pointer_to(@ctx.types.fetch("void"))
       wake_type = Types::Function.new(
         nil,
         params: [Types::Parameter.new("frame", void_ptr)],
-        return_type: @types.fetch("void"),
+        return_type: @ctx.types.fetch("void"),
       )
       param_fields = {}
       local_fields = {}
@@ -120,7 +120,7 @@ module MilkTea
             end
             index_field_name = async_collection_index_field_name(statement)
             index_field_key = async_collection_index_field_key(statement)
-            local_fields[index_field_key] ||= { field_name: index_field_name, type: @types.fetch("ptr_uint"), storage_type: @types.fetch("ptr_uint"), mutable: true }
+            local_fields[index_field_key] ||= { field_name: index_field_name, type: @ctx.types.fetch("ptr_uint"), storage_type: @ctx.types.fetch("ptr_uint"), mutable: true }
           end
           await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
         when AST::MatchStmt
@@ -218,13 +218,13 @@ module MilkTea
 
     def build_async_frame_type(frame_c_name, async_info)
       fields = {
-        "ready" => @types.fetch("bool"),
-        "cancelled" => @types.fetch("bool"),
+        "ready" => @ctx.types.fetch("bool"),
+        "cancelled" => @ctx.types.fetch("bool"),
         "waiter_frame" => async_info[:void_ptr],
         "waiter" => async_info[:wake_type],
       }
-      fields["state"] = @types.fetch("int") unless async_info[:await_fields].empty?
-      unless async_info[:result_type] == @types.fetch("void")
+      fields["state"] = @ctx.types.fetch("int") unless async_info[:await_fields].empty?
+      unless async_info[:result_type] == @ctx.types.fetch("void")
         fields["result"] = async_info[:result_type]
       end
       async_info[:param_fields].each_value do |field_info|

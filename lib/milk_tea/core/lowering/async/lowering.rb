@@ -6,8 +6,8 @@ module MilkTea
       def lower_contained_task_release_statements(value_expr, type)
         return [] unless contains_task_type?(type)
 
-        void_type = @types.fetch("void")
-        int_type = @types.fetch("int")
+        void_type = @ctx.types.fetch("void")
+        int_type = @ctx.types.fetch("int")
 
         case type
         when Types::Task
@@ -39,7 +39,7 @@ module MilkTea
               operator: "==",
               left: kind_expr,
               right: IR::IntegerLiteral.new(value: 0, type: int_type),
-              type: @types.fetch("bool"),
+              type: @ctx.types.fetch("bool"),
             )
             data_expr = IR::Member.new(receiver: value_expr, member: "data", type: nil)
             some_payload_expr = IR::Member.new(receiver: data_expr, member: "some", type: nil)
@@ -78,7 +78,7 @@ module MilkTea
               operator: "==",
               left: kind_expr,
               right: IR::IntegerLiteral.new(value: 0, type: int_type),
-              type: @types.fetch("bool"),
+              type: @ctx.types.fetch("bool"),
             )
             data_expr = IR::Member.new(receiver: value_expr, member: "data", type: nil)
             some_payload_expr = IR::Member.new(receiver: data_expr, member: "some", type: nil)
@@ -150,7 +150,7 @@ module MilkTea
             statement_position: false,
           )
           lowered.concat(setup)
-          raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @types.fetch("void")
+          raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @ctx.types.fetch("void")
           raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
 
           lowered << IR::Assignment.new(target:, operator: "=", value:)
@@ -334,7 +334,7 @@ module MilkTea
       def lower_async_cf_if_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow:)
         branch_entries = statement.branches.map do |branch|
           condition_setup, prepared_cond = prepare_expression_for_inline_lowering(branch.condition, env:)
-          condition = lower_contextual_expression(prepared_cond, env:, expected_type: @types.fetch("bool"))
+          condition = lower_contextual_expression(prepared_cond, env:, expected_type: @ctx.types.fetch("bool"))
           body = if statements_contain_await?(branch.body, async_info)
             lower_async_cf_statements(branch.body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow:)
           else
@@ -365,7 +365,7 @@ module MilkTea
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
         condition_setup, prepared_cond = prepare_expression_for_inline_lowering(statement.condition, env:)
-        condition = lower_contextual_expression(prepared_cond, env:, expected_type: @types.fetch("bool"))
+        condition = lower_contextual_expression(prepared_cond, env:, expected_type: @ctx.types.fetch("bool"))
         inner_loop_flow = loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label))
         body = if statements_contain_await?(statement.body, async_info)
           lower_async_cf_statements(statement.body, env: duplicate_env(env), frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
@@ -383,13 +383,13 @@ module MilkTea
         loop_body = [
           *condition_setup,
           IR::IfStmt.new(
-            condition: IR::Unary.new(operator: "not", operand: condition, type: @types.fetch("bool")),
+            condition: IR::Unary.new(operator: "not", operand: condition, type: @ctx.types.fetch("bool")),
             then_body: [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
             else_body: nil,
           ),
           *body,
         ]
-        stmts = [IR::WhileStmt.new(condition: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")), body: loop_body)]
+        stmts = [IR::WhileStmt.new(condition: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool")), body: loop_body)]
         stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(loop_body, break_label)
         stmts
       end
@@ -448,7 +448,7 @@ module MilkTea
           IR::Assignment.new(target: loop_var_expr, operator: "=", value: start_expr),
           IR::Assignment.new(target: stop_field_expr, operator: "=", value: stop_expr),
           IR::WhileStmt.new(
-            condition: IR::Binary.new(operator: cmp_op, left: loop_var_expr, right: stop_field_expr, type: @types.fetch("bool")),
+            condition: IR::Binary.new(operator: cmp_op, left: loop_var_expr, right: stop_field_expr, type: @ctx.types.fetch("bool")),
             body: body + [IR::Assignment.new(target: loop_var_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: loop_var_type))],
           ),
         ]
@@ -467,7 +467,7 @@ module MilkTea
         iterable_field = async_info[:local_fields].fetch(async_collection_iterable_field_key(statement))
         index_field = async_info[:local_fields].fetch(async_collection_index_field_key(statement))
         iterable_ref = async_frame_field_expression(frame_expr, iterable_field[:field_name], iterable_type)
-        index_ref = async_frame_field_expression(frame_expr, index_field[:field_name], @types.fetch("ptr_uint"))
+        index_ref = async_frame_field_expression(frame_expr, index_field[:field_name], @ctx.types.fetch("ptr_uint"))
 
         # Loop variable stored in frame so it survives suspension
         loop_var_field = async_info[:local_fields].fetch(statement.name)
@@ -480,9 +480,9 @@ module MilkTea
                        IR::Index.new(receiver: data_ref, index: index_ref, type: element_type)
                      end
         stop_value = if array_type?(iterable_type)
-                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("ptr_uint"))
+                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @ctx.types.fetch("ptr_uint"))
                      else
-                       IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("ptr_uint"))
+                       IR::Member.new(receiver: iterable_ref, member: "len", type: @ctx.types.fetch("ptr_uint"))
                      end
 
         inner_env = duplicate_env(env)
@@ -502,11 +502,11 @@ module MilkTea
         stmts = [
           *iterable_setup,
           IR::Assignment.new(target: iterable_ref, operator: "=", value: lower_expression(prepared_iterable, env:, expected_type: iterable_type)),
-          IR::Assignment.new(target: index_ref, operator: "=", value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
+          IR::Assignment.new(target: index_ref, operator: "=", value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
           IR::WhileStmt.new(
-            condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+            condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
             body: [assign_item] + body_stmts + [
-              IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+              IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
             ],
           ),
         ]
@@ -539,7 +539,7 @@ module MilkTea
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
         index_field = async_info[:local_fields].fetch(async_collection_index_field_key(statement))
-        index_ref = async_frame_field_expression(frame_expr, index_field[:field_name], @types.fetch("ptr_uint"))
+        index_ref = async_frame_field_expression(frame_expr, index_field[:field_name], @ctx.types.fetch("ptr_uint"))
         iterable_refs = iterable_entries.map do |entry|
           async_frame_field_expression(frame_expr, entry[:iterable_field][:field_name], entry[:iterable_type])
         end
@@ -577,7 +577,7 @@ module MilkTea
               operator: "!=",
               left: collection_loop_stop_value(iterable_refs[offset + 1], entry[:iterable_type]),
               right: stop_value,
-              type: @types.fetch("bool"),
+              type: @ctx.types.fetch("bool"),
             ),
             then_body: [lower_fatal_statement("parallel for iterables must have matching lengths", env:)],
             else_body: nil,
@@ -594,11 +594,11 @@ module MilkTea
             )
           end,
           *length_checks,
-          IR::Assignment.new(target: index_ref, operator: "=", value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
+          IR::Assignment.new(target: index_ref, operator: "=", value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
           IR::WhileStmt.new(
-            condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+            condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
             body: assign_items + body_stmts + [
-              IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+              IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
             ],
           ),
         ]
@@ -620,7 +620,7 @@ module MilkTea
             match_expr = IR::Name.new(name: scrutinee_c_name, type: match_type, pointer: false)
           end
 
-          kind_type = @types.fetch("int")
+          kind_type = @ctx.types.fetch("int")
           kind_expr = IR::Member.new(receiver: match_expr, member: "kind", type: kind_type)
           cases = statement.arms.map do |arm|
             arm_env, binding_decl = async_variant_match_arm_binding(arm, match_expr, match_type, env:, frame_expr:, local_fields: async_info[:local_fields])
@@ -704,7 +704,7 @@ module MilkTea
                   operator: "==",
                   left: IR::Name.new(name: c_name, type: storage_type, pointer: false),
                   right: IR::NullLiteral.new(type: storage_type),
-                  type: @types.fetch("bool"),
+                  type: @ctx.types.fetch("bool"),
                 ),
                 then_body: else_body,
                 else_body: nil,
@@ -719,12 +719,12 @@ module MilkTea
           when AST::IfStmt
             branch_entries = statement.branches.map do |branch|
               condition_setup, prepared_cond = prepare_expression_for_inline_lowering(
-                branch.condition, env: local_env, expected_type: @types.fetch("bool")
+                branch.condition, env: local_env, expected_type: @ctx.types.fetch("bool")
               )
               then_body = lower_async_non_await_statements(
                 branch.body, env: local_env, frame_expr:, raw_frame_expr:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)
               )
-              [condition_setup, lower_expression(prepared_cond, env: local_env, expected_type: @types.fetch("bool")), then_body]
+              [condition_setup, lower_expression(prepared_cond, env: local_env, expected_type: @ctx.types.fetch("bool")), then_body]
             end
             else_body = statement.else_body ? lower_async_non_await_statements(
               statement.else_body, env: local_env, frame_expr:, raw_frame_expr:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)
@@ -750,7 +750,7 @@ module MilkTea
                 expr = IR::Name.new(name: scrutinee_c_name, type: scrutinee_type, pointer: false)
               end
 
-              kind_type = @types.fetch("int")
+              kind_type = @ctx.types.fetch("int")
               kind_expr = IR::Member.new(receiver: expr, member: "kind", type: kind_type)
               cases = statement.arms.map do |arm|
                 arm_env, binding_decl = async_variant_match_arm_binding(arm, expr, scrutinee_type, env: local_env)
@@ -821,7 +821,7 @@ module MilkTea
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
         condition_setup, prepared_cond = prepare_expression_for_inline_lowering(
-          statement.condition, env:, expected_type: @types.fetch("bool")
+          statement.condition, env:, expected_type: @ctx.types.fetch("bool")
         )
         body = lower_async_non_await_statements(
           statement.body,
@@ -833,7 +833,7 @@ module MilkTea
           loop_flow: loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label)),
         )
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
-        cond = lower_expression(prepared_cond, env:, expected_type: @types.fetch("bool"))
+        cond = lower_expression(prepared_cond, env:, expected_type: @ctx.types.fetch("bool"))
 
         if condition_setup.empty?
           stmts = [IR::WhileStmt.new(condition: cond, body:)]
@@ -844,13 +844,13 @@ module MilkTea
         loop_body = [
           *condition_setup,
           IR::IfStmt.new(
-            condition: IR::Unary.new(operator: "not", operand: cond, type: @types.fetch("bool")),
+            condition: IR::Unary.new(operator: "not", operand: cond, type: @ctx.types.fetch("bool")),
             then_body: [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
             else_body: nil,
           ),
           *body,
         ]
-        stmts = [IR::WhileStmt.new(condition: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")), body: loop_body)]
+        stmts = [IR::WhileStmt.new(condition: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool")), body: loop_body)]
         stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(loop_body, break_label)
         IR::BlockStmt.new(body: stmts)
       end
@@ -898,7 +898,7 @@ module MilkTea
 
         for_statement = IR::ForStmt.new(
           init: IR::LocalDecl.new(name: statement.name, c_name: index_c_name, type: loop_type, value: lower_expression(prepared_start, env:, expected_type: loop_type)),
-          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
           post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: loop_type)),
           body:,
         )
@@ -924,7 +924,7 @@ module MilkTea
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
         iterable_ref = IR::Name.new(name: iterable_c_name, type: iterable_type, pointer: false)
-        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("ptr_uint"), pointer: false)
+        index_ref = IR::Name.new(name: index_c_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
 
         item_value = if array_type?(iterable_type)
                        IR::Index.new(receiver: iterable_ref, index: index_ref, type: element_type)
@@ -933,9 +933,9 @@ module MilkTea
                        IR::Index.new(receiver: data_ref, index: index_ref, type: element_type)
                      end
         stop_value = if array_type?(iterable_type)
-                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("ptr_uint"))
+                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @ctx.types.fetch("ptr_uint"))
                      else
-                       IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("ptr_uint"))
+                       IR::Member.new(receiver: iterable_ref, member: "len", type: @ctx.types.fetch("ptr_uint"))
                      end
 
         while_env = duplicate_env(env)
@@ -955,9 +955,9 @@ module MilkTea
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
-          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
-          post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
+          post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
           body:,
         )
 
@@ -1000,7 +1000,7 @@ module MilkTea
         index_c_name = fresh_c_temp_name(env, "for_index")
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
-        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("ptr_uint"), pointer: false)
+        index_ref = IR::Name.new(name: index_c_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
         stop_value = collection_loop_stop_value(iterable_entries.first[:iterable_ref], iterable_entries.first[:iterable_type])
 
         while_env = duplicate_env(env)
@@ -1032,7 +1032,7 @@ module MilkTea
               operator: "!=",
               left: collection_loop_stop_value(entry[:iterable_ref], entry[:iterable_type]),
               right: stop_value,
-              type: @types.fetch("bool"),
+              type: @ctx.types.fetch("bool"),
             ),
             then_body: [lower_fatal_statement("parallel for iterables must have matching lengths", env:)],
             else_body: nil,
@@ -1040,9 +1040,9 @@ module MilkTea
         end
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
-          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
-          post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
+          post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
           body:,
         )
 
@@ -1077,7 +1077,7 @@ module MilkTea
             statement_position: false,
           )
           lowered.concat(setup)
-          raise LoweringError, "foreign call used in assignment must return a value" if call_type == @types.fetch("void")
+          raise LoweringError, "foreign call used in assignment must return a value" if call_type == @ctx.types.fetch("void")
           raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
 
           lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
@@ -1144,7 +1144,7 @@ module MilkTea
           )
           lowered.concat(setup)
         elsif prepared_expression
-          lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env:), line: statement.line, source_path: @current_analysis_path)
+          lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env:), line: statement.line, source_path: @ctx.current_analysis_path)
         end
 
         lowered
@@ -1177,7 +1177,7 @@ module MilkTea
           )
         end
 
-        if async_info[:result_type] != @types.fetch("void") && value && cleanup.any? && !cleanup_safe_return_expression?(prepared_value)
+        if async_info[:result_type] != @ctx.types.fetch("void") && value && cleanup.any? && !cleanup_safe_return_expression?(prepared_value)
           lowered << IR::Assignment.new(
             target: async_frame_field_expression(frame_expr, "result", async_info[:result_type]),
             operator: "=",
@@ -1210,7 +1210,7 @@ module MilkTea
 
         task_expr = async_frame_field_expression(frame_expr, await_info[:field_name], await_info[:task_type])
         task_frame_expr = async_task_frame_expression(task_expr, await_info[:task_type])
-        ready_call = async_task_call(task_expr, await_info[:task_type], "ready", [task_frame_expr], @types.fetch("bool"))
+        ready_call = async_task_call(task_expr, await_info[:task_type], "ready", [task_frame_expr], @ctx.types.fetch("bool"))
         set_waiter_call = async_task_call(
           task_expr,
           await_info[:task_type],
@@ -1220,10 +1220,10 @@ module MilkTea
             raw_frame_expr,
             IR::Name.new(name: resume_c_name, type: async_info[:wake_type], pointer: false),
           ],
-          @types.fetch("void"),
+          @ctx.types.fetch("void"),
         )
         take_result_call = async_task_call(task_expr, await_info[:task_type], "take_result", [task_frame_expr], await_info[:result_type])
-        release_call = async_task_call(task_expr, await_info[:task_type], "release", [task_frame_expr], @types.fetch("void"))
+        release_call = async_task_call(task_expr, await_info[:task_type], "release", [task_frame_expr], @ctx.types.fetch("void"))
 
         unless await_info[:reuse_existing_storage]
           lowered << IR::Assignment.new(
@@ -1233,12 +1233,12 @@ module MilkTea
           )
         end
         lowered << IR::IfStmt.new(
-          condition: IR::Unary.new(operator: "not", operand: ready_call, type: @types.fetch("bool")),
+          condition: IR::Unary.new(operator: "not", operand: ready_call, type: @ctx.types.fetch("bool")),
           then_body: [
             IR::Assignment.new(
-              target: async_frame_field_expression(frame_expr, "state", @types.fetch("int")),
+              target: async_frame_field_expression(frame_expr, "state", @ctx.types.fetch("int")),
               operator: "=",
-              value: IR::IntegerLiteral.new(value: await_info[:state], type: @types.fetch("int")),
+              value: IR::IntegerLiteral.new(value: await_info[:state], type: @ctx.types.fetch("int")),
             ),
             IR::ExpressionStmt.new(expression: set_waiter_call),
             IR::ReturnStmt.new(value: nil),
@@ -1300,7 +1300,7 @@ module MilkTea
           lowered << IR::ExpressionStmt.new(expression: take_result_call)
           lowered << IR::ExpressionStmt.new(expression: release_call)
         when AST::ReturnStmt
-          if await_info[:result_type] == @types.fetch("void")
+          if await_info[:result_type] == @ctx.types.fetch("void")
             lowered << IR::ExpressionStmt.new(expression: take_result_call)
             lowered << IR::ExpressionStmt.new(expression: release_call)
             lowered.concat(cleanup)
@@ -1378,7 +1378,7 @@ module MilkTea
       def async_complete_statements(frame_expr:, raw_frame_expr:, async_info:, value:, result_already_stored: false)
         lowered = []
 
-        if async_info[:result_type] != @types.fetch("void") && !result_already_stored
+        if async_info[:result_type] != @ctx.types.fetch("void") && !result_already_stored
           lowered << IR::Assignment.new(
             target: async_frame_field_expression(frame_expr, "result", async_info[:result_type]),
             operator: "=",
@@ -1387,9 +1387,9 @@ module MilkTea
         end
 
         lowered << IR::Assignment.new(
-          target: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool")),
+          target: async_frame_field_expression(frame_expr, "ready", @ctx.types.fetch("bool")),
           operator: "=",
-          value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")),
+          value: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool")),
         )
 
         waiter_frame_field = async_frame_field_expression(frame_expr, "waiter_frame", async_info[:void_ptr])
@@ -1398,7 +1398,7 @@ module MilkTea
             operator: "!=",
             left: waiter_frame_field,
             right: IR::NullLiteral.new(type: async_info[:void_ptr]),
-            type: @types.fetch("bool"),
+            type: @ctx.types.fetch("bool"),
           ),
           then_body: [
             IR::LocalDecl.new(
@@ -1416,7 +1416,7 @@ module MilkTea
               expression: IR::Call.new(
                 callee: async_frame_field_expression(frame_expr, "waiter", async_info[:wake_type]),
                 arguments: [IR::Name.new(name: "__mt_waiter_frame", type: async_info[:void_ptr], pointer: false)],
-                type: @types.fetch("void"),
+                type: @ctx.types.fetch("void"),
               ),
             ),
             IR::ReturnStmt.new(value: nil),

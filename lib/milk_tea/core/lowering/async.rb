@@ -54,16 +54,16 @@ module MilkTea
 
         root_proc_expr = IR::Name.new(name: root_proc_name, type: root_proc_type, pointer: false)
 
-        if async_info[:result_type] == @types.fetch("int")
+        if async_info[:result_type] == @ctx.types.fetch("int")
           wait_callee = async_main_runtime_callee_name("wait", type_arguments: [async_info[:result_type]])
           body << IR::LocalDecl.new(
             name: result_name,
             c_name: result_name,
-            type: @types.fetch("int"),
+            type: @ctx.types.fetch("int"),
             value: IR::Call.new(
               callee: wait_callee,
               arguments: [root_proc_expr],
-              type: @types.fetch("int"),
+              type: @ctx.types.fetch("int"),
             ),
           )
         else
@@ -72,7 +72,7 @@ module MilkTea
             expression: IR::Call.new(
               callee: run_callee,
               arguments: [root_proc_expr],
-              type: @types.fetch("void"),
+              type: @ctx.types.fetch("void"),
             ),
           )
         end
@@ -82,14 +82,14 @@ module MilkTea
         )
         body.concat(cleanup_statements)
         body << IR::ReturnStmt.new(
-          value: async_info[:result_type] == @types.fetch("int") ? IR::Name.new(name: result_name, type: @types.fetch("int"), pointer: false) : IR::IntegerLiteral.new(value: 0, type: @types.fetch("int")),
+          value: async_info[:result_type] == @ctx.types.fetch("int") ? IR::Name.new(name: result_name, type: @ctx.types.fetch("int"), pointer: false) : IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("int")),
         )
 
         IR::Function.new(
           name: binding.name,
           c_name: "main",
           params:,
-          return_type: @types.fetch("int"),
+          return_type: @ctx.types.fetch("int"),
           body: body,
           entry_point: true,
         )
@@ -111,16 +111,16 @@ module MilkTea
         return_type = binding.body_return_type
         body = []
         call = IR::Call.new(
-          callee: function_binding_c_name(binding, module_name: @module_name),
+          callee: function_binding_c_name(binding, module_name: @ctx.module_name),
           arguments: call_arguments,
           type: return_type,
         )
 
         body.concat(setup_statements)
-        if return_type == @types.fetch("void")
+        if return_type == @ctx.types.fetch("void")
           body << IR::ExpressionStmt.new(expression: call)
           body.concat(cleanup_statements)
-          body << IR::ReturnStmt.new(value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("int")))
+          body << IR::ReturnStmt.new(value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("int")))
         elsif cleanup_statements.empty?
           body << IR::ReturnStmt.new(value: call)
         else
@@ -128,26 +128,26 @@ module MilkTea
           body << IR::LocalDecl.new(
             name: result_name,
             c_name: result_name,
-            type: @types.fetch("int"),
+            type: @ctx.types.fetch("int"),
             value: call,
           )
           body.concat(cleanup_statements)
-          body << IR::ReturnStmt.new(value: IR::Name.new(name: result_name, type: @types.fetch("int"), pointer: false))
+          body << IR::ReturnStmt.new(value: IR::Name.new(name: result_name, type: @ctx.types.fetch("int"), pointer: false))
         end
 
         IR::Function.new(
           name: binding.name,
           c_name: "main",
           params:,
-          return_type: @types.fetch("int"),
+          return_type: @ctx.types.fetch("int"),
           body:,
           entry_point: true,
         )
       end
 
       def build_root_main_entrypoint_bridge(signature)
-        argc_type = @types.fetch("int")
-        raw_argv_type = pointer_to(pointer_to(@types.fetch("char")))
+        argc_type = @ctx.types.fetch("int")
+        raw_argv_type = pointer_to(pointer_to(@ctx.types.fetch("char")))
         argc_name = "argc"
         argv_name = "argv"
 
@@ -183,7 +183,7 @@ module MilkTea
             [],
           ]
         when :span_str
-          items_type = pointer_to(@types.fetch("str"))
+          items_type = pointer_to(@ctx.types.fetch("str"))
           items_name = "__mt_args_items"
           args_name = "__mt_args"
           items_expr = IR::Name.new(name: items_name, type: items_type, pointer: false)
@@ -215,7 +215,7 @@ module MilkTea
           ]
           cleanup = [
             IR::ExpressionStmt.new(
-              expression: IR::Call.new(callee: "mt_free_entry_argv_strs", arguments: [items_expr], type: @types.fetch("void")),
+              expression: IR::Call.new(callee: "mt_free_entry_argv_strs", arguments: [items_expr], type: @ctx.types.fetch("void")),
             ),
           ]
 
@@ -234,27 +234,27 @@ module MilkTea
       end
 
       def root_main_entrypoint_signature(binding)
-        return nil unless @analysis == @program.root_analysis
+        return nil unless @ctx.analysis == @program.root_analysis
         return nil unless binding.type.receiver_type.nil?
         return nil unless binding.name == "main"
         return nil unless binding.type_arguments.empty?
 
         return_type = binding.body_return_type
-        return nil unless return_type == @types.fetch("int") || return_type == @types.fetch("void")
+        return nil unless return_type == @ctx.types.fetch("int") || return_type == @ctx.types.fetch("void")
 
         params = binding.type.params
         return { kind: :none } if params.empty?
 
-        if params.length == 1 && params.first.type.is_a?(Types::Span) && params.first.type.element_type == @types.fetch("str")
+        if params.length == 1 && params.first.type.is_a?(Types::Span) && params.first.type.element_type == @ctx.types.fetch("str")
           return { kind: :span_str, args_type: params.first.type }
         end
 
         return nil unless params.length == 2
-        return nil unless params[0].type == @types.fetch("int")
+        return nil unless params[0].type == @ctx.types.fetch("int")
 
         argv_type = params[1].type
-        return { kind: :raw_cstr_ptr, argv_type: } if argv_type == pointer_to(@types.fetch("cstr"))
-        return { kind: :raw_char_ptr_ptr, argv_type: } if argv_type == pointer_to(pointer_to(@types.fetch("char")))
+        return { kind: :raw_cstr_ptr, argv_type: } if argv_type == pointer_to(@ctx.types.fetch("cstr"))
+        return { kind: :raw_char_ptr_ptr, argv_type: } if argv_type == pointer_to(pointer_to(@ctx.types.fetch("char")))
 
         nil
       end
@@ -275,7 +275,7 @@ module MilkTea
             target_type: frame_pointer_type,
             expression: IR::Call.new(
               callee: "mt_async_alloc",
-              arguments: [IR::SizeofExpr.new(target_type: frame_type, type: @types.fetch("ptr_uint"))],
+              arguments: [IR::SizeofExpr.new(target_type: frame_type, type: @ctx.types.fetch("ptr_uint"))],
               type: async_info[:void_ptr],
             ),
             type: frame_pointer_type,
@@ -303,7 +303,7 @@ module MilkTea
         end
 
         body << IR::ExpressionStmt.new(
-          expression: IR::Call.new(callee: resume_c_name, arguments: [raw_frame_expr], type: @types.fetch("void")),
+          expression: IR::Call.new(callee: resume_c_name, arguments: [raw_frame_expr], type: @ctx.types.fetch("void")),
         )
         body << IR::ReturnStmt.new(
           value: IR::AggregateLiteral.new(
@@ -342,17 +342,17 @@ module MilkTea
         else
           cases = (0..async_info[:await_fields].length).map do |state|
             IR::SwitchCase.new(
-              value: IR::IntegerLiteral.new(value: state, type: @types.fetch("int")),
+              value: IR::IntegerLiteral.new(value: state, type: @ctx.types.fetch("int")),
               body: [IR::GotoStmt.new(label: async_state_label(resume_c_name, state))],
             )
           end
-          body << IR::SwitchStmt.new(expression: async_frame_field_expression(frame_expr, "state", @types.fetch("int")), cases:)
+          body << IR::SwitchStmt.new(expression: async_frame_field_expression(frame_expr, "state", @ctx.types.fetch("int")), cases:)
           body << IR::ReturnStmt.new(value: nil)
           body << IR::LabelStmt.new(name: async_state_label(resume_c_name, 0))
           body.concat(lower_async_cf_statements(statements, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: []))
         end
 
-        if async_info[:result_type] == @types.fetch("void") && !cfg_block_always_terminates?(statements)
+        if async_info[:result_type] == @ctx.types.fetch("void") && !cfg_block_always_terminates?(statements)
           body.concat(async_complete_statements(frame_expr:, raw_frame_expr:, async_info:, value: nil, result_already_stored: true))
         end
 
@@ -360,7 +360,7 @@ module MilkTea
           name: "#{binding.name}__resume",
           c_name: resume_c_name,
           params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           body:,
           entry_point: false,
         )
@@ -373,10 +373,10 @@ module MilkTea
           name: "#{ready_c_name}_fn",
           c_name: ready_c_name,
           params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
-          return_type: @types.fetch("bool"),
+          return_type: @ctx.types.fetch("bool"),
           body: [
             async_frame_cast_declaration(frame_type, async_info),
-            IR::ReturnStmt.new(value: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool"))),
+            IR::ReturnStmt.new(value: async_frame_field_expression(frame_expr, "ready", @ctx.types.fetch("bool"))),
           ],
           entry_point: false,
         )
@@ -395,13 +395,13 @@ module MilkTea
             IR::Param.new(name: "waiter_frame", c_name: "waiter_frame", type: async_info[:void_ptr], pointer: false),
             IR::Param.new(name: "waiter", c_name: "waiter", type: async_info[:wake_type], pointer: false),
           ],
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           body: [
             async_frame_cast_declaration(frame_type, async_info),
             IR::IfStmt.new(
-              condition: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool")),
+              condition: async_frame_field_expression(frame_expr, "ready", @ctx.types.fetch("bool")),
               then_body: [
-                IR::ExpressionStmt.new(expression: IR::Call.new(callee: waiter_expr, arguments: [waiter_frame_expr], type: @types.fetch("void"))),
+                IR::ExpressionStmt.new(expression: IR::Call.new(callee: waiter_expr, arguments: [waiter_frame_expr], type: @ctx.types.fetch("void"))),
                 IR::ReturnStmt.new(value: nil),
               ],
               else_body: nil,
@@ -420,7 +420,7 @@ module MilkTea
 
         body = [async_frame_cast_declaration(frame_type, async_info)]
 
-        not_ready_expr = IR::Unary.new(operator: "not", operand: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool")), type: @types.fetch("bool"))
+        not_ready_expr = IR::Unary.new(operator: "not", operand: async_frame_field_expression(frame_expr, "ready", @ctx.types.fetch("bool")), type: @ctx.types.fetch("bool"))
         not_ready_return = [IR::ReturnStmt.new(value: nil)]
 
         if async_info[:await_fields].any?
@@ -429,7 +429,7 @@ module MilkTea
             task_field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:task_type])
             task_frame_expr = async_task_frame_expression(task_field_expr, field_info[:task_type])
             release_call = IR::ExpressionStmt.new(
-              expression: async_task_call(task_field_expr, field_info[:task_type], "release", [task_frame_expr], @types.fetch("void")),
+              expression: async_task_call(task_field_expr, field_info[:task_type], "release", [task_frame_expr], @ctx.types.fetch("void")),
             )
             await_release_stmts << IR::IfStmt.new(
               condition: task_frame_expr,
@@ -469,12 +469,12 @@ module MilkTea
         end
 
         (async_info[:format_str_fields] || {}).each_key do |field_name|
-          field_expr = async_frame_field_expression(frame_expr, field_name, @types.fetch("str"))
+          field_expr = async_frame_field_expression(frame_expr, field_name, @ctx.types.fetch("str"))
           body << IR::ExpressionStmt.new(
             expression: IR::Call.new(
               callee: "mt_format_str_release",
               arguments: [field_expr],
-              type: @types.fetch("void"),
+              type: @ctx.types.fetch("void"),
             ),
           )
         end
@@ -484,18 +484,18 @@ module MilkTea
 
           param_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:type])
           body << IR::ExpressionStmt.new(
-            expression: IR::Call.new(callee: "mt_async_free", arguments: [param_expr], type: @types.fetch("void")),
+            expression: IR::Call.new(callee: "mt_async_free", arguments: [param_expr], type: @ctx.types.fetch("void")),
           )
         end
 
-        body << IR::ExpressionStmt.new(expression: IR::Call.new(callee: "mt_async_free", arguments: [raw_frame_expr], type: @types.fetch("void")))
+        body << IR::ExpressionStmt.new(expression: IR::Call.new(callee: "mt_async_free", arguments: [raw_frame_expr], type: @ctx.types.fetch("void")))
         body << IR::ReturnStmt.new(value: nil)
 
         IR::Function.new(
           name: "#{release_c_name}_fn",
           c_name: release_c_name,
           params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           body:,
           entry_point: false,
         )
@@ -506,7 +506,7 @@ module MilkTea
 
         body = [async_frame_cast_declaration(frame_type, async_info)]
 
-        ready_expr = async_frame_field_expression(frame_expr, "ready", @types.fetch("bool"))
+        ready_expr = async_frame_field_expression(frame_expr, "ready", @ctx.types.fetch("bool"))
         if_ready_return = IR::IfStmt.new(
           condition: ready_expr,
           then_body: [IR::ReturnStmt.new(value: nil)],
@@ -515,9 +515,9 @@ module MilkTea
         body << if_ready_return
 
         cancelled_assign = IR::Assignment.new(
-          target: async_frame_field_expression(frame_expr, "cancelled", @types.fetch("bool")),
+          target: async_frame_field_expression(frame_expr, "cancelled", @ctx.types.fetch("bool")),
           operator: "=",
-          value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")),
+          value: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool")),
         )
         body << IR::ExpressionStmt.new(expression: cancelled_assign)
 
@@ -526,10 +526,10 @@ module MilkTea
           task_field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:task_type])
           task_frame_expr = async_task_frame_expression(task_field_expr, field_info[:task_type])
           cancel_call = IR::ExpressionStmt.new(
-            expression: async_task_call(task_field_expr, field_info[:task_type], "cancel", [task_frame_expr], @types.fetch("void")),
+            expression: async_task_call(task_field_expr, field_info[:task_type], "cancel", [task_frame_expr], @ctx.types.fetch("void")),
           )
           release_call = IR::ExpressionStmt.new(
-            expression: async_task_call(task_field_expr, field_info[:task_type], "release", [task_frame_expr], @types.fetch("void")),
+            expression: async_task_call(task_field_expr, field_info[:task_type], "release", [task_frame_expr], @ctx.types.fetch("void")),
           )
           cancel_member_expr = IR::Member.new(receiver: task_field_expr, member: "cancel", type: async_info[:task_type].field("cancel"))
           cancel_stmts << IR::IfStmt.new(
@@ -563,12 +563,12 @@ module MilkTea
         end
 
         (async_info[:format_str_fields] || {}).each_key do |field_name|
-          field_expr = async_frame_field_expression(frame_expr, field_name, @types.fetch("str"))
+          field_expr = async_frame_field_expression(frame_expr, field_name, @ctx.types.fetch("str"))
           body << IR::ExpressionStmt.new(
             expression: IR::Call.new(
               callee: "mt_format_str_release",
               arguments: [field_expr],
-              type: @types.fetch("void"),
+              type: @ctx.types.fetch("void"),
             ),
           )
         end
@@ -578,14 +578,14 @@ module MilkTea
 
           param_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:type])
           body << IR::ExpressionStmt.new(
-            expression: IR::Call.new(callee: "mt_async_free", arguments: [param_expr], type: @types.fetch("void")),
+            expression: IR::Call.new(callee: "mt_async_free", arguments: [param_expr], type: @ctx.types.fetch("void")),
           )
         end
 
         ready_assign = IR::Assignment.new(
-          target: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool")),
+          target: async_frame_field_expression(frame_expr, "ready", @ctx.types.fetch("bool")),
           operator: "=",
-          value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")),
+          value: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool")),
         )
         body << IR::ExpressionStmt.new(expression: ready_assign)
 
@@ -602,7 +602,7 @@ module MilkTea
             expression: IR::Call.new(
               callee: IR::Name.new(name: async_frame_field_c_name("waiter"), type: async_info[:wake_type], pointer: false),
               arguments: [waiter_frame_expr],
-              type: @types.fetch("void"),
+              type: @ctx.types.fetch("void"),
             ),
           ),
         ]
@@ -618,7 +618,7 @@ module MilkTea
           name: "#{cancel_c_name}_fn",
           c_name: cancel_c_name,
           params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           body:,
           entry_point: false,
         )
@@ -626,7 +626,7 @@ module MilkTea
 
       def build_async_take_result_function(frame_type, take_result_c_name, async_info)
         frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
-        body = if async_info[:result_type] == @types.fetch("void")
+        body = if async_info[:result_type] == @ctx.types.fetch("void")
                  [IR::ReturnStmt.new(value: nil)]
                else
                  [async_frame_cast_declaration(frame_type, async_info),

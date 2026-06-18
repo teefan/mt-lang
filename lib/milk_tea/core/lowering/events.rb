@@ -34,7 +34,7 @@ module MilkTea
           Types::Function.new(
             kind.to_s,
             params: [
-              Types::Parameter.new("state", pointer_to(@types.fetch("void"))),
+              Types::Parameter.new("state", pointer_to(@ctx.types.fetch("void"))),
               Types::Parameter.new("listener", event_stateful_listener_function_type(event_type)),
             ],
             return_type: event_subscription_result_type,
@@ -42,13 +42,13 @@ module MilkTea
         when :event_unsubscribe
           Types::Function.new(
             kind.to_s,
-            params: [Types::Parameter.new("subscription", @types.fetch("Subscription"))],
-            return_type: @types.fetch("bool"),
+            params: [Types::Parameter.new("subscription", @ctx.types.fetch("Subscription"))],
+            return_type: @ctx.types.fetch("bool"),
           )
         when :event_emit
           params = []
           params << Types::Parameter.new("payload", event_type.payload_type) if event_type.payload_type
-          Types::Function.new(kind.to_s, params:, return_type: @types.fetch("void"))
+          Types::Function.new(kind.to_s, params:, return_type: @ctx.types.fetch("void"))
         when :event_wait
           Types::Function.new(kind.to_s, params: [], return_type: Types::Task.new(event_wait_result_type(event_type)))
         else
@@ -89,21 +89,21 @@ module MilkTea
       def event_listener_function_type(event_type)
         params = []
         params << Types::Parameter.new("payload", event_type.payload_type) if event_type.payload_type
-        Types::Function.new("#{event_type.name}__listener", params:, return_type: @types.fetch("void"))
+        Types::Function.new("#{event_type.name}__listener", params:, return_type: @ctx.types.fetch("void"))
       end
 
       def event_stateful_listener_function_type(event_type)
-        params = [Types::Parameter.new("state", pointer_to(@types.fetch("void")))]
+        params = [Types::Parameter.new("state", pointer_to(@ctx.types.fetch("void")))]
         params << Types::Parameter.new("payload", event_type.payload_type) if event_type.payload_type
-        Types::Function.new("#{event_type.name}__stateful_listener", params:, return_type: @types.fetch("void"))
+        Types::Function.new("#{event_type.name}__stateful_listener", params:, return_type: @ctx.types.fetch("void"))
       end
 
       def event_subscription_result_type
-        @types.fetch("Result").instantiate([@types.fetch("Subscription"), @types.fetch("EventError")])
+        @ctx.types.fetch("Result").instantiate([@ctx.types.fetch("Subscription"), @ctx.types.fetch("EventError")])
       end
 
       def event_wait_result_type(event_type)
-        @types.fetch("Result").instantiate([event_type.payload_type || @types.fetch("void"), @types.fetch("EventError")])
+        @ctx.types.fetch("Result").instantiate([event_type.payload_type || @ctx.types.fetch("void"), @ctx.types.fetch("EventError")])
       end
 
       def array_of(type, length)
@@ -113,13 +113,13 @@ module MilkTea
       def ensure_subscription_runtime
         return if @artifacts.subscription_runtime_emitted
 
-        subscription_type = @types.fetch("Subscription")
+        subscription_type = @ctx.types.fetch("Subscription")
         @artifacts.synthetic_structs << IR::StructDecl.new(
           name: subscription_type.name,
           c_name: subscription_type.c_name,
           fields: [
-            IR::Field.new(name: "slot", type: @types.fetch("ptr_uint")),
-            IR::Field.new(name: "generation", type: @types.fetch("ptr_uint")),
+            IR::Field.new(name: "slot", type: @ctx.types.fetch("ptr_uint")),
+            IR::Field.new(name: "generation", type: @ctx.types.fetch("ptr_uint")),
           ],
           packed: false,
           alignment: nil,
@@ -130,7 +130,7 @@ module MilkTea
       def ensure_event_error_enum
         return if @artifacts.event_error_enum_emitted
 
-        event_error_type = @types.fetch("EventError")
+        event_error_type = @ctx.types.fetch("EventError")
         @artifacts.synthetic_enums << IR::EnumDecl.new(
           name: event_error_type.name,
           c_name: c_type_name(event_error_type),
@@ -153,35 +153,35 @@ module MilkTea
         ensure_subscription_runtime
         ensure_event_error_enum
 
-        void_ptr = pointer_to(@types.fetch("void"))
+        void_ptr = pointer_to(@ctx.types.fetch("void"))
         listener_type = event_listener_function_type(event_type)
         subscription_result_type = event_subscription_result_type
         wait_result_type = event_wait_result_type(event_type)
         task_type = Types::Task.new(wait_result_type)
-        wake_type = task_type.field("ready").params.fetch(0).type == void_ptr ? task_type.field("set_waiter").params.fetch(2).type : Types::Function.new(nil, params: [Types::Parameter.new("frame", void_ptr)], return_type: @types.fetch("void"))
+        wake_type = task_type.field("ready").params.fetch(0).type == void_ptr ? task_type.field("set_waiter").params.fetch(2).type : Types::Function.new(nil, params: [Types::Parameter.new("frame", void_ptr)], return_type: @ctx.types.fetch("void"))
         slot_type = Types::Struct.new("#{event_type.c_name}__slot").define_fields(
-          "active" => @types.fetch("bool"),
-          "once" => @types.fetch("bool"),
-          "generation" => @types.fetch("ptr_uint"),
+          "active" => @ctx.types.fetch("bool"),
+          "once" => @ctx.types.fetch("bool"),
+          "generation" => @ctx.types.fetch("ptr_uint"),
           "state" => void_ptr,
           "listener" => void_ptr,
           "wait_frame" => void_ptr,
         )
         snapshot_type = Types::Struct.new("#{event_type.c_name}__snapshot").define_fields(
-          "slot" => @types.fetch("ptr_uint"),
-          "generation" => @types.fetch("ptr_uint"),
-          "once" => @types.fetch("bool"),
-          "wait_slot" => @types.fetch("bool"),
-          "stateful" => @types.fetch("bool"),
+          "slot" => @ctx.types.fetch("ptr_uint"),
+          "generation" => @ctx.types.fetch("ptr_uint"),
+          "once" => @ctx.types.fetch("bool"),
+          "wait_slot" => @ctx.types.fetch("bool"),
+          "stateful" => @ctx.types.fetch("bool"),
           "state" => void_ptr,
           "listener" => void_ptr,
         )
         wait_frame_type = Types::Struct.new("#{event_type.c_name}__wait_frame").define_fields(
-          "ready" => @types.fetch("bool"),
+          "ready" => @ctx.types.fetch("bool"),
           "waiter_frame" => void_ptr,
           "waiter" => wake_type,
           "event" => void_ptr,
-          "subscription" => @types.fetch("Subscription"),
+          "subscription" => @ctx.types.fetch("Subscription"),
           "result" => wait_result_type,
         )
         slots_type = array_of(slot_type, event_type.capacity)
@@ -191,9 +191,9 @@ module MilkTea
           name: slot_type.name,
           c_name: slot_type.name,
           fields: [
-            IR::Field.new(name: "active", type: @types.fetch("bool")),
-            IR::Field.new(name: "once", type: @types.fetch("bool")),
-            IR::Field.new(name: "generation", type: @types.fetch("ptr_uint")),
+            IR::Field.new(name: "active", type: @ctx.types.fetch("bool")),
+            IR::Field.new(name: "once", type: @ctx.types.fetch("bool")),
+            IR::Field.new(name: "generation", type: @ctx.types.fetch("ptr_uint")),
             IR::Field.new(name: "state", type: void_ptr),
             IR::Field.new(name: "listener", type: void_ptr),
             IR::Field.new(name: "wait_frame", type: void_ptr),
@@ -205,11 +205,11 @@ module MilkTea
           name: snapshot_type.name,
           c_name: snapshot_type.name,
           fields: [
-            IR::Field.new(name: "slot", type: @types.fetch("ptr_uint")),
-            IR::Field.new(name: "generation", type: @types.fetch("ptr_uint")),
-            IR::Field.new(name: "once", type: @types.fetch("bool")),
-            IR::Field.new(name: "wait_slot", type: @types.fetch("bool")),
-            IR::Field.new(name: "stateful", type: @types.fetch("bool")),
+            IR::Field.new(name: "slot", type: @ctx.types.fetch("ptr_uint")),
+            IR::Field.new(name: "generation", type: @ctx.types.fetch("ptr_uint")),
+            IR::Field.new(name: "once", type: @ctx.types.fetch("bool")),
+            IR::Field.new(name: "wait_slot", type: @ctx.types.fetch("bool")),
+            IR::Field.new(name: "stateful", type: @ctx.types.fetch("bool")),
             IR::Field.new(name: "state", type: void_ptr),
             IR::Field.new(name: "listener", type: void_ptr),
           ],
@@ -220,11 +220,11 @@ module MilkTea
           name: wait_frame_type.name,
           c_name: wait_frame_type.name,
           fields: [
-            IR::Field.new(name: "ready", type: @types.fetch("bool")),
+            IR::Field.new(name: "ready", type: @ctx.types.fetch("bool")),
             IR::Field.new(name: "waiter_frame", type: void_ptr),
             IR::Field.new(name: "waiter", type: wake_type),
             IR::Field.new(name: "event", type: void_ptr),
-            IR::Field.new(name: "subscription", type: @types.fetch("Subscription")),
+            IR::Field.new(name: "subscription", type: @ctx.types.fetch("Subscription")),
             IR::Field.new(name: "result", type: wait_result_type),
           ],
           packed: false,
@@ -286,8 +286,8 @@ module MilkTea
       def build_event_subscribe_function(runtime, once:)
         event_expr = IR::Name.new(name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)
         listener_expr = IR::Name.new(name: "listener", type: runtime.fetch(:listener_type), pointer: false)
-        slot_index_expr = IR::Name.new(name: "__mt_slot_index", type: @types.fetch("ptr_uint"), pointer: false)
-        generation_expr = IR::Name.new(name: "__mt_generation", type: @types.fetch("ptr_uint"), pointer: false)
+        slot_index_expr = IR::Name.new(name: "__mt_slot_index", type: @ctx.types.fetch("ptr_uint"), pointer: false)
+        generation_expr = IR::Name.new(name: "__mt_generation", type: @ctx.types.fetch("ptr_uint"), pointer: false)
         slot_pointer_expr = IR::Name.new(name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), pointer: false)
 
         body = [
@@ -295,23 +295,23 @@ module MilkTea
             init: IR::LocalDecl.new(
               name: "__mt_slot_index",
               c_name: "__mt_slot_index",
-              type: @types.fetch("ptr_uint"),
-              value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
+              type: @ctx.types.fetch("ptr_uint"),
+              value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint")),
             ),
             condition: IR::Binary.new(
               operator: "<",
               left: slot_index_expr,
-              right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @types.fetch("ptr_uint")),
-              type: @types.fetch("bool"),
+              right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @ctx.types.fetch("ptr_uint")),
+              type: @ctx.types.fetch("bool"),
             ),
-            post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+            post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
             body: [
               event_slot_local_decl(event_expr, slot_index_expr, runtime),
               active_event_slot_continue_guard(slot_pointer_expr),
               IR::LocalDecl.new(
                 name: "__mt_generation",
                 c_name: "__mt_generation",
-                type: @types.fetch("ptr_uint"),
+                type: @ctx.types.fetch("ptr_uint"),
                 value: event_next_generation_expression(slot_pointer_expr),
               ),
               *event_slot_activate_statements(
@@ -345,8 +345,8 @@ module MilkTea
         event_expr = IR::Name.new(name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)
         state_expr = IR::Name.new(name: "state", type: runtime.fetch(:void_ptr), pointer: false)
         listener_expr = IR::Name.new(name: "listener", type: runtime.fetch(:void_ptr), pointer: false)
-        slot_index_expr = IR::Name.new(name: "__mt_slot_index", type: @types.fetch("ptr_uint"), pointer: false)
-        generation_expr = IR::Name.new(name: "__mt_generation", type: @types.fetch("ptr_uint"), pointer: false)
+        slot_index_expr = IR::Name.new(name: "__mt_slot_index", type: @ctx.types.fetch("ptr_uint"), pointer: false)
+        generation_expr = IR::Name.new(name: "__mt_generation", type: @ctx.types.fetch("ptr_uint"), pointer: false)
         slot_pointer_expr = IR::Name.new(name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), pointer: false)
 
         body = [
@@ -354,23 +354,23 @@ module MilkTea
             init: IR::LocalDecl.new(
               name: "__mt_slot_index",
               c_name: "__mt_slot_index",
-              type: @types.fetch("ptr_uint"),
-              value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
+              type: @ctx.types.fetch("ptr_uint"),
+              value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint")),
             ),
             condition: IR::Binary.new(
               operator: "<",
               left: slot_index_expr,
-              right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @types.fetch("ptr_uint")),
-              type: @types.fetch("bool"),
+              right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @ctx.types.fetch("ptr_uint")),
+              type: @ctx.types.fetch("bool"),
             ),
-            post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+            post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
             body: [
               event_slot_local_decl(event_expr, slot_index_expr, runtime),
               active_event_slot_continue_guard(slot_pointer_expr),
               IR::LocalDecl.new(
                 name: "__mt_generation",
                 c_name: "__mt_generation",
-                type: @types.fetch("ptr_uint"),
+                type: @ctx.types.fetch("ptr_uint"),
                 value: event_next_generation_expression(slot_pointer_expr),
               ),
               *event_slot_activate_stateful_statements(
@@ -405,19 +405,19 @@ module MilkTea
 
       def build_event_unsubscribe_function(runtime)
         event_expr = IR::Name.new(name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)
-        subscription_expr = IR::Name.new(name: "subscription", type: @types.fetch("Subscription"), pointer: false)
-        slot_index_expr = subscription_field_expression(subscription_expr, "slot", @types.fetch("ptr_uint"))
+        subscription_expr = IR::Name.new(name: "subscription", type: @ctx.types.fetch("Subscription"), pointer: false)
+        slot_index_expr = subscription_field_expression(subscription_expr, "slot", @ctx.types.fetch("ptr_uint"))
         slot_pointer_expr = IR::Name.new(name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), pointer: false)
 
-        false_value = IR::BooleanLiteral.new(value: false, type: @types.fetch("bool"))
-        true_value = IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))
+        false_value = IR::BooleanLiteral.new(value: false, type: @ctx.types.fetch("bool"))
+        true_value = IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool"))
         body = [
           IR::IfStmt.new(
             condition: IR::Binary.new(
               operator: ">=",
               left: slot_index_expr,
-              right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @types.fetch("ptr_uint")),
-              type: @types.fetch("bool"),
+              right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @ctx.types.fetch("ptr_uint")),
+              type: @ctx.types.fetch("bool"),
             ),
             then_body: [IR::ReturnStmt.new(value: false_value)],
             else_body: nil,
@@ -429,16 +429,16 @@ module MilkTea
             value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime),
           ),
           IR::IfStmt.new(
-            condition: IR::Unary.new(operator: "not", operand: event_slot_active_expression(slot_pointer_expr), type: @types.fetch("bool")),
+            condition: IR::Unary.new(operator: "not", operand: event_slot_active_expression(slot_pointer_expr), type: @ctx.types.fetch("bool")),
             then_body: [IR::ReturnStmt.new(value: false_value)],
             else_body: nil,
           ),
           IR::IfStmt.new(
             condition: IR::Binary.new(
               operator: "!=",
-              left: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")),
-              right: subscription_field_expression(subscription_expr, "generation", @types.fetch("ptr_uint")),
-              type: @types.fetch("bool"),
+              left: event_slot_field_expression(slot_pointer_expr, "generation", @ctx.types.fetch("ptr_uint")),
+              right: subscription_field_expression(subscription_expr, "generation", @ctx.types.fetch("ptr_uint")),
+              type: @ctx.types.fetch("bool"),
             ),
             then_body: [IR::ReturnStmt.new(value: false_value)],
             else_body: nil,
@@ -452,9 +452,9 @@ module MilkTea
           c_name: runtime.fetch(:unsubscribe_c_name),
           params: [
             IR::Param.new(name: "event", c_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false),
-            IR::Param.new(name: "subscription", c_name: "subscription", type: @types.fetch("Subscription"), pointer: false),
+            IR::Param.new(name: "subscription", c_name: "subscription", type: @ctx.types.fetch("Subscription"), pointer: false),
           ],
-          return_type: @types.fetch("bool"),
+          return_type: @ctx.types.fetch("bool"),
           body:,
           entry_point: false,
         )
@@ -464,39 +464,39 @@ module MilkTea
         event_expr = IR::Name.new(name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)
         payload_expr = runtime.fetch(:event_type).payload_type ? IR::Name.new(name: "payload", type: runtime.fetch(:event_type).payload_type, pointer: false) : nil
         snapshots_expr = IR::Name.new(name: "__mt_snapshots", type: runtime.fetch(:snapshots_type), pointer: false)
-        snapshot_count_expr = IR::Name.new(name: "__mt_snapshot_count", type: @types.fetch("ptr_uint"), pointer: false)
-        slot_index_expr = IR::Name.new(name: "__mt_slot_index", type: @types.fetch("ptr_uint"), pointer: false)
-        dispatch_index_expr = IR::Name.new(name: "__mt_dispatch_index", type: @types.fetch("ptr_uint"), pointer: false)
+        snapshot_count_expr = IR::Name.new(name: "__mt_snapshot_count", type: @ctx.types.fetch("ptr_uint"), pointer: false)
+        slot_index_expr = IR::Name.new(name: "__mt_slot_index", type: @ctx.types.fetch("ptr_uint"), pointer: false)
+        dispatch_index_expr = IR::Name.new(name: "__mt_dispatch_index", type: @ctx.types.fetch("ptr_uint"), pointer: false)
         slot_pointer_expr = IR::Name.new(name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), pointer: false)
         frame_pointer_expr = IR::Name.new(name: "__mt_wait_frame", type: runtime.fetch(:wait_frame_pointer_type), pointer: false)
 
         collect_body = [
           event_slot_local_decl(event_expr, slot_index_expr, runtime),
           inactive_event_slot_continue_guard(slot_pointer_expr),
-          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "slot", @types.fetch("ptr_uint")), operator: "=", value: slot_index_expr),
-          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "generation", @types.fetch("ptr_uint")), operator: "=", value: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint"))),
-          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "once", @types.fetch("bool")), operator: "=", value: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool"))),
-          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "wait_slot", @types.fetch("bool")),
+          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "slot", @ctx.types.fetch("ptr_uint")), operator: "=", value: slot_index_expr),
+          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "generation", @ctx.types.fetch("ptr_uint")), operator: "=", value: event_slot_field_expression(slot_pointer_expr, "generation", @ctx.types.fetch("ptr_uint"))),
+          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "once", @ctx.types.fetch("bool")), operator: "=", value: event_slot_field_expression(slot_pointer_expr, "once", @ctx.types.fetch("bool"))),
+          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "wait_slot", @ctx.types.fetch("bool")),
             operator: "=",
             value: IR::Binary.new(
               operator: "!=",
               left: event_slot_wait_frame_expression(slot_pointer_expr, runtime),
               right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
-              type: @types.fetch("bool"),
+              type: @ctx.types.fetch("bool"),
             ),
           ),
-          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "stateful", @types.fetch("bool")), operator: "=", value: IR::Binary.new(operator: "!=", left: event_slot_field_expression(slot_pointer_expr, "state", runtime.fetch(:void_ptr)), right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)), type: @types.fetch("bool"))),
+          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "stateful", @ctx.types.fetch("bool")), operator: "=", value: IR::Binary.new(operator: "!=", left: event_slot_field_expression(slot_pointer_expr, "state", runtime.fetch(:void_ptr)), right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)), type: @ctx.types.fetch("bool"))),
           IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "state", runtime.fetch(:void_ptr)), operator: "=", value: event_slot_field_expression(slot_pointer_expr, "state", runtime.fetch(:void_ptr))),
           IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "listener", runtime.fetch(:void_ptr)), operator: "=", value: event_slot_field_expression(slot_pointer_expr, "listener", runtime.fetch(:void_ptr))),
-          IR::Assignment.new(target: snapshot_count_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+          IR::Assignment.new(target: snapshot_count_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
         ]
 
         snapshot_subscription_expr = event_subscription_literal(
-          snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "slot", @types.fetch("ptr_uint")),
-          snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "generation", @types.fetch("ptr_uint")),
+          snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "slot", @ctx.types.fetch("ptr_uint")),
+          snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "generation", @ctx.types.fetch("ptr_uint")),
         )
         current_slot_active = event_slot_active_expression(slot_pointer_expr)
-        current_slot_generation = event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint"))
+        current_slot_generation = event_slot_field_expression(slot_pointer_expr, "generation", @ctx.types.fetch("ptr_uint"))
         current_wait_frame = event_slot_wait_frame_expression(slot_pointer_expr, runtime)
         wait_slot_condition = IR::Binary.new(
           operator: "and",
@@ -506,18 +506,18 @@ module MilkTea
             left: IR::Binary.new(
               operator: "==",
               left: current_slot_generation,
-              right: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "generation", @types.fetch("ptr_uint")),
-              type: @types.fetch("bool"),
+              right: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "generation", @ctx.types.fetch("ptr_uint")),
+              type: @ctx.types.fetch("bool"),
             ),
             right: IR::Binary.new(
               operator: "!=",
               left: current_wait_frame,
               right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
-              type: @types.fetch("bool"),
+              type: @ctx.types.fetch("bool"),
             ),
-            type: @types.fetch("bool"),
+            type: @ctx.types.fetch("bool"),
           ),
-          type: @types.fetch("bool"),
+          type: @ctx.types.fetch("bool"),
         )
 
         wait_result_value = event_wait_success_literal(runtime.fetch(:wait_result_type), payload_expr)
@@ -525,7 +525,7 @@ module MilkTea
 
         dispatch_body = [
           IR::IfStmt.new(
-            condition: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "wait_slot", @types.fetch("bool")),
+            condition: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "wait_slot", @ctx.types.fetch("bool")),
             then_body: [
               IR::LocalDecl.new(
                 name: "__mt_slot",
@@ -533,7 +533,7 @@ module MilkTea
                 type: runtime.fetch(:slot_pointer_type),
                 value: event_slot_pointer_expression(
                   event_expr,
-                  snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "slot", @types.fetch("ptr_uint")),
+                  snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "slot", @ctx.types.fetch("ptr_uint")),
                   runtime,
                 ),
               ),
@@ -548,13 +548,13 @@ module MilkTea
                   ),
                   IR::ExpressionStmt.new(expression: event_unsubscribe_call(runtime, event_expr, snapshot_subscription_expr)),
                   IR::Assignment.new(target: wait_frame_field_expression(frame_pointer_expr, "result", runtime.fetch(:wait_result_type)), operator: "=", value: wait_result_value),
-                  IR::Assignment.new(target: wait_frame_field_expression(frame_pointer_expr, "ready", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
+                  IR::Assignment.new(target: wait_frame_field_expression(frame_pointer_expr, "ready", @ctx.types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool"))),
                   IR::IfStmt.new(
                     condition: IR::Binary.new(
                       operator: "!=",
                       left: waiter_frame_expr,
                       right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
-                      type: @types.fetch("bool"),
+                      type: @ctx.types.fetch("bool"),
                     ),
                     then_body: [
                       IR::LocalDecl.new(name: "__mt_waiter_frame", c_name: "__mt_waiter_frame", type: runtime.fetch(:void_ptr), value: waiter_frame_expr),
@@ -563,7 +563,7 @@ module MilkTea
                         expression: IR::Call.new(
                           callee: wait_frame_field_expression(frame_pointer_expr, "waiter", runtime.fetch(:wake_type)),
                           arguments: [IR::Name.new(name: "__mt_waiter_frame", type: runtime.fetch(:void_ptr), pointer: false)],
-                          type: @types.fetch("void"),
+                          type: @ctx.types.fetch("void"),
                         ),
                       ),
                     ],
@@ -575,12 +575,12 @@ module MilkTea
             ],
             else_body: [
               IR::IfStmt.new(
-                condition: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "once", @types.fetch("bool")),
+                condition: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "once", @ctx.types.fetch("bool")),
                 then_body: [IR::ExpressionStmt.new(expression: event_unsubscribe_call(runtime, event_expr, snapshot_subscription_expr))],
                 else_body: nil,
               ),
               IR::IfStmt.new(
-                condition: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "stateful", @types.fetch("bool")),
+                condition: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "stateful", @ctx.types.fetch("bool")),
                 then_body: [
                   IR::ExpressionStmt.new(expression: event_stateful_listener_call_expression(runtime, snapshots_expr, dispatch_index_expr, payload_expr)),
                 ],
@@ -594,17 +594,17 @@ module MilkTea
 
         body = [
           IR::LocalDecl.new(name: "__mt_snapshots", c_name: "__mt_snapshots", type: runtime.fetch(:snapshots_type), value: IR::ZeroInit.new(type: runtime.fetch(:snapshots_type))),
-          IR::LocalDecl.new(name: "__mt_snapshot_count", c_name: "__mt_snapshot_count", type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
+          IR::LocalDecl.new(name: "__mt_snapshot_count", c_name: "__mt_snapshot_count", type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
           IR::ForStmt.new(
-            init: IR::LocalDecl.new(name: "__mt_slot_index", c_name: "__mt_slot_index", type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
-            condition: IR::Binary.new(operator: "<", left: slot_index_expr, right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @types.fetch("ptr_uint")), type: @types.fetch("bool")),
-            post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+            init: IR::LocalDecl.new(name: "__mt_slot_index", c_name: "__mt_slot_index", type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+            condition: IR::Binary.new(operator: "<", left: slot_index_expr, right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @ctx.types.fetch("ptr_uint")), type: @ctx.types.fetch("bool")),
+            post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
             body: collect_body,
           ),
           IR::ForStmt.new(
-            init: IR::LocalDecl.new(name: "__mt_dispatch_index", c_name: "__mt_dispatch_index", type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
-            condition: IR::Binary.new(operator: "<", left: dispatch_index_expr, right: snapshot_count_expr, type: @types.fetch("bool")),
-            post: IR::Assignment.new(target: dispatch_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+            init: IR::LocalDecl.new(name: "__mt_dispatch_index", c_name: "__mt_dispatch_index", type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+            condition: IR::Binary.new(operator: "<", left: dispatch_index_expr, right: snapshot_count_expr, type: @ctx.types.fetch("bool")),
+            post: IR::Assignment.new(target: dispatch_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
             body: dispatch_body,
           ),
           IR::ReturnStmt.new(value: nil),
@@ -617,7 +617,7 @@ module MilkTea
           name: "#{runtime.fetch(:emit_c_name)}_fn",
           c_name: runtime.fetch(:emit_c_name),
           params:,
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           body:,
           entry_point: false,
         )
@@ -631,16 +631,16 @@ module MilkTea
           name: "#{runtime.fetch(:wait_ready_c_name)}_fn",
           c_name: runtime.fetch(:wait_ready_c_name),
           params: [IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
-          return_type: @types.fetch("bool"),
+          return_type: @ctx.types.fetch("bool"),
           body: [
             IR::IfStmt.new(
               condition: IR::Binary.new(
                 operator: "==",
                 left: raw_frame_expr,
                 right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
-                type: @types.fetch("bool"),
+                type: @ctx.types.fetch("bool"),
               ),
-              then_body: [IR::ReturnStmt.new(value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")))],
+              then_body: [IR::ReturnStmt.new(value: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool")))],
               else_body: nil,
             ),
             IR::LocalDecl.new(
@@ -653,7 +653,7 @@ module MilkTea
                 type: runtime.fetch(:wait_frame_pointer_type),
               ),
             ),
-            IR::ReturnStmt.new(value: wait_frame_field_expression(frame_expr, "ready", @types.fetch("bool"))),
+            IR::ReturnStmt.new(value: wait_frame_field_expression(frame_expr, "ready", @ctx.types.fetch("bool"))),
           ],
           entry_point: false,
         )
@@ -673,17 +673,17 @@ module MilkTea
             IR::Param.new(name: "waiter_frame", c_name: "waiter_frame", type: runtime.fetch(:void_ptr), pointer: false),
             IR::Param.new(name: "waiter", c_name: "waiter", type: runtime.fetch(:wake_type), pointer: false),
           ],
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           body: [
             IR::IfStmt.new(
               condition: IR::Binary.new(
                 operator: "==",
                 left: raw_frame_expr,
                 right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
-                type: @types.fetch("bool"),
+                type: @ctx.types.fetch("bool"),
               ),
               then_body: [
-                IR::ExpressionStmt.new(expression: IR::Call.new(callee: waiter_expr, arguments: [waiter_frame_expr], type: @types.fetch("void"))),
+                IR::ExpressionStmt.new(expression: IR::Call.new(callee: waiter_expr, arguments: [waiter_frame_expr], type: @ctx.types.fetch("void"))),
                 IR::ReturnStmt.new(value: nil),
               ],
               else_body: nil,
@@ -695,9 +695,9 @@ module MilkTea
               value: IR::Cast.new(target_type: runtime.fetch(:wait_frame_pointer_type), expression: IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false), type: runtime.fetch(:wait_frame_pointer_type)),
             ),
             IR::IfStmt.new(
-              condition: wait_frame_field_expression(frame_expr, "ready", @types.fetch("bool")),
+              condition: wait_frame_field_expression(frame_expr, "ready", @ctx.types.fetch("bool")),
               then_body: [
-                IR::ExpressionStmt.new(expression: IR::Call.new(callee: waiter_expr, arguments: [waiter_frame_expr], type: @types.fetch("void"))),
+                IR::ExpressionStmt.new(expression: IR::Call.new(callee: waiter_expr, arguments: [waiter_frame_expr], type: @ctx.types.fetch("void"))),
                 IR::ReturnStmt.new(value: nil),
               ],
               else_body: nil,
@@ -718,14 +718,14 @@ module MilkTea
           name: "#{runtime.fetch(:wait_release_c_name)}_fn",
           c_name: runtime.fetch(:wait_release_c_name),
           params: [IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           body: [
             IR::IfStmt.new(
               condition: IR::Binary.new(
                 operator: "==",
                 left: raw_frame_expr,
                 right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
-                type: @types.fetch("bool"),
+                type: @ctx.types.fetch("bool"),
               ),
               then_body: [IR::ReturnStmt.new(value: nil)],
               else_body: nil,
@@ -737,19 +737,19 @@ module MilkTea
               value: IR::Cast.new(target_type: runtime.fetch(:wait_frame_pointer_type), expression: raw_frame_expr, type: runtime.fetch(:wait_frame_pointer_type)),
             ),
             IR::IfStmt.new(
-              condition: IR::Unary.new(operator: "not", operand: wait_frame_field_expression(frame_expr, "ready", @types.fetch("bool")), type: @types.fetch("bool")),
+              condition: IR::Unary.new(operator: "not", operand: wait_frame_field_expression(frame_expr, "ready", @ctx.types.fetch("bool")), type: @ctx.types.fetch("bool")),
               then_body: [
                 IR::ExpressionStmt.new(
                   expression: event_unsubscribe_call(
                     runtime,
                     IR::Cast.new(target_type: runtime.fetch(:event_pointer_type), expression: wait_frame_field_expression(frame_expr, "event", runtime.fetch(:void_ptr)), type: runtime.fetch(:event_pointer_type)),
-                    wait_frame_field_expression(frame_expr, "subscription", @types.fetch("Subscription")),
+                    wait_frame_field_expression(frame_expr, "subscription", @ctx.types.fetch("Subscription")),
                   ),
                 ),
               ],
               else_body: nil,
             ),
-            IR::ExpressionStmt.new(expression: IR::Call.new(callee: "mt_async_free", arguments: [raw_frame_expr], type: @types.fetch("void"))),
+            IR::ExpressionStmt.new(expression: IR::Call.new(callee: "mt_async_free", arguments: [raw_frame_expr], type: @ctx.types.fetch("void"))),
             IR::ReturnStmt.new(value: nil),
           ],
           entry_point: false,
@@ -771,7 +771,7 @@ module MilkTea
                 operator: "==",
                 left: raw_frame_expr,
                 right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
-                type: @types.fetch("bool"),
+                type: @ctx.types.fetch("bool"),
               ),
               then_body: [IR::ReturnStmt.new(value: event_failure_literal(runtime.fetch(:wait_result_type)))],
               else_body: nil,
@@ -792,22 +792,22 @@ module MilkTea
         event_expr = IR::Name.new(name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)
         frame_expr = IR::Name.new(name: "__mt_wait_frame", type: runtime.fetch(:wait_frame_pointer_type), pointer: false)
         raw_frame_expr = IR::Cast.new(target_type: runtime.fetch(:void_ptr), expression: frame_expr, type: runtime.fetch(:void_ptr))
-        slot_index_expr = IR::Name.new(name: "__mt_slot_index", type: @types.fetch("ptr_uint"), pointer: false)
-        generation_expr = IR::Name.new(name: "__mt_generation", type: @types.fetch("ptr_uint"), pointer: false)
+        slot_index_expr = IR::Name.new(name: "__mt_slot_index", type: @ctx.types.fetch("ptr_uint"), pointer: false)
+        generation_expr = IR::Name.new(name: "__mt_generation", type: @ctx.types.fetch("ptr_uint"), pointer: false)
         slot_pointer_expr = IR::Name.new(name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), pointer: false)
 
         body = [
           IR::ForStmt.new(
-            init: IR::LocalDecl.new(name: "__mt_slot_index", c_name: "__mt_slot_index", type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
-            condition: IR::Binary.new(operator: "<", left: slot_index_expr, right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @types.fetch("ptr_uint")), type: @types.fetch("bool")),
-            post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+            init: IR::LocalDecl.new(name: "__mt_slot_index", c_name: "__mt_slot_index", type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+            condition: IR::Binary.new(operator: "<", left: slot_index_expr, right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @ctx.types.fetch("ptr_uint")), type: @ctx.types.fetch("bool")),
+            post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
             body: [
               IR::LocalDecl.new(name: "__mt_slot", c_name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime)),
               active_event_slot_continue_guard(slot_pointer_expr),
               IR::LocalDecl.new(
                 name: "__mt_generation",
                 c_name: "__mt_generation",
-                type: @types.fetch("ptr_uint"),
+                type: @ctx.types.fetch("ptr_uint"),
                 value: event_next_generation_expression(slot_pointer_expr),
               ),
               IR::LocalDecl.new(
@@ -816,7 +816,7 @@ module MilkTea
                 type: runtime.fetch(:wait_frame_pointer_type),
                 value: IR::Cast.new(
                   target_type: runtime.fetch(:wait_frame_pointer_type),
-                  expression: IR::Call.new(callee: "mt_async_alloc", arguments: [IR::SizeofExpr.new(target_type: runtime.fetch(:wait_frame_type), type: @types.fetch("ptr_uint"))], type: runtime.fetch(:void_ptr)),
+                  expression: IR::Call.new(callee: "mt_async_alloc", arguments: [IR::SizeofExpr.new(target_type: runtime.fetch(:wait_frame_type), type: @ctx.types.fetch("ptr_uint"))], type: runtime.fetch(:void_ptr)),
                   type: runtime.fetch(:wait_frame_pointer_type),
                 ),
               ),
@@ -833,7 +833,7 @@ module MilkTea
                 once: true,
                 wait_frame_expr: raw_frame_expr,
               ),
-              IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "subscription", @types.fetch("Subscription")), operator: "=", value: event_subscription_literal(slot_index_expr, generation_expr)),
+              IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "subscription", @ctx.types.fetch("Subscription")), operator: "=", value: event_subscription_literal(slot_index_expr, generation_expr)),
               IR::ReturnStmt.new(value: event_task_literal(runtime, frame_expr)),
             ],
           ),
@@ -871,7 +871,7 @@ module MilkTea
       end
 
       def event_slot_active_expression(slot_pointer_expr)
-        event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool"))
+        event_slot_field_expression(slot_pointer_expr, "active", @ctx.types.fetch("bool"))
       end
 
       def event_slot_wait_frame_expression(slot_pointer_expr, runtime)
@@ -888,7 +888,7 @@ module MilkTea
 
       def inactive_event_slot_continue_guard(slot_pointer_expr)
         IR::IfStmt.new(
-          condition: IR::Unary.new(operator: "not", operand: event_slot_active_expression(slot_pointer_expr), type: @types.fetch("bool")),
+          condition: IR::Unary.new(operator: "not", operand: event_slot_active_expression(slot_pointer_expr), type: @ctx.types.fetch("bool")),
           then_body: [IR::ContinueStmt.new],
           else_body: nil,
         )
@@ -897,17 +897,17 @@ module MilkTea
       def event_next_generation_expression(slot_pointer_expr)
         IR::Binary.new(
           operator: "+",
-          left: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")),
-          right: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint")),
-          type: @types.fetch("ptr_uint"),
+          left: event_slot_field_expression(slot_pointer_expr, "generation", @ctx.types.fetch("ptr_uint")),
+          right: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint")),
+          type: @ctx.types.fetch("ptr_uint"),
         )
       end
 
       def event_slot_activate_statements(slot_pointer_expr, runtime, generation_expr:, once:, wait_frame_expr:, listener_expr: nil)
         statements = [
-          IR::Assignment.new(target: event_slot_active_expression(slot_pointer_expr), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
-          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: once, type: @types.fetch("bool"))),
-          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")), operator: "=", value: generation_expr),
+          IR::Assignment.new(target: event_slot_active_expression(slot_pointer_expr), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool"))),
+          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @ctx.types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: once, type: @ctx.types.fetch("bool"))),
+          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "generation", @ctx.types.fetch("ptr_uint")), operator: "=", value: generation_expr),
           IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "state", runtime.fetch(:void_ptr)), operator: "=", value: IR::NullLiteral.new(type: runtime.fetch(:void_ptr))),
         ]
         statements << IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "listener", runtime.fetch(:listener_type)), operator: "=", value: listener_expr) if listener_expr
@@ -917,9 +917,9 @@ module MilkTea
 
       def event_slot_activate_stateful_statements(slot_pointer_expr, runtime, generation_expr:, once:, state_expr:, wait_frame_expr:, listener_expr: nil)
         statements = [
-          IR::Assignment.new(target: event_slot_active_expression(slot_pointer_expr), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
-          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: once, type: @types.fetch("bool"))),
-          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")), operator: "=", value: generation_expr),
+          IR::Assignment.new(target: event_slot_active_expression(slot_pointer_expr), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool"))),
+          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @ctx.types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: once, type: @ctx.types.fetch("bool"))),
+          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "generation", @ctx.types.fetch("ptr_uint")), operator: "=", value: generation_expr),
           IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "state", runtime.fetch(:void_ptr)), operator: "=", value: state_expr),
         ]
         statements << IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "listener", runtime.fetch(:listener_type)), operator: "=", value: listener_expr) if listener_expr
@@ -929,8 +929,8 @@ module MilkTea
 
       def event_slot_clear_statements(slot_pointer_expr, runtime)
         [
-          IR::Assignment.new(target: event_slot_active_expression(slot_pointer_expr), operator: "=", value: IR::BooleanLiteral.new(value: false, type: @types.fetch("bool"))),
-          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: false, type: @types.fetch("bool"))),
+          IR::Assignment.new(target: event_slot_active_expression(slot_pointer_expr), operator: "=", value: IR::BooleanLiteral.new(value: false, type: @ctx.types.fetch("bool"))),
+          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @ctx.types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: false, type: @ctx.types.fetch("bool"))),
           IR::Assignment.new(target: event_slot_wait_frame_expression(slot_pointer_expr, runtime), operator: "=", value: IR::NullLiteral.new(type: runtime.fetch(:void_ptr))),
         ]
       end
@@ -957,7 +957,7 @@ module MilkTea
 
       def event_subscription_literal(slot_expr, generation_expr)
         IR::AggregateLiteral.new(
-          type: @types.fetch("Subscription"),
+          type: @ctx.types.fetch("Subscription"),
           fields: [
             IR::AggregateField.new(name: "slot", value: slot_expr),
             IR::AggregateField.new(name: "generation", value: generation_expr),
@@ -988,7 +988,7 @@ module MilkTea
           fields: [
             IR::AggregateField.new(
               name: "error",
-              value: IR::Name.new(name: enum_member_c_name(@types.fetch("EventError"), "full"), type: @types.fetch("EventError"), pointer: false),
+              value: IR::Name.new(name: enum_member_c_name(@ctx.types.fetch("EventError"), "full"), type: @ctx.types.fetch("EventError"), pointer: false),
             ),
           ],
         )
@@ -996,9 +996,9 @@ module MilkTea
 
       def void_value_expression
         IR::Cast.new(
-          target_type: @types.fetch("void"),
-          expression: IR::IntegerLiteral.new(value: 0, type: @types.fetch("int")),
-          type: @types.fetch("void"),
+          target_type: @ctx.types.fetch("void"),
+          expression: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("int")),
+          type: @ctx.types.fetch("void"),
         )
       end
 
@@ -1006,7 +1006,7 @@ module MilkTea
         IR::Call.new(
           callee: runtime.fetch(:unsubscribe_c_name),
           arguments: [event_expr, subscription_expr],
-          type: @types.fetch("void"),
+          type: @ctx.types.fetch("void"),
         )
       end
 
@@ -1022,7 +1022,7 @@ module MilkTea
         IR::Call.new(
           callee: listener_expr,
           arguments:,
-          type: @types.fetch("void"),
+          type: @ctx.types.fetch("void"),
         )
       end
 
@@ -1039,7 +1039,7 @@ module MilkTea
         IR::Call.new(
           callee: listener_expr,
           arguments:,
-          type: @types.fetch("void"),
+          type: @ctx.types.fetch("void"),
         )
       end
 

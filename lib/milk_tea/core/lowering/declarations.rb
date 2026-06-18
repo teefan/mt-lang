@@ -5,7 +5,7 @@ module MilkTea
     private
 
       def expanded_declarations
-        @ast.declarations.flat_map do |decl|
+        @ctx.ast.declarations.flat_map do |decl|
           case decl
           when AST::WhenStmt
             val = compile_time_const_value(decl.discriminant)
@@ -22,8 +22,8 @@ module MilkTea
 
       def lower_constants
         expanded_declarations.grep(AST::ConstDecl).filter_map do |decl|
-          type = @values.fetch(decl.name).type
-          const_value = @values.fetch(decl.name).const_value
+          type = @ctx.values.fetch(decl.name).type
+          const_value = @ctx.values.fetch(decl.name).const_value
 
           next if type == Types::BUILTIN_TYPE_META_TYPE
 
@@ -63,7 +63,7 @@ module MilkTea
         when TrueClass, FalseClass
           IR::BooleanLiteral.new(value: const_value, type:)
         when Array
-          element_type = type.respond_to?(:arguments) ? type.arguments.first : @types["int"]
+          element_type = type.respond_to?(:arguments) ? type.arguments.first : @ctx.types["int"]
           elements = const_value.map do |element|
             lower_const_value_literal(element_type, element)
           end
@@ -77,7 +77,7 @@ module MilkTea
         expanded_declarations.filter_map do |decl|
           next unless decl.is_a?(AST::VarDecl) || decl.is_a?(AST::EventDecl)
 
-          type = @values.fetch(decl.name).type
+          type = @ctx.values.fetch(decl.name).type
           ensure_event_runtime(type) if type.is_a?(Types::Event)
           value = if decl.is_a?(AST::VarDecl) && decl.value
                     lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
@@ -90,12 +90,12 @@ module MilkTea
 
       def lower_opaques
         expanded_declarations.grep(AST::OpaqueDecl).map do |decl|
-          opaque_type = @opaque_types.fetch(decl.name)
+          opaque_type = @ctx.opaque_types.fetch(decl.name)
           IR::OpaqueDecl.new(
             name: decl.name,
             c_name: opaque_c_type_name(opaque_type),
             forward_declarable: opaque_forward_declarable?(opaque_type),
-            source_module: @module_name,
+            source_module: @ctx.module_name,
           )
         end
       end
@@ -124,8 +124,8 @@ module MilkTea
         raise LoweringError, "static_assert condition must lower to a compile-time bool constant" unless condition_value == true || condition_value == false
 
         IR::StaticAssert.new(
-          condition: IR::BooleanLiteral.new(value: condition_value, type: @types.fetch("bool")),
-          message: lower_expression(statement.message, env:, expected_type: @types.fetch("str")),
+          condition: IR::BooleanLiteral.new(value: condition_value, type: @ctx.types.fetch("bool")),
+          message: lower_expression(statement.message, env:, expected_type: @ctx.types.fetch("str")),
         )
       end
 
@@ -140,7 +140,7 @@ module MilkTea
       end
 
       def lower_one_struct(decl, qualified_name, results)
-        struct_type = @struct_types.fetch(qualified_name)
+        struct_type = @ctx.struct_types.fetch(qualified_name)
         fields = decl.fields.map do |field|
           IR::Field.new(name: field.name, type: struct_type.field(field.name))
         end
@@ -150,7 +150,7 @@ module MilkTea
           fields << IR::Field.new(name: event_type.hidden_field_name, type: event_type)
         end
 
-        results << IR::StructDecl.new(name: decl.name, c_name: c_type_name(struct_type), fields:, packed: decl.packed, alignment: decl.alignment, source_module: @module_name)
+        results << IR::StructDecl.new(name: decl.name, c_name: c_type_name(struct_type), fields:, packed: decl.packed, alignment: decl.alignment, source_module: @ctx.module_name)
 
         decl.nested_types.each do |nested|
           lower_one_struct(nested, "#{qualified_name}.#{nested.name}", results)
@@ -159,11 +159,11 @@ module MilkTea
 
       def lower_unions
         expanded_declarations.grep(AST::UnionDecl).map do |decl|
-          union_type = @union_types.fetch(decl.name)
+          union_type = @ctx.union_types.fetch(decl.name)
           fields = decl.fields.map do |field|
             IR::Field.new(name: field.name, type: union_type.field(field.name))
           end
-          IR::UnionDecl.new(name: decl.name, c_name: c_type_name(union_type), fields:, source_module: @module_name)
+          IR::UnionDecl.new(name: decl.name, c_name: c_type_name(union_type), fields:, source_module: @ctx.module_name)
         end
       end
 
@@ -171,7 +171,7 @@ module MilkTea
         expanded_declarations.filter_map do |decl|
           case decl
           when AST::EnumDecl, AST::FlagsDecl
-            enum_type = @types.fetch(decl.name)
+            enum_type = @ctx.types.fetch(decl.name)
             backing_type = enum_type.backing_type
             members = decl.members.map do |member|
               value = lower_expression(member.value, env: empty_env, expected_type: backing_type)
@@ -193,7 +193,7 @@ module MilkTea
         expanded_declarations.filter_map do |decl|
           next unless decl.is_a?(AST::VariantDecl)
 
-          variant_type = @types.fetch(decl.name)
+          variant_type = @ctx.types.fetch(decl.name)
           next if variant_type.is_a?(Types::GenericVariantDefinition)
 
           outer_c = c_type_name(variant_type)
@@ -205,7 +205,7 @@ module MilkTea
             end
             IR::VariantArm.new(name: arm.name, c_name: arm_c, fields:)
           end
-          IR::VariantDecl.new(name: decl.name, c_name: outer_c, arms:, source_module: @module_name)
+          IR::VariantDecl.new(name: decl.name, c_name: outer_c, arms:, source_module: @ctx.module_name)
         end
       end
   end

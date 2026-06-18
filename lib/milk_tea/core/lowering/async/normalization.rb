@@ -99,14 +99,14 @@ module MilkTea
         end
         expr_setup + [AST::MatchStmt.new(expression:, arms:)]
       when AST::WhileStmt
-        condition_setup, condition = normalize_async_expression(statement.condition, counter, env:, expected_type: @types.fetch("bool"))
+        condition_setup, condition = normalize_async_expression(statement.condition, counter, env:, expected_type: @ctx.types.fetch("bool"))
         body_env = duplicate_env(env)
         body = normalize_async_statements(statement.body, counter, body_env, return_type:)
         if condition_setup.empty?
           [AST::WhileStmt.new(condition:, body:)]
         else
           cond_name = fresh_async_temp_name(counter)
-          condition_eval = condition_setup + [AST::LocalDecl.new(kind: :let, name: cond_name, type: ast_type_ref_for(@types.fetch("bool")), value: condition)]
+          condition_eval = condition_setup + [AST::LocalDecl.new(kind: :let, name: cond_name, type: ast_type_ref_for(@ctx.types.fetch("bool")), value: condition)]
           [
             AST::WhileStmt.new(
               condition: AST::BooleanLiteral.new(value: true),
@@ -182,7 +182,7 @@ module MilkTea
       return else_body || [] if branches.empty?
 
       branch = branches.first
-      condition_setup, condition = normalize_async_expression(branch.condition, counter, env:, expected_type: @types.fetch("bool"))
+      condition_setup, condition = normalize_async_expression(branch.condition, counter, env:, expected_type: @ctx.types.fetch("bool"))
       then_env = duplicate_env(env)
       then_body = normalize_async_statements(branch.body, counter, then_env, return_type:)
       chained_else = normalize_async_if_branches(branches.drop(1), else_body, counter, env, return_type:)
@@ -254,8 +254,8 @@ module MilkTea
         [setup, AST::UnaryOp.new(operator: expression.operator, operand: operand)]
       when AST::BinaryOp
         if %w[and or].include?(expression.operator)
-          left_setup, left = normalize_async_expression(expression.left, counter, env:, expected_type: @types.fetch("bool"))
-          right_setup, right = normalize_async_expression(expression.right, counter, env:, expected_type: @types.fetch("bool"))
+          left_setup, left = normalize_async_expression(expression.left, counter, env:, expected_type: @ctx.types.fetch("bool"))
+          right_setup, right = normalize_async_expression(expression.right, counter, env:, expected_type: @ctx.types.fetch("bool"))
           temp_name = fresh_async_temp_name(counter)
 
           temp_init = expression.operator == "and" ? AST::BooleanLiteral.new(value: false) : AST::BooleanLiteral.new(value: true)
@@ -278,7 +278,7 @@ module MilkTea
         right_setup, right = normalize_async_expression(expression.right, counter, env:)
         [left_setup + right_setup, AST::BinaryOp.new(operator: expression.operator, left: left, right: right)]
       when AST::IfExpr
-        condition_setup, condition = normalize_async_expression(expression.condition, counter, env:, expected_type: @types.fetch("bool"))
+        condition_setup, condition = normalize_async_expression(expression.condition, counter, env:, expected_type: @ctx.types.fetch("bool"))
         result_type = infer_expression_type(expression, env:, expected_type:)
         then_setup, then_expression = normalize_async_expression(expression.then_expression, counter, env:, expected_type: result_type)
         else_setup, else_expression = normalize_async_expression(expression.else_expression, counter, env:, expected_type: result_type)
