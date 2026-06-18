@@ -276,6 +276,7 @@ module MilkTea
         when AST::FlagsDecl then decl.name
         when AST::VariantDecl then decl.name
         when AST::InterfaceDecl then decl.name
+        when AST::OpaqueDecl then decl.name
         when AST::ExtendingBlock then decl.type_name.name.parts.join('.')
         else nil
         end
@@ -400,7 +401,11 @@ module MilkTea
           collect_local_decls(body.body)
         when AST::ForStmt
           collect_local_decls(body.body) + body.bindings
-        when AST::WhileStmt
+        when AST::MatchStmt
+          (body.arms || []).flat_map { |arm| collect_local_decls(arm.body) }
+        when AST::ParallelBlockStmt
+          (body.bodies || []).flat_map { |b| collect_local_decls(b) }
+        when AST::DeferStmt
           collect_local_decls(body.body)
         when AST::UnsafeStmt
           collect_local_decls(body.body)
@@ -503,13 +508,14 @@ module MilkTea
 
         case type
         when AST::TypeRef
-          type.name.parts.join('.')
+          type.to_s
         when AST::ProcType
           params = (type.params || []).map { |p| type_detail_string(p.type) }.join(', ')
           ret = type_detail_string(type.return_type) || 'void'
           "proc(#{params}) -> #{ret}"
         when AST::TupleType
-          "(#{(type.element_types || []).map { |t| type_detail_string(t) }.join(', ')})"
+          base = "(#{(type.element_types || []).map { |t| type_detail_string(t) }.join(', ')})"
+          type.nullable ? "#{base}?" : base
         when AST::DynType
           "dyn[#{type.interface}]"
         end
