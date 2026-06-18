@@ -1,13 +1,16 @@
 # frozen_string_literal: true
 
+require_relative "c_backend/aggregate_utils"
+require_relative "c_backend/type_system"
 require_relative "c_backend/reachability"
+require_relative "c_backend/feature_detection"
+require_relative "c_backend/type_collectors"
 require_relative "c_backend/statements"
 require_relative "c_backend/control_flow"
 require_relative "c_backend/helpers"
 require_relative "c_backend/types"
 require_relative "c_backend/expressions"
 require_relative "c_backend/reinterpret"
-require_relative "c_backend/collectors"
 
 module MilkTea
   class CBackend
@@ -231,13 +234,16 @@ module MilkTea
 
     private
 
+    include CBackendAggregateUtils
+    include CBackendTypeSystem
     include CBackendReachability
+    include CBackendFeatureDetection
+    include CBackendTypeCollectors
     include CBackendStatements
     include CBackendControlFlow
     include CBackendHelpers
     include CBackendTypes
     include CBackendExpressions
     include CBackendReinterpret
-    include CBackendCollectors
   end
 end
