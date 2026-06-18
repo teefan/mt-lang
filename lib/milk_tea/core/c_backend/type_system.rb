@@ -143,7 +143,7 @@ module MilkTea
             when Types::Handle
               "void*"
             else
-              raise LoweringError, "unsupported C type #{type.class.name}"
+              raise CBackendError, "unsupported C type #{type.class.name}"
             end
           end
 
@@ -241,25 +241,25 @@ module MilkTea
           def generic_c_type(type)
             case type.name
             when "ptr"
-              raise LoweringError, "ptr requires exactly one type argument" unless type.arguments.length == 1
+              raise CBackendError, "ptr requires exactly one type argument" unless type.arguments.length == 1
 
               "#{c_type(type.arguments.first)}*"
             when "const_ptr"
-              raise LoweringError, "const_ptr requires exactly one type argument" unless type.arguments.length == 1
+              raise CBackendError, "const_ptr requires exactly one type argument" unless type.arguments.length == 1
 
               "const #{c_type(type.arguments.first)}*"
             when "ref"
-              raise LoweringError, "ref requires at least one type argument" unless [1, 2].include?(type.arguments.length)
+              raise CBackendError, "ref requires at least one type argument" unless [1, 2].include?(type.arguments.length)
 
               "#{c_type(type.arguments.length == 1 ? type.arguments.first : type.arguments[1])}*"
             when "str_buffer"
-              raise LoweringError, "str_buffer requires exactly one type argument" unless str_buffer_type?(type)
+              raise CBackendError, "str_buffer requires exactly one type argument" unless str_buffer_type?(type)
 
               str_buffer_type_name(type)
             when "atomic"
               "_Atomic #{c_type(type.arguments.first)}"
             else
-              raise LoweringError, "unsupported generic C type #{type.name}"
+              raise CBackendError, "unsupported generic C type #{type.name}"
             end
           end
 

@@ -13,6 +13,8 @@ require_relative "c_backend/expressions"
 require_relative "c_backend/reinterpret"
 
 module MilkTea
+  class CBackendError < StandardError; end
+
   class CBackend
     INDENT = "  "
     ARRAY_OUT_PARAM_NAME = "__mt_out"
