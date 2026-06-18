@@ -741,13 +741,14 @@ module MilkTea
       end
 
       def project_field_receiver_type_for_completion(type)
-        return type.arguments.first if ref_type_name?(type)
-        return type.arguments.first if pointer_type_name?(type)
-
-        type
+        project_receiver_type_for_completion(type)
       end
 
       def project_method_receiver_type_for_completion(type)
+        project_receiver_type_for_completion(type)
+      end
+
+      def project_receiver_type_for_completion(type)
         return type.arguments.first if ref_type_name?(type)
         return type.arguments.first if pointer_type_name?(type)
 
