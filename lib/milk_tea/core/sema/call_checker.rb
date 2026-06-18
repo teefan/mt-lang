@@ -13,10 +13,10 @@ module MilkTea
         end
         return [] unless target_id
 
-        applications = @resolved_attribute_applications[target_id]
+        applications = @ctx.resolved_attribute_applications[target_id]
         return applications if applications
 
-        @imports.each_value do |imported_module|
+        @ctx.imports.each_value do |imported_module|
           applications = imported_module.attribute_applications[target_id]
           return applications if applications
         end
@@ -323,7 +323,7 @@ module MilkTea
           unless method.type.params.map(&:type) == [const_pointer_to(target_type)]
             raise_sema_error("#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint")
           end
-          unless method.type.return_type == @types.fetch("uint")
+          unless method.type.return_type == @ctx.types.fetch("uint")
             raise_sema_error("#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint, got #{method.type.return_type}")
           end
         end
@@ -336,7 +336,7 @@ module MilkTea
           unless method.type.params.map(&:type) == expected_param_types
             raise_sema_error("#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool")
           end
-          unless method.type.return_type == @types.fetch("bool")
+          unless method.type.return_type == @ctx.types.fetch("bool")
             raise_sema_error("#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool, got #{method.type.return_type}")
           end
         end
@@ -349,7 +349,7 @@ module MilkTea
           unless method.type.params.map(&:type) == expected_param_types
             raise_sema_error("#{context} requires #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int")
           end
-          unless method.type.return_type == @types.fetch("int")
+          unless method.type.return_type == @ctx.types.fetch("int")
             raise_sema_error("#{context} requires #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int, got #{method.type.return_type}")
           end
         end
@@ -373,7 +373,7 @@ module MilkTea
         resolve_explicit_instance_binding(target_type, "format_len", requirement_message:) do |method|
           raise_sema_error("#{context} requires #{target_type}.format_len() to take 0 arguments") unless method.type.params.empty?
           raise_sema_error("#{context} requires #{target_type}.format_len() to be non-editable") if method.type.receiver_editable
-          unless method.type.return_type == @types.fetch("ptr_uint")
+          unless method.type.return_type == @ctx.types.fetch("ptr_uint")
             raise_sema_error("#{context} requires #{target_type}.format_len() -> ptr_uint, got #{method.type.return_type}")
           end
         end
@@ -386,7 +386,7 @@ module MilkTea
           unless method.type.params.length == 1 && string_builder_ref_type?(method.type.params.first.type)
             raise_sema_error("#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void")
           end
-          unless method.type.return_type == @types.fetch("void")
+          unless method.type.return_type == @ctx.types.fetch("void")
             raise_sema_error("#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void, got #{method.type.return_type}")
           end
         end
@@ -433,7 +433,7 @@ module MilkTea
         raise_sema_error("hash expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
         validate_hash_operation_argument!(arguments.first.value, resolution.target_type, scopes:, operation: "hash")
-        @types.fetch("uint")
+        @ctx.types.fetch("uint")
       end
 
       def check_equal_call(resolution, arguments, scopes:)
@@ -444,7 +444,7 @@ module MilkTea
           validate_hash_operation_argument!(argument.value, resolution.target_type, scopes:, operation: "equal")
         end
 
-        @types.fetch("bool")
+        @ctx.types.fetch("bool")
       end
 
       def check_order_call(resolution, arguments, scopes:)
@@ -455,7 +455,7 @@ module MilkTea
           validate_hash_operation_argument!(argument.value, resolution.target_type, scopes:, operation: "order")
         end
 
-        @types.fetch("int")
+        @ctx.types.fetch("int")
       end
 
       def validate_hash_operation_argument!(expression, target_type, scopes:, operation:)
@@ -489,31 +489,31 @@ module MilkTea
           record_editable_receiver_expression(receiver)
           raise_sema_error("cannot call editable method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
-          @types.fetch("void")
+          @ctx.types.fetch("void")
         when :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format
           record_editable_receiver_expression(receiver)
           raise_sema_error("cannot call editable method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
-          actual_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
+          actual_type = infer_expression(arguments.first.value, scopes:, expected_type: @ctx.types.fetch("str"))
           ensure_argument_assignable!(
             actual_type,
-            @types.fetch("str"),
+            @ctx.types.fetch("str"),
             external: false,
             message: "argument value to #{receiver_type}.#{method_name} expects str, got #{actual_type}",
             expression: arguments.first.value,
           )
 
-          @types.fetch("void")
+          @ctx.types.fetch("void")
         when :str_buffer_len, :str_buffer_capacity
-          @types.fetch("ptr_uint")
+          @ctx.types.fetch("ptr_uint")
         when :str_buffer_as_str
           raise_sema_error("#{receiver_type}.as_str requires a safe stored receiver") unless safe_reference_source_expression?(receiver, scopes:)
 
-          @types.fetch("str")
+          @ctx.types.fetch("str")
         when :str_buffer_as_cstr
           raise_sema_error("#{receiver_type}.as_cstr requires a safe stored receiver") unless safe_reference_source_expression?(receiver, scopes:)
 
-          @types.fetch("cstr")
+          @ctx.types.fetch("cstr")
         else
           raise_sema_error("unsupported str_buffer method #{kind}")
         end
@@ -527,7 +527,7 @@ module MilkTea
         raise_sema_error("#{method_name} does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("cannot call editable method #{receiver_type}.#{method_name} on an immutable receiver") unless event_receiver_mutable?(receiver, scopes:)
         if kind == :event_emit
-          raise_sema_error("#{receiver_type}.emit is only available inside module #{receiver_type.module_name}") unless receiver_type.module_name == @module_name
+          raise_sema_error("#{receiver_type}.emit is only available inside module #{receiver_type.module_name}") unless receiver_type.module_name == @ctx.module_name
         end
 
         case kind
@@ -569,16 +569,16 @@ module MilkTea
         when :event_unsubscribe
           raise_sema_error("unsubscribe expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
-          actual_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("Subscription"))
+          actual_type = infer_expression(arguments.first.value, scopes:, expected_type: @ctx.types.fetch("Subscription"))
           ensure_argument_assignable!(
             actual_type,
-            @types.fetch("Subscription"),
+            @ctx.types.fetch("Subscription"),
             external: false,
             message: "argument subscription to #{receiver_type}.unsubscribe expects Subscription, got #{actual_type}",
             expression: arguments.first.value,
           )
 
-          @types.fetch("bool")
+          @ctx.types.fetch("bool")
         when :event_emit
           if receiver_type.payload_type.nil?
             raise_sema_error("emit expects 0 arguments, got #{arguments.length}") unless arguments.empty?
@@ -595,7 +595,7 @@ module MilkTea
             )
           end
 
-          @types.fetch("void")
+          @ctx.types.fetch("void")
         when :event_wait
           raise_sema_error("wait expects 0 arguments, got #{arguments.length}") unless arguments.empty?
 
@@ -612,7 +612,7 @@ module MilkTea
         Types::Function.new(
           nil,
           params:,
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           external: false,
         )
       end
@@ -624,18 +624,18 @@ module MilkTea
         Types::Function.new(
           nil,
           params:,
-          return_type: @types.fetch("void"),
+          return_type: @ctx.types.fetch("void"),
           external: false,
         )
       end
 
       def event_subscription_result_type
-        @types.fetch("Result").instantiate([@types.fetch("Subscription"), @types.fetch("EventError")])
+        @ctx.types.fetch("Result").instantiate([@ctx.types.fetch("Subscription"), @ctx.types.fetch("EventError")])
       end
 
       def event_wait_result_type(event_type)
-        payload_type = event_type.payload_type || @types.fetch("void")
-        @types.fetch("Result").instantiate([payload_type, @types.fetch("EventError")])
+        payload_type = event_type.payload_type || @ctx.types.fetch("void")
+        @ctx.types.fetch("Result").instantiate([payload_type, @ctx.types.fetch("EventError")])
       end
 
       def event_method_kind(receiver_type, name)
@@ -682,7 +682,7 @@ module MilkTea
           raise_sema_error("cannot call editable method store on an immutable receiver") unless assignable_receiver?(receiver, scopes)
           arg_type = infer_expression(arguments.first.value, scopes:, expected_type: elem_type)
           ensure_assignable!(arg_type, elem_type, "store expects #{elem_type}, got #{arg_type}")
-          @types.fetch("void")
+          @ctx.types.fetch("void")
         when :atomic_add, :atomic_sub, :atomic_exchange
           raise_sema_error("#{kind.to_s.delete_prefix("atomic_")} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
           record_editable_receiver_expression(receiver)
@@ -698,7 +698,7 @@ module MilkTea
           des_type = infer_expression(arguments[1].value, scopes:, expected_type: elem_type)
           ensure_assignable!(exp_type, elem_type, "compare_exchange expected type #{elem_type}, got #{exp_type}")
           ensure_assignable!(des_type, elem_type, "compare_exchange desired type #{elem_type}, got #{des_type}")
-          @types.fetch("bool")
+          @ctx.types.fetch("bool")
         end
       end
 
@@ -713,7 +713,7 @@ module MilkTea
       end
 
       def event_visible_from_current_module?(event_type)
-        event_type.module_name == @module_name || event_type.visibility == :public
+        event_type.module_name == @ctx.module_name || event_type.visibility == :public
       end
 
       def event_receiver_mutable?(receiver_expression, scopes:)
@@ -740,9 +740,9 @@ module MilkTea
           binding = lookup_value(receiver_expression.name, scopes)
           binding&.kind == :event
         when AST::MemberAccess
-          return false unless receiver_expression.receiver.is_a?(AST::Identifier) && @imports.key?(receiver_expression.receiver.name)
+          return false unless receiver_expression.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(receiver_expression.receiver.name)
 
-          imported_module = @imports.fetch(receiver_expression.receiver.name)
+          imported_module = @ctx.imports.fetch(receiver_expression.receiver.name)
           binding = imported_module.values[receiver_expression.member]
           binding && binding.kind == :event
         else
@@ -880,8 +880,8 @@ module MilkTea
         raise_sema_error("fatal does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("fatal expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
-        message_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
-        return @types.fetch("void") if string_like_type?(message_type)
+        message_type = infer_expression(arguments.first.value, scopes:, expected_type: @ctx.types.fetch("str"))
+        return @ctx.types.fetch("void") if string_like_type?(message_type)
 
         raise_sema_error("fatal expects str or cstr, got #{message_type}")
       end
@@ -956,7 +956,7 @@ module MilkTea
         binding = resolve_attribute_name_argument(arguments[1].value)
         validate_attribute_target_compatibility!(target, binding)
 
-        @types.fetch("bool")
+        @ctx.types.fetch("bool")
       end
       def check_attribute_of_call(arguments, scopes:)
         raise_sema_error("attribute_of does not support named arguments") if arguments.any?(&:name)

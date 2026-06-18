@@ -12,6 +12,7 @@ require_relative "sema/context_manager"
 require_relative "sema/type_compatibility"
 require_relative "sema/flow_refinement"
 require_relative "sema/resolve"
+require_relative "sema/module_context"
 
 module MilkTea
   class SemaError < StandardError
@@ -165,25 +166,23 @@ module MilkTea
     class Checker
       include TypeCompatibilityPredicates
 
-      attr_reader :module_name
+      attr_reader :ctx
+
+      def module_name
+        @ctx.module_name
+      end
 
       def initialize(ast, imported_modules: {}, allow_missing_imports: false, path: nil, global_import_index: {})
-        @ast = ast
         @path = path
-        @imported_modules = imported_modules
         @allow_missing_imports = allow_missing_imports
-        @global_import_index = global_import_index
-        @module_name = ast.module_name&.to_s
-        @module_kind = ast.module_kind
-        @const_declarations = ast.declarations.grep(AST::ConstDecl).each_with_object({}) { |decl, result| result[decl.name] = decl }
-        @types = {}
-        @interfaces = {}
-        @attributes = {}
-        @top_level_values = {}
-        @top_level_functions = {}
-        @imports = {}
-        @methods = Hash.new { |hash, key| hash[key] = {} }
-        @implemented_interfaces = Hash.new { |hash, key| hash[key] = [] }
+        @ctx = ModuleContext.new(
+          ast:,
+          module_name: ast.module_name&.to_s,
+          module_kind: ast.module_kind,
+          imported_modules:,
+          global_import_index:,
+          const_declarations: ast.declarations.grep(AST::ConstDecl).each_with_object({}) { |decl, result| result[decl.name] = decl },
+        )
         @null_type = Types::Null.new
         @error_type = Types::Error.new
         @loop_depth = 0
@@ -216,9 +215,6 @@ module MilkTea
         @uses_parallel_for = false
         @current_specialization_owner = nil
         @return_context_stack = []
-        @resolved_attribute_applications = {}
-        @validated_attribute_arguments = {}
-        @attribute_application_bindings = {}
       end
 
       def check
@@ -247,7 +243,7 @@ module MilkTea
 
       def collect_emit_declarations
         collect_emit_from_declarations(expanded_declarations)
-        @ast.declarations.grep(AST::ConstDecl).each { |decl| @const_declarations[decl.name] ||= decl }
+        @ctx.ast.declarations.grep(AST::ConstDecl).each { |decl| @ctx.const_declarations[decl.name] ||= decl }
       end
 
       def collect_emit_from_declarations(declarations)
@@ -273,7 +269,7 @@ module MilkTea
             emit_decl = stmt.declaration
             next if emit_decl.is_a?(AST::ErrorExpr)
 
-            @ast.declarations << emit_decl
+            @ctx.ast.declarations << emit_decl
             collect_emit_from_node(emit_decl)
           when AST::WhenStmt
             body = when_chosen_body(stmt) || []
@@ -299,7 +295,7 @@ module MilkTea
               nested = stmt.declaration
               next if nested.is_a?(AST::ErrorExpr)
 
-              @ast.declarations << nested
+              @ctx.ast.declarations << nested
               collect_emit_from_node(nested)
             end
           end

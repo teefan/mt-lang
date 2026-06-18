@@ -18,7 +18,7 @@ module MilkTea
           return scope[name] if scope.key?(name)
         end
 
-        @top_level_values[name]
+        @ctx.top_level_values[name]
       end
 
       def lookup_method(receiver_type, name)
@@ -45,13 +45,13 @@ module MilkTea
       def lookup_method_local_or_imported(receiver_type, name)
         dispatch_receiver_type = method_dispatch_receiver_type(receiver_type)
 
-        method = @methods.fetch(receiver_type, {})[name]
-        method ||= @methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
+        method = @ctx.methods.fetch(receiver_type, {})[name]
+        method ||= @ctx.methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
         return method if method
 
         imported_candidates = []
 
-        @imports.each_value do |module_binding|
+        @ctx.imports.each_value do |module_binding|
           imported_method = module_binding.methods.fetch(receiver_type, {})[name]
           if imported_method.nil? && dispatch_receiver_type != receiver_type
             imported_method = module_binding.methods.fetch(dispatch_receiver_type, {})[name]
@@ -85,7 +85,7 @@ module MilkTea
       def reachable_module_binding_for_type(receiver_type)
         module_name = receiver_type_module_name(receiver_type)
         return nil unless module_name
-        return nil if module_name == @module_name
+        return nil if module_name == @ctx.module_name
 
         find_reachable_imported_module(module_name)
       end
@@ -100,7 +100,7 @@ module MilkTea
       def find_reachable_imported_module(module_name)
         visited = {}
 
-        @imports.each_value do |module_binding|
+        @ctx.imports.each_value do |module_binding|
           found = find_reachable_imported_module_from(module_binding, module_name, visited)
           return found if found
         end
@@ -133,9 +133,9 @@ module MilkTea
         parts = interface_ref.parts
 
         interface = if parts.length == 1
-                      @interfaces[parts.first]
-                    elsif parts.length == 2 && @imports.key?(parts.first)
-                      imported_module = @imports.fetch(parts.first)
+                      @ctx.interfaces[parts.first]
+                    elsif parts.length == 2 && @ctx.imports.key?(parts.first)
+                      imported_module = @ctx.imports.fetch(parts.first)
                       raw = imported_module.interfaces[parts.last]
                       if imported_module.private_interface?(parts.last)
                         raise_sema_error("#{parts.first}.#{parts.last} is private to module #{imported_module.name}")
@@ -165,9 +165,9 @@ module MilkTea
 
       def type_implements_interface?(type, interface)
         key = interface_implementation_key(type)
-        return true if @implemented_interfaces.fetch(key, []).include?(interface)
+        return true if @ctx.implemented_interfaces.fetch(key, []).include?(interface)
 
-        @imports.each_value do |module_binding|
+        @ctx.imports.each_value do |module_binding|
           return true if module_binding.implemented_interfaces.fetch(key, []).include?(interface)
         end
 
@@ -277,7 +277,7 @@ module MilkTea
 
           # Handle types with lifetime params only (no type params)
           if arguments.all? { |a| a.is_a?(Types::LifetimeRef) }
-            type = @types[name]
+            type = @ctx.types[name]
             if type.is_a?(Types::Struct) && type.lifetime_params&.any?
               lifetime_args = arguments.select { |a| a.is_a?(Types::LifetimeRef) }.map(&:name)
               if lifetime_args.to_set == type.lifetime_params.to_set
@@ -310,9 +310,9 @@ module MilkTea
             raise_sema_error("unknown lifetime #{parts.first}", type_ref)
           end
 
-          type = @types[parts.first]
+          type = @ctx.types[parts.first]
           unless type
-            type_names = @types.keys
+            type_names = @ctx.types.keys
             suggestion = suggest_name(parts.first, type_names)
             unless suggestion
               suggestion = import_suggestion_for_type(parts.first)
@@ -329,8 +329,8 @@ module MilkTea
           return type if type
         end
 
-        if parts.length == 2 && @imports.key?(parts.first)
-          imported_module = @imports.fetch(parts.first)
+        if parts.length == 2 && @ctx.imports.key?(parts.first)
+          imported_module = @ctx.imports.fetch(parts.first)
           type = imported_module.types[parts.last]
           if imported_module.private_type?(parts.last)
             raise_sema_error("#{parts.first}.#{parts.last} is private to module #{imported_module.name}", type_ref)
@@ -386,18 +386,18 @@ module MilkTea
       end
 
       def resolve_current_module_const_value(name)
-        binding = @top_level_values[name]
+        binding = @ctx.top_level_values[name]
         return unless binding&.kind == :const
 
         evaluate_top_level_const_value(name)
       end
 
       def top_level_function(name)
-        @top_level_functions[name]
+        @ctx.top_level_functions[name]
       end
 
       def resolve_imported_module_const_value(import_name, value_name)
-        imported_module = @imports[import_name]
+        imported_module = @ctx.imports[import_name]
         return unless imported_module
         if imported_module.private_value?(value_name)
           raise_sema_error("#{import_name}.#{value_name} is private to module #{imported_module.name}")
@@ -716,7 +716,7 @@ module MilkTea
       end
 
       def char_array_text_type?(type)
-        array_type?(type) && array_element_type(type) == @types.fetch("char")
+        array_type?(type) && array_element_type(type) == @ctx.types.fetch("char")
       end
 
       def str_buffer_type?(type)
@@ -776,7 +776,7 @@ module MilkTea
       end
 
       def resolve_nested_type_ref(parts)
-        current = @types[parts.first]
+        current = @ctx.types[parts.first]
         return nil unless current.is_a?(Types::Struct) || current.is_a?(Types::GenericStructDefinition)
         parts[1..].each do |part|
           nested = current.respond_to?(:nested_types) ? current.nested_types[part] : nil
@@ -788,13 +788,13 @@ module MilkTea
 
       def resolve_named_generic_type(parts)
         if parts.length == 1
-          type = @types[parts.first]
+          type = @ctx.types[parts.first]
           return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
         elsif parts.length >= 2
           type = resolve_nested_type_ref(parts)
           return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
-          if @imports.key?(parts.first)
-            type = @imports.fetch(parts.first).types[parts.last]
+          if @ctx.imports.key?(parts.first)
+            type = @ctx.imports.fetch(parts.first).types[parts.last]
             return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
           end
         end
@@ -891,14 +891,14 @@ module MilkTea
           return next_type.base
         end
 
-        if next_type == @types.fetch("bool")
+        if next_type == @ctx.types.fetch("bool")
           current_method = lookup_method(iterator_type, "current")
           raise_sema_error("for iterator #{iterator_type} must define current() when next() returns bool") unless current_method
           current_method = instantiate_function_binding_with_receiver(current_method, [], receiver_type: iterator_type) if current_method.type_params.any?
           unless current_method.type.params.empty?
             raise_sema_error("for iterator #{iterator_type}.current expects 0 arguments")
           end
-          raise_sema_error("for iterator #{iterator_type}.current cannot return void") if current_method.type.return_type == @types.fetch("void")
+          raise_sema_error("for iterator #{iterator_type}.current cannot return void") if current_method.type.return_type == @ctx.types.fetch("void")
 
           return current_method.type.return_type
         end
@@ -907,7 +907,7 @@ module MilkTea
       end
 
       def string_like_type?(type)
-        type == @types.fetch("str") || type == @types.fetch("cstr")
+        type == @ctx.types.fetch("str") || type == @ctx.types.fetch("cstr")
       end
 
       def infer_index_result_type(receiver_type, index_type)
@@ -964,12 +964,12 @@ module MilkTea
         when AST::Identifier
           return current_type_params[expression.name] if current_type_params.key?(expression.name)
 
-          @types[expression.name]
+          @ctx.types[expression.name]
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
 
-          if @imports.key?(expression.receiver.name)
-            imported_module = @imports.fetch(expression.receiver.name)
+          if @ctx.imports.key?(expression.receiver.name)
+            imported_module = @ctx.imports.fetch(expression.receiver.name)
             if imported_module.private_type?(expression.member)
               raise_sema_error("#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}")
             end
@@ -977,7 +977,7 @@ module MilkTea
             return imported_module.types[expression.member]
           end
 
-          parent_type = @types[expression.receiver.name]
+          parent_type = @ctx.types[expression.receiver.name]
           return parent_type.nested_types[expression.member] if parent_type.respond_to?(:nested_types) && parent_type.nested_types.key?(expression.member)
 
           nil
@@ -1000,7 +1000,7 @@ module MilkTea
       end
 
       def imported_module_with_private_method_local(receiver_type, method_name)
-        @imports.each_value do |module_binding|
+        @ctx.imports.each_value do |module_binding|
           return module_binding if module_binding.private_method?(receiver_type, method_name)
         end
 
@@ -1151,7 +1151,7 @@ module MilkTea
       end
 
       def function_type_for_name(name)
-        @top_level_functions.fetch(name).type
+        @ctx.top_level_functions.fetch(name).type
       end
 
       def resolve_specialized_callable_binding(expression, scopes:)
@@ -1160,10 +1160,10 @@ module MilkTea
         receiver_type = nil
         binding = case expression.callee
                   when AST::Identifier
-                    @top_level_functions[expression.callee.name]
+                    @ctx.top_level_functions[expression.callee.name]
                   when AST::MemberAccess
-                    if expression.callee.receiver.is_a?(AST::Identifier) && @imports.key?(expression.callee.receiver.name)
-                      imported_module = @imports.fetch(expression.callee.receiver.name)
+                    if expression.callee.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(expression.callee.receiver.name)
+                      imported_module = @ctx.imports.fetch(expression.callee.receiver.name)
                       imported_function = imported_module.functions[expression.callee.member]
                       if imported_function.nil? && imported_module.private_function?(expression.callee.member)
                         raise_sema_error("#{expression.callee.receiver.name}.#{expression.callee.member} is private to module #{imported_module.name}")
@@ -1791,11 +1791,11 @@ module MilkTea
       end
 
       def foreign_cstr_boundary_parameter?(parameter)
-        parameter.boundary_type == @types.fetch("cstr") && parameter.type == @types.fetch("str")
+        parameter.boundary_type == @ctx.types.fetch("cstr") && parameter.type == @ctx.types.fetch("str")
       end
 
       def foreign_cstr_argument_compatible?(actual_type, parameter, expression:)
-        types_compatible?(actual_type, parameter.type, expression:) || actual_type == @types.fetch("cstr")
+        types_compatible?(actual_type, parameter.type, expression:) || actual_type == @ctx.types.fetch("cstr")
       end
 
       def array_to_span_call_argument_compatible?(actual_type, expected_type, expression:, scopes:)
@@ -1810,7 +1810,7 @@ module MilkTea
         end
 
         if str_buffer_type?(actual_type)
-          return false unless expected_type.element_type == @types.fetch("char")
+          return false unless expected_type.element_type == @ctx.types.fetch("char")
 
           infer_addr_source_type(expression, scopes:)
           record_mutable_lvalue_argument_identifier(expression)
@@ -1845,7 +1845,7 @@ module MilkTea
 
         expected_public_type = pointee_type(boundary_type)
         return if expected_public_type == public_type
-        return if expected_public_type == @types.fetch("void")
+        return if expected_public_type == @ctx.types.fetch("void")
         return if foreign_identity_projection_compatible?(public_type, expected_public_type)
 
         raise_sema_error("in parameter #{parameter_name} of #{function_name} cannot map #{public_type} as #{boundary_type}")
@@ -1857,7 +1857,7 @@ module MilkTea
 
       def validate_foreign_boundary_type!(public_type, boundary_type, function_name:, parameter_name:)
         return if boundary_type == public_type
-        return if boundary_type == @types.fetch("cstr") && public_type == @types.fetch("str")
+        return if boundary_type == @ctx.types.fetch("cstr") && public_type == @ctx.types.fetch("str")
         return if foreign_span_boundary_compatible?(public_type, boundary_type)
         return if foreign_char_pointer_buffer_boundary_compatible?(public_type, boundary_type)
         return if foreign_identity_projection_compatible?(public_type, boundary_type)
@@ -2045,7 +2045,7 @@ module MilkTea
       end
 
       def raw_module?
-        @module_kind == :raw_module
+        @ctx.module_kind == :raw_module
       end
 
       def assignable_receiver?(receiver_expression, scopes)
@@ -2173,16 +2173,16 @@ module MilkTea
       end
 
       def import_suggestion_for_type(type_name)
-        return nil if @global_import_index.nil? || @global_import_index.empty?
+        return nil if @ctx.global_import_index.nil? || @ctx.global_import_index.empty?
 
         type_str = type_name.to_s
         return nil if type_str.empty?
 
-        if @global_import_index.key?(type_str)
-          entry = @global_import_index[type_str]
+        if @ctx.global_import_index.key?(type_str)
+          entry = @ctx.global_import_index[type_str]
           return nil if entry.nil?
           module_path = entry.is_a?(Array) ? entry.first : entry
-          if module_path && !@imports.key?(module_path.to_s.split(".").first) && !@imports.key?(module_path.to_s)
+          if module_path && !@ctx.imports.key?(module_path.to_s.split(".").first) && !@ctx.imports.key?(module_path.to_s)
             return "type '#{type_str}' is available via 'import #{module_path}'"
           end
         end

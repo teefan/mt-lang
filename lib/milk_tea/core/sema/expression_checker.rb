@@ -146,22 +146,22 @@ module MilkTea
             unless check_layout_type_via_ct(expression.type, context: "size_of", scopes:)
               infer_layout_query_type(expression.type, context: "size_of")
             end
-            @types.fetch("ptr_uint")
+            @ctx.types.fetch("ptr_uint")
           when AST::AlignofExpr
             unless check_layout_type_via_ct(expression.type, context: "align_of", scopes:)
               infer_layout_query_type(expression.type, context: "align_of")
             end
-            @types.fetch("ptr_uint")
+            @ctx.types.fetch("ptr_uint")
           when AST::OffsetofExpr
             infer_offsetof_type(expression.type, expression.field, scopes:)
-            @types.fetch("ptr_uint")
+            @ctx.types.fetch("ptr_uint")
           when AST::StringLiteral
-            @types.fetch(expression.cstring ? "cstr" : "str")
+            @ctx.types.fetch(expression.cstring ? "cstr" : "str")
           when AST::FormatString
             check_format_string_literal(expression, scopes:)
-            @types.fetch("str")
+            @ctx.types.fetch("str")
           when AST::BooleanLiteral
-            @types.fetch("bool")
+            @ctx.types.fetch("bool")
           when AST::NullLiteral
             infer_null_literal(expression)
           when AST::Identifier
@@ -186,7 +186,7 @@ module MilkTea
             infer_await_expression(expression, scopes:)
           when AST::DetachExpr
             @uses_parallel_for = true
-            check_block(expression.body, scopes:, return_type: @types.fetch("void"), allow_return: false)
+            check_block(expression.body, scopes:, return_type: @ctx.types.fetch("void"), allow_return: false)
             Types::Handle.new
           when AST::Call
             infer_call(expression, scopes:, expected_type:)
@@ -262,19 +262,19 @@ module MilkTea
         if expected_type.is_a?(Types::Primitive) && expected_type.integer?
           expected_type
         else
-          @types.fetch("int")
+          @ctx.types.fetch("int")
         end
       end
 
       def infer_float_literal(expression, expected_type)
         if expression.lexeme.end_with?("float")
-          @types.fetch("float")
+          @ctx.types.fetch("float")
         elsif expression.lexeme.end_with?("double")
-          @types.fetch("double")
+          @ctx.types.fetch("double")
         elsif expected_type.is_a?(Types::Primitive) && expected_type.float?
           expected_type
         else
-          @types.fetch("double")
+          @ctx.types.fetch("double")
         end
       end
 
@@ -285,8 +285,8 @@ module MilkTea
           return binding.type
         end
 
-        if @top_level_functions.key?(expression.name)
-          raise_sema_error("generic function #{expression.name} must be called") if @top_level_functions.fetch(expression.name).type_params.any?
+        if @ctx.top_level_functions.key?(expression.name)
+          raise_sema_error("generic function #{expression.name} must be called") if @ctx.top_level_functions.fetch(expression.name).type_params.any?
 
           function_type = function_type_for_name(expression.name)
           if expected_type
@@ -297,15 +297,15 @@ module MilkTea
           raise_sema_error("function #{expression.name} must be called")
         end
 
-        raise_sema_error("module #{expression.name} cannot be used as a value") if @imports.key?(expression.name)
-        if @types.key?(expression.name)
+        raise_sema_error("module #{expression.name} cannot be used as a value") if @ctx.imports.key?(expression.name)
+        if @ctx.types.key?(expression.name)
           return Types::BUILTIN_TYPE_META_TYPE if expected_type.is_a?(Types::TypeType)
-          return @types.fetch(expression.name)
+          return @ctx.types.fetch(expression.name)
         end
 
-        if @functions && @types && scopes
-          func_names = @functions.keys.map(&:to_s)
-          type_names = @types.keys.map(&:to_s)
+        if @ctx.top_level_functions && @ctx.types && scopes
+          func_names = @ctx.top_level_functions.keys.map(&:to_s)
+          type_names = @ctx.types.keys.map(&:to_s)
           scoped_names = scopes.flat_map { |s| s.is_a?(Hash) ? s.keys : [] }.map(&:to_s)
           suggestion = suggest_name(expression.name, func_names + type_names + scoped_names)
         end
@@ -332,8 +332,8 @@ module MilkTea
           raise_sema_error("unknown member #{type}.#{expression.member}")
         end
 
-        if expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
-          imported_module = @imports.fetch(expression.receiver.name)
+        if expression.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(expression.receiver.name)
+          imported_module = @ctx.imports.fetch(expression.receiver.name)
           value = imported_module.values[expression.member]
           return value.type if value
 
@@ -431,8 +431,8 @@ module MilkTea
 
         case expression.operator
         when "not"
-          ensure_assignable!(operand_type, @types.fetch("bool"), "operator not requires bool, got #{operand_type}")
-          @types.fetch("bool")
+          ensure_assignable!(operand_type, @ctx.types.fetch("bool"), "operator not requires bool, got #{operand_type}")
+          @ctx.types.fetch("bool")
         when "+", "-"
           raise_sema_error("operator #{expression.operator} requires a numeric operand, got #{operand_type}") unless operand_type.numeric?
 
@@ -462,7 +462,7 @@ module MilkTea
       def infer_result_propagation(source_type, allow_void_success:)
         success_type = let_else_success_type(source_type)
         error_type = let_else_error_type(source_type)
-        raise_sema_error("propagation requires a non-void Result success type") if success_type == @types.fetch("void") && !allow_void_success
+        raise_sema_error("propagation requires a non-void Result success type") if success_type == @ctx.types.fetch("void") && !allow_void_success
 
         context = current_return_context
         raise_sema_error("propagation is only allowed inside function and proc bodies") unless context
@@ -483,7 +483,7 @@ module MilkTea
 
       def infer_option_propagation(source_type, allow_void_success:)
         success_type = let_else_success_type(source_type)
-        raise_sema_error("propagation requires a non-void Option success type") if success_type == @types.fetch("void") && !allow_void_success
+        raise_sema_error("propagation requires a non-void Option success type") if success_type == @ctx.types.fetch("void") && !allow_void_success
 
         context = current_return_context
         raise_sema_error("propagation is only allowed inside function and proc bodies") unless context
@@ -541,9 +541,9 @@ module MilkTea
 
         case expression.operator
         when "and", "or"
-          ensure_assignable!(left_type, @types.fetch("bool"), "operator #{expression.operator} requires bool operands")
-          ensure_assignable!(right_type, @types.fetch("bool"), "operator #{expression.operator} requires bool operands")
-          @types.fetch("bool")
+          ensure_assignable!(left_type, @ctx.types.fetch("bool"), "operator #{expression.operator} requires bool operands")
+          ensure_assignable!(right_type, @ctx.types.fetch("bool"), "operator #{expression.operator} requires bool operands")
+          @ctx.types.fetch("bool")
         when "|", "&", "^"
           # For Flags/Enum types, the operands must match and be bitwise-capable.
           unless left_type == right_type && (bitwise_type?(left_type) || left_type.is_a?(Types::Flags))
@@ -586,7 +586,7 @@ module MilkTea
             raise_sema_error("operator #{expression.operator} requires compatible numeric types, got #{left_type} and #{right_type}")
           end
 
-          @types.fetch("bool")
+          @ctx.types.fetch("bool")
         when "==", "!="
           unless c_natively_equality_comparable_type?(left_type) && c_natively_equality_comparable_type?(right_type)
             bad_type = c_natively_equality_comparable_type?(right_type) ? left_type : right_type
@@ -600,15 +600,15 @@ module MilkTea
             raise_sema_error("operator #{expression.operator} requires comparable types, got #{left_type} and #{right_type}")
           end
 
-          @types.fetch("bool")
+          @ctx.types.fetch("bool")
         else
           raise_sema_error("unsupported binary operator #{expression.operator}")
         end
       end
 
       def infer_if_expression(expression, scopes:, expected_type: nil)
-        condition_type = infer_expression(expression.condition, scopes:, expected_type: @types.fetch("bool"))
-        ensure_assignable!(condition_type, @types.fetch("bool"), "if expression condition must be bool, got #{condition_type}")
+        condition_type = infer_expression(expression.condition, scopes:, expected_type: @ctx.types.fetch("bool"))
+        ensure_assignable!(condition_type, @ctx.types.fetch("bool"), "if expression condition must be bool, got #{condition_type}")
 
         then_scopes = scopes_with_refinements(scopes, flow_refinements(expression.condition, truthy: true, scopes:))
         else_scopes = scopes_with_refinements(scopes, flow_refinements(expression.condition, truthy: false, scopes:))
@@ -1118,18 +1118,18 @@ module MilkTea
       end
 
       def automatic_foreign_cstr_list_temp_needed?(parameter)
-        return false unless parameter.type.is_a?(Types::Span) && parameter.type.element_type == @types.fetch("str")
+        return false unless parameter.type.is_a?(Types::Span) && parameter.type.element_type == @ctx.types.fetch("str")
         return false unless parameter.boundary_type.is_a?(Types::Span)
 
         boundary_element_type = parameter.boundary_type.element_type
-        boundary_element_type == @types.fetch("cstr") || char_pointer_type?(boundary_element_type)
+        boundary_element_type == @ctx.types.fetch("cstr") || char_pointer_type?(boundary_element_type)
       end
 
       def automatic_foreign_cstr_temp_needed?(parameter, expression, scopes:)
-        return false unless parameter.boundary_type == @types.fetch("cstr") && parameter.type == @types.fetch("str")
+        return false unless parameter.boundary_type == @ctx.types.fetch("cstr") && parameter.type == @ctx.types.fetch("str")
         return false if expression.is_a?(AST::StringLiteral) && !expression.cstring
 
-        infer_expression(expression, scopes:) != @types.fetch("cstr")
+        infer_expression(expression, scopes:) != @ctx.types.fetch("cstr")
       end
 
       def consuming_foreign_call_refinements(expression, scopes:)
@@ -1157,7 +1157,7 @@ module MilkTea
             raise_sema_error("#{callee.name} is not callable")
           end
 
-          return [:function, @top_level_functions.fetch(callee.name), nil] if @top_level_functions.key?(callee.name)
+          return [:function, @ctx.top_level_functions.fetch(callee.name), nil] if @ctx.top_level_functions.key?(callee.name)
           return [:fatal, nil, nil] if callee.name == "fatal"
           return [:ref_of, nil, nil] if callee.name == "ref_of"
           return [:const_ptr_of, nil, nil] if callee.name == "const_ptr_of"
@@ -1169,7 +1169,7 @@ module MilkTea
           return [:has_attribute, nil, nil] if callee.name == "has_attribute"
           return [:get, nil, nil] if callee.name == "get"
 
-          type = @types[callee.name]
+          type = @ctx.types[callee.name]
           return [:struct, type, nil] if type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
           if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
             raise_sema_error("generic type #{callee.name} requires type arguments")
@@ -1177,8 +1177,8 @@ module MilkTea
 
           raise_sema_error("unknown callable #{callee.name}")
         when AST::MemberAccess
-          if callee.receiver.is_a?(AST::Identifier) && @imports.key?(callee.receiver.name)
-            imported_module = @imports.fetch(callee.receiver.name)
+          if callee.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(callee.receiver.name)
+            imported_module = @ctx.imports.fetch(callee.receiver.name)
             return [:function, imported_module.functions.fetch(callee.member), nil] if imported_module.functions.key?(callee.member)
             imported_type = imported_module.types[callee.member]
             if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::GenericStructDefinition) || imported_type.is_a?(Types::StringView) || task_type?(imported_type) || imported_type.is_a?(Types::Vector) || imported_type.is_a?(Types::Matrix) || imported_type.is_a?(Types::Quaternion)
@@ -1198,7 +1198,7 @@ module MilkTea
               raise_sema_error("#{callee.receiver.name}.#{callee.member} is private to module #{imported_module.name}")
             end
 
-            raise_sema_error("unknown callable #{callee.receiver.name}.#{callee.member}") unless @types.key?(callee.receiver.name)
+            raise_sema_error("unknown callable #{callee.receiver.name}.#{callee.member}") unless @ctx.types.key?(callee.receiver.name)
           end
 
           if (type_expr = resolve_type_expression(callee.receiver))
@@ -1411,9 +1411,9 @@ module MilkTea
       end
 
       def format_string_interpolation_supported?(type, context:)
-        return true if type == @types.fetch("str")
-        return true if type == @types.fetch("cstr")
-        return true if type == @types.fetch("bool")
+        return true if type == @ctx.types.fetch("str")
+        return true if type == @ctx.types.fetch("cstr")
+        return true if type == @ctx.types.fetch("bool")
         return true if type.is_a?(Types::Primitive) && type.integer?
         return true if type.is_a?(Types::Primitive) && type.float?
         return true if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
@@ -1513,8 +1513,8 @@ module MilkTea
         return type.ast_declaration if type.respond_to?(:ast_declaration) && type.ast_declaration
 
         return nil unless type.respond_to?(:module_name)
-        if type.module_name == @module_name
-          return @ast.declarations.find do |decl|
+        if type.module_name == @ctx.module_name
+          return @ctx.ast.declarations.find do |decl|
             decl.is_a?(AST::StructDecl) && decl.name == type.name
           end
         end
@@ -1527,7 +1527,7 @@ module MilkTea
       end
 
       def imported_module_binding_for_name(module_name)
-        @imports.each_value.find { |binding| binding.name == module_name }
+        @ctx.imports.each_value.find { |binding| binding.name == module_name }
       end
 
       def validate_attribute_target_compatibility!(target, binding)
@@ -1548,7 +1548,7 @@ module MilkTea
       def infer_field_handle_member(expression, scopes:)
         case expression.member
         when "name"
-          @types.fetch("str")
+          @ctx.types.fetch("str")
         when "type"
           handle = evaluate_compile_time_const_value(expression.receiver, scopes:)
           return @error_type unless handle.is_a?(Types::FieldHandle)
@@ -1562,9 +1562,9 @@ module MilkTea
       def infer_member_handle_member(expression)
         case expression.member
         when "name"
-          @types.fetch("str")
+          @ctx.types.fetch("str")
         when "value"
-          @types.fetch("int")
+          @ctx.types.fetch("int")
         else
           raise_sema_error("unknown member #{expression.member} of member_handle")
         end

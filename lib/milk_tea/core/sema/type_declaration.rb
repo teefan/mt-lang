@@ -7,17 +7,17 @@ module MilkTea
 
       def build_analysis
         Analysis.new(
-          ast: @ast,
-          module_name: @module_name,
-          module_kind: @module_kind,
-          directives: @ast.directives,
-          imports: @imports,
-          types: @types,
-          interfaces: @interfaces,
+          ast: @ctx.ast,
+          module_name: @ctx.module_name,
+          module_kind: @ctx.module_kind,
+          directives: @ctx.ast.directives,
+          imports: @ctx.imports,
+          types: @ctx.types,
+          interfaces: @ctx.interfaces,
           attributes: snapshot_attributes,
           attribute_applications: snapshot_attribute_applications,
-          values: @top_level_values,
-          functions: @top_level_functions,
+          values: @ctx.top_level_values,
+          functions: @ctx.top_level_functions,
           methods: snapshot_methods,
           implemented_interfaces: snapshot_implemented_interfaces,
           local_completion_frames: @local_completion_frames.dup.freeze,
@@ -31,7 +31,7 @@ module MilkTea
 
       def install_builtin_types
         INSTALLABLE_BUILTIN_TYPE_NAMES.each do |name|
-          @types[name] = case name
+          @ctx.types[name] = case name
                          when "str"
                            Types::StringView.new
                          when "Option"
@@ -91,7 +91,7 @@ module MilkTea
       end
 
       def builtin_event_error_type
-        Types::Enum.new("EventError").define_members(@types.fetch("int"), ["full"]).define_member_values("full" => 0)
+        Types::Enum.new("EventError").define_members(@ctx.types.fetch("int"), ["full"]).define_member_values("full" => 0)
       end
 
       def builtin_struct_handle_type
@@ -120,12 +120,12 @@ module MilkTea
 
       def install_builtin_attributes
         BUILTIN_ATTRIBUTE_NAMES.each do |name|
-          @attributes[name] = Sema.builtin_attribute_binding(name, @types)
+          @ctx.attributes[name] = Sema.builtin_attribute_binding(name, @ctx.types)
         end
       end
 
       def snapshot_attributes
-        @attributes.each_with_object({}) do |(name, binding), attributes|
+        @ctx.attributes.each_with_object({}) do |(name, binding), attributes|
           next if binding.builtin
 
           attributes[name] = binding
@@ -133,42 +133,42 @@ module MilkTea
       end
 
       def snapshot_attribute_applications
-        @resolved_attribute_applications.each_with_object({}) do |(target_id, applications), snapshot|
+        @ctx.resolved_attribute_applications.each_with_object({}) do |(target_id, applications), snapshot|
           snapshot[target_id] = applications
         end.freeze
       end
 
       def snapshot_methods
-        @methods.each_with_object({}) do |(receiver_type, bindings), methods|
+        @ctx.methods.each_with_object({}) do |(receiver_type, bindings), methods|
           methods[receiver_type] = bindings.dup.freeze
         end.freeze
       end
 
       def snapshot_implemented_interfaces
-        @implemented_interfaces.each_with_object({}) do |(receiver_type, interfaces), snapshot|
+        @ctx.implemented_interfaces.each_with_object({}) do |(receiver_type, interfaces), snapshot|
           snapshot[receiver_type] = interfaces.dup.freeze
         end.freeze
       end
 
       def install_imports
-        @ast.imports.each do |import|
+        @ctx.ast.imports.each do |import|
           with_error_node(import) do
             alias_name = import.alias_name || import.path.parts.last
             ensure_non_reserved_import_alias_name!(alias_name, kind_label: "import alias", line: import.line, column: import.column)
-            raise_sema_error("duplicate import alias #{alias_name}") if @imports.key?(alias_name)
+            raise_sema_error("duplicate import alias #{alias_name}") if @ctx.imports.key?(alias_name)
 
-            module_binding = @imported_modules[import.path.to_s]
+            module_binding = @ctx.imported_modules[import.path.to_s]
             next if @allow_missing_imports && module_binding.nil?
             raise_sema_error("unknown import #{import.path}") unless module_binding
 
-            @imports[alias_name] = module_binding
+            @ctx.imports[alias_name] = module_binding
           end
         end
       end
 
       def expanded_declarations
         Enumerator.new do |yielder|
-          @ast.declarations.each do |decl|
+          @ctx.ast.declarations.each do |decl|
             case decl
             when AST::WhenStmt
               body = when_chosen_body(decl)
@@ -190,10 +190,10 @@ module MilkTea
               validate_struct_layout!(decl)
               validate_explicit_aggregate_c_name!(decl)
               ensure_available_type_name!(decl.name)
-              @types[decl.name] = if decl.type_params.empty?
+              @ctx.types[decl.name] = if decl.type_params.empty?
                                     Types::Struct.new(
                                       decl.name,
-                                      module_name: @module_name,
+                                      module_name: @ctx.module_name,
                                       external: raw_module?,
                                       packed: decl.packed,
                                       alignment: decl.alignment,
@@ -204,7 +204,7 @@ module MilkTea
                                     Types::GenericStructDefinition.new(
                                       decl.name,
                                       decl.type_params.map(&:name),
-                                      module_name: @module_name,
+                                      module_name: @ctx.module_name,
                                       external: raw_module?,
                                       packed: decl.packed,
                                       alignment: decl.alignment,
@@ -216,35 +216,35 @@ module MilkTea
             when AST::UnionDecl
               validate_explicit_aggregate_c_name!(decl)
               ensure_available_type_name!(decl.name)
-              @types[decl.name] = Types::Union.new(decl.name, module_name: @module_name, external: raw_module?, c_name: decl.c_name)
+              @ctx.types[decl.name] = Types::Union.new(decl.name, module_name: @ctx.module_name, external: raw_module?, c_name: decl.c_name)
             when AST::VariantDecl
               ensure_available_type_name!(decl.name)
-              @types[decl.name] = if decl.type_params.empty?
-                                    Types::Variant.new(decl.name, module_name: @module_name)
+              @ctx.types[decl.name] = if decl.type_params.empty?
+                                    Types::Variant.new(decl.name, module_name: @ctx.module_name)
                                   else
                                     Types::GenericVariantDefinition.new(
                                       decl.name,
                                       decl.type_params.map(&:name),
-                                      module_name: @module_name,
+                                      module_name: @ctx.module_name,
                                     )
                                   end
             when AST::EnumDecl
               ensure_available_type_name!(decl.name)
-              @types[decl.name] = Types::Enum.new(decl.name, module_name: @module_name, external: raw_module?)
+              @ctx.types[decl.name] = Types::Enum.new(decl.name, module_name: @ctx.module_name, external: raw_module?)
             when AST::FlagsDecl
               ensure_available_type_name!(decl.name)
-              @types[decl.name] = Types::Flags.new(decl.name, module_name: @module_name, external: raw_module?)
+              @ctx.types[decl.name] = Types::Flags.new(decl.name, module_name: @ctx.module_name, external: raw_module?)
             when AST::OpaqueDecl
               ensure_available_type_name!(decl.name)
-              @types[decl.name] = Types::Opaque.new(
+              @ctx.types[decl.name] = Types::Opaque.new(
                 decl.name,
-                module_name: @module_name,
+                module_name: @ctx.module_name,
                 external: raw_module?,
                 c_name: decl.c_name,
               )
             when AST::InterfaceDecl
               ensure_available_type_name!(decl.name)
-              @interfaces[decl.name] = declare_interface_binding(decl)
+              @ctx.interfaces[decl.name] = declare_interface_binding(decl)
             end
           end
         rescue SemaError => e
@@ -260,18 +260,18 @@ module MilkTea
 
             constraints = resolve_type_param_constraints(decl.type_params)
             if decl.is_a?(AST::InterfaceDecl)
-              @interfaces[decl.name] = @interfaces.fetch(decl.name).with(type_param_constraints: constraints)
+              @ctx.interfaces[decl.name] = @ctx.interfaces.fetch(decl.name).with(type_param_constraints: constraints)
             else
-              @types.fetch(decl.name).define_type_param_constraints(constraints)
+              @ctx.types.fetch(decl.name).define_type_param_constraints(constraints)
             end
           end
         end
       end
 
       def resolve_type_aliases
-        @ast.declarations.grep(AST::TypeAliasDecl).each do |decl|
+        @ctx.ast.declarations.grep(AST::TypeAliasDecl).each do |decl|
           ensure_available_type_name!(decl.name)
-          @types[decl.name] = resolve_type_ref(decl.target)
+          @ctx.types[decl.name] = resolve_type_ref(decl.target)
         rescue SemaError => e
           collect_structural_error(e)
         end
@@ -280,7 +280,7 @@ module MilkTea
       def declare_attributes
         expanded_declarations.grep(AST::AttributeDecl).each do |decl|
           with_error_node(decl) do
-            raise_sema_error("duplicate attribute #{decl.name}") if @attributes.key?(decl.name)
+            raise_sema_error("duplicate attribute #{decl.name}") if @ctx.attributes.key?(decl.name)
 
             params = []
             seen = {}
@@ -291,11 +291,11 @@ module MilkTea
               params << Types::Parameter.new(param.name, resolve_type_ref(param.type))
             end
 
-            @attributes[decl.name] = AttributeBinding.new(
+            @ctx.attributes[decl.name] = AttributeBinding.new(
               name: decl.name,
               targets: decl.targets.freeze,
               params: params.freeze,
-              module_name: @module_name,
+              module_name: @ctx.module_name,
               builtin: false,
               ast: decl,
             )
@@ -322,7 +322,7 @@ module MilkTea
             type_param_constraints: {},
             methods: methods.freeze,
             ast: decl,
-            module_name: @module_name,
+            module_name: @ctx.module_name,
           )
         else
           methods = {}
@@ -338,7 +338,7 @@ module MilkTea
             name: decl.name,
             methods: methods.freeze,
             ast: decl,
-            module_name: @module_name,
+            module_name: @ctx.module_name,
           )
         end
       end
@@ -358,7 +358,7 @@ module MilkTea
           params << Types::Parameter.new(param.name, type)
         end
 
-        return_type = method_decl.return_type ? resolve_type_ref(method_decl.return_type, type_params:, type_param_constraints:) : @types.fetch("void")
+        return_type = method_decl.return_type ? resolve_type_ref(method_decl.return_type, type_params:, type_param_constraints:) : @ctx.types.fetch("void")
         validate_return_ref_type!(return_type, function_name: method_decl.name)
         validate_return_proc_type!(return_type, function_name: method_decl.name)
 
@@ -405,7 +405,7 @@ module MilkTea
           decl.name,
           capacity: decl.capacity,
           payload_type: payload_type,
-          module_name: @module_name,
+          module_name: @ctx.module_name,
           visibility: decl.visibility,
           owner_type_name: owner_type_name,
         )
@@ -416,7 +416,7 @@ module MilkTea
           with_error_node(decl) do
             next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::UnionDecl)
 
-            struct_type = @types.fetch(decl.name)
+            struct_type = @ctx.types.fetch(decl.name)
             struct_type.ast_declaration = decl if struct_type.respond_to?(:ast_declaration=)
             type_params = if struct_type.is_a?(Types::GenericStructDefinition)
                              seen = {}
@@ -525,7 +525,7 @@ module MilkTea
           with_error_node(decl) do
             next unless decl.is_a?(AST::EnumDecl) || decl.is_a?(AST::FlagsDecl)
 
-            enum_type = @types.fetch(decl.name)
+            enum_type = @ctx.types.fetch(decl.name)
             backing_type = resolve_type_ref(decl.backing_type)
             unless backing_type.is_a?(Types::Primitive) && backing_type.integer?
               raise_sema_error("#{decl.name} backing type must be an integer primitive, got #{backing_type}")
@@ -580,7 +580,7 @@ module MilkTea
           with_error_node(decl) do
             next unless decl.is_a?(AST::VariantDecl)
 
-            variant_type = @types.fetch(decl.name)
+            variant_type = @ctx.types.fetch(decl.name)
             type_params = if variant_type.is_a?(Types::GenericVariantDefinition)
                             seen = {}
                             variant_type.type_params.each_with_object({}) do |name, params|
@@ -648,12 +648,12 @@ module MilkTea
 
       def ensure_available_type_name!(name, line: nil, column: nil, length: nil)
         ensure_non_reserved_type_binding_name!(name, kind_label: "type", line:, column:, length:) unless raw_module?
-        raise_sema_error("duplicate type #{name}") if @types.key?(name) || @interfaces.key?(name)
+        raise_sema_error("duplicate type #{name}") if @ctx.types.key?(name) || @ctx.interfaces.key?(name)
       end
 
       def ensure_available_value_name!(name, kind_label: "value", line: nil, column: nil, length: nil)
         ensure_non_reserved_value_type_name!(name, kind_label:, line:, column:, length:)
-        raise_sema_error("duplicate value #{name}") if @top_level_values.key?(name) || @top_level_functions.key?(name)
+        raise_sema_error("duplicate value #{name}") if @ctx.top_level_values.key?(name) || @ctx.top_level_functions.key?(name)
       end
 
       def ensure_non_reserved_value_type_name!(name, kind_label:, line: nil, column: nil, length: nil)
@@ -684,7 +684,7 @@ module MilkTea
                 type = resolve_type_ref(decl.type)
                 validate_stored_ref_type!(type, "constant #{decl.name}")
                 raise_sema_error("constant #{decl.name} cannot store proc values") if contains_proc_type?(type)
-                @top_level_values[decl.name] = value_binding(
+                @ctx.top_level_values[decl.name] = value_binding(
                   name: decl.name,
                   type: type,
                   mutable: false,
@@ -692,12 +692,12 @@ module MilkTea
                 )
               rescue SemaError => e
                 collect_structural_error(e)
-                @top_level_values[decl.name] = value_binding(
+                @ctx.top_level_values[decl.name] = value_binding(
                   name: decl.name,
                   type: @error_type,
                   mutable: false,
                   kind: :const,
-                ) unless @top_level_values.key?(decl.name)
+                ) unless @ctx.top_level_values.key?(decl.name)
               end
             when AST::VarDecl
               ensure_available_value_name!(decl.name, kind_label: "module variable", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
@@ -705,7 +705,7 @@ module MilkTea
 
               type = resolve_type_ref(decl.type)
               validate_stored_ref_type!(type, "module variable #{decl.name}")
-              @top_level_values[decl.name] = value_binding(
+              @ctx.top_level_values[decl.name] = value_binding(
                 name: decl.name,
                 type: type,
                 mutable: true,
@@ -713,7 +713,7 @@ module MilkTea
               )
             when AST::EventDecl
               ensure_available_value_name!(decl.name, kind_label: "event", line: decl.line, column: decl.column)
-              @top_level_values[decl.name] = value_binding(
+              @ctx.top_level_values[decl.name] = value_binding(
                 name: decl.name,
                 type: resolve_event_decl_type(decl),
                 mutable: false,
@@ -734,7 +734,7 @@ module MilkTea
       def define_nested_type_bindings_recursive(parent_decl, parent_name: parent_decl.name)
         parent_decl.nested_types.each do |nested|
           qualified_name = "#{parent_name}.#{nested.name}"
-          nested_type = @types[qualified_name]
+          nested_type = @ctx.types[qualified_name]
           next unless nested_type.is_a?(Types::Struct)
           nested_scope = resolve_nested_type_bindings(nested, parent_name: qualified_name)
           nested_type.define_nested_types(nested_scope)
@@ -746,7 +746,7 @@ module MilkTea
         parent_decl.nested_types.each do |nested|
           next unless nested.type_params.empty?
           qualified_name = "#{parent_name}.#{nested.name}"
-          nested_type = @types[qualified_name]
+          nested_type = @ctx.types[qualified_name]
           next unless nested_type.is_a?(Types::Struct)
           nested_type.ast_declaration = nested
           nested_scope = nested_type.nested_types.merge(external_nested_scope)
@@ -780,7 +780,7 @@ module MilkTea
         bindings = {}
         parent_decl.nested_types.each do |nested|
           qualified_name = "#{parent_name}.#{nested.name}"
-          nested_type = @types[qualified_name]
+          nested_type = @ctx.types[qualified_name]
           bindings[nested.name] = nested_type if nested_type
         end
         bindings
@@ -790,15 +790,15 @@ module MilkTea
         parent_decl.nested_types.each do |nested|
           qualified_name = "#{parent_name}.#{nested.name}"
           ensure_available_type_name!(qualified_name)
-          nested_c_name = if @module_name && !raw_module?
-                            "#{@module_name.to_s.tr('.', '_')}_#{qualified_name.tr('.', '_')}"
+          nested_c_name = if @ctx.module_name && !raw_module?
+                            "#{@ctx.module_name.to_s.tr('.', '_')}_#{qualified_name.tr('.', '_')}"
                           else
                             qualified_name.tr('.', '_')
                           end
           if nested.type_params.empty?
-            @types[qualified_name] = Types::Struct.new(nested.name, module_name: @module_name, external: raw_module?, packed: nested.packed, alignment: nested.alignment, c_name: nested_c_name, lifetime_params: nested.lifetime_params)
+            @ctx.types[qualified_name] = Types::Struct.new(nested.name, module_name: @ctx.module_name, external: raw_module?, packed: nested.packed, alignment: nested.alignment, c_name: nested_c_name, lifetime_params: nested.lifetime_params)
           else
-            @types[qualified_name] = Types::GenericStructDefinition.new(nested.name, nested.type_params.map(&:name), module_name: @module_name, external: raw_module?, packed: nested.packed, alignment: nested.alignment, c_name: nested_c_name, lifetime_params: nested.lifetime_params)
+            @ctx.types[qualified_name] = Types::GenericStructDefinition.new(nested.name, nested.type_params.map(&:name), module_name: @ctx.module_name, external: raw_module?, packed: nested.packed, alignment: nested.alignment, c_name: nested_c_name, lifetime_params: nested.lifetime_params)
           end
           register_nested_struct_types(nested, parent_name: qualified_name)
         end
