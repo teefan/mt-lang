@@ -1,0 +1,14 @@
+{
+  "module_name": "std.stb_image_resize2",
+  "raw_module_name": "std.c.stb_image_resize2",
+  "raw_import_alias": "c",
+  "types": {
+    "strip_prefix": "stbir_"
+  },
+  "constants": {
+    "strip_prefix": "STBIR_"
+  },
+  "functions": {
+    "strip_prefix": "stbir_"
+  }
+}

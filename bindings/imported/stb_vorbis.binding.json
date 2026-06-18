@@ -1,0 +1,14 @@
+{
+  "module_name": "std.stb_vorbis",
+  "raw_module_name": "std.c.stb_vorbis",
+  "raw_import_alias": "c",
+  "types": {
+    "strip_prefix": "stb_vorbis_"
+  },
+  "constants": {
+    "strip_prefix": "STB_VORBIS_"
+  },
+  "functions": {
+    "strip_prefix": "stb_vorbis_"
+  }
+}

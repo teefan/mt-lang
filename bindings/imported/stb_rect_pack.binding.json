@@ -1,0 +1,12 @@
+{
+  "module_name": "std.stb_rect_pack",
+  "raw_module_name": "std.c.stb_rect_pack",
+  "raw_import_alias": "c",
+  "types": {
+    "strip_prefix": "stbrp_"
+  },
+  "constants": {},
+  "functions": {
+    "strip_prefix": "stbrp_"
+  }
+}

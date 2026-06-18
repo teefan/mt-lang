@@ -1,0 +1,10 @@
+{
+  "module_name": "std.stb_image_write",
+  "raw_module_name": "std.c.stb_image_write",
+  "raw_import_alias": "c",
+  "types": {},
+  "constants": {},
+  "functions": {
+    "strip_prefix": "stbi_"
+  }
+}
