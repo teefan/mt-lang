@@ -448,7 +448,7 @@ module MilkTea
         loop_type = infer_range_loop_type(statement.iterable, env:)
         start_expr_ast = range_start_of(statement.iterable)
         stop_expr_ast = range_end_of(statement.iterable)
-        start_setup, prepared_start = prepare_expression_for_inline_lowering(start_expr_ast, env:, expected_type: loop_type)
+        start_setup, _ = prepare_expression_for_inline_lowering(start_expr_ast, env:, expected_type: loop_type)
         stop_setup, prepared_stop = prepare_expression_for_inline_lowering(stop_expr_ast, env:, expected_type: loop_type)
 
         lowered_stop = lower_expression(prepared_stop, env:, expected_type: loop_type)

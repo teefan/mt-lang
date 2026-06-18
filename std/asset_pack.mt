@@ -37,27 +37,27 @@ struct EntryMetadata:
 
 
 public function open(path: str) -> Result[Reader, Error]:
-    let file = stdio.open(path, "rb") else:
+    let file = stdio.file_open(path, "rb") else:
         return Result[Reader, Error].failure(error= Error.open_failed)
 
     var header = zero[array[ubyte, 28]]
     let header_ptr = ptr_of(header[0])
     if not read_exact(file, header_ptr, HEADER_SIZE_BYTES):
-        stdio.close(file)
+        stdio.file_close(file)
         return Result[Reader, Error].failure(error= Error.malformed_header)
 
     if not valid_magic(header_ptr):
-        stdio.close(file)
+        stdio.file_close(file)
         return Result[Reader, Error].failure(error= Error.invalid_magic)
 
     let version = decode_u16_le(unsafe: header_ptr + 4)
     if version != VERSION:
-        stdio.close(file)
+        stdio.file_close(file)
         return Result[Reader, Error].failure(error= Error.unsupported_version)
 
     let header_bits = decode_u16_le(unsafe: header_ptr + 6)
     if header_bits != HEADER_FLAGS:
-        stdio.close(file)
+        stdio.file_close(file)
         return Result[Reader, Error].failure(error= Error.unsupported_flags)
 
     let entry_count = decode_u32_le(unsafe: header_ptr + 8)
@@ -65,7 +65,7 @@ public function open(path: str) -> Result[Reader, Error]:
     var index_size: ptr_uint
     match index_size_result:
         Result.failure as payload:
-            stdio.close(file)
+            stdio.file_close(file)
             return Result[Reader, Error].failure(error= payload.error)
         Result.success as index_payload:
             index_size = index_payload.value
@@ -74,13 +74,13 @@ public function open(path: str) -> Result[Reader, Error]:
     var data_offset: ptr_uint
     match data_offset_result:
         Result.failure as payload:
-            stdio.close(file)
+            stdio.file_close(file)
             return Result[Reader, Error].failure(error= payload.error)
         Result.success as data_payload:
             data_offset = data_payload.value
 
     if data_offset != HEADER_SIZE_BYTES + index_size:
-        stdio.close(file)
+        stdio.file_close(file)
         return Result[Reader, Error].failure(error= Error.malformed_header)
 
     return Result[Reader, Error].success(value= Reader(file = file, entry_count = entry_count))
@@ -89,7 +89,7 @@ public function open(path: str) -> Result[Reader, Error]:
 extending Reader:
     public editable function close() -> void:
         if this.file != null:
-            stdio.close(this.file)
+            stdio.file_close(this.file)
 
         this.file = null
         this.entry_count = 0
@@ -99,7 +99,7 @@ extending Reader:
         if this.file == null:
             return Result[bytes.Bytes, Error].failure(error= Error.closed)
 
-        if stdio.seek(this.file, HEADER_SIZE_BYTES, stdio.SEEK_SET) != 0:
+        if stdio.file_seek(this.file, HEADER_SIZE_BYTES, stdio.SEEK_SET) != 0:
             return Result[bytes.Bytes, Error].failure(error= Error.io)
 
         var entry_index: uint = 0
@@ -122,7 +122,7 @@ extending Reader:
                                 if metadata.stored_size != metadata.unpacked_size:
                                     return Result[bytes.Bytes, Error].failure(error= Error.malformed_index)
 
-                                if stdio.seek(this.file, ptr_int<-metadata.data_offset, stdio.SEEK_SET) != 0:
+                                if stdio.file_seek(this.file, ptr_int<-metadata.data_offset, stdio.SEEK_SET) != 0:
                                     return Result[bytes.Bytes, Error].failure(error= Error.io)
 
                                 return read_payload(this.file, metadata.stored_size)
@@ -211,7 +211,7 @@ function read_exact(file: stdio.File?, buffer: ptr[ubyte], size_bytes: ptr_uint)
     if size_bytes == 0:
         return true
 
-    return stdio.read_bytes(unsafe: ptr[void]<-buffer, 1, size_bytes, file) == size_bytes
+    return stdio.file_read_bytes(unsafe: ptr[void]<-buffer, 1, size_bytes, file) == size_bytes
 
 
 function bytes_equal_str(left: ptr[ubyte], left_len: ptr_uint, right: str) -> bool:

@@ -817,14 +817,14 @@ async function main(args: span[str]) -> void:
     var port_str = fmt.to_string_int(port)
     defer port_str.release()
 
-    stdio.print("Serving HTTP on http://0.0.0.0:%d (dir: %s)\n", port, serve_dir)
+    stdio.print_format("Serving HTTP on http://0.0.0.0:%d (dir: %s)\n", port, serve_dir)
 
     let address = net.ipv4("0.0.0.0", port) else:
-        stdio.print("failed to resolve address\n")
+        stdio.print_format("failed to resolve address\n")
         return
 
     var listener = net.listen(address, 128) else:
-        stdio.print("failed to listen\n")
+        stdio.print_format("failed to listen\n")
         return
 
     defer listener.release()
@@ -834,7 +834,7 @@ async function main(args: span[str]) -> void:
         match accept_result:
             Result.failure as accept_error:
                 var err = accept_error.error
-                stdio.print("accept error: %s\n", err.message.as_str())
+                stdio.print_format("accept error: %s\n", err.message.as_str())
                 err.release()
             Result.success as stream_ok:
                 await handle_connection(stream_ok.value, serve_dir)

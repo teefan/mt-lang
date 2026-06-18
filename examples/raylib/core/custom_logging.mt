@@ -17,7 +17,7 @@ function log_message(level: str, message: str) -> void:
         "%Y-%m-%d %H:%M:%S",
         now
     )
-    stdio.print("[%s] [%s] : %s\n", text.chars_as_str(ptr_of(timestamp_buffer[0])), level, message)
+    stdio.print_format("[%s] [%s] : %s\n", text.chars_as_str(ptr_of(timestamp_buffer[0])), level, message)
 
 
 function main() -> int:

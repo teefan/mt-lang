@@ -12,10 +12,10 @@ var test_failed: int = 0
 function check(name: str, ok: bool):
     if ok:
         test_passed += 1
-        stdio.print("  PASS: %s\n", name)
+        stdio.print_format("  PASS: %s\n", name)
     else:
         test_failed += 1
-        stdio.print("  FAIL: %s\n", name)
+        stdio.print_format("  FAIL: %s\n", name)
 
 var shared_counter: array[int, 4]
 
@@ -89,14 +89,14 @@ async function outer_prop_async() -> Result[int, int]:
 
 
 async function test_nested_await() -> int:
-    stdio.print("test_nested_await\n")
+    stdio.print_format("test_nested_await\n")
     let result = await middle_value()
     check("nested_await_chain", result == 43)
     return 0
 
 
 async function test_async_in_loop() -> int:
-    stdio.print("test_async_in_loop\n")
+    stdio.print_format("test_async_in_loop\n")
     var sum: int = 0
     var i: int = 0
     while i < 5:
@@ -108,7 +108,7 @@ async function test_async_in_loop() -> int:
 
 
 async function test_result_propagation() -> int:
-    stdio.print("test_result_propagation\n")
+    stdio.print_format("test_result_propagation\n")
     let ok_result = await may_fail_false()
     match ok_result:
         Result.success as sv:
@@ -127,7 +127,7 @@ async function test_result_propagation() -> int:
 
 
 async function test_basic_timer() -> int:
-    stdio.print("test_basic_timer\n")
+    stdio.print_format("test_basic_timer\n")
     var frame: int = 0
     while frame < 3:
         let _ = await aio.sleep(ptr_uint<-20)
@@ -137,14 +137,14 @@ async function test_basic_timer() -> int:
 
 
 async function test_zero_sleep() -> int:
-    stdio.print("test_zero_sleep\n")
+    stdio.print_format("test_zero_sleep\n")
     let _ = await aio.sleep(ptr_uint<-0)
     check("zero_sleep", true)
     return 0
 
 
 async function test_completed_check() -> int:
-    stdio.print("test_completed_check\n")
+    stdio.print_format("test_completed_check\n")
     let t = aio.sleep(ptr_uint<-30)
     check("not_completed_immediately", not aio.completed(t))
     let _ = await t
@@ -153,7 +153,7 @@ async function test_completed_check() -> int:
 
 
 async function test_fire_forget() -> int:
-    stdio.print("test_fire_forget\n")
+    stdio.print_format("test_fire_forget\n")
     shared_counter[0] = 0
     shared_counter[1] = 0
     shared_counter[2] = 0
@@ -168,7 +168,7 @@ async function test_fire_forget() -> int:
 
 
 async function test_defer_in_async() -> int:
-    stdio.print("test_defer_in_async\n")
+    stdio.print_format("test_defer_in_async\n")
     defer_cleaned = false
     let v = await with_cleanup()
     check("defer_value", v == 1)
@@ -177,7 +177,7 @@ async function test_defer_in_async() -> int:
 
 
 async function test_udp_bind_release() -> int:
-    stdio.print("test_udp_bind_release\n")
+    stdio.print_format("test_udp_bind_release\n")
     match net.ipv4("0.0.0.0", PORT_BASE + 10):
         Result.failure:
             check("udp_bind_addr", false)
@@ -196,7 +196,7 @@ async function test_udp_bind_release() -> int:
 
 
 async function test_background_tasks_survive_root() -> int:
-    stdio.print("test_background_tasks_survive_root\n")
+    stdio.print_format("test_background_tasks_survive_root\n")
     shared_counter[0] = 0
     shared_counter[1] = 0
     shared_counter[2] = 0
@@ -211,7 +211,7 @@ async function test_background_tasks_survive_root() -> int:
 
 
 async function test_multiple_concurrent_timers() -> int:
-    stdio.print("test_multiple_concurrent_timers\n")
+    stdio.print_format("test_multiple_concurrent_timers\n")
     shared_counter[3] = 0
     let _ = bg_timer_30()
     let _ = bg_timer_20()
@@ -222,7 +222,7 @@ async function test_multiple_concurrent_timers() -> int:
 
 
 async function test_error_propagation_async() -> int:
-    stdio.print("test_error_propagation_async\n")
+    stdio.print_format("test_error_propagation_async\n")
     let result = await outer_prop_async()
     match result:
         Result.failure as f:
@@ -233,7 +233,7 @@ async function test_error_propagation_async() -> int:
 
 
 async function test_release_during_active_recv() -> int:
-    stdio.print("test_release_during_active_recv\n")
+    stdio.print_format("test_release_during_active_recv\n")
     match net.ipv4("0.0.0.0", PORT_BASE + 20):
         Result.failure:
             check("recv_release_addr", false)
@@ -255,7 +255,7 @@ async function test_release_during_active_recv() -> int:
 
 
 async function test_manager_create_release() -> int:
-    stdio.print("test_manager_create_release\n")
+    stdio.print_format("test_manager_create_release\n")
     match net.ipv4("0.0.0.0", PORT_BASE + 30):
         Result.failure:
             check("mgr_addr", false)
@@ -276,7 +276,7 @@ async function test_manager_create_release() -> int:
 
 
 async function test_manager_host_client() -> int:
-    stdio.print("test_manager_host_client\n")
+    stdio.print_format("test_manager_host_client\n")
     match net.ipv4("0.0.0.0", PORT_BASE + 40):
         Result.failure:
             check("hc_addr", false)
@@ -350,7 +350,7 @@ async function cancellable_worker() -> int:
 
 
 async function test_task_cancellation() -> int:
-    stdio.print("\n--- Task Cancellation ---\n")
+    stdio.print_format("\n--- Task Cancellation ---\n")
     let task = cancellable_worker()
     task.cancel(task.frame)
     let completed = task.ready(task.frame)
@@ -367,7 +367,7 @@ async function await_in_call_args_test(x: int, y: int) -> int:
 
 
 async function test_await_in_expression_contexts() -> int:
-    stdio.print("\n--- Await in Expression Contexts ---\n")
+    stdio.print_format("\n--- Await in Expression Contexts ---\n")
 
     # await inside call argument
     let sum = await await_in_call_args_test(
@@ -395,7 +395,7 @@ async function test_await_in_expression_contexts() -> int:
 
 
 async function main() -> int:
-    stdio.print("\n=== Async/LibUV Stress Tests ===\n\n")
+    stdio.print_format("\n=== Async/LibUV Stress Tests ===\n\n")
     let _ = await test_nested_await()
     let _ = await test_async_in_loop()
     let _ = await test_result_propagation()
@@ -415,8 +415,8 @@ async function main() -> int:
     let _ = await test_await_in_expression_contexts()
 
     let total = test_passed + test_failed
-    stdio.print("\n=== %d/%d tests passed ===\n", test_passed, total)
+    stdio.print_format("\n=== %d/%d tests passed ===\n", test_passed, total)
     if test_failed > 0:
-        stdio.print("FAIL: %d test(s) failed\n", test_failed)
+        stdio.print_format("FAIL: %d test(s) failed\n", test_failed)
         return 1
     return 0

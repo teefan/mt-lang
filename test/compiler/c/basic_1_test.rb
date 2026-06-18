@@ -1566,8 +1566,8 @@ function main() -> int:
 
       function main() -> int:
           var buffer = zero[array[char, 64]]
-          stdio.print("ok=%d\\n", 1)
-          stdio.format_to(ptr_of(buffer[0]), 64, "n=%d", 7)
+          stdio.print_format("ok=%d\\n", 1)
+          stdio.str_format_bounded(ptr_of(buffer[0]), 64, "n=%d", 7)
           return 0
     MT
 

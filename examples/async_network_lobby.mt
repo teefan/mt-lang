@@ -8,29 +8,29 @@ const GAME_PORT: int = 12345
 
 
 async function main() -> int:
-    stdio.print("HOST: creating server\n")
+    stdio.print_format("HOST: creating server\n")
 
     match net.ipv4("0.0.0.0", GAME_PORT):
         Result.failure:
-            stdio.print("FAIL: addr\n")
+            stdio.print_format("FAIL: addr\n")
             return -1
         Result.success as addr_p:
             let config = mgr.NetworkConfig.default(ptr_uint<-1400)
             match mgr.create_server(addr_p.value, config):
                 Result.failure:
-                    stdio.print("FAIL: server\n")
+                    stdio.print_format("FAIL: server\n")
                     return -2
                 Result.success as mgr_p:
                     var host_mgr = mgr_p.value
-                    stdio.print("HOST: listening\n")
+                    stdio.print_format("HOST: listening\n")
 
-                    stdio.print("HOST: starting announce\n")
+                    stdio.print_format("HOST: starting announce\n")
                     var _announce = net_disc.announce(GAME_PORT, ubyte<-4, "Test")
 
-                    stdio.print("CLIENT: discovering\n")
+                    stdio.print_format("CLIENT: discovering\n")
                     match await net_disc.discover(GAME_PORT, uint<-120):
                         Result.failure:
-                            stdio.print("FAIL: discover\n")
+                            stdio.print_format("FAIL: discover\n")
                             host_mgr.release()
                             return -3
                         Result.success as servers_p:
@@ -38,39 +38,39 @@ async function main() -> int:
                             defer servers.release()
 
                             if servers.len() == ptr_uint<-0:
-                                stdio.print("FAIL: no servers\n")
+                                stdio.print_format("FAIL: no servers\n")
                                 host_mgr.release()
                                 return -4
 
                             let first_ptr = servers.get(ptr_uint<-0) else:
-                                stdio.print("FAIL: get server\n")
+                                stdio.print_format("FAIL: get server\n")
                                 host_mgr.release()
                                 return -5
 
                             let info = unsafe: read(first_ptr)
-                            stdio.print("CLIENT: found server\n")
+                            stdio.print_format("CLIENT: found server\n")
 
                             match net.ipv4("127.0.0.1", 0):
                                 Result.failure:
-                                    stdio.print("FAIL: local addr\n")
+                                    stdio.print_format("FAIL: local addr\n")
                                     host_mgr.release()
                                     return -6
                                 Result.success as la_p:
                                     match net.ipv4("127.0.0.1", info.game_port):
                                         Result.failure:
-                                            stdio.print("FAIL: remote addr\n")
+                                            stdio.print_format("FAIL: remote addr\n")
                                             host_mgr.release()
                                             return -7
                                         Result.success as sa_p:
                                             let cli_cfg = mgr.NetworkConfig.default(ptr_uint<-1400)
                                             match mgr.create_client(la_p.value, sa_p.value, cli_cfg):
                                                 Result.failure:
-                                                    stdio.print("FAIL: client\n")
+                                                    stdio.print_format("FAIL: client\n")
                                                     host_mgr.release()
                                                     return -8
                                                 Result.success as cli_p:
                                                     var client_mgr = cli_p.value
-                                                    stdio.print("CLIENT: connecting\n")
+                                                    stdio.print_format("CLIENT: connecting\n")
 
                                                     var host_ok = false
                                                     var client_ok = false
@@ -82,7 +82,7 @@ async function main() -> int:
                                                             match ev:
                                                                 Option.some as ev_p:
                                                                     if ev_p.value.kind == mgr.NetworkEventKind.player_joined:
-                                                                        stdio.print(
+                                                                        stdio.print_format(
                                                                             "HOST: joined ticks=%d\n",
                                                                             uint<-frame
                                                                         )
@@ -96,7 +96,7 @@ async function main() -> int:
                                                             match ev:
                                                                 Option.some as ev_p:
                                                                     if ev_p.value.kind == mgr.NetworkEventKind.connected:
-                                                                        stdio.print(
+                                                                        stdio.print_format(
                                                                             "CLIENT: connected id=%d\n",
                                                                             uint<-ev_p.value.player_id
                                                                         )
@@ -105,14 +105,14 @@ async function main() -> int:
                                                                     break
 
                                                         if host_ok and client_ok:
-                                                            stdio.print("SUCCESS\n")
+                                                            stdio.print_format("SUCCESS\n")
                                                             client_mgr.release()
                                                             host_mgr.release()
                                                             return 0
 
                                                         frame += 1
 
-                                                    stdio.print("FAIL: timeout\n")
+                                                    stdio.print_format("FAIL: timeout\n")
                                                     client_mgr.release()
                                                     host_mgr.release()
                                                     return -9
