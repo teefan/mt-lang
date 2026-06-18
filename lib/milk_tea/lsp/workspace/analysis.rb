@@ -14,12 +14,10 @@ module MilkTea
 
           recovery_errors = []
           tokens = MilkTea::Lexer.lex(content, path: uri, recovery_errors:)
-          recovery_errors.each { |error| log_error("LSP lex error #{uri}: #{error.message}") }
           @last_good_tokens_cache[uri] = tokens
           index_identifier_tokens(uri, tokens) if tokens
           tokens
-        rescue StandardError => e
-          log_error("LSP lex error #{uri}: #{e.message}")
+        rescue StandardError
           @last_good_tokens_cache[uri] || @tokens_cache[uri]
         end
 
@@ -28,15 +26,6 @@ module MilkTea
           return nil if tokens.nil?
 
           MilkTea::Parser.parse_collecting_errors(tokens: tokens, path: uri).ast
-        rescue StandardError => e
-          log_error("LSP parse error #{uri}: #{e.message}")
-          nil
-        end
-
-        private def log_error(message)
-          return unless @error_output
-
-          @error_output.puts(message)
         rescue StandardError
           nil
         end

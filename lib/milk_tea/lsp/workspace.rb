@@ -36,8 +36,7 @@ module MilkTea
       DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|extending|opaque|interface|event)\s+/m
       DEFINITION_NAME_REGEX = /^\s*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|extending|opaque|interface|event)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
 
-      def initialize(error_output: nil)
-        @error_output = error_output
+      def initialize
         @workspace_root_path = nil
         @dependency_resolution_mode = :auto
         @platform_override = nil

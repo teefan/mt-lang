@@ -80,7 +80,6 @@ module MilkTea
           diagnostics
         rescue StandardError => e
           cache_state = 'error'
-          log_error("LSP diagnostics error #{uri}: #{e.message}")
           warn "  #{e.backtrace.first(6).join("\n  ")}" if e.backtrace
           []
         ensure
