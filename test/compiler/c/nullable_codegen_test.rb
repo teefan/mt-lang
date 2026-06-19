@@ -5,6 +5,8 @@ require_relative "helpers"
 class NullableCodegenTest < Minitest::Test
   include CodegenTestHelpers
 
+  # --- existing: local variable nullable assignment (block.rb fix) ---
+
   def test_assign_string_to_nullable_variable
     source = <<~MT
       # module demo.nullable
@@ -69,5 +71,53 @@ class NullableCodegenTest < Minitest::Test
     generated = generate_c_from_program_source(source)
     assert_match(/nullable_assign/, generated,
                 "nullable struct assignment must use temp variable")
+  end
+
+  # --- new: variant constructor nullable field (expressions.rb fix) ---
+
+  def test_non_nullable_local_to_nullable_variant_field
+    source = <<~MT
+      # module demo.nullvariant
+
+      struct Decl:
+          value: int?
+          body: int?
+
+      function wrap_value(raw: int) -> Decl:
+          return Decl(value = raw, body = raw)
+
+      function main() -> int:
+          let decl = wrap_value(42)
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+    assert_match(/\.body = &raw\b/, generated,
+                "non-nullable local passed to nullable variant field must use address-of")
+  end
+
+  def test_already_nullable_local_to_nullable_variant_field
+    source = <<~MT
+      # module demo.nullboth
+
+      struct Expr:
+          inner: int?
+
+      function get_inner() -> int:
+          return 10
+
+      function build_expr() -> Expr:
+          var opt: int? = null
+          opt = get_inner()
+          return Expr(inner = opt)
+
+      function main() -> int:
+          let e = build_expr()
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+    assert_match(/\.inner = opt\b/, generated,
+                "already-nullable local should pass directly (no extra &)")
   end
 end
