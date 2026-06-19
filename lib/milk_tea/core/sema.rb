@@ -45,15 +45,7 @@ module MilkTea
       def initialize(ast:, module_name:, module_kind:, directives:, imports:, types:, interfaces:, attributes:, attribute_applications:, values:, functions:, methods:, implemented_interfaces:, local_completion_frames:, binding_resolution:, callable_value_identifier_sites:, callable_value_member_access_sites:, required_unsafe_lines:, uses_parallel_for:, resolved_expr_types: {}) = super
     end
     Facts = Analysis
-    ToolingSnapshot = Data.define(:facts, :diagnostics) do
-      def analysis
-        facts
-      end
-
-      def ok?
-        diagnostics.none?(&:error?)
-      end
-    end
+    ToolingSnapshot = Data.define(:facts, :diagnostics)
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
     BindingResolution = Data.define(
@@ -250,9 +242,6 @@ module MilkTea
             end
           end
         end
-      end
-
-      def collect_emit_from_inline_else(stmt)
       end
 
       def collect_emit_from_node(node)

@@ -239,32 +239,6 @@ module MilkTea
       end
     end
 
-    def import_graph(program)
-      graph = {}
-      program.analyses_by_path.each do |path, analysis|
-        module_name = analysis.module_name.to_s
-        ast_imports = analysis.ast.respond_to?(:imports) ? analysis.ast.imports : []
-        deps = ast_imports.map { |import| import.path.to_s }
-        graph[module_name] = deps
-      end
-      graph
-    end
-
-    def reverse_import_graph(program)
-      reverse = {}
-      program.analyses_by_path.each do |path, analysis|
-        module_name = analysis.module_name.to_s
-        reverse[module_name] ||= []
-        ast_imports = analysis.ast.respond_to?(:imports) ? analysis.ast.imports : []
-        ast_imports.each do |import|
-          imported = import.path.to_s
-          reverse[imported] ||= []
-          reverse[imported] << module_name unless reverse[imported].include?(module_name)
-        end
-      end
-      reverse
-    end
-
     def imported_modules_for_ast(ast, importer_path: nil)
       modules = {}
 
