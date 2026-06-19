@@ -1260,7 +1260,7 @@ module MilkTea
         when AST::Identifier
           binding = lookup_value(expression.name, env)
           if binding
-            lower_bound_identifier(binding)
+            lower_bound_identifier(binding, expected_type:)
           elsif @ctx.functions.key?(expression.name)
             function_binding = @ctx.functions.fetch(expression.name)
             raise LoweringError, "generic function #{expression.name} cannot be used as a value" if function_binding.type_params.any?

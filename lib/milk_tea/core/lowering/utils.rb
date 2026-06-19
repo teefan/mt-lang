@@ -990,7 +990,7 @@ module MilkTea
         raise LoweringError, "unsupported let-else storage type #{storage_type}"
       end
 
-      def lower_bound_identifier(binding)
+      def lower_bound_identifier(binding, expected_type: nil)
         storage_type = binding[:storage_type]
         visible_type = binding[:type]
         projection = binding[:projection]
@@ -1011,7 +1011,12 @@ module MilkTea
         end
 
         return IR::Name.new(name: binding[:linkage_name], type: visible_type, pointer: binding[:pointer]) if visible_type == storage_type
-        return IR::Name.new(name: binding[:linkage_name], type: visible_type, pointer: binding[:pointer]) if storage_type.is_a?(Types::Nullable) && storage_type.base == visible_type
+        if storage_type.is_a?(Types::Nullable) && storage_type.base == visible_type
+          name = IR::Name.new(name: binding[:linkage_name], type: storage_type, pointer: binding[:pointer])
+          return name if pointer_type?(storage_type.base)
+          return name if expected_type == storage_type
+          return IR::Unary.new(operator: "*", operand: name, type: visible_type)
+        end
 
         if result_let_else_type?(storage_type) && let_else_success_type(storage_type) == visible_type
           local_ref = IR::Name.new(name: binding[:linkage_name], type: storage_type, pointer: binding[:pointer])
