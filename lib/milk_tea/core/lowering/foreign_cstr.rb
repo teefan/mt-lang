@@ -22,19 +22,19 @@ module MilkTea
 
         lowered << IR::LocalDecl.new(
           name: items_name,
-          c_name: items_name,
+          linkage_name: items_name,
           type: items_type,
           value: IR::NullLiteral.new(type: items_type),
         )
         lowered << IR::LocalDecl.new(
           name: data_name,
-          c_name: data_name,
+          linkage_name: data_name,
           type: data_type,
           value: IR::NullLiteral.new(type: data_type),
         )
         lowered << IR::LocalDecl.new(
           name: len_name,
-          c_name: len_name,
+          linkage_name: len_name,
           type: len_type,
           value: IR::IntegerLiteral.new(value: 0, type: len_type),
         )
@@ -116,7 +116,7 @@ module MilkTea
 
         lowered << IR::LocalDecl.new(
           name: items_name,
-          c_name: items_name,
+          linkage_name: items_name,
           type: items_array_type,
           value: IR::ArrayLiteral.new(type: items_array_type, elements: items),
         )

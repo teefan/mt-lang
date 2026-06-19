@@ -10,15 +10,15 @@ module MilkTea
           def emitted_constants
             @emitted_constants ||= begin
               constants_by_name = @program.constants.each_with_object({}) do |constant, result|
-                result[constant.c_name] = constant
+                result[constant.linkage_name] = constant
               end
               referenced_names = {}
               root_module_prefix = "#{module_c_prefix(@program.module_name)}_"
 
               @program.constants.each do |constant|
-                next unless constant.c_name.start_with?(root_module_prefix)
+                next unless constant.linkage_name.start_with?(root_module_prefix)
 
-                referenced_names[constant.c_name] = true
+                referenced_names[constant.linkage_name] = true
                 collect_referenced_constant_names_from_expression(constant.value, constants_by_name, referenced_names)
               end
 
@@ -35,20 +35,20 @@ module MilkTea
                 collect_referenced_constant_names_from_statements(function.body, constants_by_name, referenced_names)
               end
 
-              @program.constants.select { |constant| referenced_names[constant.c_name] }
+              @program.constants.select { |constant| referenced_names[constant.linkage_name] }
             end
           end
 
           def emitted_functions
             @emitted_functions ||= begin
               functions_by_name = @program.functions.each_with_object({}) do |function, result|
-                result[function.c_name] = function
+                result[function.linkage_name] = function
               end
 
               seeds = @program.functions.select(&:entry_point)
               if seeds.empty?
                 root_module_prefix = "#{module_c_prefix(@program.module_name)}_"
-                seeds = @program.functions.select { |function| function.c_name.start_with?(root_module_prefix) }
+                seeds = @program.functions.select { |function| function.linkage_name.start_with?(root_module_prefix) }
               end
 
               reachable_names = {}
@@ -56,9 +56,9 @@ module MilkTea
 
               until worklist.empty?
                 function = worklist.shift
-                next if reachable_names[function.c_name]
+                next if reachable_names[function.linkage_name]
 
-                reachable_names[function.c_name] = true
+                reachable_names[function.linkage_name] = true
                 collect_called_function_names_from_statements(function.body, functions_by_name, reachable_names, worklist)
               end
 
@@ -68,13 +68,13 @@ module MilkTea
 
               until worklist.empty?
                 function = worklist.shift
-                next if reachable_names[function.c_name]
+                next if reachable_names[function.linkage_name]
 
-                reachable_names[function.c_name] = true
+                reachable_names[function.linkage_name] = true
                 collect_called_function_names_from_statements(function.body, functions_by_name, reachable_names, worklist)
               end
 
-              @program.functions.select { |function| reachable_names[function.c_name] }
+              @program.functions.select { |function| reachable_names[function.linkage_name] }
             end
           end
 
@@ -90,8 +90,8 @@ module MilkTea
 
             emitted_functions.each do |fn|
               prefix = module_c_prefix(@program.module_name)
-              if fn.c_name != prefix && !fn.c_name.start_with?("#{prefix}_")
-                candidate = fn.c_name.split("_")
+              if fn.linkage_name != prefix && !fn.linkage_name.start_with?("#{prefix}_")
+                candidate = fn.linkage_name.split("_")
                 candidate.pop
                 active << candidate.join("_")
               end
@@ -206,18 +206,18 @@ module MilkTea
             return decls if decls.all? { |d| d.source_module.nil? }
 
             active_modules = collect_active_module_names
-            by_c_name = decls.each_with_object({}) { |d, h| h[d.c_name] = d }
+            by_c_name = decls.each_with_object({}) { |d, h| h[d.linkage_name] = d }
 
             reachable = Set.new
             decls.each do |decl|
               next unless decl.source_module.nil? || active_modules.include?(decl.source_module)
-              reachable << decl.c_name
+              reachable << decl.linkage_name
             end
 
             worklist = reachable.to_a
             until worklist.empty?
-              c_name = worklist.shift
-              decl = by_c_name[c_name]
+              linkage_name = worklist.shift
+              decl = by_c_name[linkage_name]
               next unless decl
 
               deps = aggregate_decl_dependencies(decl)
@@ -229,40 +229,40 @@ module MilkTea
               end
             end
 
-            decls.select { |d| reachable.include?(d.c_name) }
+            decls.select { |d| reachable.include?(d.linkage_name) }
           end
 
           def emitted_globals
             @emitted_globals ||= begin
               root_module_prefix = "#{module_c_prefix(@program.module_name)}_"
               reachable_names = {}
-              @program.globals.select { |g| g.c_name.start_with?(root_module_prefix) }.each { |g| reachable_names[g.c_name] = true }
+              @program.globals.select { |g| g.linkage_name.start_with?(root_module_prefix) }.each { |g| reachable_names[g.linkage_name] = true }
 
               emitted_functions.each do |function|
                 traverse_ir_statements(function.body) do |expression|
                   next unless expression.is_a?(IR::Name)
-                  global = @program.globals.find { |g| g.c_name == expression.name }
+                  global = @program.globals.find { |g| g.linkage_name == expression.name }
                   next unless global
-                  next if reachable_names[global.c_name]
-                  reachable_names[global.c_name] = true
+                  next if reachable_names[global.linkage_name]
+                  reachable_names[global.linkage_name] = true
                   traverse_ir_expression(global.value) do |inner|
                     next unless inner.is_a?(IR::Name)
-                    dep = @program.globals.find { |g| g.c_name == inner.name }
-                    reachable_names[dep.c_name] = true if dep
+                    dep = @program.globals.find { |g| g.linkage_name == inner.name }
+                    reachable_names[dep.linkage_name] = true if dep
                   end
                 end
               end
 
               @program.globals.each do |global|
-                next unless reachable_names[global.c_name]
+                next unless reachable_names[global.linkage_name]
                 traverse_ir_expression(global.value) do |inner|
                   next unless inner.is_a?(IR::Name)
-                  dep = @program.globals.find { |g| g.c_name == inner.name }
-                  reachable_names[dep.c_name] = true if dep
+                  dep = @program.globals.find { |g| g.linkage_name == inner.name }
+                  reachable_names[dep.linkage_name] = true if dep
                 end
               end
 
-              @program.globals.select { |g| reachable_names[g.c_name] }
+              @program.globals.select { |g| reachable_names[g.linkage_name] }
             end
           end
 
@@ -271,12 +271,12 @@ module MilkTea
               case expression
               when IR::Name
                 callee = functions_by_name[expression.name]
-                worklist << callee if callee && !reachable_names[callee.c_name]
+                worklist << callee if callee && !reachable_names[callee.linkage_name]
               when IR::Call
                 next unless expression.callee.is_a?(String)
 
                 callee = functions_by_name[expression.callee]
-                worklist << callee if callee && !reachable_names[callee.c_name]
+                worklist << callee if callee && !reachable_names[callee.linkage_name]
               end
             end
           end
@@ -286,12 +286,12 @@ module MilkTea
               case candidate
               when IR::Name
                 callee = functions_by_name[candidate.name]
-                worklist << callee if callee && !reachable_names[callee.c_name]
+                worklist << callee if callee && !reachable_names[callee.linkage_name]
               when IR::Call
                 next unless candidate.callee.is_a?(String)
 
                 callee = functions_by_name[candidate.callee]
-                worklist << callee if callee && !reachable_names[callee.c_name]
+                worklist << callee if callee && !reachable_names[callee.linkage_name]
               end
             end
           end
@@ -312,9 +312,9 @@ module MilkTea
 
               constant = constants_by_name[expression.name]
               next unless constant
-              next if referenced_names[constant.c_name]
+              next if referenced_names[constant.linkage_name]
 
-              referenced_names[constant.c_name] = true
+              referenced_names[constant.linkage_name] = true
               traverse_ir_expression(constant.value, &constant_reference_visitor(constants_by_name, referenced_names))
             end
           end

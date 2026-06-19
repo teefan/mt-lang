@@ -117,7 +117,7 @@ class MilkTeaNullableCallbackFFITest < Minitest::Test
       end
 
       program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
-      MilkTea::Codegen.generate_c(program)
+      MilkTea::Codegen.generate_c(MilkTea::Lowering.lower(program))
     end
   end
 end

@@ -147,7 +147,7 @@ module MilkTea
           when :event_subscribe
             if expression.arguments.length == 2
               IR::Call.new(
-                callee: runtime.fetch(:subscribe_stateful_c_name),
+                callee: runtime.fetch(:subscribe_stateful_linkage_name),
                 arguments: [
                   event_pointer,
                   lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:void_ptr)),
@@ -157,7 +157,7 @@ module MilkTea
               )
             else
               IR::Call.new(
-                callee: runtime.fetch(:subscribe_c_name),
+                callee: runtime.fetch(:subscribe_linkage_name),
                 arguments: [
                   event_pointer,
                   lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:listener_type)),
@@ -168,7 +168,7 @@ module MilkTea
           when :event_subscribe_once
             if expression.arguments.length == 2
               IR::Call.new(
-                callee: runtime.fetch(:subscribe_once_stateful_c_name),
+                callee: runtime.fetch(:subscribe_once_stateful_linkage_name),
                 arguments: [
                   event_pointer,
                   lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:void_ptr)),
@@ -178,7 +178,7 @@ module MilkTea
               )
             else
               IR::Call.new(
-                callee: runtime.fetch(:subscribe_once_c_name),
+                callee: runtime.fetch(:subscribe_once_linkage_name),
                 arguments: [
                   event_pointer,
                   lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:listener_type)),
@@ -188,7 +188,7 @@ module MilkTea
             end
           when :event_unsubscribe
             IR::Call.new(
-              callee: runtime.fetch(:unsubscribe_c_name),
+              callee: runtime.fetch(:unsubscribe_linkage_name),
               arguments: [
                 event_pointer,
                 lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @ctx.types.fetch("Subscription")),
@@ -200,9 +200,9 @@ module MilkTea
             if event_type.payload_type
               arguments << lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: event_type.payload_type)
             end
-            IR::Call.new(callee: runtime.fetch(:emit_c_name), arguments:, type:)
+            IR::Call.new(callee: runtime.fetch(:emit_linkage_name), arguments:, type:)
           when :event_wait
-            IR::Call.new(callee: runtime.fetch(:wait_c_name), arguments: [event_pointer], type:)
+            IR::Call.new(callee: runtime.fetch(:wait_linkage_name), arguments: [event_pointer], type:)
           end
         when :atomic_load, :atomic_store, :atomic_add, :atomic_sub, :atomic_exchange, :atomic_compare_exchange
           lower_atomic_method_call(kind, receiver, expression, env:, type:)
@@ -558,7 +558,7 @@ module MilkTea
 
         unless cleanup_statements.empty?
           result_name = fresh_c_temp_name(env, "foreign_result")
-          lowered << IR::LocalDecl.new(name: result_name, c_name: result_name, type: call_type, value: lowered_call)
+          lowered << IR::LocalDecl.new(name: result_name, linkage_name: result_name, type: call_type, value: lowered_call)
           lowered.concat(cleanup_statements)
           return [lowered, IR::Name.new(name: result_name, type: call_type, pointer: false)]
         end
@@ -569,7 +569,7 @@ module MilkTea
       def consuming_foreign_release_assignments(foreign_call, env:)
         consuming_foreign_release_bindings(foreign_call, env:).map do |binding|
           IR::Assignment.new(
-            target: IR::Name.new(name: binding[:c_name], type: binding[:storage_type], pointer: binding[:pointer]),
+            target: IR::Name.new(name: binding[:linkage_name], type: binding[:storage_type], pointer: binding[:pointer]),
             operator: "=",
             value: IR::NullLiteral.new(type: binding[:storage_type]),
           )
@@ -627,7 +627,7 @@ module MilkTea
           if public_value.is_a?(IR::Name)
             current_actual_scope(mapping_env[:scopes])[entry[:public_alias]] = local_binding(
               type: entry[:parameter].type,
-              c_name: public_value.name,
+              linkage_name: public_value.name,
               mutable: false,
               pointer: public_value.pointer,
             )
@@ -638,13 +638,13 @@ module MilkTea
           public_temp_name = fresh_c_temp_name(env, "foreign_arg_public")
           lowered << IR::LocalDecl.new(
             name: public_temp_name,
-            c_name: public_temp_name,
+            linkage_name: public_temp_name,
             type: entry[:parameter].type,
             value: public_value,
           )
           current_actual_scope(mapping_env[:scopes])[entry[:public_alias]] = local_binding(
             type: entry[:parameter].type,
-            c_name: public_temp_name,
+            linkage_name: public_temp_name,
             mutable: false,
             pointer: false,
           )
@@ -681,11 +681,11 @@ module MilkTea
             temp_name = fresh_c_temp_name(env, "foreign_arg")
             lowered << IR::LocalDecl.new(
               name: temp_name,
-              c_name: temp_name,
+              linkage_name: temp_name,
               type: temp_type,
               value: lowered_value,
             )
-            current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, c_name: temp_name, mutable: false, pointer: false)
+            current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, linkage_name: temp_name, mutable: false, pointer: false)
             replacements[param_ast.name] = IR::Name.new(name: temp_name, type: temp_type, pointer: false)
             if temporary_foreign_cstr_expression?(lowered_value)
               cleanup << IR::ExpressionStmt.new(
@@ -697,7 +697,7 @@ module MilkTea
               )
             end
           else
-            current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, c_name: param_ast.name, mutable: false, pointer: false)
+            current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, linkage_name: param_ast.name, mutable: false, pointer: false)
             replacements[param_ast.name] = lowered_value
           end
         end
@@ -826,11 +826,11 @@ module MilkTea
         temp_name = fresh_c_temp_name(env, "foreign_in")
         lowered << IR::LocalDecl.new(
           name: temp_name,
-          c_name: temp_name,
+          linkage_name: temp_name,
           type: parameter.type,
           value: lower_contextual_expression(operand, env: source_env, expected_type: parameter.type),
         )
-        current_actual_scope(source_env[:scopes])[temp_name] = local_binding(type: parameter.type, c_name: temp_name, mutable: false, pointer: false)
+        current_actual_scope(source_env[:scopes])[temp_name] = local_binding(type: parameter.type, linkage_name: temp_name, mutable: false, pointer: false)
 
         AST::Argument.new(
           name: argument.name,
@@ -928,13 +928,13 @@ module MilkTea
           public_alias = param_ast.boundary_type ? foreign_mapping_public_alias_name(param_ast.name) : nil
 
           if reference_counts.fetch(param_ast.name, 0).positive?
-            current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, c_name: param_ast.name, mutable: false, pointer: false)
+            current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, linkage_name: param_ast.name, mutable: false, pointer: false)
             replacements[param_ast.name] = lower_foreign_argument_value(parameter, expression.arguments.fetch(index), env:)
           end
 
           next unless public_alias && reference_counts.fetch(public_alias, 0).positive?
 
-          current_actual_scope(mapping_env[:scopes])[public_alias] = local_binding(type: parameter.type, c_name: public_alias, mutable: false, pointer: false)
+          current_actual_scope(mapping_env[:scopes])[public_alias] = local_binding(type: parameter.type, linkage_name: public_alias, mutable: false, pointer: false)
           replacements[public_alias] = lower_contextual_expression(expression.arguments.fetch(index).value, env:, expected_type: parameter.type)
         end
 
@@ -990,7 +990,7 @@ module MilkTea
         temp_name = fresh_c_temp_name(env, "foreign_arg")
         lowered << IR::LocalDecl.new(
           name: temp_name,
-          c_name: temp_name,
+          linkage_name: temp_name,
           type: @ctx.types.fetch("cstr"),
           value: lowered_argument,
         )

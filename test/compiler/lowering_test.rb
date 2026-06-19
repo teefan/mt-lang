@@ -24,7 +24,7 @@ class MilkTeaLoweringTest < Minitest::Test
     assert_includes names, "WIDTH"
     assert_includes names, "HEIGHT"
     assert_includes names, "LABEL"
-    assert ir.constants.all? { |c| c.c_name }, "all constants must have c_name"
+    assert ir.constants.all? { |c| c.linkage_name }, "all constants must have linkage_name"
   end
 
   def test_lowers_globals
@@ -43,7 +43,7 @@ class MilkTeaLoweringTest < Minitest::Test
     names = ir.globals.map(&:name)
     assert_includes names, "counter"
     assert_includes names, "scratch"
-    assert ir.globals.all? { |g| g.c_name }, "all globals must have c_name"
+    assert ir.globals.all? { |g| g.linkage_name }, "all globals must have linkage_name"
   end
 
   # ── Structs, unions, enums ────────────────────────────────────────────────

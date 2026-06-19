@@ -53,7 +53,7 @@ module MilkTea
           when "opaque"
             name = emitted_name(declaration[:name])
             line = "opaque #{name}"
-            line += " = c#{declaration[:c_name].inspect}" if declaration[:c_name]
+            line += " = c#{declaration[:linkage_name].inspect}" if declaration[:linkage_name]
             [line]
           when "enum", "flags"
             emit_enum_declaration(declaration[:kind], emitted_name(declaration[:name]), declaration[:node])

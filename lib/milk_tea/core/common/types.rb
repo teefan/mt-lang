@@ -800,7 +800,7 @@ module MilkTea
         nil
       end
 
-      def c_name
+      def linkage_name
         "mt_subscription"
       end
 
@@ -832,7 +832,7 @@ module MilkTea
         nil
       end
 
-      def c_name
+      def linkage_name
         "void*"
       end
 
@@ -856,7 +856,7 @@ module MilkTea
     end
 
     class Event < Base
-      attr_reader :name, :capacity, :payload_type, :module_name, :visibility, :owner_type_name, :c_name
+      attr_reader :name, :capacity, :payload_type, :module_name, :visibility, :owner_type_name, :linkage_name
 
       def initialize(name, capacity:, payload_type: nil, module_name: nil, visibility: :private, owner_type_name: nil)
         @name = name
@@ -865,7 +865,7 @@ module MilkTea
         @module_name = module_name
         @visibility = visibility
         @owner_type_name = owner_type_name
-        @c_name = begin
+        @linkage_name = begin
           parts = ["mt_event"]
           parts << module_name&.gsub(/[^A-Za-z0-9_]+/, "_")
           parts << owner_type_name&.gsub(/[^A-Za-z0-9_]+/, "_")
@@ -905,10 +905,10 @@ module MilkTea
     end
 
     class GenericStructDefinition < Base
-      attr_reader :name, :type_params, :type_param_constraints, :module_name, :external, :packed, :alignment, :c_name, :lifetime_params
+      attr_reader :name, :type_params, :type_param_constraints, :module_name, :external, :packed, :alignment, :linkage_name, :lifetime_params
       attr_accessor :ast_declaration
 
-      def initialize(name, type_params, module_name: nil, external: false, packed: false, alignment: nil, c_name: nil, lifetime_params: [])
+      def initialize(name, type_params, module_name: nil, external: false, packed: false, alignment: nil, linkage_name: nil, lifetime_params: [])
         @name = name
         @type_params = type_params.freeze
         @type_param_constraints = {}.freeze
@@ -916,7 +916,7 @@ module MilkTea
         @external = external
         @packed = packed
         @alignment = alignment
-        @c_name = c_name
+        @linkage_name = linkage_name
         @lifetime_params = lifetime_params.freeze
         @fields = {}
         @events = {}
@@ -987,13 +987,13 @@ module MilkTea
           other.external == external &&
           other.packed == packed &&
           other.alignment == alignment &&
-          other.c_name == c_name
+          other.linkage_name == linkage_name
       end
 
       alias == eql?
 
       def hash
-        [self.class, name, type_params, module_name, external, packed, alignment, c_name].hash
+        [self.class, name, type_params, module_name, external, packed, alignment, linkage_name].hash
       end
 
       def instantiate(arguments)
@@ -1021,16 +1021,16 @@ module MilkTea
     end
 
     class Struct < Base
-      attr_reader :name, :module_name, :external, :packed, :alignment, :c_name, :lifetime_params, :nested_types
+      attr_reader :name, :module_name, :external, :packed, :alignment, :linkage_name, :lifetime_params, :nested_types
       attr_accessor :ast_declaration
 
-      def initialize(name, module_name: nil, external: false, packed: false, alignment: nil, c_name: nil, lifetime_params: [])
+      def initialize(name, module_name: nil, external: false, packed: false, alignment: nil, linkage_name: nil, lifetime_params: [])
         @name = name
         @module_name = module_name
         @external = external
         @packed = packed
         @alignment = alignment
-        @c_name = c_name
+        @linkage_name = linkage_name
         @lifetime_params = lifetime_params.freeze
         @fields = {}
         @events = {}
@@ -1104,13 +1104,13 @@ module MilkTea
           other.external == external &&
           other.packed == packed &&
           other.alignment == alignment &&
-          other.c_name == c_name
+          other.linkage_name == linkage_name
       end
 
       alias == eql?
 
       def hash
-        [self.class, name, module_name, external, packed, alignment, c_name].hash
+        [self.class, name, module_name, external, packed, alignment, linkage_name].hash
       end
 
       def to_s
@@ -1128,7 +1128,7 @@ module MilkTea
           external: definition.external,
           packed: definition.packed,
           alignment: definition.alignment,
-          c_name: definition.c_name,
+          linkage_name: definition.linkage_name,
           lifetime_params: definition.lifetime_params,
         )
         @definition = definition
@@ -1312,13 +1312,13 @@ module MilkTea
     end
 
     class Opaque < Base
-      attr_reader :name, :module_name, :external, :c_name
+      attr_reader :name, :module_name, :external, :linkage_name
 
-      def initialize(name, module_name: nil, external: false, c_name: nil)
+      def initialize(name, module_name: nil, external: false, linkage_name: nil)
         @name = name
         @module_name = module_name
         @external = external
-        @c_name = c_name
+        @linkage_name = linkage_name
       end
 
       def eql?(other)
@@ -1326,13 +1326,13 @@ module MilkTea
           other.name == name &&
           other.module_name == module_name &&
           other.external == external &&
-          other.c_name == c_name
+          other.linkage_name == linkage_name
       end
 
       alias == eql?
 
       def hash
-        [self.class, name, module_name, external, c_name].hash
+        [self.class, name, module_name, external, linkage_name].hash
       end
 
       def to_s
@@ -1768,27 +1768,27 @@ module MilkTea
     end
 
     class DynVtable < Base
-      attr_reader :c_name, :interface_name, :fields
+      attr_reader :linkage_name, :interface_name, :fields
 
       def initialize(interface_name, fields = {})
         @interface_name = interface_name
-        @c_name = "mt_vtable_#{interface_name}"
+        @linkage_name = "mt_vtable_#{interface_name}"
         @fields = fields
         freeze
       end
 
       def eql?(other)
-        other.is_a?(DynVtable) && other.c_name == c_name
+        other.is_a?(DynVtable) && other.linkage_name == linkage_name
       end
 
       alias == eql?
 
       def hash
-        [self.class, c_name].hash
+        [self.class, linkage_name].hash
       end
 
       def to_s
-        c_name
+        linkage_name
       end
 
       def field(name)

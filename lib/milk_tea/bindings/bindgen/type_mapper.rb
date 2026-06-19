@@ -324,11 +324,11 @@ module MilkTea
           when "va_list"
             return if @synthetic_declarations.any? { |declaration| declaration[:name] == "va_list" }
 
-            @synthetic_declarations << { kind: "opaque", name: "va_list", c_name: "va_list" }
+            @synthetic_declarations << { kind: "opaque", name: "va_list", linkage_name: "va_list" }
           when "__va_list_tag"
             return if @synthetic_declarations.any? { |declaration| declaration[:name] == "__va_list_tag" }
 
-            @synthetic_declarations << { kind: "opaque", name: "__va_list_tag", c_name: "__va_list_tag" }
+            @synthetic_declarations << { kind: "opaque", name: "__va_list_tag", linkage_name: "__va_list_tag" }
           end
         end
 
@@ -609,7 +609,7 @@ module MilkTea
           @synthetic_declarations << {
             kind: "opaque",
             name: visible_name,
-            c_name: "#{kind} #{tag_name}",
+            linkage_name: "#{kind} #{tag_name}",
           }
         end
 

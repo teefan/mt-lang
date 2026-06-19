@@ -5,7 +5,7 @@ module MilkTea
     class Artifacts
       attr_accessor :synthetic_structs, :synthetic_enums, :synthetic_functions, :synthetic_constants
       attr_accessor :emitted_declarations, :external_layout_assertions, :emitted_external_layout_pairs
-      attr_accessor :lowered_function_c_names, :event_runtime_infos
+      attr_accessor :lowered_function_linkage_names, :event_runtime_infos
       attr_accessor :subscription_runtime_emitted, :event_error_enum_emitted
 
       def initialize
@@ -16,7 +16,7 @@ module MilkTea
         @emitted_declarations = []
         @external_layout_assertions = []
         @emitted_external_layout_pairs = {}
-        @lowered_function_c_names = {}
+        @lowered_function_linkage_names = {}
         @event_runtime_infos = {}
         @subscription_runtime_emitted = false
         @event_error_enum_emitted = false

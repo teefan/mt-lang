@@ -84,7 +84,7 @@ module MilkTea
 
     def ensure_dyn_vtable_struct(interface)
       vtable_c_name = "mt_vtable_#{interface.name}"
-      return if @artifacts.synthetic_structs.any? { |s| s.c_name == vtable_c_name }
+      return if @artifacts.synthetic_structs.any? { |s| s.linkage_name == vtable_c_name }
 
       void_ptr = Types::GenericInstance.new("ptr", [Types::Primitive.new("void")])
       fields = interface.methods.map do |method_name, method_binding|
@@ -95,7 +95,7 @@ module MilkTea
 
       @artifacts.synthetic_structs << IR::StructDecl.new(
         name: "vtable_#{interface.name}",
-        c_name: vtable_c_name,
+        linkage_name: vtable_c_name,
         fields:,
         packed: false,
         alignment: nil,
@@ -120,8 +120,8 @@ module MilkTea
         is_editable = method_ast.kind == :editable
 
         params = [
-          IR::Param.new(name: "data", c_name: "data", type: void_ptr, pointer: false),
-          *method_binding.params.map.with_index { |p, i| IR::Param.new(name: p.name, c_name: p.name || "arg#{i}", type: p.type, pointer: false) },
+          IR::Param.new(name: "data", linkage_name: "data", type: void_ptr, pointer: false),
+          *method_binding.params.map.with_index { |p, i| IR::Param.new(name: p.name, linkage_name: p.name || "arg#{i}", type: p.type, pointer: false) },
         ]
 
         body = if is_editable
@@ -180,7 +180,7 @@ module MilkTea
 
         @artifacts.synthetic_functions << IR::Function.new(
           name: "__dyn_#{concrete_type_name}_#{method_name}",
-          c_name: wrapper_c_name,
+          linkage_name: wrapper_c_name,
           params:,
           return_type: method_binding.return_type,
           body:,
@@ -201,7 +201,7 @@ module MilkTea
       end
       @artifacts.synthetic_constants << IR::Constant.new(
         name: vtable_c_name,
-        c_name: vtable_c_name,
+        linkage_name: vtable_c_name,
         type: vtable_full,
         value: IR::AggregateLiteral.new(type: vtable_full, fields:),
       )

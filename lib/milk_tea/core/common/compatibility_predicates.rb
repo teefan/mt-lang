@@ -327,14 +327,14 @@ module MilkTea
 
     def same_external_opaque_c_name?(actual_type, expected_type)
       return false unless actual_type.is_a?(Types::Opaque) && expected_type.is_a?(Types::Opaque)
-      return false unless actual_type.external || actual_type.c_name
-      return false unless expected_type.external || expected_type.c_name
+      return false unless actual_type.external || actual_type.linkage_name
+      return false unless expected_type.external || expected_type.linkage_name
 
       foreign_opaque_c_name(actual_type) == foreign_opaque_c_name(expected_type)
     end
 
     def foreign_opaque_c_name(type)
-      type.c_name || type.name
+      type.linkage_name || type.name
     end
 
     def foreign_identity_projection_reinterpret_compatible?(actual_type, expected_type)

@@ -33,16 +33,16 @@ module MilkTea
               case statement
               when IR::LocalDecl
                 if array_type?(statement.type) && statement.value.is_a?(IR::Call)
-                  lines = ["#{indent}#{c_declaration(statement.type, statement.c_name)};"]
-                  lines << emit_array_call_statement(statement.value, emit_array_out_argument(statement.c_name), indent)
+                  lines = ["#{indent}#{c_declaration(statement.type, statement.linkage_name)};"]
+                  lines << emit_array_call_statement(statement.value, emit_array_out_argument(statement.linkage_name), indent)
                   lines
                 elsif array_type?(statement.type) && !statement.value.is_a?(IR::ArrayLiteral) && !statement.value.is_a?(IR::ZeroInit)
-                  lines = ["#{indent}#{c_declaration(statement.type, statement.c_name)};"]
-                  lines << emit_array_copy_statement(statement.c_name, statement.value, indent)
+                  lines = ["#{indent}#{c_declaration(statement.type, statement.linkage_name)};"]
+                  lines << emit_array_copy_statement(statement.linkage_name, statement.value, indent)
                   lines
                 else
                   [
-                    "#{indent}#{c_declaration(statement.type, statement.c_name)} = #{emit_initializer(statement.value)};",
+                    "#{indent}#{c_declaration(statement.type, statement.linkage_name)} = #{emit_initializer(statement.value)};",
                   ]
                 end
               when IR::Assignment
@@ -225,13 +225,13 @@ module MilkTea
           def fold_single_use_local_alias(source_decl, alias_decl, remaining_statements)
             return unless source_decl.is_a?(IR::LocalDecl)
             return unless alias_decl.is_a?(IR::LocalDecl)
-            return unless compiler_generated_local_name?(source_decl.c_name)
+            return unless compiler_generated_local_name?(source_decl.linkage_name)
             return if array_type?(source_decl.type) || array_type?(alias_decl.type)
             return unless source_decl.type == alias_decl.type
-            return unless alias_decl.value.is_a?(IR::Name) && alias_decl.value.name == source_decl.c_name
-            return unless name_reference_count_in_statements(remaining_statements, source_decl.c_name).zero?
+            return unless alias_decl.value.is_a?(IR::Name) && alias_decl.value.name == source_decl.linkage_name
+            return unless name_reference_count_in_statements(remaining_statements, source_decl.linkage_name).zero?
 
-            IR::LocalDecl.new(name: alias_decl.name, c_name: alias_decl.c_name, type: alias_decl.type, value: source_decl.value)
+            IR::LocalDecl.new(name: alias_decl.name, linkage_name: alias_decl.linkage_name, type: alias_decl.type, value: source_decl.value)
           end
 
           def compiler_generated_local_name?(name)
@@ -243,11 +243,11 @@ module MilkTea
             return unless if_stmt.is_a?(IR::IfStmt)
             return unless bool_type?(local_decl.type)
 
-            condition_kind = single_use_bool_if_condition_kind(if_stmt.condition, local_decl.c_name)
+            condition_kind = single_use_bool_if_condition_kind(if_stmt.condition, local_decl.linkage_name)
             return unless condition_kind
-            return unless name_reference_count_in_statements(if_stmt.then_body, local_decl.c_name).zero?
-            return unless name_reference_count_in_statements(if_stmt.else_body || [], local_decl.c_name).zero?
-            return unless name_reference_count_in_statements(remaining_statements, local_decl.c_name).zero?
+            return unless name_reference_count_in_statements(if_stmt.then_body, local_decl.linkage_name).zero?
+            return unless name_reference_count_in_statements(if_stmt.else_body || [], local_decl.linkage_name).zero?
+            return unless name_reference_count_in_statements(remaining_statements, local_decl.linkage_name).zero?
 
             condition = if condition_kind == :direct
                           local_decl.value
@@ -491,7 +491,7 @@ module MilkTea
             when IR::LocalDecl
               raise CBackendError, "array for-loop init declarations are unsupported" if array_type?(statement.type)
 
-              "#{c_declaration(statement.type, statement.c_name)} = #{emit_initializer(statement.value)}"
+              "#{c_declaration(statement.type, statement.linkage_name)} = #{emit_initializer(statement.value)}"
             when IR::Assignment
               if array_type?(statement.target.type) && statement.operator == "="
                 raise CBackendError, "array for-loop assignment clauses are unsupported"

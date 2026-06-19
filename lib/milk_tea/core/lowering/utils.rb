@@ -46,7 +46,7 @@ module MilkTea
             if field_info && frame_expr
               target = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:storage_type])
               binding_c = async_frame_field_c_name(field_info[:field_name])
-              arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: binding_c, mutable: false, pointer: false)
+              arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: binding_c, mutable: false, pointer: false)
               data_expr = IR::Member.new(receiver: scrutinee_expr, member: "data", type: nil)
               arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
               binding_decl = IR::Assignment.new(target:, operator: "=", value: arm_expr)
@@ -54,8 +54,8 @@ module MilkTea
               data_expr = IR::Member.new(receiver: scrutinee_expr, member: "data", type: nil)
               arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
               binding_c = c_local_name(arm.binding_name)
-              arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: binding_c, mutable: false, pointer: false)
-              binding_decl = IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_type, value: arm_expr)
+              arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: binding_c, mutable: false, pointer: false)
+              binding_decl = IR::LocalDecl.new(name: arm.binding_name, linkage_name: binding_c, type: payload_type, value: arm_expr)
             end
           end
         end
@@ -72,7 +72,7 @@ module MilkTea
 
         fields = scrutinee_type.arm(arm_name)
         payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
-        arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: c_local_name(arm.binding_name), mutable: true, pointer: false)
+        arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: c_local_name(arm.binding_name), mutable: true, pointer: false)
       end
 
       def array_type?(type)
@@ -191,7 +191,7 @@ module MilkTea
         iter_name = "__mt_for_iterable__"
         iterator_name = "__mt_for_iterator__"
         probe_env = duplicate_env(env)
-        current_actual_scope(probe_env[:scopes])[iter_name] = local_binding(type:, c_name: iter_name, mutable: false, pointer: false)
+        current_actual_scope(probe_env[:scopes])[iter_name] = local_binding(type:, linkage_name: iter_name, mutable: false, pointer: false)
 
         iter_call = AST::Call.new(
           callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iter_name), member: "iter"),
@@ -199,7 +199,7 @@ module MilkTea
         )
         iterator_type = infer_expression_type(iter_call, env: probe_env)
 
-        current_actual_scope(probe_env[:scopes])[iterator_name] = local_binding(type: iterator_type, c_name: iterator_name, mutable: true, pointer: false)
+        current_actual_scope(probe_env[:scopes])[iterator_name] = local_binding(type: iterator_type, linkage_name: iterator_name, mutable: true, pointer: false)
         next_call = AST::Call.new(
           callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iterator_name), member: "next"),
           arguments: [],
@@ -372,7 +372,7 @@ module MilkTea
           {
             type: binding.type,
             storage_type: binding.storage_type,
-            c_name: value_c_name(name),
+            linkage_name: value_c_name(name),
             mutable: binding.mutable,
             pointer: false,
             cstr_backed: cstr_trackable_type?(binding.type) && binding.const_value.is_a?(String),
@@ -497,8 +497,8 @@ module MilkTea
         declaration
       end
 
-      def local_binding(type:, c_name:, mutable:, pointer:, storage_type: nil, projection: nil, cstr_backed: false, cstr_list_backed: false, const_value: nil)
-        { type:, storage_type: storage_type || type, c_name:, mutable:, pointer:, projection:, cstr_backed:, cstr_list_backed:, const_value: }
+      def local_binding(type:, linkage_name:, mutable:, pointer:, storage_type: nil, projection: nil, cstr_backed: false, cstr_list_backed: false, const_value: nil)
+        { type:, storage_type: storage_type || type, linkage_name:, mutable:, pointer:, projection:, cstr_backed:, cstr_list_backed:, const_value: }
       end
 
       def callable_type?(type)
@@ -996,34 +996,34 @@ module MilkTea
         projection = binding[:projection]
 
         if projection == :result_success_value
-          local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+          local_ref = IR::Name.new(name: binding[:linkage_name], type: storage_type, pointer: binding[:pointer])
           return variant_binding_projection_expression(local_ref, storage_type, "success", "value", visible_type)
         end
 
         if projection == :result_failure_error
-          local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+          local_ref = IR::Name.new(name: binding[:linkage_name], type: storage_type, pointer: binding[:pointer])
           return variant_binding_projection_expression(local_ref, storage_type, "failure", "error", visible_type)
         end
 
         if projection == :option_some_value
-          local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+          local_ref = IR::Name.new(name: binding[:linkage_name], type: storage_type, pointer: binding[:pointer])
           return variant_binding_projection_expression(local_ref, storage_type, "some", "value", visible_type)
         end
 
-        return IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer]) if visible_type == storage_type
-        return IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer]) if storage_type.is_a?(Types::Nullable) && storage_type.base == visible_type
+        return IR::Name.new(name: binding[:linkage_name], type: visible_type, pointer: binding[:pointer]) if visible_type == storage_type
+        return IR::Name.new(name: binding[:linkage_name], type: visible_type, pointer: binding[:pointer]) if storage_type.is_a?(Types::Nullable) && storage_type.base == visible_type
 
         if result_let_else_type?(storage_type) && let_else_success_type(storage_type) == visible_type
-          local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+          local_ref = IR::Name.new(name: binding[:linkage_name], type: storage_type, pointer: binding[:pointer])
           return variant_binding_projection_expression(local_ref, storage_type, "success", "value", visible_type)
         end
 
         if option_let_else_type?(storage_type) && let_else_success_type(storage_type) == visible_type
-          local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+          local_ref = IR::Name.new(name: binding[:linkage_name], type: storage_type, pointer: binding[:pointer])
           return variant_binding_projection_expression(local_ref, storage_type, "some", "value", visible_type)
         end
 
-        IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer])
+        IR::Name.new(name: binding[:linkage_name], type: visible_type, pointer: binding[:pointer])
       end
 
       def variant_binding_projection_expression(storage_expr, storage_type, arm_name, field_name, field_type)
@@ -1147,7 +1147,7 @@ module MilkTea
             operand_setup + [
               IR::LocalDecl.new(
                 name: result_name,
-                c_name: result_name,
+                linkage_name: result_name,
                 type: storage_type,
                 value: lower_contextual_expression(operand, env:, expected_type: storage_type),
               ),
@@ -1168,7 +1168,7 @@ module MilkTea
           operand_setup + [
             IR::LocalDecl.new(
               name: result_name,
-              c_name: result_name,
+              linkage_name: result_name,
               type: storage_type,
               value: lower_contextual_expression(operand, env:, expected_type: storage_type),
             ),
@@ -1187,8 +1187,8 @@ module MilkTea
           return "nullable_#{c_type_name(type.base)}"
         end
 
-        if type.respond_to?(:c_name) && type.c_name
-          return type.c_name
+        if type.respond_to?(:linkage_name) && type.linkage_name
+          return type.linkage_name
         end
 
         if type.is_a?(Types::GenericInstance)
@@ -1212,13 +1212,13 @@ module MilkTea
       end
 
       def opaque_c_type_name(type)
-        type.c_name || c_type_name(type)
+        type.linkage_name || c_type_name(type)
       end
 
       def opaque_forward_declarable?(type)
         return false unless opaque_c_type_name(type).match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
 
-        !type.external || type.c_name.nil?
+        !type.external || type.linkage_name.nil?
       end
 
       def forward_declarable_external_opaque?(type)
@@ -1378,7 +1378,7 @@ module MilkTea
       def lower_assignment_binding_target(binding)
         storage_type = binding[:storage_type]
         visible_type = binding[:type]
-        storage_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+        storage_ref = IR::Name.new(name: binding[:linkage_name], type: storage_type, pointer: binding[:pointer])
 
         case binding[:projection]
         when :result_success_value
@@ -1387,7 +1387,7 @@ module MilkTea
           variant_binding_projection_expression(storage_ref, storage_type, "some", "value", visible_type)
         else
           if visible_type == storage_type || (storage_type.is_a?(Types::Nullable) && storage_type.base == visible_type)
-            IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer])
+            IR::Name.new(name: binding[:linkage_name], type: visible_type, pointer: binding[:pointer])
           else
             storage_ref
           end

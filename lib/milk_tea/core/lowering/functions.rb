@@ -19,24 +19,24 @@ module MilkTea
               next if binding.body_return_type == Types::BUILTIN_TYPE_META_TYPE
               if binding.type_params.any?
                 binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
-                  c_name = function_binding_c_name(instance, module_name: @ctx.module_name)
-                  next if @artifacts.lowered_function_c_names[c_name]
+                  linkage_name = function_binding_c_name(instance, module_name: @ctx.module_name)
+                  next if @artifacts.lowered_function_linkage_names[linkage_name]
 
                   lowered << lower_function_decl(instance)
-                  @artifacts.lowered_function_c_names[c_name] = true
+                  @artifacts.lowered_function_linkage_names[linkage_name] = true
                   changed = true
                 end
               else
-                c_name = function_binding_c_name(binding, module_name: @ctx.module_name)
-                next if @artifacts.lowered_function_c_names[c_name]
+                linkage_name = function_binding_c_name(binding, module_name: @ctx.module_name)
+                next if @artifacts.lowered_function_linkage_names[linkage_name]
 
                 lowered << lower_function_decl(binding)
-                @artifacts.lowered_function_c_names[c_name] = true
+                @artifacts.lowered_function_linkage_names[linkage_name] = true
                 if (entrypoint = build_root_main_entrypoint(binding))
-                  next if @artifacts.lowered_function_c_names[entrypoint.c_name]
+                  next if @artifacts.lowered_function_linkage_names[entrypoint.linkage_name]
 
                   lowered << entrypoint
-                  @artifacts.lowered_function_c_names[entrypoint.c_name] = true
+                  @artifacts.lowered_function_linkage_names[entrypoint.linkage_name] = true
                 end
                 changed = true
               end
@@ -46,19 +46,19 @@ module MilkTea
                 binding = @ctx.methods.fetch(receiver_type).fetch(method.kind == :static ? "static:#{method.name}" : method.name)
                 if binding.type_params.any?
                   binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
-                    c_name = function_binding_c_name(instance, module_name: @ctx.module_name, receiver_type:)
-                    next if @artifacts.lowered_function_c_names[c_name]
+                    linkage_name = function_binding_c_name(instance, module_name: @ctx.module_name, receiver_type:)
+                    next if @artifacts.lowered_function_linkage_names[linkage_name]
 
                     lowered << lower_function_decl(instance, receiver_type:)
-                    @artifacts.lowered_function_c_names[c_name] = true
+                    @artifacts.lowered_function_linkage_names[linkage_name] = true
                     changed = true
                   end
                 else
-                  c_name = function_binding_c_name(binding, module_name: @ctx.module_name, receiver_type:)
-                  next if @artifacts.lowered_function_c_names[c_name]
+                  linkage_name = function_binding_c_name(binding, module_name: @ctx.module_name, receiver_type:)
+                  next if @artifacts.lowered_function_linkage_names[linkage_name]
 
                   lowered << lower_function_decl(binding, receiver_type:)
-                  @artifacts.lowered_function_c_names[c_name] = true
+                  @artifacts.lowered_function_linkage_names[linkage_name] = true
                   changed = true
                 end
               end
@@ -117,16 +117,16 @@ module MilkTea
         body_params = binding.body_params.dup
         if binding.type.receiver_type
           receiver_binding = body_params.shift
-          c_name = c_local_name(receiver_binding.name)
+          linkage_name = c_local_name(receiver_binding.name)
           env[:scopes].last[receiver_binding.name] = local_binding(
             type: receiver_binding.type,
-            c_name:,
+            linkage_name:,
             mutable: receiver_binding.mutable,
             pointer: receiver_by_pointer,
           )
           params << IR::Param.new(
             name: receiver_binding.name,
-            c_name:,
+            linkage_name:,
             type: receiver_binding.type,
             pointer: receiver_by_pointer,
           )
@@ -135,20 +135,20 @@ module MilkTea
         body_params.each_with_index do |param_binding, index|
           type = param_binding.type
 
-          c_name = c_local_name(param_binding.name)
+          linkage_name = c_local_name(param_binding.name)
           if array_type?(type)
-            input_c_name = "#{c_name}_input"
-            params << IR::Param.new(name: param_binding.name, c_name: input_c_name, type:, pointer: false)
-            env[:scopes].last[param_binding.name] = local_binding(type:, c_name:, mutable: false, pointer: false)
+            input_linkage_name = "#{linkage_name}_input"
+            params << IR::Param.new(name: param_binding.name, linkage_name: input_linkage_name, type:, pointer: false)
+            env[:scopes].last[param_binding.name] = local_binding(type:, linkage_name:, mutable: false, pointer: false)
             parameter_setup << IR::LocalDecl.new(
               name: param_binding.name,
-              c_name:,
+              linkage_name:,
               type:,
-              value: IR::Name.new(name: input_c_name, type:, pointer: false),
+              value: IR::Name.new(name: input_linkage_name, type:, pointer: false),
             )
           else
-            env[:scopes].last[param_binding.name] = local_binding(type:, c_name:, mutable: false, pointer: false)
-            params << IR::Param.new(name: param_binding.name, c_name:, type:, pointer: false)
+            env[:scopes].last[param_binding.name] = local_binding(type:, linkage_name:, mutable: false, pointer: false)
+            params << IR::Param.new(name: param_binding.name, linkage_name:, type:, pointer: false)
           end
         end
 
@@ -158,7 +158,7 @@ module MilkTea
 
         IR::Function.new(
           name: decl.name,
-          c_name: function_binding_c_name(binding, module_name: @ctx.module_name, receiver_type:),
+          linkage_name: function_binding_c_name(binding, module_name: @ctx.module_name, receiver_type:),
           params:,
           return_type:,
           body:,
@@ -172,61 +172,61 @@ module MilkTea
       def lower_async_function_decl(binding, receiver_type: nil)
         decl = binding.ast
         normalized_statements = normalize_async_body(binding, decl.body)
-        constructor_c_name = function_binding_c_name(binding, module_name: @ctx.module_name, receiver_type:)
-        frame_c_name = "#{constructor_c_name}__frame"
-        resume_c_name = "#{constructor_c_name}__resume"
-        ready_c_name = "#{constructor_c_name}__ready"
-        set_waiter_c_name = "#{constructor_c_name}__set_waiter"
-        release_c_name = "#{constructor_c_name}__release"
-        take_result_c_name = "#{constructor_c_name}__take_result"
-        cancel_c_name = "#{constructor_c_name}__cancel"
+        constructor_linkage_name = function_binding_c_name(binding, module_name: @ctx.module_name, receiver_type:)
+        frame_linkage_name = "#{constructor_linkage_name}__frame"
+        resume_linkage_name = "#{constructor_linkage_name}__resume"
+        ready_linkage_name = "#{constructor_linkage_name}__ready"
+        set_waiter_linkage_name = "#{constructor_linkage_name}__set_waiter"
+        release_linkage_name = "#{constructor_linkage_name}__release"
+        take_result_linkage_name = "#{constructor_linkage_name}__take_result"
+        cancel_linkage_name = "#{constructor_linkage_name}__cancel"
 
         async_info = analyze_async_function(binding, normalized_statements)
-        frame_type = build_async_frame_type(frame_c_name, async_info)
+        frame_type = build_async_frame_type(frame_linkage_name, async_info)
 
         @artifacts.synthetic_structs << IR::StructDecl.new(
-          name: frame_c_name,
-          c_name: frame_c_name,
+          name: frame_linkage_name,
+          linkage_name: frame_linkage_name,
           fields: frame_type.fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
           packed: false,
           alignment: nil,
         )
-        @artifacts.synthetic_functions << build_async_resume_function(binding, normalized_statements, frame_type, resume_c_name, async_info)
-        @artifacts.synthetic_functions << build_async_ready_function(frame_type, ready_c_name, async_info)
-        @artifacts.synthetic_functions << build_async_set_waiter_function(frame_type, set_waiter_c_name, async_info)
-        @artifacts.synthetic_functions << build_async_release_function(frame_type, release_c_name, async_info)
-        @artifacts.synthetic_functions << build_async_take_result_function(frame_type, take_result_c_name, async_info)
-        @artifacts.synthetic_functions << build_async_cancel_function(frame_type, cancel_c_name, async_info)
+        @artifacts.synthetic_functions << build_async_resume_function(binding, normalized_statements, frame_type, resume_linkage_name, async_info)
+        @artifacts.synthetic_functions << build_async_ready_function(frame_type, ready_linkage_name, async_info)
+        @artifacts.synthetic_functions << build_async_set_waiter_function(frame_type, set_waiter_linkage_name, async_info)
+        @artifacts.synthetic_functions << build_async_release_function(frame_type, release_linkage_name, async_info)
+        @artifacts.synthetic_functions << build_async_take_result_function(frame_type, take_result_linkage_name, async_info)
+        @artifacts.synthetic_functions << build_async_cancel_function(frame_type, cancel_linkage_name, async_info)
 
         if root_main_entrypoint_signature(binding)
           @artifacts.synthetic_functions << build_async_constructor_function(
             binding,
             decl,
             frame_type,
-            constructor_c_name,
-            resume_c_name,
-            ready_c_name,
-            set_waiter_c_name,
-            release_c_name,
-            take_result_c_name,
-            cancel_c_name,
+            constructor_linkage_name,
+            resume_linkage_name,
+            ready_linkage_name,
+            set_waiter_linkage_name,
+            release_linkage_name,
+            take_result_linkage_name,
+            cancel_linkage_name,
             async_info,
           )
 
-          return build_async_main_entrypoint(binding, constructor_c_name, async_info)
+          return build_async_main_entrypoint(binding, constructor_linkage_name, async_info)
         end
 
         build_async_constructor_function(
           binding,
           decl,
           frame_type,
-          constructor_c_name,
-          resume_c_name,
-          ready_c_name,
-          set_waiter_c_name,
-          release_c_name,
-          take_result_c_name,
-          cancel_c_name,
+          constructor_linkage_name,
+          resume_linkage_name,
+          ready_linkage_name,
+          set_waiter_linkage_name,
+          release_linkage_name,
+          take_result_linkage_name,
+          cancel_linkage_name,
           async_info,
         )
       end

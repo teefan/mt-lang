@@ -106,7 +106,7 @@ module MilkTea
               base = dyn_type_name(type)
               pointer ? "#{base}*" : base
             when Types::DynVtable
-              base = type.c_name
+              base = type.linkage_name
               pointer ? "#{base}*" : base
             when Types::Function
               base = c_declaration(type, "")
@@ -122,7 +122,7 @@ module MilkTea
                 base = external_opaque_c_type(type)
                 pointer ? "#{base}*" : base
               else
-                base = type.c_name || named_type_c_name(type)
+                base = type.linkage_name || named_type_c_name(type)
                 pointer ? "#{base}**" : "#{base}*"
               end
             when Types::Vector
@@ -194,8 +194,8 @@ module MilkTea
               return "#{named_type_c_name(type.variant_type)}_#{type.arm_name}"
             end
 
-            if type.respond_to?(:c_name) && type.c_name
-              return type.c_name
+            if type.respond_to?(:linkage_name) && type.linkage_name
+              return type.linkage_name
             end
 
             base_name = type.module_name&.start_with?("std.c.") ? type.name : type.module_name ? "#{module_c_prefix(type.module_name)}_#{type.name}" : type.name
@@ -205,7 +205,7 @@ module MilkTea
           end
 
           def external_opaque_c_type(type)
-            type.c_name || type.name
+            type.linkage_name || type.name
           end
 
           def sanitize_identifier(text)

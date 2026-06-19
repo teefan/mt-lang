@@ -40,10 +40,10 @@ module MilkTea
         @indent -= 1
       end
 
-      def binding_name(name, c_name)
-        return c_name if name.nil? || name.empty? || name == c_name
+      def binding_name(name, linkage_name)
+        return linkage_name if name.nil? || name.empty? || name == linkage_name
 
-        "#{name} as #{c_name}"
+        "#{name} as #{linkage_name}"
       end
 
       def precedence(operator)
@@ -883,11 +883,11 @@ module MilkTea
       end
 
       def emit_constant(constant)
-        line("const #{binding_name(constant.name, constant.c_name)}: #{constant.type} = #{render_expression(constant.value)}")
+        line("const #{binding_name(constant.name, constant.linkage_name)}: #{constant.type} = #{render_expression(constant.value)}")
       end
 
       def emit_struct(struct_decl)
-        header = "struct #{binding_name(struct_decl.name, struct_decl.c_name)}"
+        header = "struct #{binding_name(struct_decl.name, struct_decl.linkage_name)}"
         params = []
         if struct_decl.respond_to?(:lifetime_params) && struct_decl.lifetime_params&.any?
           params.push(*struct_decl.lifetime_params)
@@ -907,7 +907,7 @@ module MilkTea
       end
 
       def emit_union(union_decl)
-        line("union #{binding_name(union_decl.name, union_decl.c_name)}:")
+        line("union #{binding_name(union_decl.name, union_decl.linkage_name)}:")
         with_indent do
           union_decl.fields.each do |field|
             line("#{field.name}: #{field.type}")
@@ -917,10 +917,10 @@ module MilkTea
 
       def emit_enum(enum_decl)
         kind = enum_decl.flags ? "flags" : "enum"
-        line("#{kind} #{binding_name(enum_decl.name, enum_decl.c_name)}: #{enum_decl.backing_type}")
+        line("#{kind} #{binding_name(enum_decl.name, enum_decl.linkage_name)}: #{enum_decl.backing_type}")
         with_indent do
           enum_decl.members.each do |member|
-            line("#{binding_name(member.name, member.c_name)} = #{render_expression(member.value)}")
+            line("#{binding_name(member.name, member.linkage_name)} = #{render_expression(member.value)}")
           end
         end
       end
@@ -930,7 +930,7 @@ module MilkTea
       end
 
       def emit_function(function)
-        header = "fn #{binding_name(function.name || function.c_name, function.c_name)}(#{function.params.map { |param| render_param(param) }.join(', ')}) -> #{function.return_type}"
+        header = "fn #{binding_name(function.name || function.linkage_name, function.linkage_name)}(#{function.params.map { |param| render_param(param) }.join(', ')}) -> #{function.return_type}"
         header += " [entry]" if function.entry_point
         header += ":"
         line(header)
@@ -943,13 +943,13 @@ module MilkTea
 
       def render_param(param)
         type = param.pointer ? "ptr[#{param.type}]" : param.type.to_s
-        "#{binding_name(param.name, param.c_name)}: #{type}"
+        "#{binding_name(param.name, param.linkage_name)}: #{type}"
       end
 
       def emit_statement(statement)
         case statement
         when IR::LocalDecl
-          line("let #{binding_name(statement.name, statement.c_name)}: #{statement.type} = #{render_expression(statement.value)}")
+          line("let #{binding_name(statement.name, statement.linkage_name)}: #{statement.type} = #{render_expression(statement.value)}")
         when IR::Assignment
           line("#{render_expression(statement.target)} #{statement.operator} #{render_expression(statement.value)}")
         when IR::BlockStmt
@@ -1086,7 +1086,7 @@ module MilkTea
       def render_for_clause_statement(statement)
         case statement
         when IR::LocalDecl
-          "#{statement.c_name}: #{statement.type} = #{render_expression(statement.value)}"
+          "#{statement.linkage_name}: #{statement.type} = #{render_expression(statement.value)}"
         when IR::Assignment
           "#{render_expression(statement.target)} #{statement.operator} #{render_expression(statement.value)}"
         when IR::ExpressionStmt

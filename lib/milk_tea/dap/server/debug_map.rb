@@ -98,7 +98,7 @@ module MilkTea
 
           rewritten = variables.each_with_object([]) do |variable, kept|
             raw_name = dap_value(variable, "name").to_s
-            entry = @debug_map.variable_for(function.c_name, raw_name)
+            entry = @debug_map.variable_for(function.linkage_name, raw_name)
 
             if entry
               dap_set(variable, "name", entry.name)
@@ -132,8 +132,8 @@ module MilkTea
           function = debug_function_for_variables_reference(arguments["variablesReference"])
           return rewritten unless function
 
-          if (entry = @debug_map.source_variable_for(function.c_name, arguments["name"]))
-            rewritten["name"] = entry.c_name
+          if (entry = @debug_map.source_variable_for(function.linkage_name, arguments["name"]))
+            rewritten["name"] = entry.linkage_name
           end
           rewritten["value"] = rewrite_expression_for_function(arguments["value"], function)
           rewritten
@@ -146,8 +146,8 @@ module MilkTea
             function = debug_function_for_variables_reference(arguments["variablesReference"])
             return rewritten unless function
 
-            if (entry = @debug_map.source_variable_for(function.c_name, arguments["name"]))
-              rewritten["name"] = entry.c_name
+            if (entry = @debug_map.source_variable_for(function.linkage_name, arguments["name"]))
+              rewritten["name"] = entry.linkage_name
             end
             return rewritten
           end
@@ -214,8 +214,8 @@ module MilkTea
                 next
               end
 
-              entry = @debug_map.source_variable_for(function.c_name, identifier)
-              rewritten << (entry ? entry.c_name : identifier)
+              entry = @debug_map.source_variable_for(function.linkage_name, identifier)
+              rewritten << (entry ? entry.linkage_name : identifier)
               next
             end
 
