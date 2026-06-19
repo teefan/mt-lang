@@ -29,7 +29,10 @@ module MilkTea
         args << lifetime if lifetime
         args.concat(arguments.map do |argument|
           value = argument.value
-          value.respond_to?(:to_s) ? value.to_s : value.inspect
+          case value
+          when IntegerLiteral, FloatLiteral then value.lexeme
+          else value.to_s
+          end
         end)
         unless args.empty?
           text += "[#{args.join(', ')}]"
