@@ -131,7 +131,7 @@ module MilkTea
     end
 
     class Checker
-      include TypeCompatibilityPredicates
+      include CompatibilityHelpers
 
       attr_reader :ctx
 

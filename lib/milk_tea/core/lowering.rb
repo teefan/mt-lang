@@ -72,7 +72,7 @@ module MilkTea
   OrderResolution = Data.define(:target_type, :binding, :callee_name)
 
   class Lowerer
-    include TypeCompatibilityPredicates
+    include CompatibilityHelpers
 
     def initialize(program)
       @program = program

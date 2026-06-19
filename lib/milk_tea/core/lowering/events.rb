@@ -7,7 +7,7 @@ module MilkTea
       def event_method_kind(receiver_type, member_name)
         return unless receiver_type.is_a?(Types::Event)
 
-        TypeCompatibilityPredicates::EVENT_METHOD_KINDS[member_name]
+        CompatibilityHelpers::EVENT_METHOD_KINDS[member_name]
       end
 
       def event_method_type(kind, event_type)
