@@ -15,7 +15,7 @@ async function main() -> int:
             stdio.print_format("FAIL: addr\n")
             return -1
         Result.success as addr_p:
-            let config = mgr.NetworkConfig.default(ptr_uint<-1400)
+            let config = mgr.NetworkConfig.default(1400z)
             match mgr.create_server(addr_p.value, config):
                 Result.failure:
                     stdio.print_format("FAIL: server\n")
@@ -25,10 +25,10 @@ async function main() -> int:
                     stdio.print_format("HOST: listening\n")
 
                     stdio.print_format("HOST: starting announce\n")
-                    var _announce = net_disc.announce(GAME_PORT, ubyte<-4, "Test")
+                    var _announce = net_disc.announce(GAME_PORT, 4ub, "Test")
 
                     stdio.print_format("CLIENT: discovering\n")
-                    match await net_disc.discover(GAME_PORT, uint<-120):
+                    match await net_disc.discover(GAME_PORT, 120u):
                         Result.failure:
                             stdio.print_format("FAIL: discover\n")
                             host_mgr.release()
@@ -37,12 +37,12 @@ async function main() -> int:
                             var servers = servers_p.value
                             defer servers.release()
 
-                            if servers.len() == ptr_uint<-0:
+                            if servers.len() == 0z:
                                 stdio.print_format("FAIL: no servers\n")
                                 host_mgr.release()
                                 return -4
 
-                            let first_ptr = servers.get(ptr_uint<-0) else:
+                            let first_ptr = servers.get(0z) else:
                                 stdio.print_format("FAIL: get server\n")
                                 host_mgr.release()
                                 return -5
@@ -62,7 +62,7 @@ async function main() -> int:
                                             host_mgr.release()
                                             return -7
                                         Result.success as sa_p:
-                                            let cli_cfg = mgr.NetworkConfig.default(ptr_uint<-1400)
+                                            let cli_cfg = mgr.NetworkConfig.default(1400z)
                                             match mgr.create_client(la_p.value, sa_p.value, cli_cfg):
                                                 Result.failure:
                                                     stdio.print_format("FAIL: client\n")

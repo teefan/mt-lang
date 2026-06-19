@@ -28,7 +28,7 @@ function main() -> int:
             r = ubyte<-rl.get_random_value(200, 240),
             g = ubyte<-rl.get_random_value(200, 240),
             b = ubyte<-rl.get_random_value(200, 250),
-            a = ubyte<-255
+            a = 255ub
         )
         building_index += 1
 

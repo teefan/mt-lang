@@ -94,7 +94,7 @@ extending Counter[T]:
         if this.total > heap.ptr_uint_max - amount:
             fatal(c"counter.Counter.add total count overflow")
 
-        let current = this.values.get_or_insert(value, ptr_uint<-0)
+        let current = this.values.get_or_insert(value, 0z)
         unsafe:
             if read(current) > heap.ptr_uint_max - amount:
                 fatal(c"counter.Counter.add entry count overflow")

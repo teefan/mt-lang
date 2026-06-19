@@ -11,7 +11,7 @@ function load_render_texture_depth_tex(width: int, height: int) -> rl.RenderText
     var target = zero[rl.RenderTexture2D]
     target.id = rlgl.load_framebuffer()
 
-    if target.id > uint<-0:
+    if target.id > 0u:
         rlgl.enable_framebuffer(target.id)
 
         target.texture = rl.Texture(
@@ -57,7 +57,7 @@ function load_render_texture_depth_tex(width: int, height: int) -> rl.RenderText
 
 
 function unload_render_texture_depth_tex(target: rl.RenderTexture2D) -> void:
-    if target.id > uint<-0:
+    if target.id > 0u:
         rlgl.unload_texture(target.texture.id)
         rlgl.unload_texture(target.depth.id)
         rlgl.unload_framebuffer(target.id)

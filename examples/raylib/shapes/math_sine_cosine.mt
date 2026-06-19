@@ -76,14 +76,14 @@ function main() -> int:
             0,
             580,
             rl.get_screen_height(),
-            rl.Color(r = ubyte<-218, g = ubyte<-218, b = ubyte<-218, a = ubyte<-255)
+            rl.Color(r = 218ub, g = 218ub, b = 218ub, a = 255ub)
         )
         rl.draw_rectangle(
             580,
             0,
             rl.get_screen_width(),
             rl.get_screen_height(),
-            rl.Color(r = ubyte<-232, g = ubyte<-232, b = ubyte<-232, a = ubyte<-255)
+            rl.Color(r = 232ub, g = 232ub, b = 232ub, a = 255ub)
         )
 
         rl.draw_circle_lines_v(center, radius, rl.GRAY)

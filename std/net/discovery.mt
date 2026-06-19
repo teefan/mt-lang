@@ -42,7 +42,7 @@ public function build_response(
     max_players: ubyte,
     game_name: str
 ) -> bytes.Bytes:
-    var w = bin.Writer.with_capacity(probe_bytes + ptr_uint<-6 + ptr_uint<-game_name.len)
+    var w = bin.Writer.with_capacity(probe_bytes + 6z + ptr_uint<-game_name.len)
     w.write_ubyte(discovery_magic[0])
     w.write_ubyte(discovery_magic[1])
     w.write_ubyte(discovery_magic[2])

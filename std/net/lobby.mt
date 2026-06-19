@@ -183,7 +183,7 @@ public function create_lobby_on(
             var slots = vec.Vec[PlayerSlot].create()
             var i: ubyte = 0
             while i < info.max_players:
-                slots.push(PlayerSlot(player_id = uint<-0, player_name = string.String.create(), occupied = false))
+                slots.push(PlayerSlot(player_id = 0u, player_name = string.String.create(), occupied = false))
                 i += 1
             let host = LobbyHost(
                 mux = p.value,
@@ -508,7 +508,7 @@ async function handle_join_request(host: ref[LobbyHost], msg: ref[mux.MuxedMessa
                 player_id = other_id,
                 player_name = string.String.from_str(player_name.as_str()),
                 slot = slot,
-                reason = ubyte<-0
+                reason = 0ub
             ))
 
 
@@ -551,7 +551,7 @@ function handle_join_accept(client: ref[LobbyClient], msg: ref[mux.MuxedMessage]
                         player_id = id_payload.value,
                         player_name = string.String.create(),
                         slot = slot_payload.value,
-                        reason = ubyte<-0
+                        reason = 0ub
                     ))
 
 
@@ -563,9 +563,9 @@ function handle_join_reject_client(client: ref[LobbyClient], msg: ref[mux.MuxedM
     msg.release()
     client.event_queue.push_back(LobbyEvent(
         kind = LobbyEventKind.join_rejected,
-        player_id = uint<-0,
+        player_id = 0u,
         player_name = string.String.create(),
-        slot = ubyte<-0,
+        slot = 0ub,
         reason = reason
     ))
 
@@ -599,7 +599,7 @@ function handle_player_joined_client(client: ref[LobbyClient], msg: ref[mux.Muxe
                                 player_id = id_payload.value,
                                 player_name = name,
                                 slot = slot_payload.value,
-                                reason = ubyte<-0
+                                reason = 0ub
                             ))
 
 
@@ -622,7 +622,7 @@ function handle_player_left_client(client: ref[LobbyClient], msg: ref[mux.MuxedM
                 kind = LobbyEventKind.player_left,
                 player_id = id_payload.value,
                 player_name = string.String.create(),
-                slot = ubyte<-0,
+                slot = 0ub,
                 reason = reason
             ))
 
@@ -631,10 +631,10 @@ function handle_lobby_info_client(client: ref[LobbyClient], msg: ref[mux.MuxedMe
     msg.release()
     client.event_queue.push_back(LobbyEvent(
         kind = LobbyEventKind.lobby_info_updated,
-        player_id = uint<-0,
+        player_id = 0u,
         player_name = string.String.create(),
-        slot = ubyte<-0,
-        reason = ubyte<-0
+        slot = 0ub,
+        reason = 0ub
     ))
 
 
@@ -725,7 +725,7 @@ public function build_beacon_response(info: ref[LobbyInfo]) -> bytes.Bytes:
 
 
 public function parse_beacon_response(data: span[ubyte]) -> Result[LobbyInfo, net.Error]:
-    if data.len < ptr_uint<-10:
+    if data.len < 10z:
         return Result[LobbyInfo, net.Error].failure(
             error = net.Error(code = -1, message = string.String.from_str("beacon response too short"))
         )
@@ -741,7 +741,7 @@ public function parse_beacon_response(data: span[ubyte]) -> Result[LobbyInfo, ne
 
 
 function decode_lobby_info_payload_offset(data: span[ubyte], offset: ptr_uint) -> Result[LobbyInfo, net.Error]:
-    if data.len < offset + ptr_uint<-2:
+    if data.len < offset + 2z:
         return Result[LobbyInfo, net.Error].failure(error = net.Error(
             code = -1,
             message = string.String.from_str("lobby info payload truncated")

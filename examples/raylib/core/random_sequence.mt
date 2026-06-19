@@ -15,7 +15,7 @@ function generate_random_color() -> rl.Color:
         r = ubyte<-rl.get_random_value(0, 255),
         g = ubyte<-rl.get_random_value(0, 255),
         b = ubyte<-rl.get_random_value(0, 255),
-        a = ubyte<-255
+        a = 255ub
     )
 
 

@@ -49,7 +49,7 @@ function sine_callback(frames_out: ptr[void], frame_count: uint) -> void:
             if wave_index >= wavelength:
                 wave_frequency = new_wave_frequency
                 wave_index = 0
-            index += uint<-1
+            index += 1u
 
     save_synthesized_samples(frames_out, frame_count)
 
@@ -69,7 +69,7 @@ function square_callback(frames_out: ptr[void], frame_count: uint) -> void:
             if wave_index >= wavelength:
                 wave_frequency = new_wave_frequency
                 wave_index = 0
-            index += uint<-1
+            index += 1u
 
     save_synthesized_samples(frames_out, frame_count)
 
@@ -89,7 +89,7 @@ function triangle_callback(frames_out: ptr[void], frame_count: uint) -> void:
             if wave_index >= wavelength:
                 wave_frequency = new_wave_frequency
                 wave_index = 0
-            index += uint<-1
+            index += 1u
 
     save_synthesized_samples(frames_out, frame_count)
 
@@ -106,7 +106,7 @@ function sawtooth_callback(frames_out: ptr[void], frame_count: uint) -> void:
             if wave_index >= wavelength:
                 wave_frequency = new_wave_frequency
                 wave_index = 0
-            index += uint<-1
+            index += 1u
 
     save_synthesized_samples(frames_out, frame_count)
 
@@ -141,7 +141,7 @@ function main() -> int:
     defer rl.close_audio_device()
 
     rl.set_audio_stream_buffer_size_default(BUFFER_SIZE)
-    let stream = rl.load_audio_stream(uint<-SAMPLE_RATE, uint<-32, uint<-1)
+    let stream = rl.load_audio_stream(uint<-SAMPLE_RATE, 32u, 1u)
     defer rl.unload_audio_stream(stream)
     rl.play_audio_stream(stream)
 

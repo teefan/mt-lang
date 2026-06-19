@@ -84,9 +84,9 @@ function update_particles(head: int, tail: int, screen_width: int, screen_height
             particles[index].velocity.y -= 0.05
             particles[index].position.y += particles[index].velocity.y
             particles[index].radius += 0.5
-            particles[index].color.a -= ubyte<-4
+            particles[index].color.a -= 4ub
 
-            if particles[index].color.a < ubyte<-4:
+            if particles[index].color.a < 4ub:
                 particles[index].alive = false
         else:
             particles[index].position.x += (
@@ -96,7 +96,7 @@ function update_particles(head: int, tail: int, screen_width: int, screen_height
             particles[index].velocity.y -= 0.05
             particles[index].position.y += particles[index].velocity.y
             particles[index].radius -= 0.15
-            particles[index].color.g -= ubyte<-3
+            particles[index].color.g -= 3ub
 
             if particles[index].radius <= 0.02:
                 particles[index].alive = false

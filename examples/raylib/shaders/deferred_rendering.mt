@@ -122,12 +122,12 @@ function main() -> int:
 
     var gbuffer = GBuffer(
         framebuffer_id = rlgl.load_framebuffer(),
-        position_texture_id = uint<-0,
-        normal_texture_id = uint<-0,
-        albedo_spec_texture_id = uint<-0,
-        depth_renderbuffer_id = uint<-0
+        position_texture_id = 0u,
+        normal_texture_id = 0u,
+        albedo_spec_texture_id = 0u,
+        depth_renderbuffer_id = 0u
     )
-    if gbuffer.framebuffer_id == uint<-0:
+    if gbuffer.framebuffer_id == 0u:
         rl.trace_log(int<-rl.TraceLogLevel.LOG_WARNING, "Failed to create framebufferId")
 
     rlgl.enable_framebuffer(gbuffer.framebuffer_id)
@@ -350,7 +350,7 @@ function main() -> int:
             rl.end_mode_3d()
 
             rlgl.bind_framebuffer(uint<-rlgl.RL_READ_FRAMEBUFFER, gbuffer.framebuffer_id)
-            rlgl.bind_framebuffer(uint<-rlgl.RL_DRAW_FRAMEBUFFER, uint<-0)
+            rlgl.bind_framebuffer(uint<-rlgl.RL_DRAW_FRAMEBUFFER, 0u)
             rlgl.blit_framebuffer(
                 0,
                 0,

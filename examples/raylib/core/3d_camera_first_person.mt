@@ -55,8 +55,8 @@ function main() -> int:
         colors[index] = rl.Color(
             r = ubyte<-rl.get_random_value(20, 255),
             g = ubyte<-rl.get_random_value(10, 55),
-            b = ubyte<-30,
-            a = ubyte<-255
+            b = 30ub,
+            a = 255ub
         )
         index += 1
 

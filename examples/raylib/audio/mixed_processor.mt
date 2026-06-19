@@ -18,8 +18,8 @@ function process_audio(buffer: ptr[void], frames: uint) -> void:
 
         var frame: uint = 0
         while frame < frames:
-            let left_index = ptr_uint<-frame * ptr_uint<-2
-            let right_index = left_index + ptr_uint<-1
+            let left_index = ptr_uint<-frame * 2z
+            let right_index = left_index + 1z
 
             let left_value = read(samples + left_index)
             let right_value = read(samples + right_index)
@@ -39,7 +39,7 @@ function process_audio(buffer: ptr[void], frames: uint) -> void:
 
             average += float<-(math.abs(double<-new_left) / double<-frames)
             average += float<-(math.abs(double<-new_right) / double<-frames)
-            frame += uint<-1
+            frame += 1u
 
         var index = 0
         while index < VOLUME_HISTORY_SIZE - 1:

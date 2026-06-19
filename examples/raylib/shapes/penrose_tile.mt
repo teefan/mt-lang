@@ -6,17 +6,17 @@ const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const STR_MAX_SIZE: int = 10000
 const TURTLE_STACK_MAX_SIZE: int = 50
-const ASCII_W: ubyte = ubyte<-87
-const ASCII_X: ubyte = ubyte<-88
-const ASCII_Y: ubyte = ubyte<-89
-const ASCII_Z: ubyte = ubyte<-90
-const ASCII_F: ubyte = ubyte<-70
-const ASCII_PLUS: ubyte = ubyte<-43
-const ASCII_MINUS: ubyte = ubyte<-45
-const ASCII_LBRACKET: ubyte = ubyte<-91
-const ASCII_RBRACKET: ubyte = ubyte<-93
-const ASCII_ZERO: ubyte = ubyte<-48
-const ASCII_NINE: ubyte = ubyte<-57
+const ASCII_W: ubyte = 87ub
+const ASCII_X: ubyte = 88ub
+const ASCII_Y: ubyte = 89ub
+const ASCII_Z: ubyte = 90ub
+const ASCII_F: ubyte = 70ub
+const ASCII_PLUS: ubyte = 43ub
+const ASCII_MINUS: ubyte = 45ub
+const ASCII_LBRACKET: ubyte = 91ub
+const ASCII_RBRACKET: ubyte = 93ub
+const ASCII_ZERO: ubyte = 48ub
+const ASCII_NINE: ubyte = 57ub
 
 struct TurtleState:
     origin: rl.Vector2
@@ -85,7 +85,7 @@ function build_production_step(ls: ref[PenroseLSystem]) -> void:
         else if step == ASCII_Z:
             new_production.append(read(ls).rule_z)
         else if step != ASCII_F:
-            new_production.append(production_text.slice(index, ptr_uint<-1))
+            new_production.append(production_text.slice(index, 1z))
         index += 1
 
     read(ls).draw_length *= 0.5

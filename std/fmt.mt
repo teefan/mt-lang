@@ -66,12 +66,12 @@ public function append_double_precision(output: ref[string.String], number: doub
 
 function radix_digit_byte(digit: ulong, uppercase: bool) -> ubyte:
     if digit < 10:
-        return ubyte<-(ulong<-48 + digit)
+        return ubyte<-(48ul + digit)
 
     if uppercase:
-        return ubyte<-(ulong<-65 + (digit - 10))
+        return ubyte<-(65ul + (digit - 10))
 
-    return ubyte<-(ulong<-97 + (digit - 10))
+    return ubyte<-(97ul + (digit - 10))
 
 
 function append_ulong_radix(output: ref[string.String], number: ulong, base: ulong, uppercase: bool) -> void:
@@ -155,7 +155,7 @@ public function append_ptr_uint(output: ref[string.String], number: ptr_uint) ->
     var remaining = number
     while remaining != 0:
         let digit = remaining % 10
-        digits[count] = ubyte<-(ptr_uint<-48 + digit)
+        digits[count] = ubyte<-(48z + digit)
         remaining = remaining / 10
         count += 1
 
@@ -174,7 +174,7 @@ public function append_ulong(output: ref[string.String], number: ulong) -> void:
     var remaining = number
     while remaining != 0:
         let digit = remaining % 10
-        digits[count] = ubyte<-(ulong<-48 + digit)
+        digits[count] = ubyte<-(48ul + digit)
         remaining = remaining / 10
         count += 1
 

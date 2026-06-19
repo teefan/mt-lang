@@ -52,7 +52,7 @@ function main() -> int:
             let dropped_files = rl.load_dropped_files()
             defer rl.unload_dropped_files(dropped_files)
 
-            if dropped_files.count > uint<-0:
+            if dropped_files.count > 0u:
                 let dropped_path = unsafe: text.chars_as_str(read(dropped_files.paths))
                 if rl.is_file_extension(dropped_path, ".ttf"):
                     rl.unload_font(font)

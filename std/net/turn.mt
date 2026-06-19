@@ -65,23 +65,23 @@ function turn_error(code: int, msg: str) -> Error:
 
 function read_ushort_be(data: span[ubyte], offset: ptr_uint) -> ushort:
     let hi = uint<-data[offset]
-    let lo = uint<-data[offset + ptr_uint<-1]
+    let lo = uint<-data[offset + 1z]
     return ushort<-((hi << 8) | lo)
 
 
 function read_uint_be(data: span[ubyte], offset: ptr_uint) -> uint:
     let b0 = uint<-data[offset]
-    let b1 = uint<-data[offset + ptr_uint<-1]
-    let b2 = uint<-data[offset + ptr_uint<-2]
-    let b3 = uint<-data[offset + ptr_uint<-3]
+    let b1 = uint<-data[offset + 1z]
+    let b2 = uint<-data[offset + 2z]
+    let b3 = uint<-data[offset + 3z]
     return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 
 
 function format_ipv4(addr: uint) -> string.String:
-    let a = uint<-(addr & uint<-0xFF)
-    let b = uint<-((addr >> uint<-8) & uint<-0xFF)
-    let c = uint<-((addr >> uint<-16) & uint<-0xFF)
-    let d = uint<-((addr >> uint<-24) & uint<-0xFF)
+    let a = uint<-(addr & 0xFFu)
+    let b = uint<-((addr >> 8u) & 0xFFu)
+    let c = uint<-((addr >> 16u) & 0xFFu)
+    let d = uint<-((addr >> 24u) & 0xFFu)
     var s = string.String.with_capacity(16)
     fmt.append_uint(ref_of(s), d)
     s.append(".")
@@ -99,14 +99,14 @@ function transaction_id_from_bytes(data: bytes.Bytes) -> array[ubyte, 12]:
     let span = data.as_span()
     var tid = zero[array[ubyte, 12]]
     var i: ptr_uint = 0
-    while i < ptr_uint<-12:
+    while i < 12z:
         tid[i] = span[i]
         i += 1
     return tid
 
 
 public function build_allocate_request(tid: array[ubyte, 12]) -> bytes.Bytes:
-    var w = bin.Writer.with_capacity(turn_header_len + ptr_uint<-8)
+    var w = bin.Writer.with_capacity(turn_header_len + 8z)
 
     w.write_ubyte(0x00)
     w.write_ubyte(0x03)
@@ -119,7 +119,7 @@ public function build_allocate_request(tid: array[ubyte, 12]) -> bytes.Bytes:
     w.write_ubyte(0x42)
 
     var i: ptr_uint = 0
-    while i < ptr_uint<-12:
+    while i < 12z:
         w.write_ubyte(tid[i])
         i += 1
 
@@ -145,7 +145,7 @@ public function parse_allocate_response(
             error = turn_error(err_parse_failed, "packet too small for TURN header")
         )
 
-    let msg_type = read_ushort_be(data, ptr_uint<-0)
+    let msg_type = read_ushort_be(data, 0z)
     if msg_type == allocate_error:
         return Result[TurnAllocation, Error].failure(
             error = turn_error(err_allocate_rejected, "server rejected allocation")
@@ -155,37 +155,37 @@ public function parse_allocate_response(
             error = turn_error(err_parse_failed, "not an allocate success response")
         )
 
-    let cookie = read_uint_be(data, ptr_uint<-4)
+    let cookie = read_uint_be(data, 4z)
     if cookie != stun_magic_cookie:
         return Result[TurnAllocation, Error].failure(
             error = turn_error(err_parse_failed, "invalid magic cookie")
         )
 
     var j: ptr_uint = 0
-    while j < ptr_uint<-12:
-        if data[ptr_uint<-8 + j] != expected_tid[j]:
+    while j < 12z:
+        if data[8z + j] != expected_tid[j]:
             return Result[TurnAllocation, Error].failure(
                 error = turn_error(err_parse_failed, "transaction ID mismatch")
             )
         j += 1
 
-    var attr_len: ptr_uint = ptr_uint<-read_ushort_be(data, ptr_uint<-2)
+    var attr_len: ptr_uint = ptr_uint<-read_ushort_be(data, 2z)
     var offset: ptr_uint = turn_header_len
-    while attr_len >= ptr_uint<-4:
-        if offset + ptr_uint<-4 > data.len:
+    while attr_len >= 4z:
+        if offset + 4z > data.len:
             break
         let attr_type = read_ushort_be(data, offset)
-        let alen = ptr_uint<-read_ushort_be(data, offset + ptr_uint<-2)
-        let padded = (alen + ptr_uint<-3) & (~ptr_uint<-3)
-        if offset + ptr_uint<-4 + alen > data.len:
+        let alen = ptr_uint<-read_ushort_be(data, offset + 2z)
+        let padded = (alen + 3z) & (~3z)
+        if offset + 4z + alen > data.len:
             break
 
-        if attr_type == attr_xor_relayed_address and alen >= ptr_uint<-8:
-            let family = data[offset + ptr_uint<-5]
+        if attr_type == attr_xor_relayed_address and alen >= 8z:
+            let family = data[offset + 5z]
             if family == 0x01:
-                let xport = read_ushort_be(data, offset + ptr_uint<-6)
-                let port = xport ^ ushort<-((stun_magic_cookie >> uint<-16) & uint<-0xFFFF)
-                let xaddr = read_uint_be(data, offset + ptr_uint<-8)
+                let xport = read_ushort_be(data, offset + 6z)
+                let port = xport ^ ushort<-((stun_magic_cookie >> 16u) & 0xFFFFu)
+                let xaddr = read_uint_be(data, offset + 8z)
                 let ip = xaddr ^ stun_magic_cookie
                 var ip_str = format_ipv4(ip)
                 defer ip_str.release()
@@ -198,8 +198,8 @@ public function parse_allocate_response(
                     Result.failure:
                         pass
 
-        offset = offset + ptr_uint<-4 + padded
-        attr_len = attr_len - ptr_uint<-4 - padded
+        offset = offset + 4z + padded
+        attr_len = attr_len - 4z - padded
 
     return Result[TurnAllocation, Error].failure(
         error = turn_error(err_parse_failed, "no XOR-RELAYED-ADDRESS found")
@@ -278,12 +278,12 @@ public function build_send_indication(
             )
         Result.success as pp:
             let host_port = pp.value
-            let xport = ushort<-host_port ^ ushort<-((stun_magic_cookie >> uint<-16) & uint<-0xFFFF)
+            let xport = ushort<-host_port ^ ushort<-((stun_magic_cookie >> 16u) & 0xFFFFu)
             let ip_raw = addr_to_raw_ipv4(peer)
             let xip = ip_raw ^ stun_magic_cookie
 
             let data_len = data.len
-            let attr_total: ptr_uint = ptr_uint<-12 + data_len
+            let attr_total: ptr_uint = 12z + data_len
             var w = bin.Writer.with_capacity(turn_header_len + attr_total)
 
             w.write_ubyte(0x00)
@@ -295,7 +295,7 @@ public function build_send_indication(
             w.write_ubyte(0xA4)
             w.write_ubyte(0x42)
             var i: ptr_uint = 0
-            while i < ptr_uint<-12:
+            while i < 12z:
                 w.write_ubyte(tid[i])
                 i += 1
 
@@ -333,34 +333,34 @@ public function parse_data_indication(
             error = turn_error(err_parse_failed, "packet too small")
         )
 
-    let msg_type = read_ushort_be(data, ptr_uint<-0)
+    let msg_type = read_ushort_be(data, 0z)
     if msg_type != data_indication:
         return Result[TurnDatagram, Error].failure(
             error = turn_error(err_parse_failed, "not a data indication")
         )
 
-    var attr_len: ptr_uint = ptr_uint<-read_ushort_be(data, ptr_uint<-2)
+    var attr_len: ptr_uint = ptr_uint<-read_ushort_be(data, 2z)
     var offset: ptr_uint = turn_header_len
     var found_peer: bool = false
     var peer_addr: net.SocketAddress = zero[net.SocketAddress]
     var found_data: bool = false
     var payload: bytes.Bytes = bytes.Bytes.empty()
 
-    while attr_len >= ptr_uint<-4:
-        if offset + ptr_uint<-4 > data.len:
+    while attr_len >= 4z:
+        if offset + 4z > data.len:
             break
         let attr_type = read_ushort_be(data, offset)
-        let alen = ptr_uint<-read_ushort_be(data, offset + ptr_uint<-2)
-        let padded = (alen + ptr_uint<-3) & (~ptr_uint<-3)
-        if offset + ptr_uint<-4 + alen > data.len:
+        let alen = ptr_uint<-read_ushort_be(data, offset + 2z)
+        let padded = (alen + 3z) & (~3z)
+        if offset + 4z + alen > data.len:
             break
 
-        if attr_type == attr_xor_peer_address and alen >= ptr_uint<-8:
-            let family = data[offset + ptr_uint<-5]
+        if attr_type == attr_xor_peer_address and alen >= 8z:
+            let family = data[offset + 5z]
             if family == 0x01:
-                let xport = read_ushort_be(data, offset + ptr_uint<-6)
-                let port = xport ^ ushort<-((stun_magic_cookie >> uint<-16) & uint<-0xFFFF)
-                let xaddr = read_uint_be(data, offset + ptr_uint<-8)
+                let xport = read_ushort_be(data, offset + 6z)
+                let port = xport ^ ushort<-((stun_magic_cookie >> 16u) & 0xFFFFu)
+                let xaddr = read_uint_be(data, offset + 8z)
                 let ip = xaddr ^ stun_magic_cookie
                 var ip_str = format_ipv4(ip)
                 defer ip_str.release()
@@ -372,17 +372,17 @@ public function parse_data_indication(
                     Result.failure:
                         pass
 
-        if attr_type == attr_data and alen > ptr_uint<-0:
+        if attr_type == attr_data and alen > 0z:
             var buf = bin.Writer.with_capacity(alen)
             var k: ptr_uint = 0
             while k < alen:
-                buf.write_ubyte(data[offset + ptr_uint<-4 + k])
+                buf.write_ubyte(data[offset + 4z + k])
                 k += 1
             payload = buf.finish()
             found_data = true
 
-        offset = offset + ptr_uint<-4 + padded
-        attr_len = attr_len - ptr_uint<-4 - padded
+        offset = offset + 4z + padded
+        attr_len = attr_len - 4z - padded
 
     if not found_peer or not found_data:
         if found_data:

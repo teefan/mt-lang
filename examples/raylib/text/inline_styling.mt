@@ -52,28 +52,28 @@ function draw_text_styled(
         if codepoint == 91:
             if index + 2 < text_len and styled_text.slice(
                 ptr_uint<-(index + 1),
-                ptr_uint<-1
-            ).equal("r") and styled_text.slice(ptr_uint<-(index + 2), ptr_uint<-1).equal("]"):
+                1z
+            ).equal("r") and styled_text.slice(ptr_uint<-(index + 2), 1z).equal("]"):
                 front_color = color
                 back_color = rl.BLANK
                 index += 3
                 continue
             if index + 1 < text_len:
-                let marker = styled_text.slice(ptr_uint<-(index + 1), ptr_uint<-1)
+                let marker = styled_text.slice(ptr_uint<-(index + 1), 1z)
                 if marker.equal("c") or marker.equal("b"):
                     var hex_len = 0
                     while index + 2 + hex_len < text_len and not styled_text.slice(
                         ptr_uint<-(index + 2 + hex_len),
-                        ptr_uint<-1
+                        1z
                     ).equal("]"):
-                        let hex_char = styled_text.slice(ptr_uint<-(index + 2 + hex_len), ptr_uint<-1)
+                        let hex_char = styled_text.slice(ptr_uint<-(index + 2 + hex_len), 1z)
                         if not is_hex_digit(hex_char):
                             break
                         hex_len += 1
 
                     if hex_len > 0 and index + 2 + hex_len < text_len and styled_text.slice(
                         ptr_uint<-(index + 2 + hex_len),
-                        ptr_uint<-1
+                        1z
                     ).equal("]"):
                         let hex_text = styled_text.slice(ptr_uint<-(index + 2), ptr_uint<-hex_len)
                         let hex_value = uint<-libc.parse_ulong_to_end(hex_text, null, 16)
@@ -123,7 +123,7 @@ function draw_text_styled(
 
 function measure_text_styled(font_arg: rl.Font, styled_text: str, font_size: float, spacing: float) -> rl.Vector2:
     var font = font_arg
-    if font.texture.id == 0 or rl.text_length(styled_text) == uint<-0:
+    if font.texture.id == 0 or rl.text_length(styled_text) == 0u:
         return rl.Vector2(x = 0.0, y = 0.0)
     if font.texture.id == 0:
         font = rl.get_font_default()
@@ -148,26 +148,26 @@ function measure_text_styled(font_arg: rl.Font, styled_text: str, font_size: flo
         if codepoint == 91:
             if index + 2 < text_len and styled_text.slice(
                 ptr_uint<-(index + 1),
-                ptr_uint<-1
-            ).equal("r") and styled_text.slice(ptr_uint<-(index + 2), ptr_uint<-1).equal("]"):
+                1z
+            ).equal("r") and styled_text.slice(ptr_uint<-(index + 2), 1z).equal("]"):
                 index += 3
                 continue
             if index + 1 < text_len:
-                let marker = styled_text.slice(ptr_uint<-(index + 1), ptr_uint<-1)
+                let marker = styled_text.slice(ptr_uint<-(index + 1), 1z)
                 if marker.equal("c") or marker.equal("b"):
                     var hex_len = 0
                     while index + 2 + hex_len < text_len and not styled_text.slice(
                         ptr_uint<-(index + 2 + hex_len),
-                        ptr_uint<-1
+                        1z
                     ).equal("]"):
-                        let hex_char = styled_text.slice(ptr_uint<-(index + 2 + hex_len), ptr_uint<-1)
+                        let hex_char = styled_text.slice(ptr_uint<-(index + 2 + hex_len), 1z)
                         if not is_hex_digit(hex_char):
                             break
                         hex_len += 1
 
                     if hex_len > 0 and index + 2 + hex_len < text_len and styled_text.slice(
                         ptr_uint<-(index + 2 + hex_len),
-                        ptr_uint<-1
+                        1z
                     ).equal("]"):
                         index += hex_len + 3
                         continue

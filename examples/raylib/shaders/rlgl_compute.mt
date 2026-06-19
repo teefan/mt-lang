@@ -74,30 +74,30 @@ function main() -> int:
             transfer_buffer.commands[command_index].x = uint<-(rl.get_mouse_x() - brush_size / 2)
             transfer_buffer.commands[command_index].y = uint<-(rl.get_mouse_y() - brush_size / 2)
             transfer_buffer.commands[command_index].w = uint<-brush_size
-            transfer_buffer.commands[command_index].enabled = if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT): uint<-1 else: uint<-0
-            transfer_buffer.count += uint<-1
-        else if transfer_buffer.count > uint<-0:
-            rlgl.update_shader_buffer(ssbo_transfer, ptr_of(transfer_buffer), uint<-size_of(GolUpdateSSBO), uint<-0)
+            transfer_buffer.commands[command_index].enabled = if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT): 1u else: 0u
+            transfer_buffer.count += 1u
+        else if transfer_buffer.count > 0u:
+            rlgl.update_shader_buffer(ssbo_transfer, ptr_of(transfer_buffer), uint<-size_of(GolUpdateSSBO), 0u)
 
             rlgl.enable_shader(gol_transfer_program)
-            rlgl.bind_shader_buffer(ssbo_a, uint<-1)
-            rlgl.bind_shader_buffer(ssbo_transfer, uint<-3)
-            rlgl.compute_shader_dispatch(transfer_buffer.count, uint<-1, uint<-1)
+            rlgl.bind_shader_buffer(ssbo_a, 1u)
+            rlgl.bind_shader_buffer(ssbo_transfer, 3u)
+            rlgl.compute_shader_dispatch(transfer_buffer.count, 1u, 1u)
             rlgl.disable_shader()
 
-            transfer_buffer.count = uint<-0
+            transfer_buffer.count = 0u
         else:
             rlgl.enable_shader(gol_logic_program)
-            rlgl.bind_shader_buffer(ssbo_a, uint<-1)
-            rlgl.bind_shader_buffer(ssbo_b, uint<-2)
-            rlgl.compute_shader_dispatch(uint<-(GOL_WIDTH / 16), uint<-(GOL_WIDTH / 16), uint<-1)
+            rlgl.bind_shader_buffer(ssbo_a, 1u)
+            rlgl.bind_shader_buffer(ssbo_b, 2u)
+            rlgl.compute_shader_dispatch(uint<-(GOL_WIDTH / 16), uint<-(GOL_WIDTH / 16), 1u)
             rlgl.disable_shader()
 
             let temp = ssbo_a
             ssbo_a = ssbo_b
             ssbo_b = temp
 
-        rlgl.bind_shader_buffer(ssbo_a, uint<-1)
+        rlgl.bind_shader_buffer(ssbo_a, 1u)
         rl.set_shader_value(
             gol_render_shader,
             resolution_uniform_location,

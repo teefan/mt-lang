@@ -21,22 +21,22 @@ var shared_counter: array[int, 4]
 
 
 async function bg_increment_a() -> void:
-    let _ = await aio.sleep(ptr_uint<-10)
+    let _ = await aio.sleep(10z)
     shared_counter[0] += 1
 
 
 async function bg_increment_b() -> void:
-    let _ = await aio.sleep(ptr_uint<-10)
+    let _ = await aio.sleep(10z)
     shared_counter[1] += 1
 
 
 async function bg_increment_c() -> void:
-    let _ = await aio.sleep(ptr_uint<-10)
+    let _ = await aio.sleep(10z)
     shared_counter[2] += 1
 
 
 async function leaf_value() -> int:
-    let _ = await aio.sleep(ptr_uint<-10)
+    let _ = await aio.sleep(10z)
     return 42
 
 
@@ -46,7 +46,7 @@ async function middle_value() -> int:
 
 
 async function may_fail_false() -> Result[int, int]:
-    let _ = await aio.sleep(ptr_uint<-5)
+    let _ = await aio.sleep(5z)
     return Result[int, int].success(value = 100)
 
 
@@ -59,27 +59,27 @@ var defer_cleaned: bool = false
 async function with_cleanup() -> int:
     defer:
         unsafe: read(unsafe: ptr[bool]<-ptr_of(defer_cleaned)) = true
-    let _ = await aio.sleep(ptr_uint<-10)
+    let _ = await aio.sleep(10z)
     return 1
 
 
 async function bg_timer_30() -> void:
-    let _ = await aio.sleep(ptr_uint<-30)
+    let _ = await aio.sleep(30z)
     shared_counter[3] += 1
 
 
 async function bg_timer_20() -> void:
-    let _ = await aio.sleep(ptr_uint<-20)
+    let _ = await aio.sleep(20z)
     shared_counter[3] += 1
 
 
 async function bg_timer_40() -> void:
-    let _ = await aio.sleep(ptr_uint<-40)
+    let _ = await aio.sleep(40z)
     shared_counter[3] += 1
 
 
 async function inner_fail_async() -> Result[int, int]:
-    let _ = await aio.sleep(ptr_uint<-5)
+    let _ = await aio.sleep(5z)
     return Result[int, int].failure(error = -99)
 
 
@@ -100,7 +100,7 @@ async function test_async_in_loop() -> int:
     var sum: int = 0
     var i: int = 0
     while i < 5:
-        let _ = await aio.sleep(ptr_uint<-5)
+        let _ = await aio.sleep(5z)
         sum += 1
         i += 1
     check("async_in_loop", sum == 5)
@@ -130,7 +130,7 @@ async function test_basic_timer() -> int:
     stdio.print_format("test_basic_timer\n")
     var frame: int = 0
     while frame < 3:
-        let _ = await aio.sleep(ptr_uint<-20)
+        let _ = await aio.sleep(20z)
         frame += 1
     check("basic_timer", frame == 3)
     return 0
@@ -138,14 +138,14 @@ async function test_basic_timer() -> int:
 
 async function test_zero_sleep() -> int:
     stdio.print_format("test_zero_sleep\n")
-    let _ = await aio.sleep(ptr_uint<-0)
+    let _ = await aio.sleep(0z)
     check("zero_sleep", true)
     return 0
 
 
 async function test_completed_check() -> int:
     stdio.print_format("test_completed_check\n")
-    let t = aio.sleep(ptr_uint<-30)
+    let t = aio.sleep(30z)
     check("not_completed_immediately", not aio.completed(t))
     let _ = await t
     check("completed_after_await", aio.completed(t))
@@ -160,7 +160,7 @@ async function test_fire_forget() -> int:
     let _ = bg_increment_a()
     let _ = bg_increment_b()
     let _ = bg_increment_c()
-    let _ = await aio.sleep(ptr_uint<-50)
+    let _ = await aio.sleep(50z)
     check("fire_forget_a", shared_counter[0] == 1)
     check("fire_forget_b", shared_counter[1] == 1)
     check("fire_forget_c", shared_counter[2] == 1)
@@ -203,7 +203,7 @@ async function test_background_tasks_survive_root() -> int:
     let _ = bg_increment_a()
     let _ = bg_increment_b()
     let _ = bg_increment_c()
-    let _ = await aio.sleep(ptr_uint<-50)
+    let _ = await aio.sleep(50z)
     check("bg_a", shared_counter[0] == 1)
     check("bg_b", shared_counter[1] == 1)
     check("bg_c", shared_counter[2] == 1)
@@ -216,7 +216,7 @@ async function test_multiple_concurrent_timers() -> int:
     let _ = bg_timer_30()
     let _ = bg_timer_20()
     let _ = bg_timer_40()
-    let _ = await aio.sleep(ptr_uint<-100)
+    let _ = await aio.sleep(100z)
     check("concurrent_timers", shared_counter[3] == 3)
     return 0
 
@@ -246,10 +246,10 @@ async function test_release_during_active_recv() -> int:
                 Result.success as sock_p:
                     var socket = sock_p.value
                     let recv_task = socket.recv_from(1500)
-                    let _ = await aio.sleep(ptr_uint<-20)
+                    let _ = await aio.sleep(20z)
                     check("recv_release_pending", true)
                     socket.release()
-                    let _ = await aio.sleep(ptr_uint<-10)
+                    let _ = await aio.sleep(10z)
     check("recv_release_done", true)
     return 0
 
@@ -261,7 +261,7 @@ async function test_manager_create_release() -> int:
             check("mgr_addr", false)
             return -1
         Result.success as addr_p:
-            let config = mgr.NetworkConfig.default(ptr_uint<-1400)
+            let config = mgr.NetworkConfig.default(1400z)
             match mgr.create_server(addr_p.value, config):
                 Result.failure:
                     check("mgr_create", false)
@@ -282,7 +282,7 @@ async function test_manager_host_client() -> int:
             check("hc_addr", false)
             return -1
         Result.success as addr_p:
-            let config = mgr.NetworkConfig.default(ptr_uint<-1400)
+            let config = mgr.NetworkConfig.default(1400z)
             match mgr.create_server(addr_p.value, config):
                 Result.failure:
                     check("hc_create", false)
@@ -301,7 +301,7 @@ async function test_manager_host_client() -> int:
                                     check("hc_remote_addr", false)
                                     return -4
                                 Result.success as sa_p:
-                                    let cli_cfg = mgr.NetworkConfig.default(ptr_uint<-1400)
+                                    let cli_cfg = mgr.NetworkConfig.default(1400z)
                                     match mgr.create_client(la_p.value, sa_p.value, cli_cfg):
                                         Result.failure:
                                             host.release()
@@ -345,7 +345,7 @@ async function test_manager_host_client() -> int:
 # ---------------------------------------------------------------------------
 
 async function cancellable_worker() -> int:
-    let _ = await aio.sleep(ptr_uint<-50)
+    let _ = await aio.sleep(50z)
     return 42
 
 

@@ -112,10 +112,10 @@ extending SpatialGrid[T]:
             Option.some as mp:
                 let ec = mp.value % ptr_uint<-this.cols
                 let er = mp.value / ptr_uint<-this.cols
-                if ec + ptr_uint<-1 < end_col:
-                    end_col = ec + ptr_uint<-1
-                if er + ptr_uint<-1 < end_row:
-                    end_row = er + ptr_uint<-1
+                if ec + 1z < end_col:
+                    end_col = ec + 1z
+                if er + 1z < end_row:
+                    end_row = er + 1z
             Option.none:
                 pass
 

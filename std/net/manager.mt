@@ -76,8 +76,8 @@ extending NetworkEvent:
         return NetworkEvent(
             kind = NetworkEventKind.connected,
             player_id = player_id,
-            channel_id = ubyte<-0,
-            type_id = ushort<-0,
+            channel_id = 0ub,
+            type_id = 0us,
             payload = bytes.Bytes.empty()
         )
 
@@ -85,9 +85,9 @@ extending NetworkEvent:
     public static function disconnected() -> NetworkEvent:
         return NetworkEvent(
             kind = NetworkEventKind.disconnected,
-            player_id = uint<-0,
-            channel_id = ubyte<-0,
-            type_id = ushort<-0,
+            player_id = 0u,
+            channel_id = 0ub,
+            type_id = 0us,
             payload = bytes.Bytes.empty()
         )
 
@@ -96,8 +96,8 @@ extending NetworkEvent:
         return NetworkEvent(
             kind = NetworkEventKind.player_joined,
             player_id = player_id,
-            channel_id = ubyte<-0,
-            type_id = ushort<-0,
+            channel_id = 0ub,
+            type_id = 0us,
             payload = bytes.Bytes.empty()
         )
 
@@ -106,8 +106,8 @@ extending NetworkEvent:
         return NetworkEvent(
             kind = NetworkEventKind.player_left,
             player_id = player_id,
-            channel_id = ubyte<-0,
-            type_id = ushort<-0,
+            channel_id = 0ub,
+            type_id = 0us,
             payload = bytes.Bytes.empty()
         )
 
@@ -332,11 +332,11 @@ public function create_server(
                 max_players = config.max_players,
                 mux_session = session_p.value,
                 mux_connection = unsafe: zero[mux.MuxedConnection],
-                local_player_id = uint<-0,
+                local_player_id = 0u,
                 players = vec.Vec[PlayerState].create(),
-                next_player_id = uint<-1,
+                next_player_id = 1u,
                 events = deque.Deque[NetworkEvent].create(),
-                tick_clock = clock.TickClock(tick = uint<-0, rate = uint<-60, epoch = clock.monotonic_ns()),
+                tick_clock = clock.TickClock(tick = 0u, rate = 60u, epoch = clock.monotonic_ns()),
                 connected = true,
                 config = config,
                 stored_peer_id_events = deque.Deque[PlayerJoinEvent].create()
@@ -359,11 +359,11 @@ public function create_client(
                 max_players = config.max_players,
                 mux_session = unsafe: zero[mux.MuxedSession],
                 mux_connection = mux_conn_p.value,
-                local_player_id = uint<-0,
+                local_player_id = 0u,
                 players = vec.Vec[PlayerState].create(),
-                next_player_id = uint<-0,
+                next_player_id = 0u,
                 events = deque.Deque[NetworkEvent].create(),
-                tick_clock = clock.TickClock(tick = uint<-0, rate = uint<-60, epoch = clock.monotonic_ns()),
+                tick_clock = clock.TickClock(tick = 0u, rate = 60u, epoch = clock.monotonic_ns()),
                 connected = false,
                 config = config,
                 stored_peer_id_events = deque.Deque[PlayerJoinEvent].create()

@@ -8,7 +8,7 @@ public struct Rng:
 
 
 public function from_seed(seed: ulong) -> Rng:
-    var rng = Rng(state = ulong<-0, increment = (seed << ulong<-1) | ulong<-1)
+    var rng = Rng(state = 0ul, increment = (seed << 1ul) | 1ul)
     rng.next_u32()
     rng.state = rng.state + seed
     rng.next_u32()
@@ -16,12 +16,12 @@ public function from_seed(seed: ulong) -> Rng:
 
 
 public function from_seed_str(seed_str: str) -> Rng:
-    var hash: ulong = ulong<-5381
+    var hash: ulong = 5381ul
     var i: ptr_uint = 0
     while i < seed_str.len:
         unsafe:
             let byte_val = ulong<-ubyte<-read(seed_str.data + i)
-            hash = ((hash << ulong<-5) + hash) + byte_val
+            hash = ((hash << 5ul) + hash) + byte_val
             i += 1
     return from_seed(hash)
 
@@ -30,15 +30,15 @@ extending Rng:
     public editable function next_u32() -> uint:
         let oldstate = this.state
         this.state = oldstate * pcg_multiplier + this.increment
-        let xorshifted = uint<-(((oldstate >> ulong<-18) ^ oldstate) >> ulong<-27)
-        let rot = uint<-(oldstate >> ulong<-59)
-        return (xorshifted >> rot) | (xorshifted << (uint<-32 - rot))
+        let xorshifted = uint<-(((oldstate >> 18ul) ^ oldstate) >> 27ul)
+        let rot = uint<-(oldstate >> 59ul)
+        return (xorshifted >> rot) | (xorshifted << (32u - rot))
 
 
     public editable function next_u64() -> ulong:
         let hi = ulong<-this.next_u32()
         let lo = ulong<-this.next_u32()
-        return (hi << ulong<-32) | lo
+        return (hi << 32ul) | lo
 
 
     public editable function next_f64() -> double:
@@ -53,12 +53,12 @@ extending Rng:
 
     public editable function next_ubyte() -> ubyte:
         let val = this.next_u32()
-        return ubyte<-(val & uint<-0xFF)
+        return ubyte<-(val & 0xFFu)
 
 
     public editable function next_bool() -> bool:
         let val = this.next_u32()
-        return (val & uint<-1) != uint<-0
+        return (val & 1u) != 0u
 
 
     public editable function next_uint() -> uint:
@@ -100,17 +100,17 @@ extending Rng:
 
     public editable function pick_ref[T](items: span[T]) -> ptr[T]?:
         let len = items.len
-        if len == ptr_uint<-0:
+        if len == 0z:
             return null
-        let index = ptr_uint<-this.next_uint_range(uint<-0, uint<-len)
+        let index = ptr_uint<-this.next_uint_range(0u, uint<-len)
         return items.data + index
 
 
     public editable function pick[T](items: ref[vec.Vec[T]]) -> Option[T]:
         let len = items.len()
-        if len == ptr_uint<-0:
+        if len == 0z:
             return Option[T].none()
-        let index = ptr_uint<-this.next_uint_range(uint<-0, uint<-len)
+        let index = ptr_uint<-this.next_uint_range(0u, uint<-len)
         let ptr = items.get(index) else:
             return Option[T].none()
         return Option[T].some(value = unsafe: read(ptr))
@@ -118,11 +118,11 @@ extending Rng:
 
     public editable function shuffle[T](items: ref[vec.Vec[T]]) -> void:
         let n = items.len()
-        if n <= ptr_uint<-1:
+        if n <= 1z:
             return
-        var i: ptr_uint = n - ptr_uint<-1
-        while i > ptr_uint<-0:
-            let j = ptr_uint<-this.next_uint_range(uint<-0, uint<-(i + ptr_uint<-1))
+        var i: ptr_uint = n - 1z
+        while i > 0z:
+            let j = ptr_uint<-this.next_uint_range(0u, uint<-(i + 1z))
             items.swap(i, j)
             i -= 1
         return

@@ -228,7 +228,7 @@ function write_octal_digits(buffer: ptr[ubyte], offset: ptr_uint, digits_len: pt
                 return false
 
             let digit = remaining % 8
-            digits[count] = ubyte<-(ptr_uint<-48 + digit)
+            digits[count] = ubyte<-(48z + digit)
             remaining /= 8
             count += 1
 
@@ -484,7 +484,7 @@ function parse_octal_field(input: span[ubyte], offset: ptr_uint, field_len: ptr_
                     ptr_uint,
                     Error
                 ].failure(error = error_message("tar numeric field contains non-octal digits"))
-            let digit = ptr_uint<-(current - ubyte<-48)
+            let digit = ptr_uint<-(current - 48ub)
             if value > (heap.ptr_uint_max - digit) / 8:
                 return Result[
                     ptr_uint,

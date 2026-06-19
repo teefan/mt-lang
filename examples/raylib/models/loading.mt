@@ -40,7 +40,7 @@ function main() -> int:
             let dropped_files = rl.load_dropped_files()
             defer rl.unload_dropped_files(dropped_files)
 
-            if dropped_files.count == uint<-1:
+            if dropped_files.count == 1u:
                 let dropped_path = unsafe: text.chars_as_str(read(dropped_files.paths))
 
                 if rl.is_file_extension(dropped_path, ".obj") or rl.is_file_extension(

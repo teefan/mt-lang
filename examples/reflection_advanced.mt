@@ -100,7 +100,7 @@ function test_inline_if_not() -> int:
 
 function test_sizeof_literal() -> int:
     let s = size_of(uint)
-    if s != ptr_uint<-4:
+    if s != 4z:
         return 200
     return 0
 
@@ -114,7 +114,7 @@ function test_sizeof_field_type[T]() -> int:
 
 function test_sizeof_ptr_void() -> int:
     let s = size_of(ptr[void])
-    if s != ptr_uint<-8:
+    if s != 8z:
         return 201
     return 0
 
@@ -134,7 +134,7 @@ function test_sizeof_nullable() -> int:
 
 function test_offsetof_literal() -> int:
     let o = offset_of(Vec3, x)
-    if o != ptr_uint<-0:
+    if o != 0z:
         return 300
     return 0
 
@@ -142,7 +142,7 @@ function test_offsetof_literal() -> int:
 function test_offsetof_packed() -> int:
     let o0 = offset_of(CompactHeader, tag)
     let o2 = offset_of(CompactHeader, extra)
-    if o0 != ptr_uint<-0:
+    if o0 != 0z:
         return 301
     return 0
 
@@ -247,9 +247,9 @@ function test_serialize_pod() -> int:
 
 function test_serialize_nested() -> int:
     var original = NestedContainer(
-        entity = Entity(pos = Vec3(x = 1.0, y = 2.0, z = 3.0), health = uint<-100, speed = 5.0, alive = byte<-1),
-        id = uint<-42,
-        priority = ushort<-7
+        entity = Entity(pos = Vec3(x = 1.0, y = 2.0, z = 3.0), health = 100u, speed = 5.0, alive = 1b),
+        id = 42u,
+        priority = 7us
     )
     var packet = ser.pack[NestedContainer](ref_of(original))
     defer packet.release()
@@ -262,7 +262,7 @@ function test_serialize_nested() -> int:
 
 
 function test_serialize_writer_reader() -> int:
-    var original = CompactHeader(tag = ubyte<-0xAA, version = ushort<-1, extra = ubyte<-0x55)
+    var original = CompactHeader(tag = 0xAAub, version = 1us, extra = 0x55ub)
     var w = bin.Writer.with_capacity(128)
     w.pack[CompactHeader](ref_of(original))
     var data = w.finish()
@@ -313,7 +313,7 @@ function test_double_inline_for() -> int:
 
 function test_alignof_literal() -> int:
     let a = align_of(uint)
-    if a != ptr_uint<-4:
+    if a != 4z:
         return 700
     return 0
 
@@ -362,7 +362,7 @@ function pick_int[N: int]() -> type:
 
 
 function test_nullable_ptr() -> int:
-    var e = Entity(pos = Vec3(x = 0.0, y = 0.0, z = 0.0), health = uint<-0, speed = 0.0, alive = byte<-0)
+    var e = Entity(pos = Vec3(x = 0.0, y = 0.0, z = 0.0), health = 0u, speed = 0.0, alive = 0b)
     var ptr: const_ptr[Entity]? = const_ptr_of(e)
     return 0
 
@@ -379,7 +379,7 @@ function test_zero_and_reflect[T]() -> int:
 function first_field_offset[T]() -> ptr_uint:
     inline for field in fields_of(T):
         return offset_of(T, field)
-    return ptr_uint<-0
+    return 0z
 
 # ---------------------------------------------------------------------------
 # 12  const function — compile-time-evaluable functions
@@ -412,21 +412,21 @@ function typed_sizes[T]() -> ptr_uint:
     var total: ptr_uint = 0
     inline for field in fields_of(T):
         inline if field.type == float:
-            total = total + ptr_uint<-4
+            total = total + 4z
         else if field.type == uint:
-            total = total + ptr_uint<-4
+            total = total + 4z
         else if field.type == ushort:
-            total = total + ptr_uint<-2
+            total = total + 2z
         else if field.type == ubyte:
-            total = total + ptr_uint<-1
+            total = total + 1z
         else if field.type == byte:
-            total = total + ptr_uint<-1
+            total = total + 1z
     return total
 
 
 function test_type_dispatch() -> int:
     let cs = typed_sizes[CompactHeader]()
-    if cs != ptr_uint<-4:
+    if cs != 4z:
         return 801
     return 0
 
@@ -503,7 +503,7 @@ function main() -> int:
     let _ = test_alignof_field[CompactHeader]()
     let _ = test_alignof_field[CompactHeader]()
 
-    var ts = TaggedStruct(data = uint<-0)
+    var ts = TaggedStruct(data = 0u)
     let _ = reflect_constrained[TaggedStruct](ref_of(ts))
     let _ = test_nullable_ptr()
     let _ = test_zero_and_reflect[Vec3]()

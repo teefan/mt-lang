@@ -6,8 +6,8 @@ import std.net as net
 import std.string as string
 
 const clock_magic: array[ubyte, 8] = array[ubyte, 8](
-    ubyte<-0x4D, ubyte<-0x54, ubyte<-0x43, ubyte<-0x4C,
-    ubyte<-0x4F, ubyte<-0x43, ubyte<-0x4B, ubyte<-0x00
+    0x4Dub, 0x54ub, 0x43ub, 0x4Cub,
+    0x4Fub, 0x43ub, 0x4Bub, 0x00ub
 )
 
 const sync_request: ubyte = 0x01
@@ -50,13 +50,13 @@ public function monotonic_ns() -> ulong:
 
 
 public function monotonic_us() -> ulong:
-    return libuv.hrtime() / ulong<-1000
+    return libuv.hrtime() / 1000ul
 
 
 public function build_request(t1: ulong) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(request_bytes)
     var i: ptr_uint = 0
-    while i < ptr_uint<-8:
+    while i < 8z:
         w.write_ubyte(clock_magic[i])
         i += 1
     w.write_ubyte(sync_request)
@@ -67,7 +67,7 @@ public function build_request(t1: ulong) -> bytes.Bytes:
 public function build_response(t1_client: ulong, t2_server: ulong) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(response_bytes)
     var i: ptr_uint = 0
-    while i < ptr_uint<-8:
+    while i < 8z:
         w.write_ubyte(clock_magic[i])
         i += 1
     w.write_ubyte(sync_response)
@@ -80,7 +80,7 @@ function is_clock_packet(data: span[ubyte]) -> bool:
     if data.len < header_bytes:
         return false
     var i: ptr_uint = 0
-    while i < ptr_uint<-8:
+    while i < 8z:
         if data[i] != clock_magic[i]:
             return false
         i += 1
@@ -88,10 +88,10 @@ function is_clock_packet(data: span[ubyte]) -> bool:
 
 
 public function parse_request(data: span[ubyte]) -> Result[ulong, Error]:
-    if data.len < request_bytes or data[ptr_uint<-8] != sync_request:
+    if data.len < request_bytes or data[8z] != sync_request:
         return Result[ulong, Error].failure(error = clock_error(err_bad_packet, "not a clock sync request"))
     var r = bin.reader(data)
-    match r.read_bytes(ptr_uint<-9):
+    match r.read_bytes(9z):
         Result.failure:
             return Result[ulong, Error].failure(error = clock_error(err_bad_packet, "malformed request"))
         Result.success as bp:
@@ -104,10 +104,10 @@ public function parse_request(data: span[ubyte]) -> Result[ulong, Error]:
 
 
 public function parse_response(data: span[ubyte]) -> Result[ClockSync, Error]:
-    if data.len < response_bytes or data[ptr_uint<-8] != sync_response:
+    if data.len < response_bytes or data[8z] != sync_response:
         return Result[ClockSync, Error].failure(error = clock_error(err_bad_packet, "not a clock sync response"))
     var r = bin.reader(data)
-    match r.read_bytes(ptr_uint<-9):
+    match r.read_bytes(9z):
         Result.failure:
             return Result[ClockSync, Error].failure(error = clock_error(err_bad_packet, "malformed response"))
         Result.success as bp:
@@ -124,17 +124,17 @@ public function parse_response(data: span[ubyte]) -> Result[ClockSync, Error]:
                     let t2_svr = t2_payload.value
                     let t4 = libuv.hrtime()
                     let rtt = t4 - t1_client
-                    let half_rtt = rtt / ulong<-2
+                    let half_rtt = rtt / 2ul
                     if t2_svr > t1_client + half_rtt:
                         let offset_ns = t2_svr - t1_client - half_rtt
                         return Result[ClockSync, Error].success(
                             value = ClockSync(
-                                offset_us = int<-(offset_ns / ulong<-1000),
-                                rtt_us = ptr_uint<-(rtt / ulong<-1000)
+                                offset_us = int<-(offset_ns / 1000ul),
+                                rtt_us = ptr_uint<-(rtt / 1000ul)
                             )
                         )
                     return Result[ClockSync, Error].success(
-                        value = ClockSync(offset_us = int<-0, rtt_us = ptr_uint<-(rtt / ulong<-1000))
+                        value = ClockSync(offset_us = 0, rtt_us = ptr_uint<-(rtt / 1000ul))
                     )
 
 
@@ -214,7 +214,7 @@ public async function respond_to_sync(
 
 
 public function tick_clock_new(rate: uint) -> TickClock:
-    return TickClock(tick = uint<-0, rate = rate, epoch = monotonic_ns())
+    return TickClock(tick = 0u, rate = rate, epoch = monotonic_ns())
 
 
 public function tick_clock_from_seed(rate: uint, seed_tick: uint, epoch_ns: ulong) -> TickClock:
@@ -229,19 +229,19 @@ extending TickClock:
     public function elapsed_ticks() -> uint:
         let now = monotonic_ns()
         let elapsed_ns = now - this.epoch
-        let tick_duration_ns = ulong<-(ulong<-1000000000 / ulong<-uint<-this.rate)
-        if tick_duration_ns == ulong<-0:
-            return uint<-0
+        let tick_duration_ns = ulong<-(1000000000ul / ulong<-uint<-this.rate)
+        if tick_duration_ns == 0ul:
+            return 0u
         return uint<-(elapsed_ns / tick_duration_ns)
 
 
     public function time_to_next_tick() -> ptr_uint:
         let now = monotonic_ns()
         let elapsed_ns = now - this.epoch
-        let tick_ns = ulong<-(ulong<-1000000000 / ulong<-(ulong<-uint<-this.rate))
+        let tick_ns = ulong<-(1000000000ul / ulong<-(ulong<-uint<-this.rate))
         let into_current = elapsed_ns % tick_ns
         let remaining = tick_ns - into_current
-        return ptr_uint<-(remaining / ulong<-1000)
+        return ptr_uint<-(remaining / 1000ul)
 
 
     public function tick_ready() -> bool:

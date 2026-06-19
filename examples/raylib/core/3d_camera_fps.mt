@@ -146,7 +146,7 @@ function update_camera_fps(camera: ref[rl.Camera3D]) -> void:
 
 
 function draw_level() -> void:
-    let tile_color = rl.Color(r = ubyte<-150, g = ubyte<-200, b = ubyte<-200, a = ubyte<-255)
+    let tile_color = rl.Color(r = 150ub, g = 200ub, b = 200ub, a = 255ub)
     let tower_size = rl.Vector3(x = 16.0, y = 32.0, z = 16.0)
 
     var y = -25
@@ -177,7 +177,7 @@ function draw_level() -> void:
     rl.draw_sphere(
         rl.Vector3(x = 300.0, y = 300.0, z = 0.0),
         100.0,
-        rl.Color(r = ubyte<-255, g = ubyte<-0, b = ubyte<-0, a = ubyte<-255)
+        rl.Color(r = 255ub, g = 0ub, b = 0ub, a = 255ub)
     )
 
 
