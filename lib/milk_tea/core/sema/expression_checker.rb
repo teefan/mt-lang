@@ -139,9 +139,11 @@ module MilkTea
                  when AST::ErrorExpr
             expected_type || @error_type
           when AST::IntegerLiteral
-            infer_integer_literal(expected_type)
+            infer_integer_literal(expression, expected_type)
           when AST::FloatLiteral
             infer_float_literal(expression, expected_type)
+          when AST::CharLiteral
+            @ctx.types.fetch("byte")
           when AST::SizeofExpr
             unless check_layout_type_via_ct(expression.type, context: "size_of", scopes:)
               infer_layout_query_type(expression.type, context: "size_of")
@@ -261,12 +263,33 @@ module MilkTea
         end
       end
 
-      def infer_integer_literal(expected_type)
+      def infer_integer_literal(expression, expected_type)
+        # Integer type suffixes: 42u8, 0xFFub, 100uz, etc.
+        suffix_type = integer_suffix_type(expression.lexeme)
+        return @ctx.types.fetch(suffix_type) if suffix_type
+
         if expected_type.is_a?(Types::Primitive) && expected_type.integer?
           expected_type
         else
           @ctx.types.fetch("int")
         end
+      end
+
+      INTEGER_SUFFIX_TYPES = {
+        "ub" => "ubyte",
+        "b" => "byte",
+        "us" => "ushort",
+        "s" => "short",
+        "u" => "uint",
+        "i" => "int",
+        "ul" => "ulong",
+        "l" => "long",
+        "z" => "ptr_uint",
+        "iz" => "ptr_int",
+      }.freeze
+
+      def integer_suffix_type(lexeme)
+        INTEGER_SUFFIX_TYPES.sort_by { |k, _| -k.length }.find { |suffix, _| lexeme.end_with?(suffix) }&.last
       end
 
       def infer_float_literal(expression, expected_type)

@@ -407,3 +407,35 @@ class MilkTeaLexerTest < Minitest::Test
     assert_equal 15, int_token.end_offset
   end
 end
+
+  def test_lexes_character_literals
+    tokens = lex_tokens("'a'\n'\\n'\n'\\t'\n'\\\\'\n'\\''\n'\\0'\n'\\x41'\n")
+    chars = tokens.select { |t| t.type == :char_literal }
+    assert_equal 7, chars.length
+    assert_equal 97, chars[0].literal
+    assert_equal 10, chars[1].literal
+    assert_equal 9, chars[2].literal
+    assert_equal 92, chars[3].literal
+    assert_equal 39, chars[4].literal
+    assert_equal 0, chars[5].literal
+    assert_equal 65, chars[6].literal
+  end
+
+  def test_lexes_character_literal_errors
+    assert_raises(MilkTea::LexError) { lex_tokens("'") }
+    assert_raises(MilkTea::LexError) { lex_tokens("'ab") }
+  end
+
+  def test_lexes_integer_type_suffixes
+    tokens = lex_tokens("42ub\n0xFFub\n100z\n7i\n")
+    ints = tokens.select { |t| t.type == :integer }
+    assert_equal 4, ints.length
+    assert_equal "42ub", ints[0].lexeme
+    assert_equal 42, ints[0].literal
+    assert_equal "0xFFub", ints[1].lexeme
+    assert_equal 255, ints[1].literal
+    assert_equal "100z", ints[2].lexeme
+    assert_equal 100, ints[2].literal
+    assert_equal "7i", ints[3].lexeme
+    assert_equal 7, ints[3].literal
+  end
