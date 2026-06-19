@@ -57,7 +57,10 @@ module MilkTea
             when IR::StructDecl, IR::UnionDecl
               aggregate_decl.fields.flat_map { |field| aggregate_type_dependencies(field.type) }.uniq
             when IR::VariantDecl
-              aggregate_decl.arms.flat_map { |arm| arm.fields.flat_map { |field| aggregate_type_dependencies(field.type) } }.uniq
+              own_name = aggregate_decl.linkage_name
+              aggregate_decl.arms.flat_map { |arm| arm.fields.flat_map { |field| aggregate_type_dependencies(field.type) } }
+                .uniq
+                .reject { |dep| dep == own_name }
             else
               []
             end

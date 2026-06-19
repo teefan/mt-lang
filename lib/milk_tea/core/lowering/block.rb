@@ -93,10 +93,15 @@ module MilkTea
                 expected_type: storage_type,
                 contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
               )
-            else
-              value = IR::ZeroInit.new(type: storage_type)
-            end
-            if bind_let_else_local?(statement)
+             else
+               value = IR::ZeroInit.new(type: storage_type)
+             end
+             if value && storage_type.is_a?(Types::Nullable) && !value.type.is_a?(Types::Nullable) && !pointer_type?(storage_type.base)
+               temp_name = fresh_c_temp_name(local_env, "nullable_loc")
+               lowered << IR::LocalDecl.new(name: temp_name, linkage_name: temp_name, type: storage_type.base, value:)
+               value = IR::AddressOf.new(expression: IR::Name.new(name: temp_name, type: storage_type.base, pointer: false), type: storage_type.base)
+             end
+             if bind_let_else_local?(statement)
               current_actual_scope(local_env[:scopes])[statement.name] = local_binding(
                 type:,
                 storage_type:,
@@ -202,6 +207,11 @@ module MilkTea
                       else
                         lower_expression(prepared_value, env: local_env, expected_type: target.type)
                       end
+            end
+            if target.type.is_a?(Types::Nullable) && value && !value.type.is_a?(Types::Nullable) && !pointer_type?(target.type.base)
+              temp_name = fresh_c_temp_name(local_env, "nullable_assign")
+              lowered << IR::LocalDecl.new(name: temp_name, linkage_name: temp_name, type: target.type.base, value:)
+              value = IR::AddressOf.new(expression: IR::Name.new(name: temp_name, type: target.type.base, pointer: false), type: target.type.base)
             end
             update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
             local_defers.concat(prepared_cleanups)
