@@ -93,6 +93,8 @@ module MilkTea
                 expected_type: storage_type,
                 contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
               )
+              nullable_setup = local_env.delete(:nullable_agg_setup) || []
+              lowered.concat(nullable_setup)
             else
               value = IR::ZeroInit.new(type: storage_type)
             end
@@ -575,6 +577,8 @@ module MilkTea
               expected_type: return_type,
               contextual_int_to_float: contextual_int_to_float_target?(return_type),
             ) : nil
+            nullable_setup = local_env.delete(:nullable_agg_setup) || []
+            lowered.concat(nullable_setup)
             if prepared_cleanups.any? && cstr_trackable_type?(return_type)
               raise LoweringError, "formatted string temporaries cannot be returned as borrowed text; use std.fmt.format(f\"...\") when ownership must escape"
             end

@@ -212,15 +212,17 @@ module MilkTea
         when :struct_literal
           fields = expression.arguments.map do |argument|
             field_type = type.field(argument.name)
+            lowered_value = lower_contextual_expression(
+              argument.value,
+              env:,
+              expected_type: field_type,
+              external_numeric: type.respond_to?(:external) && type.external,
+              contextual_int_to_float: contextual_int_to_float_target?(field_type),
+            )
+            lowered_value = wrap_nullable_field_value(field_type, lowered_value, env)
             IR::AggregateField.new(
               name: argument.name,
-              value: lower_contextual_expression(
-                argument.value,
-                env:,
-                expected_type: field_type,
-                external_numeric: type.respond_to?(:external) && type.external,
-                contextual_int_to_float: contextual_int_to_float_target?(field_type),
-              ),
+              value: lowered_value,
             )
           end
           IR::AggregateLiteral.new(type:, fields:)
@@ -264,6 +266,7 @@ module MilkTea
               contextual_int_to_float: contextual_int_to_float_target?(field_type),
             )
             lowered_value = IR::AddressOf.new(expression: lowered_value, type: lowered_value.type) if field_type == variant_type
+            lowered_value = wrap_nullable_field_value(field_type, lowered_value, env) unless field_type == variant_type
             IR::AggregateField.new(
               name: argument.name,
               value: lowered_value,
