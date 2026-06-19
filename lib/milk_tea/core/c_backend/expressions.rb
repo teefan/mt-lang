@@ -11,7 +11,7 @@ module MilkTea
               expression.name
             when IR::Member
               operator = pointer_member_receiver?(expression.receiver) ? "->" : "."
-              member = "#{wrap_member_receiver(expression.receiver)}#{operator}#{expression.member}"
+              member = "#{wrap_member_receiver(expression.receiver)}#{operator}#{sanitize_c_identifier(expression.member)}"
               expression.type.is_a?(Types::Primitive) && expression.type.void? ? "((void)(#{member}))" : member
             when IR::Index
               "#{wrap_index_receiver(expression.receiver)}[#{emit_expression(expression.index)}]"
@@ -195,7 +195,7 @@ module MilkTea
               "{ .kind = #{kind_constant} }"
             else
               payload_fields = expression.fields.map { |field| ".#{field.name} = #{emit_variant_field_initializer(expression.type, expression.arm_name, field)}" }.join(", ")
-              "{ .kind = #{kind_constant}, .data.#{expression.arm_name} = { #{payload_fields} } }"
+              "{ .kind = #{kind_constant}, .data.#{sanitize_c_identifier(expression.arm_name)} = { #{payload_fields} } }"
             end
           end
 
@@ -224,7 +224,7 @@ module MilkTea
             else
               arm_c = "#{outer_c}_#{expression.arm_name}"
               payload_fields = expression.fields.map { |field| ".#{field.name} = #{emit_variant_field_initializer(expression.type, expression.arm_name, field)}" }.join(", ")
-              "(#{outer_c}){ .kind = #{kind_constant}, .data.#{expression.arm_name} = (struct #{arm_c}){ #{payload_fields} } }"
+              "(#{outer_c}){ .kind = #{kind_constant}, .data.#{sanitize_c_identifier(expression.arm_name)} = (struct #{arm_c}){ #{payload_fields} } }"
             end
           end
 

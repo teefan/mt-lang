@@ -105,4 +105,115 @@ class VariantCodegenTest < Minitest::Test
     assert_match(/Counter_read\(\*this\)/, generated,
                 "editable method must dereference this when calling value-receiver method")
   end
+
+  # --- match else: as wildcard (Bug 7: parser fix) ---
+
+  def test_match_with_else_as_wildcard
+    source = <<~MT
+      # module demo.elsewild
+
+      variant Color:
+          red(value: int)
+          green(value: int)
+          blue(value: int)
+
+      function describe(c: Color) -> int:
+          match c:
+              Color.red as r:
+                  return r.value
+              else:
+                  return 0
+
+      function main() -> int:
+          var c = Color.red(value = 42)
+          return describe(c)
+    MT
+
+    generated = generate_c_from_program_source(source)
+    assert_match(/demo_elsewild_Color_kind_red/, generated,
+                "match with else: must produce valid C with variant arm dispatching")
+  end
+
+  def test_match_expression_with_else_as_wildcard
+    source = <<~MT
+      # module demo.elsewild2
+
+      variant Color:
+          red(value: int)
+          green(value: int)
+
+      function get_color_name(c: Color) -> int:
+          return match c:
+              Color.red as r: r.value
+              else: 0
+
+      function main() -> int:
+          var c = Color.green(value = 7)
+          return get_color_name(c)
+    MT
+
+    generated = generate_c_from_program_source(source)
+    assert_match(/demo_elsewild2_Color_kind_red/, generated,
+                "match expression with else: must produce valid C")
+  end
+
+  # --- C keyword arm name sanitization (Bug 11) ---
+
+  def test_c_keyword_arm_name_sizeof
+    source = <<~MT
+      # module demo.ckw1
+
+      variant Token:
+          sizeof(val: int)
+          switch(val: str)
+
+      function make_token() -> Token:
+          return Token.sizeof(val = 42)
+
+      function main() -> int:
+          var t = make_token()
+          match t:
+              Token.sizeof as s:
+                  return s.val
+              else:
+                  return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+    assert_match(/struct demo_ckw1_Token_sizeof/, generated,
+                "C keyword arm sizeof must produce valid struct type name")
+    assert_match(/struct demo_ckw1_Token_switch/, generated,
+                "C keyword arm switch must produce valid struct type name")
+    refute_match(/(?<![a-zA-Z_])sizeof(?![a-zA-Z_])/, generated,
+                "arm name sizeof must NOT appear as standalone C identifier")
+  end
+
+  def test_c_keyword_arm_name_case_default
+    source = <<~MT
+      # module demo.ckw2
+
+      variant Action:
+          default(val: int)
+          case(val: int)
+
+      function make_action() -> Action:
+          return Action.case(val = 1)
+
+      function main() -> int:
+          var a = make_action()
+          match a:
+              Action.case as c:
+                  return c.val
+              else:
+                  return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+    refute_match(/\.data\.case\b/, generated,
+                   "C keyword arm case as union member must be sanitized")
+    refute_match(/\.data\.default\b/, generated,
+                   "C keyword arm default as union member must be sanitized")
+    assert_match(/\.data\.case_/, generated,
+                "C keyword arm case must be sanitized as case_")
+  end
 end

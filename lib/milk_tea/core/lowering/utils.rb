@@ -1398,5 +1398,29 @@ module MilkTea
           end
         end
       end
+
+      def wrap_nullable_field_value(field_type, lowered_value, env)
+        return lowered_value unless field_type.is_a?(Types::Nullable)
+        return lowered_value if pointer_type?(field_type.base)
+        return lowered_value if lowered_value.type.is_a?(Types::Nullable)
+        return lowered_value if lowered_value.is_a?(IR::AddressOf)
+        return lowered_value if addressable_ir_expression?(lowered_value)
+
+        temp_name = fresh_c_temp_name(env, "nullable_agg")
+        (env[:nullable_agg_setup] ||= []) << IR::LocalDecl.new(
+          name: temp_name,
+          linkage_name: temp_name,
+          type: field_type.base,
+          value: lowered_value,
+        )
+        IR::AddressOf.new(
+          expression: IR::Name.new(name: temp_name, type: field_type.base, pointer: false),
+          type: field_type.base,
+        )
+      end
+
+      def addressable_ir_expression?(expression)
+        expression.is_a?(IR::Name) || expression.is_a?(IR::Member) || expression.is_a?(IR::Index)
+      end
   end
 end

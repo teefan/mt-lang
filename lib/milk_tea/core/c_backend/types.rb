@@ -5,6 +5,19 @@ module MilkTea
     module CBackendTypes
       private
 
+          C_KEYWORDS = %w[
+            auto break case char const continue default do double
+            else enum extern float for goto if inline int long
+            register restrict return short signed sizeof static
+            struct switch typedef union unsigned void volatile while
+            _Bool _Complex _Imaginary alignas alignof bool complex
+            imaginary noreturn static_assert thread_local
+          ].to_set.freeze
+
+          def sanitize_c_identifier(name)
+            C_KEYWORDS.include?(name) ? "#{name}_" : name
+          end
+
           def emit_forward_declarations(opaque_decls, aggregate_decls)
             lines = []
             opaque_decls.uniq { |opaque_decl| opaque_decl.linkage_name }.each do |opaque_decl|
@@ -64,13 +77,13 @@ module MilkTea
              # Per-arm payload structs
              payload_arms.each do |arm|
                lines << "struct #{arm.linkage_name} {"
-               arm.fields.each do |field|
-                 if variant_self_reference?(field.type, outer_c)
-                   lines << "#{INDENT}#{c_declaration(field.type, "*#{field.name}")};"
-                 else
-                   lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
-                 end
-               end
+                arm.fields.each do |field|
+                  if variant_self_reference?(field.type, outer_c)
+                    lines << "#{INDENT}#{c_declaration(field.type, "*#{field.name}")};"
+                  else
+                    lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
+                  end
+                end
                lines << "};"
                lines << "typedef struct #{arm.linkage_name} #{arm.linkage_name};"
              end
@@ -91,7 +104,7 @@ module MilkTea
             if payload_arms.any?
               lines << "union #{outer_c}__data {"
               payload_arms.each do |arm|
-                lines << "#{INDENT}struct #{arm.linkage_name} #{arm.name};"
+                lines << "#{INDENT}struct #{arm.linkage_name} #{sanitize_c_identifier(arm.name)};"
               end
               lines << "};"
             end
