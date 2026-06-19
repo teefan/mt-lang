@@ -257,14 +257,16 @@ module MilkTea
           provided_names = expression.arguments.map(&:name).to_set
           payload_fields = expression.arguments.map do |argument|
             field_type = arm_fields.fetch(argument.name)
+            lowered_value = lower_contextual_expression(
+              argument.value,
+              env:,
+              expected_type: field_type,
+              contextual_int_to_float: contextual_int_to_float_target?(field_type),
+            )
+            lowered_value = IR::AddressOf.new(expression: lowered_value, type: lowered_value.type) if field_type == variant_type
             IR::AggregateField.new(
               name: argument.name,
-              value: lower_contextual_expression(
-                argument.value,
-                env:,
-                expected_type: field_type,
-                contextual_int_to_float: contextual_int_to_float_target?(field_type),
-              ),
+              value: lowered_value,
             )
           end
           arm_fields.each do |field_name, field_type|
@@ -393,6 +395,10 @@ module MilkTea
 
         if ref_type?(lowered_receiver.type)
           return IR::Unary.new(operator: "*", operand: lowered_receiver, type: referenced_type(lowered_receiver.type))
+        end
+
+        if lowered_receiver.is_a?(IR::Name) && lowered_receiver.pointer
+          return IR::Unary.new(operator: "*", operand: lowered_receiver, type: lowered_receiver.type)
         end
 
         if pointer_type?(lowered_receiver.type)
