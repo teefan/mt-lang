@@ -1574,7 +1574,7 @@ module MilkTea
       def atomic_method_kind(receiver_type, name)
         return unless atomic_type?(receiver_type)
 
-        TypeCompatibilityPredicates::ATOMIC_METHOD_KINDS[name]
+        CompatibilityHelpers::ATOMIC_METHOD_KINDS[name]
       end
 
       def lower_atomic_method_call(kind, receiver, expression, env:, type:)

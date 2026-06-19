@@ -3,7 +3,7 @@
 require "json"
 require_relative "../tooling/formatter"
 require_relative "../core/token"
-require_relative "../core/common/types"
+require_relative "../core/types/types"
 
 require_relative "imported_bindings/generator"
 require_relative "imported_bindings/method_source"

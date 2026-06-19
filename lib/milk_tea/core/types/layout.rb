@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fiddle"
+require_relative "types"
 
 module MilkTea
   module Layout

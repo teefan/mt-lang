@@ -1,65 +1,9 @@
 # frozen_string_literal: true
 
+require_relative "types"
+
 module MilkTea
-  # Pure type-compatibility predicates shared by sema and lowering.
-  module TypeCompatibilityPredicates
-    BUILTIN_VOID = Types::Primitive.new("void")
-    BUILTIN_CHAR = Types::Primitive.new("char")
-    BUILTIN_CSTR = Types::Primitive.new("cstr")
-    BUILTIN_STR  = Types::StringView.new
-
-    EVENT_METHOD_KINDS = {
-      "subscribe" => :event_subscribe,
-      "subscribe_once" => :event_subscribe_once,
-      "unsubscribe" => :event_unsubscribe,
-      "emit" => :event_emit,
-      "wait" => :event_wait,
-    }.freeze
-
-    EVENT_METHOD_NAMES = EVENT_METHOD_KINDS.invert.freeze
-
-    STR_BUFFER_METHOD_KINDS = {
-      "clear" => :str_buffer_clear,
-      "assign" => :str_buffer_assign,
-      "append" => :str_buffer_append,
-      "assign_format" => :str_buffer_assign_format,
-      "append_format" => :str_buffer_append_format,
-      "len" => :str_buffer_len,
-      "capacity" => :str_buffer_capacity,
-      "as_str" => :str_buffer_as_str,
-      "as_cstr" => :str_buffer_as_cstr,
-    }.freeze
-
-    STR_BUFFER_METHOD_NAMES = STR_BUFFER_METHOD_KINDS.invert.freeze
-
-    ATOMIC_METHOD_KINDS = {
-      "load" => :atomic_load,
-      "store" => :atomic_store,
-      "add" => :atomic_add,
-      "sub" => :atomic_sub,
-      "exchange" => :atomic_exchange,
-      "compare_exchange" => :atomic_compare_exchange,
-    }.freeze
-
-    ATOMIC_METHOD_NAMES = ATOMIC_METHOD_KINDS.invert.freeze
-
-    def type_ref_from_specialization(expression)
-      case expression.callee
-      when AST::Identifier
-        return nil if %w[zero default reinterpret].include?(expression.callee.name)
-
-        AST::TypeRef.new(name: AST::QualifiedName.new(parts: [expression.callee.name]), arguments: expression.arguments, nullable: false)
-      when AST::MemberAccess
-        return nil unless expression.callee.receiver.is_a?(AST::Identifier)
-
-        AST::TypeRef.new(
-          name: AST::QualifiedName.new(parts: [expression.callee.receiver.name, expression.callee.member]),
-          arguments: expression.arguments,
-          nullable: false,
-        )
-      end
-    end
-
+  module TypePredicates
     def method_dispatch_receiver_type(receiver_type)
       return receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
       if receiver_type.is_a?(Types::Nullable)
@@ -77,20 +21,6 @@ module MilkTea
         end,
       )
       dispatch_receiver_type == receiver_type ? receiver_type : dispatch_receiver_type
-    end
-
-    def event_subscription_result_type
-      @ctx.types.fetch("Result").instantiate([@ctx.types.fetch("Subscription"), @ctx.types.fetch("EventError")])
-    end
-
-    def event_wait_result_type(event_type)
-      @ctx.types.fetch("Result").instantiate([event_type.payload_type || @ctx.types.fetch("void"), @ctx.types.fetch("EventError")])
-    end
-
-    private
-
-    def string_literal_cstr_compatibility?(expression, expected_type)
-      expression.is_a?(AST::StringLiteral) && !expression.cstring && expected_type == BUILTIN_CSTR
     end
 
     def task_root_proc_type?(type)
@@ -122,7 +52,7 @@ module MilkTea
       return false unless actual_type.is_a?(Types::Null)
       return false unless actual_type.target_type
       return false if expected_type.is_a?(Types::Nullable)
-      return true if expected_type == BUILTIN_CSTR && char_pointer_type?(actual_type.target_type)
+      return true if expected_type == Types::Primitive.new("cstr") && char_pointer_type?(actual_type.target_type)
       return false unless pointer_type?(expected_type)
 
       actual_type.target_type == expected_type
@@ -243,7 +173,7 @@ module MilkTea
     def foreign_char_pointer_buffer_boundary_compatible?(public_type, boundary_type)
       return false unless char_pointer_type?(boundary_type)
 
-      return true if public_type.is_a?(Types::Span) && public_type.element_type == BUILTIN_CHAR
+      return true if public_type.is_a?(Types::Span) && public_type.element_type == Types::Primitive.new("char")
       return true if char_array_text_type?(public_type)
       return true if str_buffer_type?(public_type)
 
@@ -252,8 +182,8 @@ module MilkTea
 
     def foreign_boundary_element_compatible?(public_type, boundary_type)
       return true if public_type == boundary_type
-      return true if public_type == BUILTIN_STR && boundary_type == BUILTIN_CSTR
-      return true if public_type == BUILTIN_STR && char_pointer_type?(boundary_type)
+      return true if public_type == Types::StringView.new && boundary_type == Types::Primitive.new("cstr")
+      return true if public_type == Types::StringView.new && char_pointer_type?(boundary_type)
 
       foreign_identity_projection_compatible?(public_type, boundary_type)
     end
@@ -292,8 +222,8 @@ module MilkTea
 
       return true if void_pointer_type?(actual_type) && opaque_type?(expected_type)
       return true if opaque_type?(actual_type) && void_pointer_type?(expected_type)
-      return true if char_pointer_type?(actual_type) && expected_type == BUILTIN_CSTR
-      return true if actual_type == BUILTIN_CSTR && char_pointer_type?(expected_type)
+      return true if char_pointer_type?(actual_type) && expected_type == Types::Primitive.new("cstr")
+      return true if actual_type == Types::Primitive.new("cstr") && char_pointer_type?(expected_type)
 
       false
     end
@@ -390,7 +320,7 @@ module MilkTea
     end
 
     def void_pointer_type?(type)
-      pointer_type?(type) && type.arguments.first == BUILTIN_VOID
+      pointer_type?(type) && type.arguments.first == Types::Primitive.new("void")
     end
 
     def native_foreign_layout_compatible?(native_type, foreign_type)
@@ -435,7 +365,7 @@ module MilkTea
     end
 
     def char_pointer_type?(type)
-      pointer_type?(type) && type.arguments.first == BUILTIN_CHAR
+      pointer_type?(type) && type.arguments.first == Types::Primitive.new("char")
     end
 
     def opaque_type?(type)
@@ -490,10 +420,6 @@ module MilkTea
 
     def proc_type?(type)
       type.is_a?(Types::Proc)
-    end
-
-    def range_expr?(expression)
-      expression.is_a?(AST::RangeExpr)
     end
 
     def pointee_type(type)
@@ -692,6 +618,31 @@ module MilkTea
       else
         error.call("unknown generic type #{name}")
       end
+    end
+
+    private
+
+    def char_array_text_type?(type)
+      return false unless array_type?(type)
+
+      element = array_element_type(type)
+      element.is_a?(Types::Primitive) && element.name == "char"
+    end
+
+    def str_buffer_type?(type)
+      type.arguments.length == 1 && type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments.first.value.is_a?(Integer)
+    end
+
+    def array_type?(type)
+      type.arguments.length == 2 && type.arguments[1].is_a?(Types::LiteralTypeArg) && type.arguments[1].value.is_a?(Integer)
+    end
+
+    def array_length(type)
+      type.arguments[1].value
+    end
+
+    def array_element_type(type)
+      type.arguments.first
     end
   end
 end
