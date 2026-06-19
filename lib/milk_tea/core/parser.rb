@@ -1514,7 +1514,11 @@ module MilkTea
       binding_token = nil
       binding_name = nil
 
-      pattern = parse_expression
+      if match(:else)
+        pattern = AST::Identifier.new(name: "_", line: previous.line, column: previous.column)
+      else
+        pattern = parse_expression
+      end
       binding_name = if match(:as)
                        binding_token = consume_name("expected binding name after 'as'")
                        binding_token.lexeme
@@ -1977,7 +1981,11 @@ module MilkTea
     end
 
     def parse_match_expression_arm
-      pattern = parse_expression
+      pattern = if match(:else)
+                  AST::Identifier.new(name: "_", line: previous.line, column: previous.column)
+                else
+                  parse_expression
+                end
       binding_token = nil
       binding_name = if match(:as)
                        binding_token = consume_name("expected binding name after 'as'")

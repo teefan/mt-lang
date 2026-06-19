@@ -738,7 +738,8 @@ module MilkTea
         case parameter.passing_mode
         when :plain, :consuming
           if parameter.boundary_type.nil? || parameter.boundary_type == parameter.type
-            lower_contextual_expression(argument.value, env:, expected_type: parameter.type)
+            expected = parameter.passing_mode == :consuming ? Types::Nullable.new(parameter.type) : parameter.type
+            lower_contextual_expression(argument.value, env:, expected_type: expected)
           elsif parameter.boundary_type == @ctx.types.fetch("cstr") && parameter.type == @ctx.types.fetch("str")
             if argument.value.is_a?(AST::StringLiteral) && !argument.value.cstring
               return IR::StringLiteral.new(value: argument.value.value, type: parameter.boundary_type, cstring: true)
