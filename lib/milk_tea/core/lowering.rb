@@ -14,6 +14,7 @@
 #   .functions              Hash[name → FunctionBinding]
 #   .methods                Hash[type → Hash[name → FunctionBinding]]
 #   .implemented_interfaces Hash[type → Set[InterfaceBinding]]
+#   .resolved_expr_types   Hash[expression.object_id → Types::Base]
 #
 # The output is IR::Program, consumed by CBackend.
 

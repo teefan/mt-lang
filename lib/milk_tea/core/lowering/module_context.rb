@@ -9,6 +9,7 @@ module MilkTea
       attr_accessor :methods, :attributes, :attribute_applications, :implemented_interfaces
       attr_accessor :struct_types, :union_types, :opaque_types
       attr_accessor :current_type_substitutions
+      attr_accessor :resolved_expr_types
 
       def initialize
         @imports = {}
@@ -24,6 +25,7 @@ module MilkTea
         @attribute_applications = {}
         @implemented_interfaces = {}
         @current_type_substitutions = nil
+        @resolved_expr_types = {}
       end
 
       def install(analysis, module_roots: nil)
@@ -41,6 +43,7 @@ module MilkTea
         @attribute_applications = analysis.attribute_applications
         @implemented_interfaces = analysis.implemented_interfaces
         @directives = analysis.directives
+        @resolved_expr_types = analysis.resolved_expr_types
         @struct_types = {}
         @union_types = {}
         @opaque_types = {}
@@ -57,6 +60,7 @@ module MilkTea
           implemented_interfaces: @implemented_interfaces,
           struct_types: @struct_types, union_types: @union_types,
           opaque_types: @opaque_types, current_type_substitutions: @current_type_substitutions,
+          resolved_expr_types: @resolved_expr_types,
         }
       end
 

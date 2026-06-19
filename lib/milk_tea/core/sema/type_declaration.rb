@@ -26,6 +26,7 @@ module MilkTea
           callable_value_member_access_sites: @callable_value_member_access_sites.dup.freeze,
           required_unsafe_lines: @required_unsafe_lines.uniq.freeze,
           uses_parallel_for: @uses_parallel_for,
+          resolved_expr_types: @resolved_expr_types.dup.freeze,
         )
       end
 
