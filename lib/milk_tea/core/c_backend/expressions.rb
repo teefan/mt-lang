@@ -354,12 +354,24 @@ module MilkTea
 
           def emit_aggregate_field_initializer(type, field)
             field_type = aggregate_field_type(type, field.name)
-            void_storage_field?(field_type) ? emit_void_field_initializer(field.value) : emit_initializer(field.value)
+            if field_type.is_a?(Types::Nullable) && !field.value.type.is_a?(Types::Nullable) && !pointer_type?(field_type.base) && !field.value.is_a?(IR::AddressOf)
+              "&#{emit_initializer(field.value)}"
+            elsif void_storage_field?(field_type)
+              emit_void_field_initializer(field.value)
+            else
+              emit_initializer(field.value)
+            end
           end
 
           def emit_variant_field_initializer(type, arm_name, field)
             field_type = type.arm(arm_name).fetch(field.name)
-            void_storage_field?(field_type) ? emit_void_field_initializer(field.value) : emit_initializer(field.value)
+            if field_type.is_a?(Types::Nullable) && !field.value.type.is_a?(Types::Nullable) && !pointer_type?(field_type.base) && !field.value.is_a?(IR::AddressOf)
+              "&#{emit_initializer(field.value)}"
+            elsif void_storage_field?(field_type)
+              emit_void_field_initializer(field.value)
+            else
+              emit_initializer(field.value)
+            end
           end
 
           def emit_void_field_initializer(expression)
