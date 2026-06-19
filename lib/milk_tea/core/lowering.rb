@@ -6,6 +6,8 @@
 #   .ast                    raw parsed AST
 #   .module_name            module identifier string
 #   .module_kind            :module or :raw_module
+#   .directives             compiler/link/include directives
+#   .imports                imported module bindings
 #   .types                  Hash[name → Types::Base]
 #   .interfaces             Hash[name → InterfaceBinding|GenericInterfaceBinding]
 #   .attributes             Hash[name → AttributeBinding]
@@ -15,6 +17,10 @@
 #   .methods                Hash[type → Hash[name → FunctionBinding]]
 #   .implemented_interfaces Hash[type → Set[InterfaceBinding]]
 #   .resolved_expr_types   Hash[expression.object_id → Types::Base]
+#   .uses_parallel_for      bool
+#
+# Cross-module access uses analysis_for_module(name) which returns
+# another module's Analysis and its fields as listed above.
 #
 # The output is IR::Program, consumed by CBackend.
 
