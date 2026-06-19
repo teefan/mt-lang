@@ -6,8 +6,8 @@ const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
 var delay_buffer: array[float, 96000] = zero[array[float, 96000]]
-var delay_buffer_size: uint = uint<-96000
-var delay_read_index: uint = uint<-2
+var delay_buffer_size: uint = 96000u
+var delay_read_index: uint = 2u
 var delay_write_index: uint = 0
 var low_pass_state: array[float, 2] = zero[array[float, 2]]
 
@@ -19,15 +19,15 @@ function audio_process_effect_lpf(buffer: ptr[void], frames: uint) -> void:
         let k: float = cutoff / (cutoff + 0.1591549431)
 
         var index: uint = 0
-        while index < frames * uint<-2:
+        while index < frames * 2u:
             let left = read(buffer_data + ptr_uint<-index)
-            let right = read(buffer_data + ptr_uint<-(index + uint<-1))
+            let right = read(buffer_data + ptr_uint<-(index + 1u))
 
             low_pass_state[0] += k * (left - low_pass_state[0])
             low_pass_state[1] += k * (right - low_pass_state[1])
             read(buffer_data + ptr_uint<-index) = low_pass_state[0]
-            read(buffer_data + ptr_uint<-(index + uint<-1)) = low_pass_state[1]
-            index += uint<-2
+            read(buffer_data + ptr_uint<-(index + 1u)) = low_pass_state[1]
+            index += 2u
 
 
 function audio_process_effect_delay(buffer: ptr[void], frames: uint) -> void:
@@ -35,25 +35,25 @@ function audio_process_effect_delay(buffer: ptr[void], frames: uint) -> void:
         let buffer_data = ptr[float]<-buffer
 
         var index: uint = 0
-        while index < frames * uint<-2:
+        while index < frames * 2u:
             let left_delay = delay_buffer[int<-delay_read_index]
-            delay_read_index += uint<-1
+            delay_read_index += 1u
             let right_delay = delay_buffer[int<-delay_read_index]
-            delay_read_index += uint<-1
+            delay_read_index += 1u
             if delay_read_index == delay_buffer_size:
                 delay_read_index = 0
 
             read(buffer_data + ptr_uint<-index) = 0.5 * read(buffer_data + ptr_uint<-index) + 0.5 * left_delay
-            read(buffer_data + ptr_uint<-(index + uint<-1)) = 0.5 * read(buffer_data + ptr_uint<-(index + uint<-1)) + 0.5 * right_delay
+            read(buffer_data + ptr_uint<-(index + 1u)) = 0.5 * read(buffer_data + ptr_uint<-(index + 1u)) + 0.5 * right_delay
 
             delay_buffer[int<-delay_write_index] = read(buffer_data + ptr_uint<-index)
-            delay_write_index += uint<-1
-            delay_buffer[int<-delay_write_index] = read(buffer_data + ptr_uint<-(index + uint<-1))
-            delay_write_index += uint<-1
+            delay_write_index += 1u
+            delay_buffer[int<-delay_write_index] = read(buffer_data + ptr_uint<-(index + 1u))
+            delay_write_index += 1u
             if delay_write_index == delay_buffer_size:
                 delay_write_index = 0
 
-            index += uint<-2
+            index += 2u
 
 
 function main() -> int:

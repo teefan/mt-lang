@@ -102,7 +102,7 @@ function sequence_is_acked(sequence: uint, ack: uint, ack_bits: uint) -> bool:
     if distance == 0 or distance > uint<-ack_window_size:
         return false
 
-    let mask = (uint<-1) << (distance - 1)
+    let mask = (1u) << (distance - 1)
     return (ack_bits & mask) != 0
 
 
@@ -258,7 +258,7 @@ function mark_received(protocol: ptr[ProtocolState], sequence: uint) -> bool:
     if distance == 0 or distance > uint<-ack_window_size:
         return false
 
-    let mask = (uint<-1) << (distance - 1)
+    let mask = (1u) << (distance - 1)
     if (current_mask & mask) != 0:
         return false
 

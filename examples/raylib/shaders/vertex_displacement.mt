@@ -37,7 +37,7 @@ function main() -> int:
     rlgl.enable_shader(shader.id)
     rlgl.active_texture_slot(1)
     rlgl.enable_texture(perlin_noise_map.id)
-    rlgl.set_uniform_sampler(perlin_noise_map_location, uint<-1)
+    rlgl.set_uniform_sampler(perlin_noise_map_location, 1u)
 
     let plane_mesh = rl.gen_mesh_plane(50.0, 50.0, 50, 50)
     var plane_model = rl.load_model_from_mesh(plane_mesh)

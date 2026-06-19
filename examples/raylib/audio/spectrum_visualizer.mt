@@ -210,15 +210,15 @@ function main() -> int:
                 var left: int = 0
                 var right: int = 0
                 unsafe:
-                    if wav.channels == uint<-2:
-                        left = int<-read(wav_pcm16 + ptr_uint<-(wav_cursor * uint<-2))
-                        right = int<-read(wav_pcm16 + ptr_uint<-(wav_cursor * uint<-2 + uint<-1))
+                    if wav.channels == 2u:
+                        left = int<-read(wav_pcm16 + ptr_uint<-(wav_cursor * 2u))
+                        right = int<-read(wav_pcm16 + ptr_uint<-(wav_cursor * 2u + 1u))
                     else:
                         left = int<-read(wav_pcm16 + ptr_uint<-wav_cursor)
                         right = left
 
                 chunk_samples[index] = short<-((left + right) / 2)
-                wav_cursor += uint<-1
+                wav_cursor += 1u
                 if wav_cursor >= wav.frameCount:
                     wav_cursor = 0
                 index += 1

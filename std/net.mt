@@ -2730,14 +2730,14 @@ extending SocketAddress:
         if family == v4_family:
             let in_ptr = unsafe: ptr[libuv.sockaddr_in]<-storage
             let nbo_port = (unsafe: read(in_ptr)).sin_port
-            let host_port = int<-(((uint<-nbo_port) >> 8) | (((uint<-nbo_port) & uint<-0xFF) << 8))
+            let host_port = int<-(((uint<-nbo_port) >> 8) | (((uint<-nbo_port) & 0xFFu) << 8))
             return Result[int, Error].success(value = host_port)
 
         let v6_family = ipv6_socket_family()
         if family == v6_family:
             let in6_ptr = unsafe: ptr[libuv.sockaddr_in6]<-storage
             let nbo_port = (unsafe: read(in6_ptr)).sin6_port
-            let host_port = int<-(((uint<-nbo_port) >> 8) | (((uint<-nbo_port) & uint<-0xFF) << 8))
+            let host_port = int<-(((uint<-nbo_port) >> 8) | (((uint<-nbo_port) & 0xFFu) << 8))
             return Result[int, Error].success(value = host_port)
 
         return Result[int, Error].failure(
@@ -2830,7 +2830,7 @@ extending UdpSocket:
             return
 
         let state = unsafe: ptr[UdpSocketState]<-state_raw
-        if unsafe: read(state).pending_send_count > ptr_uint<-0:
+        if unsafe: read(state).pending_send_count > 0z:
             unsafe:
                 read(state).closing = true
             this.handle = null

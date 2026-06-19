@@ -769,7 +769,7 @@ function parse_integer(parser: ref[Parser]) -> Result[long, ParseError]:
                 if not ascii_digit(payload.value):
                     pass
                 else:
-                    result = result * 10 + long<-(payload.value - ubyte<-48)
+                    result = result * 10 + long<-(payload.value - 48ub)
                     advance = true
 
         if not advance:

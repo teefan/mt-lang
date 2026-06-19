@@ -366,7 +366,7 @@ function append_ptr_uint(target: ref[string.String], value: ptr_uint) -> void:
     var remaining = value
     while remaining != 0:
         let digit = remaining % 10
-        digits[count] = ubyte<-(ptr_uint<-48 + digit)
+        digits[count] = ubyte<-(48z + digit)
         remaining = remaining / 10
         count += 1
 

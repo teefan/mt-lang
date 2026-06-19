@@ -87,7 +87,7 @@ function slice_text_particle(
     if length > 1 and read(particle_count) + length < MAX_TEXT_PARTICLES:
         var index = 0
         while index < length:
-            var piece_text = source_text.slice(ptr_uint<-index, ptr_uint<-1)
+            var piece_text = source_text.slice(ptr_uint<-index, 1z)
             if slice_length != 1:
                 piece_text = text.cstr_as_str(rl.text_subtext(source_text, index, slice_length))
 

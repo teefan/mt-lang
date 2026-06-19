@@ -125,7 +125,7 @@ function parse_decimal(text_value: str) -> Option[ptr_uint]:
         if current < 48 or current > 57:
             return Option[ptr_uint].none
 
-        let digit = ptr_uint<-(current - ubyte<-48)
+        let digit = ptr_uint<-(current - 48ub)
         if value > (heap.ptr_uint_max - digit) / 10:
             return Option[ptr_uint].none
 
@@ -468,19 +468,19 @@ function hexadecimal_digit_value(current: ubyte) -> Option[ptr_uint]:
         return Option[ptr_uint].none
 
     if current <= 57:
-        return Option[ptr_uint].some(value = ptr_uint<-(current - ubyte<-48))
+        return Option[ptr_uint].some(value = ptr_uint<-(current - 48ub))
 
     if current < 65:
         return Option[ptr_uint].none
 
     if current <= 70:
-        return Option[ptr_uint].some(value = ptr_uint<-(current - ubyte<-55))
+        return Option[ptr_uint].some(value = ptr_uint<-(current - 55ub))
 
     if current < 97:
         return Option[ptr_uint].none
 
     if current <= 102:
-        return Option[ptr_uint].some(value = ptr_uint<-(current - ubyte<-87))
+        return Option[ptr_uint].some(value = ptr_uint<-(current - 87ub))
 
     return Option[ptr_uint].none
 

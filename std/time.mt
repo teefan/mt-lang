@@ -74,8 +74,8 @@ public function seconds(value: ptr_int) -> TimeSpec:
 
 
 public function milliseconds(value: ptr_uint) -> TimeSpec:
-    let seconds_part = ptr_int<-(value / ptr_uint<-1000)
-    let nanoseconds_part = ptr_int<-((value % ptr_uint<-1000) * NANOSECONDS_PER_MILLISECOND)
+    let seconds_part = ptr_int<-(value / 1000z)
+    let nanoseconds_part = ptr_int<-((value % 1000z) * NANOSECONDS_PER_MILLISECOND)
     return c.timespec(tv_sec = seconds_part, tv_nsec = nanoseconds_part)
 
 

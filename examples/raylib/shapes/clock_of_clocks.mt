@@ -11,11 +11,11 @@ const HANDS_MOVE_DURATION: float = 0.5
 
 
 function parse_ascii_digit(value: ubyte) -> int:
-    return int<-(value - ubyte<-48)
+    return int<-(value - 48ub)
 
 
 function parse_two_digits(value_text: str, offset: ptr_uint) -> int:
-    return parse_ascii_digit(value_text.byte_at(offset)) * 10 + parse_ascii_digit(value_text.byte_at(offset + ptr_uint<-1))
+    return parse_ascii_digit(value_text.byte_at(offset)) * 10 + parse_ascii_digit(value_text.byte_at(offset + 1z))
 
 
 function main() -> int:
@@ -322,18 +322,18 @@ function main() -> int:
     while not rl.window_should_close():
         let now = time.now()
         var time_buffer = zero[array[char, 7]]
-        if time.format_local_time_into(ptr_of(time_buffer[0]), ptr_uint<-7, "%H%M%S", now) != 0:
+        if time.format_local_time_into(ptr_of(time_buffer[0]), 7z, "%H%M%S", now) != 0:
             let clock_text = text.chars_as_str(ptr_of(time_buffer[0]))
-            let seconds = parse_two_digits(clock_text, ptr_uint<-4)
+            let seconds = parse_two_digits(clock_text, 4z)
             if seconds != prev_seconds:
                 prev_seconds = seconds
 
-                let hour_value = parse_two_digits(clock_text, ptr_uint<-0) % hour_mode
+                let hour_value = parse_two_digits(clock_text, 0z) % hour_mode
                 let digit_values = array[int, CLOCK_DIGITS](
                     hour_value / 10,
                     hour_value % 10,
-                    parse_two_digits(clock_text, ptr_uint<-2) / 10,
-                    parse_two_digits(clock_text, ptr_uint<-2) % 10,
+                    parse_two_digits(clock_text, 2z) / 10,
+                    parse_two_digits(clock_text, 2z) % 10,
                     seconds / 10,
                     seconds % 10
                 )

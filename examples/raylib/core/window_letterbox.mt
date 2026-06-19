@@ -13,7 +13,7 @@ function random_bar_color() -> rl.Color:
         r = ubyte<-rl.get_random_value(100, 250),
         g = ubyte<-rl.get_random_value(50, 150),
         b = ubyte<-rl.get_random_value(10, 100),
-        a = ubyte<-255
+        a = 255ub
     )
 
 

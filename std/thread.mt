@@ -115,6 +115,6 @@ extending Thread:
 
 
 public function sleep_ms(milliseconds: uint) -> void:
-    usleep(milliseconds * uint<-1000)
+    usleep(milliseconds * 1000u)
 
 external function usleep(__useconds: uint) -> int

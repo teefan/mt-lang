@@ -11,11 +11,11 @@ const DEG_TO_RAD: float = rl.PI / 180.0
 
 
 function parse_ascii_digit(value: ubyte) -> int:
-    return int<-(value - ubyte<-48)
+    return int<-(value - 48ub)
 
 
 function parse_two_digits(value_text: str, offset: ptr_uint) -> int:
-    return parse_ascii_digit(value_text.byte_at(offset)) * 10 + parse_ascii_digit(value_text.byte_at(offset + ptr_uint<-1))
+    return parse_ascii_digit(value_text.byte_at(offset)) * 10 + parse_ascii_digit(value_text.byte_at(offset + 1z))
 
 
 function blinking_separator_color(second_value: int, on_color: rl.Color, off_color: rl.Color) -> rl.Color:
@@ -47,13 +47,13 @@ struct Clock:
 function update_clock(clock: ref[Clock]) -> void:
     let now = time.now()
     var time_buffer = zero[array[char, 7]]
-    if time.format_local_time_into(ptr_of(time_buffer[0]), ptr_uint<-7, "%H%M%S", now) == 0:
+    if time.format_local_time_into(ptr_of(time_buffer[0]), 7z, "%H%M%S", now) == 0:
         return
 
     let clock_text = text.chars_as_str(ptr_of(time_buffer[0]))
-    let second_value = parse_two_digits(clock_text, ptr_uint<-4)
-    let minute_value = parse_two_digits(clock_text, ptr_uint<-2)
-    let hour_value = parse_two_digits(clock_text, ptr_uint<-0)
+    let second_value = parse_two_digits(clock_text, 4z)
+    let minute_value = parse_two_digits(clock_text, 2z)
+    let hour_value = parse_two_digits(clock_text, 0z)
 
     read(clock).second.value = second_value
     read(clock).minute.value = minute_value

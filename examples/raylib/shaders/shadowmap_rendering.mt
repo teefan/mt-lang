@@ -46,7 +46,7 @@ function load_shadowmap_render_texture(width: int, height: int) -> rl.RenderText
     target.texture.width = width
     target.texture.height = height
 
-    if target.id > uint<-0:
+    if target.id > 0u:
         rlgl.enable_framebuffer(target.id)
         target.depth = rl.Texture(
             id = rlgl.load_texture_depth(width, height, false),
@@ -74,7 +74,7 @@ function load_shadowmap_render_texture(width: int, height: int) -> rl.RenderText
 
 
 function unload_shadowmap_render_texture(target: rl.RenderTexture2D) -> void:
-    if target.id > uint<-0:
+    if target.id > 0u:
         rlgl.unload_framebuffer(target.id)
 
 

@@ -65,7 +65,7 @@ function main() -> int:
         )
 
         if not left_button_down:
-            let preview_color = rl.Color(r = ubyte<-127, g = ubyte<-127, b = ubyte<-127, a = ubyte<-127)
+            let preview_color = rl.Color(r = 127ub, g = 127ub, b = 127ub, a = 127ub)
             rl.draw_circle_lines_v(rl.get_mouse_position(), line_thickness / 2.0, preview_color)
 
         if start_text:

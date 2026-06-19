@@ -50,7 +50,7 @@ function transaction_id_from_bytes(data: bytes.Bytes) -> array[ubyte, 12]:
     let span = data.as_span()
     var tid = zero[array[ubyte, 12]]
     var i: ptr_uint = 0
-    while i < ptr_uint<-12:
+    while i < 12z:
         tid[i] = span[i]
         i += 1
     return tid
@@ -67,7 +67,7 @@ public function build_binding_request(tid: array[ubyte, 12]) -> bytes.Bytes:
     w.write_ubyte(0xA4)
     w.write_ubyte(0x42)
     var i: ptr_uint = 0
-    while i < ptr_uint<-12:
+    while i < 12z:
         w.write_ubyte(tid[i])
         i += 1
     return w.finish()
@@ -75,23 +75,23 @@ public function build_binding_request(tid: array[ubyte, 12]) -> bytes.Bytes:
 
 function read_ushort_be(data: span[ubyte], offset: ptr_uint) -> ushort:
     let hi = uint<-data[offset]
-    let lo = uint<-data[offset + ptr_uint<-1]
+    let lo = uint<-data[offset + 1z]
     return ushort<-((hi << 8) | lo)
 
 
 function read_uint_be(data: span[ubyte], offset: ptr_uint) -> uint:
     let b0 = uint<-data[offset]
-    let b1 = uint<-data[offset + ptr_uint<-1]
-    let b2 = uint<-data[offset + ptr_uint<-2]
-    let b3 = uint<-data[offset + ptr_uint<-3]
+    let b1 = uint<-data[offset + 1z]
+    let b2 = uint<-data[offset + 2z]
+    let b3 = uint<-data[offset + 3z]
     return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 
 
 function format_ipv4(addr: uint) -> string.String:
-    let a = uint<-(addr & uint<-0xFF)
-    let b = uint<-((addr >> uint<-8) & uint<-0xFF)
-    let c = uint<-((addr >> uint<-16) & uint<-0xFF)
-    let d = uint<-((addr >> uint<-24) & uint<-0xFF)
+    let a = uint<-(addr & 0xFFu)
+    let b = uint<-((addr >> 8u) & 0xFFu)
+    let c = uint<-((addr >> 16u) & 0xFFu)
+    let d = uint<-((addr >> 24u) & 0xFFu)
     var s = string.String.with_capacity(16)
     fmt.append_uint(ref_of(s), d)
     s.append(".")
@@ -116,38 +116,38 @@ public function parse_binding_response(
             "packet too small for STUN header"
         ))
 
-    let msg_type = read_ushort_be(data, ptr_uint<-0)
+    let msg_type = read_ushort_be(data, 0z)
     if msg_type != 0x0101:
         return Result[StunResult, Error].failure(error = stun_error(
             err_not_binding_response,
             "not a binding success response"
         ))
 
-    var attr_len: ptr_uint = ptr_uint<-read_ushort_be(data, ptr_uint<-2)
-    let cookie = read_uint_be(data, ptr_uint<-4)
+    var attr_len: ptr_uint = ptr_uint<-read_ushort_be(data, 2z)
+    let cookie = read_uint_be(data, 4z)
     if cookie != stun_magic_cookie:
         return Result[StunResult, Error].failure(error = stun_error(err_bad_cookie, "invalid magic cookie"))
 
     var j: ptr_uint = 0
-    while j < ptr_uint<-12:
-        if data[ptr_uint<-8 + j] != expected_tid[j]:
+    while j < 12z:
+        if data[8z + j] != expected_tid[j]:
             return Result[StunResult, Error].failure(error = stun_error(err_tid_mismatch, "transaction ID mismatch"))
         j += 1
 
     var offset: ptr_uint = stun_header_len
-    while attr_len >= ptr_uint<-4:
-        if offset + ptr_uint<-4 > data.len:
+    while attr_len >= 4z:
+        if offset + 4z > data.len:
             break
         let attr_type = read_ushort_be(data, offset)
-        let alen = ptr_uint<-read_ushort_be(data, offset + ptr_uint<-2)
-        let padded = (alen + ptr_uint<-3) & (~ptr_uint<-3)
-        if offset + ptr_uint<-4 + alen > data.len:
+        let alen = ptr_uint<-read_ushort_be(data, offset + 2z)
+        let padded = (alen + 3z) & (~3z)
+        if offset + 4z + alen > data.len:
             break
 
-        if attr_type == 0x0020 and alen >= ptr_uint<-8 and data[offset + ptr_uint<-5] == 0x01:
-            let xport = read_ushort_be(data, offset + ptr_uint<-6)
-            let port = xport ^ ushort<-((stun_magic_cookie >> uint<-16) & uint<-0xFFFF)
-            let xaddr = read_uint_be(data, offset + ptr_uint<-8)
+        if attr_type == 0x0020 and alen >= 8z and data[offset + 5z] == 0x01:
+            let xport = read_ushort_be(data, offset + 6z)
+            let port = xport ^ ushort<-((stun_magic_cookie >> 16u) & 0xFFFFu)
+            let xaddr = read_uint_be(data, offset + 8z)
             let ip = xaddr ^ stun_magic_cookie
             var ip_str = format_ipv4(ip)
             defer ip_str.release()
@@ -161,8 +161,8 @@ public function parse_binding_response(
                 Result.success as addr_payload:
                     return Result[StunResult, Error].success(value = StunResult(public_address = addr_payload.value))
 
-        offset = offset + ptr_uint<-4 + padded
-        attr_len = attr_len - ptr_uint<-4 - padded
+        offset = offset + 4z + padded
+        attr_len = attr_len - 4z - padded
 
     return Result[StunResult, Error].failure(error = stun_error(
         err_no_xor_address,

@@ -3,7 +3,7 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
-const byte_equals: ubyte = ubyte<-61
+const byte_equals: ubyte = 61ub
 
 public enum OptionKind: int
     flag = 0
@@ -481,7 +481,7 @@ function parse_long_option_impl(
 
     let spec = unsafe: read(spec_ptr)
     if option_takes_value(spec):
-        var consumed = ptr_uint<-1
+        var consumed = 1z
 
         match inline_value:
             Option.some as inline_payload:
@@ -501,7 +501,7 @@ function parse_long_option_impl(
             Result.failure as payload:
                 return Result[ptr_uint, Error].failure(error= payload.error)
             Result.success:
-                consumed = ptr_uint<-2
+                consumed = 2z
                 return Result[ptr_uint, Error].success(value= consumed)
 
     match inline_value:
@@ -514,7 +514,7 @@ function parse_long_option_impl(
         Result.failure as payload:
             return Result[ptr_uint, Error].failure(error= payload.error)
         Result.success:
-            return Result[ptr_uint, Error].success(value= ptr_uint<-1)
+            return Result[ptr_uint, Error].success(value= 1z)
 
 
 function parse_short_option_impl(
@@ -533,7 +533,7 @@ function parse_short_option_impl(
 
         let spec = unsafe: read(spec_ptr)
         if option_takes_value(spec):
-            var consumed = ptr_uint<-1
+            var consumed = 1z
 
             if short_index + 1 < arg.len:
                 let value = arg.slice(short_index + 1, arg.len - short_index - 1)
@@ -551,7 +551,7 @@ function parse_short_option_impl(
                 Result.failure as payload:
                     return Result[ptr_uint, Error].failure(error= payload.error)
                 Result.success:
-                    consumed = ptr_uint<-2
+                    consumed = 2z
                     return Result[ptr_uint, Error].success(value= consumed)
 
         match set_option_flag(result, spec):
@@ -562,7 +562,7 @@ function parse_short_option_impl(
 
         short_index += 1
 
-    return Result[ptr_uint, Error].success(value= ptr_uint<-1)
+    return Result[ptr_uint, Error].success(value= 1z)
 
 
 public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:

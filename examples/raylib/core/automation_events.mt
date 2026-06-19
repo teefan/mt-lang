@@ -187,7 +187,7 @@ function main() -> int:
 
             if dropped_files.count > 0:
                 unsafe:
-                    let raw_path = read(dropped_files.paths + ptr_uint<-0)
+                    let raw_path = read(dropped_files.paths + 0z)
                     let dropped_path = text.cstr_as_str(cstr<-raw_path)
                     if rl.is_file_extension(dropped_path, ".txt;.rae"):
                         rl.unload_automation_event_list(aelist)

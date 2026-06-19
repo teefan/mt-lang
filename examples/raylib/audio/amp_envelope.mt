@@ -86,7 +86,7 @@ function main() -> int:
 
     rl.set_audio_stream_buffer_size_default(BUFFER_SIZE)
     var buffer: array[float, BUFFER_SIZE] = zero[array[float, BUFFER_SIZE]]
-    let stream = rl.load_audio_stream(uint<-SAMPLE_RATE, uint<-32, uint<-1)
+    let stream = rl.load_audio_stream(uint<-SAMPLE_RATE, 32u, 1u)
     defer rl.unload_audio_stream(stream)
 
     var audio_time: float = 0.0

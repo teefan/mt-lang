@@ -27,7 +27,7 @@ function release_string_values(values: ref[vec.Vec[string.String]]) -> void:
 
 function next_word_break(line: str, start: ptr_uint) -> ptr_uint:
     var index = start
-    while index < line.len and line.byte_at(index) != ubyte<-32:
+    while index < line.len and line.byte_at(index) != 32ub:
         index += 1
     return index
 
@@ -70,9 +70,9 @@ function wrap_file_text(content: str, font_size: int, wrap_width: int, output: r
     var index: ptr_uint = 0
 
     while index <= content.len:
-        if index == content.len or content.byte_at(index) == ubyte<-10:
+        if index == content.len or content.byte_at(index) == 10ub:
             var line = content.slice(start, index - start)
-            if line.len > 0 and line.byte_at(line.len - 1) == ubyte<-13:
+            if line.len > 0 and line.byte_at(line.len - 1) == 13ub:
                 line = line.slice(0, line.len - 1)
             append_wrapped_line(line, font_size, wrap_width, output)
             start = index + 1

@@ -24,11 +24,11 @@ function hex_digit(value: ubyte) -> ubyte:
 
 function hex_value(value: ubyte) -> int:
     if value >= 48 and value <= 57:
-        return int<-(value - ubyte<-48)
+        return int<-(value - 48ub)
     if value >= 65 and value <= 70:
-        return 10 + int<-(value - ubyte<-65)
+        return 10 + int<-(value - 65ub)
     if value >= 97 and value <= 102:
-        return 10 + int<-(value - ubyte<-97)
+        return 10 + int<-(value - 97ub)
 
     return -1
 
