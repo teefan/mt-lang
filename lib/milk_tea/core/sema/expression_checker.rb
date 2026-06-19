@@ -245,7 +245,7 @@ module MilkTea
             raise_sema_error("unsupported expression #{expression.class.name}")
           end
 
-          @resolved_expr_types[expression.object_id] = type
+          @resolved_expr_types[@ctx.ast.node_ids[expression.object_id]] = type
           type
         end
       end

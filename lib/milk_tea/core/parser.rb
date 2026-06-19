@@ -105,7 +105,7 @@ module MilkTea
         skip_newlines
         raise error(peek, "expected end of file after external declarations") unless eof?
 
-        return AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:, line: module_line)
+        return AST.assign_node_ids(AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:, line: module_line))
       end
 
       while match(:import)
@@ -136,7 +136,7 @@ module MilkTea
         skip_newlines
       end
 
-      AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:, line: module_line)
+      AST.assign_node_ids(AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:, line: module_line))
     end
 
     def parse_import

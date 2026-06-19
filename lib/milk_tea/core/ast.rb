@@ -45,8 +45,8 @@ module MilkTea
     DynType = Data.define(:interface, :nullable, :line, :column, :length) do
       def initialize(interface:, nullable: false, line: nil, column: nil, length: nil) = super
     end
-    SourceFile = Data.define(:module_name, :module_kind, :imports, :directives, :declarations, :line) do
-      def initialize(module_name:, module_kind:, imports:, directives:, declarations:, line: nil) = super
+    SourceFile = Data.define(:module_name, :module_kind, :imports, :directives, :declarations, :line, :node_ids) do
+      def initialize(module_name:, module_kind:, imports:, directives:, declarations:, line: nil, node_ids: {}) = super
     end
     Import = Data.define(:path, :alias_name, :line, :column, :length) do
       def initialize(path:, alias_name:, line: nil, column: nil, length: nil) = super
@@ -246,6 +246,42 @@ module MilkTea
       def initialize(type:, line: nil, column: nil) = super
     end
     PrefixCast = Data.define(:target_type, :expression)
+
+    def self.assign_node_ids(source_file)
+      next_id = 0
+      node_ids = {}
+
+      visit = ->(node) do
+        return unless node.is_a?(::Data)
+
+        node_ids[node.object_id] = (next_id += 1)
+
+        if node.respond_to?(:declarations) && node.declarations.is_a?(Array)
+          node.declarations.each { |d| visit.call(d) }
+        end
+
+        if node.respond_to?(:body)
+          visit.call(node.body)
+        end
+
+        node.class.members.each do |field_name|
+          next if %i[module_name module_kind].include?(field_name)
+
+          value = node.public_send(field_name)
+          next unless value
+
+          case value
+          when ::Data
+            visit.call(value)
+          when Array
+            value.each { |v| visit.call(v) if v.is_a?(::Data) }
+          end
+        end
+      end
+
+      visit.call(source_file)
+      source_file.with(node_ids: node_ids.freeze)
+    end
 
     def self.build_chain_from_parts(parts)
       return nil unless parts.length >= 1
