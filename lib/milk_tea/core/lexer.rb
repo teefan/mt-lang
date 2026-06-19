@@ -308,6 +308,11 @@ module MilkTea
           next
         end
 
+        if char == "'"
+          index = lex_char_literal(line, index, line_number, line_offset:)
+          next
+        end
+
         if identifier_start?(char)
           index = lex_identifier(line, index, line_number, line_offset:)
           next
@@ -489,24 +494,30 @@ module MilkTea
         end
       end
 
-      if line[index, 5] == "float" && !identifier_part?(line[index + 5].to_s)
-        type = :float
-        index += 5
-      elsif line[index, 6] == "double" && !identifier_part?(line[index + 6].to_s)
-        type = :float
-        index += 6
-      elsif type == :float && line[index] == "f" && !identifier_part?((line[index + 1] || " ").to_s)
+      if type == :float && line[index] == "f" && !identifier_part?((line[index + 1] || " ").to_s)
         index += 1
       elsif type == :float && line[index] == "d" && !identifier_part?((line[index + 1] || " ").to_s)
         index += 1
       end
 
       lexeme = line[start...index]
-      normalized = lexeme.delete("_").delete_suffix("float").delete_suffix("double").delete_suffix("f").delete_suffix("d")
-      literal = type == :integer ? parse_integer(lexeme) : normalized.to_f
+      if type == :integer
+        int_suffix = scan_integer_suffix_text(lexeme)
+        cleaned = int_suffix ? lexeme.delete_suffix(int_suffix).delete("_") : lexeme
+        literal = parse_integer(cleaned)
+      else
+        normalized = lexeme.delete("_").delete_suffix("f").delete_suffix("d")
+        literal = normalized.to_f
+      end
       @tokens << token(type, lexeme, literal, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
       index
     end
+
+    def scan_integer_suffix_text(lexeme)
+      INTEGER_SUFFIX_STRINGS.sort_by { |s| -s.length }.find { |s| lexeme.end_with?(s) }
+    end
+
+    INTEGER_SUFFIX_STRINGS = %w[ub us ul iz b s i u l z].freeze
 
     def lex_string(lines, line_index, line, index, line_number, line_offset:, cstring: false)
       segment = scan_string_segment(line, index, line_number, cstring:, recover: @recovery_errors)
@@ -1129,10 +1140,52 @@ module MilkTea
       when "n" then "\n"
       when "r" then "\r"
       when "t" then "\t"
+      when "0" then "\0"
       when '"' then '"'
+      when "'" then "'"
       when "\\" then "\\"
       else char
       end
+    end
+
+    def lex_char_literal(line, index, line_number, line_offset:)
+      start = index
+      index += 1 # skip opening '
+      if index >= line.length
+        raise LexError.new("unterminated character literal", line: line_number, column: start + 1, path: @path)
+      end
+
+      char = line[index]
+      if char == "\\"
+        index += 1
+        if index >= line.length
+          raise LexError.new("unterminated escape in character literal", line: line_number, column: start + 1, path: @path)
+        end
+        escape_char = line[index]
+        if escape_char == "x"
+          hex = line[index + 1, 2]
+          unless hex&.match?(/\A[0-9a-fA-F]{2}\z/)
+            raise LexError.new("invalid hex escape in character literal", line: line_number, column: index + 1, path: @path)
+          end
+          value = hex.to_i(16)
+          index += 3
+        else
+          value = decode_escape(escape_char).ord
+          index += 1
+        end
+      else
+        value = char.ord
+        index += 1
+      end
+
+      if index >= line.length || line[index] != "'"
+        raise LexError.new("expected closing ' in character literal", line: line_number, column: index + 1, path: @path)
+      end
+      index += 1 # skip closing '
+
+      lexeme = line[start...index]
+      @tokens << token(:char_literal, lexeme, value, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
+      index
     end
 
     def leading_space_count(line)

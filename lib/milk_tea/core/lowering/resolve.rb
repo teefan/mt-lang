@@ -664,6 +664,8 @@ module MilkTea
           else
             @ctx.types.fetch("int")
           end
+        when AST::CharLiteral
+          @ctx.types.fetch("byte")
         when AST::FloatLiteral
           if expected_type.is_a?(Types::Primitive) && expected_type.float?
             expected_type

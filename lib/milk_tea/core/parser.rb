@@ -2208,6 +2208,8 @@ module MilkTea
         AST::IntegerLiteral.new(lexeme: previous.lexeme, value: previous.literal)
       elsif match(:float)
         AST::FloatLiteral.new(lexeme: previous.lexeme, value: previous.literal)
+      elsif match(:char_literal)
+        AST::CharLiteral.new(lexeme: previous.lexeme, value: previous.literal, line: previous.line, column: previous.column)
       elsif match(:string)
         parse_adjacent_string_literal(previous, cstring: false)
       elsif match(:cstring)

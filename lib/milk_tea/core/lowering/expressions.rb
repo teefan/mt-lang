@@ -1226,6 +1226,8 @@ module MilkTea
           raise LoweringError, "await expressions must be lowered in async statement context"
         when AST::IntegerLiteral
           IR::IntegerLiteral.new(value: expression.value, type:)
+        when AST::CharLiteral
+          IR::IntegerLiteral.new(value: expression.value, type:)
         when AST::FloatLiteral
           IR::FloatLiteral.new(value: expression.value, type:)
         when AST::SizeofExpr

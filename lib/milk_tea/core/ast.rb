@@ -244,6 +244,9 @@ module MilkTea
     FormatString = Data.define(:parts)
     FormatTextPart = Data.define(:value)
     FormatExprPart = Data.define(:expression, :format_spec)
+    CharLiteral = Data.define(:lexeme, :value, :line, :column) do
+      def initialize(lexeme:, value:, line: nil, column: nil) = super
+    end
     BooleanLiteral = Data.define(:value)
     NullLiteral = Data.define(:type, :line, :column) do
       def initialize(type:, line: nil, column: nil) = super
