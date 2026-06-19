@@ -270,14 +270,14 @@ module MilkTea
 
           def omitted_method_receiver_function_names
             @omitted_method_receiver_function_names ||= emitted_functions.each_with_object({}) do |function, omitted|
-              omitted[function.c_name] = true if omitted_method_receiver_function?(function)
+              omitted[function.linkage_name] = true if omitted_method_receiver_function?(function)
             end
           end
 
           def omitted_method_receiver_function?(function)
             function.method_receiver_param &&
               function.params.first &&
-              name_reference_count_in_statements(function.body, function.params.first.c_name).zero?
+              name_reference_count_in_statements(function.body, function.params.first.linkage_name).zero?
           end
 
           def discarded_expression(expression)

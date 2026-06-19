@@ -197,7 +197,7 @@ module MilkTea
                                       external: raw_module?,
                                       packed: decl.packed,
                                       alignment: decl.alignment,
-                                      c_name: decl.c_name,
+                                      linkage_name: decl.c_name,
                                       lifetime_params: decl.lifetime_params,
                                     )
                                   else
@@ -208,7 +208,7 @@ module MilkTea
                                       external: raw_module?,
                                       packed: decl.packed,
                                       alignment: decl.alignment,
-                                      c_name: decl.c_name,
+                                      linkage_name: decl.c_name,
                                       lifetime_params: decl.lifetime_params,
                                     )
                                   end
@@ -216,7 +216,7 @@ module MilkTea
             when AST::UnionDecl
               validate_explicit_aggregate_c_name!(decl)
               ensure_available_type_name!(decl.name)
-              @ctx.types[decl.name] = Types::Union.new(decl.name, module_name: @ctx.module_name, external: raw_module?, c_name: decl.c_name)
+              @ctx.types[decl.name] = Types::Union.new(decl.name, module_name: @ctx.module_name, external: raw_module?, linkage_name: decl.c_name)
             when AST::VariantDecl
               ensure_available_type_name!(decl.name)
               @ctx.types[decl.name] = if decl.type_params.empty?
@@ -240,7 +240,7 @@ module MilkTea
                 decl.name,
                 module_name: @ctx.module_name,
                 external: raw_module?,
-                c_name: decl.c_name,
+                linkage_name: decl.c_name,
               )
             when AST::InterfaceDecl
               ensure_available_type_name!(decl.name)
@@ -796,9 +796,9 @@ module MilkTea
                             qualified_name.tr('.', '_')
                           end
           if nested.type_params.empty?
-            @ctx.types[qualified_name] = Types::Struct.new(nested.name, module_name: @ctx.module_name, external: raw_module?, packed: nested.packed, alignment: nested.alignment, c_name: nested_c_name, lifetime_params: nested.lifetime_params)
+            @ctx.types[qualified_name] = Types::Struct.new(nested.name, module_name: @ctx.module_name, external: raw_module?, packed: nested.packed, alignment: nested.alignment, linkage_name: nested_c_name, lifetime_params: nested.lifetime_params)
           else
-            @ctx.types[qualified_name] = Types::GenericStructDefinition.new(nested.name, nested.type_params.map(&:name), module_name: @ctx.module_name, external: raw_module?, packed: nested.packed, alignment: nested.alignment, c_name: nested_c_name, lifetime_params: nested.lifetime_params)
+            @ctx.types[qualified_name] = Types::GenericStructDefinition.new(nested.name, nested.type_params.map(&:name), module_name: @ctx.module_name, external: raw_module?, packed: nested.packed, alignment: nested.alignment, linkage_name: nested_c_name, lifetime_params: nested.lifetime_params)
           end
           register_nested_struct_types(nested, parent_name: qualified_name)
         end

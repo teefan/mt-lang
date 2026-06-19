@@ -153,7 +153,7 @@ module MilkTea
         literal_capacity = format_parts.sum { |part| part[:kind] == :text ? part[:value].bytesize : 0 }
 
         setup << IR::LocalDecl.new(
-          name: cap_name, c_name: cap_name, type: @ctx.types.fetch("ptr_uint"),
+          name: cap_name, linkage_name: cap_name, type: @ctx.types.fetch("ptr_uint"),
           value: IR::IntegerLiteral.new(value: literal_capacity, type: @ctx.types.fetch("ptr_uint")),
         )
 
@@ -167,11 +167,11 @@ module MilkTea
         end
 
         setup << IR::LocalDecl.new(
-          name: temp_name, c_name: temp_name, type: string_type,
+          name: temp_name, linkage_name: temp_name, type: string_type,
           value: IR::Call.new(callee: "mt_format_str_make", arguments: [total_cap_value], type: string_type),
         )
         setup << IR::LocalDecl.new(
-          name: off_name, c_name: off_name, type: @ctx.types.fetch("ptr_uint"),
+          name: off_name, linkage_name: off_name, type: @ctx.types.fetch("ptr_uint"),
           value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint")),
         )
 
@@ -211,10 +211,10 @@ module MilkTea
             when :precision
               precision = part.format_spec[:value]
               append_argument_type = @ctx.types.fetch("double")
-              parameter_c_name = fresh_c_temp_name(env, "fmt_part")
+              parameter_linkage_name = fresh_c_temp_name(env, "fmt_part")
               setup << IR::LocalDecl.new(
-                name: parameter_c_name,
-                c_name: parameter_c_name,
+                name: parameter_linkage_name,
+                linkage_name: parameter_linkage_name,
                 type: append_argument_type,
                 value: cast_expression(
                   lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
@@ -224,16 +224,16 @@ module MilkTea
               format_parts << {
                 kind: :precision_expression,
                 append_function_name: "append_double_precision",
-                parameter_c_name: parameter_c_name,
+                parameter_linkage_name: parameter_linkage_name,
                 parameter_type: append_argument_type,
                 precision: precision,
               }
             when :hex
               append_function_name, append_argument_type = format_string_hex_append_plan(value_type, uppercase: part.format_spec[:uppercase])
-              parameter_c_name = fresh_c_temp_name(env, "fmt_part")
+              parameter_linkage_name = fresh_c_temp_name(env, "fmt_part")
               setup << IR::LocalDecl.new(
-                name: parameter_c_name,
-                c_name: parameter_c_name,
+                name: parameter_linkage_name,
+                linkage_name: parameter_linkage_name,
                 type: append_argument_type,
                 value: cast_expression(
                   lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
@@ -243,15 +243,15 @@ module MilkTea
               format_parts << {
                 kind: :expression,
                 append_function_name: append_function_name,
-                parameter_c_name: parameter_c_name,
+                parameter_linkage_name: parameter_linkage_name,
                 parameter_type: append_argument_type,
               }
             when :oct
               append_function_name, append_argument_type = format_string_oct_append_plan(value_type, uppercase: part.format_spec[:uppercase])
-              parameter_c_name = fresh_c_temp_name(env, "fmt_part")
+              parameter_linkage_name = fresh_c_temp_name(env, "fmt_part")
               setup << IR::LocalDecl.new(
-                name: parameter_c_name,
-                c_name: parameter_c_name,
+                name: parameter_linkage_name,
+                linkage_name: parameter_linkage_name,
                 type: append_argument_type,
                 value: cast_expression(
                   lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
@@ -261,15 +261,15 @@ module MilkTea
               format_parts << {
                 kind: :expression,
                 append_function_name: append_function_name,
-                parameter_c_name: parameter_c_name,
+                parameter_linkage_name: parameter_linkage_name,
                 parameter_type: append_argument_type,
               }
             when :bin
               append_function_name, append_argument_type = format_string_bin_append_plan(value_type, uppercase: part.format_spec[:uppercase])
-              parameter_c_name = fresh_c_temp_name(env, "fmt_part")
+              parameter_linkage_name = fresh_c_temp_name(env, "fmt_part")
               setup << IR::LocalDecl.new(
-                name: parameter_c_name,
-                c_name: parameter_c_name,
+                name: parameter_linkage_name,
+                linkage_name: parameter_linkage_name,
                 type: append_argument_type,
                 value: cast_expression(
                   lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
@@ -279,7 +279,7 @@ module MilkTea
               format_parts << {
                 kind: :expression,
                 append_function_name: append_function_name,
-                parameter_c_name: parameter_c_name,
+                parameter_linkage_name: parameter_linkage_name,
                 parameter_type: append_argument_type,
               }
             else
@@ -287,10 +287,10 @@ module MilkTea
             end
           else
             append_plan = format_string_append_plan(value_type, context: "formatted string interpolation of #{value_type}")
-            parameter_c_name = fresh_c_temp_name(env, "fmt_part")
+            parameter_linkage_name = fresh_c_temp_name(env, "fmt_part")
             setup << IR::LocalDecl.new(
-              name: parameter_c_name,
-              c_name: parameter_c_name,
+              name: parameter_linkage_name,
+              linkage_name: parameter_linkage_name,
               type: append_plan[:append_argument_type],
               value: cast_expression(
                 lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
@@ -299,18 +299,18 @@ module MilkTea
             )
 
             if append_plan[:kind] == :custom
-              register_prepared_temp!(env, parameter_c_name, append_plan[:append_argument_type])
+              register_prepared_temp!(env, parameter_linkage_name, append_plan[:append_argument_type])
               part_info = {
                 kind: :custom_expression,
-                parameter_c_name: parameter_c_name,
+                parameter_linkage_name: parameter_linkage_name,
                 parameter_type: append_plan[:append_argument_type],
                 format_binding: append_plan[:binding],
                 append_output_type: append_plan[:append_output_type],
               }
-              expected_length_c_name = fresh_c_temp_name(env, "fmt_part_len")
+              expected_length_linkage_name = fresh_c_temp_name(env, "fmt_part_len")
               setup << IR::LocalDecl.new(
-                name: expected_length_c_name,
-                c_name: expected_length_c_name,
+                name: expected_length_linkage_name,
+                linkage_name: expected_length_linkage_name,
                 type: @ctx.types.fetch("ptr_uint"),
                 value: IR::Call.new(
                   callee: append_plan[:binding].length_callee_name,
@@ -318,12 +318,12 @@ module MilkTea
                   type: @ctx.types.fetch("ptr_uint"),
                 ),
               )
-              format_parts << part_info.merge(expected_length_c_name:)
+              format_parts << part_info.merge(expected_length_linkage_name:)
             else
               format_parts << {
                 kind: :expression,
                 append_function_name: append_plan[:append_function_name],
-                parameter_c_name: parameter_c_name,
+                parameter_linkage_name: parameter_linkage_name,
                 parameter_type: append_plan[:append_argument_type],
               }
             end
@@ -548,7 +548,7 @@ module MilkTea
                             type: @ctx.types.fetch("ptr_uint"),
                           )
                         end
-          sink_statements << IR::LocalDecl.new(name: offset_name, c_name: offset_name, type: @ctx.types.fetch("ptr_uint"), value: offset_init)
+          sink_statements << IR::LocalDecl.new(name: offset_name, linkage_name: offset_name, type: @ctx.types.fetch("ptr_uint"), value: offset_init)
 
           target_value = explicit_format_sink_target_buffer_view(sink_target)
           copied_parts.each do |part|
@@ -617,7 +617,7 @@ module MilkTea
 
           setup << IR::LocalDecl.new(
             name: copy_name,
-            c_name: copy_name,
+            linkage_name: copy_name,
             type: @ctx.types.fetch("str"),
             value: IR::Call.new(
               callee: "mt_format_str_make",
@@ -636,7 +636,7 @@ module MilkTea
             expression: IR::Call.new(callee: "mt_format_str_release", arguments: [copy_value], type: @ctx.types.fetch("void")),
           )
 
-          part.merge(parameter_c_name: copy_name, parameter_type: @ctx.types.fetch("str"), append_function_name: "append")
+          part.merge(parameter_linkage_name: copy_name, parameter_type: @ctx.types.fetch("str"), append_function_name: "append")
         end
 
         [setup, copied_parts, cleanup]
@@ -696,7 +696,7 @@ module MilkTea
         end
 
         if part[:kind] == :custom_expression
-          return IR::Name.new(name: part[:expected_length_c_name], type: @ctx.types.fetch("ptr_uint"), pointer: false)
+          return IR::Name.new(name: part[:expected_length_linkage_name], type: @ctx.types.fetch("ptr_uint"), pointer: false)
         end
 
         case part[:append_function_name]
@@ -716,7 +716,7 @@ module MilkTea
           output_value_name = fresh_c_temp_name(env, "fmt_part_output")
           output_value = IR::Name.new(name: output_value_name, type: output_type, pointer: false)
           output_len = IR::Member.new(receiver: output_value, member: "len", type: @ctx.types.fetch("ptr_uint"))
-          expected_length = IR::Name.new(name: part[:expected_length_c_name], type: @ctx.types.fetch("ptr_uint"), pointer: false)
+          expected_length = IR::Name.new(name: part[:expected_length_linkage_name], type: @ctx.types.fetch("ptr_uint"), pointer: false)
           data_pointer = format_string_result_data_pointer(result_value)
           slice_data_pointer = cast_expression(
             IR::Binary.new(operator: "+", left: data_pointer, right: offset_value, type: pointer_to(@ctx.types.fetch("char"))),
@@ -726,7 +726,7 @@ module MilkTea
           return [
             IR::LocalDecl.new(
               name: output_value_name,
-              c_name: output_value_name,
+              linkage_name: output_value_name,
               type: output_type,
               value: IR::AggregateLiteral.new(
                 type: output_type,
@@ -841,10 +841,10 @@ module MilkTea
                   end
 
         if env
-          return lower_method_receiver_argument(AST::Identifier.new(name: part[:parameter_c_name]), binding.type, binding, env:)
+          return lower_method_receiver_argument(AST::Identifier.new(name: part[:parameter_linkage_name]), binding.type, binding, env:)
         end
 
-        IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false)
+        IR::Name.new(name: part[:parameter_linkage_name], type: part[:parameter_type], pointer: false)
       end
 
       def format_string_result_data_pointer(result_value)
@@ -852,7 +852,7 @@ module MilkTea
       end
 
       def format_string_part_parameter_expression(part)
-        IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false)
+        IR::Name.new(name: part[:parameter_linkage_name], type: part[:parameter_type], pointer: false)
       end
 
       def format_string_append_plan(type, context:)
@@ -1019,7 +1019,7 @@ module MilkTea
 
         [
           left_setup + [
-            IR::LocalDecl.new(name: result_name, c_name: result_name, type: result_type, value: left_value),
+            IR::LocalDecl.new(name: result_name, linkage_name: result_name, type: result_type, value: left_value),
             IR::IfStmt.new(
               condition: branch_condition,
               then_body: right_setup + [IR::Assignment.new(target: result_ref, operator: "=", value: right_value)],
@@ -1036,15 +1036,15 @@ module MilkTea
         @registered_tuple_types ||= {}
         return if @registered_tuple_types[tuple_type]
 
-        c_name = tuple_type_name(tuple_type)
-        return if @artifacts.synthetic_structs.any? { |s| s.c_name == c_name }
+        linkage_name = tuple_type_name(tuple_type)
+        return if @artifacts.synthetic_structs.any? { |s| s.linkage_name == linkage_name }
 
         fields = tuple_type.element_types.each_with_index.map do |et, i|
           IR::Field.new(name: tuple_type.field_names[i], type: et)
         end
         @artifacts.synthetic_structs << IR::StructDecl.new(
           name: tuple_type.to_s,
-          c_name: c_name,
+          linkage_name: linkage_name,
           fields: fields,
           packed: false,
           alignment: nil,
@@ -1082,7 +1082,7 @@ module MilkTea
 
         [
           condition_setup + [
-            IR::LocalDecl.new(name: result_name, c_name: result_name, type: result_type, value: IR::ZeroInit.new(type: result_type)),
+            IR::LocalDecl.new(name: result_name, linkage_name: result_name, type: result_type, value: IR::ZeroInit.new(type: result_type)),
             IR::IfStmt.new(
               condition: lower_expression(condition, env:, expected_type: @ctx.types.fetch("bool")),
               then_body: then_setup + [
@@ -1112,14 +1112,14 @@ module MilkTea
         result_name = fresh_c_temp_name(env, "match_expr")
         register_prepared_temp!(env, result_name, result_type)
         result_ref = IR::Name.new(name: result_name, type: result_type, pointer: false)
-        setup = expression_setup + [IR::LocalDecl.new(name: result_name, c_name: result_name, type: result_type, value: IR::ZeroInit.new(type: result_type))]
+        setup = expression_setup + [IR::LocalDecl.new(name: result_name, linkage_name: result_name, type: result_type, value: IR::ZeroInit.new(type: result_type))]
         lowered_expression = lower_expression(prepared_expression, env:, expected_type: scrutinee_type)
 
         if scrutinee_type.is_a?(Types::Variant) &&
            expression.arms.any? { |arm| arm.binding_name && !wildcard_arm_pattern?(arm.pattern) } &&
            !duplicable_foreign_argument_expression?(lowered_expression)
           scrutinee_name = fresh_c_temp_name(env, "match_value")
-          setup << IR::LocalDecl.new(name: scrutinee_name, c_name: scrutinee_name, type: scrutinee_type, value: lowered_expression)
+          setup << IR::LocalDecl.new(name: scrutinee_name, linkage_name: scrutinee_name, type: scrutinee_type, value: lowered_expression)
           lowered_expression = IR::Name.new(name: scrutinee_name, type: scrutinee_type, pointer: false)
         end
 
@@ -1137,8 +1137,8 @@ module MilkTea
                                        data_expr = IR::Member.new(receiver: lowered_expression, member: "data", type: nil)
                                        arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
                                        binding_c = c_local_name(arm.binding_name)
-                                       arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: binding_c, mutable: false, pointer: false)
-                                       IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_type, value: arm_expr)
+                                       arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: binding_c, mutable: false, pointer: false)
+                                       IR::LocalDecl.new(name: arm.binding_name, linkage_name: binding_c, type: payload_type, value: arm_expr)
                                      end
                                    end
                     value_setup, prepared_value = prepare_expression_for_inline_lowering(arm.value, env: arm_env, expected_type: result_type)
@@ -1178,13 +1178,13 @@ module MilkTea
         temp_name = fresh_c_temp_name(env, prefix)
         register_prepared_temp!(env, temp_name, type)
         [
-          setup + [IR::LocalDecl.new(name: temp_name, c_name: temp_name, type:, value:)],
+          setup + [IR::LocalDecl.new(name: temp_name, linkage_name: temp_name, type:, value:)],
           AST::Identifier.new(name: temp_name),
         ]
       end
 
       def register_prepared_temp!(env, name, type, pointer: false, storage_type: nil, projection: nil, cstr_backed: false, cstr_list_backed: false)
-        current_actual_scope(env[:scopes])[name] = local_binding(type:, storage_type:, c_name: name, mutable: false, pointer:, projection:, cstr_backed:, cstr_list_backed:)
+        current_actual_scope(env[:scopes])[name] = local_binding(type:, storage_type:, linkage_name: name, mutable: false, pointer:, projection:, cstr_backed:, cstr_list_backed:)
       end
 
       def foreign_call_requires_statement_lowering?(expression, binding, env:)

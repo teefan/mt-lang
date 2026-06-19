@@ -37,7 +37,7 @@ module MilkTea
             value = lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
           end
 
-          IR::Constant.new(name: decl.name, c_name: value_c_name(decl.name), type:, value:)
+          IR::Constant.new(name: decl.name, linkage_name: value_c_name(decl.name), type:, value:)
         end
       end
 
@@ -84,7 +84,7 @@ module MilkTea
                   else
                     IR::ZeroInit.new(type: type)
                   end
-          IR::Global.new(name: decl.name, c_name: value_c_name(decl.name), type:, value:)
+          IR::Global.new(name: decl.name, linkage_name: value_c_name(decl.name), type:, value:)
         end
       end
 
@@ -93,7 +93,7 @@ module MilkTea
           opaque_type = @ctx.opaque_types.fetch(decl.name)
           IR::OpaqueDecl.new(
             name: decl.name,
-            c_name: opaque_c_type_name(opaque_type),
+            linkage_name: opaque_c_type_name(opaque_type),
             forward_declarable: opaque_forward_declarable?(opaque_type),
             source_module: @ctx.module_name,
           )
@@ -108,9 +108,9 @@ module MilkTea
             opaque_type = analysis.types.fetch(decl.name)
             next unless forward_declarable_external_opaque?(opaque_type)
 
-            IR::OpaqueDecl.new(name: decl.name, c_name: opaque_c_type_name(opaque_type), forward_declarable: true, source_module: analysis.module_name)
+            IR::OpaqueDecl.new(name: decl.name, linkage_name: opaque_c_type_name(opaque_type), forward_declarable: true, source_module: analysis.module_name)
           end
-        end.uniq { |decl| decl.c_name }
+        end.uniq { |decl| decl.linkage_name }
       end
 
       def lower_static_asserts
@@ -150,7 +150,7 @@ module MilkTea
           fields << IR::Field.new(name: event_type.hidden_field_name, type: event_type)
         end
 
-        results << IR::StructDecl.new(name: decl.name, c_name: c_type_name(struct_type), fields:, packed: decl.packed, alignment: decl.alignment, source_module: @ctx.module_name)
+        results << IR::StructDecl.new(name: decl.name, linkage_name: c_type_name(struct_type), fields:, packed: decl.packed, alignment: decl.alignment, source_module: @ctx.module_name)
 
         decl.nested_types.each do |nested|
           lower_one_struct(nested, "#{qualified_name}.#{nested.name}", results)
@@ -163,7 +163,7 @@ module MilkTea
           fields = decl.fields.map do |field|
             IR::Field.new(name: field.name, type: union_type.field(field.name))
           end
-          IR::UnionDecl.new(name: decl.name, c_name: c_type_name(union_type), fields:, source_module: @ctx.module_name)
+          IR::UnionDecl.new(name: decl.name, linkage_name: c_type_name(union_type), fields:, source_module: @ctx.module_name)
         end
       end
 
@@ -175,12 +175,12 @@ module MilkTea
             backing_type = enum_type.backing_type
             members = decl.members.map do |member|
               value = lower_expression(member.value, env: empty_env, expected_type: backing_type)
-              IR::EnumMember.new(name: member.name, c_name: enum_member_c_name(enum_type, member.name), value:)
+              IR::EnumMember.new(name: member.name, linkage_name: enum_member_c_name(enum_type, member.name), value:)
             end
 
             IR::EnumDecl.new(
               name: decl.name,
-              c_name: c_type_name(enum_type),
+              linkage_name: c_type_name(enum_type),
               backing_type:,
               members:,
               flags: decl.is_a?(AST::FlagsDecl),
@@ -203,9 +203,9 @@ module MilkTea
               field_type = variant_type.arm(arm.name).fetch(field.name)
               IR::Field.new(name: field.name, type: field_type)
             end
-            IR::VariantArm.new(name: arm.name, c_name: arm_c, fields:)
+            IR::VariantArm.new(name: arm.name, linkage_name: arm_c, fields:)
           end
-          IR::VariantDecl.new(name: decl.name, c_name: outer_c, arms:, source_module: @ctx.module_name)
+          IR::VariantDecl.new(name: decl.name, linkage_name: outer_c, arms:, source_module: @ctx.module_name)
         end
       end
   end

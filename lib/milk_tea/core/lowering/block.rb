@@ -52,14 +52,14 @@ module MilkTea
                    else
                      storage_type
                    end
-            c_name = let_else_storage_c_name(statement, local_env)
-            decl_name = bind_let_else_local?(statement) ? statement.name : c_name
+            linkage_name = let_else_storage_c_name(statement, local_env)
+            decl_name = bind_let_else_local?(statement) ? statement.name : linkage_name
             prepared_setup = []
             prepared_value = statement.value
             prepared_cleanups = []
             emitted_decl = false
             if statement.value
-              local_env[:current_local_name] = c_name
+              local_env[:current_local_name] = linkage_name
               prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
                 statement.value,
                 env: local_env,
@@ -80,7 +80,7 @@ module MilkTea
               raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @ctx.types.fetch("void")
               raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
 
-              lowered << IR::LocalDecl.new(name: decl_name, c_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path)
+              lowered << IR::LocalDecl.new(name: decl_name, linkage_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path)
               lowered.concat(cleanup_statements)
               emitted_decl = true
             elsif prepared_value.is_a?(AST::ProcExpr)
@@ -100,7 +100,7 @@ module MilkTea
               current_actual_scope(local_env[:scopes])[statement.name] = local_binding(
                 type:,
                 storage_type:,
-                c_name:,
+                linkage_name:,
                 mutable: statement.kind == :var,
                 pointer: false,
                 projection: statement.else_body ? let_else_binding_projection(storage_type) : nil,
@@ -109,14 +109,14 @@ module MilkTea
                 const_value: statement.else_body ? nil : statement.kind == :let && prepared_value ? compile_time_const_value(prepared_value, env: local_env) : nil,
               )
             end
-            lowered << IR::LocalDecl.new(name: decl_name, c_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path) unless emitted_decl
+            lowered << IR::LocalDecl.new(name: decl_name, linkage_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path) unless emitted_decl
             if statement.else_body
               else_env = if statement.else_binding
                            duplicate_env(local_env).tap do |env_with_error|
                              current_actual_scope(env_with_error[:scopes])[statement.else_binding.name] = local_binding(
                                type: let_else_error_type(storage_type),
                                storage_type:,
-                               c_name:,
+                               linkage_name:,
                                mutable: false,
                                pointer: false,
                                projection: :result_failure_error,
@@ -133,7 +133,7 @@ module MilkTea
                 loop_flow: nested_loop_flow(loop_flow, local_defers),
                 allow_return:,
               )
-              local_ref = IR::Name.new(name: c_name, type: storage_type, pointer: false)
+              local_ref = IR::Name.new(name: linkage_name, type: storage_type, pointer: false)
               lowered << IR::IfStmt.new(
                 condition: let_else_failure_condition(local_ref, storage_type),
                 then_body: else_body,
@@ -142,7 +142,7 @@ module MilkTea
             end
             local_defers.concat(prepared_cleanups)
             if contains_proc_storage_type?(storage_type)
-              local_value = IR::Name.new(name: c_name, type: storage_type, pointer: false)
+              local_value = IR::Name.new(name: linkage_name, type: storage_type, pointer: false)
               # Use guarded release so zero-initialized var locals are safe (invoke == NULL guard).
               local_defers << lower_proc_contained_guarded_release_statements(local_value, storage_type)
               if statement.value && !expression_contains_proc_expr?(statement.value)
@@ -209,7 +209,7 @@ module MilkTea
               # Materialize the RHS to a C temp to avoid evaluating aggregate literals multiple times
               # and to ensure retain/release operate on a stable struct value throughout the sequence.
               rhs_name = fresh_c_temp_name(local_env, "proc_assign")
-              lowered << IR::LocalDecl.new(name: rhs_name, c_name: rhs_name, type: target.type, value:)
+              lowered << IR::LocalDecl.new(name: rhs_name, linkage_name: rhs_name, type: target.type, value:)
               rhs = IR::Name.new(name: rhs_name, type: target.type, pointer: false)
               # Retain proc fields in the incoming value that are NOT from fresh proc expressions
               # (fresh proc exprs carry refcount=1 and transfer ownership; existing procs need +1).
@@ -299,9 +299,9 @@ module MilkTea
             if scrutinee_type.is_a?(Types::Variant) &&
                statement.arms.any? { |arm| arm.binding_name && !wildcard_arm_pattern?(arm.pattern) } &&
                !duplicable_foreign_argument_expression?(expression)
-              scrutinee_c_name = fresh_c_temp_name(local_env, "match_value")
-              lowered << IR::LocalDecl.new(name: scrutinee_c_name, c_name: scrutinee_c_name, type: scrutinee_type, value: expression)
-              expression = IR::Name.new(name: scrutinee_c_name, type: scrutinee_type, pointer: false)
+              scrutinee_linkage_name = fresh_c_temp_name(local_env, "match_value")
+              lowered << IR::LocalDecl.new(name: scrutinee_linkage_name, linkage_name: scrutinee_linkage_name, type: scrutinee_type, value: expression)
+              expression = IR::Name.new(name: scrutinee_linkage_name, type: scrutinee_type, pointer: false)
             end
 
             if scrutinee_type.is_a?(Types::Variant)
@@ -341,10 +341,10 @@ module MilkTea
                     data_expr = IR::Member.new(receiver: expression, member: "data", type: nil)
                     arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
                     payload_c_name = fresh_c_temp_name(arm_local_env, "match_payload")
-                    arm_local_env[:scopes].last["__mt_payload"] = local_binding(type: payload_type, c_name: payload_c_name, mutable: true, pointer: false)
+                    arm_local_env[:scopes].last["__mt_payload"] = local_binding(type: payload_type, linkage_name: payload_c_name, mutable: true, pointer: false)
 
                     arm_body_ir = []
-                    arm_body_ir << IR::LocalDecl.new(name: payload_c_name, c_name: payload_c_name, type: payload_type, value: arm_expr)
+                    arm_body_ir << IR::LocalDecl.new(name: payload_c_name, linkage_name: payload_c_name, type: payload_type, value: arm_expr)
 
                     nested_struct_fields = nil
                     nested_struct_c_name = nil
@@ -359,7 +359,7 @@ module MilkTea
                         member: single_field_name,
                         type: nested_struct_type,
                       )
-                      arm_body_ir << IR::LocalDecl.new(name: nested_struct_c_name, c_name: nested_struct_c_name, type: nested_struct_type, value: struct_expr)
+                      arm_body_ir << IR::LocalDecl.new(name: nested_struct_c_name, linkage_name: nested_struct_c_name, type: nested_struct_type, value: struct_expr)
                     end
 
                     if arm.pattern.is_a?(AST::Call) && !arm.pattern.arguments.empty?
@@ -405,8 +405,8 @@ module MilkTea
                         field_type = pattern_fields[field_name]
                         binding_c = c_local_name(field_name)
                         field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
-                        arm_body_ir << IR::LocalDecl.new(name: binding_c, c_name: binding_c, type: field_type, value: field_expr)
-                        arm_local_env[:scopes].last[field_name] = local_binding(type: field_type, c_name: binding_c, mutable: false, pointer: false)
+                        arm_body_ir << IR::LocalDecl.new(name: binding_c, linkage_name: binding_c, type: field_type, value: field_expr)
+                        arm_local_env[:scopes].last[field_name] = local_binding(type: field_type, linkage_name: binding_c, mutable: false, pointer: false)
                       end
                     end
 
@@ -417,9 +417,9 @@ module MilkTea
                         payload_key = "__mt_payload"
                         if arm_local_env[:scopes].last.key?(payload_key)
                           payload_binding = arm_local_env[:scopes].last[payload_key]
-                          arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_binding[:type], c_name: binding_c, mutable: true, pointer: false)
-                          payload_ref = IR::Name.new(name: payload_binding[:c_name], type: payload_binding[:type], pointer: false)
-                          arm_body_ir << IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_binding[:type], value: payload_ref)
+                          arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_binding[:type], linkage_name: binding_c, mutable: true, pointer: false)
+                          payload_ref = IR::Name.new(name: payload_binding[:linkage_name], type: payload_binding[:type], pointer: false)
+                          arm_body_ir << IR::LocalDecl.new(name: arm.binding_name, linkage_name: binding_c, type: payload_binding[:type], value: payload_ref)
                         end
                       end
                     end
@@ -465,8 +465,8 @@ module MilkTea
                                    data_expr = IR::Member.new(receiver: expression, member: "data", type: nil)
                                    arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
                                    binding_c = c_local_name(arm.binding_name)
-                                    arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: binding_c, mutable: true, pointer: false)
-                                   IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_type, value: arm_expr)
+                                    arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: binding_c, mutable: true, pointer: false)
+                                   IR::LocalDecl.new(name: arm.binding_name, linkage_name: binding_c, type: payload_type, value: arm_expr)
                                  end
                                end
                 body = lower_block(
@@ -545,7 +545,7 @@ module MilkTea
             prepared_value = statement.value
             prepared_cleanups = []
             if statement.value
-              local_env[:current_local_name] = c_name
+              local_env[:current_local_name] = linkage_name
               prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
                 statement.value,
                 env: local_env,
@@ -573,7 +573,7 @@ module MilkTea
             needs_proc_retain = value && contains_proc_storage_type?(return_type) && !local_defers.empty? && !expression_contains_proc_expr?(prepared_value)
             if value && (!cleanup.empty? && !cleanup_safe_return_expression?(prepared_value) || needs_proc_retain)
               return_value_name = fresh_c_temp_name(local_env, "return_value")
-              lowered << IR::LocalDecl.new(name: return_value_name, c_name: return_value_name, type: return_type, value:)
+              lowered << IR::LocalDecl.new(name: return_value_name, linkage_name: return_value_name, type: return_type, value:)
               value = IR::Name.new(name: return_value_name, type: return_type, pointer: false)
             end
             lowered.concat(lower_proc_contained_retain_statements(value, return_type)) if needs_proc_retain
@@ -663,7 +663,7 @@ module MilkTea
 
         proc_id = fresh_proc_symbol
         invoke_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__invoke"
-        release_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__release"
+        release_linkage_name = "#{@ctx.module_prefix}__proc_#{proc_id}__release"
         retain_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__retain"
         env_struct_type = nil
         setup = []
@@ -676,7 +676,7 @@ module MilkTea
                       )
                       @artifacts.synthetic_structs << IR::StructDecl.new(
                         name: env_struct_type.name,
-                        c_name: env_struct_type.name,
+                        linkage_name: env_struct_type.name,
                         fields: [IR::Field.new(name: "__mt_ref_count", type: @ctx.types.fetch("ptr_uint")), *captures.map { |capture| IR::Field.new(name: capture[:field_name], type: capture[:type]) }],
                         packed: false,
                         alignment: nil,
@@ -691,7 +691,7 @@ module MilkTea
                       )
                       setup << IR::LocalDecl.new(
                         name: env_name,
-                        c_name: env_name,
+                        linkage_name: env_name,
                         type: env_pointer_type,
                         value: IR::Cast.new(target_type: env_pointer_type, expression: raw_allocation, type: env_pointer_type),
                       )
@@ -718,7 +718,7 @@ module MilkTea
                     end
 
         @artifacts.synthetic_functions << build_proc_invoke_function(expression, proc_type, captures, env_struct_type, invoke_c_name)
-        @artifacts.synthetic_functions << build_proc_release_function(release_c_name, env_struct_type)
+        @artifacts.synthetic_functions << build_proc_release_function(release_linkage_name, env_struct_type)
         @artifacts.synthetic_functions << build_proc_retain_function(retain_c_name, env_struct_type)
 
         [
@@ -728,7 +728,7 @@ module MilkTea
             fields: [
               IR::AggregateField.new(name: "env", value: env_value),
               IR::AggregateField.new(name: "invoke", value: IR::Name.new(name: invoke_c_name, type: proc_invoke_function_type(proc_type), pointer: false)),
-              IR::AggregateField.new(name: "release", value: IR::Name.new(name: release_c_name, type: proc_release_function_type, pointer: false)),
+              IR::AggregateField.new(name: "release", value: IR::Name.new(name: release_linkage_name, type: proc_release_function_type, pointer: false)),
               IR::AggregateField.new(name: "retain", value: IR::Name.new(name: retain_c_name, type: proc_retain_function_type, pointer: false)),
             ],
           ),
@@ -747,7 +747,7 @@ module MilkTea
           iter_env = duplicate_env(env)
           current_actual_scope(iter_env[:scopes])[loop_var_name] = local_binding(
             type: loop_var_type,
-            c_name: c_local_name(loop_var_name),
+            linkage_name: c_local_name(loop_var_name),
             mutable: false,
             pointer: false,
             const_value: element,
@@ -842,18 +842,18 @@ module MilkTea
         params = []
         param_setup = []
         return_type = decl.return_type ? resolve_type_ref(decl.return_type) : @ctx.types.fetch("void")
-        c_name = "#{@ctx.module_prefix}#{decl.name}"
+        linkage_name = "#{@ctx.module_prefix}#{decl.name}"
 
         decl.params.each do |param|
           param_type = param.type ? resolve_type_ref(param.type) : @ctx.types.fetch("int")
-          param_c_name = c_local_name(param.name)
-          params << IR::Param.new(name: param.name, c_name: param_c_name, type: param_type, pointer: false)
-          env[:scopes].last[param.name] = local_binding(type: param_type, c_name: param_c_name, mutable: false, pointer: false)
+          param_linkage_name = c_local_name(param.name)
+          params << IR::Param.new(name: param.name, linkage_name: param_linkage_name, type: param_type, pointer: false)
+          env[:scopes].last[param.name] = local_binding(type: param_type, linkage_name: param_linkage_name, mutable: false, pointer: false)
         end
 
         body = lower_block(decl.body, env:, active_defers: [], return_type:, loop_flow: nil, allow_return: true)
         body = param_setup + body
-        func = IR::Function.new(name: decl.name, c_name:, params:, return_type:, body:, entry_point: false, method_receiver_param: false)
+        func = IR::Function.new(name: decl.name, linkage_name:, params:, return_type:, body:, entry_point: false, method_receiver_param: false)
         @artifacts.emitted_declarations << func
         []
       end
@@ -863,8 +863,8 @@ module MilkTea
           field_type = field.type ? resolve_type_ref(field.type) : @ctx.types.fetch("int")
           IR::Field.new(name: field.name, type: field_type)
         end
-        c_name = "#{@ctx.module_prefix}#{decl.name}"
-        struct_decl = IR::StructDecl.new(name: decl.name, c_name:, fields:, packed: decl.respond_to?(:packed) ? decl.packed : false, alignment: nil)
+        linkage_name = "#{@ctx.module_prefix}#{decl.name}"
+        struct_decl = IR::StructDecl.new(name: decl.name, linkage_name:, fields:, packed: decl.respond_to?(:packed) ? decl.packed : false, alignment: nil)
         @artifacts.emitted_declarations << struct_decl
         []
       end
@@ -876,7 +876,7 @@ module MilkTea
         value = lower_contextual_expression(prepared_value, env:, expected_type: value_type)
 
         temp_name = fresh_c_temp_name(env, "destructure_val")
-        lowered << IR::LocalDecl.new(name: temp_name, c_name: temp_name, type: value_type, value:)
+        lowered << IR::LocalDecl.new(name: temp_name, linkage_name: temp_name, type: value_type, value:)
 
         if statement.destructure_type_name
           # Struct destructure: find fields by name in the struct type
@@ -886,8 +886,8 @@ module MilkTea
             field_type = fields[name]
             field_expr = IR::Member.new(receiver: IR::Name.new(name: temp_name, type: destructure_type, pointer: false), member: name, type: field_type)
             decl_c_name = c_local_name(name)
-            lowered << IR::LocalDecl.new(name: decl_c_name, c_name: decl_c_name, type: field_type, value: field_expr)
-            env[:scopes].last[name] = local_binding(type: field_type, c_name: decl_c_name, mutable: false, pointer: false)
+            lowered << IR::LocalDecl.new(name: decl_c_name, linkage_name: decl_c_name, type: field_type, value: field_expr)
+            env[:scopes].last[name] = local_binding(type: field_type, linkage_name: decl_c_name, mutable: false, pointer: false)
           end
         else
           # Tuple destructure: index by position
@@ -896,8 +896,8 @@ module MilkTea
             field_type = value_type.element_types[index]
             field_expr = IR::Member.new(receiver: IR::Name.new(name: temp_name, type: value_type, pointer: false), member: field_name, type: field_type)
             decl_c_name = c_local_name(name)
-            lowered << IR::LocalDecl.new(name: decl_c_name, c_name: decl_c_name, type: field_type, value: field_expr)
-            env[:scopes].last[name] = local_binding(type: field_type, c_name: decl_c_name, mutable: false, pointer: false)
+            lowered << IR::LocalDecl.new(name: decl_c_name, linkage_name: decl_c_name, type: field_type, value: field_expr)
+            env[:scopes].last[name] = local_binding(type: field_type, linkage_name: decl_c_name, mutable: false, pointer: false)
           end
         end
       end
@@ -905,8 +905,8 @@ module MilkTea
       def lower_emitted_const(decl, env:)
         value = lower_static_storage_initializer(decl.value, env:, expected_type: decl.type ? resolve_type_ref(decl.type) : nil)
         type = decl.type ? resolve_type_ref(decl.type) : infer_expression_type(decl.value, env:)
-        c_name = value_c_name(decl.name)
-        constant = IR::Constant.new(name: decl.name, c_name:, type:, value:)
+        linkage_name = value_c_name(decl.name)
+        constant = IR::Constant.new(name: decl.name, linkage_name:, type:, value:)
         @artifacts.emitted_declarations << constant
         []
       end

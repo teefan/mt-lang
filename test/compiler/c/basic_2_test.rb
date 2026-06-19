@@ -770,7 +770,7 @@ function main() -> int:
 
       )
       program = MilkTea::ModuleLoader.new(module_roots: [dir]).check_program(source_path)
-      generated = MilkTea::Codegen.generate_c(program)
+      generated = MilkTea::Codegen.generate_c(MilkTea::Lowering.lower(program))
 
       assert_match(/static demo_math_RawVec demo_math_RawVec_zero_static\(void\)/, generated)
       assert_match(/demo_math_RawVec value = demo_math_RawVec_zero_static\(\);/, generated)

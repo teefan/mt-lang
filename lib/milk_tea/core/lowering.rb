@@ -1,5 +1,22 @@
 # frozen_string_literal: true
 
+# Lowering transforms the Sema analysis into IR::Program.
+#
+# Contract with Sema::Analysis — the Lowerer reads these fields:
+#   .ast                    raw parsed AST
+#   .module_name            module identifier string
+#   .module_kind            :module or :raw_module
+#   .types                  Hash[name → Types::Base]
+#   .interfaces             Hash[name → InterfaceBinding|GenericInterfaceBinding]
+#   .attributes             Hash[name → AttributeBinding]
+#   .attribute_applications Hash[...]
+#   .values                 Hash[name → ValueBinding]
+#   .functions              Hash[name → FunctionBinding]
+#   .methods                Hash[type → Hash[name → FunctionBinding]]
+#   .implemented_interfaces Hash[type → Set[InterfaceBinding]]
+#
+# The output is IR::Program, consumed by CBackend.
+
 require_relative "lowering/scans"
 require_relative "lowering/declarations"
 require_relative "lowering/events"
@@ -88,7 +105,7 @@ module MilkTea
       cached&.each do |module_name, cached_ir|
         modules[module_name] = cached_ir.with(functions: [])
         per_module_funcs[module_name] = cached_ir.functions.dup
-        cached_ir.functions.each { |f| @artifacts.lowered_function_c_names[f.c_name] = true }
+        cached_ir.functions.each { |f| @artifacts.lowered_function_linkage_names[f.linkage_name] = true }
       end
 
       @program.analyses_by_path.each_pair do |path, analysis|
@@ -205,9 +222,9 @@ module MilkTea
       all_functions = modules.values.flat_map(&:functions)
 
       all_opaques.concat(lower_imported_external_opaques)
-      all_structs.concat(@artifacts.synthetic_structs.uniq { |s| s.c_name })
-      all_enums.concat(@artifacts.synthetic_enums.uniq { |e| e.c_name })
-      all_functions.concat(@artifacts.synthetic_functions.uniq { |f| f.c_name })
+      all_structs.concat(@artifacts.synthetic_structs.uniq { |s| s.linkage_name })
+      all_enums.concat(@artifacts.synthetic_enums.uniq { |e| e.linkage_name })
+      all_functions.concat(@artifacts.synthetic_functions.uniq { |f| f.linkage_name })
 
       # Add emit-generated declarations
       @artifacts.emitted_declarations.each do |emitted|

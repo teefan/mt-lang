@@ -18,12 +18,12 @@ module MilkTea
           def sort_aggregate_decls(struct_decls, union_decls, variant_decls)
             aggregate_decls = struct_decls + union_decls + variant_decls
             by_c_name = aggregate_decls.each_with_object({}) do |aggregate_decl, declarations|
-              declarations[aggregate_decl.c_name] = aggregate_decl
+              declarations[aggregate_decl.linkage_name] = aggregate_decl
             end
             variant_decls.each do |variant_decl|
               variant_decl.arms.each do |arm|
                 next if arm.fields.empty?
-                by_c_name[arm.c_name] = variant_decl
+                by_c_name[arm.linkage_name] = variant_decl
               end
             end
             visiting = {}
@@ -31,17 +31,17 @@ module MilkTea
             sorted = []
 
             visit = lambda do |aggregate_decl|
-              return if visited[aggregate_decl.c_name]
-              raise CBackendError, "cyclic aggregate dependency involving #{aggregate_decl.c_name}" if visiting[aggregate_decl.c_name]
+              return if visited[aggregate_decl.linkage_name]
+              raise CBackendError, "cyclic aggregate dependency involving #{aggregate_decl.linkage_name}" if visiting[aggregate_decl.linkage_name]
 
-              visiting[aggregate_decl.c_name] = true
+              visiting[aggregate_decl.linkage_name] = true
               aggregate_decl_dependencies(aggregate_decl).each do |dependency|
                 next unless by_c_name.key?(dependency)
 
                 visit.call(by_c_name.fetch(dependency))
               end
-              visiting.delete(aggregate_decl.c_name)
-              visited[aggregate_decl.c_name] = true
+              visiting.delete(aggregate_decl.linkage_name)
+              visited[aggregate_decl.linkage_name] = true
               sorted << aggregate_decl
             end
 

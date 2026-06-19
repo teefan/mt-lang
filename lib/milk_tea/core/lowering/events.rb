@@ -96,7 +96,7 @@ module MilkTea
         subscription_type = @ctx.types.fetch("Subscription")
         @artifacts.synthetic_structs << IR::StructDecl.new(
           name: subscription_type.name,
-          c_name: subscription_type.c_name,
+          linkage_name: subscription_type.linkage_name,
           fields: [
             IR::Field.new(name: "slot", type: @ctx.types.fetch("ptr_uint")),
             IR::Field.new(name: "generation", type: @ctx.types.fetch("ptr_uint")),
@@ -113,12 +113,12 @@ module MilkTea
         event_error_type = @ctx.types.fetch("EventError")
         @artifacts.synthetic_enums << IR::EnumDecl.new(
           name: event_error_type.name,
-          c_name: c_type_name(event_error_type),
+          linkage_name: c_type_name(event_error_type),
           backing_type: event_error_type.backing_type,
           members: [
             IR::EnumMember.new(
               name: "full",
-              c_name: enum_member_c_name(event_error_type, "full"),
+              linkage_name: enum_member_c_name(event_error_type, "full"),
               value: IR::IntegerLiteral.new(value: 0, type: event_error_type.backing_type),
             ),
           ],
@@ -139,7 +139,7 @@ module MilkTea
         wait_result_type = event_wait_result_type(event_type)
         task_type = Types::Task.new(wait_result_type)
         wake_type = task_type.field("ready").params.fetch(0).type == void_ptr ? task_type.field("set_waiter").params.fetch(2).type : Types::Function.new(nil, params: [Types::Parameter.new("frame", void_ptr)], return_type: @ctx.types.fetch("void"))
-        slot_type = Types::Struct.new("#{event_type.c_name}__slot").define_fields(
+        slot_type = Types::Struct.new("#{event_type.linkage_name}__slot").define_fields(
           "active" => @ctx.types.fetch("bool"),
           "once" => @ctx.types.fetch("bool"),
           "generation" => @ctx.types.fetch("ptr_uint"),
@@ -147,7 +147,7 @@ module MilkTea
           "listener" => void_ptr,
           "wait_frame" => void_ptr,
         )
-        snapshot_type = Types::Struct.new("#{event_type.c_name}__snapshot").define_fields(
+        snapshot_type = Types::Struct.new("#{event_type.linkage_name}__snapshot").define_fields(
           "slot" => @ctx.types.fetch("ptr_uint"),
           "generation" => @ctx.types.fetch("ptr_uint"),
           "once" => @ctx.types.fetch("bool"),
@@ -156,7 +156,7 @@ module MilkTea
           "state" => void_ptr,
           "listener" => void_ptr,
         )
-        wait_frame_type = Types::Struct.new("#{event_type.c_name}__wait_frame").define_fields(
+        wait_frame_type = Types::Struct.new("#{event_type.linkage_name}__wait_frame").define_fields(
           "ready" => @ctx.types.fetch("bool"),
           "waiter_frame" => void_ptr,
           "waiter" => wake_type,
@@ -169,7 +169,7 @@ module MilkTea
 
         @artifacts.synthetic_structs << IR::StructDecl.new(
           name: slot_type.name,
-          c_name: slot_type.name,
+          linkage_name: slot_type.name,
           fields: [
             IR::Field.new(name: "active", type: @ctx.types.fetch("bool")),
             IR::Field.new(name: "once", type: @ctx.types.fetch("bool")),
@@ -183,7 +183,7 @@ module MilkTea
         )
         @artifacts.synthetic_structs << IR::StructDecl.new(
           name: snapshot_type.name,
-          c_name: snapshot_type.name,
+          linkage_name: snapshot_type.name,
           fields: [
             IR::Field.new(name: "slot", type: @ctx.types.fetch("ptr_uint")),
             IR::Field.new(name: "generation", type: @ctx.types.fetch("ptr_uint")),
@@ -198,7 +198,7 @@ module MilkTea
         )
         @artifacts.synthetic_structs << IR::StructDecl.new(
           name: wait_frame_type.name,
-          c_name: wait_frame_type.name,
+          linkage_name: wait_frame_type.name,
           fields: [
             IR::Field.new(name: "ready", type: @ctx.types.fetch("bool")),
             IR::Field.new(name: "waiter_frame", type: void_ptr),
@@ -212,7 +212,7 @@ module MilkTea
         )
         @artifacts.synthetic_structs << IR::StructDecl.new(
           name: event_type.name,
-          c_name: event_type.c_name,
+          linkage_name: event_type.linkage_name,
           fields: [IR::Field.new(name: "slots", type: slots_type)],
           packed: false,
           alignment: nil,
@@ -235,17 +235,17 @@ module MilkTea
           subscription_result_type:,
           wait_result_type:,
           task_type:,
-          subscribe_c_name: "#{event_type.c_name}__subscribe",
-          subscribe_once_c_name: "#{event_type.c_name}__subscribe_once",
-          subscribe_stateful_c_name: "#{event_type.c_name}__subscribe_stateful",
-          subscribe_once_stateful_c_name: "#{event_type.c_name}__subscribe_once_stateful",
-          unsubscribe_c_name: "#{event_type.c_name}__unsubscribe",
-          emit_c_name: "#{event_type.c_name}__emit",
-          wait_c_name: "#{event_type.c_name}__wait",
-          wait_ready_c_name: "#{event_type.c_name}__wait__ready",
-          wait_set_waiter_c_name: "#{event_type.c_name}__wait__set_waiter",
-          wait_release_c_name: "#{event_type.c_name}__wait__release",
-          wait_take_result_c_name: "#{event_type.c_name}__wait__take_result",
+          subscribe_linkage_name: "#{event_type.linkage_name}__subscribe",
+          subscribe_once_linkage_name: "#{event_type.linkage_name}__subscribe_once",
+          subscribe_stateful_linkage_name: "#{event_type.linkage_name}__subscribe_stateful",
+          subscribe_once_stateful_linkage_name: "#{event_type.linkage_name}__subscribe_once_stateful",
+          unsubscribe_linkage_name: "#{event_type.linkage_name}__unsubscribe",
+          emit_linkage_name: "#{event_type.linkage_name}__emit",
+          wait_linkage_name: "#{event_type.linkage_name}__wait",
+          wait_ready_linkage_name: "#{event_type.linkage_name}__wait__ready",
+          wait_set_waiter_linkage_name: "#{event_type.linkage_name}__wait__set_waiter",
+          wait_release_linkage_name: "#{event_type.linkage_name}__wait__release",
+          wait_take_result_linkage_name: "#{event_type.linkage_name}__wait__take_result",
         }
 
         @artifacts.synthetic_functions << build_event_subscribe_function(runtime, once: false)
@@ -274,7 +274,7 @@ module MilkTea
           IR::ForStmt.new(
             init: IR::LocalDecl.new(
               name: "__mt_slot_index",
-              c_name: "__mt_slot_index",
+              linkage_name: "__mt_slot_index",
               type: @ctx.types.fetch("ptr_uint"),
               value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint")),
             ),
@@ -290,7 +290,7 @@ module MilkTea
               active_event_slot_continue_guard(slot_pointer_expr),
               IR::LocalDecl.new(
                 name: "__mt_generation",
-                c_name: "__mt_generation",
+                linkage_name: "__mt_generation",
                 type: @ctx.types.fetch("ptr_uint"),
                 value: event_next_generation_expression(slot_pointer_expr),
               ),
@@ -309,11 +309,11 @@ module MilkTea
         ]
 
         IR::Function.new(
-          name: once ? "#{runtime.fetch(:subscribe_once_c_name)}_fn" : "#{runtime.fetch(:subscribe_c_name)}_fn",
-          c_name: once ? runtime.fetch(:subscribe_once_c_name) : runtime.fetch(:subscribe_c_name),
+          name: once ? "#{runtime.fetch(:subscribe_once_linkage_name)}_fn" : "#{runtime.fetch(:subscribe_linkage_name)}_fn",
+          linkage_name: once ? runtime.fetch(:subscribe_once_linkage_name) : runtime.fetch(:subscribe_linkage_name),
           params: [
-            IR::Param.new(name: "event", c_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false),
-            IR::Param.new(name: "listener", c_name: "listener", type: runtime.fetch(:listener_type), pointer: false),
+            IR::Param.new(name: "event", linkage_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false),
+            IR::Param.new(name: "listener", linkage_name: "listener", type: runtime.fetch(:listener_type), pointer: false),
           ],
           return_type: runtime.fetch(:subscription_result_type),
           body:,
@@ -333,7 +333,7 @@ module MilkTea
           IR::ForStmt.new(
             init: IR::LocalDecl.new(
               name: "__mt_slot_index",
-              c_name: "__mt_slot_index",
+              linkage_name: "__mt_slot_index",
               type: @ctx.types.fetch("ptr_uint"),
               value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint")),
             ),
@@ -349,7 +349,7 @@ module MilkTea
               active_event_slot_continue_guard(slot_pointer_expr),
               IR::LocalDecl.new(
                 name: "__mt_generation",
-                c_name: "__mt_generation",
+                linkage_name: "__mt_generation",
                 type: @ctx.types.fetch("ptr_uint"),
                 value: event_next_generation_expression(slot_pointer_expr),
               ),
@@ -368,14 +368,14 @@ module MilkTea
           IR::ReturnStmt.new(value: event_failure_literal(runtime.fetch(:subscription_result_type))),
         ]
 
-        c_name = once ? runtime.fetch(:subscribe_once_stateful_c_name) : runtime.fetch(:subscribe_stateful_c_name)
+        linkage_name = once ? runtime.fetch(:subscribe_once_stateful_linkage_name) : runtime.fetch(:subscribe_stateful_linkage_name)
         IR::Function.new(
-          name: "#{c_name}_fn",
-          c_name:,
+          name: "#{linkage_name}_fn",
+          linkage_name:,
           params: [
-            IR::Param.new(name: "event", c_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false),
-            IR::Param.new(name: "state", c_name: "state", type: runtime.fetch(:void_ptr), pointer: false),
-            IR::Param.new(name: "listener", c_name: "listener", type: runtime.fetch(:void_ptr), pointer: false),
+            IR::Param.new(name: "event", linkage_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false),
+            IR::Param.new(name: "state", linkage_name: "state", type: runtime.fetch(:void_ptr), pointer: false),
+            IR::Param.new(name: "listener", linkage_name: "listener", type: runtime.fetch(:void_ptr), pointer: false),
           ],
           return_type: runtime.fetch(:subscription_result_type),
           body:,
@@ -404,7 +404,7 @@ module MilkTea
           ),
           IR::LocalDecl.new(
             name: "__mt_slot",
-            c_name: "__mt_slot",
+            linkage_name: "__mt_slot",
             type: runtime.fetch(:slot_pointer_type),
             value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime),
           ),
@@ -428,11 +428,11 @@ module MilkTea
         ]
 
         IR::Function.new(
-          name: "#{runtime.fetch(:unsubscribe_c_name)}_fn",
-          c_name: runtime.fetch(:unsubscribe_c_name),
+          name: "#{runtime.fetch(:unsubscribe_linkage_name)}_fn",
+          linkage_name: runtime.fetch(:unsubscribe_linkage_name),
           params: [
-            IR::Param.new(name: "event", c_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false),
-            IR::Param.new(name: "subscription", c_name: "subscription", type: @ctx.types.fetch("Subscription"), pointer: false),
+            IR::Param.new(name: "event", linkage_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false),
+            IR::Param.new(name: "subscription", linkage_name: "subscription", type: @ctx.types.fetch("Subscription"), pointer: false),
           ],
           return_type: @ctx.types.fetch("bool"),
           body:,
@@ -509,7 +509,7 @@ module MilkTea
             then_body: [
               IR::LocalDecl.new(
                 name: "__mt_slot",
-                c_name: "__mt_slot",
+                linkage_name: "__mt_slot",
                 type: runtime.fetch(:slot_pointer_type),
                 value: event_slot_pointer_expression(
                   event_expr,
@@ -522,7 +522,7 @@ module MilkTea
                 then_body: [
                   IR::LocalDecl.new(
                     name: "__mt_wait_frame",
-                    c_name: "__mt_wait_frame",
+                    linkage_name: "__mt_wait_frame",
                     type: runtime.fetch(:wait_frame_pointer_type),
                     value: IR::Cast.new(target_type: runtime.fetch(:wait_frame_pointer_type), expression: current_wait_frame, type: runtime.fetch(:wait_frame_pointer_type)),
                   ),
@@ -537,7 +537,7 @@ module MilkTea
                       type: @ctx.types.fetch("bool"),
                     ),
                     then_body: [
-                      IR::LocalDecl.new(name: "__mt_waiter_frame", c_name: "__mt_waiter_frame", type: runtime.fetch(:void_ptr), value: waiter_frame_expr),
+                      IR::LocalDecl.new(name: "__mt_waiter_frame", linkage_name: "__mt_waiter_frame", type: runtime.fetch(:void_ptr), value: waiter_frame_expr),
                       IR::Assignment.new(target: waiter_frame_expr, operator: "=", value: IR::NullLiteral.new(type: runtime.fetch(:void_ptr))),
                       IR::ExpressionStmt.new(
                         expression: IR::Call.new(
@@ -573,16 +573,16 @@ module MilkTea
         ]
 
         body = [
-          IR::LocalDecl.new(name: "__mt_snapshots", c_name: "__mt_snapshots", type: runtime.fetch(:snapshots_type), value: IR::ZeroInit.new(type: runtime.fetch(:snapshots_type))),
-          IR::LocalDecl.new(name: "__mt_snapshot_count", c_name: "__mt_snapshot_count", type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+          IR::LocalDecl.new(name: "__mt_snapshots", linkage_name: "__mt_snapshots", type: runtime.fetch(:snapshots_type), value: IR::ZeroInit.new(type: runtime.fetch(:snapshots_type))),
+          IR::LocalDecl.new(name: "__mt_snapshot_count", linkage_name: "__mt_snapshot_count", type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
           IR::ForStmt.new(
-            init: IR::LocalDecl.new(name: "__mt_slot_index", c_name: "__mt_slot_index", type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+            init: IR::LocalDecl.new(name: "__mt_slot_index", linkage_name: "__mt_slot_index", type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
             condition: IR::Binary.new(operator: "<", left: slot_index_expr, right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @ctx.types.fetch("ptr_uint")), type: @ctx.types.fetch("bool")),
             post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
             body: collect_body,
           ),
           IR::ForStmt.new(
-            init: IR::LocalDecl.new(name: "__mt_dispatch_index", c_name: "__mt_dispatch_index", type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+            init: IR::LocalDecl.new(name: "__mt_dispatch_index", linkage_name: "__mt_dispatch_index", type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
             condition: IR::Binary.new(operator: "<", left: dispatch_index_expr, right: snapshot_count_expr, type: @ctx.types.fetch("bool")),
             post: IR::Assignment.new(target: dispatch_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
             body: dispatch_body,
@@ -590,12 +590,12 @@ module MilkTea
           IR::ReturnStmt.new(value: nil),
         ]
 
-        params = [IR::Param.new(name: "event", c_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)]
-        params << IR::Param.new(name: "payload", c_name: "payload", type: runtime.fetch(:event_type).payload_type, pointer: false) if runtime.fetch(:event_type).payload_type
+        params = [IR::Param.new(name: "event", linkage_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)]
+        params << IR::Param.new(name: "payload", linkage_name: "payload", type: runtime.fetch(:event_type).payload_type, pointer: false) if runtime.fetch(:event_type).payload_type
 
         IR::Function.new(
-          name: "#{runtime.fetch(:emit_c_name)}_fn",
-          c_name: runtime.fetch(:emit_c_name),
+          name: "#{runtime.fetch(:emit_linkage_name)}_fn",
+          linkage_name: runtime.fetch(:emit_linkage_name),
           params:,
           return_type: @ctx.types.fetch("void"),
           body:,
@@ -608,9 +608,9 @@ module MilkTea
         raw_frame_expr = IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false)
 
         IR::Function.new(
-          name: "#{runtime.fetch(:wait_ready_c_name)}_fn",
-          c_name: runtime.fetch(:wait_ready_c_name),
-          params: [IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
+          name: "#{runtime.fetch(:wait_ready_linkage_name)}_fn",
+          linkage_name: runtime.fetch(:wait_ready_linkage_name),
+          params: [IR::Param.new(name: "frame", linkage_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
           return_type: @ctx.types.fetch("bool"),
           body: [
             IR::IfStmt.new(
@@ -625,7 +625,7 @@ module MilkTea
             ),
             IR::LocalDecl.new(
               name: "__mt_wait_frame",
-              c_name: "__mt_wait_frame",
+              linkage_name: "__mt_wait_frame",
               type: runtime.fetch(:wait_frame_pointer_type),
               value: IR::Cast.new(
                 target_type: runtime.fetch(:wait_frame_pointer_type),
@@ -646,12 +646,12 @@ module MilkTea
         waiter_expr = IR::Name.new(name: "waiter", type: runtime.fetch(:wake_type), pointer: false)
 
         IR::Function.new(
-          name: "#{runtime.fetch(:wait_set_waiter_c_name)}_fn",
-          c_name: runtime.fetch(:wait_set_waiter_c_name),
+          name: "#{runtime.fetch(:wait_set_waiter_linkage_name)}_fn",
+          linkage_name: runtime.fetch(:wait_set_waiter_linkage_name),
           params: [
-            IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false),
-            IR::Param.new(name: "waiter_frame", c_name: "waiter_frame", type: runtime.fetch(:void_ptr), pointer: false),
-            IR::Param.new(name: "waiter", c_name: "waiter", type: runtime.fetch(:wake_type), pointer: false),
+            IR::Param.new(name: "frame", linkage_name: "frame", type: runtime.fetch(:void_ptr), pointer: false),
+            IR::Param.new(name: "waiter_frame", linkage_name: "waiter_frame", type: runtime.fetch(:void_ptr), pointer: false),
+            IR::Param.new(name: "waiter", linkage_name: "waiter", type: runtime.fetch(:wake_type), pointer: false),
           ],
           return_type: @ctx.types.fetch("void"),
           body: [
@@ -670,7 +670,7 @@ module MilkTea
             ),
             IR::LocalDecl.new(
               name: "__mt_wait_frame",
-              c_name: "__mt_wait_frame",
+              linkage_name: "__mt_wait_frame",
               type: runtime.fetch(:wait_frame_pointer_type),
               value: IR::Cast.new(target_type: runtime.fetch(:wait_frame_pointer_type), expression: IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false), type: runtime.fetch(:wait_frame_pointer_type)),
             ),
@@ -695,9 +695,9 @@ module MilkTea
         raw_frame_expr = IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false)
 
         IR::Function.new(
-          name: "#{runtime.fetch(:wait_release_c_name)}_fn",
-          c_name: runtime.fetch(:wait_release_c_name),
-          params: [IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
+          name: "#{runtime.fetch(:wait_release_linkage_name)}_fn",
+          linkage_name: runtime.fetch(:wait_release_linkage_name),
+          params: [IR::Param.new(name: "frame", linkage_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
           return_type: @ctx.types.fetch("void"),
           body: [
             IR::IfStmt.new(
@@ -712,7 +712,7 @@ module MilkTea
             ),
             IR::LocalDecl.new(
               name: "__mt_wait_frame",
-              c_name: "__mt_wait_frame",
+              linkage_name: "__mt_wait_frame",
               type: runtime.fetch(:wait_frame_pointer_type),
               value: IR::Cast.new(target_type: runtime.fetch(:wait_frame_pointer_type), expression: raw_frame_expr, type: runtime.fetch(:wait_frame_pointer_type)),
             ),
@@ -741,9 +741,9 @@ module MilkTea
         raw_frame_expr = IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false)
 
         IR::Function.new(
-          name: "#{runtime.fetch(:wait_take_result_c_name)}_fn",
-          c_name: runtime.fetch(:wait_take_result_c_name),
-          params: [IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
+          name: "#{runtime.fetch(:wait_take_result_linkage_name)}_fn",
+          linkage_name: runtime.fetch(:wait_take_result_linkage_name),
+          params: [IR::Param.new(name: "frame", linkage_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
           return_type: runtime.fetch(:wait_result_type),
           body: [
             IR::IfStmt.new(
@@ -758,7 +758,7 @@ module MilkTea
             ),
             IR::LocalDecl.new(
               name: "__mt_wait_frame",
-              c_name: "__mt_wait_frame",
+              linkage_name: "__mt_wait_frame",
               type: runtime.fetch(:wait_frame_pointer_type),
               value: IR::Cast.new(target_type: runtime.fetch(:wait_frame_pointer_type), expression: IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false), type: runtime.fetch(:wait_frame_pointer_type)),
             ),
@@ -778,21 +778,21 @@ module MilkTea
 
         body = [
           IR::ForStmt.new(
-            init: IR::LocalDecl.new(name: "__mt_slot_index", c_name: "__mt_slot_index", type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+            init: IR::LocalDecl.new(name: "__mt_slot_index", linkage_name: "__mt_slot_index", type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
             condition: IR::Binary.new(operator: "<", left: slot_index_expr, right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @ctx.types.fetch("ptr_uint")), type: @ctx.types.fetch("bool")),
             post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
             body: [
-              IR::LocalDecl.new(name: "__mt_slot", c_name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime)),
+              IR::LocalDecl.new(name: "__mt_slot", linkage_name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime)),
               active_event_slot_continue_guard(slot_pointer_expr),
               IR::LocalDecl.new(
                 name: "__mt_generation",
-                c_name: "__mt_generation",
+                linkage_name: "__mt_generation",
                 type: @ctx.types.fetch("ptr_uint"),
                 value: event_next_generation_expression(slot_pointer_expr),
               ),
               IR::LocalDecl.new(
                 name: "__mt_wait_frame",
-                c_name: "__mt_wait_frame",
+                linkage_name: "__mt_wait_frame",
                 type: runtime.fetch(:wait_frame_pointer_type),
                 value: IR::Cast.new(
                   target_type: runtime.fetch(:wait_frame_pointer_type),
@@ -821,9 +821,9 @@ module MilkTea
         ]
 
         IR::Function.new(
-          name: "#{runtime.fetch(:wait_c_name)}_fn",
-          c_name: runtime.fetch(:wait_c_name),
-          params: [IR::Param.new(name: "event", c_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)],
+          name: "#{runtime.fetch(:wait_linkage_name)}_fn",
+          linkage_name: runtime.fetch(:wait_linkage_name),
+          params: [IR::Param.new(name: "event", linkage_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)],
           return_type: runtime.fetch(:task_type),
           body:,
           entry_point: false,
@@ -844,7 +844,7 @@ module MilkTea
       def event_slot_local_decl(event_expr, slot_index_expr, runtime, local_name: "__mt_slot")
         IR::LocalDecl.new(
           name: local_name,
-          c_name: local_name,
+          linkage_name: local_name,
           type: runtime.fetch(:slot_pointer_type),
           value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime),
         )
@@ -984,7 +984,7 @@ module MilkTea
 
       def event_unsubscribe_call(runtime, event_expr, subscription_expr)
         IR::Call.new(
-          callee: runtime.fetch(:unsubscribe_c_name),
+          callee: runtime.fetch(:unsubscribe_linkage_name),
           arguments: [event_expr, subscription_expr],
           type: @ctx.types.fetch("void"),
         )
@@ -1037,10 +1037,10 @@ module MilkTea
           type: runtime.fetch(:task_type),
           fields: [
             IR::AggregateField.new(name: "frame", value: raw_frame_expr),
-            IR::AggregateField.new(name: "ready", value: IR::Name.new(name: runtime.fetch(:wait_ready_c_name), type: runtime.fetch(:task_type).field("ready"), pointer: false)),
-            IR::AggregateField.new(name: "set_waiter", value: IR::Name.new(name: runtime.fetch(:wait_set_waiter_c_name), type: runtime.fetch(:task_type).field("set_waiter"), pointer: false)),
-            IR::AggregateField.new(name: "release", value: IR::Name.new(name: runtime.fetch(:wait_release_c_name), type: runtime.fetch(:task_type).field("release"), pointer: false)),
-            IR::AggregateField.new(name: "take_result", value: IR::Name.new(name: runtime.fetch(:wait_take_result_c_name), type: runtime.fetch(:task_type).field("take_result"), pointer: false)),
+            IR::AggregateField.new(name: "ready", value: IR::Name.new(name: runtime.fetch(:wait_ready_linkage_name), type: runtime.fetch(:task_type).field("ready"), pointer: false)),
+            IR::AggregateField.new(name: "set_waiter", value: IR::Name.new(name: runtime.fetch(:wait_set_waiter_linkage_name), type: runtime.fetch(:task_type).field("set_waiter"), pointer: false)),
+            IR::AggregateField.new(name: "release", value: IR::Name.new(name: runtime.fetch(:wait_release_linkage_name), type: runtime.fetch(:task_type).field("release"), pointer: false)),
+            IR::AggregateField.new(name: "take_result", value: IR::Name.new(name: runtime.fetch(:wait_take_result_linkage_name), type: runtime.fetch(:task_type).field("take_result"), pointer: false)),
           ],
         )
       end

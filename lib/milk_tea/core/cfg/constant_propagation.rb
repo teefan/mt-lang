@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../const_eval"
+require_relative "../common/const_eval"
 
 module MilkTea
   module CFG

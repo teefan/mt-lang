@@ -6,27 +6,27 @@ module MilkTea
       def initialize(module_name:, includes:, constants:, globals:, opaques:, structs:, unions:, enums:, variants:, static_asserts:, functions:, source_path: nil) = super
     end
     Include = Data.define(:header)
-    Constant = Data.define(:name, :c_name, :type, :value)
-    Global = Data.define(:name, :c_name, :type, :value)
-    OpaqueDecl = Data.define(:name, :c_name, :forward_declarable, :source_module) do
-      def initialize(name:, c_name:, forward_declarable:, source_module: nil) = super
+    Constant = Data.define(:name, :linkage_name, :type, :value)
+    Global = Data.define(:name, :linkage_name, :type, :value)
+    OpaqueDecl = Data.define(:name, :linkage_name, :forward_declarable, :source_module) do
+      def initialize(name:, linkage_name:, forward_declarable:, source_module: nil) = super
     end
-    StructDecl = Data.define(:name, :c_name, :fields, :packed, :alignment, :source_module) do
-      def initialize(name:, c_name:, fields:, packed:, alignment:, source_module: nil) = super
+    StructDecl = Data.define(:name, :linkage_name, :fields, :packed, :alignment, :source_module) do
+      def initialize(name:, linkage_name:, fields:, packed:, alignment:, source_module: nil) = super
     end
-    UnionDecl = Data.define(:name, :c_name, :fields, :source_module) do
-      def initialize(name:, c_name:, fields:, source_module: nil) = super
+    UnionDecl = Data.define(:name, :linkage_name, :fields, :source_module) do
+      def initialize(name:, linkage_name:, fields:, source_module: nil) = super
     end
-    EnumDecl = Data.define(:name, :c_name, :backing_type, :members, :flags)
-    EnumMember = Data.define(:name, :c_name, :value)
+    EnumDecl = Data.define(:name, :linkage_name, :backing_type, :members, :flags)
+    EnumMember = Data.define(:name, :linkage_name, :value)
     Field = Data.define(:name, :type)
-    Function = Data.define(:name, :c_name, :params, :return_type, :body, :entry_point, :method_receiver_param) do
-      def initialize(name:, c_name:, params:, return_type:, body:, entry_point:, method_receiver_param: false) = super
+    Function = Data.define(:name, :linkage_name, :params, :return_type, :body, :entry_point, :method_receiver_param) do
+      def initialize(name:, linkage_name:, params:, return_type:, body:, entry_point:, method_receiver_param: false) = super
     end
-    Param = Data.define(:name, :c_name, :type, :pointer)
+    Param = Data.define(:name, :linkage_name, :type, :pointer)
 
-    LocalDecl = Data.define(:name, :c_name, :type, :value, :line, :source_path) do
-      def initialize(name:, c_name:, type:, value:, line: nil, source_path: nil) = super
+    LocalDecl = Data.define(:name, :linkage_name, :type, :value, :line, :source_path) do
+      def initialize(name:, linkage_name:, type:, value:, line: nil, source_path: nil) = super
     end
     Assignment = Data.define(:target, :operator, :value)
     BlockStmt = Data.define(:body)
@@ -76,10 +76,10 @@ module MilkTea
     AggregateLiteral = Data.define(:type, :fields)
     AggregateField = Data.define(:name, :value)
     ArrayLiteral = Data.define(:type, :elements)
-    VariantDecl = Data.define(:name, :c_name, :arms, :source_module) do
-      def initialize(name:, c_name:, arms:, source_module: nil) = super
+    VariantDecl = Data.define(:name, :linkage_name, :arms, :source_module) do
+      def initialize(name:, linkage_name:, arms:, source_module: nil) = super
     end
-    VariantArm = Data.define(:name, :c_name, :fields)
+    VariantArm = Data.define(:name, :linkage_name, :fields)
     VariantLiteral = Data.define(:type, :arm_name, :fields)
   end
 end

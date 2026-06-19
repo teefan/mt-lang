@@ -118,7 +118,7 @@ module MilkTea
         statements
       end
 
-      def lower_async_local_decl_statement(statement, field_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: [], loop_flow: nil)
+      def lower_async_local_decl_statement(statement, field_info:, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers: [], loop_flow: nil)
         lowered = []
         type = field_info[:type]
         storage_type = field_info[:storage_type]
@@ -175,7 +175,7 @@ module MilkTea
             current_actual_scope(else_env[:scopes])[statement.else_binding.name] = local_binding(
               type: let_else_error_type(storage_type),
               storage_type:,
-              c_name: async_frame_field_c_name(field_info[:field_name]),
+              linkage_name: async_frame_field_c_name(field_info[:field_name]),
               mutable: false,
               pointer: false,
               projection: :result_failure_error,
@@ -187,7 +187,7 @@ module MilkTea
               env: else_env,
               frame_expr:,
               raw_frame_expr:,
-              resume_c_name:,
+              resume_linkage_name:,
               async_info:,
               active_defers:,
               loop_flow:,
@@ -247,7 +247,7 @@ module MilkTea
 
       # Lower a list of statements that MAY contain await expressions inside nested control flow.
       # CPS-via-goto: labels placed inside if/while/match bodies, reachable from top-level switch dispatch.
-      def lower_async_cf_statements(statements, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: [], loop_flow: nil)
+      def lower_async_cf_statements(statements, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers: [], loop_flow: nil)
         lowered = []
         local_defers = []
         env[:return_context] = async_return_context(
@@ -265,22 +265,22 @@ module MilkTea
             field_info = async_info[:local_fields].fetch(async_local_decl_field_key(statement))
             await_info = async_info[:await_fields][statement.value&.object_id]
             if await_info
-              lowered.concat(lower_async_await_statement(statement, field_info:, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
+              lowered.concat(lower_async_await_statement(statement, field_info:, await_info:, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
             else
-              lowered.concat(lower_async_local_decl_statement(statement, field_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
+              lowered.concat(lower_async_local_decl_statement(statement, field_info:, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
             end
             async_bind_local!(env, statement.name, field_info) if bind_let_else_local?(statement)
           when AST::Assignment
             await_info = async_info[:await_fields][statement.value&.object_id]
             if await_info
-              lowered.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
+              lowered.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:))
             else
               lowered.concat(lower_async_assignment_statement(statement, env:))
             end
           when AST::ExpressionStmt
             await_info = async_info[:await_fields][statement.expression&.object_id]
             if await_info
-              lowered.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
+              lowered.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:))
             else
               lowered.concat(lower_async_expression_statement(statement, env:))
             end
@@ -288,20 +288,20 @@ module MilkTea
             cleanup = lower_async_cleanup_entries(local_defers, active_defers, frame_expr:, raw_frame_expr:, async_info:)
             await_info = async_info[:await_fields][statement.value&.object_id]
             if await_info
-              lowered.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, cleanup:))
+              lowered.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, cleanup:))
             else
               lowered.concat(lower_async_return_statement(statement, env:, frame_expr:, raw_frame_expr:, async_info:, cleanup:))
             end
           when AST::IfStmt
-            lowered.concat(lower_async_cf_if_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
+            lowered.concat(lower_async_cf_if_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
           when AST::WhileStmt
-            lowered.concat(lower_async_cf_while_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
+            lowered.concat(lower_async_cf_while_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
           when AST::ForStmt
-            lowered.concat(lower_async_cf_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: active_defers + local_defers))
+            lowered.concat(lower_async_cf_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers: active_defers + local_defers))
           when AST::MatchStmt
-            lowered.concat(lower_async_cf_match_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
+            lowered.concat(lower_async_cf_match_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
           when AST::UnsafeStmt
-            lowered.concat(lower_async_cf_statements(statement.body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
+            lowered.concat(lower_async_cf_statements(statement.body, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
           when AST::DeferStmt
             local_defers << lower_async_defer_cleanup(statement, env:, async_info:)
           when AST::PassStmt
@@ -331,12 +331,12 @@ module MilkTea
         lowered
       end
 
-      def lower_async_cf_if_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow:)
+      def lower_async_cf_if_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow:)
         branch_entries = statement.branches.map do |branch|
           condition_setup, prepared_cond = prepare_expression_for_inline_lowering(branch.condition, env:)
           condition = lower_contextual_expression(prepared_cond, env:, expected_type: @ctx.types.fetch("bool"))
           body = if statements_contain_await?(branch.body, async_info)
-            lower_async_cf_statements(branch.body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow:)
+            lower_async_cf_statements(branch.body, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow:)
           else
             lower_async_non_await_statements(branch.body, env:, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow:)
           end
@@ -345,7 +345,7 @@ module MilkTea
 
         else_body = if statement.else_body
           if statements_contain_await?(statement.else_body, async_info)
-            lower_async_cf_statements(statement.else_body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow:)
+            lower_async_cf_statements(statement.else_body, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow:)
           else
             lower_async_non_await_statements(statement.else_body, env:, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow:)
           end
@@ -361,14 +361,14 @@ module MilkTea
         nested_else || []
       end
 
-      def lower_async_cf_while_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow:)
+      def lower_async_cf_while_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow:)
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
         condition_setup, prepared_cond = prepare_expression_for_inline_lowering(statement.condition, env:)
         condition = lower_contextual_expression(prepared_cond, env:, expected_type: @ctx.types.fetch("bool"))
         inner_loop_flow = loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label))
         body = if statements_contain_await?(statement.body, async_info)
-          lower_async_cf_statements(statement.body, env: duplicate_env(env), frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
+          lower_async_cf_statements(statement.body, env: duplicate_env(env), frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
         else
           lower_async_non_await_statements(statement.body, env: duplicate_env(env), frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: inner_loop_flow)
         end
@@ -394,13 +394,13 @@ module MilkTea
         stmts
       end
 
-      def lower_async_cf_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:)
-        return lower_async_cf_parallel_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:) if statement.parallel?
+      def lower_async_cf_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:)
+        return lower_async_cf_parallel_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:) if statement.parallel?
 
         if range_iterable?(statement.iterable)
-          lower_async_cf_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:)
+          lower_async_cf_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:)
         else
-          lower_async_cf_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:)
+          lower_async_cf_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:)
         end
       end
 
@@ -413,7 +413,7 @@ module MilkTea
         [start_ir, stop_ir, false]
       end
 
-      def lower_async_cf_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:)
+      def lower_async_cf_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:)
         loop_var_name = statement.name
         loop_var_type = infer_range_loop_type(statement.iterable, env:)
         loop_var_field = async_info[:local_fields].fetch(loop_var_name)
@@ -431,13 +431,13 @@ module MilkTea
         inner_env = duplicate_env(env)
         inner_env[:scopes].last[loop_var_name] = local_binding(
           type: loop_var_type,
-          c_name: async_frame_field_c_name(loop_var_field[:field_name]),
+          linkage_name: async_frame_field_c_name(loop_var_field[:field_name]),
           mutable: true, pointer: false
         )
         inner_loop_flow = loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label))
 
         body = if statements_contain_await?(statement.body, async_info)
-          lower_async_cf_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
+          lower_async_cf_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
         else
           lower_async_non_await_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: inner_loop_flow)
         end
@@ -456,7 +456,7 @@ module MilkTea
         stmts
       end
 
-      def lower_async_cf_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:)
+      def lower_async_cf_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:)
         iterable_type = infer_expression_type(statement.iterable, env:)
         element_type = collection_loop_type(iterable_type)
         raise LoweringError, "for loop expects start..stop, array[T, N], or span[T], got #{iterable_type}" unless element_type
@@ -487,13 +487,13 @@ module MilkTea
 
         inner_env = duplicate_env(env)
         inner_env[:scopes].last[statement.name] = local_binding(
-          type: element_type, c_name: async_frame_field_c_name(loop_var_field[:field_name]), mutable: true, pointer: false
+          type: element_type, linkage_name: async_frame_field_c_name(loop_var_field[:field_name]), mutable: true, pointer: false
         )
         inner_loop_flow = loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label))
 
         assign_item = IR::Assignment.new(target: loop_var_expr, operator: "=", value: item_value)
         body_stmts = if statements_contain_await?(statement.body, async_info)
-          lower_async_cf_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
+          lower_async_cf_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
         else
           lower_async_non_await_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: inner_loop_flow)
         end
@@ -514,7 +514,7 @@ module MilkTea
         stmts
       end
 
-      def lower_async_cf_parallel_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:)
+      def lower_async_cf_parallel_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:)
         infos = statement.bindings.each_with_index.map do |binding, index|
           iterable = statement.iterables[index]
           iterable_type = infer_expression_type(iterable, env:)
@@ -557,7 +557,7 @@ module MilkTea
           binding_target = async_frame_field_expression(frame_expr, binding_field[:field_name], entry[:binding_type])
           inner_env[:scopes].last[entry[:binding].name] = local_binding(
             type: entry[:binding_type],
-            c_name: async_frame_field_c_name(binding_field[:field_name]),
+            linkage_name: async_frame_field_c_name(binding_field[:field_name]),
             mutable: true,
             pointer: false,
           )
@@ -565,7 +565,7 @@ module MilkTea
         end
         inner_loop_flow = loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label))
         body_stmts = if statements_contain_await?(statement.body, async_info)
-          lower_async_cf_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
+          lower_async_cf_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
         else
           lower_async_non_await_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: inner_loop_flow)
         end
@@ -606,7 +606,7 @@ module MilkTea
         stmts
       end
 
-      def lower_async_cf_match_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow:)
+      def lower_async_cf_match_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow:)
         expr_setup, prepared_expr = prepare_expression_for_inline_lowering(statement.expression, env:)
         match_expr = lower_contextual_expression(prepared_expr, env:, expected_type: nil)
         match_type = infer_expression_type(statement.expression, env:)
@@ -615,9 +615,9 @@ module MilkTea
         if match_type.is_a?(Types::Variant)
           if statement.arms.any? { |arm| arm.binding_name && !wildcard_arm_pattern?(arm.pattern) } &&
              !duplicable_foreign_argument_expression?(match_expr)
-            scrutinee_c_name = fresh_c_temp_name(env, "match_value")
-            expr_setup << IR::LocalDecl.new(name: scrutinee_c_name, c_name: scrutinee_c_name, type: match_type, value: match_expr)
-            match_expr = IR::Name.new(name: scrutinee_c_name, type: match_type, pointer: false)
+            scrutinee_linkage_name = fresh_c_temp_name(env, "match_value")
+            expr_setup << IR::LocalDecl.new(name: scrutinee_linkage_name, linkage_name: scrutinee_linkage_name, type: match_type, value: match_expr)
+            match_expr = IR::Name.new(name: scrutinee_linkage_name, type: match_type, pointer: false)
           end
 
           kind_type = @ctx.types.fetch("int")
@@ -625,7 +625,7 @@ module MilkTea
           cases = statement.arms.map do |arm|
             arm_env, binding_decl = async_variant_match_arm_binding(arm, match_expr, match_type, env:, frame_expr:, local_fields: async_info[:local_fields])
             arm_body = if statements_contain_await?(arm.body, async_info)
-                         lower_async_cf_statements(arm.body, env: arm_env, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow: arm_loop_flow)
+                         lower_async_cf_statements(arm.body, env: arm_env, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: arm_loop_flow)
                        else
                          lower_async_non_await_statements(arm.body, env: arm_env, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: arm_loop_flow)
                        end
@@ -643,7 +643,7 @@ module MilkTea
 
         cases = statement.arms.map do |arm|
           arm_body = if statements_contain_await?(arm.body, async_info)
-            lower_async_cf_statements(arm.body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow: arm_loop_flow)
+            lower_async_cf_statements(arm.body, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: arm_loop_flow)
           else
             lower_async_non_await_statements(arm.body, env:, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: arm_loop_flow)
           end
@@ -674,7 +674,7 @@ module MilkTea
           when AST::LocalDecl
             else_env = duplicate_env(local_env) if statement.else_body
             type, storage_type = async_local_decl_types(statement, env: local_env)
-            c_name = c_local_name(statement.name)
+            linkage_name = c_local_name(statement.name)
             if statement.value
               prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
                 statement.value, env: local_env, expected_type: storage_type, allow_root_statement_foreign: true
@@ -687,8 +687,8 @@ module MilkTea
             else
               value = IR::ZeroInit.new(type: storage_type)
             end
-            lowered << IR::LocalDecl.new(name: statement.name, c_name:, type: storage_type, value:)
-            current_actual_scope(local_env[:scopes])[statement.name] = local_binding(type:, storage_type:, c_name:, mutable: statement.kind == :var, pointer: false)
+            lowered << IR::LocalDecl.new(name: statement.name, linkage_name:, type: storage_type, value:)
+            current_actual_scope(local_env[:scopes])[statement.name] = local_binding(type:, storage_type:, linkage_name:, mutable: statement.kind == :var, pointer: false)
             if statement.else_body
               else_body = lower_async_non_await_statements(
                 statement.else_body,
@@ -702,7 +702,7 @@ module MilkTea
               lowered << IR::IfStmt.new(
                 condition: IR::Binary.new(
                   operator: "==",
-                  left: IR::Name.new(name: c_name, type: storage_type, pointer: false),
+                  left: IR::Name.new(name: linkage_name, type: storage_type, pointer: false),
                   right: IR::NullLiteral.new(type: storage_type),
                   type: @ctx.types.fetch("bool"),
                 ),
@@ -745,9 +745,9 @@ module MilkTea
             if scrutinee_type.is_a?(Types::Variant)
               if statement.arms.any? { |arm| arm.binding_name && !wildcard_arm_pattern?(arm.pattern) } &&
                  !duplicable_foreign_argument_expression?(expr)
-                scrutinee_c_name = fresh_c_temp_name(local_env, "match_value")
-                lowered << IR::LocalDecl.new(name: scrutinee_c_name, c_name: scrutinee_c_name, type: scrutinee_type, value: expr)
-                expr = IR::Name.new(name: scrutinee_c_name, type: scrutinee_type, pointer: false)
+                scrutinee_linkage_name = fresh_c_temp_name(local_env, "match_value")
+                lowered << IR::LocalDecl.new(name: scrutinee_linkage_name, linkage_name: scrutinee_linkage_name, type: scrutinee_type, value: expr)
+                expr = IR::Name.new(name: scrutinee_linkage_name, type: scrutinee_type, pointer: false)
               end
 
               kind_type = @ctx.types.fetch("int")
@@ -869,21 +869,21 @@ module MilkTea
         stop_expr = range_end_of(statement.iterable)
         start_setup, prepared_start = prepare_expression_for_inline_lowering(start_expr, env:, expected_type: loop_type)
         stop_setup, prepared_stop = prepare_expression_for_inline_lowering(stop_expr, env:, expected_type: loop_type)
-        index_c_name = c_local_name(statement.name)
-        stop_c_name = fresh_c_temp_name(env, "for_stop")
+        index_linkage_name = c_local_name(statement.name)
+        stop_linkage_name = fresh_c_temp_name(env, "for_stop")
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
-        index_ref = IR::Name.new(name: index_c_name, type: loop_type, pointer: false)
+        index_ref = IR::Name.new(name: index_linkage_name, type: loop_type, pointer: false)
         inline_stop = stop_setup.empty? && compile_time_numeric_const_expression?(prepared_stop)
         stop_value = if inline_stop
                        lower_expression(prepared_stop, env:, expected_type: loop_type)
                      else
-                       IR::Name.new(name: stop_c_name, type: loop_type, pointer: false)
+                       IR::Name.new(name: stop_linkage_name, type: loop_type, pointer: false)
                      end
 
         while_env = duplicate_env(env)
         current_actual_scope(while_env[:scopes])[statement.name] = local_binding(
-          type: loop_type, c_name: index_c_name, mutable: false, pointer: false
+          type: loop_type, linkage_name: index_linkage_name, mutable: false, pointer: false
         )
         body = lower_async_non_await_statements(
           statement.body,
@@ -897,7 +897,7 @@ module MilkTea
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: statement.name, c_name: index_c_name, type: loop_type, value: lower_expression(prepared_start, env:, expected_type: loop_type)),
+          init: IR::LocalDecl.new(name: statement.name, linkage_name: index_linkage_name, type: loop_type, value: lower_expression(prepared_start, env:, expected_type: loop_type)),
           condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
           post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: loop_type)),
           body:,
@@ -906,7 +906,7 @@ module MilkTea
         stmts = [
           *start_setup,
           *stop_setup,
-          *(inline_stop ? [] : [IR::LocalDecl.new(name: stop_c_name, c_name: stop_c_name, type: loop_type, value: lower_expression(prepared_stop, env:, expected_type: loop_type))]),
+          *(inline_stop ? [] : [IR::LocalDecl.new(name: stop_linkage_name, linkage_name: stop_linkage_name, type: loop_type, value: lower_expression(prepared_stop, env:, expected_type: loop_type))]),
           for_statement,
         ]
         stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
@@ -919,12 +919,12 @@ module MilkTea
         raise LoweringError, "for loop expects start..stop, array[T, N], or span[T], got #{iterable_type}" unless element_type
 
         iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
-        iterable_c_name = fresh_c_temp_name(env, "for_items")
-        index_c_name = fresh_c_temp_name(env, "for_index")
+        iterable_linkage_name = fresh_c_temp_name(env, "for_items")
+        index_linkage_name = fresh_c_temp_name(env, "for_index")
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
-        iterable_ref = IR::Name.new(name: iterable_c_name, type: iterable_type, pointer: false)
-        index_ref = IR::Name.new(name: index_c_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
+        iterable_ref = IR::Name.new(name: iterable_linkage_name, type: iterable_type, pointer: false)
+        index_ref = IR::Name.new(name: index_linkage_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
 
         item_value = if array_type?(iterable_type)
                        IR::Index.new(receiver: iterable_ref, index: index_ref, type: element_type)
@@ -940,9 +940,9 @@ module MilkTea
 
         while_env = duplicate_env(env)
         current_actual_scope(while_env[:scopes])[statement.name] = local_binding(
-          type: element_type, c_name: c_local_name(statement.name), mutable: false, pointer: false
+          type: element_type, linkage_name: c_local_name(statement.name), mutable: false, pointer: false
         )
-        body = [IR::LocalDecl.new(name: statement.name, c_name: c_local_name(statement.name), type: element_type, value: item_value)]
+        body = [IR::LocalDecl.new(name: statement.name, linkage_name: c_local_name(statement.name), type: element_type, value: item_value)]
         body.concat(lower_async_non_await_statements(
           statement.body,
           env: while_env,
@@ -955,7 +955,7 @@ module MilkTea
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+          init: IR::LocalDecl.new(name: index_linkage_name, linkage_name: index_linkage_name, type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
           condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
           post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
           body:,
@@ -963,7 +963,7 @@ module MilkTea
 
         stmts = [
           *iterable_setup,
-          IR::LocalDecl.new(name: iterable_c_name, c_name: iterable_c_name, type: iterable_type, value: lower_expression(prepared_iterable, env:, expected_type: iterable_type)),
+          IR::LocalDecl.new(name: iterable_linkage_name, linkage_name: iterable_linkage_name, type: iterable_type, value: lower_expression(prepared_iterable, env:, expected_type: iterable_type)),
           for_statement,
         ]
         stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
@@ -988,19 +988,19 @@ module MilkTea
 
         iterable_entries = infos.map do |info|
           setup, prepared_iterable = prepare_expression_for_inline_lowering(info[:iterable], env:, expected_type: info[:iterable_type])
-          c_name = fresh_c_temp_name(env, "for_items")
+          linkage_name = fresh_c_temp_name(env, "for_items")
           info.merge(
             setup:,
             prepared_iterable:,
-            iterable_c_name: c_name,
-            iterable_ref: IR::Name.new(name: c_name, type: info[:iterable_type], pointer: false),
+            iterable_linkage_name: linkage_name,
+            iterable_ref: IR::Name.new(name: linkage_name, type: info[:iterable_type], pointer: false),
           )
         end
 
-        index_c_name = fresh_c_temp_name(env, "for_index")
+        index_linkage_name = fresh_c_temp_name(env, "for_index")
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
-        index_ref = IR::Name.new(name: index_c_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
+        index_ref = IR::Name.new(name: index_linkage_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
         stop_value = collection_loop_stop_value(iterable_entries.first[:iterable_ref], iterable_entries.first[:iterable_type])
 
         while_env = duplicate_env(env)
@@ -1012,8 +1012,8 @@ module MilkTea
                               item_value
                             end
           binding = entry[:binding]
-          current_actual_scope(while_env[:scopes])[binding.name] = local_binding(type: entry[:binding_type], c_name: c_local_name(binding.name), mutable: false, pointer: false)
-          IR::LocalDecl.new(name: binding.name, c_name: c_local_name(binding.name), type: entry[:binding_type], value: loop_item_value)
+          current_actual_scope(while_env[:scopes])[binding.name] = local_binding(type: entry[:binding_type], linkage_name: c_local_name(binding.name), mutable: false, pointer: false)
+          IR::LocalDecl.new(name: binding.name, linkage_name: c_local_name(binding.name), type: entry[:binding_type], value: loop_item_value)
         end
         body.concat(lower_async_non_await_statements(
           statement.body,
@@ -1040,7 +1040,7 @@ module MilkTea
         end
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+          init: IR::LocalDecl.new(name: index_linkage_name, linkage_name: index_linkage_name, type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
           condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
           post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @ctx.types.fetch("ptr_uint"))),
           body:,
@@ -1049,7 +1049,7 @@ module MilkTea
         stmts = [
           *iterable_entries.flat_map { |entry| entry[:setup] },
           *iterable_entries.map do |entry|
-            IR::LocalDecl.new(name: entry[:iterable_c_name], c_name: entry[:iterable_c_name], type: entry[:iterable_type], value: lower_expression(entry[:prepared_iterable], env:, expected_type: entry[:iterable_type]))
+            IR::LocalDecl.new(name: entry[:iterable_linkage_name], linkage_name: entry[:iterable_linkage_name], type: entry[:iterable_type], value: lower_expression(entry[:prepared_iterable], env:, expected_type: entry[:iterable_type]))
           end,
           *length_checks,
           for_statement,
@@ -1107,7 +1107,7 @@ module MilkTea
         update_cstr_metadata_for_assignment!(statement, prepared_value, env)
         if statement.operator == "=" && contains_proc_storage_type?(target.type)
           rhs_name = fresh_c_temp_name(env, "proc_assign")
-          lowered << IR::LocalDecl.new(name: rhs_name, c_name: rhs_name, type: target.type, value:)
+          lowered << IR::LocalDecl.new(name: rhs_name, linkage_name: rhs_name, type: target.type, value:)
           rhs = IR::Name.new(name: rhs_name, type: target.type, pointer: false)
           lowered.concat(lower_proc_selective_retain_statements(rhs, statement.value, target.type))
           lowered.concat(lower_proc_contained_guarded_release_statements(target, target.type))
@@ -1192,7 +1192,7 @@ module MilkTea
         lowered
       end
 
-      def lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, field_info: nil, cleanup: [], active_defers: [], loop_flow: nil)
+      def lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, field_info: nil, cleanup: [], active_defers: [], loop_flow: nil)
         lowered = []
         await_expression = case statement
                            when AST::LocalDecl then statement.value
@@ -1218,7 +1218,7 @@ module MilkTea
           [
             task_frame_expr,
             raw_frame_expr,
-            IR::Name.new(name: resume_c_name, type: async_info[:wake_type], pointer: false),
+            IR::Name.new(name: resume_linkage_name, type: async_info[:wake_type], pointer: false),
           ],
           @ctx.types.fetch("void"),
         )
@@ -1245,7 +1245,7 @@ module MilkTea
           ],
           else_body: nil,
         )
-        lowered << IR::LabelStmt.new(name: async_state_label(resume_c_name, await_info[:state]))
+        lowered << IR::LabelStmt.new(name: async_state_label(resume_linkage_name, await_info[:state]))
 
         case statement
         when AST::LocalDecl
@@ -1259,7 +1259,7 @@ module MilkTea
               current_actual_scope(else_env[:scopes])[statement.else_binding.name] = local_binding(
                 type: let_else_error_type(storage_type),
                 storage_type:,
-                c_name: async_frame_field_c_name(field_info[:field_name]),
+                linkage_name: async_frame_field_c_name(field_info[:field_name]),
                 mutable: false,
                 pointer: false,
                 projection: :result_failure_error,
@@ -1271,7 +1271,7 @@ module MilkTea
                 env: else_env,
                 frame_expr:,
                 raw_frame_expr:,
-                resume_c_name:,
+                resume_linkage_name:,
                 async_info:,
                 active_defers:,
                 loop_flow:,
@@ -1344,7 +1344,7 @@ module MilkTea
               env: cleanup_env,
               frame_expr:,
               raw_frame_expr:,
-              resume_c_name: async_info.fetch(:resume_c_name),
+              resume_linkage_name: async_info.fetch(:resume_linkage_name),
               async_info:,
               active_defers: [],
               loop_flow: nil,
@@ -1403,7 +1403,7 @@ module MilkTea
           then_body: [
             IR::LocalDecl.new(
               name: "waiter_frame",
-              c_name: "__mt_waiter_frame",
+              linkage_name: "__mt_waiter_frame",
               type: async_info[:void_ptr],
               value: waiter_frame_field,
             ),

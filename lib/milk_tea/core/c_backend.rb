@@ -175,11 +175,11 @@ module MilkTea
       end
 
       constants.each do |constant|
-        lines << "#{constant_storage(constant.type)} #{c_declaration(constant.type, constant.c_name)} = #{emit_initializer(constant.value)};"
+        lines << "#{constant_storage(constant.type)} #{c_declaration(constant.type, constant.linkage_name)} = #{emit_initializer(constant.value)};"
       end
       @program.globals.each do |global|
         next unless emitted_globals.include?(global)
-        lines << "#{global_storage(global.type)} #{c_declaration(global.type, global.c_name)} = #{emit_initializer(global.value)};"
+        lines << "#{global_storage(global.type)} #{c_declaration(global.type, global.linkage_name)} = #{emit_initializer(global.value)};"
       end
       lines << "" unless constants.empty? && @program.globals.empty?
 

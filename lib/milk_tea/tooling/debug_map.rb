@@ -8,22 +8,22 @@ module MilkTea
   class DebugMap
     VERSION = 1
 
-    Entry = Data.define(:name, :c_name, :line) do
+    Entry = Data.define(:name, :linkage_name, :line) do
       def to_h
         payload = {
           "name" => name,
-          "cName" => c_name,
+          "cName" => linkage_name,
         }
         payload["line"] = line if line
         payload
       end
     end
 
-    Function = Data.define(:name, :c_name, :source_path, :line, :params, :locals) do
+    Function = Data.define(:name, :linkage_name, :source_path, :line, :params, :locals) do
       def to_h(base_dir: nil)
         payload = {
           "name" => name,
-          "cName" => c_name,
+          "cName" => linkage_name,
           "params" => params.map(&:to_h),
           "locals" => locals.map(&:to_h),
         }
@@ -41,7 +41,7 @@ module MilkTea
       @program_source_path = program_source_path ? File.expand_path(program_source_path) : nil
       @functions = functions
       @functions_by_c_name = functions.each_with_object({}) do |function, memo|
-        memo[function.c_name] ||= function
+        memo[function.linkage_name] ||= function
       end
     end
 
@@ -56,7 +56,7 @@ module MilkTea
       functions = Array(payload["functions"]).map do |function|
         Function.new(
           name: function.fetch("name"),
-          c_name: function.fetch("cName"),
+          linkage_name: function.fetch("cName"),
           source_path: path_from_payload(function["sourcePath"], base_dir),
           line: function["line"],
           params: load_entries(function["params"]),
@@ -85,10 +85,10 @@ module MilkTea
         source_path = first_statement_source_path(function.body) || ir_program.source_path
         Function.new(
           name: function.name.to_s,
-          c_name: function.c_name.to_s,
+          linkage_name: function.linkage_name.to_s,
           source_path: source_path ? File.expand_path(source_path) : nil,
           line: first_statement_line(function.body),
-          params: function.params.map { |param| Entry.new(name: param.name.to_s, c_name: param.c_name.to_s, line: nil) },
+          params: function.params.map { |param| Entry.new(name: param.name.to_s, linkage_name: param.linkage_name.to_s, line: nil) },
           locals: collect_locals(function.body)
         )
       end
@@ -111,8 +111,8 @@ module MilkTea
       function = function_for_c_name(function_c_name)
       return nil unless function
 
-      function.params.find { |entry| entry.c_name == c_name.to_s } ||
-        function.locals.find { |entry| entry.c_name == c_name.to_s }
+      function.params.find { |entry| entry.linkage_name == c_name.to_s } ||
+        function.locals.find { |entry| entry.linkage_name == c_name.to_s }
     end
 
     def source_variable_for(function_c_name, source_name)
@@ -122,7 +122,7 @@ module MilkTea
       matches = (function.params + function.locals).select { |entry| entry.name == source_name.to_s }
       return nil if matches.empty?
 
-      return matches.first if matches.map(&:c_name).uniq.one?
+      return matches.first if matches.map(&:linkage_name).uniq.one?
 
       nil
     end
@@ -169,7 +169,7 @@ module MilkTea
 
       def load_entries(entries)
         Array(entries).map do |entry|
-          Entry.new(name: entry.fetch("name"), c_name: entry.fetch("cName"), line: entry["line"])
+          Entry.new(name: entry.fetch("name"), linkage_name: entry.fetch("cName"), line: entry["line"])
         end
       end
 
@@ -177,7 +177,7 @@ module MilkTea
         Array(statements).each do |statement|
           case statement
           when IR::LocalDecl
-            locals << Entry.new(name: statement.name.to_s, c_name: statement.c_name.to_s, line: statement.line)
+            locals << Entry.new(name: statement.name.to_s, linkage_name: statement.linkage_name.to_s, line: statement.line)
           when IR::BlockStmt, IR::WhileStmt
             collect_locals(statement.body, locals)
           when IR::ForStmt

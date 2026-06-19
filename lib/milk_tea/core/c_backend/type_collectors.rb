@@ -329,7 +329,7 @@ module MilkTea
               end
               IR::StructDecl.new(
                 name: type.to_s,
-                c_name: named_type_c_name(type),
+                linkage_name: named_type_c_name(type),
                 fields:,
                 packed: type.packed,
                 alignment: type.alignment,
@@ -341,7 +341,7 @@ module MilkTea
             collect_task_types.map do |type|
               IR::StructDecl.new(
                 name: type.to_s,
-                c_name: task_type_name(type),
+                linkage_name: task_type_name(type),
                 fields: type.fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
                 packed: false,
                 alignment: nil,
@@ -353,7 +353,7 @@ module MilkTea
             collect_proc_types.map do |type|
               IR::StructDecl.new(
                 name: type.to_s,
-                c_name: proc_type_name(type),
+                linkage_name: proc_type_name(type),
                 fields: proc_field_types(type).map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
                 packed: false,
                 alignment: nil,
@@ -376,7 +376,7 @@ module MilkTea
             collect_str_buffer_types.map do |type|
               IR::StructDecl.new(
                 name: type.to_s,
-                c_name: str_buffer_type_name(type),
+                linkage_name: str_buffer_type_name(type),
                 fields: [
                   IR::Field.new(name: "data", type: Types::GenericInstance.new("array", [Types::Primitive.new("char"), Types::LiteralTypeArg.new(str_buffer_storage_capacity(type))])),
                   IR::Field.new(name: "len", type: Types::Primitive.new("ptr_uint")),
@@ -395,11 +395,11 @@ module MilkTea
                 fields = type.arm(arm_name)
                 IR::VariantArm.new(
                   name: arm_name,
-                  c_name: "#{outer_c}_#{arm_name}",
+                  linkage_name: "#{outer_c}_#{arm_name}",
                   fields: fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
                 )
               end
-              IR::VariantDecl.new(name: type.to_s, c_name: outer_c, arms:)
+              IR::VariantDecl.new(name: type.to_s, linkage_name: outer_c, arms:)
             end
           end
 
@@ -1339,7 +1339,7 @@ module MilkTea
             collect_dyn_types.map do |type|
               IR::StructDecl.new(
                 name: type.to_s,
-                c_name: dyn_type_name(type),
+                linkage_name: dyn_type_name(type),
                 fields: [
                   IR::Field.new(name: "data", type: void_ptr),
                   IR::Field.new(name: "vtable", type: void_ptr),

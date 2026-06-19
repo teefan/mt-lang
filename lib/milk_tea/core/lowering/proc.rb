@@ -7,16 +7,16 @@ module MilkTea
 
       def build_proc_invoke_function(expression, proc_type, captures, env_struct_type, invoke_c_name)
         env = empty_env
-        params = [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)]
+        params = [IR::Param.new(name: "env", linkage_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)]
         parameter_setup = []
 
         if env_struct_type
           env_pointer_type = pointer_to(env_struct_type)
           env_pointer_name = "__mt_proc_env_ptr"
-          env[:scopes].last[env_pointer_name] = local_binding(type: env_pointer_type, c_name: env_pointer_name, mutable: false, pointer: false)
+          env[:scopes].last[env_pointer_name] = local_binding(type: env_pointer_type, linkage_name: env_pointer_name, mutable: false, pointer: false)
           parameter_setup << IR::LocalDecl.new(
             name: env_pointer_name,
-            c_name: env_pointer_name,
+            linkage_name: env_pointer_name,
             type: env_pointer_type,
             value: IR::Cast.new(
               target_type: env_pointer_type,
@@ -28,10 +28,10 @@ module MilkTea
           env_pointer = IR::Name.new(name: env_pointer_name, type: env_pointer_type, pointer: false)
           captures.each do |capture|
             capture_c_name = "__mt_capture_#{capture[:name]}"
-            env[:scopes].last[capture[:name]] = local_binding(type: capture[:type], c_name: capture_c_name, mutable: false, pointer: false)
+            env[:scopes].last[capture[:name]] = local_binding(type: capture[:type], linkage_name: capture_c_name, mutable: false, pointer: false)
             parameter_setup << IR::LocalDecl.new(
               name: capture[:name],
-              c_name: capture_c_name,
+              linkage_name: capture_c_name,
               type: capture[:type],
               value: IR::Member.new(receiver: env_pointer, member: capture[:field_name], type: capture[:type]),
             )
@@ -40,29 +40,29 @@ module MilkTea
 
         expression.params.each_with_index do |param, index|
           type = proc_type.params.fetch(index).type
-          c_name = c_local_name(param.name)
+          linkage_name = c_local_name(param.name)
           if array_type?(type)
-            input_c_name = "#{c_name}_input"
-            params << IR::Param.new(name: param.name, c_name: input_c_name, type:, pointer: false)
-            env[:scopes].last[param.name] = local_binding(type:, c_name:, mutable: false, pointer: false)
+            input_linkage_name = "#{linkage_name}_input"
+            params << IR::Param.new(name: param.name, linkage_name: input_linkage_name, type:, pointer: false)
+            env[:scopes].last[param.name] = local_binding(type:, linkage_name:, mutable: false, pointer: false)
             parameter_setup << IR::LocalDecl.new(
               name: param.name,
-              c_name:,
+              linkage_name:,
               type:,
-              value: IR::Name.new(name: input_c_name, type:, pointer: false),
+              value: IR::Name.new(name: input_linkage_name, type:, pointer: false),
             )
           else
-            env[:scopes].last[param.name] = local_binding(type:, c_name:, mutable: false, pointer: false)
-            params << IR::Param.new(name: param.name, c_name:, type:, pointer: false)
+            env[:scopes].last[param.name] = local_binding(type:, linkage_name:, mutable: false, pointer: false)
+            params << IR::Param.new(name: param.name, linkage_name:, type:, pointer: false)
           end
         end
 
         body = parameter_setup + lower_block(expression.body, env:, active_defers: [], return_type: proc_type.return_type, loop_flow: nil, allow_return: true)
-        IR::Function.new(name: invoke_c_name, c_name: invoke_c_name, params:, return_type: proc_type.return_type, body:, entry_point: false)
+        IR::Function.new(name: invoke_c_name, linkage_name: invoke_c_name, params:, return_type: proc_type.return_type, body:, entry_point: false)
       end
 
-      def build_proc_release_function(release_c_name, env_struct_type)
-        return build_proc_noop_release_function(release_c_name) unless env_struct_type
+      def build_proc_release_function(release_linkage_name, env_struct_type)
+        return build_proc_noop_release_function(release_linkage_name) unless env_struct_type
 
         env_pointer_type = pointer_to(env_struct_type)
         env_pointer = IR::Name.new(name: "__mt_proc_env_ptr", type: env_pointer_type, pointer: false)
@@ -88,14 +88,14 @@ module MilkTea
         )
 
         IR::Function.new(
-          name: release_c_name,
-          c_name: release_c_name,
-          params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+          name: release_linkage_name,
+          linkage_name: release_linkage_name,
+          params: [IR::Param.new(name: "env", linkage_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
           return_type: @ctx.types.fetch("void"),
           body: [
             IR::LocalDecl.new(
               name: "__mt_proc_env_ptr",
-              c_name: "__mt_proc_env_ptr",
+              linkage_name: "__mt_proc_env_ptr",
               type: env_pointer_type,
               value: IR::Cast.new(target_type: env_pointer_type, expression: IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false), type: env_pointer_type),
             ),
@@ -119,13 +119,13 @@ module MilkTea
         ref_count = IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @ctx.types.fetch("ptr_uint"))
         IR::Function.new(
           name: retain_c_name,
-          c_name: retain_c_name,
-          params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+          linkage_name: retain_c_name,
+          params: [IR::Param.new(name: "env", linkage_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
           return_type: @ctx.types.fetch("void"),
           body: [
             IR::LocalDecl.new(
               name: "__mt_proc_env_ptr",
-              c_name: "__mt_proc_env_ptr",
+              linkage_name: "__mt_proc_env_ptr",
               type: env_pointer_type,
               value: IR::Cast.new(target_type: env_pointer_type, expression: IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false), type: env_pointer_type),
             ),
@@ -394,11 +394,11 @@ module MilkTea
           false
         end
       end
-      def build_proc_noop_release_function(release_c_name)
+      def build_proc_noop_release_function(release_linkage_name)
         IR::Function.new(
-          name: release_c_name,
-          c_name: release_c_name,
-          params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+          name: release_linkage_name,
+          linkage_name: release_linkage_name,
+          params: [IR::Param.new(name: "env", linkage_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
           return_type: @ctx.types.fetch("void"),
           body: [IR::ReturnStmt.new(value: nil)],
           entry_point: false,
@@ -408,8 +408,8 @@ module MilkTea
       def build_proc_noop_retain_function(retain_c_name)
         IR::Function.new(
           name: retain_c_name,
-          c_name: retain_c_name,
-          params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+          linkage_name: retain_c_name,
+          params: [IR::Param.new(name: "env", linkage_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
           return_type: @ctx.types.fetch("void"),
           body: [IR::ReturnStmt.new(value: nil)],
           entry_point: false,

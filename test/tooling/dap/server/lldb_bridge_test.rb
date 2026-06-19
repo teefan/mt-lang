@@ -350,11 +350,11 @@ class LldbBridgeTest < Minitest::Test
         functions: [
           MilkTea::DebugMap::Function.new(
             name: "add",
-            c_name: "debug_map_add",
+            linkage_name: "debug_map_add",
             source_path: source_path,
             line: 3,
-            params: [MilkTea::DebugMap::Entry.new(name: "left", c_name: "left", line: nil)],
-            locals: [MilkTea::DebugMap::Entry.new(name: "int", c_name: "int_", line: 4)]
+            params: [MilkTea::DebugMap::Entry.new(name: "left", linkage_name: "left", line: nil)],
+            locals: [MilkTea::DebugMap::Entry.new(name: "int", linkage_name: "int_", line: 4)]
           )
         ]
       )
@@ -406,11 +406,11 @@ class LldbBridgeTest < Minitest::Test
         functions: [
           MilkTea::DebugMap::Function.new(
             name: "add",
-            c_name: "debug_map_add",
+            linkage_name: "debug_map_add",
             source_path: source_path,
             line: 3,
-            params: [MilkTea::DebugMap::Entry.new(name: "left", c_name: "left", line: nil)],
-            locals: [MilkTea::DebugMap::Entry.new(name: "int", c_name: "int_", line: 4)]
+            params: [MilkTea::DebugMap::Entry.new(name: "left", linkage_name: "left", line: nil)],
+            locals: [MilkTea::DebugMap::Entry.new(name: "int", linkage_name: "int_", line: 4)]
           )
         ]
       )
@@ -488,11 +488,11 @@ class LldbBridgeTest < Minitest::Test
         functions: [
           MilkTea::DebugMap::Function.new(
             name: "add",
-            c_name: "debug_map_add",
+            linkage_name: "debug_map_add",
             source_path: source_path,
             line: 3,
-            params: [MilkTea::DebugMap::Entry.new(name: "left", c_name: "left", line: nil)],
-            locals: [MilkTea::DebugMap::Entry.new(name: "int", c_name: "int_", line: 4)]
+            params: [MilkTea::DebugMap::Entry.new(name: "left", linkage_name: "left", line: nil)],
+            locals: [MilkTea::DebugMap::Entry.new(name: "int", linkage_name: "int_", line: 4)]
           )
         ]
       )
@@ -551,11 +551,11 @@ class LldbBridgeTest < Minitest::Test
         functions: [
           MilkTea::DebugMap::Function.new(
             name: "add",
-            c_name: "debug_map_add",
+            linkage_name: "debug_map_add",
             source_path: source_path,
             line: 3,
-            params: [MilkTea::DebugMap::Entry.new(name: "left", c_name: "left", line: nil)],
-            locals: [MilkTea::DebugMap::Entry.new(name: "int", c_name: "int_", line: 4)]
+            params: [MilkTea::DebugMap::Entry.new(name: "left", linkage_name: "left", line: nil)],
+            locals: [MilkTea::DebugMap::Entry.new(name: "int", linkage_name: "int_", line: 4)]
           )
         ]
       )
@@ -754,11 +754,11 @@ class LldbBridgeTest < Minitest::Test
         functions: [
           MilkTea::DebugMap::Function.new(
             name: "add",
-            c_name: "debug_map_add",
+            linkage_name: "debug_map_add",
             source_path: source_path,
             line: 3,
-            params: [MilkTea::DebugMap::Entry.new(name: "left", c_name: "left", line: nil)],
-            locals: [MilkTea::DebugMap::Entry.new(name: "int", c_name: "int_", line: 4)]
+            params: [MilkTea::DebugMap::Entry.new(name: "left", linkage_name: "left", line: nil)],
+            locals: [MilkTea::DebugMap::Entry.new(name: "int", linkage_name: "int_", line: 4)]
           )
         ]
       ).write(MilkTea::DebugMap.sidecar_path_for(binary_path))

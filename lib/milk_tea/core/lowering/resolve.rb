@@ -44,11 +44,11 @@ module MilkTea
 
         proc_id = fresh_proc_symbol
         invoke_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__invoke"
-        release_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__release"
+        release_linkage_name = "#{@ctx.module_prefix}__proc_#{proc_id}__release"
         retain_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__retain"
 
         @artifacts.synthetic_functions << build_direct_function_proc_invoke_function(source_expression, source_function.name, source_function.type, expected_type, invoke_c_name)
-        @artifacts.synthetic_functions << build_proc_noop_release_function(release_c_name)
+        @artifacts.synthetic_functions << build_proc_noop_release_function(release_linkage_name)
         @artifacts.synthetic_functions << build_proc_noop_retain_function(retain_c_name)
 
         IR::AggregateLiteral.new(
@@ -56,7 +56,7 @@ module MilkTea
           fields: [
             IR::AggregateField.new(name: "env", value: IR::NullLiteral.new(type: proc_env_pointer_type)),
             IR::AggregateField.new(name: "invoke", value: IR::Name.new(name: invoke_c_name, type: proc_invoke_function_type(expected_type), pointer: false)),
-            IR::AggregateField.new(name: "release", value: IR::Name.new(name: release_c_name, type: proc_release_function_type, pointer: false)),
+            IR::AggregateField.new(name: "release", value: IR::Name.new(name: release_linkage_name, type: proc_release_function_type, pointer: false)),
             IR::AggregateField.new(name: "retain", value: IR::Name.new(name: retain_c_name, type: proc_retain_function_type, pointer: false)),
           ],
         )
@@ -64,27 +64,27 @@ module MilkTea
 
       def build_direct_function_proc_invoke_function(source_expression, function_c_name, function_type, proc_type, invoke_c_name)
         env = empty_env
-        params = [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)]
+        params = [IR::Param.new(name: "env", linkage_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)]
         parameter_setup = []
         call_arguments = []
 
         proc_type.params.each_with_index do |param, index|
-          c_name = c_local_name(param.name || "arg#{index}")
+          linkage_name = c_local_name(param.name || "arg#{index}")
           if array_type?(param.type)
-            input_c_name = "#{c_name}_input"
-            params << IR::Param.new(name: param.name || "arg#{index}", c_name: input_c_name, type: param.type, pointer: false)
-            env[:scopes].last[param.name || "arg#{index}"] = local_binding(type: param.type, c_name:, mutable: param.mutable, pointer: false)
+            input_linkage_name = "#{linkage_name}_input"
+            params << IR::Param.new(name: param.name || "arg#{index}", linkage_name: input_linkage_name, type: param.type, pointer: false)
+            env[:scopes].last[param.name || "arg#{index}"] = local_binding(type: param.type, linkage_name:, mutable: param.mutable, pointer: false)
             parameter_setup << IR::LocalDecl.new(
               name: param.name || "arg#{index}",
-              c_name:,
+              linkage_name:,
               type: param.type,
-              value: IR::Name.new(name: input_c_name, type: param.type, pointer: false),
+              value: IR::Name.new(name: input_linkage_name, type: param.type, pointer: false),
             )
-            call_arguments << IR::Name.new(name: c_name, type: param.type, pointer: false)
+            call_arguments << IR::Name.new(name: linkage_name, type: param.type, pointer: false)
           else
-            env[:scopes].last[param.name || "arg#{index}"] = local_binding(type: param.type, c_name:, mutable: param.mutable, pointer: false)
-            params << IR::Param.new(name: param.name || "arg#{index}", c_name:, type: param.type, pointer: false)
-            call_arguments << IR::Name.new(name: c_name, type: param.type, pointer: false)
+            env[:scopes].last[param.name || "arg#{index}"] = local_binding(type: param.type, linkage_name:, mutable: param.mutable, pointer: false)
+            params << IR::Param.new(name: param.name || "arg#{index}", linkage_name:, type: param.type, pointer: false)
+            call_arguments << IR::Name.new(name: linkage_name, type: param.type, pointer: false)
           end
         end
 
@@ -95,7 +95,7 @@ module MilkTea
                  parameter_setup + [IR::ReturnStmt.new(value: call)]
                end
 
-        IR::Function.new(name: invoke_c_name, c_name: invoke_c_name, params:, return_type: proc_type.return_type, body:, entry_point: false)
+        IR::Function.new(name: invoke_c_name, linkage_name: invoke_c_name, params:, return_type: proc_type.return_type, body:, entry_point: false)
       end
 
       def lower_array_to_span_expression(expression, target_type)
@@ -300,7 +300,7 @@ module MilkTea
               current_actual_scope(simulated_env[:scopes])[statement.name] = local_binding(
                 type:,
                 storage_type:,
-                c_name: c_local_name(statement.name),
+                linkage_name: c_local_name(statement.name),
                 mutable: statement.kind == :var,
                 pointer: false,
                 projection: statement.else_body ? let_else_binding_projection(storage_type) : nil,
@@ -433,7 +433,7 @@ module MilkTea
           else
             emit_fn = @artifacts.emitted_declarations.find { |d| d.is_a?(IR::Function) && d.name == callee.name }
             if emit_fn
-              return [:function, emit_fn.c_name, nil, emit_fn.return_type, nil]
+              return [:function, emit_fn.linkage_name, nil, emit_fn.return_type, nil]
             end
 
             raise LoweringError, "unknown callee #{callee.name}"
@@ -770,7 +770,7 @@ module MilkTea
               if arm_name && scrutinee_type.has_payload?(arm_name)
                 fields = scrutinee_type.arm(arm_name)
                 payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
-                arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: c_local_name(arm.binding_name), mutable: false, pointer: false)
+                arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: c_local_name(arm.binding_name), mutable: false, pointer: false)
               end
             end
             infer_expression_type(arm.value, env: arm_env, expected_type: expected_type)

@@ -21,10 +21,10 @@ module MilkTea
         argument_names = binding.type.params.each_index.map { |index| "__mt_async_main_arg_#{index + 1}" }
         binding.type.params.each_with_index do |param, index|
           name = argument_names.fetch(index)
-          env[:scopes].last[name] = local_binding(type: param.type, c_name: name, mutable: false, pointer: false)
+          env[:scopes].last[name] = local_binding(type: param.type, linkage_name: name, mutable: false, pointer: false)
           body << IR::LocalDecl.new(
             name: name,
-            c_name: name,
+            linkage_name: name,
             type: param.type,
             value: call_arguments.fetch(index),
           )
@@ -47,7 +47,7 @@ module MilkTea
         body.concat(proc_setup)
         body << IR::LocalDecl.new(
           name: root_proc_name,
-          c_name: root_proc_name,
+          linkage_name: root_proc_name,
           type: root_proc_type,
           value: proc_value,
         )
@@ -58,7 +58,7 @@ module MilkTea
           wait_callee = async_main_runtime_callee_name("wait", type_arguments: [async_info[:result_type]])
           body << IR::LocalDecl.new(
             name: result_name,
-            c_name: result_name,
+            linkage_name: result_name,
             type: @ctx.types.fetch("int"),
             value: IR::Call.new(
               callee: wait_callee,
@@ -87,7 +87,7 @@ module MilkTea
 
         IR::Function.new(
           name: binding.name,
-          c_name: "main",
+          linkage_name: "main",
           params:,
           return_type: @ctx.types.fetch("int"),
           body: body,
@@ -127,7 +127,7 @@ module MilkTea
           result_name = "__mt_result"
           body << IR::LocalDecl.new(
             name: result_name,
-            c_name: result_name,
+            linkage_name: result_name,
             type: @ctx.types.fetch("int"),
             value: call,
           )
@@ -137,7 +137,7 @@ module MilkTea
 
         IR::Function.new(
           name: binding.name,
-          c_name: "main",
+          linkage_name: "main",
           params:,
           return_type: @ctx.types.fetch("int"),
           body:,
@@ -159,8 +159,8 @@ module MilkTea
           argv_expr = IR::Name.new(name: argv_name, type: raw_argv_type, pointer: false)
           [
             [
-              IR::Param.new(name: argc_name, c_name: argc_name, type: argc_type, pointer: false),
-              IR::Param.new(name: argv_name, c_name: argv_name, type: raw_argv_type, pointer: false),
+              IR::Param.new(name: argc_name, linkage_name: argc_name, type: argc_type, pointer: false),
+              IR::Param.new(name: argv_name, linkage_name: argv_name, type: raw_argv_type, pointer: false),
             ],
             [],
             [argc_expr, argv_expr],
@@ -175,8 +175,8 @@ module MilkTea
           )
           [
             [
-              IR::Param.new(name: argc_name, c_name: argc_name, type: argc_type, pointer: false),
-              IR::Param.new(name: argv_name, c_name: argv_name, type: raw_argv_type, pointer: false),
+              IR::Param.new(name: argc_name, linkage_name: argc_name, type: argc_type, pointer: false),
+              IR::Param.new(name: argv_name, linkage_name: argv_name, type: raw_argv_type, pointer: false),
             ],
             [],
             [argc_expr, argv_expr],
@@ -194,13 +194,13 @@ module MilkTea
           setup = [
             IR::LocalDecl.new(
               name: items_name,
-              c_name: items_name,
+              linkage_name: items_name,
               type: items_type,
               value: IR::NullLiteral.new(type: items_type),
             ),
             IR::LocalDecl.new(
               name: args_name,
-              c_name: args_name,
+              linkage_name: args_name,
               type: signature[:args_type],
               value: IR::Call.new(
                 callee: "mt_entry_argv_to_span_str",
@@ -221,8 +221,8 @@ module MilkTea
 
           [
             [
-              IR::Param.new(name: argc_name, c_name: argc_name, type: argc_type, pointer: false),
-              IR::Param.new(name: argv_name, c_name: argv_name, type: raw_argv_type, pointer: false),
+              IR::Param.new(name: argc_name, linkage_name: argc_name, type: argc_type, pointer: false),
+              IR::Param.new(name: argv_name, linkage_name: argv_name, type: raw_argv_type, pointer: false),
             ],
             setup,
             [args_expr],
@@ -260,7 +260,7 @@ module MilkTea
       end
 
 
-      def build_async_constructor_function(binding, decl, frame_type, constructor_c_name, resume_c_name, ready_c_name, set_waiter_c_name, release_c_name, take_result_c_name, cancel_c_name, async_info)
+      def build_async_constructor_function(binding, decl, frame_type, constructor_linkage_name, resume_linkage_name, ready_linkage_name, set_waiter_linkage_name, release_linkage_name, take_result_linkage_name, cancel_linkage_name, async_info)
         params = []
         body = []
         frame_pointer_type = pointer_to(frame_type)
@@ -269,7 +269,7 @@ module MilkTea
 
         body << IR::LocalDecl.new(
           name: async_frame_local_name,
-          c_name: async_frame_local_name,
+          linkage_name: async_frame_local_name,
           type: frame_pointer_type,
           value: IR::Cast.new(
             target_type: frame_pointer_type,
@@ -286,14 +286,14 @@ module MilkTea
           field_info = async_info[:param_fields].fetch(param_binding.name)
           field_type = field_info[:type]
           param_type = field_info[:param_type]
-          c_name = c_local_name(param_binding.name)
-          input_c_name = array_type?(param_type) && !field_info[:pointer] ? "#{c_name}_input" : c_name
-          params << IR::Param.new(name: param_binding.name, c_name: input_c_name, type: param_type, pointer: field_info[:pointer])
+          linkage_name = c_local_name(param_binding.name)
+          input_linkage_name = array_type?(param_type) && !field_info[:pointer] ? "#{linkage_name}_input" : linkage_name
+          params << IR::Param.new(name: param_binding.name, linkage_name: input_linkage_name, type: param_type, pointer: field_info[:pointer])
           frame_field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_type)
           body << IR::Assignment.new(
             target: frame_field_expr,
             operator: "=",
-            value: IR::Name.new(name: input_c_name, type: param_type, pointer: field_info[:pointer]),
+            value: IR::Name.new(name: input_linkage_name, type: param_type, pointer: field_info[:pointer]),
           )
           # Retain proc-containing params: the frame outlives the constructor call stack,
           # so we must increment the env refcount so the caller releasing their copy is safe.
@@ -303,25 +303,25 @@ module MilkTea
         end
 
         body << IR::ExpressionStmt.new(
-          expression: IR::Call.new(callee: resume_c_name, arguments: [raw_frame_expr], type: @ctx.types.fetch("void")),
+          expression: IR::Call.new(callee: resume_linkage_name, arguments: [raw_frame_expr], type: @ctx.types.fetch("void")),
         )
         body << IR::ReturnStmt.new(
           value: IR::AggregateLiteral.new(
             type: async_info[:task_type],
             fields: [
               IR::AggregateField.new(name: "frame", value: raw_frame_expr),
-              IR::AggregateField.new(name: "ready", value: IR::Name.new(name: ready_c_name, type: async_info[:task_type].field("ready"), pointer: false)),
-              IR::AggregateField.new(name: "set_waiter", value: IR::Name.new(name: set_waiter_c_name, type: async_info[:task_type].field("set_waiter"), pointer: false)),
-              IR::AggregateField.new(name: "release", value: IR::Name.new(name: release_c_name, type: async_info[:task_type].field("release"), pointer: false)),
-              IR::AggregateField.new(name: "take_result", value: IR::Name.new(name: take_result_c_name, type: async_info[:task_type].field("take_result"), pointer: false)),
-              IR::AggregateField.new(name: "cancel", value: IR::Name.new(name: cancel_c_name, type: async_info[:task_type].field("cancel"), pointer: false)),
+              IR::AggregateField.new(name: "ready", value: IR::Name.new(name: ready_linkage_name, type: async_info[:task_type].field("ready"), pointer: false)),
+              IR::AggregateField.new(name: "set_waiter", value: IR::Name.new(name: set_waiter_linkage_name, type: async_info[:task_type].field("set_waiter"), pointer: false)),
+              IR::AggregateField.new(name: "release", value: IR::Name.new(name: release_linkage_name, type: async_info[:task_type].field("release"), pointer: false)),
+              IR::AggregateField.new(name: "take_result", value: IR::Name.new(name: take_result_linkage_name, type: async_info[:task_type].field("take_result"), pointer: false)),
+              IR::AggregateField.new(name: "cancel", value: IR::Name.new(name: cancel_linkage_name, type: async_info[:task_type].field("cancel"), pointer: false)),
             ],
           ),
         )
 
         IR::Function.new(
           name: decl.name,
-          c_name: constructor_c_name,
+          linkage_name: constructor_linkage_name,
           params:,
           return_type: async_info[:task_type],
           body:,
@@ -330,8 +330,8 @@ module MilkTea
         )
       end
 
-      def build_async_resume_function(binding, statements, frame_type, resume_c_name, async_info)
-        async_info = async_info.merge(resume_c_name:)
+      def build_async_resume_function(binding, statements, frame_type, resume_linkage_name, async_info)
+        async_info = async_info.merge(resume_linkage_name:)
         frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
         raw_frame_expr = IR::Name.new(name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)
         body = [async_frame_cast_declaration(frame_type, async_info)]
@@ -343,13 +343,13 @@ module MilkTea
           cases = (0..async_info[:await_fields].length).map do |state|
             IR::SwitchCase.new(
               value: IR::IntegerLiteral.new(value: state, type: @ctx.types.fetch("int")),
-              body: [IR::GotoStmt.new(label: async_state_label(resume_c_name, state))],
+              body: [IR::GotoStmt.new(label: async_state_label(resume_linkage_name, state))],
             )
           end
           body << IR::SwitchStmt.new(expression: async_frame_field_expression(frame_expr, "state", @ctx.types.fetch("int")), cases:)
           body << IR::ReturnStmt.new(value: nil)
-          body << IR::LabelStmt.new(name: async_state_label(resume_c_name, 0))
-          body.concat(lower_async_cf_statements(statements, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: []))
+          body << IR::LabelStmt.new(name: async_state_label(resume_linkage_name, 0))
+          body.concat(lower_async_cf_statements(statements, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers: []))
         end
 
         if async_info[:result_type] == @ctx.types.fetch("void") && !cfg_block_always_terminates?(statements)
@@ -358,21 +358,21 @@ module MilkTea
 
         IR::Function.new(
           name: "#{binding.name}__resume",
-          c_name: resume_c_name,
-          params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
+          linkage_name: resume_linkage_name,
+          params: [IR::Param.new(name: "frame", linkage_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
           return_type: @ctx.types.fetch("void"),
           body:,
           entry_point: false,
         )
       end
 
-      def build_async_ready_function(frame_type, ready_c_name, async_info)
+      def build_async_ready_function(frame_type, ready_linkage_name, async_info)
         frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
 
         IR::Function.new(
-          name: "#{ready_c_name}_fn",
-          c_name: ready_c_name,
-          params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
+          name: "#{ready_linkage_name}_fn",
+          linkage_name: ready_linkage_name,
+          params: [IR::Param.new(name: "frame", linkage_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
           return_type: @ctx.types.fetch("bool"),
           body: [
             async_frame_cast_declaration(frame_type, async_info),
@@ -382,18 +382,18 @@ module MilkTea
         )
       end
 
-      def build_async_set_waiter_function(frame_type, set_waiter_c_name, async_info)
+      def build_async_set_waiter_function(frame_type, set_waiter_linkage_name, async_info)
         frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
         waiter_frame_expr = IR::Name.new(name: "waiter_frame", type: async_info[:void_ptr], pointer: false)
         waiter_expr = IR::Name.new(name: "waiter", type: async_info[:wake_type], pointer: false)
 
         IR::Function.new(
-          name: "#{set_waiter_c_name}_fn",
-          c_name: set_waiter_c_name,
+          name: "#{set_waiter_linkage_name}_fn",
+          linkage_name: set_waiter_linkage_name,
           params: [
-            IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false),
-            IR::Param.new(name: "waiter_frame", c_name: "waiter_frame", type: async_info[:void_ptr], pointer: false),
-            IR::Param.new(name: "waiter", c_name: "waiter", type: async_info[:wake_type], pointer: false),
+            IR::Param.new(name: "frame", linkage_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false),
+            IR::Param.new(name: "waiter_frame", linkage_name: "waiter_frame", type: async_info[:void_ptr], pointer: false),
+            IR::Param.new(name: "waiter", linkage_name: "waiter", type: async_info[:wake_type], pointer: false),
           ],
           return_type: @ctx.types.fetch("void"),
           body: [
@@ -414,7 +414,7 @@ module MilkTea
         )
       end
 
-      def build_async_release_function(frame_type, release_c_name, async_info)
+      def build_async_release_function(frame_type, release_linkage_name, async_info)
         frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
         raw_frame_expr = IR::Name.new(name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)
 
@@ -492,16 +492,16 @@ module MilkTea
         body << IR::ReturnStmt.new(value: nil)
 
         IR::Function.new(
-          name: "#{release_c_name}_fn",
-          c_name: release_c_name,
-          params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
+          name: "#{release_linkage_name}_fn",
+          linkage_name: release_linkage_name,
+          params: [IR::Param.new(name: "frame", linkage_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
           return_type: @ctx.types.fetch("void"),
           body:,
           entry_point: false,
         )
       end
 
-      def build_async_cancel_function(frame_type, cancel_c_name, async_info)
+      def build_async_cancel_function(frame_type, cancel_linkage_name, async_info)
         frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
 
         body = [async_frame_cast_declaration(frame_type, async_info)]
@@ -615,16 +615,16 @@ module MilkTea
         body << IR::ReturnStmt.new(value: nil)
 
         IR::Function.new(
-          name: "#{cancel_c_name}_fn",
-          c_name: cancel_c_name,
-          params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
+          name: "#{cancel_linkage_name}_fn",
+          linkage_name: cancel_linkage_name,
+          params: [IR::Param.new(name: "frame", linkage_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
           return_type: @ctx.types.fetch("void"),
           body:,
           entry_point: false,
         )
       end
 
-      def build_async_take_result_function(frame_type, take_result_c_name, async_info)
+      def build_async_take_result_function(frame_type, take_result_linkage_name, async_info)
         frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
         body = if async_info[:result_type] == @ctx.types.fetch("void")
                  [IR::ReturnStmt.new(value: nil)]
@@ -634,9 +634,9 @@ module MilkTea
                end
 
         IR::Function.new(
-          name: "#{take_result_c_name}_fn",
-          c_name: take_result_c_name,
-          params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
+          name: "#{take_result_linkage_name}_fn",
+          linkage_name: take_result_linkage_name,
+          params: [IR::Param.new(name: "frame", linkage_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
           return_type: async_info[:result_type],
           body:,
           entry_point: false,
@@ -648,7 +648,7 @@ module MilkTea
         async_info[:param_fields].each do |name, field_info|
           env[:scopes].last[name] = local_binding(
             type: field_info[:pointer] ? pointee_type(field_info[:type]) : field_info[:type],
-            c_name: async_frame_field_c_name(field_info[:field_name]),
+            linkage_name: async_frame_field_c_name(field_info[:field_name]),
             mutable: field_info[:mutable],
             pointer: field_info[:pointer],
           )
@@ -660,7 +660,7 @@ module MilkTea
         current_actual_scope(env[:scopes])[name] = local_binding(
           type: field_info[:type],
           storage_type: field_info[:storage_type],
-          c_name: async_frame_field_c_name(field_info[:field_name]),
+          linkage_name: async_frame_field_c_name(field_info[:field_name]),
           mutable: field_info[:mutable],
           pointer: false,
         )
@@ -669,7 +669,7 @@ module MilkTea
       def async_frame_cast_declaration(frame_type, async_info)
         IR::LocalDecl.new(
           name: async_frame_local_name,
-          c_name: async_frame_local_name,
+          linkage_name: async_frame_local_name,
           type: pointer_to(frame_type),
           value: IR::Cast.new(
             target_type: pointer_to(frame_type),
@@ -691,8 +691,8 @@ module MilkTea
         "#{async_frame_local_name}->#{field_name}"
       end
 
-      def async_state_label(resume_c_name, state)
-        "#{resume_c_name}_state_#{state}"
+      def async_state_label(resume_linkage_name, state)
+        "#{resume_linkage_name}_state_#{state}"
       end
 
       def async_frame_field_expression(frame_expr, field_name, field_type)

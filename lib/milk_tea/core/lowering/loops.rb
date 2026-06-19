@@ -75,20 +75,20 @@ module MilkTea
         stop_expr = range_end_of(statement.iterable)
         start_setup, prepared_start = prepare_expression_for_inline_lowering(start_expr, env:, expected_type: loop_type)
         stop_setup, prepared_stop = prepare_expression_for_inline_lowering(stop_expr, env:, expected_type: loop_type)
-        index_c_name = c_local_name(statement.name)
-        stop_c_name = fresh_c_temp_name(env, "for_stop")
+        index_linkage_name = c_local_name(statement.name)
+        stop_linkage_name = fresh_c_temp_name(env, "for_stop")
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
-        index_ref = IR::Name.new(name: index_c_name, type: loop_type, pointer: false)
+        index_ref = IR::Name.new(name: index_linkage_name, type: loop_type, pointer: false)
         inline_stop = stop_setup.empty? && compile_time_numeric_const_expression?(prepared_stop)
         stop_value = if inline_stop
                        lower_expression(prepared_stop, env:, expected_type: loop_type)
                      else
-                       IR::Name.new(name: stop_c_name, type: loop_type, pointer: false)
+                       IR::Name.new(name: stop_linkage_name, type: loop_type, pointer: false)
                      end
 
         while_env = duplicate_env(env)
-        current_actual_scope(while_env[:scopes])[statement.name] = local_binding(type: loop_type, c_name: c_local_name(statement.name), mutable: false, pointer: false)
+        current_actual_scope(while_env[:scopes])[statement.name] = local_binding(type: loop_type, linkage_name: c_local_name(statement.name), mutable: false, pointer: false)
 
         body = []
         body.concat(
@@ -104,7 +104,7 @@ module MilkTea
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: statement.name, c_name: index_c_name, type: loop_type, value: lower_expression(prepared_start, env:, expected_type: loop_type)),
+          init: IR::LocalDecl.new(name: statement.name, linkage_name: index_linkage_name, type: loop_type, value: lower_expression(prepared_start, env:, expected_type: loop_type)),
           condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
           post: IR::Assignment.new(
             target: index_ref,
@@ -122,7 +122,7 @@ module MilkTea
         unless inline_stop
           statements.insert(
             statements.length - 1,
-            IR::LocalDecl.new(name: stop_c_name, c_name: stop_c_name, type: loop_type, value: lower_expression(prepared_stop, env:, expected_type: loop_type)),
+            IR::LocalDecl.new(name: stop_linkage_name, linkage_name: stop_linkage_name, type: loop_type, value: lower_expression(prepared_stop, env:, expected_type: loop_type)),
           )
         end
         statements << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
@@ -137,12 +137,12 @@ module MilkTea
         iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
         binding_type = collection_loop_binding_type(iterable_type, element_type) || element_type
 
-        iterable_c_name = fresh_c_temp_name(env, "for_items")
-        index_c_name = fresh_c_temp_name(env, "for_index")
+        iterable_linkage_name = fresh_c_temp_name(env, "for_items")
+        index_linkage_name = fresh_c_temp_name(env, "for_index")
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
-        iterable_ref = IR::Name.new(name: iterable_c_name, type: iterable_type, pointer: false)
-        index_ref = IR::Name.new(name: index_c_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
+        iterable_ref = IR::Name.new(name: iterable_linkage_name, type: iterable_type, pointer: false)
+        index_ref = IR::Name.new(name: index_linkage_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
 
         item_value = if array_type?(iterable_type)
                        IR::Index.new(receiver: iterable_ref, index: index_ref, type: element_type)
@@ -164,10 +164,10 @@ module MilkTea
                           end
 
         while_env = duplicate_env(env)
-        current_actual_scope(while_env[:scopes])[statement.name] = local_binding(type: binding_type, c_name: c_local_name(statement.name), mutable: false, pointer: false)
+        current_actual_scope(while_env[:scopes])[statement.name] = local_binding(type: binding_type, linkage_name: c_local_name(statement.name), mutable: false, pointer: false)
 
         body = [
-          IR::LocalDecl.new(name: statement.name, c_name: c_local_name(statement.name), type: binding_type, value: loop_item_value),
+          IR::LocalDecl.new(name: statement.name, linkage_name: c_local_name(statement.name), type: binding_type, value: loop_item_value),
         ]
         body.concat(
           lower_block(
@@ -182,7 +182,7 @@ module MilkTea
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+          init: IR::LocalDecl.new(name: index_linkage_name, linkage_name: index_linkage_name, type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
           condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
           post: IR::Assignment.new(
             target: index_ref,
@@ -194,7 +194,7 @@ module MilkTea
 
         statements = [
           *iterable_setup,
-          IR::LocalDecl.new(name: iterable_c_name, c_name: iterable_c_name, type: iterable_type, value: lower_expression(prepared_iterable, env:, expected_type: iterable_type)),
+          IR::LocalDecl.new(name: iterable_linkage_name, linkage_name: iterable_linkage_name, type: iterable_type, value: lower_expression(prepared_iterable, env:, expected_type: iterable_type)),
           for_statement,
         ]
         statements << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
@@ -220,19 +220,19 @@ module MilkTea
 
         iterable_entries = infos.map do |info|
           setup, prepared_iterable = prepare_expression_for_inline_lowering(info[:iterable], env:, expected_type: info[:iterable_type])
-          c_name = fresh_c_temp_name(env, "for_items")
+          linkage_name = fresh_c_temp_name(env, "for_items")
           info.merge(
             setup:,
             prepared_iterable:,
-            iterable_c_name: c_name,
-            iterable_ref: IR::Name.new(name: c_name, type: info[:iterable_type], pointer: false),
+            iterable_linkage_name: linkage_name,
+            iterable_ref: IR::Name.new(name: linkage_name, type: info[:iterable_type], pointer: false),
           )
         end
 
-        index_c_name = fresh_c_temp_name(env, "for_index")
+        index_linkage_name = fresh_c_temp_name(env, "for_index")
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
-        index_ref = IR::Name.new(name: index_c_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
+        index_ref = IR::Name.new(name: index_linkage_name, type: @ctx.types.fetch("ptr_uint"), pointer: false)
         stop_value = collection_loop_stop_value(iterable_entries.first[:iterable_ref], iterable_entries.first[:iterable_type])
 
         while_env = duplicate_env(env)
@@ -244,8 +244,8 @@ module MilkTea
                               item_value
                             end
           binding = entry[:binding]
-          current_actual_scope(while_env[:scopes])[binding.name] = local_binding(type: entry[:binding_type], c_name: c_local_name(binding.name), mutable: false, pointer: false)
-          IR::LocalDecl.new(name: binding.name, c_name: c_local_name(binding.name), type: entry[:binding_type], value: loop_item_value)
+          current_actual_scope(while_env[:scopes])[binding.name] = local_binding(type: entry[:binding_type], linkage_name: c_local_name(binding.name), mutable: false, pointer: false)
+          IR::LocalDecl.new(name: binding.name, linkage_name: c_local_name(binding.name), type: entry[:binding_type], value: loop_item_value)
         end
         body.concat(
           lower_block(
@@ -273,7 +273,7 @@ module MilkTea
         end
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
+          init: IR::LocalDecl.new(name: index_linkage_name, linkage_name: index_linkage_name, type: @ctx.types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @ctx.types.fetch("ptr_uint"))),
           condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @ctx.types.fetch("bool")),
           post: IR::Assignment.new(
             target: index_ref,
@@ -287,8 +287,8 @@ module MilkTea
           *iterable_entries.flat_map { |entry| entry[:setup] },
           *iterable_entries.map do |entry|
             IR::LocalDecl.new(
-              name: entry[:iterable_c_name],
-              c_name: entry[:iterable_c_name],
+              name: entry[:iterable_linkage_name],
+              linkage_name: entry[:iterable_linkage_name],
               type: entry[:iterable_type],
               value: lower_expression(entry[:prepared_iterable], env:, expected_type: entry[:iterable_type]),
             )
@@ -320,7 +320,7 @@ module MilkTea
         iterator_env = duplicate_env(env)
         current_actual_scope(iterator_env[:scopes])[iterator_name] = local_binding(
           type: iterator_info[:iterator_type],
-          c_name: iterator_c_name,
+          linkage_name: iterator_c_name,
           mutable: true,
           pointer: false,
         )
@@ -329,7 +329,7 @@ module MilkTea
         current_actual_scope(loop_env[:scopes])[statement.name] = local_binding(
           type: iterator_info[:item_type],
           storage_type: iterator_info[:item_storage_type],
-          c_name: c_local_name(statement.name),
+          linkage_name: c_local_name(statement.name),
           mutable: false,
           pointer: false,
         )
@@ -344,7 +344,7 @@ module MilkTea
                  [
                    IR::LocalDecl.new(
                      name: statement.name,
-                     c_name: c_local_name(statement.name),
+                     linkage_name: c_local_name(statement.name),
                      type: iterator_info[:item_storage_type],
                      value: lower_expression(next_call, env: iterator_env, expected_type: iterator_info[:item_storage_type]),
                    ),
@@ -360,16 +360,16 @@ module MilkTea
                    ),
                  ]
                else
-                 ready_c_name = fresh_c_temp_name(env, "for_ready")
-                 ready_ref = IR::Name.new(name: ready_c_name, type: @ctx.types.fetch("bool"), pointer: false)
+                 ready_linkage_name = fresh_c_temp_name(env, "for_ready")
+                 ready_ref = IR::Name.new(name: ready_linkage_name, type: @ctx.types.fetch("bool"), pointer: false)
                  current_call = AST::Call.new(
                    callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iterator_name), member: "current"),
                    arguments: [],
                  )
                  [
                    IR::LocalDecl.new(
-                     name: ready_c_name,
-                     c_name: ready_c_name,
+                     name: ready_linkage_name,
+                     linkage_name: ready_linkage_name,
                      type: @ctx.types.fetch("bool"),
                      value: lower_expression(next_call, env: iterator_env, expected_type: @ctx.types.fetch("bool")),
                    ),
@@ -380,7 +380,7 @@ module MilkTea
                    ),
                    IR::LocalDecl.new(
                      name: statement.name,
-                     c_name: c_local_name(statement.name),
+                     linkage_name: c_local_name(statement.name),
                      type: iterator_info[:item_storage_type],
                      value: lower_expression(current_call, env: iterator_env, expected_type: iterator_info[:item_storage_type]),
                    ),
@@ -402,7 +402,7 @@ module MilkTea
           *iterable_setup,
           IR::LocalDecl.new(
             name: iterator_name,
-            c_name: iterator_c_name,
+            linkage_name: iterator_c_name,
             type: iterator_info[:iterator_type],
             value: lower_expression(iter_call, env:, expected_type: iterator_info[:iterator_type]),
           ),
@@ -452,11 +452,11 @@ module MilkTea
         stop_setup, prepared_stop = prepare_expression_for_inline_lowering(stop_expr_ast, env:, expected_type: loop_type)
 
         lowered_stop = lower_expression(prepared_stop, env:, expected_type: loop_type)
-        index_c_name = c_local_name(statement.name)
+        index_linkage_name = c_local_name(statement.name)
 
         body_env = duplicate_env(env)
         current_actual_scope(body_env[:scopes])[statement.name] = local_binding(
-          type: loop_type, c_name: index_c_name, mutable: false, pointer: false,
+          type: loop_type, linkage_name: index_linkage_name, mutable: false, pointer: false,
         )
 
         body = lower_block(
@@ -477,7 +477,7 @@ module MilkTea
         body.each { |s| collect_pfor_ir_names_stmt(s, all_names) }
         local_decls = Set.new
         body.each { |s| collect_pfor_local_decls(s, local_decls) }
-        excluded = Set.new(local_decls.to_a + [index_c_name])
+        excluded = Set.new(local_decls.to_a + [index_linkage_name])
         captures = all_names.values.reject { |n| excluded.include?(n.name) }
 
         validate_pfor_no_ref_captures!(captures)
@@ -497,7 +497,7 @@ module MilkTea
           end
         end
         @artifacts.synthetic_structs << IR::StructDecl.new(
-          name: cap_struct_c_name, c_name: cap_struct_c_name,
+          name: cap_struct_c_name, linkage_name: cap_struct_c_name,
           fields: cap_fields, packed: false, alignment: nil,
         )
 
@@ -505,7 +505,7 @@ module MilkTea
         cap_name_ir = IR::Name.new(name: "mt_cap", type: cap_ptr_type, pointer: true)
         worker_body = [
           IR::LocalDecl.new(
-            name: "mt_cap", c_name: "mt_cap", type: cap_ptr_type,
+            name: "mt_cap", linkage_name: "mt_cap", type: cap_ptr_type,
             value: IR::Cast.new(
               target_type: cap_ptr_type,
               expression: IR::Name.new(name: "mt_pfor_data", type: void_ptr_type, pointer: false),
@@ -520,17 +520,17 @@ module MilkTea
                          c.type
                        end
           worker_body << IR::LocalDecl.new(
-            name: c.name, c_name: c.name, type: alias_type,
+            name: c.name, linkage_name: c.name, type: alias_type,
             value: IR::Member.new(receiver: cap_name_ir, member: c.name, type: alias_type),
           )
         end
 
         body = rewrite_pfor_array_captures(body, array_capture_names) unless array_capture_names.empty?
 
-        loop_var_ref = IR::Name.new(name: index_c_name, type: loop_type, pointer: false)
+        loop_var_ref = IR::Name.new(name: index_linkage_name, type: loop_type, pointer: false)
         worker_body << IR::ForStmt.new(
           init: IR::LocalDecl.new(
-            name: index_c_name, c_name: index_c_name, type: loop_type,
+            name: index_linkage_name, linkage_name: index_linkage_name, type: loop_type,
             value: IR::Name.new(name: "mt_pfor_start", type: long_type, pointer: false),
           ),
           condition: IR::Binary.new(
@@ -548,18 +548,18 @@ module MilkTea
         )
 
         @artifacts.synthetic_functions << IR::Function.new(
-          name: worker_c_name, c_name: worker_c_name,
+          name: worker_c_name, linkage_name: worker_c_name,
           params: [
-            IR::Param.new(name: "mt_pfor_data", c_name: "mt_pfor_data", type: void_ptr_type, pointer: false),
-            IR::Param.new(name: "mt_pfor_start", c_name: "mt_pfor_start", type: long_type, pointer: false),
-            IR::Param.new(name: "mt_pfor_end", c_name: "mt_pfor_end", type: long_type, pointer: false),
+            IR::Param.new(name: "mt_pfor_data", linkage_name: "mt_pfor_data", type: void_ptr_type, pointer: false),
+            IR::Param.new(name: "mt_pfor_start", linkage_name: "mt_pfor_start", type: long_type, pointer: false),
+            IR::Param.new(name: "mt_pfor_end", linkage_name: "mt_pfor_end", type: long_type, pointer: false),
           ],
           return_type: void_type,
           body: worker_body,
           entry_point: false,
         )
 
-        cap_struct_type = Types::Struct.new(cap_struct_c_name, c_name: cap_struct_c_name).tap do |s|
+        cap_struct_type = Types::Struct.new(cap_struct_c_name, linkage_name: cap_struct_c_name).tap do |s|
           s.define_fields(captures.each_with_object({}) do |c, h|
             h[c.name] = if array_capture_names.include?(c.name)
                           Types::GenericInstance.new("ptr", [array_element_type(c.type)])
@@ -584,7 +584,7 @@ module MilkTea
 
         worker_fn_type = Types::Function.new(nil, params: [], return_type: void_type)
         call_site = [
-          IR::LocalDecl.new(name: cap_local_name, c_name: cap_local_name, type: cap_struct_type, value: cap_init),
+          IR::LocalDecl.new(name: cap_local_name, linkage_name: cap_local_name, type: cap_struct_type, value: cap_init),
           IR::ExpressionStmt.new(expression: IR::Call.new(
             callee: "mt_parallel_for",
             arguments: [
@@ -646,7 +646,7 @@ module MilkTea
             end
 
             @artifacts.synthetic_structs << IR::StructDecl.new(
-              name: cap_struct_c_name, c_name: cap_struct_c_name,
+              name: cap_struct_c_name, linkage_name: cap_struct_c_name,
               fields: cap_fields, packed: false, alignment: nil,
             )
 
@@ -654,7 +654,7 @@ module MilkTea
             cap_name_ir = IR::Name.new(name: "mt_cap", type: cap_ptr_type, pointer: true)
             worker_body = [
               IR::LocalDecl.new(
-                name: "mt_cap", c_name: "mt_cap", type: cap_ptr_type,
+                name: "mt_cap", linkage_name: "mt_cap", type: cap_ptr_type,
                 value: IR::Cast.new(
                   target_type: cap_ptr_type,
                   expression: IR::Name.new(name: "mt_pfor_data", type: void_ptr_type, pointer: false),
@@ -669,7 +669,7 @@ module MilkTea
                              c.type
                            end
               worker_body << IR::LocalDecl.new(
-                name: c.name, c_name: c.name, type: alias_type,
+                name: c.name, linkage_name: c.name, type: alias_type,
                 value: IR::Member.new(receiver: cap_name_ir, member: c.name, type: alias_type),
               )
             end
@@ -679,8 +679,8 @@ module MilkTea
           end
 
           @artifacts.synthetic_functions << IR::Function.new(
-            name: worker_c_name, c_name: worker_c_name,
-            params: [IR::Param.new(name: "mt_pfor_data", c_name: "mt_pfor_data", type: void_ptr_type, pointer: false)],
+            name: worker_c_name, linkage_name: worker_c_name,
+            params: [IR::Param.new(name: "mt_pfor_data", linkage_name: "mt_pfor_data", type: void_ptr_type, pointer: false)],
             return_type: void_type,
             body: worker_body,
             entry_point: false,
@@ -689,7 +689,7 @@ module MilkTea
           cap_struct_type = if captureless
                               void_ptr_type
                             else
-                              Types::Struct.new(cap_struct_c_name, c_name: cap_struct_c_name).tap do |s|
+                              Types::Struct.new(cap_struct_c_name, linkage_name: cap_struct_c_name).tap do |s|
                                 s.define_fields(captures.each_with_object({}) do |c, h|
                                   h[c.name] = if array_capture_names.include?(c.name)
                                                 Types::GenericInstance.new("ptr", [array_element_type(c.type)])
@@ -723,7 +723,7 @@ module MilkTea
         validate_pfor_write_conflicts!(block_infos)
 
         fn_type = Types::Function.new(nil, params: [], return_type: void_type)
-        spawn_item_type = Types::Struct.new("mt_spawn_item", c_name: "mt_spawn_item").tap do |s|
+        spawn_item_type = Types::Struct.new("mt_spawn_item", linkage_name: "mt_spawn_item").tap do |s|
           s.define_fields({ "work" => fn_type, "data" => void_ptr_type })
         end
 
@@ -731,7 +731,7 @@ module MilkTea
         block_infos.each do |info|
           unless info[:captureless]
             call_site << IR::LocalDecl.new(
-              name: info[:cap_local_name], c_name: info[:cap_local_name],
+              name: info[:cap_local_name], linkage_name: info[:cap_local_name],
               type: info[:cap_struct_type], value: info[:cap_init],
             )
           end
@@ -760,7 +760,7 @@ module MilkTea
             )
           },
         )
-        call_site << IR::LocalDecl.new(name: tasks_local, c_name: tasks_local, type: tasks_array_type, value: tasks_init)
+        call_site << IR::LocalDecl.new(name: tasks_local, linkage_name: tasks_local, type: tasks_array_type, value: tasks_init)
         call_site << IR::ExpressionStmt.new(expression: IR::Call.new(
           callee: "mt_spawn_all",
           arguments: [
@@ -813,8 +813,8 @@ module MilkTea
         end
 
         @artifacts.synthetic_functions << IR::Function.new(
-          name: worker_c_name, c_name: worker_c_name,
-          params: [IR::Param.new(name: "mt_pfor_data", c_name: "mt_pfor_data", type: @ctx.types.fetch("void").then { |v| Types::GenericInstance.new("ptr", [v]) }, pointer: false)],
+          name: worker_c_name, linkage_name: worker_c_name,
+          params: [IR::Param.new(name: "mt_pfor_data", linkage_name: "mt_pfor_data", type: @ctx.types.fetch("void").then { |v| Types::GenericInstance.new("ptr", [v]) }, pointer: false)],
           return_type: @ctx.types.fetch("void"),
           body: worker_body,
           entry_point: false,
@@ -904,7 +904,7 @@ module MilkTea
             value: rewrite_pfor_expr(stmt.value, array_names),
           )
         when IR::LocalDecl
-          stmt.value ? IR::LocalDecl.new(name: stmt.name, c_name: stmt.c_name, type: stmt.type, value: rewrite_pfor_expr(stmt.value, array_names), line: stmt.line, source_path: stmt.source_path) : stmt
+          stmt.value ? IR::LocalDecl.new(name: stmt.name, linkage_name: stmt.linkage_name, type: stmt.type, value: rewrite_pfor_expr(stmt.value, array_names), line: stmt.line, source_path: stmt.source_path) : stmt
         when IR::ExpressionStmt
           IR::ExpressionStmt.new(expression: rewrite_pfor_expr(stmt.expression, array_names), line: stmt.line, source_path: stmt.source_path)
         when IR::IfStmt
@@ -1057,9 +1057,9 @@ module MilkTea
       def collect_pfor_local_decls(stmt, decls)
         case stmt
         when IR::LocalDecl
-          decls << stmt.c_name
+          decls << stmt.linkage_name
         when IR::ForStmt
-          decls << stmt.init.c_name if stmt.init.is_a?(IR::LocalDecl)
+          decls << stmt.init.linkage_name if stmt.init.is_a?(IR::LocalDecl)
           stmt.body.each { |s| collect_pfor_local_decls(s, decls) }
         when IR::BlockStmt
           stmt.body.each { |s| collect_pfor_local_decls(s, decls) }

@@ -648,7 +648,7 @@ module MilkTea
         if multiple
           @out.puts("/* --- #{path} --- */")
         end
-        @out.write(Codegen.generate_c(program, emit_line_directives: false))
+        @out.write(Codegen.generate_c(Lowering.lower(program), emit_line_directives: false))
         @out.puts if multiple && index < program_paths.length - 1
       end
       0

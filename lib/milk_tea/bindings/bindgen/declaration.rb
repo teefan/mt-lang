@@ -47,7 +47,7 @@ module MilkTea
               index:,
               kind: record_complete_definition?(record_node) ? record_node["tagUsed"] : "opaque",
               name: visible_name,
-              c_name: record_c_name(record_node),
+              linkage_name: record_c_name(record_node),
               node: record_node,
             }
 

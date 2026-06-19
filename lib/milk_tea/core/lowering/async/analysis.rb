@@ -30,7 +30,7 @@ module MilkTea
         }
         env[:scopes].last[param_binding.name] = local_binding(
           type: param_binding.type,
-          c_name: field_name,
+          linkage_name: field_name,
           mutable: param_binding.mutable,
           pointer:,
         )
@@ -73,7 +73,7 @@ module MilkTea
             env[:scopes].last[statement.name] = local_binding(
               type:,
               storage_type:,
-              c_name: statement.name,
+              linkage_name: statement.name,
               mutable: statement.kind == :var,
               pointer: false,
               const_value: statement.else_body ? nil : statement.kind == :let && statement.value ? compile_time_const_value(statement.value, env:) : nil,
@@ -216,7 +216,7 @@ module MilkTea
       nil
     end
 
-    def build_async_frame_type(frame_c_name, async_info)
+    def build_async_frame_type(frame_linkage_name, async_info)
       fields = {
         "ready" => @ctx.types.fetch("bool"),
         "cancelled" => @ctx.types.fetch("bool"),
@@ -239,7 +239,7 @@ module MilkTea
         fields[field_info[:field_name]] = field_info[:task_type]
       end
 
-      Types::Struct.new(frame_c_name).define_fields(fields)
+      Types::Struct.new(frame_linkage_name).define_fields(fields)
     end
   end
 end

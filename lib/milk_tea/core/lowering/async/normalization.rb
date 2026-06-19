@@ -10,7 +10,7 @@ module MilkTea
       binding.body_params.each do |param_binding|
         env[:scopes].last[param_binding.name] = local_binding(
           type: param_binding.type,
-          c_name: param_binding.name,
+          linkage_name: param_binding.name,
           mutable: param_binding.mutable,
           pointer: false,
         )
@@ -49,7 +49,7 @@ module MilkTea
             current_actual_scope(env[:scopes])[statement.name] = local_binding(
               type: local_type,
               storage_type:,
-              c_name: statement.name,
+              linkage_name: statement.name,
               mutable: statement.kind == :var,
               pointer: false,
               projection: statement.else_body ? let_else_binding_projection(storage_type) : nil,
@@ -63,7 +63,7 @@ module MilkTea
         current_actual_scope(env[:scopes])[statement.name] = local_binding(
           type: local_type,
           storage_type: local_type,
-          c_name: statement.name,
+          linkage_name: statement.name,
           mutable: statement.kind == :var,
           pointer: false,
           const_value: nil,
@@ -140,14 +140,14 @@ module MilkTea
             iterable_type = infer_expression_type(statement.iterables[index], env:)
             element_type = collection_loop_type(iterable_type)
             binding_type = collection_loop_binding_type(iterable_type, element_type) || element_type
-            current_actual_scope(for_env[:scopes])[binding.name] = local_binding(type: binding_type, c_name: binding.name, mutable: false, pointer: false)
+            current_actual_scope(for_env[:scopes])[binding.name] = local_binding(type: binding_type, linkage_name: binding.name, mutable: false, pointer: false)
           end
           body = normalize_async_statements(statement.body, counter, for_env, return_type:)
           return iterable_setups + [AST::ForStmt.new(bindings: statement.bindings, iterables: normalized_iterables, body:, line: statement.line, column: statement.column)]
         end
 
         iterable_setup, iterable = normalize_async_expression(statement.iterable, counter, env:)
-        current_actual_scope(for_env[:scopes])[statement.name] = local_binding(type: loop_type, c_name: statement.name, mutable: false, pointer: false)
+        current_actual_scope(for_env[:scopes])[statement.name] = local_binding(type: loop_type, linkage_name: statement.name, mutable: false, pointer: false)
         body = normalize_async_statements(statement.body, counter, for_env, return_type:)
         iterable_setup + [AST::ForStmt.new(bindings: statement.bindings, iterables: [iterable], body:, line: statement.line, column: statement.column)]
       when AST::UnsafeStmt
