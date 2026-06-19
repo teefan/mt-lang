@@ -101,9 +101,7 @@ module MilkTea
       end
 
       def lower_imported_external_opaques
-        @program.analyses_by_module_name.each_value.flat_map do |analysis|
-          next [] unless analysis.module_kind == :raw_module
-
+        each_raw_module_analysis.flat_map do |analysis|
           analysis.ast.declarations.grep(AST::OpaqueDecl).filter_map do |decl|
             opaque_type = analysis.types.fetch(decl.name)
             next unless forward_declarable_external_opaque?(opaque_type)

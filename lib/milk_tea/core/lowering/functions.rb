@@ -91,11 +91,11 @@ module MilkTea
 
         parts = type_name.name.parts
         if parts.length == 1
-          return analysis.types.fetch(parts.first)
+          return types_for_module(analysis.module_name).fetch(parts.first)
         end
 
         if parts.length == 2
-          imported_module = analysis.imports.fetch(parts.first)
+          imported_module = imports_for_module(analysis.module_name).fetch(parts.first)
           return imported_module.types.fetch(parts.last)
         end
 

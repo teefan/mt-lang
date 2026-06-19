@@ -436,7 +436,7 @@ module MilkTea
         when AST::Identifier
           binding = @ctx.values[expression.name]
           if binding&.kind == :const
-            declaration = const_declaration_for(analysis_for_module(@ctx.module_name), expression.name)
+            declaration = const_declaration_for_module(@ctx.module_name, expression.name)
             return rewrite_static_storage_initializer(declaration.value)
           end
 
@@ -446,7 +446,7 @@ module MilkTea
             imported_module = @ctx.imports.fetch(expression.receiver.name)
             if (binding = imported_module.values[expression.member])&.kind == :const
               imported_analysis = analysis_for_module(imported_module.name)
-              declaration = const_declaration_for(imported_analysis, expression.member)
+              declaration = const_declaration_for_module(imported_module.name, expression.member)
               return with_analysis_context(imported_analysis) do
                 rewrite_static_storage_initializer(declaration.value)
               end

@@ -57,9 +57,7 @@ module MilkTea
         headers << "<stddef.h>" if program_uses_offsetof?
         headers << "<stdio.h>" if program_uses_fatal?
 
-        @program.analyses_by_module_name.each_value do |analysis|
-          next unless analysis.module_kind == :raw_module
-
+        each_raw_module_analysis do |analysis|
           analysis.directives.grep(AST::IncludeDirective).each do |directive|
             headers << normalized_include_header(directive.value)
           end
@@ -79,17 +77,13 @@ module MilkTea
       end
 
       def program_uses_fatal?
-        @program.analyses_by_module_name.each_value.any? do |analysis|
-          next false if analysis.module_kind == :raw_module
-
+        each_non_raw_module_analysis.any? do |analysis|
           analysis_uses_fatal?(analysis)
         end
       end
 
       def program_uses_offsetof?
-        @program.analyses_by_module_name.each_value.any? do |analysis|
-          next false if analysis.module_kind == :raw_module
-
+        each_non_raw_module_analysis.any? do |analysis|
           analysis_uses_offsetof?(analysis)
         end
       end

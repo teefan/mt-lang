@@ -2329,6 +2329,45 @@ module MilkTea
         @program.analyses_by_module_name.fetch(module_name)
       end
 
+      def each_analysis_module(&block)
+        return @program.analyses_by_module_name.each_value unless block
+        @program.analyses_by_module_name.each_value(&block)
+      end
+
+      def each_raw_module_analysis(&block)
+        return @program.analyses_by_module_name.each_value.select { |a| a.module_kind == :raw_module }.each unless block
+        @program.analyses_by_module_name.each_value { |a| block.call(a) if a.module_kind == :raw_module }
+      end
+
+      def each_non_raw_module_analysis(&block)
+        return @program.analyses_by_module_name.each_value.reject { |a| a.module_kind == :raw_module }.each unless block
+        @program.analyses_by_module_name.each_value { |a| block.call(a) unless a.module_kind == :raw_module }
+      end
+
+      def types_for_module(module_name)
+        @program.analyses_by_module_name.fetch(module_name).types
+      end
+
+      def imports_for_module(module_name)
+        @program.analyses_by_module_name.fetch(module_name).imports
+      end
+
+      def directives_for_module(module_name)
+        @program.analyses_by_module_name.fetch(module_name).directives
+      end
+
+      def module_kind_for(module_name)
+        @program.analyses_by_module_name.fetch(module_name).module_kind
+      end
+
+      def const_declaration_for_module(module_name, name)
+        analysis = @program.analyses_by_module_name.fetch(module_name)
+        declaration = analysis.ast.declarations.find { |decl| decl.is_a?(AST::ConstDecl) && decl.name == name }
+        raise LoweringError, "unknown constant #{analysis.module_name}.#{name}" unless declaration
+
+        declaration
+      end
+
       def resolve_type_ref_for_analysis(type_ref, analysis, type_params: current_type_params)
         saved = @ctx.save
         @ctx.install(analysis)
