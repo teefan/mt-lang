@@ -50,20 +50,31 @@ module MilkTea
             lines
           end
 
+          def variant_self_reference?(type, outer_c)
+            return false unless type.is_a?(Types::Variant) || type.is_a?(Types::VariantInstance)
+
+            named_type_c_name(type) == outer_c
+          end
+
           def emit_variant(variant_decl)
             lines = []
             outer_c = variant_decl.linkage_name
             payload_arms = variant_decl.arms.select { |a| a.fields.any? }
 
-            # Per-arm payload structs
-            payload_arms.each do |arm|
-              lines << "struct #{arm.linkage_name} {"
-              arm.fields.each do |field|
-                lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
-              end
-              lines << "};"
-              lines << "typedef struct #{arm.linkage_name} #{arm.linkage_name};"
-            end
+             # Per-arm payload structs
+             payload_arms.each do |arm|
+               lines << "struct #{arm.linkage_name} {"
+               arm.fields.each do |field|
+                 if variant_self_reference?(field.type, outer_c)
+                   lines << "#{INDENT}#{c_declaration(field.type, "*#{field.name}")};"
+                 else
+                   lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
+                 end
+               end
+               lines << "};"
+               lines << "typedef struct #{arm.linkage_name} #{arm.linkage_name};"
+             end
+
 
             # Kind enum
             lines << "typedef int32_t #{outer_c}_kind;"
