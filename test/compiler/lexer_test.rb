@@ -406,7 +406,6 @@ class MilkTeaLexerTest < Minitest::Test
     assert_equal 13, int_token.start_offset
     assert_equal 15, int_token.end_offset
   end
-end
 
   def test_lexes_character_literals
     tokens = lex_tokens("'a'\n'\\n'\n'\\t'\n'\\\\'\n'\\''\n'\\0'\n'\\x41'\n")
@@ -439,3 +438,10 @@ end
     assert_equal "7i", ints[3].lexeme
     assert_equal 7, ints[3].literal
   end
+
+  private
+
+  def lex_tokens(source)
+    MilkTea::Lexer.lex(source)
+  end
+end

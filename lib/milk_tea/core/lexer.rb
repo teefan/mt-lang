@@ -494,6 +494,12 @@ module MilkTea
         end
       end
 
+      int_suffix = nil
+      if type == :integer
+        int_suffix = scan_integer_suffix_at(line, index)
+        index += int_suffix.length if int_suffix
+      end
+
       if type == :float && line[index] == "f" && !identifier_part?((line[index + 1] || " ").to_s)
         index += 1
       elsif type == :float && line[index] == "d" && !identifier_part?((line[index + 1] || " ").to_s)
@@ -502,8 +508,7 @@ module MilkTea
 
       lexeme = line[start...index]
       if type == :integer
-        int_suffix = scan_integer_suffix_text(lexeme)
-        cleaned = int_suffix ? lexeme.delete_suffix(int_suffix).delete("_") : lexeme
+        cleaned = int_suffix ? lexeme.delete_suffix(int_suffix).delete("_") : lexeme.delete("_")
         literal = parse_integer(cleaned)
       else
         normalized = lexeme.delete("_").delete_suffix("f").delete_suffix("d")
@@ -513,11 +518,15 @@ module MilkTea
       index
     end
 
-    def scan_integer_suffix_text(lexeme)
-      INTEGER_SUFFIX_STRINGS.sort_by { |s| -s.length }.find { |s| lexeme.end_with?(s) }
+    def scan_integer_suffix_at(line, index)
+      return nil if index >= line.length
+
+      INTEGER_SUFFIX_STRINGS.find do |suffix|
+        line[index, suffix.length] == suffix && !identifier_part?((line[index + suffix.length] || " ").to_s)
+      end
     end
 
-    INTEGER_SUFFIX_STRINGS = %w[ub us ul iz b s i u l z].freeze
+    INTEGER_SUFFIX_STRINGS = %w[ub us ul iz b s i u l z].sort_by { |s| -s.length }.freeze
 
     def lex_string(lines, line_index, line, index, line_number, line_offset:, cstring: false)
       segment = scan_string_segment(line, index, line_number, cstring:, recover: @recovery_errors)
