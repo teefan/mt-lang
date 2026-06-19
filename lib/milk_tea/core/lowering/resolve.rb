@@ -648,6 +648,10 @@ module MilkTea
       end
 
       def infer_expression_type(expression, env:, expected_type: nil)
+        if expected_type.nil? && (resolved = @ctx.resolved_expr_types[expression.object_id])
+          return resolved
+        end
+
         case expression
         when AST::AwaitExpr
           task_type = infer_expression_type(expression.expression, env:)

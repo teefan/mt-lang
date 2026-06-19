@@ -135,8 +135,8 @@ module MilkTea
 
       def infer_expression(expression, scopes:, expected_type: nil)
         with_error_node(expression) do
-          case expression
-          when AST::ErrorExpr
+          type = case expression
+                 when AST::ErrorExpr
             expected_type || @error_type
           when AST::IntegerLiteral
             infer_integer_literal(expected_type)
@@ -244,6 +244,9 @@ module MilkTea
           else
             raise_sema_error("unsupported expression #{expression.class.name}")
           end
+
+          @resolved_expr_types[expression.object_id] = type
+          type
         end
       end
 

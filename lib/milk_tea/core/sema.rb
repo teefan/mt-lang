@@ -41,7 +41,9 @@ module MilkTea
   end
 
   class Sema
-    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :attributes, :attribute_applications, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines, :uses_parallel_for)
+    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :attributes, :attribute_applications, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines, :uses_parallel_for, :resolved_expr_types) do
+      def initialize(ast:, module_name:, module_kind:, directives:, imports:, types:, interfaces:, attributes:, attribute_applications:, values:, functions:, methods:, implemented_interfaces:, local_completion_frames:, binding_resolution:, callable_value_identifier_sites:, callable_value_member_access_sites:, required_unsafe_lines:, uses_parallel_for:, resolved_expr_types: {}) = super
+    end
     Facts = Analysis
     ToolingSnapshot = Data.define(:facts, :diagnostics) do
       def analysis
@@ -163,6 +165,7 @@ module MilkTea
         @error_node_stack = []
         @local_completion_frames = []
         @active_local_completion_stack = []
+        @resolved_expr_types = {}
         @next_binding_id = 1
         @binding_name_by_id = {}
         @binding_type_by_id = {}
