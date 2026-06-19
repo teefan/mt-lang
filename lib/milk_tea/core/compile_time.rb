@@ -259,10 +259,6 @@ module MilkTea
       ).evaluate(expression)
     end
 
-    def equality_result(left, right)
-      ConstEval.equality_result(left, right)
-    end
-
     def boolean_value?(value)
       ConstEval.boolean_value?(value)
     end
@@ -328,19 +324,6 @@ module MilkTea
         end
       end
 
-      def self.core_evaluate_const_function_body(func, arguments, evaluate_arg:, block_evaluator:)
-        return nil unless func.ast.params.length == arguments.length
-
-        initial_vars = {}
-        func.ast.params.each_with_index do |param, idx|
-          arg_value = evaluate_arg.call(arguments[idx].value)
-          return nil unless arg_value
-
-          initial_vars[param.name] = arg_value
-        end
-
-        block_evaluator.call(func.ast.body, initial_vars)
-      end
     end
   end
 end

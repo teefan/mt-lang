@@ -6,10 +6,7 @@ module MilkTea
   module CompatibilityHelpers
     include TypePredicates
 
-    BUILTIN_VOID = Types::Primitive.new("void")
-    BUILTIN_CHAR = Types::Primitive.new("char")
     BUILTIN_CSTR = Types::Primitive.new("cstr")
-    BUILTIN_STR  = Types::StringView.new
 
     EVENT_METHOD_KINDS = {
       "subscribe" => :event_subscribe,
@@ -43,8 +40,6 @@ module MilkTea
       "exchange" => :atomic_exchange,
       "compare_exchange" => :atomic_compare_exchange,
     }.freeze
-
-    ATOMIC_METHOD_NAMES = ATOMIC_METHOD_KINDS.invert.freeze
 
     def type_ref_from_specialization(expression)
       case expression.callee
