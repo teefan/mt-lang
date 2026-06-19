@@ -648,7 +648,7 @@ module MilkTea
       end
 
       def infer_expression_type(expression, env:, expected_type: nil)
-        if expected_type.nil? && (resolved = @ctx.resolved_expr_types[expression.object_id])
+        if expected_type.nil? && (id = @ctx.ast.node_ids[expression.object_id]) && (resolved = @ctx.resolved_expr_types[id])
           return resolved
         end
 

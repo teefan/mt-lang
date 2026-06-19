@@ -190,6 +190,7 @@ module MilkTea
             directives: ast.directives,
             declarations: ast.declarations,
             line: ast.line,
+            node_ids: ast.node_ids,
           )
         end
 
