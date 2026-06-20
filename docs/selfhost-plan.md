@@ -150,11 +150,11 @@ token
 | 1 | `lexer.mt` | ✓ Line-by-line indentation-based lexer; full keyword/operator/string/number/char |
 | 1 | `source.mt` | ✓ `SourceView` (path+text), `Span` helpers |
 | 1 | `token_stream.mt` | ✓ `SyntaxTokenStream` with len/get |
-| 2 | `ast.mt` | ✗ |
+| 2 | `ast.mt` | ✓ ~150 variant arm definitions across Expr/Decl/Stmt + helper structs |
 | 2 | `cst.mt` | ✗ |
 | 2 | `cst_builder.mt` | ✗ |
-| 2 | `parser.mt` | ✗ |
-| 2 | `diagnostics.mt` | ✗ |
+| 2 | `parser.mt` | ✓ Skeleton + expression parser + statements + function_def; remaining decl stubs |
+| 2 | `diagnostics.mt` | ✓ Diagnostic + DiagnosticList with Severity enum |
 | 3 | `types.mt` | ✗ |
 | 3 | `scope.mt` | ✗ |
 | 3 | `resolver.mt` | ✗ |
