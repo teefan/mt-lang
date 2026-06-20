@@ -1153,6 +1153,7 @@ Custom formatting hook notes:
 - `read(...)` of raw pointer requires `unsafe`
 - pointer casts require `unsafe`
 - `reinterpret[...]` requires `unsafe`, non-array concrete sized types, and equal-size source and target types.
+- variant types support `==` and `!=` (generates per-variant comparison helper)
 
 ## 10. Async Semantics
 

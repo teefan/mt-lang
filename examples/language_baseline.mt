@@ -393,6 +393,25 @@ function statements_demo() -> int:
     if not is_ident:
         result += 1
 
+    # --- == on variants: no-payload and payload comparison
+    let eof1 = TokenKind.eof
+    let eof2 = TokenKind.eof
+    if eof1 == eof2:
+        result += 1
+    if eof1 != TokenKind.number(value = 0):
+        result += 1
+
+    let id_abc = TokenKind.ident(name = "abc")
+    let id_abc2 = TokenKind.ident(name = "abc")
+    let id_xyz = TokenKind.ident(name = "xyz")
+    if id_abc == id_abc2:
+        result += 1
+    if id_abc != id_xyz:
+        result += 1
+
+    if id_abc != TokenKind.eof:
+        result += 1
+
     defer:
         global_counter += result
     defer:

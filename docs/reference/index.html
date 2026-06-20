@@ -1395,6 +1395,23 @@ if kind is TokenKind.eof or kind is TokenKind.indent:
 let ok = kind is TokenKind.op_plus</code></pre>
 </div>
 
+  <p>Variants also support <code>==</code> and <code>!=</code> for direct value comparison (discriminant + payload fields). The compiler generates a per-type comparison helper function in the emitted C.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>let a = TokenKind.eof
+let b = TokenKind.eof
+if a == b:
+    io.print_line("same arm")
+
+let id1 = TokenKind.ident(name = "hello")
+let id2 = TokenKind.ident(name = "hello")
+if id1 == id2:
+    io.print_line("same payload")
+
+if id1 != TokenKind.eof:
+    io.print_line("different arm")</code></pre>
+</div>
+
   <h3>Struct Patterns (Variants)</h3>
   <p>Inline destructuring with guards and bindings inside variant arm patterns.</p>
 <div class="code-wrap">
