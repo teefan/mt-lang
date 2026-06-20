@@ -275,6 +275,10 @@ module MilkTea
             mutable_pointer_type?(type)
           end
 
+          def c_backend_pointer_like_type?(type)
+            pointer_type?(type) || const_pointer_type?(type) || (type.is_a?(Types::Primitive) && type.name == "cstr") || type.is_a?(Types::Function) || type.is_a?(Types::Proc) || type.is_a?(Types::Opaque)
+          end
+
           def raw_pointer_type?(type)
             mutable_pointer_type?(type) || const_pointer_type?(type)
           end

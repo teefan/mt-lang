@@ -98,7 +98,7 @@ module MilkTea
             else
               value = IR::ZeroInit.new(type: storage_type)
             end
-            if value && storage_type.is_a?(Types::Nullable) && !value.type.is_a?(Types::Nullable) && !pointer_type?(storage_type.base)
+            if value && storage_type.is_a?(Types::Nullable) && !value.type.is_a?(Types::Nullable) && !pointer_like_type?(storage_type.base)
               temp_name = fresh_c_temp_name(local_env, "nullable_loc")
               lowered << IR::LocalDecl.new(name: temp_name, linkage_name: temp_name, type: storage_type.base, value:)
               value = IR::AddressOf.new(expression: IR::Name.new(name: temp_name, type: storage_type.base, pointer: false), type: storage_type.base)
@@ -210,7 +210,7 @@ module MilkTea
                         lower_expression(prepared_value, env: local_env, expected_type: target.type)
                       end
             end
-            if target.type.is_a?(Types::Nullable) && value && !value.type.is_a?(Types::Nullable) && !pointer_type?(target.type.base)
+            if target.type.is_a?(Types::Nullable) && value && !value.type.is_a?(Types::Nullable) && !pointer_like_type?(target.type.base)
               temp_name = fresh_c_temp_name(local_env, "nullable_assign")
               lowered << IR::LocalDecl.new(name: temp_name, linkage_name: temp_name, type: target.type.base, value:)
               value = IR::AddressOf.new(expression: IR::Name.new(name: temp_name, type: target.type.base, pointer: false), type: target.type.base)

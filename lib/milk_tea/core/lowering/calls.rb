@@ -820,7 +820,7 @@ module MilkTea
       end
 
       def foreign_slot_boundary_value_type(type)
-        if type.is_a?(Types::Nullable) && pointer_type?(type.base)
+        if type.is_a?(Types::Nullable) && pointer_like_type?(type.base)
           return type.base
         end
 

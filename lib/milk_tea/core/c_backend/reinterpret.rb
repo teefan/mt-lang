@@ -174,10 +174,17 @@ module MilkTea
 
           def pointer_member_receiver?(expression)
             return true if checked_index_alias(expression)
-            return true if expression.is_a?(IR::Unary) && expression.operator == "*"
+            return pointer_member_receiver?(expression.operand) if expression.is_a?(IR::Unary) && expression.operator == "*"
 
             (expression.is_a?(IR::Name) && expression.pointer) ||
-              (expression.respond_to?(:type) && (raw_pointer_type?(expression.type) || ref_type?(expression.type)))
+              (expression.respond_to?(:type) && (raw_pointer_type?(expression.type) || ref_type?(expression.type) || nullable_pointer_like_ir_type?(expression.type)))
+          end
+
+          def nullable_pointer_like_ir_type?(type)
+            return false unless type.is_a?(Types::Nullable)
+            return true if raw_pointer_type?(type.base) || ref_type?(type.base)
+
+            !type.base.is_a?(Types::Primitive)
           end
 
           def wrap_pointer_member_receiver(expression)
