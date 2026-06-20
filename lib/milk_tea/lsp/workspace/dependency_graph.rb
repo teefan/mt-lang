@@ -115,6 +115,10 @@ module MilkTea
                                   else
                                     dependency_index_imports_for(uri)
                                   end
+
+          if imported_module_names&.empty?
+            imported_module_names = dependency_index_imports_for(uri) || Set.new
+          end
           return if imported_module_names.nil? && facts.nil?
 
           delete_dependency_index(uri)
