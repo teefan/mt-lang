@@ -509,12 +509,12 @@ function load_entity(id: EntityId) -&gt; Result[Entity, LoadError]:
         value = Entity.create(id, EntityKind.player, "Hero"),
     )
 
-## Postfix ? propagation (enclosing must return Result[_, E])
-function load_pair() -&gt; Result[void, LoadError]:
+## Postfix ? propagation (enclosing must return compatible Result or Option)
+function load_pair() -&gt; Result[bool, LoadError]:
     let first = load_entity(1)?
     let second = load_entity(2)?
     io.print_line(f"Loaded #{first.name} and #{second.name}")
-    return Result[void, LoadError].success()
+    return Result[bool, LoadError].success(value = true)
 
 ## ── Events (fixed-capacity pub/sub, zero heap during dispatch) ──────
 struct DamageEvent:
@@ -575,8 +575,8 @@ function main() -&gt; int:
         return 1
 
     ## Guard with error binding
-    let _ = load_pair() else as error:
-        io.print_line("load failed")
+    let loaded = load_pair() else as error:
+        io.print_line(f"load failed: #{error}")
         return 1
 
     ## Native vector types &amp; arithmetic
@@ -962,8 +962,8 @@ let _ = initialize_runtime() else:
     return 1</code></pre>
 </div>
 
-  <h3>Postfix Result Propagation (<code>?</code>)</h3>
-  <p><code>expr?</code> unwraps <code>Result[T, E]</code> on success; on failure, returns early from the enclosing function or proc. Only allowed inside function and proc bodies.</p>
+  <h3>Postfix Result/Option Propagation (<code>?</code>)</h3>
+  <p><code>expr?</code> unwraps <code>Option[T]</code> or <code>Result[T, E]</code> on success; on failure (None or failure(error)), returns early from the enclosing function or proc. Only allowed inside function and proc bodies.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>let parsed = parse(input)?
@@ -1912,6 +1912,8 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>std.mem.pool</code></td><td>Fixed-size object pool</td></tr>
       <tr><td><code>std.mem.stack</code></td><td>Explicit temporary allocator</td></tr>
       <tr><td><code>std.async</code></td><td>Async runtime: <code>sleep</code>, <code>work</code>, <code>completed</code>, <code>result</code>, <code>wait</code>, <code>run</code></td></tr>
+      <tr><td><code>std.option</code></td><td><code>Option[T]</code> — optional value; methods: <code>is_some</code>, <code>is_none</code>, <code>unwrap</code>, <code>expect</code>, <code>unwrap_or</code>, <code>unwrap_or_else</code></td></tr>
+      <tr><td><code>std.result</code></td><td><code>Result[T, E]</code> — fallible computation; methods: <code>is_success</code>, <code>is_failure</code>, <code>unwrap</code>, <code>unwrap_error</code>, <code>unwrap_or</code>, <code>unwrap_or_else</code>, <code>ok</code>, <code>error</code>, <code>map_error</code></td></tr>
     </table>
   </div>
 

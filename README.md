@@ -788,6 +788,8 @@ Core modules in `std/`:
 - `std.string.String` — growable owned UTF-8 text
 - `std.mem.heap`, `std.mem.arena`, `std.mem.pool`, `std.mem.stack` — allocators
 - `std.async` — task runtime (`sleep`, `work`, `completed`, `result`, `wait`, `run`)
+- `std.option.Option[T]` — optional value with `is_some`, `is_none`, `unwrap`, `expect`, `unwrap_or`, `unwrap_or_else` (auto-imported via prelude)
+- `std.result.Result[T, E]` — fallible computation with `is_success`, `is_failure`, `unwrap`, `unwrap_error`, `unwrap_or`, `unwrap_or_else`, `ok`, `error`, `map_error` (auto-imported via prelude)
 
 **Collections**: `std.vec.Vec[T]`, `std.deque.Deque[T]`, `std.map.Map[K,V]`, `std.set.Set[T]`, `std.ordered_map.OrderedMap[K,V]`, `std.ordered_set.OrderedSet[T]`, `std.binary_heap.BinaryHeap[T]`, `std.priority_queue.PriorityQueue[T]`, `std.linked_map.LinkedMap[K,V]`, `std.linked_set.LinkedSet[T]`, `std.counter.Counter[T]`, `std.multiset.MultiSet[T]`, `std.queue.Queue[T]`, `std.stack.Stack[T]`
 
