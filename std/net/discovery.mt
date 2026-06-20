@@ -87,26 +87,27 @@ function parse_response(data: span[ubyte]) -> Result[ServerInfo, net.Error]:
 
     var r = bin.reader(data)
 
-    r.read_bytes(probe_bytes).map_err(proc(_: bin.Error) -> net.Error:
+    var _bp = r.read_bytes(probe_bytes).map_error(proc(_: bin.Error) -> net.Error:
         discovery_error("discovery response malformed header")
-    )
+    )?
+    _bp.release()
 
     var game_port: int = 0
-    game_port = int<-r.read_ushort().map_err(proc(_: bin.Error) -> net.Error:
+    game_port = int<-r.read_ushort().map_error(proc(_: bin.Error) -> net.Error:
         discovery_error("discovery response malformed port")
     )?
 
     var player_count: ubyte = 0
-    player_count = r.read_ubyte().map_err(proc(_: bin.Error) -> net.Error:
+    player_count = r.read_ubyte().map_error(proc(_: bin.Error) -> net.Error:
         discovery_error("discovery response malformed player_count")
     )?
 
     var max_players: ubyte = 0
-    max_players = r.read_ubyte().map_err(proc(_: bin.Error) -> net.Error:
+    max_players = r.read_ubyte().map_error(proc(_: bin.Error) -> net.Error:
         discovery_error("discovery response malformed max_players")
     )?
 
-    let game_name = r.read_str().map_err(proc(_: bin.Error) -> net.Error:
+    let game_name = r.read_str().map_error(proc(_: bin.Error) -> net.Error:
         discovery_error("discovery response malformed name")
     )?
     return Result[ServerInfo, net.Error].success(value = ServerInfo(

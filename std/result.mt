@@ -67,7 +67,7 @@ extending Result[T, E]:
             Result.failure as payload:
                 return f(error=payload.error)
 
-    public function map_err[F](f: proc(error: E) -> F) -> Result[T, F]:
+    public function map_error[F](f: proc(error: E) -> F) -> Result[T, F]:
         match this:
             Result.success as payload:
                 return Result[T, F].success(value = payload.value)
@@ -81,7 +81,7 @@ extending Result[T, E]:
             Result.failure:
                 return Option[T].none
 
-    public function err() -> Option[E]:
+    public function error() -> Option[E]:
         match this:
             Result.success:
                 return Option[E].none

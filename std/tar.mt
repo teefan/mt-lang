@@ -660,7 +660,7 @@ public function extract(archive: span[ubyte], destination_root: str) -> Result[b
     if archive.len % block_size != 0:
         return Result[bool, Error].failure(error = error_message("tar archive size must be a multiple of 512 bytes"))
 
-    fs.create_directories(destination_root).map_err(take_fs_error)?
+    fs.create_directories(destination_root).map_error(take_fs_error)?
 
     var offset: ptr_uint = 0
     while offset < archive.len:
@@ -674,20 +674,20 @@ public function extract(archive: span[ubyte], destination_root: str) -> Result[b
         defer destination_path.release()
 
         if entry.kind == EntryKind.directory:
-            fs.create_directories(destination_path.as_str()).map_err(take_fs_error)?
+            fs.create_directories(destination_path.as_str()).map_error(take_fs_error)?
 
-            fs.set_permissions(destination_path.as_str(), entry.mode).map_err(take_fs_error)?
+            fs.set_permissions(destination_path.as_str(), entry.mode).map_error(take_fs_error)?
         else:
             let parent = path_ops.dirname(destination_path.as_str())
-            fs.create_directories(parent).map_err(take_fs_error)?
+            fs.create_directories(parent).map_error(take_fs_error)?
 
             let file_data = unsafe: span[ubyte](
                 data = archive.data + entry.data_offset,
                 len = entry.size
             )
-            fs.write_bytes(destination_path.as_str(), file_data).map_err(take_fs_error)?
+            fs.write_bytes(destination_path.as_str(), file_data).map_error(take_fs_error)?
 
-            fs.set_permissions(destination_path.as_str(), entry.mode).map_err(take_fs_error)?
+            fs.set_permissions(destination_path.as_str(), entry.mode).map_error(take_fs_error)?
 
         let entry_payload_size = padded_size(entry.size)
         if offset > heap.ptr_uint_max - block_size - entry_payload_size:
@@ -699,6 +699,6 @@ public function extract(archive: span[ubyte], destination_root: str) -> Result[b
 
 
 public function extract_gzip(archive: span[ubyte], destination_root: str) -> Result[bool, Error]:
-    var decoded = gzip.decompress_bytes(archive).map_err(take_gzip_error)?
+    var decoded = gzip.decompress_bytes(archive).map_error(take_gzip_error)?
     defer decoded.release()
     return extract(decoded.as_span(), destination_root)

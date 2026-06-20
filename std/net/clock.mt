@@ -91,8 +91,9 @@ public function parse_request(data: span[ubyte]) -> Result[ulong, Error]:
     if data.len < request_bytes or data[8z] != sync_request:
         return Result[ulong, Error].failure(error = clock_error(err_bad_packet, "not a clock sync request"))
     var r = bin.reader(data)
-    r.read_bytes(9z).map_err(proc(_: bin.Error) -> Error: clock_error(err_bad_packet, "malformed request"))
-    return r.read_ulong().map_err(proc(_: bin.Error) -> Error: clock_error(err_bad_packet, "malformed timestamp"))
+    var _bp = r.read_bytes(9z).map_error(proc(_: bin.Error) -> Error: clock_error(err_bad_packet, "malformed request"))?
+    _bp.release()
+    return r.read_ulong().map_error(proc(_: bin.Error) -> Error: clock_error(err_bad_packet, "malformed timestamp"))
 
 
 public function parse_response(data: span[ubyte]) -> Result[ClockSync, Error]:
@@ -137,9 +138,9 @@ public async function measure_offset(
     let t1 = libuv.hrtime()
     var request = build_request(t1)
     defer request.release()
-    (await socket.send_to(request.as_span(), peer)).map_err(proc(_: net.Error) -> Error:
+    (await socket.send_to(request.as_span(), peer)).map_error(proc(_: net.Error) -> Error:
         clock_error(err_send_failed, "failed to send sync request")
-    )
+    )?
 
     var frame: uint = 0
     let recv_task = socket.recv_from(512)

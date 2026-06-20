@@ -152,18 +152,24 @@ module MilkTea
         )
       end
       # ── useless-expression ───────────────────────────────────────────────────
-  
+
       PURE_EXPRESSION_TYPES = [
         AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::FormatString,
         AST::BooleanLiteral, AST::NullLiteral,
         AST::BinaryOp, AST::UnaryOp,
         AST::Identifier, AST::UnsafeExpr,
       ].freeze
-  
+
+      SIDE_EFFECTING_EXPRESSION_TYPES = [
+        AST::Call, AST::AwaitExpr,
+      ].freeze
+
       def check_useless_expression(stmt)
         expr = stmt.expression
         return unless PURE_EXPRESSION_TYPES.any? { |t| expr.is_a?(t) }
-  
+        return if expr.is_a?(AST::UnaryOp) && expr.operator == "?"
+        return if contains_side_effecting_expression?(expr)
+
         line = expression_line(expr) || (stmt.respond_to?(:line) ? stmt.line : nil)
         column = expression_column(expr)
         length = expression_length(expr)
@@ -172,7 +178,7 @@ module MilkTea
           column ||= fallback_span&.first
           length = fallback_span&.last if !length || !expr.respond_to?(:column) || expr.is_a?(AST::UnsafeExpr)
         end
-  
+
         @warnings << Warning.new(
           path: @path,
           line:,
@@ -182,6 +188,22 @@ module MilkTea
           message: "expression result is unused and has no side effects",
           severity: :warning
         )
+      end
+
+      def contains_side_effecting_expression?(expr)
+        return true if SIDE_EFFECTING_EXPRESSION_TYPES.any? { |t| expr.is_a?(t) }
+        return true if expr.is_a?(AST::UnaryOp) && expr.operator == "?"
+
+        case expr
+        when AST::BinaryOp
+          contains_side_effecting_expression?(expr.left) || contains_side_effecting_expression?(expr.right)
+        when AST::UnsafeExpr
+          contains_side_effecting_expression?(expr.expression)
+        when AST::FormatString
+          expr.parts.any? { |part| part.is_a?(AST::FormatExprPart) && contains_side_effecting_expression?(part.expression) }
+        else
+          false
+        end
       end
       # ── self-assignment ────────────────────────────────────────────────────
   
