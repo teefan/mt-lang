@@ -277,7 +277,7 @@ async function send_connected_packet(
     var framed = build_packet(sequence, ack, ack_bits, packet_flags, content)
     defer framed.release()
 
-    await socket.send(framed.as_span())
+    (await socket.send(framed.as_span()))?
     return Result[bool, net.Error].success(value = true)
 
 
@@ -299,7 +299,7 @@ async function send_packet_to(
     var framed = build_packet(sequence, ack, ack_bits, packet_flags, content)
     defer framed.release()
 
-    await socket.send_to(framed.as_span(), destination)
+    (await socket.send_to(framed.as_span(), destination))?
     return Result[bool, net.Error].success(value = true)
 
 
@@ -444,7 +444,7 @@ extending Channel:
 
         let protocol = unsafe: ptr[ProtocolState]<-ptr_of(this.protocol)
         let sequence = allocate_sequence(protocol)
-        await send_connected_packet(this.socket, protocol, sequence, 0, content)
+        (await send_connected_packet(this.socket, protocol, sequence, 0, content))?
         return Result[uint, net.Error].success(value = sequence)
 
 
@@ -464,7 +464,7 @@ extending Channel:
             ))
 
         let sequence = allocate_sequence(protocol)
-        await send_connected_packet(this.socket, protocol, sequence, reliable_flag, content)
+        (await send_connected_packet(this.socket, protocol, sequence, reliable_flag, content))?
         unsafe: read(protocol).pending_reliable.push(PendingReliable(
             sequence = sequence,
             payload = bytes.Bytes.copy(content),
@@ -483,7 +483,7 @@ extending Channel:
         let is_new = mark_received(protocol, header.sequence)
         let is_reliable = (header.packet_flags & reliable_flag) != 0
         if is_reliable:
-            await send_connected_ack_only(this.socket, protocol)
+            (await send_connected_ack_only(this.socket, protocol))?
 
         if (header.packet_flags & ack_only_flag) != 0:
             return Result[Option[Message], net.Error].success(value = Option[Message].none)
@@ -515,13 +515,13 @@ extending Channel:
                 index += 1
                 continue
 
-            await send_connected_packet(
+            (await send_connected_packet(
                 this.socket,
                 protocol,
                 unsafe: read(entry_ptr).sequence,
                 reliable_flag,
                 unsafe: read(entry_ptr).payload.as_span()
-            )
+            ))?
             unsafe: read(entry_ptr).last_sent_frame = frame
             resent += 1
 
@@ -579,14 +579,14 @@ extending Host:
         let peer_ptr = get_or_create_peer(ref_of(this), destination)?
         let protocol = unsafe: ptr[ProtocolState]<-ptr_of(read(peer_ptr).protocol)
         let sequence = allocate_sequence(protocol)
-        await send_packet_to(
+        (await send_packet_to(
             this.socket,
             unsafe: read(peer_ptr).address,
             protocol,
             sequence,
             0,
             content
-        )
+        ))?
         return Result[uint, net.Error].success(value = sequence)
 
 
@@ -611,14 +611,14 @@ extending Host:
             ))
 
         let sequence = allocate_sequence(protocol)
-        await send_packet_to(
+        (await send_packet_to(
             this.socket,
             unsafe: read(peer_ptr).address,
             protocol,
             sequence,
             reliable_flag,
             content
-        )
+        ))?
         unsafe: read(protocol).pending_reliable.push(PendingReliable(
             sequence = sequence,
             payload = bytes.Bytes.copy(content),
@@ -709,14 +709,14 @@ extending Host:
                     index += 1
                     continue
 
-                await send_packet_to(
+                (await send_packet_to(
                     this.socket,
                     unsafe: read(peer_ptr).address,
                     protocol,
                     unsafe: read(entry_ptr).sequence,
                     reliable_flag,
                     unsafe: read(entry_ptr).payload.as_span()
-                )
+                ))?
                 unsafe: read(entry_ptr).last_sent_frame = frame
                 resent += 1
 
