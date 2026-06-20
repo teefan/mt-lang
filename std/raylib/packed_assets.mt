@@ -232,7 +232,7 @@ function from_pack_error(error: pack.Error) -> Error:
 
 
 function map_pack_result[T](result: Result[T, pack.Error]) -> Result[T, Error]:
-    return result.map_err(proc(e: pack.Error) -> Error:
+    return result.map_error(proc(e: pack.Error) -> Error:
         from_pack_error(e)
     )
 

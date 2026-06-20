@@ -954,6 +954,16 @@ module MilkTea
               index: rewrite_pfor_expr(expr.index, array_names),
               type: expr.type,
             )
+          elsif expr.receiver.is_a?(IR::Name) &&
+                array_names.include?(expr.receiver.name)
+            name_node = expr.receiver
+            elem = array_element_type(expr.receiver_type)
+            ptr_type = elem ? Types::GenericInstance.new("ptr", [elem]) : expr.receiver_type
+            IR::Index.new(
+              receiver: IR::Name.new(name: name_node.name, type: ptr_type, pointer: false),
+              index: rewrite_pfor_expr(expr.index, array_names),
+              type: expr.type,
+            )
           else
             expr
           end
