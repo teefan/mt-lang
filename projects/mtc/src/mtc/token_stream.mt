@@ -16,3 +16,6 @@ extending SyntaxTokenStream:
 
     public function get(index: ptr_uint) -> ptr[token.Token]?:
         return this.tokens.get(index)
+
+    public function at(index: ptr_uint) -> Option[token.Token]:
+        return this.tokens.at(index)

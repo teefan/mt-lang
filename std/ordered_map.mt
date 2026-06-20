@@ -289,6 +289,14 @@ extending OrderedMap[K, V]:
             return ptr_of(read(ptr[Node[K, V]]<-node).value)
 
 
+    public function at(key: K) -> Option[V]:
+        let p = this.get(key) else:
+            return Option[V].none
+
+        unsafe:
+            return Option[V].some(value = read(p))
+
+
     public function get_key(key: K) -> const_ptr[K]?:
         let location = OrderedMap[K, V].locate(this, key)
         if not location.found:

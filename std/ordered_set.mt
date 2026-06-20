@@ -268,6 +268,14 @@ extending OrderedSet[T]:
             return const_ptr_of(read(ptr[Node[T]]<-candidate).value)
 
 
+    public function at(value: T) -> Option[T]:
+        let p = this.get(value) else:
+            return Option[T].none
+
+        unsafe:
+            return Option[T].some(value = read(ptr[T]<-p))
+
+
     public function contains(value: T) -> bool:
         return this.get(value) != null
 

@@ -479,6 +479,14 @@ extending Object:
             return ptr_of(read(entry).value)
 
 
+    public function at(key: str) -> Option[Value]:
+        let p = this.get(key) else:
+            return Option[Value].none
+
+        unsafe:
+            return Option[Value].some(value = read(p))
+
+
     public function get_boolean(key: str) -> Option[bool]:
         let entry = Object.find_entry(this, key) else:
             return Option[bool].none
@@ -555,6 +563,10 @@ extending Array:
 
     public function get(index: ptr_uint) -> ptr[Value]?:
         return this.values.get(index)
+
+
+    public function at(index: ptr_uint) -> Option[Value]:
+        return this.values.at(index)
 
 
     public function get_boolean(index: ptr_uint) -> Option[bool]:
