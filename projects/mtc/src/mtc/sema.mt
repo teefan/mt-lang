@@ -29,6 +29,7 @@ extending Checker:
         this.resolve_variant_arms()
         this.declare_top_level_values()
         this.declare_functions()
+        this.check_function_bodies()
         return this.ctx
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -303,3 +304,117 @@ extending Checker:
         )
         let _prev = this.ctx.functions.set(name, binding)
         pass
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Phase 20: Check function bodies (expression + statement inference)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    public editable function check_function_bodies() -> void:
+        var i: ptr_uint = 0
+        while i < this.file.declarations.len:
+            let decl = this.file.declarations.at(i) else:
+                break
+            match decl:
+                ast.Decl.func_def as fd:
+                    if fd.body != 0z:
+                        var scopes = scope.ScopeStack.create()
+                        this.check_block(fd.body, ref_of(scopes))
+                _:
+                    pass
+            i += 1
+
+    editable function check_block(body_id: ast.NodeId, scopes: ref[scope.ScopeStack]) -> void:
+        scopes.push_scope()
+        var i = body_id
+        while i < this.file.stmts.len:
+            let stmt = this.file.stmts.at(i) else:
+                break
+            match stmt:
+                ast.Stmt.expression_stmt(expr_id, _):
+                    let _ty = this.infer_expr(expr_id, scopes)
+                ast.Stmt.return_stmt(value_id, _, _):
+                    if value_id != 0z:
+                        let _ty = this.infer_expr(value_id, scopes)
+                    break
+                ast.Stmt.local_decl as ld:
+                    if ld.value_id != 0z:
+                        let inf = this.infer_expr(ld.value_id, scopes)
+                        let vb = scope.ValueBinding(
+                            id = 0z, name = ld.name, storage_type = inf,
+                            mutable = (ld.kind == "var"), kind = "local", is_param = false,
+                        )
+                        scopes.insert(vb)
+                _:
+                    pass
+            i += 1
+        scopes.pop_scope()
+
+    # ── Expression type inference ──
+
+    editable function infer_expr(expr_id: ast.NodeId, scopes: ref[scope.ScopeStack]) -> types.TypeId:
+        if expr_id == 0z:
+            return this.ctx.error_type_id
+        let expr = this.file.exprs.at(expr_id) else:
+            return this.ctx.error_type_id
+        match expr:
+            ast.Expr.identifier(name, _, _):
+                return this.infer_name(name, scopes)
+            ast.Expr.member_access(receiver, member, _, _):
+                let _rt = this.infer_expr(receiver, scopes)
+                return this.ctx.arena.primitive_int()
+            ast.Expr.call(callee, args_start, args_len, _):
+                let _ct = this.infer_expr(callee, scopes)
+                return this.ctx.arena.primitive_int()
+            ast.Expr.integer_literal as il:
+                return this.ctx.arena.primitive_int()
+            ast.Expr.string_literal as sl:
+                return this.ctx.arena.primitive_str()
+            ast.Expr.boolean_literal as bl:
+                return this.ctx.arena.primitive_bool()
+            ast.Expr.float_literal as fl:
+                return this.ctx.arena.primitive_double()
+            ast.Expr.binary_op(operator, left, right):
+                let _lt = this.infer_expr(left, scopes)
+                let _rt = this.infer_expr(right, scopes)
+                if operator == "==" or operator == "!=" or operator == "<" or operator == "<=" or operator == ">" or operator == ">=":
+                    return this.ctx.arena.primitive_bool()
+                if operator == "and" or operator == "or":
+                    return this.ctx.arena.primitive_bool()
+                return this.ctx.arena.primitive_int()
+            ast.Expr.prefix_cast(target_type, expression):
+                let _tt = this.infer_expr(target_type, scopes)
+                return _tt
+            ast.Expr.unary_op(operator, operand):
+                let _ot = this.infer_expr(operand, scopes)
+                return _ot
+            ast.Expr.index_access(receiver, index, args_start, args_len):
+                let _rt = this.infer_expr(receiver, scopes)
+                return this.ctx.arena.primitive_int()
+            ast.Expr.null_literal(type_id):
+                return this.ctx.arena.primitive_int()
+            ast.Expr.if_expr(condition, then_expr, else_expr):
+                return this.infer_expr(then_expr, scopes)
+            ast.Expr.format_string(_, _):
+                return this.ctx.arena.primitive_str()
+            ast.Expr.cstring_literal as cl:
+                return this.ctx.arena.primitive_cstr()
+            ast.Expr.char_literal as ch:
+                return this.ctx.arena.primitive_char()
+            ast.Expr.range_expr(_, _, _, _):
+                return this.ctx.arena.primitive_int()
+            ast.Expr.error_expr(_, _, _):
+                return this.ctx.error_type_id
+            _:
+                pass
+        return this.ctx.error_type_id
+
+    editable function infer_name(name: str, scopes: ref[scope.ScopeStack]) -> types.TypeId:
+        let binding = scopes.lookup(name)
+        match binding:
+            Option.some as s:
+                return s.value.storage_type
+            Option.none:
+                pass
+        let type_ptr = this.ctx.types.get(name) else:
+            return this.ctx.error_type_id
+        return unsafe: read(type_ptr)

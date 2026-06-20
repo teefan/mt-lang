@@ -159,10 +159,10 @@ token
 | 3 | `scope.mt` | ✓ `Scope` with `Map[str, ValueBinding]`, `ScopeStack` for nested lookup |
 | 3 | `sema/context.mt` | ✓ `ModuleContext` with types, functions, values, imports, diagnostics storage |
 | 3 | `sema/resolver.mt` | ✓ Type/name resolution from AST NodeId expressions, generic instantiation |
-| 3 | `sema.mt` | ✓ `Checker` orchestrator: 8 structural phases (builtins → prelude → named types → fields → functions) |
+| 3 | `sema.mt` | ✓ 8 structural phases + body checking (Phase 20: expression inference + statement walk) |
 | 6 | `main.mt` | ✓ Wired: lex → parse → sema-check. `mtc build projects/mtc` produces a working binary that runs the pipeline. |
-| 3 | `sema/expr.mt` | ✗ |
-| 3 | `sema/stmt.mt` | ✗ |
+| 3 | `sema/expr.mt` | ✗ (consolidated into sema.mt — cross-module extending creates import cycles) |
+| 3 | `sema/stmt.mt` | ✗ (consolidated into sema.mt — same reason) |
 | 3 | `sema/decl.mt` | ✗ (consolidated into sema.mt structural phases) |
 | 3 | `sema/bindings.mt` | ✗ (consolidated into sema.mt structural phases) |
 | 4 | `ir.mt` | ✗ |
