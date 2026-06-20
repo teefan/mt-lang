@@ -239,12 +239,7 @@ extending str:
 
 
     public function contains_substring(needle: str) -> bool:
-        let found = this.find_substring(needle)
-        match found:
-            Option.some:
-                return true
-            Option.none:
-                return false
+        return this.find_substring(needle).is_some()
 
 
     public static function hash(value: const_ptr[str]) -> uint:

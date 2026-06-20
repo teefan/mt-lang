@@ -4,6 +4,8 @@
 # either Success(T) or Failure(E).
 # Imported automatically as part of the language prelude.
 
+import std.option
+
 public variant Result[T, E]:
     success(value: T)
     failure(error: E)
@@ -64,3 +66,24 @@ extending Result[T, E]:
                 return payload.value
             Result.failure as payload:
                 return f(error=payload.error)
+
+    public function map_err[F](f: proc(error: E) -> F) -> Result[T, F]:
+        match this:
+            Result.success as payload:
+                return Result[T, F].success(value = payload.value)
+            Result.failure as payload:
+                return Result[T, F].failure(error = f(payload.error))
+
+    public function ok() -> Option[T]:
+        match this:
+            Result.success as payload:
+                return Option[T].some(value = payload.value)
+            Result.failure:
+                return Option[T].none
+
+    public function err() -> Option[E]:
+        match this:
+            Result.success:
+                return Option[E].none
+            Result.failure as payload:
+                return Option[E].some(value = payload.error)

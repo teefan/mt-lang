@@ -87,54 +87,35 @@ function parse_response(data: span[ubyte]) -> Result[ServerInfo, net.Error]:
 
     var r = bin.reader(data)
 
-    match r.read_bytes(probe_bytes):
-        Result.failure:
-            return Result[ServerInfo, net.Error].failure(
-                error = discovery_error("discovery response malformed header")
-            )
-        Result.success as bp:
-            bp.value.release()
+    r.read_bytes(probe_bytes).map_err(proc(_: bin.Error) -> net.Error:
+        discovery_error("discovery response malformed header")
+    )
 
     var game_port: int = 0
-    match r.read_ushort():
-        Result.failure:
-            return Result[ServerInfo, net.Error].failure(
-                error = discovery_error("discovery response malformed port")
-            )
-        Result.success as port_p:
-            game_port = int<-port_p.value
+    game_port = int<-r.read_ushort().map_err(proc(_: bin.Error) -> net.Error:
+        discovery_error("discovery response malformed port")
+    )?
 
     var player_count: ubyte = 0
-    match r.read_ubyte():
-        Result.failure:
-            return Result[ServerInfo, net.Error].failure(
-                error = discovery_error("discovery response malformed player_count")
-            )
-        Result.success as pc:
-            player_count = pc.value
+    player_count = r.read_ubyte().map_err(proc(_: bin.Error) -> net.Error:
+        discovery_error("discovery response malformed player_count")
+    )?
 
     var max_players: ubyte = 0
-    match r.read_ubyte():
-        Result.failure:
-            return Result[ServerInfo, net.Error].failure(
-                error = discovery_error("discovery response malformed max_players")
-            )
-        Result.success as mp:
-            max_players = mp.value
+    max_players = r.read_ubyte().map_err(proc(_: bin.Error) -> net.Error:
+        discovery_error("discovery response malformed max_players")
+    )?
 
-    match r.read_str():
-        Result.failure:
-            return Result[ServerInfo, net.Error].failure(
-                error = discovery_error("discovery response malformed name")
-            )
-        Result.success as np:
-            return Result[ServerInfo, net.Error].success(value = ServerInfo(
-                address = zero[net.SocketAddress],
-                game_port = game_port,
-                player_count = player_count,
-                max_players = max_players,
-                game_name = np.value
-            ))
+    let game_name = r.read_str().map_err(proc(_: bin.Error) -> net.Error:
+        discovery_error("discovery response malformed name")
+    )?
+    return Result[ServerInfo, net.Error].success(value = ServerInfo(
+        address = zero[net.SocketAddress],
+        game_port = game_port,
+        player_count = player_count,
+        max_players = max_players,
+        game_name = game_name
+    ))
 
 
 public async function announce(

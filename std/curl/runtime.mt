@@ -234,13 +234,11 @@ function do_request(
     if timeout > 0:
         let _timeout = easy_setopt_timeout(handle, timeout)
 
-    match body:
-        Option.none:
-            pass
-        Option.some as body_content:
-            var body_scratch = arena.create(body_content.value.len + 1)
-            defer body_scratch.release()
-            let _pf = easy_setopt_postfields(handle, body_scratch.to_cstr(body_content.value))
+    if body.is_some():
+        let body_content = body.unwrap()
+        var body_scratch = arena.create(body_content.len + 1)
+        defer body_scratch.release()
+        let _pf = easy_setopt_postfields(handle, body_scratch.to_cstr(body_content))
 
     if method.len > 0 and not method.starts_with("GET"):
         var method_scratch = arena.create(method.len + 1)

@@ -238,11 +238,8 @@ function write_stdout_sequence(sequence: string.String, fallback: str) -> Result
     if sequence.len != 0:
         data = unsafe: const_ptr[ubyte]<-sequence.data
 
-    match write_stdout_bytes(data, sequence.len, fallback):
-        Result.failure as payload:
-            return Result[bool, Error].failure(error= payload.error)
-        Result.success:
-            return Result[bool, Error].success(value= true)
+    write_stdout_bytes(data, sequence.len, fallback)?
+    return Result[bool, Error].success(value= true)
 
 
 function flush_stdout_internal() -> Result[bool, Error]:
@@ -852,12 +849,9 @@ extending Terminal:
 
 
     public editable function refresh_size() -> Result[Size, Error]:
-        match get_size_internal():
-            Result.failure as payload:
-                return Result[Size, Error].failure(error= payload.error)
-            Result.success as payload:
-                this.size = payload.value
-                return Result[Size, Error].success(value= this.size)
+        let size = get_size_internal()?
+        this.size = size
+        return Result[Size, Error].success(value= this.size)
 
 
     public function current_size() -> Size:
@@ -884,165 +878,120 @@ extending Terminal:
         if this.raw_mode:
             return Result[bool, Error].success(value= true)
 
-        match raw_mode_enter():
-            Result.failure as payload:
-                return Result[bool, Error].failure(error= payload.error)
-            Result.success as payload:
-                this.raw_mode = payload.value
-                return Result[bool, Error].success(value= true)
+        let value = raw_mode_enter()?
+        this.raw_mode = value
+        return Result[bool, Error].success(value= true)
 
 
     public editable function leave_raw_mode() -> Result[bool, Error]:
         if not this.raw_mode:
             return Result[bool, Error].success(value= true)
 
-        match raw_mode_leave():
-            Result.failure as payload:
-                return Result[bool, Error].failure(error= payload.error)
-            Result.success as payload:
-                this.raw_mode = false
-                return Result[bool, Error].success(value= payload.value)
+        let value = raw_mode_leave()?
+        this.raw_mode = false
+        return Result[bool, Error].success(value= value)
 
 
     public editable function enter_alternate_screen() -> Result[bool, Error]:
         if this.alternate_screen:
             return Result[bool, Error].success(value= true)
 
-        match enter_alternate_screen():
-            Result.failure as payload:
-                return Result[bool, Error].failure(error= payload.error)
-            Result.success as payload:
-                this.alternate_screen = payload.value
-                return Result[bool, Error].success(value= true)
+        let value = enter_alternate_screen()?
+        this.alternate_screen = value
+        return Result[bool, Error].success(value= true)
 
 
     public editable function leave_alternate_screen() -> Result[bool, Error]:
         if not this.alternate_screen:
             return Result[bool, Error].success(value= true)
 
-        match leave_alternate_screen():
-            Result.failure as payload:
-                return Result[bool, Error].failure(error= payload.error)
-            Result.success as payload:
-                this.alternate_screen = false
-                return Result[bool, Error].success(value= payload.value)
+        let value = leave_alternate_screen()?
+        this.alternate_screen = false
+        return Result[bool, Error].success(value= value)
 
 
     public editable function hide_cursor() -> Result[bool, Error]:
         if this.cursor_hidden:
             return Result[bool, Error].success(value= true)
 
-        match hide_cursor():
-            Result.failure as payload:
-                return Result[bool, Error].failure(error= payload.error)
-            Result.success as payload:
-                this.cursor_hidden = payload.value
-                return Result[bool, Error].success(value= true)
+        let value = hide_cursor()?
+        this.cursor_hidden = value
+        return Result[bool, Error].success(value= true)
 
 
     public editable function show_cursor() -> Result[bool, Error]:
         if not this.cursor_hidden:
             return Result[bool, Error].success(value= true)
 
-        match show_cursor():
-            Result.failure as payload:
-                return Result[bool, Error].failure(error= payload.error)
-            Result.success as payload:
-                this.cursor_hidden = false
-                return Result[bool, Error].success(value= payload.value)
+        let value = show_cursor()?
+        this.cursor_hidden = false
+        return Result[bool, Error].success(value= value)
 
 
     public editable function enable_mouse() -> Result[bool, Error]:
         if this.mouse_enabled:
             return Result[bool, Error].success(value= true)
 
-        match enable_mouse():
-            Result.failure as payload:
-                return Result[bool, Error].failure(error= payload.error)
-            Result.success as payload:
-                this.mouse_enabled = payload.value
-                return Result[bool, Error].success(value= true)
+        let value = enable_mouse()?
+        this.mouse_enabled = value
+        return Result[bool, Error].success(value= true)
 
 
     public editable function disable_mouse() -> Result[bool, Error]:
         if not this.mouse_enabled:
             return Result[bool, Error].success(value= true)
 
-        match disable_mouse():
-            Result.failure as payload:
-                return Result[bool, Error].failure(error= payload.error)
-            Result.success as payload:
-                this.mouse_enabled = false
-                return Result[bool, Error].success(value= payload.value)
+        let value = disable_mouse()?
+        this.mouse_enabled = false
+        return Result[bool, Error].success(value= value)
 
 
     public editable function poll_event(timeout_ms: int) -> Result[Option[Event], Error]:
         if stdin_is_tty():
-            match get_size_internal():
-                Result.failure as payload:
-                    return Result[Option[Event], Error].failure(error= payload.error)
-                Result.success as payload:
-                    let current = payload.value
-                    if current.width != this.size.width or current.height != this.size.height:
-                        this.size = current
-                        return Result[
-                            Option[Event],
-                            Error
-                        ].success(value= Option[Event].some(value = resize_event(current)))
+            let current = get_size_internal()?
+            if current.width != this.size.width or current.height != this.size.height:
+                this.size = current
+                return Result[Option[Event], Error].success(value= Option[Event].some(value = resize_event(current)))
 
-        match parse_event(ref_of(this.input)):
-            Option.some as payload:
-                return Result[Option[Event], Error].success(value= Option[Event].some(value = payload.value))
-            Option.none:
-                pass
+        let ev = parse_event(ref_of(this.input))
+        if ev.is_some():
+            return Result[Option[Event], Error].success(value= Option[Event].some(value= ev.unwrap()))
 
-        match read_stdin(timeout_ms):
-            Result.failure as payload:
-                return Result[Option[Event], Error].failure(error= payload.error)
-            Result.success as payload:
-                var bytes = payload.value
-                defer bytes.release()
-                if not bytes.is_empty():
-                    this.input.append_span(bytes.as_span())
+        var bytes = read_stdin(timeout_ms)?
+        defer bytes.release()
+        if not bytes.is_empty():
+            this.input.append_span(bytes.as_span())
 
-        match parse_event(ref_of(this.input)):
-            Option.some as payload:
-                return Result[Option[Event], Error].success(value= Option[Event].some(value = payload.value))
-            Option.none:
-                return Result[Option[Event], Error].success(value= Option[Event].none)
+        return Result[Option[Event], Error].success(value= parse_event(ref_of(this.input)))
 
 
     public editable function release() -> void:
         if this.mouse_enabled:
-            match disable_mouse():
-                Result.failure as payload:
-                    payload.error.release()
-                Result.success:
-                    pass
+            let res = disable_mouse()
+            if res.is_failure():
+                var err = res.unwrap_error()
+                err.release()
             this.mouse_enabled = false
 
         if this.cursor_hidden:
-            match show_cursor():
-                Result.failure as payload:
-                    payload.error.release()
-                Result.success:
-                    pass
+            let res = show_cursor()
+            if res.is_failure():
+                var err = res.unwrap_error()
+                err.release()
             this.cursor_hidden = false
 
         if this.alternate_screen:
-            match leave_alternate_screen():
-                Result.failure as payload:
-                    payload.error.release()
-                Result.success:
-                    pass
+            let res = leave_alternate_screen()
+            if res.is_failure():
+                var err = res.unwrap_error()
+                err.release()
             this.alternate_screen = false
 
         if this.raw_mode:
-            match raw_mode_leave():
-                Result.failure as payload:
-                    payload.error.release()
-                Result.success:
-                    pass
+            let res = raw_mode_leave()
+            if res.is_failure():
+                var err = res.unwrap_error()
+                err.release()
             this.raw_mode = false
 
         this.input.release()

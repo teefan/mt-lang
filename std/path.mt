@@ -215,11 +215,7 @@ public function extension(path: str) -> Option[str]:
 
 public function stem(path: str) -> str:
     let name = basename(path)
-    match extension_dot(name):
-        Option.some as payload:
-            return name.slice(0, payload.value)
-        Option.none:
-            return name
+    return name.slice(0, extension_dot(name).unwrap_or(name.len))
 
 
 function root_length(path: str) -> ptr_uint:

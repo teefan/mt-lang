@@ -292,57 +292,53 @@ function append_header(
     mode: int,
     size_bytes: ptr_uint
 ) -> Result[bool, Error]:
-    match split_ustar_path(archive_path):
-        Result.failure as payload:
-            return Result[bool, Error].failure(error = payload.error)
-        Result.success as payload:
-            let parts = payload.value
-            var header = zero[array[ubyte, 512]]
-            let header_ptr = ptr_of(header[0])
+    let parts = split_ustar_path(archive_path)?
+    var header = zero[array[ubyte, 512]]
+    let header_ptr = ptr_of(header[0])
 
-            write_path_field(header_ptr, 0, archive_path, parts.name_start, parts.name_len)
-            if not write_octal_field(header_ptr, 100, 8, ptr_uint<-(mode & 4095)):
-                return Result[bool, Error].failure(error = error_message("tar mode exceeds field capacity"))
-            if not write_octal_field(header_ptr, 108, 8, 0):
-                return Result[bool, Error].failure(error = error_message("tar uid exceeds field capacity"))
-            if not write_octal_field(header_ptr, 116, 8, 0):
-                return Result[bool, Error].failure(error = error_message("tar gid exceeds field capacity"))
+    write_path_field(header_ptr, 0, archive_path, parts.name_start, parts.name_len)
+    if not write_octal_field(header_ptr, 100, 8, ptr_uint<-(mode & 4095)):
+        return Result[bool, Error].failure(error = error_message("tar mode exceeds field capacity"))
+    if not write_octal_field(header_ptr, 108, 8, 0):
+        return Result[bool, Error].failure(error = error_message("tar uid exceeds field capacity"))
+    if not write_octal_field(header_ptr, 116, 8, 0):
+        return Result[bool, Error].failure(error = error_message("tar gid exceeds field capacity"))
 
-            var stored_size: ptr_uint = 0
-            if kind == EntryKind.file:
-                stored_size = size_bytes
+    var stored_size: ptr_uint = 0
+    if kind == EntryKind.file:
+        stored_size = size_bytes
 
-            if not write_octal_field(header_ptr, 124, 12, stored_size):
-                return Result[bool, Error].failure(error = error_message("tar size exceeds field capacity"))
-            if not write_octal_field(header_ptr, 136, 12, 0):
-                return Result[bool, Error].failure(error = error_message("tar mtime exceeds field capacity"))
+    if not write_octal_field(header_ptr, 124, 12, stored_size):
+        return Result[bool, Error].failure(error = error_message("tar size exceeds field capacity"))
+    if not write_octal_field(header_ptr, 136, 12, 0):
+        return Result[bool, Error].failure(error = error_message("tar mtime exceeds field capacity"))
 
-            var checksum_index: ptr_uint = 148
-            while checksum_index < 156:
-                header[checksum_index] = space_byte
-                checksum_index += 1
+    var checksum_index: ptr_uint = 148
+    while checksum_index < 156:
+        header[checksum_index] = space_byte
+        checksum_index += 1
 
-            if kind == EntryKind.directory:
-                header[156] = directory_type_flag
-            else:
-                header[156] = file_type_flag
+    if kind == EntryKind.directory:
+        header[156] = directory_type_flag
+    else:
+        header[156] = file_type_flag
 
-            header[257] = 117
-            header[258] = 115
-            header[259] = 116
-            header[260] = 97
-            header[261] = 114
-            header[263] = 48
-            header[264] = 48
+    header[257] = 117
+    header[258] = 115
+    header[259] = 116
+    header[260] = 97
+    header[261] = 114
+    header[263] = 48
+    header[264] = 48
 
-            if parts.prefix_len != 0:
-                write_path_field(header_ptr, 345, archive_path, parts.prefix_start, parts.prefix_len)
+    if parts.prefix_len != 0:
+        write_path_field(header_ptr, 345, archive_path, parts.prefix_start, parts.prefix_len)
 
-            if not write_checksum_field(header_ptr, 148, header_checksum(header_ptr)):
-                return Result[bool, Error].failure(error = error_message("tar checksum exceeds field capacity"))
+    if not write_checksum_field(header_ptr, 148, header_checksum(header_ptr)):
+        return Result[bool, Error].failure(error = error_message("tar checksum exceeds field capacity"))
 
-            output.append_array(header)
-            return Result[bool, Error].success(value = true)
+    output.append_array(header)
+    return Result[bool, Error].success(value = true)
 
 
 function append_file_entry(source_path: str, archive_path: str, output: ref[vec.Vec[ubyte]]) -> Result[bool, Error]:
@@ -523,67 +519,59 @@ function read_text_field(input: span[ubyte], offset: ptr_uint, field_len: ptr_ui
 
 
 function parse_entry(input: span[ubyte], offset: ptr_uint) -> Result[ParsedEntry, Error]:
-    match read_text_field(input, offset + 0, 100):
+    var name = read_text_field(input, offset + 0, 100)?
+    defer name.release()
+
+    var prefix = read_text_field(input, offset + 345, 155)?
+    defer prefix.release()
+
+    let name_text = name.as_str()
+    if name_text.len == 0:
+        return Result[ParsedEntry, Error].failure(error = error_message("tar entry missing name"))
+
+    var full_path = string.String.create()
+    if prefix.is_empty():
+        full_path = string.String.from_str(name_text)
+    else:
+        full_path = path_ops.join(prefix.as_str(), name_text)
+
+    match parse_octal_field(input, offset + 100, 8):
         Result.failure as payload:
+            full_path.release()
             return Result[ParsedEntry, Error].failure(error = payload.error)
-        Result.success as name_payload:
-            var name = name_payload.value
-            defer name.release()
-
-            match read_text_field(input, offset + 345, 155):
+        Result.success as mode_payload:
+            match parse_octal_field(input, offset + 124, 12):
                 Result.failure as payload:
+                    full_path.release()
                     return Result[ParsedEntry, Error].failure(error = payload.error)
-                Result.success as prefix_payload:
-                    var prefix = prefix_payload.value
-                    defer prefix.release()
-
-                    let name_text = name.as_str()
-                    if name_text.len == 0:
-                        return Result[ParsedEntry, Error].failure(error = error_message("tar entry missing name"))
-
-                    var full_path = string.String.create()
-                    if prefix.is_empty():
-                        full_path = string.String.from_str(name_text)
-                    else:
-                        full_path = path_ops.join(prefix.as_str(), name_text)
-
-                    match parse_octal_field(input, offset + 100, 8):
-                        Result.failure as payload:
+                Result.success as size_payload:
+                    var kind = EntryKind.file
+                    unsafe:
+                        let type_flag = read(input.data + offset + 156)
+                        if type_flag == directory_type_flag:
+                            kind = EntryKind.directory
+                        else if type_flag != file_type_flag and type_flag != zero_byte:
                             full_path.release()
-                            return Result[ParsedEntry, Error].failure(error = payload.error)
-                        Result.success as mode_payload:
-                            match parse_octal_field(input, offset + 124, 12):
-                                Result.failure as payload:
-                                    full_path.release()
-                                    return Result[ParsedEntry, Error].failure(error = payload.error)
-                                Result.success as size_payload:
-                                    var kind = EntryKind.file
-                                    unsafe:
-                                        let type_flag = read(input.data + offset + 156)
-                                        if type_flag == directory_type_flag:
-                                            kind = EntryKind.directory
-                                        else if type_flag != file_type_flag and type_flag != zero_byte:
-                                            full_path.release()
-                                            return Result[
-                                                ParsedEntry,
-                                                Error
-                                            ].failure(error = error_message("tar entry type is not supported"))
+                            return Result[
+                                ParsedEntry,
+                                Error
+                            ].failure(error = error_message("tar entry type is not supported"))
 
-                                    let data_offset = offset + block_size
-                                    if size_payload.value > input.len - data_offset:
-                                        full_path.release()
-                                        return Result[
-                                            ParsedEntry,
-                                            Error
-                                        ].failure(error = error_message("tar entry payload exceeds archive bounds"))
+                    let data_offset = offset + block_size
+                    if size_payload.value > input.len - data_offset:
+                        full_path.release()
+                        return Result[
+                            ParsedEntry,
+                            Error
+                        ].failure(error = error_message("tar entry payload exceeds archive bounds"))
 
-                                    return Result[ParsedEntry, Error].success(value = ParsedEntry(
-                                        path = full_path,
-                                        kind = kind,
-                                        mode = int<-mode_payload.value,
-                                        size = size_payload.value,
-                                        data_offset = data_offset
-                                    ))
+                    return Result[ParsedEntry, Error].success(value = ParsedEntry(
+                        path = full_path,
+                        kind = kind,
+                        mode = int<-mode_payload.value,
+                        size = size_payload.value,
+                        data_offset = data_offset
+                    ))
 
 
 function checked_destination_path(destination_root: str, relative_path: str) -> Result[string.String, Error]:
@@ -672,81 +660,45 @@ public function extract(archive: span[ubyte], destination_root: str) -> Result[b
     if archive.len % block_size != 0:
         return Result[bool, Error].failure(error = error_message("tar archive size must be a multiple of 512 bytes"))
 
-    match fs.create_directories(destination_root):
-        Result.failure as payload:
-            return Result[bool, Error].failure(error = take_fs_error(payload.error))
-        Result.success:
-            pass
+    fs.create_directories(destination_root).map_err(take_fs_error)?
 
     var offset: ptr_uint = 0
     while offset < archive.len:
         if block_is_zero(archive, offset):
             return Result[bool, Error].success(value = true)
 
-        match parse_entry(archive, offset):
-            Result.failure as payload:
-                return Result[bool, Error].failure(error = payload.error)
-            Result.success as payload:
-                var entry = payload.value
-                defer entry.release()
+        var entry = parse_entry(archive, offset)?
+        defer entry.release()
 
-                match checked_destination_path(destination_root, entry.path.as_str()):
-                    Result.failure as destination_payload:
-                        return Result[bool, Error].failure(error = destination_payload.error)
-                    Result.success as destination_payload:
-                        var destination_path = destination_payload.value
-                        defer destination_path.release()
+        var destination_path = checked_destination_path(destination_root, entry.path.as_str())?
+        defer destination_path.release()
 
-                        if entry.kind == EntryKind.directory:
-                            match fs.create_directories(destination_path.as_str()):
-                                Result.failure as create_payload:
-                                    return Result[bool, Error].failure(error = take_fs_error(create_payload.error))
-                                Result.success:
-                                    pass
+        if entry.kind == EntryKind.directory:
+            fs.create_directories(destination_path.as_str()).map_err(take_fs_error)?
 
-                            match fs.set_permissions(destination_path.as_str(), entry.mode):
-                                Result.failure as permission_payload:
-                                    return Result[bool, Error].failure(error = take_fs_error(permission_payload.error))
-                                Result.success:
-                                    pass
-                        else:
-                            let parent = path_ops.dirname(destination_path.as_str())
-                            match fs.create_directories(parent):
-                                Result.failure as create_payload:
-                                    return Result[bool, Error].failure(error = take_fs_error(create_payload.error))
-                                Result.success:
-                                    pass
+            fs.set_permissions(destination_path.as_str(), entry.mode).map_err(take_fs_error)?
+        else:
+            let parent = path_ops.dirname(destination_path.as_str())
+            fs.create_directories(parent).map_err(take_fs_error)?
 
-                            let file_data = unsafe: span[ubyte](
-                                data = archive.data + entry.data_offset,
-                                len = entry.size
-                            )
-                            match fs.write_bytes(destination_path.as_str(), file_data):
-                                Result.failure as write_payload:
-                                    return Result[bool, Error].failure(error = take_fs_error(write_payload.error))
-                                Result.success:
-                                    pass
+            let file_data = unsafe: span[ubyte](
+                data = archive.data + entry.data_offset,
+                len = entry.size
+            )
+            fs.write_bytes(destination_path.as_str(), file_data).map_err(take_fs_error)?
 
-                            match fs.set_permissions(destination_path.as_str(), entry.mode):
-                                Result.failure as permission_payload:
-                                    return Result[bool, Error].failure(error = take_fs_error(permission_payload.error))
-                                Result.success:
-                                    pass
+            fs.set_permissions(destination_path.as_str(), entry.mode).map_err(take_fs_error)?
 
-                let entry_payload_size = padded_size(entry.size)
-                if offset > heap.ptr_uint_max - block_size - entry_payload_size:
-                    return Result[bool, Error].failure(error = error_message("tar archive offset overflow"))
+        let entry_payload_size = padded_size(entry.size)
+        if offset > heap.ptr_uint_max - block_size - entry_payload_size:
+            return Result[bool, Error].failure(error = error_message("tar archive offset overflow"))
 
-                offset += block_size + entry_payload_size
+        offset += block_size + entry_payload_size
 
     return Result[bool, Error].success(value = true)
 
 
 public function extract_gzip(archive: span[ubyte], destination_root: str) -> Result[bool, Error]:
-    match gzip.decompress_bytes(archive):
-        Result.failure as payload:
-            return Result[bool, Error].failure(error = take_gzip_error(payload.error))
-        Result.success as payload:
-            var decoded = payload.value
-            defer decoded.release()
-            return extract(decoded.as_span(), destination_root)
+    var decoded = gzip.decompress_bytes(archive).map_err(take_gzip_error)?
+    defer decoded.release()
+    return extract(decoded.as_span(), destination_root)

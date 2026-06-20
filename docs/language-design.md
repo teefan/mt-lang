@@ -979,8 +979,7 @@ The standard library follows the same rule as the language: no hidden allocation
 
 Implemented core modules:
 
-- `Option[T]` is a built-in type for APIs where an explicit optional value is clearer than a nullable pointer.
-- `Result[T, E]` is a built-in type for explicit success/failure flows where both paths carry typed values.
+- `Option[T]` and `Result[T, E]` are standard library generic variant types (auto-imported via prelude) for APIs where explicit optional or fallible values are clearer than nullable pointers.
 - `std.string.String` is the normal growable owned UTF-8 text surface. Its public API should mirror the mutable-text shape of `str_buffer[N]`: method-style `len`, `capacity`, `append`, `assign`, `clear`, `as_str`, `to_cstr`, and explicit constructors, not a parallel module-function vocabulary. Byte-level appends exist as low-level escape hatches, but `as_str` and `to_cstr` still enforce valid UTF-8 at the borrowed-text boundary.
 - `std.str` provides borrowed string helpers: UTF-8 validation, byte lookup, prefix/suffix/equality, ASCII trimming, and byte search.
 - `std.fmt` is the explicit formatting subsystem. It should be the single normal formatting engine for owned and fixed-capacity text rather than one option among many formatting styles. `f"..."` produces borrowed `str`; `fmt.format(f"...")` is the explicit owned-text allocation path when you need a `std.string.String`. Low-level append helpers remain implementation building blocks.

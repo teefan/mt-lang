@@ -301,12 +301,7 @@ extending Deque[T]:
 
         var remaining = shift
         while remaining != 0:
-            let rotated = this.pop_front()
-            match rotated:
-                Option.none:
-                    fatal(c"deque.rotate_left missing front value")
-                Option.some as payload:
-                    this.push_back(payload.value)
+            this.push_back(this.pop_front().expect("deque rotate_left missing front value"))
             remaining -= 1
 
 
@@ -324,12 +319,7 @@ extending Deque[T]:
 
         var remaining = shift
         while remaining != 0:
-            let rotated = this.pop_back()
-            match rotated:
-                Option.none:
-                    fatal(c"deque.rotate_right missing back value")
-                Option.some as payload:
-                    this.push_front(payload.value)
+            this.push_front(this.pop_back().expect("deque rotate_right missing back value"))
             remaining -= 1
 
 

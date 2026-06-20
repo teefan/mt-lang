@@ -273,14 +273,11 @@ public function listen(local_address: net.SocketAddress, config: Config) -> Resu
 
 extending Connection:
     public editable function release() -> void:
-        match this.pending_recv:
-            Option.some as task_opt:
-                let task = task_opt.value
-                let raw_frame = unsafe: reinterpret[ptr_int](task.frame)
-                if raw_frame != 0:
-                    task.release(task.frame)
-            Option.none:
-                pass
+        if this.pending_recv.is_some():
+            let task = this.pending_recv.unwrap()
+            let raw_frame = unsafe: reinterpret[ptr_int](task.frame)
+            if raw_frame != 0:
+                task.release(task.frame)
         this.pending_recv = Option[ChanMessageTask].none
         drain_release_outgoing_conn(ref_of(this))
         this.outgoing.release()
