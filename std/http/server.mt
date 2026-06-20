@@ -147,90 +147,84 @@ public function parse_request(raw_data: span[ubyte]) -> Result[Request, string.S
     let _ = text.utf8_byte_span_as_str(raw_data) else:
         return Result[Request, string.String].failure(error = string.String.from_str("request is not valid UTF-8"))
 
-    let header_end = find_header_terminator(raw_data)
-    match header_end:
-        Option.none:
-            return Result[Request, string.String].failure(error = string.String.from_str("request headers incomplete"))
-        Option.some as end_pos:
-            let inner = text.utf8_byte_span_as_str(span[ubyte](data = raw_data.data, len = end_pos.value)) else:
-                return Result[Request, string.String].failure(
-                    error = string.String.from_str("request headers not valid UTF-8")
-                )
-            let first_line_end = find_byte(inner, 10)
-            var request_line = inner.slice(0, first_line_end)
-            if request_line.ends_with("\r"):
-                request_line = inner.slice(0, request_line.len - 1)
+    let end_pos = find_header_terminator(raw_data) else:
+        return Result[Request, string.String].failure(error = string.String.from_str("request headers incomplete"))
+    let inner = text.utf8_byte_span_as_str(span[ubyte](data = raw_data.data, len = end_pos)) else:
+        return Result[Request, string.String].failure(
+            error = string.String.from_str("request headers not valid UTF-8")
+        )
+    let first_line_end = find_byte(inner, 10)
+    var request_line = inner.slice(0, first_line_end)
+    if request_line.ends_with("\r"):
+        request_line = inner.slice(0, request_line.len - 1)
 
-            let method_end = find_byte(request_line, 32)
-            if method_end >= request_line.len:
-                return Result[Request, string.String].failure(error = string.String.from_str("malformed request line"))
+    let method_end = find_byte(request_line, 32)
+    if method_end >= request_line.len:
+        return Result[Request, string.String].failure(error = string.String.from_str("malformed request line"))
 
-            let method = request_line.slice(0, method_end)
+    let method = request_line.slice(0, method_end)
 
-            var path_start = method_end + 1
-            while path_start < request_line.len and request_line.byte_at(path_start) == 32:
-                path_start += 1
+    var path_start = method_end + 1
+    while path_start < request_line.len and request_line.byte_at(path_start) == 32:
+        path_start += 1
 
-            let path_end = find_byte_from(request_line, 32, path_start)
-            let raw_url = request_line.slice(path_start, path_end - path_start)
+    let path_end = find_byte_from(request_line, 32, path_start)
+    let raw_url = request_line.slice(path_start, path_end - path_start)
 
-            var path = raw_url
-            var query: str = zero[str]
-            let question = raw_url.find_byte(63)
-            match question:
-                Option.none:
-                    pass
-                Option.some as q:
-                    path = raw_url.slice(0, q.value)
-                    query = raw_url.slice(q.value + 1, raw_url.len - q.value - 1)
+    var path = raw_url
+    var query: str = zero[str]
+    let question = raw_url.find_byte(63)
+    if question.is_some():
+        let q = question.unwrap()
+        path = raw_url.slice(0, q)
+        query = raw_url.slice(q + 1, raw_url.len - q - 1)
 
-            var headers = vec.Vec[HttpHeader].create()
+    var headers = vec.Vec[HttpHeader].create()
 
-            let first_crlf = find_byte_from(inner, 13, first_line_end)
-            if first_crlf < inner.len:
-                var index = first_crlf + 2
-                while index < inner.len:
-                    if inner.byte_at(index) == 13:
-                        break
+    let first_crlf = find_byte_from(inner, 13, first_line_end)
+    if first_crlf < inner.len:
+        var index = first_crlf + 2
+        while index < inner.len:
+            if inner.byte_at(index) == 13:
+                break
 
-                    let line_end = find_byte_from(inner, 13, index)
-                    if line_end >= inner.len:
-                        break
+            let line_end = find_byte_from(inner, 13, index)
+            if line_end >= inner.len:
+                break
 
-                    let line = inner.slice(index, line_end - index)
+            let line = inner.slice(index, line_end - index)
 
-                    let colon = line.find_byte(58)
-                    match colon:
-                        Option.none:
-                            break
-                        Option.some as c:
-                            let name_text = line.slice(0, c.value)
-                            var value_start = c.value + 1
-                            while value_start < line.len and line.byte_at(value_start) == 32:
-                                value_start += 1
-                            let value_text = line.slice(value_start, line.len - value_start)
+            let colon = line.find_byte(58)
+            if colon.is_none():
+                break
+            let c = colon.unwrap()
+            let name_text = line.slice(0, c)
+            var value_start = c + 1
+            while value_start < line.len and line.byte_at(value_start) == 32:
+                value_start += 1
+            let value_text = line.slice(value_start, line.len - value_start)
 
-                            headers.push(HttpHeader(
-                                name = string.String.from_str(name_text),
-                                value = string.String.from_str(value_text)
-                            ))
-
-                    index = line_end + 2
-
-            var body_data = bytes.Bytes.empty()
-            let body_start = end_pos.value + 4
-            if body_start < raw_data.len:
-                let body_span = unsafe: span[ubyte](data = raw_data.data + body_start, len = raw_data.len - body_start)
-                body_data = bytes.Bytes.copy(body_span)
-
-            return Result[Request, string.String].success(value = Request(
-                method = string.String.from_str(method),
-                path = string.String.from_str(path),
-                query = query,
-                headers = headers,
-                body = body_data,
-                raw_url = string.String.from_str(raw_url)
+            headers.push(HttpHeader(
+                name = string.String.from_str(name_text),
+                value = string.String.from_str(value_text)
             ))
+
+            index = line_end + 2
+
+    var body_data = bytes.Bytes.empty()
+    let body_start = end_pos + 4
+    if body_start < raw_data.len:
+        let body_span = unsafe: span[ubyte](data = raw_data.data + body_start, len = raw_data.len - body_start)
+        body_data = bytes.Bytes.copy(body_span)
+
+    return Result[Request, string.String].success(value = Request(
+        method = string.String.from_str(method),
+        path = string.String.from_str(path),
+        query = query,
+        headers = headers,
+        body = body_data,
+        raw_url = string.String.from_str(raw_url)
+    ))
 
 
 function find_header_terminator(data: span[ubyte]) -> Option[ptr_uint]:
@@ -338,22 +332,10 @@ public async function write_response(stream: net.TcpStream, response: ref[Respon
     header_text.append("\r\nConnection: close\r\n\r\n")
 
     let header_bytes = text.as_byte_span(header_text.as_str())
-    let write_result = await stream.write_bytes(header_bytes)
-    match write_result:
-        Result.failure as payload:
-            return Result[ptr_uint, net.Error].failure(error = payload.error)
-        Result.success:
-            if response.body.len > 0:
-                let body_span = response.body.as_span()
-
-                let body_result = await stream.write_bytes(body_span)
-                match body_result:
-                    Result.failure as payload:
-                        return Result[ptr_uint, net.Error].failure(error = payload.error)
-                    Result.success:
-                        pass
-
-            return Result[ptr_uint, net.Error].success(value = header_bytes.len + response.body.len)
+    (await stream.write_bytes(header_bytes))?
+    if response.body.len > 0:
+        (await stream.write_bytes(response.body.as_span()))?
+    return Result[ptr_uint, net.Error].success(value = header_bytes.len + response.body.len)
 
 
 function append_ptr_uint(target: ref[string.String], value: ptr_uint) -> void:
@@ -481,44 +463,42 @@ function parse_serve_dir(args: span[str]) -> str:
 
 
 function guess_mime(file_path: str) -> str:
-    let ext = path_ops.extension(file_path)
-    match ext:
-        Option.none:
-            return "application/octet-stream"
-        Option.some as e:
-            if e.value.equal(".html") or e.value.equal(".htm"):
-                return "text/html"
-            if e.value.equal(".css"):
-                return "text/css"
-            if e.value.equal(".js"):
-                return "application/javascript"
-            if e.value.equal(".json"):
-                return "application/json"
-            if e.value.equal(".md"):
-                return "text/markdown"
-            if e.value.equal(".png"):
-                return "image/png"
-            if e.value.equal(".jpg") or e.value.equal(".jpeg"):
-                return "image/jpeg"
-            if e.value.equal(".gif"):
-                return "image/gif"
-            if e.value.equal(".svg"):
-                return "image/svg+xml"
-            if e.value.equal(".ico"):
-                return "image/x-icon"
-            if e.value.equal(".wasm"):
-                return "application/wasm"
-            if e.value.equal(".txt"):
-                return "text/plain"
-            if e.value.equal(".xml"):
-                return "application/xml"
-            if e.value.equal(".pdf"):
-                return "application/pdf"
-            if e.value.equal(".mp3"):
-                return "audio/mpeg"
-            if e.value.equal(".mp4"):
-                return "video/mp4"
-            return "application/octet-stream"
+    let e = path_ops.extension(file_path).unwrap_or("")
+    if e.len == 0:
+        return "application/octet-stream"
+    if e.equal(".html") or e.equal(".htm"):
+        return "text/html"
+    if e.equal(".css"):
+        return "text/css"
+    if e.equal(".js"):
+        return "application/javascript"
+    if e.equal(".json"):
+        return "application/json"
+    if e.equal(".md"):
+        return "text/markdown"
+    if e.equal(".png"):
+        return "image/png"
+    if e.equal(".jpg") or e.equal(".jpeg"):
+        return "image/jpeg"
+    if e.equal(".gif"):
+        return "image/gif"
+    if e.equal(".svg"):
+        return "image/svg+xml"
+    if e.equal(".ico"):
+        return "image/x-icon"
+    if e.equal(".wasm"):
+        return "application/wasm"
+    if e.equal(".txt"):
+        return "text/plain"
+    if e.equal(".xml"):
+        return "application/xml"
+    if e.equal(".pdf"):
+        return "application/pdf"
+    if e.equal(".mp3"):
+        return "audio/mpeg"
+    if e.equal(".mp4"):
+        return "video/mp4"
+    return "application/octet-stream"
 
 
 function has_header_end(data: span[ubyte]) -> bool:
@@ -637,88 +617,83 @@ function release_string_vec(values: ref[vec.Vec[string.String]]) -> void:
 
 
 async function serve_directory_index(stream: net.TcpStream, dir_path: str, url_prefix: str, head_only: bool) -> void:
-    let entries_result = fs.list_entries(dir_path)
-    match entries_result:
-        Result.failure:
-            await send_error(stream, 500, "Internal Server Error")
-            return
-        Result.success as entries_ok:
-            var entries = entries_ok.value
-            defer entries.release()
+    var entries = fs.list_entries(dir_path) else:
+        await send_error(stream, 500, "Internal Server Error")
+        return
+    defer entries.release()
 
-            var names = vec.Vec[string.String].create()
-            defer release_string_vec(ref_of(names))
+    var names = vec.Vec[string.String].create()
+    defer release_string_vec(ref_of(names))
 
-            var is_dir = vec.Vec[bool].create()
-            defer is_dir.release()
+    var is_dir = vec.Vec[bool].create()
+    defer is_dir.release()
 
-            var index: ptr_uint = 0
-            while index < entries.len():
-                match entries.get(index):
-                    Option.some as entry_name:
-                        let name_str = entry_name.value
-                        var child_path = path_ops.join(dir_path, name_str)
-                        defer child_path.release()
-                        let dir_flag = fs.is_directory(child_path.as_str())
-                        sorted_insert(ref_of(names), ref_of(is_dir), string.String.from_str(name_str), dir_flag)
-                    Option.none:
-                        pass
-                index += 1
+    var index: ptr_uint = 0
+    while index < entries.len():
+        let entry_ptr = entries.get(index)
+        if entry_ptr.is_some():
+            let entry_name = entry_ptr.unwrap()
+            let name_str = entry_name
+            var child_path = path_ops.join(dir_path, name_str)
+            defer child_path.release()
+            let dir_flag = fs.is_directory(child_path.as_str())
+            sorted_insert(ref_of(names), ref_of(is_dir), string.String.from_str(name_str), dir_flag)
+        index += 1
 
-            var body = string.String.with_capacity(4096)
-            defer body.release()
+    var body = string.String.with_capacity(4096)
+    defer body.release()
 
-            var escaped_path = html_escape(url_prefix)
-            defer escaped_path.release()
+    var escaped_path = html_escape(url_prefix)
+    defer escaped_path.release()
 
-            body.append("<!DOCTYPE html>\n<html>\n<head><meta charset=\"utf-8\"><title>Index of ")
-            body.append(escaped_path.as_str())
-            body.append("</title></head>\n<body>\n<h1>Index of ")
-            body.append(escaped_path.as_str())
-            body.append("</h1>\n<hr>\n<pre>\n")
+    body.append("<!DOCTYPE html>\n<html>\n<head><meta charset=\"utf-8\"><title>Index of ")
+    body.append(escaped_path.as_str())
+    body.append("</title></head>\n<body>\n<h1>Index of ")
+    body.append(escaped_path.as_str())
+    body.append("</h1>\n<hr>\n<pre>\n")
 
-            if url_prefix.len > 0 and not url_prefix.equal("/"):
-                body.append("<a href=\"../\">../</a>\n")
+    if url_prefix.len > 0 and not url_prefix.equal("/"):
+        body.append("<a href=\"../\">../</a>\n")
 
-            index = 0
-            while index < names.len():
-                let name_ptr = names.get(index) else:
-                    break
-                let dir_flag_ptr = is_dir.get(index) else:
-                    break
+    index = 0
+    while index < names.len():
+        let name_ptr = names.get(index) else:
+            break
+        let dir_flag_ptr = is_dir.get(index) else:
+            break
 
-                unsafe:
-                    let name_str = read(name_ptr).as_str()
-                    let is_directory = read(dir_flag_ptr)
+        unsafe:
+            let name_str = read(name_ptr).as_str()
+            let is_directory = read(dir_flag_ptr)
 
-                    var line = string.String.with_capacity(name_str.len + 64)
-                    defer line.release()
+            var line = string.String.with_capacity(name_str.len + 64)
+            defer line.release()
 
-                    var escaped_name = html_escape(name_str)
-                    defer escaped_name.release()
+            var escaped_name = html_escape(name_str)
+            defer escaped_name.release()
 
-                    if is_directory:
-                        line.append("<a href=\"")
-                        line.append(escaped_name.as_str())
-                        line.append("/\">")
-                        line.append(escaped_name.as_str())
-                        line.append("/</a>")
-                    else:
-                        line.append("<a href=\"")
-                        line.append(escaped_name.as_str())
-                        line.append("\">")
-                        line.append(escaped_name.as_str())
-                        line.append("</a>")
+            if is_directory:
+                line.append("<a href=\"")
+                line.append(escaped_name.as_str())
+                line.append("/\">")
+                line.append(escaped_name.as_str())
+                line.append("/</a>")
+            else:
+                line.append("<a href=\"")
+                line.append(escaped_name.as_str())
+                line.append("\">")
+                line.append(escaped_name.as_str())
+                line.append("</a>")
 
-                    line.append("\n")
-                    body.append(line.as_str())
+            line.append("\n")
+            body.append(line.as_str())
 
-                index += 1
+        index += 1
 
-            body.append("</pre>\n<hr>\n</body>\n</html>")
+    body.append("</pre>\n<hr>\n</body>\n</html>")
 
-            let body_span = text.as_byte_span(body.as_str())
-            await send_file_response(stream, 200, "OK", "text/html; charset=utf-8", body_span, head_only)
+    let body_span = text.as_byte_span(body.as_str())
+    await send_file_response(stream, 200, "OK", "text/html; charset=utf-8", body_span, head_only)
 
 
 async function handle_connection(stream: net.TcpStream, serve_dir: str) -> void:
@@ -730,15 +705,11 @@ async function handle_connection(stream: net.TcpStream, serve_dir: str) -> void:
 
     var headers_done = false
     while not headers_done:
-        let chunk_result = await conn.read_once(READ_BUFFER_SIZE)
-        match chunk_result:
-            Result.failure:
-                return
-            Result.success as chunk_ok:
-                var chunk = chunk_ok.value
-                buffer.append_span(chunk.as_span())
-                chunk.release()
-                headers_done = has_header_end(buffer.as_span())
+        var chunk = await conn.read_once(READ_BUFFER_SIZE) else:
+            return
+        buffer.append_span(chunk.as_span())
+        chunk.release()
+        headers_done = has_header_end(buffer.as_span())
 
     let raw = buffer.as_span()
     let header_text = text.utf8_byte_span_as_str(raw) else:
@@ -831,10 +802,9 @@ async function main(args: span[str]) -> void:
 
     while true:
         let accept_result = await listener.accept()
-        match accept_result:
-            Result.failure as accept_error:
-                var err = accept_error.error
-                stdio.print_format("accept error: %s\n", err.message.as_str())
-                err.release()
-            Result.success as stream_ok:
-                await handle_connection(stream_ok.value, serve_dir)
+        if accept_result.is_failure():
+            var err = accept_result.unwrap_error()
+            stdio.print_format("accept error: %s\n", err.message.as_str())
+            err.release()
+        else:
+            await handle_connection(accept_result.unwrap(), serve_dir)

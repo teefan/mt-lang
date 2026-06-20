@@ -161,13 +161,10 @@ function reader_check_remaining(reader: ref[Reader], count: ptr_uint) -> Result[
 
 
 function reader_read_byte(reader: ref[Reader]) -> Result[ubyte, Error]:
-    match reader_check_remaining(reader, 1):
-        Result.failure as payload:
-            return Result[ubyte, Error].failure(error = payload.error)
-        Result.success:
-            let value = unsafe: read(reader.data.data + reader.position)
-            reader.position += 1
-            return Result[ubyte, Error].success(value = value)
+    reader_check_remaining(reader, 1)?
+    let value = unsafe: read(reader.data.data + reader.position)
+    reader.position += 1
+    return Result[ubyte, Error].success(value = value)
 
 
 extending Reader:
@@ -176,131 +173,97 @@ extending Reader:
 
 
     public editable function read_ushort() -> Result[ushort, Error]:
-        match reader_check_remaining(ref_of(this), 2):
-            Result.failure as payload:
-                return Result[ushort, Error].failure(error = payload.error)
-            Result.success:
-                let low = ushort<-unsafe: read(this.data.data + this.position)
-                let high = ushort<-unsafe: read(this.data.data + this.position + 1)
-                this.position += 2
-                return Result[ushort, Error].success(value = (high << 8) | low)
+        reader_check_remaining(ref_of(this), 2)?
+        let low = ushort<-unsafe: read(this.data.data + this.position)
+        let high = ushort<-unsafe: read(this.data.data + this.position + 1)
+        this.position += 2
+        return Result[ushort, Error].success(value = (high << 8) | low)
 
 
     public editable function read_uint() -> Result[uint, Error]:
-        match reader_check_remaining(ref_of(this), 4):
-            Result.failure as payload:
-                return Result[uint, Error].failure(error = payload.error)
-            Result.success:
-                var value: uint = 0
-                unsafe:
-                    let b0 = uint<-read(this.data.data + this.position)
-                    let b1 = uint<-read(this.data.data + this.position + 1)
-                    let b2 = uint<-read(this.data.data + this.position + 2)
-                    let b3 = uint<-read(this.data.data + this.position + 3)
-                    value = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-                this.position += 4
-                return Result[uint, Error].success(value = value)
+        reader_check_remaining(ref_of(this), 4)?
+        var value: uint = 0
+        unsafe:
+            let b0 = uint<-read(this.data.data + this.position)
+            let b1 = uint<-read(this.data.data + this.position + 1)
+            let b2 = uint<-read(this.data.data + this.position + 2)
+            let b3 = uint<-read(this.data.data + this.position + 3)
+            value = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+        this.position += 4
+        return Result[uint, Error].success(value = value)
 
 
     public editable function read_ulong() -> Result[ulong, Error]:
-        match reader_check_remaining(ref_of(this), 8):
-            Result.failure as payload:
-                return Result[ulong, Error].failure(error = payload.error)
-            Result.success:
-                var value: ulong = 0
-                unsafe:
-                    let b0 = ulong<-read(this.data.data + this.position)
-                    let b1 = ulong<-read(this.data.data + this.position + 1)
-                    let b2 = ulong<-read(this.data.data + this.position + 2)
-                    let b3 = ulong<-read(this.data.data + this.position + 3)
-                    let b4 = ulong<-read(this.data.data + this.position + 4)
-                    let b5 = ulong<-read(this.data.data + this.position + 5)
-                    let b6 = ulong<-read(this.data.data + this.position + 6)
-                    let b7 = ulong<-read(this.data.data + this.position + 7)
-                    value = (
-                        b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-                        | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56)
-                    )
-                this.position += 8
-                return Result[ulong, Error].success(value = value)
+        reader_check_remaining(ref_of(this), 8)?
+        var value: ulong = 0
+        unsafe:
+            let b0 = ulong<-read(this.data.data + this.position)
+            let b1 = ulong<-read(this.data.data + this.position + 1)
+            let b2 = ulong<-read(this.data.data + this.position + 2)
+            let b3 = ulong<-read(this.data.data + this.position + 3)
+            let b4 = ulong<-read(this.data.data + this.position + 4)
+            let b5 = ulong<-read(this.data.data + this.position + 5)
+            let b6 = ulong<-read(this.data.data + this.position + 6)
+            let b7 = ulong<-read(this.data.data + this.position + 7)
+            value = (
+                b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+                | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56)
+            )
+        this.position += 8
+        return Result[ulong, Error].success(value = value)
 
 
     public editable function read_byte() -> Result[byte, Error]:
-        match this.read_ubyte():
-            Result.failure as payload:
-                return Result[byte, Error].failure(error = payload.error)
-            Result.success as payload:
-                return Result[byte, Error].success(value = byte<-payload.value)
+        let value = this.read_ubyte()?
+        return Result[byte, Error].success(value = byte<-value)
 
 
     public editable function read_short() -> Result[short, Error]:
-        match this.read_ushort():
-            Result.failure as payload:
-                return Result[short, Error].failure(error = payload.error)
-            Result.success as payload:
-                return Result[short, Error].success(value = short<-payload.value)
+        let value = this.read_ushort()?
+        return Result[short, Error].success(value = short<-value)
 
 
     public editable function read_int() -> Result[int, Error]:
-        match this.read_uint():
-            Result.failure as payload:
-                return Result[int, Error].failure(error = payload.error)
-            Result.success as payload:
-                return Result[int, Error].success(value = int<-payload.value)
+        let value = this.read_uint()?
+        return Result[int, Error].success(value = int<-value)
 
 
     public editable function read_long() -> Result[long, Error]:
-        match this.read_ulong():
-            Result.failure as payload:
-                return Result[long, Error].failure(error = payload.error)
-            Result.success as payload:
-                return Result[long, Error].success(value = long<-payload.value)
+        let value = this.read_ulong()?
+        return Result[long, Error].success(value = long<-value)
 
 
     public editable function read_float() -> Result[float, Error]:
-        match this.read_uint():
-            Result.failure as payload:
-                return Result[float, Error].failure(error = payload.error)
-            Result.success as payload:
-                return Result[float, Error].success(value = unsafe: reinterpret[float](payload.value))
+        let value = this.read_uint()?
+        return Result[float, Error].success(value = unsafe: reinterpret[float](value))
 
 
     public editable function read_double() -> Result[double, Error]:
-        match this.read_ulong():
-            Result.failure as payload:
-                return Result[double, Error].failure(error = payload.error)
-            Result.success as payload:
-                return Result[double, Error].success(value = unsafe: reinterpret[double](payload.value))
+        let value = this.read_ulong()?
+        return Result[double, Error].success(value = unsafe: reinterpret[double](value))
 
 
     public editable function read_bool() -> Result[bool, Error]:
-        match this.read_ubyte():
-            Result.failure as payload:
-                return Result[bool, Error].failure(error = payload.error)
-            Result.success as payload:
-                let value = payload.value
-                if value == 0:
-                    return Result[bool, Error].success(value = false)
-                if value == 1:
-                    return Result[bool, Error].success(value = true)
-                return Result[bool, Error].failure(error = binary_error(-2, "binary reader invalid bool value"))
+        let value = this.read_ubyte()?
+        if value == 0:
+            return Result[bool, Error].success(value = false)
+        if value == 1:
+            return Result[bool, Error].success(value = true)
+        return Result[bool, Error].failure(error = binary_error(-2, "binary reader invalid bool value"))
 
 
     public editable function read_bytes(count: ptr_uint) -> Result[bytes.Bytes, Error]:
         if count == 0:
             return Result[bytes.Bytes, Error].success(value = bytes.Bytes.empty())
 
-        match reader_check_remaining(ref_of(this), count):
-            Result.failure as payload:
-                return Result[bytes.Bytes, Error].failure(error = payload.error)
-            Result.success:
-                unsafe:
-                    let result = bytes.Bytes.copy(span[ubyte](
-                        data = this.data.data + this.position,
-                        len = count
-                    ))
-                    this.position += count
-                    return Result[bytes.Bytes, Error].success(value = result)
+        reader_check_remaining(ref_of(this), count)?
+        unsafe:
+            let result = bytes.Bytes.copy(span[ubyte](
+                data = this.data.data + this.position,
+                len = count
+            ))
+            this.position += count
+            return Result[bytes.Bytes, Error].success(value = result)
 
 
     public editable function read_span(count: ptr_uint) -> Result[span[ubyte], Error]:
@@ -308,52 +271,37 @@ extending Reader:
             let empty = unsafe: span[ubyte](data = this.data.data, len = 0)
             return Result[span[ubyte], Error].success(value = empty)
 
-        match reader_check_remaining(ref_of(this), count):
-            Result.failure as payload:
-                return Result[span[ubyte], Error].failure(error = payload.error)
-            Result.success:
-                unsafe:
-                    let result = span[ubyte](data = this.data.data + this.position, len = count)
-                    this.position += count
-                    return Result[span[ubyte], Error].success(value = result)
+        reader_check_remaining(ref_of(this), count)?
+        unsafe:
+            let result = span[ubyte](data = this.data.data + this.position, len = count)
+            this.position += count
+            return Result[span[ubyte], Error].success(value = result)
 
 
     public editable function read_str() -> Result[string.String, Error]:
-        match this.read_uint():
-            Result.failure as payload:
-                return Result[string.String, Error].failure(error = payload.error)
-            Result.success as payload:
-                let length = ptr_uint<-payload.value
-                if length == 0:
-                    return Result[string.String, Error].success(value = string.String.create())
+        let length = ptr_uint<-this.read_uint()?
+        if length == 0:
+            return Result[string.String, Error].success(value = string.String.create())
 
-                let byte_result = this.read_bytes(length)
-                match byte_result:
-                    Result.failure as read_error:
-                        return Result[string.String, Error].failure(error = read_error.error)
-                    Result.success as byte_payload:
-                        var data = byte_payload.value
-                        let str_opt = text.utf8_byte_span_as_str(data.as_span())
-                        match str_opt:
-                            Option.none:
-                                data.release()
-                                return Result[string.String, Error].failure(error = binary_error(
-                                    -2,
-                                    "binary reader invalid UTF-8 string"
-                                ))
-                            Option.some as str_payload:
-                                let result = string.String.from_str(str_payload.value)
-                                data.release()
-                                return Result[string.String, Error].success(value = result)
+        var data = this.read_bytes(length)?
+        let str_opt = text.utf8_byte_span_as_str(data.as_span())
+        match str_opt:
+            Option.none:
+                data.release()
+                return Result[string.String, Error].failure(error = binary_error(
+                    -2,
+                    "binary reader invalid UTF-8 string"
+                ))
+            Option.some as str_payload:
+                let result = string.String.from_str(str_payload.value)
+                data.release()
+                return Result[string.String, Error].success(value = result)
 
 
     public editable function skip(count: ptr_uint) -> Result[bool, Error]:
-        match reader_check_remaining(ref_of(this), count):
-            Result.failure as payload:
-                return Result[bool, Error].failure(error = payload.error)
-            Result.success:
-                this.position += count
-                return Result[bool, Error].success(value = true)
+        reader_check_remaining(ref_of(this), count)?
+        this.position += count
+        return Result[bool, Error].success(value = true)
 
 
     public function remaining() -> ptr_uint:

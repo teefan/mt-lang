@@ -149,12 +149,7 @@ extending Mailbox[T]:
         unsafe: read(state).queue.push_back(value)
         let status_code = libuv.async_send(handle)
         if status_code != 0:
-            let rollback = unsafe: read(state).queue.pop_back()
-            match rollback:
-                Option.none:
-                    rollback
-                Option.some as payload:
-                    payload.value
+            let _ = unsafe: read(state).queue.pop_back()
             return Result[bool, Error].failure(error = libuv_error(status_code))
 
         return Result[bool, Error].success(value = true)
@@ -181,11 +176,9 @@ extending Mailbox[T]:
         var drained = vec.Vec[T].with_capacity(unsafe: read(state).queue.len())
         while true:
             let message = unsafe: read(state).queue.pop_front()
-            match message:
-                Option.none:
-                    return drained
-                Option.some as payload:
-                    drained.push(payload.value)
+            if message.is_none():
+                return drained
+            drained.push(message.unwrap())
 
 
     public function is_empty() -> bool:

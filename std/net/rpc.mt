@@ -42,11 +42,7 @@ public function parse_request_id(data: span[ubyte]) -> Result[uint, Error]:
     if data.len < header_bytes:
         return Result[uint, Error].failure(error = rpc_error(err_unexpected, "rpc frame too small"))
     var r = bin.reader(data)
-    match r.read_uint():
-        Result.failure:
-            return Result[uint, Error].failure(error = rpc_error(err_unexpected, "malformed rpc frame"))
-        Result.success as rp:
-            return Result[uint, Error].success(value = rp.value)
+    return r.read_uint().map_err(proc(_: bin.Error) -> Error: rpc_error(err_unexpected, "malformed rpc frame"))
 
 
 public function payload_after_header(data: span[ubyte]) -> span[ubyte]:

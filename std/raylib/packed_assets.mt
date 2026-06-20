@@ -111,101 +111,64 @@ public function close_reader(reader: ref[Reader]) -> void:
 
 
 public function load_image(reader: pack.Reader, logical_path: str) -> Result[rl.Image, Error]:
-    let file_type_result = detect_file_type(logical_path)
-    match file_type_result:
-        Result.failure as payload:
-            return Result[rl.Image, Error].failure(error= payload.error)
-        Result.success as file_type_payload:
-            let data_result = map_pack_result(reader.read_bytes(logical_path))
-            match data_result:
-                Result.failure as payload:
-                    return Result[rl.Image, Error].failure(error= payload.error)
-                Result.success as data_payload:
-                    var data = data_payload.value
-                    defer data.release()
+    let file_type = detect_file_type(logical_path)?
+    var data = map_pack_result(reader.read_bytes(logical_path))?
+    defer data.release()
 
-                    let image = rl.load_image_from_memory(file_type_payload.value, data.as_span())
-                    if not rl.is_image_valid(image):
-                        return Result[rl.Image, Error].failure(error= Error.invalid_image)
+    let image = rl.load_image_from_memory(file_type, data.as_span())
+    if not rl.is_image_valid(image):
+        return Result[rl.Image, Error].failure(error= Error.invalid_image)
 
-                    return Result[rl.Image, Error].success(value= image)
+    return Result[rl.Image, Error].success(value= image)
 
 
 public function load_texture(reader: pack.Reader, logical_path: str) -> Result[rl.Texture2D, Error]:
-    let image_result = load_image(reader, logical_path)
-    match image_result:
-        Result.failure as payload:
-            return Result[rl.Texture2D, Error].failure(error= payload.error)
-        Result.success as image_payload:
-            let image = image_payload.value
-            defer rl.unload_image(image)
+    let image = load_image(reader, logical_path)?
+    defer rl.unload_image(image)
 
-            let texture = rl.load_texture_from_image(image)
-            if not rl.is_texture_valid(texture):
-                return Result[rl.Texture2D, Error].failure(error= Error.invalid_texture)
+    let texture = rl.load_texture_from_image(image)
+    if not rl.is_texture_valid(texture):
+        return Result[rl.Texture2D, Error].failure(error= Error.invalid_texture)
 
-            return Result[rl.Texture2D, Error].success(value= texture)
+    return Result[rl.Texture2D, Error].success(value= texture)
 
 
 public function load_wave(reader: pack.Reader, logical_path: str) -> Result[rl.Wave, Error]:
-    let file_type_result = detect_file_type(logical_path)
-    match file_type_result:
-        Result.failure as payload:
-            return Result[rl.Wave, Error].failure(error= payload.error)
-        Result.success as file_type_payload:
-            let data_result = map_pack_result(reader.read_bytes(logical_path))
-            match data_result:
-                Result.failure as payload:
-                    return Result[rl.Wave, Error].failure(error= payload.error)
-                Result.success as data_payload:
-                    var data = data_payload.value
-                    defer data.release()
+    let file_type = detect_file_type(logical_path)?
+    var data = map_pack_result(reader.read_bytes(logical_path))?
+    defer data.release()
 
-                    let wave = rl.load_wave_from_memory(file_type_payload.value, data.as_span())
-                    if not rl.is_wave_valid(wave):
-                        return Result[rl.Wave, Error].failure(error= Error.invalid_wave)
+    let wave = rl.load_wave_from_memory(file_type, data.as_span())
+    if not rl.is_wave_valid(wave):
+        return Result[rl.Wave, Error].failure(error= Error.invalid_wave)
 
-                    return Result[rl.Wave, Error].success(value= wave)
+    return Result[rl.Wave, Error].success(value= wave)
 
 
 public function load_sound(reader: pack.Reader, logical_path: str) -> Result[rl.Sound, Error]:
-    let wave_result = load_wave(reader, logical_path)
-    match wave_result:
-        Result.failure as payload:
-            return Result[rl.Sound, Error].failure(error= payload.error)
-        Result.success as wave_payload:
-            let wave = wave_payload.value
-            defer rl.unload_wave(wave)
+    let wave = load_wave(reader, logical_path)?
+    defer rl.unload_wave(wave)
 
-            let sound = rl.load_sound_from_wave(wave)
-            if not rl.is_sound_valid(sound):
-                return Result[rl.Sound, Error].failure(error= Error.invalid_sound)
+    let sound = rl.load_sound_from_wave(wave)
+    if not rl.is_sound_valid(sound):
+        return Result[rl.Sound, Error].failure(error= Error.invalid_sound)
 
-            return Result[rl.Sound, Error].success(value= sound)
+    return Result[rl.Sound, Error].success(value= sound)
 
 
 public function load_music(reader: pack.Reader, logical_path: str) -> Result[PackedMusic, Error]:
-    let file_type_result = detect_file_type(logical_path)
-    match file_type_result:
-        Result.failure as payload:
-            return Result[PackedMusic, Error].failure(error= payload.error)
-        Result.success as file_type_payload:
-            let data_result = map_pack_result(reader.read_bytes(logical_path))
-            match data_result:
-                Result.failure as payload:
-                    return Result[PackedMusic, Error].failure(error= payload.error)
-                Result.success as data_payload:
-                    var data = data_payload.value
-                    let span = data.as_span()
-                    let music = rl.load_music_stream_from_memory(file_type_payload.value, span.data, int<-span.len)
-                    if rl.is_music_valid(music):
-                        return Result[PackedMusic, Error].success(value= PackedMusic(
-                            music = music,
-                            backing_data = data
-                        ))
+    let file_type = detect_file_type(logical_path)?
+    var data = map_pack_result(reader.read_bytes(logical_path))?
+    let span = data.as_span()
+    let music = rl.load_music_stream_from_memory(file_type, span.data, int<-span.len)
+    if rl.is_music_valid(music):
+        return Result[PackedMusic, Error].success(value= PackedMusic(
+            music = music,
+            backing_data = data
+        ))
 
-                    data.release()
-                    return Result[PackedMusic, Error].failure(error= Error.invalid_music)
+    data.release()
+    return Result[PackedMusic, Error].failure(error= Error.invalid_music)
 
 
 function open_pack_relative_to_application(pack_name: str) -> Result[pack.Reader, Error]:
@@ -269,11 +232,9 @@ function from_pack_error(error: pack.Error) -> Error:
 
 
 function map_pack_result[T](result: Result[T, pack.Error]) -> Result[T, Error]:
-    match result:
-        Result.failure as payload:
-            return Result[T, Error].failure(error= from_pack_error(payload.error))
-        Result.success as payload:
-            return Result[T, Error].success(value= payload.value)
+    return result.map_err(proc(e: pack.Error) -> Error:
+        from_pack_error(e)
+    )
 
 
 function file_type(logical_path: str) -> Option[str]:

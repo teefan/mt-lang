@@ -1516,7 +1516,11 @@ module MilkTea
 
       def proc_type_compatible?(actual_type, expected_type)
         return true unless expected_type
-        return actual_type == expected_type if proc_type?(expected_type)
+        if proc_type?(expected_type)
+          return true if expected_type.is_a?(Types::Proc) && actual_type.is_a?(Types::Proc) &&
+            contains_type_var?(expected_type)
+          return actual_type == expected_type
+        end
 
         false
       end

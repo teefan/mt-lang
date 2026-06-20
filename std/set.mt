@@ -109,18 +109,8 @@ extending Set[T]:
 
 
     public editable function insert(value: T) -> bool:
-        let previous = this.values.set(value, true)
-        match previous:
-            Option.none:
-                return true
-            Option.some:
-                return false
+        return this.values.set(value, true).is_none()
 
 
     public editable function remove(value: T) -> bool:
-        let removed = this.values.remove(value)
-        match removed:
-            Option.none:
-                return false
-            Option.some:
-                return true
+        return this.values.remove(value).is_some()

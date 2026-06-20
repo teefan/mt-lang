@@ -290,11 +290,9 @@ extending Map[K, V]:
 
     public editable function remove(key: K) -> Option[V]:
         let removed = this.remove_entry(key)
-        match removed:
-            Option.none:
-                return Option[V].none
-            Option.some as payload:
-                return Option[V].some(value = payload.value.value)
+        if removed.is_none():
+            return Option[V].none
+        return Option[V].some(value = removed.unwrap().value)
 
 
 extending Keys[K, V]:

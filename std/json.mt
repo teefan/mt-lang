@@ -374,26 +374,22 @@ function build_raw_value(value: Value) -> Result[ptr[cjson.JSON], Error]:
 
 
 function render_with_mode(value: Value, pretty: bool) -> Result[string.String, Error]:
-    match build_raw_value(value):
-        Result.failure as payload:
-            return Result[string.String, Error].failure(error = payload.error)
-        Result.success as payload:
-            let raw_value = payload.value
-            defer cjson.delete(raw_value)
+    let raw_value = build_raw_value(value)?
+    defer cjson.delete(raw_value)
 
-            if pretty:
-                let rendered_ptr = cjson.print(raw_value) else:
-                    return Result[string.String, Error].failure(error = error_message("json print failed"))
-                defer raw.cJSON_free(unsafe: ptr[void]<-rendered_ptr)
-                return Result[
-                    string.String,
-                    Error
-                ].success(value = string.String.from_str(text.chars_as_str(rendered_ptr)))
+    if pretty:
+        let rendered_ptr = cjson.print(raw_value) else:
+            return Result[string.String, Error].failure(error = error_message("json print failed"))
+        defer raw.cJSON_free(unsafe: ptr[void]<-rendered_ptr)
+        return Result[
+            string.String,
+            Error
+        ].success(value = string.String.from_str(text.chars_as_str(rendered_ptr)))
 
-            let rendered_ptr = cjson.print_unformatted(raw_value) else:
-                return Result[string.String, Error].failure(error = error_message("json print failed"))
-            defer raw.cJSON_free(unsafe: ptr[void]<-rendered_ptr)
-            return Result[string.String, Error].success(value = string.String.from_str(text.chars_as_str(rendered_ptr)))
+    let rendered_ptr = cjson.print_unformatted(raw_value) else:
+        return Result[string.String, Error].failure(error = error_message("json print failed"))
+    defer raw.cJSON_free(unsafe: ptr[void]<-rendered_ptr)
+    return Result[string.String, Error].success(value = string.String.from_str(text.chars_as_str(rendered_ptr)))
 
 
 public function parse(text_value: str) -> Result[Value, Error]:

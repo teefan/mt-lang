@@ -306,12 +306,8 @@ function poll_on(runtime: aio.Runtime, fd: int, events: int) -> Task[Result[int,
 
 async function wait_for_io(runtime: aio.Runtime, fd: int, status_code: int) -> Result[bool, Error]:
     let poll_result = await poll_on(runtime, fd, poll_events_for_status(status_code))
-    match poll_result:
-        Result.failure as payload:
-            return Result[bool, Error].failure(error = payload.error)
-        Result.success as payload:
-            payload.value
-            return Result[bool, Error].success(value = true)
+    poll_result?
+    return Result[bool, Error].success(value = true)
 
 
 function begin_stream_operation(state_raw: ptr[StreamState]?) -> Result[ptr[StreamState], Error]:
@@ -338,36 +334,27 @@ function end_stream_operation(state: ptr[StreamState]) -> void:
 
 
 async function handshake_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?) -> Result[bool, Error]:
-    let begin_result = begin_stream_operation(state_raw)
-    match begin_result:
-        Result.failure as payload:
-            return Result[bool, Error].failure(error = payload.error)
-        Result.success as payload:
-            let state = payload.value
-            defer end_stream_operation(state)
+    let state = begin_stream_operation(state_raw)?
+    defer end_stream_operation(state)
 
-            while true:
-                let client = unsafe: read(state).client else:
-                    return Result[bool, Error].failure(error = tls_error("tls stream is released"))
+    while true:
+        let client = unsafe: read(state).client else:
+            return Result[bool, Error].failure(error = tls_error("tls stream is released"))
 
-                var raw_error = zero[c.mt_tls_error]
-                let status_code = c.mt_tls_client_handshake(client, raw_error)
-                if status_code == tls_io_ready:
-                    return Result[bool, Error].success(value = true)
+        var raw_error = zero[c.mt_tls_error]
+        let status_code = c.mt_tls_client_handshake(client, raw_error)
+        if status_code == tls_io_ready:
+            return Result[bool, Error].success(value = true)
 
-                if status_code == tls_io_want_read or status_code == tls_io_want_write:
-                    let wait_result = await wait_for_io(runtime, unsafe: read(state).fd, status_code)
-                    match wait_result:
-                        Result.failure as wait_error_payload:
-                            return Result[bool, Error].failure(error = wait_error_payload.error)
-                        Result.success as wait_payload:
-                            wait_payload.value
-                            continue
+        if status_code == tls_io_want_read or status_code == tls_io_want_write:
+            let wait_result = await wait_for_io(runtime, unsafe: read(state).fd, status_code)
+            wait_result?
+            continue
 
-                if status_code == tls_io_eof:
-                    return Result[bool, Error].failure(error = tls_error("tls stream closed during handshake"))
+        if status_code == tls_io_eof:
+            return Result[bool, Error].failure(error = tls_error("tls stream closed during handshake"))
 
-                return Result[bool, Error].failure(error = take_error(raw_error, "tls connect failed"))
+        return Result[bool, Error].failure(error = take_error(raw_error, "tls connect failed"))
 
 
 async function write_on(
@@ -378,50 +365,41 @@ async function write_on(
     if content.len == 0:
         return Result[ptr_uint, Error].success(value = 0)
 
-    let begin_result = begin_stream_operation(state_raw)
-    match begin_result:
-        Result.failure as payload:
-            return Result[ptr_uint, Error].failure(error = payload.error)
-        Result.success as payload:
-            let state = payload.value
-            defer end_stream_operation(state)
+    let state = begin_stream_operation(state_raw)?
+    defer end_stream_operation(state)
 
-            var offset: ptr_uint = 0
-            while offset < content.len:
-                let client = unsafe: read(state).client else:
-                    return Result[ptr_uint, Error].failure(error = tls_error("tls stream is released"))
+    var offset: ptr_uint = 0
+    while offset < content.len:
+        let client = unsafe: read(state).client else:
+            return Result[ptr_uint, Error].failure(error = tls_error("tls stream is released"))
 
-                var transferred: ptr_uint = 0
-                var raw_error = zero[c.mt_tls_error]
-                let status_code = c.mt_tls_client_write(
-                    client,
-                    unsafe: content.data + offset,
-                    content.len - offset,
-                    transferred,
-                    raw_error
-                )
-                if status_code == tls_io_ready:
-                    if transferred == 0:
-                        return Result[ptr_uint, Error].failure(error = tls_error("tls write made no progress"))
+        var transferred: ptr_uint = 0
+        var raw_error = zero[c.mt_tls_error]
+        let status_code = c.mt_tls_client_write(
+            client,
+            unsafe: content.data + offset,
+            content.len - offset,
+            transferred,
+            raw_error
+        )
+        if status_code == tls_io_ready:
+            if transferred == 0:
+                return Result[ptr_uint, Error].failure(error = tls_error("tls write made no progress"))
 
-                    offset += transferred
-                    continue
+            offset += transferred
+            continue
 
-                if status_code == tls_io_want_read or status_code == tls_io_want_write:
-                    let wait_result = await wait_for_io(runtime, unsafe: read(state).fd, status_code)
-                    match wait_result:
-                        Result.failure as wait_error_payload:
-                            return Result[ptr_uint, Error].failure(error = wait_error_payload.error)
-                        Result.success as wait_payload:
-                            wait_payload.value
-                            continue
+        if status_code == tls_io_want_read or status_code == tls_io_want_write:
+            let wait_result = await wait_for_io(runtime, unsafe: read(state).fd, status_code)
+            wait_result?
+            continue
 
-                if status_code == tls_io_eof:
-                    return Result[ptr_uint, Error].failure(error = tls_error("tls stream closed during write"))
+        if status_code == tls_io_eof:
+            return Result[ptr_uint, Error].failure(error = tls_error("tls stream closed during write"))
 
-                return Result[ptr_uint, Error].failure(error = take_error(raw_error, "tls write failed"))
+        return Result[ptr_uint, Error].failure(error = take_error(raw_error, "tls write failed"))
 
-            return Result[ptr_uint, Error].success(value = offset)
+    return Result[ptr_uint, Error].success(value = offset)
 
 
 async function read_once_on(
@@ -432,76 +410,62 @@ async function read_once_on(
     if max_bytes == 0:
         return Result[bytes.Bytes, Error].failure(error = tls_error("tls read requires max_bytes > 0"))
 
-    let begin_result = begin_stream_operation(state_raw)
-    match begin_result:
-        Result.failure as payload:
-            return Result[bytes.Bytes, Error].failure(error = payload.error)
-        Result.success as payload:
-            let state = payload.value
-            defer end_stream_operation(state)
+    let state = begin_stream_operation(state_raw)?
+    defer end_stream_operation(state)
 
-            let buffer = heap.must_alloc[ubyte](max_bytes)
-            while true:
-                let client = unsafe: read(state).client else:
-                    unsafe: heap.release(buffer)
-                    return Result[bytes.Bytes, Error].failure(error = tls_error("tls stream is released"))
+    let buffer = heap.must_alloc[ubyte](max_bytes)
+    while true:
+        let client = unsafe: read(state).client else:
+            unsafe: heap.release(buffer)
+            return Result[bytes.Bytes, Error].failure(error = tls_error("tls stream is released"))
 
-                var transferred: ptr_uint = 0
-                var raw_error = zero[c.mt_tls_error]
-                let status_code = c.mt_tls_client_read(client, buffer, max_bytes, transferred, raw_error)
-                if status_code == tls_io_ready:
-                    if transferred == 0:
-                        heap.release(buffer)
-                        return Result[bytes.Bytes, Error].success(value = bytes.Bytes.empty())
-
-                    return Result[bytes.Bytes, Error].success(value = bytes.Bytes(data = buffer, len = transferred))
-
-                if status_code == tls_io_eof:
-                    heap.release(buffer)
-                    return Result[bytes.Bytes, Error].success(value = bytes.Bytes.empty())
-
-                if status_code == tls_io_want_read or status_code == tls_io_want_write:
-                    let wait_result = await wait_for_io(runtime, unsafe: read(state).fd, status_code)
-                    match wait_result:
-                        Result.failure as wait_error_payload:
-                            heap.release(buffer)
-                            return Result[bytes.Bytes, Error].failure(error = wait_error_payload.error)
-                        Result.success as wait_payload:
-                            wait_payload.value
-                            continue
-
+        var transferred: ptr_uint = 0
+        var raw_error = zero[c.mt_tls_error]
+        let status_code = c.mt_tls_client_read(client, buffer, max_bytes, transferred, raw_error)
+        if status_code == tls_io_ready:
+            if transferred == 0:
                 heap.release(buffer)
-                return Result[bytes.Bytes, Error].failure(error = take_error(raw_error, "tls read failed"))
+                return Result[bytes.Bytes, Error].success(value = bytes.Bytes.empty())
+
+            return Result[bytes.Bytes, Error].success(value = bytes.Bytes(data = buffer, len = transferred))
+
+        if status_code == tls_io_eof:
+            heap.release(buffer)
+            return Result[bytes.Bytes, Error].success(value = bytes.Bytes.empty())
+
+        if status_code == tls_io_want_read or status_code == tls_io_want_write:
+            let wait_result = await wait_for_io(runtime, unsafe: read(state).fd, status_code)
+            match wait_result:
+                Result.failure as wait_error_payload:
+                    heap.release(buffer)
+                    return Result[bytes.Bytes, Error].failure(error = wait_error_payload.error)
+                Result.success as wait_payload:
+                    wait_payload.value
+                    continue
+
+        heap.release(buffer)
+        return Result[bytes.Bytes, Error].failure(error = take_error(raw_error, "tls read failed"))
 
 
 async function shutdown_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?) -> Result[bool, Error]:
-    let begin_result = begin_stream_operation(state_raw)
-    match begin_result:
-        Result.failure as payload:
-            return Result[bool, Error].failure(error = payload.error)
-        Result.success as payload:
-            let state = payload.value
-            defer end_stream_operation(state)
+    let state = begin_stream_operation(state_raw)?
+    defer end_stream_operation(state)
 
-            while true:
-                let client = unsafe: read(state).client else:
-                    return Result[bool, Error].failure(error = tls_error("tls stream is released"))
+    while true:
+        let client = unsafe: read(state).client else:
+            return Result[bool, Error].failure(error = tls_error("tls stream is released"))
 
-                var raw_error = zero[c.mt_tls_error]
-                let status_code = c.mt_tls_client_shutdown(client, raw_error)
-                if status_code == tls_io_ready:
-                    return Result[bool, Error].success(value = true)
+        var raw_error = zero[c.mt_tls_error]
+        let status_code = c.mt_tls_client_shutdown(client, raw_error)
+        if status_code == tls_io_ready:
+            return Result[bool, Error].success(value = true)
 
-                if status_code == tls_io_want_read or status_code == tls_io_want_write:
-                    let wait_result = await wait_for_io(runtime, unsafe: read(state).fd, status_code)
-                    match wait_result:
-                        Result.failure as wait_error_payload:
-                            return Result[bool, Error].failure(error = wait_error_payload.error)
-                        Result.success as wait_payload:
-                            wait_payload.value
-                            continue
+        if status_code == tls_io_want_read or status_code == tls_io_want_write:
+            let wait_result = await wait_for_io(runtime, unsafe: read(state).fd, status_code)
+            wait_result?
+            continue
 
-                return Result[bool, Error].failure(error = take_error(raw_error, "tls shutdown failed"))
+        return Result[bool, Error].failure(error = take_error(raw_error, "tls shutdown failed"))
 
 
 public async function connect_on(runtime: aio.Runtime, host: str, port: int) -> Result[Stream, Error]:

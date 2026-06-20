@@ -181,7 +181,7 @@ Rules for `let ... else:` and `var ... else:`:
 - `let _ = expr else:` checks success without binding a name.
 - The `else` block must terminate control flow.
 
-Postfix Result propagation:
+Postfix Result/Option propagation:
 
 ```mt
 let parsed = parse(input)?
@@ -189,14 +189,14 @@ let lowered = lower(parsed)?
 return Result[Output, Error].success(value= lowered)
 ```
 
-- `expr?` requires `Result[T, E]` with a non-`void` success type.
+- `expr?` requires `Option[T]` or `Result[T, E]` with a non-`void` success type. Any variant with matching arm structure (`some(value: T)`/`none` or `success(value: T)`/`failure(error: E)`) also works.
 - On success, `expr?` evaluates to the unwrapped `T`.
-- On failure, `expr?` returns `Result[_, E].failure(error= ...)` from the enclosing function or proc.
-- As an expression statement, `expr?` also accepts `Result[void, E]`; success continues and failure returns early.
+- On failure, `expr?` returns `Option[_].none` or `Result[_, E].failure(error= ...)` from the enclosing function or proc.
+- As an expression statement, `expr?` also accepts `Option[void]` or `Result[void, E]`; success continues and failure returns early.
 - `expr?` is only allowed inside function and proc bodies.
-- Inside `async` functions, failure completes the task early with the same `Result` failure.
+- Inside `async` functions, failure completes the task early.
 - `expr?` is not allowed inside `defer` blocks.
-- The enclosing function or proc must return `Result[_, E]` with the same error type `E`.
+- The enclosing function or proc must return a compatible type — `Option[_]` or `Result[_, E]` with the same error type `E`.
 - `let _ = expr else:` is still useful when you need an explicit `else` block or `else as error:` binding.
 
 Callable and `ref[...]` rules:

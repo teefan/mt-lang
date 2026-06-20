@@ -158,9 +158,9 @@ module MilkTea
       PRELUDE_MODULE_PATHS = %w[std.option std.result].freeze
 
       def install_prelude_types
-        return if PRELUDE_MODULE_PATHS.include?(@ctx.module_name)
-
         PRELUDE_MODULE_PATHS.each do |module_path|
+          next if module_path == @ctx.module_name
+
           module_binding = @ctx.imported_modules[module_path]
           unless module_binding
             install_fallback_builtin_type(module_path)
@@ -171,7 +171,8 @@ module MilkTea
             @ctx.types[type_name] = type unless @ctx.types.key?(type_name)
           end
 
-          @ctx.imports[module_path] = module_binding unless @ctx.imports.key?(module_path)
+          already_imported = @ctx.imports.any? { |_, existing_binding| existing_binding == module_binding }
+          @ctx.imports[module_path] = module_binding unless @ctx.imports.key?(module_path) || already_imported
         end
       end
 
