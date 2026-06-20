@@ -1120,7 +1120,7 @@ GLSL
 
 Ordinary `"..."` and `c"..."` literals may continue across following indented lines when each continued line starts with the same literal kind and contains nothing else. The segments concatenate exactly with no inserted separator, so any spaces or punctuation between pieces must be written explicitly.
 
-In the VS Code extension, specific heredoc tags opt into embedded highlighting without changing the Milk Tea type: `GLSL`, `VERT`, `FRAG`, `COMP`, `JSON`, `JSONC`, and `SQL`. These still produce ordinary `str` or `cstr` values, and SQL heredocs should still use bound parameters rather than string interpolation.
+In the VS Code extension, specific heredoc tags opt into embedded highlighting without changing the Milk Tea type: `GLSL`, `VERT`, `FRAG`, `COMP`, `JSON`, `JSONC`, `SQL`, `HTML`, and `MT`. `MT` recursively applies Milk Tea syntax highlighting to the heredoc content.
 
 Format strings have type `str` and are valid anywhere a `str` value is accepted. Interpolated expressions must be one of: `str`, `cstr`, `bool`, a numeric primitive, an integer-backed enum or flags type, or a type implementing both `format_len() -> ptr_uint` and `append_format(output: ref[std.string.String]) -> void`. A precision specifier `:.N` is allowed on `float` and `double` interpolations. Integer-base specifiers `:x` / `:X` (hex), `:o` / `:O` (octal), and `:b` / `:B` (binary) are allowed on integer primitives and integer-backed enum/flags interpolations.
 

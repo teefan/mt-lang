@@ -4,6 +4,7 @@
 
 import std.vec
 import std.map
+import std.str
 import mtc.types
 import mtc.ast
 

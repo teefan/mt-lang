@@ -702,24 +702,24 @@ extending TypeArena:
         match t:
             Type.primitive as p:
                 return p.name
-            Type.nullable as nb:
-                let base = this.type_to_str_impl(nb.base, 0z)
-                return f"#{base}?"
-            Type.pointer_type as pt:
-                let inner = this.type_to_str_impl(pt.pointee, 0z)
-                return f"ptr[#{inner}]"
-            Type.struct_type as st:
-                if st.module_name == "":
-                    return st.name
-                return f"#{st.module_name}.#{st.name}"
-            Type.variant_type as vt:
-                if vt.module_name == "":
-                    return vt.name
-                return f"#{vt.module_name}.#{vt.name}"
             Type.error_type:
                 return "<error>"
             Type.type_var as tv:
-                return f"@#{tv.name}"
+                return tv.name
+            Type.struct_type as st:
+                if st.module_name == "":
+                    return st.name
+                return st.name
+            Type.variant_type as vt:
+                return vt.name
+            Type.nullable:
+                return "nullable"
+            Type.pointer_type:
+                return "ptr"
+            Type.struct_instance:
+                return "struct_instance"
+            Type.variant_instance:
+                return "variant_instance"
             _:
                 return "<type>"
 

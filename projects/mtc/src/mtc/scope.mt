@@ -3,6 +3,8 @@
 
 import std.vec
 import std.map
+import std.hash
+import std.str
 import mtc.types
 
 public struct ValueBinding:

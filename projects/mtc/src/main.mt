@@ -7,7 +7,21 @@ import mtc.ast
 import mtc.sema
 import std.stdio as io
 
-const SRC: str = "import std.vec\n\npublic variant Kind:\n    a\n    b\n\npublic struct Pair:\n    first: int\n    second: int\n\nfunction main() -> int:\n    let x = 1\n    return 0\n"
+const SRC: str = <<-MT
+import std.vec
+
+public variant Kind:
+    a
+    b
+
+public struct Pair:
+    first: int
+    second: int
+
+function main() -> int:
+    let x = 1
+    return 0
+MT
 
 function main() -> int:
     io.print_line("=== mtc selfhost pipeline test ===")
@@ -36,20 +50,20 @@ function main() -> int:
             break
         match decl:
             ast.Decl.struct_decl as sd:
-                let type_id = ctx.types.get(sd.name) else:
+                let _ = ctx.types.get(sd.name) else:
                     j += 1
                     continue
-                io.print_line(f"  struct {sd.name} OK (fields: #{sd.fields_len})")
+                io.print_line(f"  struct #{sd.name} OK (fields: #{sd.fields_len})")
             ast.Decl.variant_decl as vd:
-                let type_id = ctx.types.get(vd.name) else:
+                let _ = ctx.types.get(vd.name) else:
                     j += 1
                     continue
-                io.print_line(f"  variant {vd.name} OK (arms: #{vd.arms_len})")
+                io.print_line(f"  variant #{vd.name} OK (arms: #{vd.arms_len})")
             ast.Decl.func_def as fd:
-                let fb_ptr = ctx.functions.get(fd.name) else:
+                let _ = ctx.functions.get(fd.name) else:
                     j += 1
                     continue
-                io.print_line(f"  function {fd.name} OK (params: #{fd.params_len})")
+                io.print_line(f"  function #{fd.name} OK (params: #{fd.params_len})")
             _:
                 pass
         j += 1

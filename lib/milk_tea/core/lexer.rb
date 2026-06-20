@@ -663,6 +663,8 @@ module MilkTea
       scan_line_offset = line_offset + lines.fetch(line_index).bytesize
       scan_line_index = line_index + 1
 
+      content_min_indent = nil
+
       while scan_line_index < lines.length
         raw_line = lines.fetch(scan_line_index)
         raw_text = raw_line.delete_suffix("\n")
@@ -674,7 +676,7 @@ module MilkTea
           break
         end
 
-        if @recovery_errors && top_level_resync_line?(raw_text)
+        if @recovery_errors && content_min_indent&.positive? && top_level_resync_line?(raw_text)
           resync_line_offset = scan_line_offset
           resync_line_number = scan_line_number
           break
@@ -688,6 +690,19 @@ module MilkTea
         scan_line_offset += raw_line.bytesize
         scan_line_number += 1
         scan_line_index += 1
+
+        unless raw_text.strip.empty?
+          line_indent = leading_space_count(raw_text)
+          content_min_indent = line_indent if content_min_indent.nil? || line_indent < content_min_indent
+        end
+      end
+
+      if terminator_line.nil? && @recovery_errors && resync_line_number.nil? && scan_line_index < lines.length
+        trailing_text = lines.fetch(scan_line_index).delete_suffix("\n")
+        if top_level_resync_line?(trailing_text)
+          resync_line_offset = scan_line_offset
+          resync_line_number = scan_line_number
+        end
       end
 
       if terminator_line.nil?
@@ -714,7 +729,7 @@ module MilkTea
 
           @tokens << token(token_type, lexeme, literal, line_number, index + 1, start_offset:, end_offset:)
           emit_line_newline(last_line, last_line_number, last_line_offset, last_line_has_newline)
-          return resync_line_number ? (resync_line_number - line_number) : ((scan_line_index - line_index) + 1)
+          return resync_line_number ? (resync_line_number - line_number) : (scan_line_index - line_index)
         end
 
         raise LexError.new("unterminated heredoc literal", line: line_number, column: index + 1, path: @path)

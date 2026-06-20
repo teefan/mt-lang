@@ -157,20 +157,19 @@ token
 | 2 | `cst_builder.mt` | deferred (not needed — parser produces AST directly) |
 | 3 | `types.mt` | ✓ 37-arm Type variant + TypeArena + predicates + reserved-name checking |
 | 3 | `scope.mt` | ✓ `Scope` with `Map[str, ValueBinding]`, `ScopeStack` for nested lookup |
-| 3 | `resolver.mt` | ✓ Type/name resolution from AST NodeId expressions, generic instantiation |
 | 3 | `sema/context.mt` | ✓ `ModuleContext` with types, functions, values, imports, diagnostics storage |
-| 3 | `sema.mt` | ✓ `Checker` orchestrator: 8 structural phases (builtins → types → fields → functions) |
-| 3 | `main.mt` | ✓ Wired: lex → parse → sema check on embedded source, type registry output |
+| 3 | `sema/resolver.mt` | ✓ Type/name resolution from AST NodeId expressions, generic instantiation |
+| 3 | `sema.mt` | ✓ `Checker` orchestrator: 8 structural phases (builtins → prelude → named types → fields → functions) |
+| 6 | `main.mt` | ✓ Wired: lex → parse → sema-check. `mtc build projects/mtc` produces a working binary that runs the pipeline. |
 | 3 | `sema/expr.mt` | ✗ |
 | 3 | `sema/stmt.mt` | ✗ |
-| 3 | `sema/decl.mt` | ✗ |
-| 3 | `sema/bindings.mt` | ✗ |
+| 3 | `sema/decl.mt` | ✗ (consolidated into sema.mt structural phases) |
+| 3 | `sema/bindings.mt` | ✗ (consolidated into sema.mt structural phases) |
 | 4 | `ir.mt` | ✗ |
 | 4 | `lowering/*` | ✗ |
 | 5 | `emit/*` | ✗ |
 | 6 | `module_loader.mt` | ✗ |
 | 6 | `compiler.mt` | ✗ |
-| 6 | `main.mt` | ✓ Pipeline test: lexer → parser → SourceFile on embedded snippets |
 
 ## Coding principles
 

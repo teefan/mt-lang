@@ -293,7 +293,7 @@ module MilkTea
         tag = token.lexeme[/\A(?:f|c)?<<-([A-Za-z_][A-Za-z0-9_]*)[ \t]*\n/, 1]
         return false if tag.nil?
 
-        %w[GLSL VERT FRAG COMP JSON JSONC SQL HTML].include?(tag)
+        %w[GLSL VERT FRAG COMP JSON JSONC SQL HTML MT].include?(tag)
       end
 
       def token_semantic_entries(token, semantic_type, modifiers)
