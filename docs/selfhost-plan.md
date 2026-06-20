@@ -160,14 +160,14 @@ token
 | 3 | `sema/context.mt` | ✓ `ModuleContext` with types, functions, values, imports, diagnostics storage |
 | 3 | `sema/resolver.mt` | ✓ Type/name resolution from AST NodeId expressions, generic instantiation |
 | 3 | `sema.mt` | ✓ 8 structural phases + body checking (Phase 20: expression inference + statement walk) |
-| 6 | `main.mt` | ✓ Wired: lex → parse → sema-check. `mtc build projects/mtc` produces a working binary that runs the pipeline. |
+| 6 | `main.mt` | ✓ Wired: lex → parse → sema-check → lower → emit-C. Full pipeline produces correct C. |
 | 3 | `sema/expr.mt` | ✗ (consolidated into sema.mt — cross-module extending creates import cycles) |
 | 3 | `sema/stmt.mt` | ✗ (consolidated into sema.mt — same reason) |
 | 3 | `sema/decl.mt` | ✗ (consolidated into sema.mt structural phases) |
 | 3 | `sema/bindings.mt` | ✗ (consolidated into sema.mt structural phases) |
-| 4 | `ir.mt` | ✗ |
-| 4 | `lowering/*` | ✗ |
-| 5 | `emit/*` | ✗ |
+| 4 | `ir.mt` | ✓ 25-arm IrExpr + 14-arm IrStmt + 6-arm IrDecl + IrUnit arena |
+| 4 | `lowering.mt` | ✓ Declaration lowering; function body lowering (expressions, statements, control flow) |
+| 5 | `emit.mt` | ✓ C emission for all IR types, statements and expressions including function bodies |
 | 6 | `module_loader.mt` | ✗ |
 | 6 | `compiler.mt` | ✗ |
 

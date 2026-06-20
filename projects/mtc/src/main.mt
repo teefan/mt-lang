@@ -1,30 +1,25 @@
 # Milk Tea Compiler CLI entry point.
-# Exercises: lexer → parser → sema checker on embedded source.
+# Exercises: lexer -> parser -> sema checker -> lowering -> C emission.
 
 import mtc.lexer
 import mtc.parser
 import mtc.ast
 import mtc.sema
+import mtc.lowering
+import mtc.emit
 import std.stdio as io
 
 const SRC: str = <<-MT
-import std.vec
-
-public variant Kind:
-    a
-    b
-
-public struct Pair:
-    first: int
-    second: int
+function add(a: int, b: int) -> int:
+    return a + b
 
 function main() -> int:
-    let x = 1
-    return 0
+    let x = add(1, 2)
+    return x
 MT
 
 function main() -> int:
-    io.print_line("=== mtc selfhost pipeline test ===")
+    io.print_line("=== mtc selfhost pipeline ===")
 
     io.print_line("[1] lexing...")
     var lx = lexer.Lexer.from_source(SRC)
@@ -35,38 +30,25 @@ function main() -> int:
     io.print_line("[2] parsing...")
     var p = parser.Parser.create(tokens)
     let file = p.parse()
-    io.print_line(f"  imports:      #{file.imports.len}")
     io.print_line(f"  declarations: #{file.declarations.len}")
 
     io.print_line("[3] sema check...")
     var checker = sema.Checker.create(file)
     let ctx = checker.check()
-    io.print_line(f"  type errors: #{ctx.errors.len}")
+    io.print_line(f"  errors: #{ctx.errors.len}")
 
-    io.print_line("[4] type registry:")
-    var j: ptr_uint = 0
-    while j < file.declarations.len:
-        let decl = file.declarations.at(j) else:
-            break
-        match decl:
-            ast.Decl.struct_decl as sd:
-                let _ = ctx.types.get(sd.name) else:
-                    j += 1
-                    continue
-                io.print_line(f"  struct #{sd.name} OK (fields: #{sd.fields_len})")
-            ast.Decl.variant_decl as vd:
-                let _ = ctx.types.get(vd.name) else:
-                    j += 1
-                    continue
-                io.print_line(f"  variant #{vd.name} OK (arms: #{vd.arms_len})")
-            ast.Decl.func_def as fd:
-                let _ = ctx.functions.get(fd.name) else:
-                    j += 1
-                    continue
-                io.print_line(f"  function #{fd.name} OK (params: #{fd.params_len})")
-            _:
-                pass
-        j += 1
+    io.print_line("[4] lowering...")
+    var lowerer = lowering.Lowerer.create(ctx, file, "main")
+    let ir = lowerer.lower()
+    io.print_line(f"  ir decls: #{ir.declarations.len}")
+    io.print_line(f"  ir stmts: #{ir.statements.len}")
 
-    io.print_line("  done.")
+    io.print_line("[5] C emission...")
+    var emitter = emit.Emitter.create(ir, ctx.arena)
+    let c_code = emitter.emit_c()
+    io.print_line(f"  C output: #{c_code.len} bytes")
+    io.print_line("---")
+    io.print_line(c_code)
+    io.print_line("---")
+
     return 0

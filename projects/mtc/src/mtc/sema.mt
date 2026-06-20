@@ -103,7 +103,7 @@ extending Checker:
     # ═══════════════════════════════════════════════════════════════════════
 
     editable function declare_named_types() -> void:
-        var i: ptr_uint = 0
+        var i: ptr_uint = 1
         while i < this.file.declarations.len:
             let decl = this.file.declarations.at(i) else:
                 break
@@ -195,7 +195,7 @@ extending Checker:
     # ═══════════════════════════════════════════════════════════════════════
 
     editable function resolve_aggregate_fields() -> void:
-        var i: ptr_uint = 0
+        var i: ptr_uint = 1
         while i < this.file.declarations.len:
             let decl = this.file.declarations.at(i) else:
                 break
@@ -237,7 +237,7 @@ extending Checker:
     # ═══════════════════════════════════════════════════════════════════════
 
     editable function declare_top_level_values() -> void:
-        var i: ptr_uint = 0
+        var i: ptr_uint = 1
         while i < this.file.declarations.len:
             let decl = this.file.declarations.at(i) else:
                 break
@@ -259,7 +259,7 @@ extending Checker:
     # ═══════════════════════════════════════════════════════════════════════
 
     editable function declare_functions() -> void:
-        var i: ptr_uint = 0
+        var i: ptr_uint = 1
         while i < this.file.declarations.len:
             let decl = this.file.declarations.at(i) else:
                 break
@@ -310,7 +310,7 @@ extending Checker:
     # ═══════════════════════════════════════════════════════════════════════
 
     public editable function check_function_bodies() -> void:
-        var i: ptr_uint = 0
+        var i: ptr_uint = 1
         while i < this.file.declarations.len:
             let decl = this.file.declarations.at(i) else:
                 break

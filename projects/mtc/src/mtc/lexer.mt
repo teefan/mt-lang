@@ -25,7 +25,7 @@ extending Lexer:
             pos = 0z,
             line = 1,
             grouping_depth = 0z,
-            grouping_start_line = 0
+            grouping_start_line = 0,
         )
 
     # ── public API ──
@@ -267,6 +267,7 @@ extending Lexer:
                 this.push_token(kind, lexeme, this.line, col, offset)
                 return
 
+        this.pos = offset
         value = this.scan_digits(10)
         kind = token.TokenKind.int_literal(value = value)
         let lexeme = this.source.slice(offset, this.pos - offset)

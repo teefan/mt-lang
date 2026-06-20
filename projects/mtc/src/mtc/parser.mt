@@ -18,7 +18,7 @@ public struct Parser:
 
 extending Parser:
     static function empty_source_file() -> ast.SourceFile:
-        return ast.SourceFile(
+        var sf = ast.SourceFile(
             module_name = ast.QualifiedName(parts = vec.Vec[str].create()),
             module_kind = "module",
             imports = vec.Vec[ast.Import].create(),
@@ -43,6 +43,18 @@ extending Parser:
             type_arguments = vec.Vec[ast.TypeArgument].create(),
             line = 1,
         )
+        sf.exprs.push(ast.Expr.error_expr(line = 0, column = 0, message = ""))
+        sf.stmts.push(ast.Stmt.error_stmt(line = 0, column = 0, message = ""))
+        sf.declarations.push(ast.Decl.error_decl(line = 0, column = 0, message = ""))
+        sf.fields.push(ast.Field(name = "", field_type = Parser.empty_type_ref_static(), type_expr_id = 0z))
+        sf.params.push(ast.Param(name = "", param_type = Parser.empty_type_ref_static(), type_expr_id = 0z, line = 0, column = 0))
+        sf.variant_arms.push(ast.VariantArm(name = "", fields = vec.Vec[ast.VariantArmField].create()))
+        sf.variant_arm_fields.push(ast.VariantArmField(name = "", field_type = Parser.empty_type_ref_static()))
+        sf.enum_members.push(ast.EnumMember(name = "", value = 0z))
+        sf.if_branches.push(ast.IfBranch(condition = 0z, body = 0z, line = 0, column = 0))
+        sf.format_parts.push(ast.FormatStringPart(is_expr = false, text = "", format_spec = ""))
+        sf.arguments.push(ast.Argument(name = "", value = 0z))
+        return sf
 
     public static function create(
         token_vec: vec.Vec[token.Token],
@@ -715,6 +727,13 @@ extending Parser:
         this.consume_colon()
         let field_type_expr = this.parse_expression()
         this.file.fields.push(ast.Field(name = field_name, field_type = this.empty_type_ref(), type_expr_id = field_type_expr))
+
+    static function empty_type_ref_static() -> ast.TypeRef:
+        return ast.TypeRef(
+            arguments = vec.Vec[ast.TypeArgument].create(),
+            nullable = false,
+            name = ast.QualifiedName(parts = vec.Vec[str].create()),
+        )
 
     editable function empty_type_ref() -> ast.TypeRef:
         return ast.TypeRef(
