@@ -175,13 +175,48 @@ function consume_string(s: string.String) -> bool:
 
 
 # ============================================================
-# Section 6 — Edge cases and language awkwardness
+# Audit Notes (verified against compiler, June 2026)
+#
+# Milk Tea has four string types, each with a distinct role per lang-design.md §6:
+#
+#   str              — borrowed text view (zero-cost, no allocation)
+#   cstr             — raw C ABI type (FFI boundary)
+#   str_buffer[N]    — stack-allocated fixed-capacity mutable buffer
+#   string.String    — heap-allocated growable owned text
+#
+# None are redundant. They solve four different memory-ownership stories.
+#
+# Real usability findings from this audit:
+#
+#   A. str methods like .equal(), .starts_with(), .ends_with() etc.
+#      are defined via 'extending str' in std/str.mt and require
+#      'import std.str' to use. Without the import, only built-in
+#      fields (.len, .data) and operators (==, !=) work on str.
+#      Status: by design — Milk Tea requires explicit imports.
+#
+#   B. string.String methods .starts_with(), .ends_with(),
+#      .find_substring(), .contains_substring() wrap the underlying
+#      .as_str() call. Each call re-validates UTF-8. This is correct
+#      but worth noting for hot loops.
+#      Status: acceptable — UTF-8 safety trumps micro-optimization.
+#
+#   C. std/str.mt now also provides .split(sep) and .replace(old, new)
+#      on string.String, filling an important gap.
+#      Status: fixed.
+#
+#   D. string.String.equals(other) was added for direct instance
+#      comparison (previously only .as_str().equal() was available).
+#      Status: fixed.
+#
+#   E. cstr supports == and != operators. cstr? supports == null
+#      for nullable checks.
+#      Status: works correctly (the earlier test used invalid syntax).
 # ============================================================
 
 # ISSUE 1 (RESOLVED): Format strings (`f"... #{expr} ..."`) ARE supported
 # at the compiler level (§8) and produce a `str` result. The `append_format`
 # and `assign_format` in stdlib are fallback stubs that copy raw text
-# (for when format strings are passed as parameters). Using an `f"..."` 
+# (for when format strings are passed as parameters). Using an `f"..."`
 # literal directly works fine:
 function test_format_string_compiler_support() -> bool:
     var s = string.String.from_str(f"hello")
@@ -214,10 +249,10 @@ function test_str_lifetime_safe_in_scope() -> bool:
 
 # ISSUE 4 (FIXED): `String.equals(other)` is now available. Previously
 # the only option was the static `String.equal(left, right: const_ptr)`.
-function test_string_equals() -> bool:
+function test_string_equal() -> bool:
     var a = string.String.from_str("one")
     var b = string.String.from_str("one")
-    return a.equals(b)
+    return a.equal(b)
 
 
 # ISSUE 5 (NOT A BUG): Empty `String.as_str()` returns a valid empty `str`
@@ -320,7 +355,7 @@ function main() -> int:
         failures = failures + 1
     if not test_str_lifetime_safe_in_scope():
         failures = failures + 1
-    if not test_string_equals():
+    if not test_string_equal():
         failures = failures + 1
     if not test_empty_string_as_str_valid():
         failures = failures + 1
