@@ -1013,7 +1013,7 @@ module MilkTea
         return IR::Name.new(name: binding[:linkage_name], type: visible_type, pointer: binding[:pointer]) if visible_type == storage_type
         if storage_type.is_a?(Types::Nullable) && storage_type.base == visible_type
           name = IR::Name.new(name: binding[:linkage_name], type: storage_type, pointer: binding[:pointer])
-          return name if pointer_type?(storage_type.base)
+          return name if pointer_like_type?(storage_type.base)
           return name if expected_type == storage_type
           return IR::Unary.new(operator: "*", operand: name, type: visible_type)
         end
@@ -1401,7 +1401,7 @@ module MilkTea
 
       def wrap_nullable_field_value(field_type, lowered_value, env)
         return lowered_value unless field_type.is_a?(Types::Nullable)
-        return lowered_value if pointer_type?(field_type.base)
+        return lowered_value if pointer_like_type?(field_type.base)
         return lowered_value if lowered_value.type.is_a?(Types::Nullable)
         return lowered_value if lowered_value.is_a?(IR::AddressOf)
         return lowered_value if addressable_ir_expression?(lowered_value)
@@ -1421,6 +1421,10 @@ module MilkTea
 
       def addressable_ir_expression?(expression)
         expression.is_a?(IR::Name) || expression.is_a?(IR::Member) || expression.is_a?(IR::Index)
+      end
+
+      def pointer_like_type?(type)
+        pointer_type?(type) || (type.is_a?(Types::Primitive) && type.name == "cstr") || type.is_a?(Types::Function) || type.is_a?(Types::Proc) || type.is_a?(Types::Opaque)
       end
   end
 end
