@@ -2129,7 +2129,7 @@ struct ecs_meta_op_t:
     member_index: short
     type_: ptr_uint
     type_info: const_ptr[ecs_type_info_t]
-    is: ecs_meta_op_t_is
+    is_: ecs_meta_op_t_is
 
 struct EcsTypeSerializer:
     kind: ecs_type_kind_t
