@@ -56,6 +56,14 @@ extending Vec[T]:
         return unsafe: ptr[T]<-data + index
 
 
+    public function at(index: ptr_uint) -> Option[T]:
+        let p = this.get(index) else:
+            return Option[T].none
+
+        unsafe:
+            return Option[T].some(value = read(p))
+
+
     public function first() -> ptr[T]?:
         return this.get(0)
 

@@ -365,6 +365,10 @@ extending ArrayTable:
         return this.tables.get(index)
 
 
+    public function at(index: ptr_uint) -> Option[Object]:
+        return this.tables.at(index)
+
+
     public editable function release() -> void:
         this.name.release()
 

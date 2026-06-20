@@ -48,6 +48,10 @@ extending SyncList[T]:
         return this.items.get(index)
 
 
+    public function at(index: ptr_uint) -> Option[T]:
+        return this.items.at(index)
+
+
     public editable function mark_clean() -> void:
         this.dirty = false
 
