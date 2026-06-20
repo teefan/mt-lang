@@ -2030,6 +2030,10 @@ module MilkTea
         line = previous.line
         column = previous.column
         arm_pattern = parse_bitwise_or
+        if arm_pattern.is_a?(AST::Call) && arm_pattern.arguments.any?
+          raise error(previous, "`is` does not support struct pattern bindings; use `match` to destructure payload fields")
+        end
+
         expr = AST::MatchExpr.new(
           expression: expr,
           arms: [

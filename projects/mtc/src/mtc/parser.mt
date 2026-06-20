@@ -10,44 +10,47 @@ import mtc.ast
 import mtc.diagnostics
 import std.vec
 
-struct Parser:
+public struct Parser:
     tokens: token_stream.SyntaxTokenStream
     current: ptr_uint
     file: ast.SourceFile
     diagnostics: diagnostics.DiagnosticList
 
 extending Parser:
+    static function empty_source_file() -> ast.SourceFile:
+        return ast.SourceFile(
+            module_name = ast.QualifiedName(parts = vec.Vec[str].create()),
+            module_kind = "module",
+            imports = vec.Vec[ast.Import].create(),
+            declarations = vec.Vec[ast.Decl].create(),
+            exprs = vec.Vec[ast.Expr].create(),
+            stmts = vec.Vec[ast.Stmt].create(),
+            type_nodes = vec.Vec[ast.TypeRef].create(),
+            arguments = vec.Vec[ast.Argument].create(),
+            if_branches = vec.Vec[ast.IfBranch].create(),
+            match_arms = vec.Vec[ast.MatchArm].create(),
+            match_expr_arms = vec.Vec[ast.MatchExprArm].create(),
+            when_branches = vec.Vec[ast.WhenBranch].create(),
+            for_bindings = vec.Vec[ast.ForBinding].create(),
+            params = vec.Vec[ast.Param].create(),
+            foreign_params = vec.Vec[ast.ForeignParam].create(),
+            fields = vec.Vec[ast.Field].create(),
+            variant_arms = vec.Vec[ast.VariantArm].create(),
+            variant_arm_fields = vec.Vec[ast.VariantArmField].create(),
+            enum_members = vec.Vec[ast.EnumMember].create(),
+            format_parts = vec.Vec[ast.FormatStringPart].create(),
+            attributes = vec.Vec[ast.Attribute].create(),
+            type_arguments = vec.Vec[ast.TypeArgument].create(),
+            line = 1,
+        )
+
     public static function create(
         token_vec: vec.Vec[token.Token],
     ) -> Parser:
         return Parser(
             tokens = token_stream.SyntaxTokenStream.from_tokens(token_vec),
             current = 0z,
-            file = ast.SourceFile(
-                module_name = ast.QualifiedName(parts = vec.Vec[str].create()),
-                module_kind = "module",
-                imports = vec.Vec[ast.Import].create(),
-                declarations = vec.Vec[ast.Decl].create(),
-                exprs = vec.Vec[ast.Expr].create(),
-                stmts = vec.Vec[ast.Stmt].create(),
-                type_nodes = vec.Vec[ast.TypeRef].create(),
-                arguments = vec.Vec[ast.Argument].create(),
-                if_branches = vec.Vec[ast.IfBranch].create(),
-                match_arms = vec.Vec[ast.MatchArm].create(),
-                match_expr_arms = vec.Vec[ast.MatchExprArm].create(),
-                when_branches = vec.Vec[ast.WhenBranch].create(),
-                for_bindings = vec.Vec[ast.ForBinding].create(),
-                params = vec.Vec[ast.Param].create(),
-                foreign_params = vec.Vec[ast.ForeignParam].create(),
-                fields = vec.Vec[ast.Field].create(),
-                variant_arms = vec.Vec[ast.VariantArm].create(),
-                variant_arm_fields = vec.Vec[ast.VariantArmField].create(),
-                enum_members = vec.Vec[ast.EnumMember].create(),
-                format_parts = vec.Vec[ast.FormatStringPart].create(),
-                attributes = vec.Vec[ast.Attribute].create(),
-                type_arguments = vec.Vec[ast.TypeArgument].create(),
-                line = 1,
-            ),
+            file = Parser.empty_source_file(),
             diagnostics = diagnostics.DiagnosticList.create(),
         )
 
@@ -193,11 +196,13 @@ extending Parser:
 
     editable function parse_identifier() -> str:
         let tok = this.peek()
-        if tok.kind is token.TokenKind.identifier(name):
-            this.advance()
-            return name
-        this.emit_error(tok, "expected identifier")
-        return ""
+        match tok.kind:
+            token.TokenKind.identifier(name):
+                this.advance()
+                return name
+            _:
+                this.emit_error(tok, "expected identifier")
+                return ""
 
     editable function parse_name_token() -> token.Token:
         let tok = this.peek()
@@ -375,36 +380,39 @@ extending Parser:
     editable function parse_primary() -> ast.NodeId:
         let tok = this.peek()
         let kind = tok.kind
-        if kind is token.TokenKind.identifier(name):
-            this.advance()
-            return this.alloc_expr(ast.Expr.identifier(
-                name = name,
-                line = tok.line,
-                column = tok.column,
-            ))
-        else if kind is token.TokenKind.int_literal(value):
-            this.advance()
-            return this.alloc_expr(ast.Expr.integer_literal(value = value))
-        else if kind is token.TokenKind.string_literal(value):
-            this.advance()
-            return this.alloc_expr(ast.Expr.string_literal(value = value))
-        else if kind is token.TokenKind.keyword_true:
-            this.advance()
-            return this.alloc_expr(ast.Expr.boolean_literal(value = true))
-        else if kind is token.TokenKind.keyword_false:
-            this.advance()
-            return this.alloc_expr(ast.Expr.boolean_literal(value = false))
-        else if kind is token.TokenKind.keyword_null:
-            this.advance()
-            return this.alloc_expr(ast.Expr.null_literal(type_id = 0z))
-        else if kind is token.TokenKind.char_literal(value):
-            this.advance()
-            return this.alloc_expr(ast.Expr.char_literal(value = value))
-        else if kind is token.TokenKind.op_lparen:
-            this.advance()
-            let expr = this.parse_expression()
-            this.consume_rparen()
-            return expr
+        match kind:
+            token.TokenKind.identifier(name):
+                this.advance()
+                return this.alloc_expr(ast.Expr.identifier(
+                    name = name,
+                    line = tok.line,
+                    column = tok.column,
+                ))
+            token.TokenKind.int_literal(value):
+                this.advance()
+                return this.alloc_expr(ast.Expr.integer_literal(value = value))
+            token.TokenKind.string_literal(value):
+                this.advance()
+                return this.alloc_expr(ast.Expr.string_literal(value = value))
+            token.TokenKind.keyword_true:
+                this.advance()
+                return this.alloc_expr(ast.Expr.boolean_literal(value = true))
+            token.TokenKind.keyword_false:
+                this.advance()
+                return this.alloc_expr(ast.Expr.boolean_literal(value = false))
+            token.TokenKind.keyword_null:
+                this.advance()
+                return this.alloc_expr(ast.Expr.null_literal(type_id = 0z))
+            token.TokenKind.char_literal(value):
+                this.advance()
+                return this.alloc_expr(ast.Expr.char_literal(value = value))
+            token.TokenKind.op_lparen:
+                this.advance()
+                let expr = this.parse_expression()
+                this.consume_rparen()
+                return expr
+            _:
+                pass
         this.emit_error(tok, "expected expression")
         return this.alloc_expr(ast.Expr.error_expr(
             line = tok.line,
@@ -431,6 +439,10 @@ extending Parser:
             this.advance()
         else:
             this.emit_error(this.peek(), "expected ':'")
+
+    editable function consume_newline() -> void:
+        if this.peek().kind is token.TokenKind.newline:
+            this.advance()
 
     editable function expect_indent() -> void:
         if this.peek().kind is token.TokenKind.indent:
@@ -619,13 +631,9 @@ extending Parser:
     editable function parse_param() -> void:
         let name = this.parse_identifier()
         this.consume_colon()
-        let type_expr = this.parse_expression()
+        let _type_expr = this.parse_expression()
         this.file.params.push(ast.Param(
-            name = name, param_type = ast.TypeRef(
-                name = ast.QualifiedName(parts = vec.Vec[str].create()),
-                arguments = vec.Vec[ast.TypeArgument].create(),
-                nullable = false,
-            ), line = 0, column = 0,
+            name = name, param_type = this.empty_type_ref(), line = 0, column = 0,
         ))
 
     editable function parse_const_decl(visibility: str) -> void:
@@ -700,12 +708,15 @@ extending Parser:
     editable function parse_struct_field() -> void:
         let field_name = this.parse_identifier()
         this.consume_colon()
-        let _field_type = this.parse_type_ref_expr()
-        this.file.fields.push(ast.Field(name = field_name, field_type = ast.TypeRef(
-            name = ast.QualifiedName(parts = vec.Vec[str].create()),
+        let _field_type = this.parse_expression()
+        this.file.fields.push(ast.Field(name = field_name, field_type = this.empty_type_ref()))
+
+    editable function empty_type_ref() -> ast.TypeRef:
+        return ast.TypeRef(
             arguments = vec.Vec[ast.TypeArgument].create(),
             nullable = false,
-        )))
+            name = ast.QualifiedName(parts = vec.Vec[str].create()),
+        )
 
     editable function parse_enum_decl(visibility: str) -> void:
         this.advance()
@@ -791,11 +802,7 @@ extending Parser:
                             let _f_type = this.parse_type_ref_expr()
                             this.file.variant_arm_fields.push(ast.VariantArmField(
                                 name = f_name,
-                                field_type = ast.TypeRef(
-                                    name = ast.QualifiedName(parts = vec.Vec[str].create()),
-                                    arguments = vec.Vec[ast.TypeArgument].create(),
-                                    nullable = false,
-                                ),
+                                field_type = this.empty_type_ref(),
                             ))
                             fields_count += 1
                             if this.peek().kind is token.TokenKind.op_comma:
@@ -867,11 +874,11 @@ extending Parser:
         while not this.at_end() and not (this.peek().kind is token.TokenKind.dedent):
             if this.peek().kind is token.TokenKind.newline:
                 this.advance()
-            elif this.peek().kind is token.TokenKind.keyword_editable:
+            else if this.peek().kind is token.TokenKind.keyword_editable:
                 this.advance()
-            elif this.peek().kind is token.TokenKind.keyword_static:
+            else if this.peek().kind is token.TokenKind.keyword_static:
                 this.advance()
-            elif this.peek().kind is token.TokenKind.keyword_function:
+            else if this.peek().kind is token.TokenKind.keyword_function:
                 this.advance()
                 let m_name = this.parse_identifier()
                 this.skip_to_body()
@@ -887,8 +894,11 @@ extending Parser:
         let capacity_tok = this.peek()
         this.advance()
         var capacity: int = 4
-        if capacity_tok.kind is token.TokenKind.int_literal(value):
-            capacity = value
+        match capacity_tok.kind:
+            token.TokenKind.int_literal(value):
+                capacity = value
+            _:
+                pass
         this.consume_rbracket()
         var payload_type: ast.NodeId = 0z
         if this.peek().kind is token.TokenKind.op_lparen:
