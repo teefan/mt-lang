@@ -146,15 +146,15 @@ token
 
 | Phase | Component | Status |
 |-------|-----------|--------|
-| 1 | `token.mt` | ✓ `TokenKind` variant (70 arms), `Token` struct with lexeme/start_offset |
+| 1 | `token.mt` | ✓ `TokenKind` variant (124 arms), `Token` struct with lexeme/start_offset |
 | 1 | `lexer.mt` | ✓ Line-by-line indentation-based lexer; full keyword/operator/string/number/char |
 | 1 | `source.mt` | ✓ `SourceView` (path+text), `Span` helpers |
-| 1 | `token_stream.mt` | ✓ `SyntaxTokenStream` with len/get |
-| 2 | `ast.mt` | ✓ ~150 variant arm definitions across Expr/Decl/Stmt + helper structs |
-| 2 | `cst.mt` | ✗ |
-| 2 | `cst_builder.mt` | ✗ |
-| 2 | `parser.mt` | ✓ Skeleton + expression parser + statements + function_def; remaining decl stubs |
+| 1 | `token_stream.mt` | ✓ `SyntaxTokenStream` with len/get/at |
+| 2 | `ast.mt` | ✓ 3 variants (Expr/Decl/Stmt, ~40 arms) + 20 helper structs, arena-based NodeId design |
 | 2 | `diagnostics.mt` | ✓ Diagnostic + DiagnosticList with Severity enum |
+| 2 | `parser.mt` | ✓ Full expression parser (precedence), statements, 15/17 declaration parsers, import, top-level |
+| 2 | `cst.mt` | deferred (not needed — parser produces AST directly) |
+| 2 | `cst_builder.mt` | deferred (not needed — parser produces AST directly) |
 | 3 | `types.mt` | ✗ |
 | 3 | `scope.mt` | ✗ |
 | 3 | `resolver.mt` | ✗ |
@@ -168,7 +168,7 @@ token
 | 5 | `emit/*` | ✗ |
 | 6 | `module_loader.mt` | ✗ |
 | 6 | `compiler.mt` | ✗ |
-| 6 | `main.mt` | ✓ Skeleton entry point, exercises lexer on hardcoded input |
+| 6 | `main.mt` | ✓ Pipeline test: lexer → parser → SourceFile on embedded snippets |
 
 ## Coding principles
 
@@ -223,3 +223,6 @@ workarounds are considered:
 | Variant method dispatch needs type inference | ✓ Fixed |
 | Parallel-for array capture C lowering | ✓ Fixed |
 | `?` propagation at statement level (linter false positive) | ✓ Fixed |
+| `==` on variant types | ✓ Fixed — sema, lowering, C backend |
+| `is` keyword (variant arm membership test) | ✓ Fixed — parser desugaring; rejects struct patterns |
+| `at()` safe value accessor on collections | ✓ Fixed — Vec, Deque, Map, Set, OrderedMap, OrderedSet, LinkedMap, LinkedSet |
