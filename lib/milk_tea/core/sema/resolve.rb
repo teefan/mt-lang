@@ -825,14 +825,7 @@ module MilkTea
         return true if type.is_a?(Types::Variant)
         return true if type.is_a?(Types::VariantArmPayload)
 
-        variant_instance_type?(type)
-      end
-
-      def variant_instance_type?(type)
-        return false unless type.is_a?(Types::GenericInstance)
-
-        definition = type.resolved_declaration || type.definition
-        definition.is_a?(Types::Variant)
+        false
       end
 
       def collection_loop_type(type)

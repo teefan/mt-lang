@@ -1018,7 +1018,7 @@ Current compiler rejects:
 ### Operator and expression restrictions
 
 - `+` does not support `str`/`cstr` concatenation; use format strings or `std.str` helpers
-- `==` and `!=` are not supported on struct types; use `equal[T]`
+- `==` and `!=` are not supported on struct types; use `equal[T]`.  Variant types support `==`/`!=` (generates per-variant comparison helper).
 - range expressions are restricted to `for`-loop iterables and range-index assignment targets
 - functions, methods, generic functions, and variant arms must be called — they are not usable as bare values
 - `read(...)` of a raw pointer requires `unsafe`
