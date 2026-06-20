@@ -146,30 +146,30 @@ token
 
 | Phase | Component | Status |
 |-------|-----------|--------|
-| 1 | `token.mt` | ✓ `TokenKind` variant (124 arms), `Token` struct with lexeme/start_offset |
+| 1 | `token.mt` | ✓ TokenKind variant (124 arms), Token struct with lexeme/start_offset |
 | 1 | `lexer.mt` | ✓ Line-by-line indentation-based lexer; full keyword/operator/string/number/char |
-| 1 | `source.mt` | ✓ `SourceView` (path+text), `Span` helpers |
-| 1 | `token_stream.mt` | ✓ `SyntaxTokenStream` with len/get/at |
+| 1 | `source.mt` | ✓ SourceView (path+text), Span helpers |
+| 1 | `token_stream.mt` | ✓ SyntaxTokenStream with len/get/at |
 | 2 | `ast.mt` | ✓ 3 variants (Expr/Decl/Stmt, ~40 arms) + 20 helper structs, arena-based NodeId design |
 | 2 | `diagnostics.mt` | ✓ Diagnostic + DiagnosticList with Severity enum |
 | 2 | `parser.mt` | ✓ Full expression parser (precedence), statements, 15/17 declaration parsers, import, top-level |
 | 2 | `cst.mt` | deferred (not needed — parser produces AST directly) |
 | 2 | `cst_builder.mt` | deferred (not needed — parser produces AST directly) |
 | 3 | `types.mt` | ✓ 37-arm Type variant + TypeArena + predicates + reserved-name checking |
-| 3 | `scope.mt` | ✓ `Scope` with `Map[str, ValueBinding]`, `ScopeStack` for nested lookup |
-| 3 | `sema/context.mt` | ✓ `ModuleContext` with types, functions, values, imports, diagnostics storage |
-| 3 | `sema/resolver.mt` | ✓ Type/name resolution from AST NodeId expressions, generic instantiation |
-| 3 | `sema.mt` | ✓ 8 structural phases + body checking (Phase 20: expression inference + statement walk) |
-| 6 | `main.mt` | ✓ Wired: lex → parse → sema-check → lower → emit-C. Full pipeline produces correct C. |
-| 3 | `sema/expr.mt` | ✗ (consolidated into sema.mt — cross-module extending creates import cycles) |
-| 3 | `sema/stmt.mt` | ✗ (consolidated into sema.mt — same reason) |
-| 3 | `sema/decl.mt` | ✗ (consolidated into sema.mt structural phases) |
-| 3 | `sema/bindings.mt` | ✗ (consolidated into sema.mt structural phases) |
+| 3 | `scope.mt` | ✓ Scope, ScopeStack for nested lookup |
+| 3 | `sema/context.mt` | ✓ ModuleContext with types, functions, values, imports, diagnostics |
+| 3 | `sema/resolver.mt` | ✓ Type/name resolution from AST NodeId, generic instantiation |
+| 3 | `sema.mt` | ◐ Structural phases only; no type inference, no match/if/while body walk |
 | 4 | `ir.mt` | ✓ 25-arm IrExpr + 14-arm IrStmt + 6-arm IrDecl + IrUnit arena |
-| 4 | `lowering.mt` | ✓ Declaration lowering; function body lowering (expressions, statements, control flow) |
-| 5 | `emit.mt` | ✓ C emission for all IR types, statements and expressions including function bodies |
+| 4 | `lowering.mt` | ◐ struct/variant/enum decls, let/var/return, binary/unary/calls, member/index. `body_len` tracking added to AST. if/while stmts partially implemented — body duplication bug needs resolving |
+| 5 | `emit.mt` | ◐ type decls, function bodies (simple), all IR exprs/stmts. Missing: switch/match emission |
+| 6 | `main.mt` | ✓ Wired: lex → parse → sema → lower → emit-C |
 | 6 | `module_loader.mt` | ✗ |
 | 6 | `compiler.mt` | ✗ |
+
+### Next milestone: if/while lowering
+
+The AST has been updated with `body_len` tracking (`func_def.body_len`, `if_stmt.body_len`/`else_body_len`, `while_stmt.body_len`, `for_stmt.body_len`). The parser's `parse_block_body` now counts statements and stores the count via `this.block_len`. What remains is fixing the lowering to not emit nested body statements twice in the flat IR stmt vec.
 
 ## Coding principles
 

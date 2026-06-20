@@ -16,6 +16,7 @@ module MilkTea
         when "redundant-bool-compare" then redundant_bool_compare_edits(lines, warning)
         when "redundant-else"         then redundant_else_edits(lines, warning)
         when "redundant-return"       then redundant_return_edits(lines, warning)
+        when "redundant-type-annotation" then redundant_type_annotation_edits(lines, warning)
         when "unused-import"          then unused_import_edits(lines, warning)
         when "trailing-list-comma"    then trailing_list_comma_edits(lines, warning)
         else []
@@ -172,6 +173,28 @@ module MilkTea
         return [] unless line[char_idx] == ","
 
         [FixEdit.new(start_line: line_idx, start_char: char_idx, end_line: line_idx, end_char: char_idx + 1, new_text: "")]
+      end
+
+      def redundant_type_annotation_edits(lines, warning)
+        return [] unless warning.line
+
+        line_idx = warning.line - 1
+        line = lines[line_idx]
+        return [] unless line
+
+        name_len = warning.length
+        col = warning.column - 1
+        return [] if col.negative? || col + name_len > line.length
+
+        after_name = col + name_len
+        rest = line[after_name..]
+        return [] unless rest
+
+        type_match = rest.match(/\s*:\s*\S+/)
+        return [] unless type_match
+
+        new_line = +"#{line[0...after_name]}#{rest[type_match.end(0)..]}"
+        [FixEdit.new(start_line: line_idx, start_char: 0, end_line: line_idx + 1, end_char: 0, new_text: new_line)]
       end
     end
   end

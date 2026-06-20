@@ -38,6 +38,7 @@ module MilkTea
       redundant-ignored-match-binding
       redundant-null-check
       redundant-return
+      redundant-type-annotation
       reserved-primitive-name
       self-assignment
       self-comparison
@@ -60,6 +61,7 @@ module MilkTea
       redundant-bool-compare
       redundant-else
       redundant-return
+      redundant-type-annotation
       unused-import
       reserved-primitive-name
       trailing-list-comma
@@ -71,6 +73,7 @@ module MilkTea
       "redundant-ignored-match-binding" => "Remove redundant as _",
       "redundant-else" => "Remove redundant else",
       "redundant-return" => "Remove redundant return",
+      "redundant-type-annotation" => "Remove redundant type annotation",
       "prefer-let-else" => "Rewrite as let-else",
       "prefer-var-else" => "Rewrite as var-else",
       "redundant-bool-compare" => "Simplify boolean comparison",

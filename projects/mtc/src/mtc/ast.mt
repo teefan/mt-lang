@@ -70,7 +70,8 @@ public struct Import:
 
 public struct IfBranch:
     condition: NodeId
-    body: NodeId  # ptr_uint index into stmts vec
+    body: NodeId
+    body_len: NodeId
     line: int
     column: int
 
@@ -145,7 +146,7 @@ public variant Decl:
     variant_decl(name: str, type_params_start: NodeId, type_params_len: NodeId, arms_start: NodeId, arms_len: NodeId, visibility: str)
     opaque_decl(name: str, c_name: str, visibility: str)
     interface_decl(name: str, methods_start: NodeId, methods_len: NodeId, visibility: str)
-    func_def(name: str, params_start: NodeId, params_len: NodeId, return_type: NodeId, body: NodeId, visibility: str, is_async: bool, is_const: bool)
+    func_def(name: str, params_start: NodeId, params_len: NodeId, return_type: NodeId, body: NodeId, body_len: NodeId, visibility: str, is_async: bool, is_const: bool)
     extern_func_decl(name: str, params_start: NodeId, params_len: NodeId, return_type: NodeId, is_variadic: bool, mapping: str)
     foreign_func_decl(name: str, params_start: NodeId, params_len: NodeId, return_type: NodeId, mapping: str, visibility: str)
     extending_block(type_name: QualifiedName, methods_start: NodeId, methods_len: NodeId)
@@ -160,11 +161,11 @@ public variant Decl:
 
 public variant Stmt:
     expression_stmt(expr_id: NodeId, line: int)
-    if_stmt(branches_start: NodeId, branches_len: NodeId, else_body: NodeId, is_inline: bool, line: int, column: int)
+    if_stmt(condition: NodeId, body: NodeId, body_len: NodeId, else_body: NodeId, else_body_len: NodeId, is_inline: bool, line: int, column: int)
     match_stmt(scrutinee: NodeId, arms_start: NodeId, arms_len: NodeId, is_inline: bool, line: int, column: int)
-    for_stmt(bindings_start: NodeId, bindings_len: NodeId, iterables_start: NodeId, iterables_len: NodeId, body: NodeId, is_inline: bool, threaded: bool, line: int, column: int)
+    for_stmt(bindings_start: NodeId, bindings_len: NodeId, iterables_start: NodeId, iterables_len: NodeId, body: NodeId, body_len: NodeId, is_inline: bool, threaded: bool, line: int, column: int)
     parallel_block(bodies_start: NodeId, bodies_len: NodeId, line: int, column: int)
-    while_stmt(condition: NodeId, body: NodeId, is_inline: bool, line: int, column: int)
+    while_stmt(condition: NodeId, body: NodeId, body_len: NodeId, is_inline: bool, line: int, column: int)
     when_stmt(discriminant: NodeId, branches_start: NodeId, branches_len: NodeId, else_body: NodeId, line: int, column: int)
     break_stmt(line: int, column: int)
     continue_stmt(line: int, column: int)

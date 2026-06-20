@@ -15,6 +15,7 @@ public struct Parser:
     current: ptr_uint
     file: ast.SourceFile
     diagnostics: diagnostics.DiagnosticList
+    block_len: ptr_uint
 
 extending Parser:
     static function empty_source_file() -> ast.SourceFile:
@@ -64,6 +65,7 @@ extending Parser:
             current = 0z,
             file = Parser.empty_source_file(),
             diagnostics = diagnostics.DiagnosticList.create(),
+            block_len = 0z,
         )
 
     # ── Token stream interface ──
@@ -478,16 +480,20 @@ extending Parser:
         if this.peek().kind is token.TokenKind.indent:
             this.advance()
         var first: ast.NodeId = 0z
+        var count: ast.NodeId = 0z
         while not this.at_end():
             if this.peek().kind is token.TokenKind.dedent:
                 this.advance()
+                this.block_len = count
                 return first
             if this.peek().kind is token.TokenKind.newline:
                 this.advance()
             else:
                 let stmt = this.parse_statement()
+                count += 1
                 if first == 0z:
                     first = stmt
+        this.block_len = count
         return first
 
     editable function parse_statement() -> ast.NodeId:
@@ -573,15 +579,20 @@ extending Parser:
         this.advance()
         let condition = this.parse_expression()
         let body = this.parse_block_body()
+        var body_len: ast.NodeId = this.block_len
         var else_body: ast.NodeId = 0z
+        var else_body_len: ast.NodeId = 0z
         if this.peek().kind is token.TokenKind.keyword_else:
             this.advance()
             if this.peek().kind is token.TokenKind.keyword_if:
                 else_body = this.parse_if_stmt()
+                else_body_len = 1z
             else:
                 else_body = this.parse_block_body()
+                else_body_len = this.block_len
         return this.alloc_stmt(ast.Stmt.if_stmt(
-            branches_start = 0z, branches_len = 0z, else_body = else_body,
+            condition = condition, body = body, body_len = body_len,
+            else_body = else_body, else_body_len = else_body_len,
             is_inline = false, line = 0, column = 0,
         ))
 
@@ -589,8 +600,10 @@ extending Parser:
         this.advance()
         let condition = this.parse_expression()
         let body = this.parse_block_body()
+        let body_len = this.block_len
         return this.alloc_stmt(ast.Stmt.while_stmt(
-            condition = condition, body = body, is_inline = false, line = 0, column = 0,
+            condition = condition, body = body, body_len = body_len,
+            is_inline = false, line = 0, column = 0,
         ))
 
     editable function parse_for_stmt() -> ast.NodeId:
@@ -631,9 +644,11 @@ extending Parser:
             this.advance()
             return_type = this.parse_expression()
         let body = this.parse_block_body()
+        let body_len = this.block_len
         this.file.declarations.push(ast.Decl.func_def(
             name = name, params_start = params_start, params_len = params_len,
-            return_type = return_type, body = body, visibility = visibility,
+            return_type = return_type, body = body, body_len = body_len,
+            visibility = visibility,
             is_async = false, is_const = false,
         ))
 
