@@ -113,6 +113,11 @@ public variant TokenKind:
     number(value: int)
     eof
 
+# Variant with multi-field arms to exercise _ discard
+variant MultiField:
+    tagged(tag: int, pos_x: float, pos_y: float, title: str)
+    empty
+
 # =============================================================================
 # 4  Interfaces, methods, implements
 # =============================================================================
@@ -365,6 +370,15 @@ function statements_demo() -> int:
         TokenKind.number as n:
             result += n.value
         TokenKind.eof:
+            result += 0
+
+    # --- struct pattern _ discard (skip unneeded fields)
+    var mf = MultiField.tagged(tag = 7, pos_x = 1.0, pos_y = 2.0, title = "test")
+    match mf:
+        MultiField.tagged(_, _, _, title):
+            if title == "test":
+                result += 1
+        MultiField.empty:
             result += 0
 
     # --- integer match

@@ -1413,7 +1413,7 @@ if id1 != TokenKind.eof:
 </div>
 
   <h3>Struct Patterns (Variants)</h3>
-  <p>Inline destructuring with guards and bindings inside variant arm patterns.</p>
+  <p>Inline destructuring with guards, bindings, and field discards inside variant arm patterns.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>match entity:
@@ -1422,7 +1422,12 @@ if id1 != TokenKind.eof:
     Entity.player:
         remove()
     Entity.enemy:
-        return</code></pre>
+        return
+
+## _ discards a field without binding it
+match record:
+    Record.fields(_, _, _, label):
+        use_label(label)</code></pre>
 </div>
 </section>
 
