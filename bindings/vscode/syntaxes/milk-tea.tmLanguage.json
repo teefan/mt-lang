@@ -8,6 +8,7 @@
     { "include": "#format-string" },
     { "include": "#cstring" },
     { "include": "#format-html-heredoc-string" },
+    { "include": "#mt-format-heredoc-string" },
     { "include": "#format-heredoc-string" },
     { "include": "#glsl-heredoc-cstring" },
     { "include": "#glsl-heredoc-string" },
@@ -19,6 +20,8 @@
     { "include": "#sql-heredoc-string" },
     { "include": "#html-heredoc-cstring" },
     { "include": "#html-heredoc-string" },
+    { "include": "#mt-heredoc-cstring" },
+    { "include": "#mt-heredoc-string" },
     { "include": "#heredoc-cstring" },
     { "include": "#heredoc-string" },
     { "include": "#string" },
@@ -367,6 +370,57 @@
           "match": "\\\\."
         },
         { "include": "text.html.basic" }
+      ]
+    },
+
+    "mt-heredoc-cstring": {
+      "name": "string.unquoted.heredoc.milk-tea",
+      "begin": "\\b(c<<-)(MT)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        { "include": "source.milk-tea" }
+      ]
+    },
+
+    "mt-heredoc-string": {
+      "name": "string.unquoted.heredoc.milk-tea",
+      "begin": "(?<![A-Za-z0-9_])(<<-)(MT)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        { "include": "source.milk-tea" }
+      ]
+    },
+
+    "mt-format-heredoc-string": {
+      "name": "string.unquoted.heredoc.format.milk-tea",
+      "begin": "(?<![A-Za-z0-9_])(f<<-)(MT)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        { "include": "source.milk-tea" }
       ]
     },
 

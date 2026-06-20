@@ -552,7 +552,7 @@ Notes:
 - `c"hello"` produces `cstr` with static storage for raw ABI work and low-level interop.
 - `<<-TAG ... TAG` produces `str` and `c<<-TAG ... TAG` produces `cstr` for multiline block text. The content is dedented by the shared leading spaces of nonblank lines, and the newline before the terminator is preserved.
 - Whitespace-adjacent `"..."` / `c"..."` literal segments concatenate exactly with no implicit separator, so long text can wrap (or be split on one line) without introducing another literal form.
-- The VS Code extension may attach embedded grammars to specific heredoc tags such as `GLSL`, `VERT`, `FRAG`, `COMP`, `JSON`, `JSONC`, and `SQL`, but that is editor-only highlighting. It does not change runtime semantics, and SQL values should still use bound parameters rather than text interpolation.
+- The VS Code extension may attach embedded grammars to specific heredoc tags such as `GLSL`, `VERT`, `FRAG`, `COMP`, `JSON`, `JSONC`, `SQL`, `HTML`, and `MT`, but that is editor-only highlighting. The `MT` tag recursively applies Milk Tea syntax highlighting to the heredoc content. It does not change runtime semantics, and SQL values should still use bound parameters rather than text interpolation.
 - There is no first-party runtime JSONC normalization layer; editor JSONC highlighting remains separate from runtime parsing.
 
 ### Composite types
