@@ -143,7 +143,7 @@ module MilkTea
           when AST::FloatLiteral
             infer_float_literal(expression, expected_type)
           when AST::CharLiteral
-            @ctx.types.fetch("byte")
+            @ctx.types.fetch("ubyte")
           when AST::SizeofExpr
             unless check_layout_type_via_ct(expression.type, context: "size_of", scopes:)
               infer_layout_query_type(expression.type, context: "size_of")
