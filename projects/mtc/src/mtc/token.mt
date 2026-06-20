@@ -50,6 +50,7 @@ public variant TokenKind:
     keyword_inout
     keyword_import
     keyword_interface
+    keyword_is
     keyword_let
     keyword_link
     keyword_match

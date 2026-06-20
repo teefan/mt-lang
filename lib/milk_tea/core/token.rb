@@ -46,6 +46,7 @@ module MilkTea
       "inout" => :inout,
       "import" => :import,
       "interface" => :interface,
+      "is" => :is,
       "let" => :let,
       "link" => :link,
       "match" => :match,

@@ -526,6 +526,8 @@ extending Lexer:
             return token.TokenKind.keyword_extending
         else if name == "interface":
             return token.TokenKind.keyword_interface
+        else if name == "is":
+            return token.TokenKind.keyword_is
         else if name == "implements":
             return token.TokenKind.keyword_implements
         else if name == "external":

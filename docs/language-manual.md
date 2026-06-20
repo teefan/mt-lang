@@ -137,6 +137,7 @@ Symbols:
 Word operators:
 
 - `and`, `or`, `not`
+- `is` — variant arm membership test (`expr is Variant.Arm` returns `bool`; desugars to a `match` expression)
 - `in`, `out`, `inout` (reserved for `foreign function` parameter modes; legacy call-site forms are rejected semantically)
 
 ## 3. Declarations
@@ -854,6 +855,7 @@ Rules:
 - partial field update: `v.with(x = 10.0)` — returns a copy with specified fields replaced; supported on structs and native types (vector, matrix, quaternion)
 - specialization: `name[T]`, `name[32]`, `mod.name[T]`
 - explicit specialization is only accepted on bare or module-qualified names; `value.member[32](...)` remains indexed-call syntax, so value-member calls rely on inference instead of explicit literal specialization
+- variant membership test: `expr is Variant.Arm` — returns `true` if the variant value matches the arm, `false` otherwise. Desugars to `match expr: Variant.Arm: true; _: false` during parsing. Works for both no-payload arms (discriminant equality) and payload arms (any payload matches). Use `match` with `as name` for payload destructuring.
 
 ### 5.3 Operator precedence (low to high)
 

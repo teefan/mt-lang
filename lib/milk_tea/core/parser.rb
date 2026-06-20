@@ -2021,7 +2021,39 @@ module MilkTea
     end
 
     def parse_and
-      parse_left_associative(:parse_bitwise_or, :and)
+      parse_left_associative(:parse_is, :and)
+    end
+
+    def parse_is
+      expr = parse_bitwise_or
+      while match(:is)
+        line = previous.line
+        column = previous.column
+        arm_pattern = parse_bitwise_or
+        expr = AST::MatchExpr.new(
+          expression: expr,
+          arms: [
+            AST::MatchExprArm.new(
+              pattern: arm_pattern,
+              binding_name: nil,
+              binding_line: nil,
+              binding_column: nil,
+              value: AST::BooleanLiteral.new(value: true),
+            ),
+            AST::MatchExprArm.new(
+              pattern: AST::Identifier.new(name: "_", line:, column:),
+              binding_name: nil,
+              binding_line: nil,
+              binding_column: nil,
+              value: AST::BooleanLiteral.new(value: false),
+            ),
+          ],
+          line:,
+          column:,
+          length: previous.lexeme.length,
+        )
+      end
+      expr
     end
 
     def parse_bitwise_or

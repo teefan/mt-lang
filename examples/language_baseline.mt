@@ -382,6 +382,17 @@ function statements_demo() -> int:
         _: "other"
     let _label = label
 
+    # --- is keyword: variant arm membership test
+    let tk3 = TokenKind.eof
+    if tk3 is TokenKind.eof:
+        result += 1
+    if not (tk3 is TokenKind.number):
+        result += 1
+
+    let is_ident = tk3 is TokenKind.ident
+    if not is_ident:
+        result += 1
+
     defer:
         global_counter += result
     defer:
