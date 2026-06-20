@@ -461,6 +461,11 @@ match token:
         use_value(n.value)
     Token.eof:
         return
+
+# Discard unneeded fields with _
+match multi_field:
+    Entity.tag(_, _, _, label):
+        use_label(label)
 ```
 
 Struct pattern rules:
@@ -468,6 +473,7 @@ Struct pattern rules:
 - Guards (`hp > 0`, `level >= 3`) skip the arm if the condition is false; the match tries the next arm. Supported guard operators: `==`, `!=`, `<`, `<=`, `>`, `>=`.
 - Equality patterns (`kind = Kind.boss`) skip the arm if the field does not equal the value.
 - Bindings (`position`) create immutable local variables bound to the field value.
+- Discard (`_`) skips a field position without binding it; useful when you only need a subset of a multi-field payload arm.
 - Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field gatherively cover every member of the enum, the arm is considered exhaustive.
 - For variant payload arms, struct patterns compose with `as name` bindings.
 - When a variant arm has exactly one payload field of struct type, and no pattern argument references that field name, the struct's own fields are transparently destructured. For example, `Entity.positioned(x, y)` where `positioned(loc: Pos)` destructures through `Pos` to bind `x` and `y`.

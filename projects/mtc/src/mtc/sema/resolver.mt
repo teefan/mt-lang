@@ -161,14 +161,14 @@ public function resolve_type_expr(
         return read(ctx).error_type_id
 
     match expr:
-        ast.Expr.identifier as iden:
-            return resolve_single_name(ctx, iden.name, type_params)
+        ast.Expr.identifier(name, _, _):
+            return resolve_single_name(ctx, name, type_params)
 
-        ast.Expr.member_access as ma:
-            return resolve_qualified_name(ctx, file, ma.receiver, ma.member, type_params)
+        ast.Expr.member_access(receiver, member, _, _):
+            return resolve_qualified_name(ctx, file, receiver, member, type_params)
 
-        ast.Expr.index_access as ia:
-            return resolve_index_or_specialization(ctx, file, ia.receiver, ia.args_start, ia.args_len, type_params)
+        ast.Expr.index_access(receiver, _, args_start, args_len):
+            return resolve_index_or_specialization(ctx, file, receiver, args_start, args_len, type_params)
 
         _:
             pass
@@ -189,8 +189,8 @@ function resolve_qualified_name(
         return read(ctx).error_type_id
 
     match recv_expr:
-        ast.Expr.identifier as iden:
-            return resolve_imported_type(ctx, iden.name, member, type_params)
+        ast.Expr.identifier(name, _, _):
+            return resolve_imported_type(ctx, name, member, type_params)
         _:
             pass
 

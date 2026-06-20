@@ -228,3 +228,4 @@ workarounds are considered:
 | `==` on variant types | ✓ Fixed — sema, lowering, C backend |
 | `is` keyword (variant arm membership test) | ✓ Fixed — parser desugaring; rejects struct patterns |
 | `at()` safe value accessor on collections | ✓ Fixed — Vec, Deque, Map, Set, OrderedMap, OrderedSet, LinkedMap, LinkedSet |
+| `_` discard in struct patterns (`Variant.arm(field, _, _)`) | ✓ Fixed — sema: skip binding/validation; lowering: skip IR emit |

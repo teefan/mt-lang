@@ -589,6 +589,7 @@ match token:
 When a variant arm carries payload fields, those fields may be destructured inline. Inside `VariantName.arm_name(...)`, each argument is one of:
 
 - **Binding:** a bare field name creates an immutable local bound to that field.
+- **Discard:** `_` discards a field value without binding it. Use it to skip unneeded fields in multi-field payload arms.
 - **Guard:** `field comparison_op expr` extracts the field and skips the arm if the condition is false. Supported operators: `==`, `!=`, `<`, `<=`, `>`, `>=`.
 - **Equality pattern:** `field = expr` is a shorthand guard — the arm matches only when the field equals the expression value.
 
@@ -604,7 +605,7 @@ match entity:
 
 Rules for struct patterns:
 
-- Each field name must appear at most once per arm.
+- Each field name must appear at most once per arm. `_` may appear any number of times as a positional discard.
 - Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field gatherively cover every member of the enum, the arm is considered exhaustive. An arm with only bindings and no guards counts as exhaustive.
 - Struct patterns compose with `as name` bindings: `Entity.player(hp > 0) as p` binds both `hp` (guard-checked) and `p` (the full payload struct).
 - Struct patterns do not apply to enum or integer match scrutinees.
