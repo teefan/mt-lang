@@ -39,7 +39,7 @@ extending String:
         return this.len == 0
 
 
-    public function equals(other: String) -> bool:
+    public function equal(other: String) -> bool:
         return this.as_str().equal(other.as_str())
 
 
