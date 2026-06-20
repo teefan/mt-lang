@@ -44,6 +44,45 @@ module MilkTea
             ]
           end
 
+          def emit_variant_equality_helpers
+            emitted_aggregate_variants.flat_map { |variant_decl| emit_variant_equality_helper(variant_decl) }
+          end
+
+          def emit_variant_equality_helper(variant_decl)
+            outer_c = variant_decl.linkage_name
+            lines = ["static bool mt_variant_eq_#{outer_c}(struct #{outer_c} left, struct #{outer_c} right) {"]
+            lines << "#{INDENT}if (left.kind != right.kind) return false;"
+            lines << "#{INDENT}switch (left.kind) {"
+
+            variant_decl.arms.each do |arm|
+              lines << "#{INDENT * 2}case #{outer_c}_kind_#{arm.name}:"
+              if arm.fields.empty?
+                lines << "#{INDENT * 3}return true;"
+              else
+                arm.fields.each do |field|
+                  field_type = field.type
+                  left_expr = "left.data.#{sanitize_c_identifier(arm.name)}.#{sanitize_c_identifier(field.name)}"
+                  right_expr = "right.data.#{sanitize_c_identifier(arm.name)}.#{sanitize_c_identifier(field.name)}"
+                  if field_type.is_a?(Types::StringView)
+                    lines << "#{INDENT * 3}if (!mt_str_equal(#{left_expr}, #{right_expr})) return false;"
+                  elsif field_type.is_a?(Types::Variant)
+                    lines << "#{INDENT * 3}if (!mt_variant_eq_#{named_type_c_name(field_type)}(#{left_expr}, #{right_expr})) return false;"
+                  elsif field_type.is_a?(Types::Primitive) || field_type.is_a?(Types::EnumBase) || field_type.is_a?(Types::Nullable)
+                    lines << "#{INDENT * 3}if (#{left_expr} != #{right_expr}) return false;"
+                  else
+                    lines << "#{INDENT * 3}if (#{left_expr} != #{right_expr}) return false;"
+                  end
+                end
+                lines << "#{INDENT * 3}return true;"
+              end
+            end
+
+            lines << "#{INDENT * 2}default: return true;"
+            lines << "#{INDENT}}"
+            lines << "}"
+            lines
+          end
+
           def emit_async_memory_helpers
             [
               "#define MT_ASYNC_HEADER_SIZE (sizeof(uint64_t) + sizeof(uintptr_t))",

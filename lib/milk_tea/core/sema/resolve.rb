@@ -822,8 +822,17 @@ module MilkTea
         return true if type.is_a?(Types::StringView)
         return true if pointer_type?(type)
         return true if ref_type?(type)
+        return true if type.is_a?(Types::Variant)
+        return true if type.is_a?(Types::VariantArmPayload)
 
-        false
+        variant_instance_type?(type)
+      end
+
+      def variant_instance_type?(type)
+        return false unless type.is_a?(Types::GenericInstance)
+
+        definition = type.resolved_declaration || type.definition
+        definition.is_a?(Types::Variant)
       end
 
       def collection_loop_type(type)

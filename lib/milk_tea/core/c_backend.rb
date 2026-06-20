@@ -168,6 +168,12 @@ module MilkTea
         lines << ""
       end
 
+      if uses_variant_equality_helper?
+        lines.concat(emit_str_equality_helper) unless uses_str_equality_helper?
+        lines.concat(emit_variant_equality_helpers)
+        lines << ""
+      end
+
       function_declarations = emit_function_declarations(emitted_functions)
       unless function_declarations.empty?
         lines.concat(function_declarations)

@@ -310,6 +310,47 @@ module MilkTea
             emitted_functions.any? { |function| function_uses_str_equality?(function) }
           end
 
+          def uses_variant_equality_helper?
+            emitted_functions.any? { |function| function_uses_variant_equality?(function) }
+          end
+
+          def function_uses_variant_equality?(function)
+            function.body.any? { |statement| statement_uses_variant_equality?(statement) }
+          end
+
+          def statement_uses_variant_equality?(statement)
+            case statement
+            when IR::LocalDecl
+              expression_uses_variant_equality?(statement.value)
+            when IR::ExpressionStmt
+              expression_uses_variant_equality?(statement.expression)
+            when IR::ReturnStmt
+              statement.value && expression_uses_variant_equality?(statement.value)
+            when IR::Assignment
+              expression_uses_variant_equality?(statement.value)
+            when IR::IfStmt
+              expression_uses_variant_equality?(statement.condition)
+            when IR::WhileStmt
+              expression_uses_variant_equality?(statement.condition)
+            else
+              false
+            end
+          end
+
+          def expression_uses_variant_equality?(expression)
+            return false unless expression
+
+            case expression
+            when IR::Binary
+              ["==", "!="].include?(expression.operator) &&
+                (expression.left.type.is_a?(Types::Variant) || expression.left.type.is_a?(Types::VariantArmPayload))
+            when IR::Call
+              expression.arguments.any? { |arg| expression_uses_variant_equality?(arg) }
+            else
+              false
+            end
+          end
+
           def function_uses_named_call?(function, callees)
             function.body.any? { |statement| statement_uses_named_call?(statement, callees) }
           end
