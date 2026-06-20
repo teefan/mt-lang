@@ -630,39 +630,284 @@ extending Parser:
 
     editable function parse_const_decl(visibility: str) -> void:
         this.advance()
+        let name = this.parse_identifier()
+        var type_id: ast.NodeId = 0z
+        var value_id: ast.NodeId = 0z
+        if this.peek().kind is token.TokenKind.op_arrow:
+            this.advance()
+            type_id = this.parse_type_ref_expr()
+            let body = this.parse_block_body()
+            this.file.declarations.push(ast.Decl.const_decl(
+                name = name, type_id = type_id, value_id = 0z, visibility = visibility,
+            ))
+            return
+        this.consume_colon()
+        type_id = this.parse_type_ref_expr()
+        this.consume_equal()
+        value_id = this.parse_expression()
+        this.file.declarations.push(ast.Decl.const_decl(
+            name = name, type_id = type_id, value_id = value_id, visibility = visibility,
+        ))
 
     editable function parse_var_decl(visibility: str) -> void:
         this.advance()
-
-    editable function parse_struct_decl(visibility: str) -> void:
-        this.advance()
-
-    editable function parse_enum_decl(visibility: str) -> void:
-        this.advance()
-
-    editable function parse_flags_decl(visibility: str) -> void:
-        this.advance()
-
-    editable function parse_variant_decl(visibility: str) -> void:
-        this.advance()
+        let name = this.parse_identifier()
+        var type_id: ast.NodeId = 0z
+        if this.peek().kind is token.TokenKind.op_colon:
+            this.advance()
+            type_id = this.parse_type_ref_expr()
+        var value_id: ast.NodeId = 0z
+        if this.peek().kind is token.TokenKind.op_assign:
+            this.advance()
+            value_id = this.parse_expression()
+        this.file.declarations.push(ast.Decl.var_decl(
+            name = name, type_id = type_id, value_id = value_id, visibility = visibility,
+        ))
 
     editable function parse_type_alias_decl(visibility: str) -> void:
         this.advance()
+        let name = this.parse_identifier()
+        this.consume_equal()
+        let target = this.parse_type_ref_expr()
+        this.file.declarations.push(ast.Decl.type_alias_decl(
+            name = name, target_type = target, visibility = visibility,
+        ))
+
+    editable function parse_struct_decl(visibility: str) -> void:
+        this.advance()
+        let name = this.parse_identifier()
+        this.consume_colon()
+        this.consume_newline()
+        this.expect_indent()
+        var fields_start: ast.NodeId = 0z
+        var fields_count: ast.NodeId = 0z
+        fields_start = this.file.fields.len
+        while not this.at_end() and not (this.peek().kind is token.TokenKind.dedent):
+            if this.peek().kind is token.TokenKind.newline:
+                this.advance()
+            else:
+                this.parse_struct_field()
+                fields_count += 1
+        if this.peek().kind is token.TokenKind.dedent:
+            this.advance()
+        this.file.declarations.push(ast.Decl.struct_decl(
+            name = name,
+            fields_start = fields_start,
+            fields_len = fields_count,
+            visibility = visibility,
+        ))
+
+    editable function parse_struct_field() -> void:
+        let field_name = this.parse_identifier()
+        this.consume_colon()
+        let _field_type = this.parse_type_ref_expr()
+        this.file.fields.push(ast.Field(name = field_name, field_type = ast.TypeRef(
+            name = ast.QualifiedName(parts = vec.Vec[str].create()),
+            arguments = vec.Vec[ast.TypeArgument].create(),
+            nullable = false,
+        )))
+
+    editable function parse_enum_decl(visibility: str) -> void:
+        this.advance()
+        let name = this.parse_identifier()
+        this.consume_colon()
+        let _backing_type = this.parse_type_ref_expr()
+        this.consume_newline()
+        this.expect_indent()
+        var members_start: ast.NodeId = 0z
+        var members_count: ast.NodeId = 0z
+        members_start = this.file.enum_members.len
+        while not this.at_end() and not (this.peek().kind is token.TokenKind.dedent):
+            if this.peek().kind is token.TokenKind.newline:
+                this.advance()
+            else:
+                let m_name = this.parse_identifier()
+                this.consume_equal()
+                let m_value = this.parse_expression()
+                this.file.enum_members.push(ast.EnumMember(name = m_name, value = m_value))
+                members_count += 1
+        if this.peek().kind is token.TokenKind.dedent:
+            this.advance()
+        this.file.declarations.push(ast.Decl.enum_decl(
+            name = name,
+            backing_type = 0z,
+            members_start = members_start,
+            members_len = members_count,
+            visibility = visibility,
+        ))
+
+    editable function parse_flags_decl(visibility: str) -> void:
+        this.advance()
+        let name = this.parse_identifier()
+        this.consume_colon()
+        let _backing_type = this.parse_type_ref_expr()
+        this.consume_newline()
+        this.expect_indent()
+        var members_start: ast.NodeId = 0z
+        var members_count: ast.NodeId = 0z
+        members_start = this.file.enum_members.len
+        while not this.at_end() and not (this.peek().kind is token.TokenKind.dedent):
+            if this.peek().kind is token.TokenKind.newline:
+                this.advance()
+            else:
+                let m_name = this.parse_identifier()
+                this.consume_equal()
+                let m_value = this.parse_expression()
+                this.file.enum_members.push(ast.EnumMember(name = m_name, value = m_value))
+                members_count += 1
+        if this.peek().kind is token.TokenKind.dedent:
+            this.advance()
+        this.file.declarations.push(ast.Decl.flags_decl(
+            name = name,
+            backing_type = 0z,
+            members_start = members_start,
+            members_len = members_count,
+            visibility = visibility,
+        ))
+
+    editable function parse_variant_decl(visibility: str) -> void:
+        this.advance()
+        let name = this.parse_identifier()
+        this.consume_colon()
+        this.consume_newline()
+        this.expect_indent()
+        var arms_start: ast.NodeId = 0z
+        var arms_count: ast.NodeId = 0z
+        arms_start = this.file.variant_arms.len
+        while not this.at_end() and not (this.peek().kind is token.TokenKind.dedent):
+            if this.peek().kind is token.TokenKind.newline:
+                this.advance()
+            else:
+                let arm_name = this.parse_identifier()
+                var fields_start: ast.NodeId = 0z
+                var fields_count: ast.NodeId = 0z
+                if this.peek().kind is token.TokenKind.op_lparen:
+                    this.advance()
+                    fields_start = this.file.variant_arm_fields.len
+                    if not (this.peek().kind is token.TokenKind.op_rparen):
+                        while true:
+                            let f_name = this.parse_identifier()
+                            this.consume_colon()
+                            let _f_type = this.parse_type_ref_expr()
+                            this.file.variant_arm_fields.push(ast.VariantArmField(
+                                name = f_name,
+                                field_type = ast.TypeRef(
+                                    name = ast.QualifiedName(parts = vec.Vec[str].create()),
+                                    arguments = vec.Vec[ast.TypeArgument].create(),
+                                    nullable = false,
+                                ),
+                            ))
+                            fields_count += 1
+                            if this.peek().kind is token.TokenKind.op_comma:
+                                this.advance()
+                            else:
+                                break
+                    this.consume_rparen()
+                var arm = ast.VariantArm(name = arm_name, fields = vec.Vec[ast.VariantArmField].create())
+                this.file.variant_arms.push(arm)
+                arms_count += 1
+        if this.peek().kind is token.TokenKind.dedent:
+            this.advance()
+        this.file.declarations.push(ast.Decl.variant_decl(
+            name = name,
+            type_params_start = 0z,
+            type_params_len = 0z,
+            arms_start = arms_start,
+            arms_len = arms_count,
+            visibility = visibility,
+        ))
 
     editable function parse_opaque_decl(visibility: str) -> void:
         this.advance()
+        let name = this.parse_identifier()
+        this.file.declarations.push(ast.Decl.opaque_decl(
+            name = name, c_name = "", visibility = visibility,
+        ))
 
     editable function parse_interface_decl(visibility: str) -> void:
         this.advance()
+        let name = this.parse_identifier()
+        this.consume_colon()
+        this.consume_newline()
+        this.expect_indent()
+        var methods_count: ast.NodeId = 0z
+        while not this.at_end() and not (this.peek().kind is token.TokenKind.dedent):
+            if this.peek().kind is token.TokenKind.newline:
+                this.advance()
+            else if this.peek().kind is token.TokenKind.keyword_editable:
+                this.advance()
+            else if this.peek().kind is token.TokenKind.keyword_static:
+                this.advance()
+            else if this.peek().kind is token.TokenKind.keyword_function:
+                this.advance()
+                this.parse_identifier()
+                this.consume_colon()
+                this.consume_newline()
+                this.expect_indent()
+                if this.peek().kind is token.TokenKind.dedent:
+                    this.advance()
+                methods_count += 1
+            else:
+                this.advance()
+        if this.peek().kind is token.TokenKind.dedent:
+            this.advance()
+        this.file.declarations.push(ast.Decl.interface_decl(
+            name = name,
+            methods_start = 0z,
+            methods_len = 0z,
+            visibility = visibility,
+        ))
 
     editable function parse_extending_block() -> void:
         this.advance()
+        let _type_name = this.parse_identifier()
+        this.consume_colon()
+        this.consume_newline()
+        this.expect_indent()
+        while not this.at_end() and not (this.peek().kind is token.TokenKind.dedent):
+            if this.peek().kind is token.TokenKind.newline:
+                this.advance()
+            elif this.peek().kind is token.TokenKind.keyword_editable:
+                this.advance()
+            elif this.peek().kind is token.TokenKind.keyword_static:
+                this.advance()
+            elif this.peek().kind is token.TokenKind.keyword_function:
+                this.advance()
+                let m_name = this.parse_identifier()
+                this.skip_to_body()
+            else:
+                this.advance()
+        if this.peek().kind is token.TokenKind.dedent:
+            this.advance()
 
     editable function parse_event_decl(visibility: str) -> void:
         this.advance()
+        let name = this.parse_identifier()
+        this.consume_lbracket()
+        let capacity_tok = this.peek()
+        this.advance()
+        var capacity: int = 4
+        if capacity_tok.kind is token.TokenKind.int_literal(value):
+            capacity = value
+        this.consume_rbracket()
+        var payload_type: ast.NodeId = 0z
+        if this.peek().kind is token.TokenKind.op_lparen:
+            this.advance()
+            payload_type = this.parse_type_ref_expr()
+            this.consume_rparen()
+        this.file.declarations.push(ast.Decl.event_decl(
+            name = name,
+            capacity = capacity,
+            payload_type = payload_type,
+            visibility = visibility,
+        ))
 
     editable function parse_static_assert() -> void:
         this.advance()
+        let _condition = this.parse_expression()
+        this.file.declarations.push(ast.Decl.static_assert_decl(
+            condition = 0z, message = "", line = 0,
+        ))
 
     editable function parse_attribute_decl(visibility: str) -> void:
         this.advance()
@@ -675,3 +920,30 @@ extending Parser:
 
     editable function parse_emit_decl() -> void:
         this.advance()
+
+    # ── Helpers ──
+
+    editable function consume_equal() -> void:
+        if this.peek().kind is token.TokenKind.op_assign:
+            this.advance()
+        else:
+            this.emit_error(this.peek(), "expected '='")
+
+    editable function consume_lbracket() -> void:
+        if this.peek().kind is token.TokenKind.op_lbracket:
+            this.advance()
+        else:
+            this.emit_error(this.peek(), "expected '['")
+
+    editable function parse_type_ref_expr() -> ast.NodeId:
+        return this.parse_expression()
+
+    editable function skip_to_body() -> void:
+        while not this.at_end():
+            if this.peek().kind is token.TokenKind.op_colon:
+                this.advance()
+                while not this.at_end() and not (this.peek().kind is token.TokenKind.newline):
+                    this.advance()
+                let _body = this.parse_block_body()
+                return
+            this.advance()
