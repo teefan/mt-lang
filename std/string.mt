@@ -1,6 +1,7 @@
 import std.str as text_ops
 import std.mem.arena as arena
 import std.mem.heap as heap
+import std.vec as vec
 
 public struct String:
     data: ptr[ubyte]?
@@ -36,6 +37,10 @@ extending String:
 
     public function is_empty() -> bool:
         return this.len == 0
+
+
+    public function equals(other: String) -> bool:
+        return this.as_str().equal(other.as_str())
 
 
     public editable function clear() -> void:
@@ -200,3 +205,30 @@ extending String:
 
     public function to_cstr(space: ref[arena.Arena]) -> cstr:
         return space.to_cstr(this.as_str())
+
+
+    public function split(separator: str) -> vec.Vec[String]:
+        var result = vec.Vec[String].create()
+        var remaining = this.as_str()
+        while true:
+            var found = remaining.find_substring(separator)
+            let idx = found else:
+                break
+            result.push(String.from_str(remaining.slice(0, idx)))
+            remaining = remaining.slice(idx + separator.len, remaining.len - idx - separator.len)
+        result.push(String.from_str(remaining))
+        return result
+
+
+    public function replace(old_substr: str, new_substr: str) -> String:
+        var result = String.create()
+        var remaining = this.as_str()
+        while true:
+            var found = remaining.find_substring(old_substr)
+            let idx = found else:
+                break
+            result.append(remaining.slice(0, idx))
+            result.append(new_substr)
+            remaining = remaining.slice(idx + old_substr.len, remaining.len - idx - old_substr.len)
+        result.append(remaining)
+        return result

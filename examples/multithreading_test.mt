@@ -44,10 +44,10 @@ function run_tests() -> int:
             failures += 1
 
     if failures > 0:
-        stdio.print_string("FAIL: parallel for")
+        stdio.print_format("FAIL: parallel for")
         return failures
 
-    stdio.print_string("  pass: parallel for — span capture, 1000 elements verified")
+    stdio.print_format("  pass: parallel for — span capture, 1000 elements verified")
 
     parallel:
         compute_a()
@@ -56,10 +56,10 @@ function run_tests() -> int:
     let total = fork_result_a + fork_result_b
 
     if total != 499500:
-        stdio.print_string("FAIL: parallel block")
+        stdio.print_format("FAIL: parallel block")
         return 1
 
-    stdio.print_string("  pass: parallel block — fork-join computation correct")
+    stdio.print_format("  pass: parallel block — fork-join computation correct")
 
     atomic_counter.store(0)
 
@@ -69,19 +69,19 @@ function run_tests() -> int:
 
     let counter_value = atomic_counter.load()
     if counter_value != 10000:
-        stdio.print_string("FAIL: detach + gather")
+        stdio.print_format("FAIL: detach + gather")
         return 1
 
-    stdio.print_string("  pass: detach + gather — concurrent increments correct")
+    stdio.print_format("  pass: detach + gather — concurrent increments correct")
 
     return 0
 
 
 function main() -> int:
-    stdio.print_string("multithreading tests:")
+    stdio.print_format("multithreading tests:")
 
     let result = run_tests()
     if result == 0:
-        stdio.print_string("all passed")
+        stdio.print_format("all passed")
 
     return result
