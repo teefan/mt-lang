@@ -1,108 +1,152 @@
 # Token definitions for the self-hosting Milk Tea compiler.
+#
+# Mirrors the Ruby lib/milk_tea/core/token.rb KEYWORDS map and operator tables.
+# TokenKind arms are sorted alphabetically within each group.
 
 public variant TokenKind:
     eof
 
-    # Keywords
-    keyword_function
-    keyword_let
-    keyword_var
-    keyword_return
-    keyword_if
-    keyword_else
-    keyword_for
-    keyword_while
-    keyword_match
-    keyword_break
-    keyword_continue
-    keyword_pass
-    keyword_import
-    keyword_as
-    keyword_public
-    keyword_struct
-    keyword_union
-    keyword_enum
-    keyword_flags
-    keyword_variant
-    keyword_opaque
-    keyword_extending
-    keyword_interface
-    keyword_implements
-    keyword_external
-    keyword_foreign
-    keyword_function_async
-    keyword_function_const
-    keyword_unsafe
-    keyword_defer
-    keyword_await
-    keyword_type
-    keyword_const
-    keyword_attribute
-    keyword_event
-    keyword_static_assert
-    keyword_emit
-    keyword_when
-    keyword_inline
-    keyword_parallel
+    # ── Keywords ──
+    keyword_align_of
     keyword_and
-    keyword_or
-    keyword_not
-    keyword_true
+    keyword_as
+    keyword_async
+    keyword_attribute
+    keyword_attribute_arg
+    keyword_attribute_of
+    keyword_attributes_of
+    keyword_await
+    keyword_break
+    keyword_callable_of
+    keyword_compiler_flag
+    keyword_const
+    keyword_consuming
+    keyword_continue
+    keyword_defer
+    keyword_detach
+    keyword_dyn
+    keyword_editable
+    keyword_else
+    keyword_emit
+    keyword_enum
+    keyword_event
+    keyword_external
+    keyword_extending
     keyword_false
+    keyword_field_of
+    keyword_fields_of
+    keyword_flags
+    keyword_fn
+    keyword_for
+    keyword_foreign
+    keyword_function
+    keyword_gather
+    keyword_has_attribute
+    keyword_if
+    keyword_implements
+    keyword_in
+    keyword_include
+    keyword_inline
+    keyword_inout
+    keyword_import
+    keyword_interface
+    keyword_let
+    keyword_link
+    keyword_match
+    keyword_members_of
+    keyword_module
+    keyword_not
     keyword_null
+    keyword_offset_of
+    keyword_opaque
+    keyword_or
+    keyword_out
+    keyword_parallel
+    keyword_pass
+    keyword_proc
+    keyword_public
+    keyword_return
+    keyword_size_of
+    keyword_static
+    keyword_static_assert
+    keyword_struct
+    keyword_true
+    keyword_type
+    keyword_union
+    keyword_unsafe
+    keyword_var
+    keyword_variant
+    keyword_when
+    keyword_while
 
-    # Identifiers / Literals
+    # ── Identifiers / Literals ──
     identifier(name: str)
     string_literal(value: str)
     cstring_literal(value: str)
     int_literal(value: int)
+    float_literal(value: float)
+    char_literal(value: ubyte)
+    fstring_literal
 
-    # Operators
-    op_plus
-    op_minus
-    op_star
-    op_slash
-    op_percent
+    # ── Single-char operators ──
+    op_ampersand
+    op_at
+    op_caret
+    op_colon
+    op_comma
+    op_dot
     op_equal
-    op_not_equal
-    op_less
-    op_less_equal
     op_greater
-    op_greater_equal
+    op_hash
+    op_less
+    op_lparen
+    op_lbracket
+    op_minus
+    op_percent
+    op_pipe
+    op_plus
+    op_question
+    op_rparen
+    op_rbracket
+    op_slash
+    op_star
+    op_tilde
+
+    # ── Single-char assignment / value ──
     op_assign
+
+    # ── Two-char operators ──
+    op_arrow
+    op_dot_dot
+    op_not_equal
+    op_less_equal
+    op_greater_equal
+    op_shift_left
+    op_shift_right
+
+    # ── Two-char assignment operators ──
     op_plus_assign
     op_minus_assign
     op_star_assign
     op_slash_assign
     op_percent_assign
-    op_arrow
-    op_dot
-    op_comma
-    op_colon
-    op_semicolon
-    op_lparen
-    op_rparen
-    op_lbracket
-    op_rbracket
-    op_question
-    op_ampersand
-    op_pipe
-    op_caret
-    op_tilde
-    op_shift_left
-    op_shift_right
-    op_hash
-    op_double_dot
-    op_double_colon
+    op_amp_equal
+    op_pipe_equal
+    op_caret_equal
+
+    # ── Three-char operators ──
+    op_shift_left_equal
+    op_shift_right_equal
     op_ellipsis
 
-    # Indentation
+    # ── Lexical structure ──
     indent
     dedent
     newline
 
 public struct Token:
     kind: TokenKind
+    lexeme: str
     line: int
     column: int
-    length: int
+    start_offset: ptr_uint

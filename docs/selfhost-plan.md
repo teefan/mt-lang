@@ -146,10 +146,10 @@ token
 
 | Phase | Component | Status |
 |-------|-----------|--------|
-| 1 | `token.mt` | ✓ `TokenKind` variant (70 arms), `Token` struct |
-| 1 | `lexer.mt` | ✓ Character-level dispatch, keyword detection, string/number scanning |
-| 1 | `source.mt` | ✗ |
-| 1 | `token_stream.mt` | ✗ |
+| 1 | `token.mt` | ✓ `TokenKind` variant (70 arms), `Token` struct with lexeme/start_offset |
+| 1 | `lexer.mt` | ✓ Line-by-line indentation-based lexer; full keyword/operator/string/number/char |
+| 1 | `source.mt` | ✓ `SourceView` (path+text), `Span` helpers |
+| 1 | `token_stream.mt` | ✓ `SyntaxTokenStream` with len/get |
 | 2 | `ast.mt` | ✗ |
 | 2 | `cst.mt` | ✗ |
 | 2 | `cst_builder.mt` | ✗ |
@@ -168,7 +168,7 @@ token
 | 5 | `emit/*` | ✗ |
 | 6 | `module_loader.mt` | ✗ |
 | 6 | `compiler.mt` | ✗ |
-| 6 | `main.mt` | ✓ Skeleton entry point |
+| 6 | `main.mt` | ✓ Skeleton entry point, exercises lexer on hardcoded input |
 
 ## Coding principles
 
