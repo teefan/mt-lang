@@ -794,6 +794,7 @@ module MilkTea
         if payload_fields.size == 1
           native_field = payload_fields.keys.first
           has_native_reference = arguments.any? do |arg|
+            next false if !arg.name && arg.value.is_a?(AST::Identifier) && arg.value.name == "_"
             name = arg.name || (arg.value.is_a?(AST::Identifier) ? arg.value.name : nil)
             name == native_field
           end
@@ -808,7 +809,10 @@ module MilkTea
         equality_cover = {}
 
         arguments.each do |arg|
-          if arg.name
+          if arg.value.is_a?(AST::Identifier) && arg.value.name == "_"
+            # _ discard: skip this field, no binding, no guard
+            next
+          elsif arg.name
             # Equality pattern: kind = Kind.boss
             field_name = arg.name
             raise_sema_error("unknown field #{scrutinee_type}.#{arm_name}.#{field_name}") unless payload_fields.key?(field_name)
