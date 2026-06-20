@@ -43,6 +43,7 @@ module MilkTea
               end
             when IR::Binary
               return emit_str_equality_expression(expression) if str_equality_expression?(expression)
+              return emit_variant_equality_expression(expression) if variant_equality_expression?(expression)
 
               emit_binary_expression(expression)
             when IR::Conditional
@@ -160,6 +161,22 @@ module MilkTea
           def emit_str_equality_expression(expression)
             call = "mt_str_equal(#{emit_expression(expression.left)}, #{emit_expression(expression.right)})"
             expression.operator == "!=" ? "!#{call}" : call
+          end
+
+          def variant_equality_expression?(expression)
+            ["==", "!="].include?(expression.operator) &&
+              (expression.left.type.is_a?(Types::Variant) || expression.left.type.is_a?(Types::VariantArmPayload))
+          end
+
+          def emit_variant_equality_expression(expression)
+            helper_name = variant_equality_helper_name(expression.left.type)
+            call = "#{helper_name}(#{emit_expression(expression.left)}, #{emit_expression(expression.right)})"
+            expression.operator == "!=" ? "!#{call}" : call
+          end
+
+          def variant_equality_helper_name(type)
+            variant = type.is_a?(Types::VariantArmPayload) ? type.variant_type : type
+            "mt_variant_eq_#{named_type_c_name(variant)}"
           end
 
           def emit_initializer(expression)
