@@ -364,9 +364,14 @@ extending Parser:
         this.parse_argument_list()
         args_len = this.file.exprs.len - args_start
         this.consume_rbracket()
+        var resolved_index: ast.NodeId = 0z
+        if args_len == 1z:
+            resolved_index = args_start
         return this.alloc_expr(ast.Expr.index_access(
             receiver = receiver,
-            index = 0z,
+            index = resolved_index,
+            args_start = args_start,
+            args_len = args_len,
         ))
 
     editable function parse_argument_list() -> void:
@@ -631,9 +636,9 @@ extending Parser:
     editable function parse_param() -> void:
         let name = this.parse_identifier()
         this.consume_colon()
-        let _type_expr = this.parse_expression()
+        let type_expr = this.parse_expression()
         this.file.params.push(ast.Param(
-            name = name, param_type = this.empty_type_ref(), line = 0, column = 0,
+            name = name, param_type = this.empty_type_ref(), type_expr_id = type_expr, line = 0, column = 0,
         ))
 
     editable function parse_const_decl(visibility: str) -> void:
@@ -708,8 +713,8 @@ extending Parser:
     editable function parse_struct_field() -> void:
         let field_name = this.parse_identifier()
         this.consume_colon()
-        let _field_type = this.parse_expression()
-        this.file.fields.push(ast.Field(name = field_name, field_type = this.empty_type_ref()))
+        let field_type_expr = this.parse_expression()
+        this.file.fields.push(ast.Field(name = field_name, field_type = this.empty_type_ref(), type_expr_id = field_type_expr))
 
     editable function empty_type_ref() -> ast.TypeRef:
         return ast.TypeRef(

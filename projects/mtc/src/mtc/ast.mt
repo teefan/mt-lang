@@ -27,6 +27,7 @@ public struct TypeRef:
 public struct Param:
     name: str
     param_type: TypeRef
+    type_expr_id: NodeId
     line: int
     column: int
 
@@ -39,6 +40,7 @@ public struct ForeignParam:
 public struct Field:
     name: str
     field_type: TypeRef
+    type_expr_id: NodeId
 
 public struct VariantArmField:
     name: str
@@ -102,7 +104,7 @@ public struct FormatStringPart:
 public variant Expr:
     identifier(name: str, line: int, column: int)
     member_access(receiver: NodeId, member: str, line: int, column: int)
-    index_access(receiver: NodeId, index: NodeId)
+    index_access(receiver: NodeId, index: NodeId, args_start: NodeId, args_len: NodeId)
     call(callee: NodeId, args_start: NodeId, args_len: NodeId, line: int, column: int)
     specialization(callee: NodeId, args_start: NodeId, args_len: NodeId)
     unary_op(operator: str, operand: NodeId)
