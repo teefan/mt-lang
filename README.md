@@ -89,6 +89,7 @@ Common punctuation and operators:
 - assignment: `= += -= *= /= %= &= |= ^= <<= >>=`
 - variadic marker: `...`
 - word operators: `and`, `or`, `not`
+- pattern test: `is` — desugars to `match` expression for variant arm membership test
 
 ## 3. Top-Level Declarations
 

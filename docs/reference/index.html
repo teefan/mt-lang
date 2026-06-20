@@ -770,7 +770,7 @@ function main() -&gt; int:
 </div>
 
   <div class="callout tip">
-    <strong>Tip:</strong> This example covers imports, constants, <code>const function</code>, type aliases, enums, flags, structs (nested, attributed), variants, interfaces, <code>extending</code> methods, generics with constraints, value parameter generics, <code>Result</code> error handling with <code>?</code> and guard binding, events, closures (<code>proc</code>), <code>async</code>/<code>await</code>, concurrency (<code>parallel for</code>, <code>parallel:</code>, <code>detach</code> + <code>gather</code>, <code>atomic[T]</code>), native vector types, arrays, spans, collections, <code>for</code>/<code>while</code>/<code>match</code>/<code>if</code>, parallel <code>for</code>, <code>defer</code>, <code>unsafe</code>, <code>ref[T]</code>, <code>dyn[Interface]</code>, format strings, heredocs, <code>str_buffer</code>, compile-time reflection, <code>inline for</code>/<code>inline if</code>, <code>static_assert</code>, and explicit casts. See the sections below for full details on each feature.
+    <strong>Tip:</strong> This example covers imports, constants, <code>const function</code>, type aliases, enums, flags, structs (nested, attributed), variants, interfaces, <code>extending</code> methods, generics with constraints, value parameter generics, <code>Result</code> error handling with <code>?</code> and guard binding, events, closures (<code>proc</code>), <code>async</code>/<code>await</code>, concurrency (<code>parallel for</code>, <code>parallel:</code>, <code>detach</code> + <code>gather</code>, <code>atomic[T]</code>), native vector types, arrays, spans, collections, <code>for</code>/<code>while</code>/<code>match</code>/<code>if</code>, variant membership test (<code>is</code>), parallel <code>for</code>, <code>defer</code>, <code>unsafe</code>, <code>ref[T]</code>, <code>dyn[Interface]</code>, format strings, heredocs, <code>str_buffer</code>, compile-time reflection, <code>inline for</code>/<code>inline if</code>, <code>static_assert</code>, and explicit casts. See the sections below for full details on each feature.
   </div>
 </section>
 
@@ -896,6 +896,7 @@ let total = subtotal +
       <tr><td>Assignment</td><td><code>= += -= *= /= %= &amp;= |= ^= &lt;&lt;= &gt;&gt;=</code></td></tr>
       <tr><td>Variadic</td><td><code>...</code></td></tr>
       <tr><td>Word operators</td><td><code>and</code> <code>or</code> <code>not</code></td></tr>
+      <tr><td>Pattern test</td><td><code>is</code> &mdash; variant arm membership test, desugars to <code>match</code></td></tr>
       <tr><td>Parameter modes</td><td><code>in</code> <code>out</code> <code>inout</code> (reserved for <code>foreign function</code>)</td></tr>
     </table>
   </div>
@@ -1372,6 +1373,26 @@ match token:
     1: "one"
     2: "two"
     _: "other"</code></pre>
+</div>
+
+  <h3>Variant Membership Test (<code>is</code>)</h3>
+  <p><code>expr is Variant.Arm</code> returns <code>bool</code>. Desugars to a <code>match</code> expression at parse time &mdash; no new semantics. Use for boolean membership checks; use <code>match</code> for payload destructuring.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## No-payload arm
+if kind is TokenKind.eof:
+    break
+
+## Payload arm (any payload matches)
+if kind is TokenKind.identifier:
+    process_ident()
+
+## With logical operators
+if kind is TokenKind.eof or kind is TokenKind.indent:
+    break
+
+## In a let binding
+let ok = kind is TokenKind.op_plus</code></pre>
 </div>
 
   <h3>Struct Patterns (Variants)</h3>
@@ -2165,7 +2186,7 @@ const KEYWORDS = new Set([
   'if','else','match','for','while','return','break','continue','pass',
   'defer','unsafe','when','inline','external','foreign','import','public',
   'event','emit','not','and','or','in','out','inout','consuming','static_assert',
-  'fn','proc','this','editable','static','as','parallel','detach','gather',
+  'fn','proc','this','editable','static','as','parallel','detach','gather','is',
 ])
 
 const ATOMS = new Set(['true','false','null'])
