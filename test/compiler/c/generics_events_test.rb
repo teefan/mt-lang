@@ -67,7 +67,7 @@ class GenericsEventsTest < Minitest::Test
 
     assert_match(/if \(frame == NULL\) \{\s*return true;/m, generated)
     assert_match(/if \(frame == NULL\) \{\s*waiter\(waiter_frame\);\s*return;/m, generated)
-    assert_match(/if \(frame == NULL\) \{\s*return \(Result_void_EventError\)\{.*EventError_full.*\};\s*\}/m, generated)
+    assert_match(/if \(frame == NULL\) \{\s*return \(std_result_Result_void_EventError\)\{.*EventError_full.*\};\s*\}/m, generated)
     assert_match(/\.frame = NULL, \.ready = mt_event_demo_event_wait_full_codegen_ready_1__wait__ready/m, generated)
   end
 

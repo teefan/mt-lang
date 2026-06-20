@@ -365,7 +365,7 @@ class AsyncTest < Minitest::Test
 
     assert_match(/demo_async_status_void_codegen___async_main__frame/, generated)
     assert_match(/local_discard_\d+/, generated)
-    assert_match(/if \(.*kind == Result_void_int_kind_failure\)/, generated)
+    assert_match(/if \(.*kind == std_result_Result_void_int_kind_failure\)/, generated)
     assert_match(/data\.failure\.error;/, generated)
   end
 
@@ -387,11 +387,11 @@ class AsyncTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/Result_int_int __mt_propagate_\d+ = demo_main_parse\([^\)]*\);/, generated)
-    assert_match(/if \(__mt_propagate_\d+\.kind == Result_int_int_kind_failure\)/, generated)
-    assert_match(/__mt_frame->result = \(Result_str_int\)\{ \.kind = Result_str_int_kind_failure, \.data\.failure = \(struct Result_str_int_failure\)\{ \.error = __mt_propagate_\d+\.data\.failure\.error \} \};/, generated)
+    assert_match(/std_result_Result_int_int __mt_propagate_\d+ = demo_main_parse\([^\)]*\);/, generated)
+    assert_match(/if \(__mt_propagate_\d+\.kind == std_result_Result_int_int_kind_failure\)/, generated)
+    assert_match(/__mt_frame->result = \(std_result_Result_str_int\)\{ \.kind = std_result_Result_str_int_kind_failure, \.data\.failure = \(struct std_result_Result_str_int_failure\)\{ \.error = __mt_propagate_\d+\.data\.failure\.error \} \};/, generated)
     assert_match(/__mt_frame->ready = true;/, generated)
-    refute_match(/return \(Result_str_int\)\{ \.kind = Result_str_int_kind_failure/, generated)
+    refute_match(/return \(std_result_Result_str_int\)\{ \.kind = std_result_Result_str_int_kind_failure/, generated)
   end
 
   def test_generate_c_for_async_result_propagation_over_await_expression
@@ -415,8 +415,8 @@ class AsyncTest < Minitest::Test
     generated = generate_c_from_program_source(source)
 
     assert_match(/take_result\([^\)]*\);/, generated)
-    assert_match(/Result_int_int __mt_propagate_\d+ = __mt_frame->local___mt_async_tmp_\d+;/, generated)
-    assert_match(/__mt_frame->result = \(Result_str_int\)\{ \.kind = Result_str_int_kind_failure, \.data\.failure = \(struct Result_str_int_failure\)\{ \.error = __mt_propagate_\d+\.data\.failure\.error \} \};/, generated)
+    assert_match(/std_result_Result_int_int __mt_propagate_\d+ = __mt_frame->local___mt_async_tmp_\d+;/, generated)
+    assert_match(/__mt_frame->result = \(std_result_Result_str_int\)\{ \.kind = std_result_Result_str_int_kind_failure, \.data\.failure = \(struct std_result_Result_str_int_failure\)\{ \.error = __mt_propagate_\d+\.data\.failure\.error \} \};/, generated)
   end
 
   def test_generate_c_for_async_result_void_propagation_statement
@@ -440,8 +440,8 @@ class AsyncTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-  assert_match(/Result_void_int __mt_propagate_\d+ = demo_main_parse\([^\)]*\);/, generated)
-    assert_match(/if \(__mt_propagate_\d+\.kind == Result_void_int_kind_failure\)/, generated)
+  assert_match(/std_result_Result_void_int __mt_propagate_\d+ = demo_main_parse\([^\)]*\);/, generated)
+    assert_match(/if \(__mt_propagate_\d+\.kind == std_result_Result_void_int_kind_failure\)/, generated)
     assert_match(/__mt_frame->result = __mt_propagate_\d+;/, generated)
     assert_match(/__mt_frame->ready = true;/, generated)
     refute_match(/return __mt_propagate_\d+;/, generated)
@@ -604,8 +604,8 @@ async function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/Result_int_int_success payload = .*\.data\.success;/, generated)
-    assert_match(/Result_int_int_failure .*\.data\.failure;/, generated)
+    assert_match(/std_result_Result_int_int_success payload = .*\.data\.success;/, generated)
+    assert_match(/std_result_Result_int_int_failure .*\.data\.failure;/, generated)
   end
 
   def test_run_program_for_async_status_result

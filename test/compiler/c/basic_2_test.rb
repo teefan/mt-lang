@@ -188,7 +188,7 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     assert_match(/while \(current >= 0\) \{/, generated)
-    assert_match(/if \(__mt_match_value_\d+\.kind == Option_int_kind_some\) \{/, generated)
+    assert_match(/if \(__mt_match_value_\d+\.kind == std_option_Option_int_kind_some\) \{/, generated)
     assert_match(/if \(payload.value == 2\) \{\n        break;/, generated)
     refute_match(/total \+= payload\.value;\n\s+break;/, generated)
     refute_match(/goto __mt_loop_break_\d+;/, generated)

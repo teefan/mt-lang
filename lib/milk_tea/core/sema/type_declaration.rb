@@ -33,13 +33,9 @@ module MilkTea
       def install_builtin_types
         INSTALLABLE_BUILTIN_TYPE_NAMES.each do |name|
           @ctx.types[name] = case name
-                         when "str"
-                           Types::StringView.new
-                         when "Option"
-                           builtin_option_type
-                         when "Result"
-                           builtin_result_type
-                         when "Subscription"
+                          when "str"
+                            Types::StringView.new
+                          when "Subscription"
                            builtin_subscription_type
                          when "EventError"
                            builtin_event_error_type
@@ -77,14 +73,6 @@ module MilkTea
                             Types::Primitive.new(name)
                          end
         end
-      end
-
-      def builtin_option_type
-        Types::BUILTIN_OPTION_TYPE
-      end
-
-      def builtin_result_type
-        Types::BUILTIN_RESULT_TYPE
       end
 
       def builtin_subscription_type
@@ -164,6 +152,35 @@ module MilkTea
 
             @ctx.imports[alias_name] = module_binding
           end
+        end
+      end
+
+      PRELUDE_MODULE_PATHS = %w[std.option std.result].freeze
+
+      def install_prelude_types
+        return if PRELUDE_MODULE_PATHS.include?(@ctx.module_name)
+
+        PRELUDE_MODULE_PATHS.each do |module_path|
+          module_binding = @ctx.imported_modules[module_path]
+          unless module_binding
+            install_fallback_builtin_type(module_path)
+            next
+          end
+
+          module_binding.types.each do |type_name, type|
+            @ctx.types[type_name] = type unless @ctx.types.key?(type_name)
+          end
+
+          @ctx.imports[module_path] = module_binding unless @ctx.imports.key?(module_path)
+        end
+      end
+
+      def install_fallback_builtin_type(module_path)
+        case module_path
+        when "std.option"
+          @ctx.types["Option"] = Types::BUILTIN_OPTION_TYPE unless @ctx.types.key?("Option")
+        when "std.result"
+          @ctx.types["Result"] = Types::BUILTIN_RESULT_TYPE unless @ctx.types.key?("Result")
         end
       end
 
@@ -647,8 +664,15 @@ module MilkTea
         end
       end
 
+      PRELUDE_TYPE_DEFINING_MODULES = {
+        "Option" => "std.option",
+        "Result" => "std.result",
+      }.freeze
+
       def ensure_available_type_name!(name, line: nil, column: nil, length: nil)
-        ensure_non_reserved_type_binding_name!(name, kind_label: "type", line:, column:, length:) unless raw_module?
+        unless raw_module? || (PRELUDE_TYPE_DEFINING_MODULES[name] == @ctx.module_name)
+          ensure_non_reserved_type_binding_name!(name, kind_label: "type", line:, column:, length:)
+        end
         raise_sema_error("duplicate type #{name}") if @ctx.types.key?(name) || @ctx.interfaces.key?(name)
       end
 

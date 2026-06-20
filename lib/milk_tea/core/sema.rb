@@ -97,7 +97,7 @@ module MilkTea
     OrderResolution = Data.define(:target_type, :binding)
 
     INSTALLABLE_BUILTIN_TYPE_NAMES = (Types::BUILTIN_PRIMITIVE_NAMES + %w[
-      Option Result Subscription EventError
+      Subscription EventError
       struct_handle field_handle callable_handle attribute_handle member_handle type
     ]).freeze
 
@@ -181,6 +181,7 @@ module MilkTea
         install_builtin_types
         install_builtin_attributes
         install_imports
+        install_prelude_types
         declare_named_types
         resolve_generic_type_param_constraints
         resolve_type_aliases
@@ -270,6 +271,7 @@ module MilkTea
         catch_structural { install_builtin_types }
         catch_structural { install_builtin_attributes }
         catch_structural { install_imports }
+        catch_structural { install_prelude_types }
         catch_structural { declare_named_types }
         catch_structural { resolve_generic_type_param_constraints }
         catch_structural { resolve_type_aliases }

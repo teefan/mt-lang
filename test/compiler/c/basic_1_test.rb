@@ -1877,8 +1877,8 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/Result_int_int value = demo_main_parse\(4\);/, generated)
-    assert_match(/if \(value\.kind == Result_int_int_kind_failure\)/, generated)
+    assert_match(/std_result_Result_int_int value = demo_main_parse\(4\);/, generated)
+    assert_match(/if \(value\.kind == std_result_Result_int_int_kind_failure\)/, generated)
     assert_match(/return 1;/, generated)
     assert_match(/return value\.data\.success\.value \+ 10;/, generated)
   end
@@ -1902,8 +1902,8 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/Option_int value = demo_main_parse\(4\);/, generated)
-    assert_match(/if \(value\.kind == Option_int_kind_none\)/, generated)
+    assert_match(/std_option_Option_int value = demo_main_parse\(4\);/, generated)
+    assert_match(/if \(value\.kind == std_option_Option_int_kind_none\)/, generated)
     assert_match(/return 1;/, generated)
     assert_match(/return value\.data\.some\.value \+ 10;/, generated)
   end
@@ -1927,8 +1927,8 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/Result_int_int value = demo_main_parse\(4\);/, generated)
-    assert_match(/if \(value\.kind == Result_int_int_kind_failure\)/, generated)
+    assert_match(/std_result_Result_int_int value = demo_main_parse\(4\);/, generated)
+    assert_match(/if \(value\.kind == std_result_Result_int_int_kind_failure\)/, generated)
     assert_match(/return value\.data\.failure\.error;/, generated)
     assert_match(/return value\.data\.success\.value \+ 10;/, generated)
   end
@@ -1953,8 +1953,8 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/Result_int_int value = demo_main_parse\(4\);/, generated)
-    assert_match(/if \(value\.kind == Result_int_int_kind_failure\)/, generated)
+    assert_match(/std_result_Result_int_int value = demo_main_parse\(4\);/, generated)
+    assert_match(/if \(value\.kind == std_result_Result_int_int_kind_failure\)/, generated)
     assert_match(/value\.data\.success\.value \+= 2;/, generated)
     assert_match(/return value\.data\.success\.value;/, generated)
   end
@@ -1981,11 +1981,11 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/struct Result_void_int_success \{/, generated)
+    assert_match(/struct std_result_Result_void_int_success \{/, generated)
     assert_match(/uint8_t value;/, generated)
     assert_match(/\.value = \(demo_main_done\(\), 0\)/, generated)
-    assert_match(/Result_void_int __mt_let_else_discard_\d+ = demo_main_parse\(flag\);/, generated)
-    assert_match(/if \(__mt_let_else_discard_\d+\.kind == Result_void_int_kind_failure\)/, generated)
+    assert_match(/std_result_Result_void_int __mt_let_else_discard_\d+ = demo_main_parse\(flag\);/, generated)
+    assert_match(/if \(__mt_let_else_discard_\d+\.kind == std_result_Result_void_int_kind_failure\)/, generated)
     assert_match(/return __mt_let_else_discard_\d+\.data\.failure\.error;/, generated)
   end
 
@@ -2007,9 +2007,9 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/Result_int_int __mt_propagate_\d+ = demo_main_parse\(input\);/, generated)
-    assert_match(/if \(__mt_propagate_\d+\.kind == Result_int_int_kind_failure\)/, generated)
-    assert_match(/return \(Result_str_int\)\{ \.kind = Result_str_int_kind_failure, \.data\.failure = \(struct Result_str_int_failure\)\{ \.error = __mt_propagate_\d+\.data\.failure\.error \} \};/, generated)
+    assert_match(/std_result_Result_int_int __mt_propagate_\d+ = demo_main_parse\(input\);/, generated)
+    assert_match(/if \(__mt_propagate_\d+\.kind == std_result_Result_int_int_kind_failure\)/, generated)
+    assert_match(/return \(std_result_Result_str_int\)\{ \.kind = std_result_Result_str_int_kind_failure, \.data\.failure = \(struct std_result_Result_str_int_failure\)\{ \.error = __mt_propagate_\d+\.data\.failure\.error \} \};/, generated)
     assert_match(/int32_t value = __mt_propagate_\d+\.data\.success\.value;/, generated)
   end
 
@@ -2034,8 +2034,8 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/Result_void_int __mt_propagate_\d+ = demo_main_parse\(flag\);/, generated)
-    assert_match(/if \(__mt_propagate_\d+\.kind == Result_void_int_kind_failure\)/, generated)
+    assert_match(/std_result_Result_void_int __mt_propagate_\d+ = demo_main_parse\(flag\);/, generated)
+    assert_match(/if \(__mt_propagate_\d+\.kind == std_result_Result_void_int_kind_failure\)/, generated)
     assert_match(/return __mt_propagate_\d+;/, generated)
     refute_match(/__mt_propagate_\d+\.data\.success\.value/, generated)
   end
