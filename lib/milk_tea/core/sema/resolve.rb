@@ -986,18 +986,18 @@ module MilkTea
       def resolve_methods_receiver_target(type_ref)
         if type_ref.is_a?(AST::TypeRef)
           generic_type = resolve_named_generic_type(type_ref.name.parts)
-          if generic_type.is_a?(Types::GenericStructDefinition)
+          if generic_type.is_a?(Types::GenericStructDefinition) || generic_type.is_a?(Types::GenericVariantDefinition)
             receiver_type_param_names = validate_methods_receiver_type_arguments!(type_ref, generic_type)
             receiver_type_params = receiver_type_param_names.to_h { |name| [name, Types::TypeVar.new(name)] }
-            receiver_type_param_constraints = generic_type.type_param_constraints
+            receiver_type_param_constraints = generic_type.respond_to?(:type_param_constraints) ? generic_type.type_param_constraints : {}
             receiver_type = resolve_type_ref(type_ref, type_params: receiver_type_params, type_param_constraints: receiver_type_param_constraints)
             return [generic_type, receiver_type, receiver_type_param_names, receiver_type_param_constraints]
           end
 
           begin
             receiver_type = resolve_type_ref(type_ref)
-            unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::Opaque) || receiver_type.is_a?(Types::GenericInstance) || receiver_type.is_a?(Types::Nullable) || receiver_type.is_a?(Types::StringView) || receiver_type.is_a?(Types::Primitive) || vector_type?(receiver_type) || matrix_type?(receiver_type) || quaternion_type?(receiver_type)
-              raise_sema_error("extending target #{type_ref} must be a struct, opaque, nullable/generic receiver, or str")
+            unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::Opaque) || receiver_type.is_a?(Types::GenericInstance) || receiver_type.is_a?(Types::Nullable) || receiver_type.is_a?(Types::StringView) || receiver_type.is_a?(Types::Primitive) || receiver_type.is_a?(Types::Variant) || receiver_type.is_a?(Types::VariantInstance) || vector_type?(receiver_type) || matrix_type?(receiver_type) || quaternion_type?(receiver_type)
+              raise_sema_error("extending target #{type_ref} must be a struct, opaque, nullable/generic receiver, variant, or str")
             end
 
             return [receiver_type, receiver_type, [], {}]
@@ -1012,8 +1012,8 @@ module MilkTea
         end
 
         receiver_type = resolve_type_ref(type_ref)
-        unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::Opaque) || receiver_type.is_a?(Types::GenericInstance) || receiver_type.is_a?(Types::Nullable) || receiver_type.is_a?(Types::StringView) || receiver_type.is_a?(Types::Primitive) || vector_type?(receiver_type) || matrix_type?(receiver_type) || quaternion_type?(receiver_type)
-          raise_sema_error("extending target #{type_ref} must be a struct, opaque, nullable/generic receiver, or str")
+        unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::Opaque) || receiver_type.is_a?(Types::GenericInstance) || receiver_type.is_a?(Types::Nullable) || receiver_type.is_a?(Types::StringView) || receiver_type.is_a?(Types::Primitive) || receiver_type.is_a?(Types::Variant) || receiver_type.is_a?(Types::VariantInstance) || vector_type?(receiver_type) || matrix_type?(receiver_type) || quaternion_type?(receiver_type)
+          raise_sema_error("extending target #{type_ref} must be a struct, opaque, nullable/generic receiver, variant, or str")
         end
 
         [receiver_type, receiver_type, [], {}]
@@ -1067,6 +1067,14 @@ module MilkTea
           return {} unless declared_receiver_type.definition.is_a?(Types::GenericStructDefinition)
 
           unless receiver_type.is_a?(Types::StructInstance) && receiver_type.definition == declared_receiver_type.definition
+            raise_sema_error("cannot use method #{binding.name} with receiver #{receiver_type}")
+          end
+
+          declared_receiver_type.definition.type_params.zip(receiver_type.arguments).to_h
+        when Types::VariantInstance
+          return {} unless declared_receiver_type.definition.is_a?(Types::GenericVariantDefinition)
+
+          unless receiver_type.is_a?(Types::VariantInstance) && receiver_type.definition == declared_receiver_type.definition
             raise_sema_error("cannot use method #{binding.name} with receiver #{receiver_type}")
           end
 
@@ -1304,6 +1312,15 @@ module MilkTea
 
           return unless actual_type.is_a?(Types::GenericInstance)
           return unless actual_type.name == pattern_type.name && actual_type.arguments.length == pattern_type.arguments.length
+
+          pattern_type.arguments.zip(actual_type.arguments).each do |expected_argument, actual_argument|
+            next if expected_argument.is_a?(Types::LiteralTypeArg)
+
+            collect_type_substitutions(expected_argument, actual_argument, substitutions, function_name)
+          end
+        when Types::VariantInstance
+          return unless actual_type.is_a?(Types::VariantInstance)
+          return unless actual_type.definition == pattern_type.definition || (actual_type.name == pattern_type.name && actual_type.arguments.length == pattern_type.arguments.length)
 
           pattern_type.arguments.zip(actual_type.arguments).each do |expected_argument, actual_argument|
             next if expected_argument.is_a?(Types::LiteralTypeArg)

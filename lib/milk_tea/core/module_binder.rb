@@ -149,6 +149,7 @@ module MilkTea
       return true if imported_receiver_type?(receiver_type, analysis.imports)
       return exported_method_receiver?(receiver_type.base, analysis, exported_types) if receiver_type.is_a?(Types::Nullable)
       return receiver_type.arguments.all? { |argument| exported_method_receiver_argument?(argument, analysis, exported_types) } if receiver_type.is_a?(Types::GenericInstance)
+      return exported_types.value?(receiver_type.definition) || imported_receiver_type?(receiver_type.definition, analysis.imports) if receiver_type.is_a?(Types::VariantInstance)
 
       receiver_type.is_a?(Types::StructInstance) &&
         (exported_types.value?(receiver_type.definition) || imported_receiver_type?(receiver_type.definition, analysis.imports))

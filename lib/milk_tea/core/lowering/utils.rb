@@ -939,7 +939,6 @@ module MilkTea
 
       def option_let_else_type?(type)
         return false unless type.is_a?(Types::Variant)
-        return false unless type.module_name.nil? && type.name == "Option"
 
         some_fields = type.arm("some")
         none_fields = type.arm("none")
@@ -949,7 +948,6 @@ module MilkTea
 
       def result_let_else_type?(type)
         return false unless type.is_a?(Types::Variant)
-        return false unless type.module_name.nil? && type.name == "Result"
 
         success_fields = type.arm("success")
         failure_fields = type.arm("failure")

@@ -2161,6 +2161,14 @@ module MilkTea
           end
 
           declared_receiver_type.definition.type_params.zip(receiver_type.arguments).to_h
+        when Types::VariantInstance
+          return {} unless declared_receiver_type.definition.is_a?(Types::GenericVariantDefinition)
+
+          unless receiver_type.is_a?(Types::VariantInstance) && receiver_type.definition == declared_receiver_type.definition
+            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+          end
+
+          declared_receiver_type.definition.type_params.zip(receiver_type.arguments).to_h
         when Types::GenericInstance
           unless receiver_type.is_a?(Types::GenericInstance) && receiver_type.name == declared_receiver_type.name && receiver_type.arguments.length == declared_receiver_type.arguments.length
             raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
@@ -2303,6 +2311,8 @@ module MilkTea
             return_type: substitute_type(type.return_type, substitutions),
           )
         when Types::StructInstance
+          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
+        when Types::VariantInstance
           type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
         when Types::Function
           Types::Function.new(

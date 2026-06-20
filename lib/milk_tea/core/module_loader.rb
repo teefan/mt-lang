@@ -4,6 +4,7 @@ require_relative "module_loader/errors"
 require_relative "module_path_resolver"
 require_relative "module_binder"
 require_relative "async_runtime_installer"
+require_relative "prelude_installer"
 
 module MilkTea
   class ModuleLoader
@@ -111,6 +112,11 @@ module MilkTea
       )
       @binder = ModuleBinder.new
       @async_runtime_installer = AsyncRuntimeInstaller.new(
+        resolve_module_path: @path_resolver.method(:resolve_module_path),
+        check_block: ->(path, collecting) { collecting ? check_path_collecting_errors(path) : check_path(path) },
+        bind_block: @binder.method(:module_binding),
+      )
+      @prelude_installer = PreludeInstaller.new(
         resolve_module_path: @path_resolver.method(:resolve_module_path),
         check_block: ->(path, collecting) { collecting ? check_path_collecting_errors(path) : check_path(path) },
         bind_block: @binder.method(:module_binding),
@@ -249,6 +255,7 @@ module MilkTea
       end
 
       @async_runtime_installer.install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: false)
+      @prelude_installer.install_prelude_modules!(ast, modules, importer_path:, collecting_errors: false)
       modules.freeze
     end
 
@@ -291,6 +298,12 @@ module MilkTea
 
       begin
         @async_runtime_installer.install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: true)
+      rescue ModuleLoadError, PackageLockError => e
+        errors << ImportResolutionError.new(import: nil, error: e)
+      end
+
+      begin
+        @prelude_installer.install_prelude_modules!(ast, modules, importer_path:, collecting_errors: true)
       rescue ModuleLoadError, PackageLockError => e
         errors << ImportResolutionError.new(import: nil, error: e)
       end

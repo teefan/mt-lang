@@ -5,7 +5,7 @@ require_relative "types"
 module MilkTea
   module TypePredicates
     def method_dispatch_receiver_type(receiver_type)
-      return receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
+      return receiver_type.definition if receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::VariantInstance)
       if receiver_type.is_a?(Types::Nullable)
         dispatch_base_type = method_dispatch_receiver_type(receiver_type.base)
         return receiver_type if dispatch_base_type == receiver_type.base
