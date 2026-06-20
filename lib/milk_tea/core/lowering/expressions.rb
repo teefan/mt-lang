@@ -1398,7 +1398,21 @@ module MilkTea
         end
 
         receiver = lower_expression(expression.receiver, env:)
-        IR::Member.new(receiver:, member: member_c_name(receiver_type, expression.member), type:)
+        member_expr = IR::Member.new(receiver:, member: member_c_name(receiver_type, expression.member), type:)
+        if self_referencing_variant_field_access?(receiver_type, expression.member, type)
+          return IR::Unary.new(operator: "*", operand: member_expr, type:)
+        end
+        member_expr
+      end
+
+      def self_referencing_variant_field_access?(receiver_type, member, field_type)
+        return false unless receiver_type.is_a?(Types::VariantArmPayload)
+
+        outer = receiver_type.variant_type
+        return field_type == outer if outer.is_a?(Types::Variant)
+        return field_type == outer if outer.is_a?(Types::VariantInstance)
+
+        false
       end
 
       def lower_compile_time_handle_member(handle, member, type)
