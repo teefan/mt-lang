@@ -406,10 +406,11 @@ module MilkTea
                         end
                       end
 
-                      # Phase 2: Emit bindings (bare identifiers)
+                      # Phase 2: Emit bindings (bare identifiers, excluding _ discard)
                       arm.pattern.arguments.each do |arg|
                         next if arg.name
                         next unless arg.value.is_a?(AST::Identifier)
+                        next if arg.value.name == "_"
 
                         field_name = arg.value.name
                         next unless pattern_fields.key?(field_name)
