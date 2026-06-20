@@ -151,6 +151,7 @@ module MilkTea
             column: statement.column,
             var: statement.kind == :var
           )
+          check_redundant_type_annotation(statement)
         when AST::Assignment
           visit_expression(statement.value)          # visit RHS first — reads in RHS count against dead-assignment
           mark_assignment_target_reads(statement.target, statement.operator) # compound: marks target as read
@@ -527,6 +528,54 @@ module MilkTea
             end
           end
         end
+      end
+      # ── redundant type annotation ─────────────────────────────────────────────
+
+      def check_redundant_type_annotation(statement)
+        return unless statement.is_a?(AST::LocalDecl)
+        return unless statement.kind == :let
+        return unless statement.type
+        return unless statement.value
+
+        declared_name = type_ref_name(statement.type)
+        return unless declared_name
+
+        inferred_name = expression_literal_type_name(statement.value)
+        return unless inferred_name
+        return unless declared_name == inferred_name
+
+        @warnings << Warning.new(
+          path: @path,
+          line: statement.line,
+          column: statement.column,
+          length: statement.name.length,
+          code: "redundant-type-annotation",
+          message: "type annotation ': #{declared_name}' is redundant, inferred from initializer",
+          severity: :hint,
+          symbol_name: statement.name,
+        )
+      end
+
+      def type_ref_name(type_node)
+        return nil unless type_node.is_a?(AST::TypeRef)
+        return nil if type_node.name.parts.empty?
+
+        type_node.name.parts.first
+      rescue StandardError
+        nil
+      end
+
+      def expression_literal_type_name(expr)
+        case expr
+        when AST::IntegerLiteral then "int"
+        when AST::StringLiteral  then "str"
+        when AST::CStringLiteral then "cstr"
+        when AST::FloatLiteral   then "float"
+        when AST::BooleanLiteral then "bool"
+        else nil
+        end
+      rescue StandardError
+        nil
       end
       # ── borrow facts helpers ──────────────────────────────────────────────────
   
