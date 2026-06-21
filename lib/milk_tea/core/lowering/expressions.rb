@@ -1238,14 +1238,10 @@ module MilkTea
           target_type ? IR::AlignofExpr.new(target_type:, type:) : raise(LoweringError, "align_of argument is not a concrete type")
         when AST::OffsetofExpr
           target_type = resolve_type_ref(expression.type)
-          binding = lookup_value(expression.field, env)
-          if binding && binding[:const_value].is_a?(Types::FieldHandle)
-            offset = CompileTime::Layout.offset_of(target_type, binding[:const_value].field_name)
-            if offset
-              IR::IntegerLiteral.new(value: offset, type:)
-            else
-              IR::OffsetofExpr.new(target_type:, field: binding[:const_value].field_name, type:)
-            end
+          if (precomputed = @ctx.const_values[@ctx.ast.node_ids[expression.object_id]])
+            IR::IntegerLiteral.new(value: precomputed, type:)
+          elsif (binding = lookup_value(expression.field, env)) && binding[:const_value].is_a?(Types::FieldHandle)
+            IR::OffsetofExpr.new(target_type:, field: binding[:const_value].field_name, type:)
           else
             IR::OffsetofExpr.new(target_type:, field: expression.field, type:)
           end
