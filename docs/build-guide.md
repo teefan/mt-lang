@@ -420,7 +420,7 @@ Depending on Emscripten flags and debug settings, extra side files such as worke
 
 Native builds use `--cc`, then `$CC`, then `cc`.
 
-The generated C is intended for Clang/GCC-family compilers. That matters most for layout-sensitive attributes such as `@[packed]` and `@[align(...)]`, because the current C backend emits GNU-style `__attribute__((packed))` and `__attribute__((aligned(N)))` on generated declarations. On Windows, use Clang or a GCC-family toolchain such as MinGW when those attributes are present. `cl.exe` is not a supported backend for those layout controls today.
+The generated C requires a Clang/GCC-family compiler. MSVC-style backends (`cl.exe`, `clang-cl`) are rejected for native targets. This is because the C backend emits GNU-style `__attribute__((packed))` and `__attribute__((aligned(N)))` for layout-sensitive declarations such as `@[packed]` and `@[align(...)]`. On Windows, use Clang or a GCC-family toolchain such as MinGW.
 
 Wasm builds use `--cc` when you pass it explicitly. Otherwise Milk Tea switches to `$EMCC`, falling back to `emcc`.
 
