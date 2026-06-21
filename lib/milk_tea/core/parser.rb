@@ -18,19 +18,6 @@ module MilkTea
       def initialize(ast:, errors: []) = super
     end
 
-    # Parser-local copy of Types::BUILTIN_TYPE_NAMES so the parser has no
-    # direct dependency on the core type system. Keep this list in sync with
-    # Types::BUILTIN_TYPE_NAMES in core/types.rb.
-    BUILTIN_TYPE_NAMES = %w[
-      bool byte ubyte char short ushort int uint long ulong ptr_int ptr_uint
-      float double void str cstr
-      vec2 vec3 vec4 ivec2 ivec3 ivec4 mat3 mat4 quat
-      ptr const_ptr ref span array str_buffer atomic
-      Task Option Result SoA
-      struct_handle field_handle callable_handle attribute_handle member_handle type
-      EventError Subscription
-    ].freeze
-
     def self.parse(source = nil, path: nil, tokens: nil)
       token_stream = tokens || Lexer.lex(source, path: path)
       new(token_stream, path: path).parse
@@ -2829,7 +2816,7 @@ module MilkTea
     end
 
     def seed_known_names
-      BUILTIN_TYPE_NAMES.each { |name| @known_type_names[name] = true }
+      MilkTea::BUILTIN_TYPE_NAMES.each { |name| @known_type_names[name] = true }
 
       depth = 0
       index = 0

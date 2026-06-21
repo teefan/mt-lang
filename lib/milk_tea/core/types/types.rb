@@ -4,21 +4,10 @@ require "fiddle"
 
 module MilkTea
   module Types
-    BUILTIN_PRIMITIVE_NAMES = %w[
-      bool byte ubyte char short ushort int uint long ulong ptr_int ptr_uint float double void str cstr
-      vec2 vec3 vec4 ivec2 ivec3 ivec4 mat3 mat4 quat
-    ].freeze
-    RESERVED_VALUE_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
-      Option Result
-    ]).freeze
-    RESERVED_IMPORT_ALIAS_NAMES = %w[
-      Option Result
-    ].freeze
-    BUILTIN_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
-      ptr const_ptr ref span array str_buffer atomic Task Option Result SoA
-      struct_handle field_handle callable_handle attribute_handle member_handle type
-      EventError Subscription
-    ]).freeze
+    BUILTIN_PRIMITIVE_NAMES = MilkTea::BUILTIN_PRIMITIVE_NAMES
+    RESERVED_VALUE_TYPE_NAMES = MilkTea::RESERVED_VALUE_TYPE_NAMES
+    RESERVED_IMPORT_ALIAS_NAMES = MilkTea::RESERVED_IMPORT_ALIAS_NAMES
+    BUILTIN_TYPE_NAMES = MilkTea::BUILTIN_TYPE_NAMES
     RESERVED_TYPE_BINDING_NAMES = BUILTIN_TYPE_NAMES
 
     def self.substitute_type_variables(type, substitutions)
@@ -974,7 +963,7 @@ module MilkTea
 
       def field_c_name(name)
         stripped = name.delete_suffix("_")
-        return stripped if stripped != name && Token::KEYWORDS.key?(stripped)
+        return stripped if stripped != name && MilkTea::KEYWORDS.key?(stripped)
 
         name
       end
@@ -1092,7 +1081,7 @@ module MilkTea
 
       def field_c_name(name)
         stripped = name.delete_suffix("_")
-        return stripped if stripped != name && Token::KEYWORDS.key?(stripped)
+        return stripped if stripped != name && MilkTea::KEYWORDS.key?(stripped)
 
         name
       end

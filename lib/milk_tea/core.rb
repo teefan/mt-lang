@@ -2,6 +2,7 @@
 
 require_relative "base"
 
+require_relative "core/reserved_words"
 require_relative "core/token"
 require_relative "core/token_stream"
 require_relative "core/lexer"
