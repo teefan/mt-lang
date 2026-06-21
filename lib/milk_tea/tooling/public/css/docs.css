@@ -38,19 +38,25 @@ body{display:flex;min-height:100vh}
 
 /* ── Sidebar ────────────────────────────────────────────────── */
 .sidebar-logo{display:flex;align-items:center;gap:.5rem;padding:.5rem 0 1rem;font-size:1.15rem;font-weight:700;color:var(--fg);user-select:none}
-.sidebar-logo .icon{font-size:1.35rem}
+.sidebar-search{margin-bottom:.5rem}
+.sidebar-search input{width:100%;padding:.35rem .5rem;border:1px solid var(--border);border-radius:.375rem;background:var(--raised);color:var(--fg);font-size:.8rem;outline:none;transition:border-color .2s}
+.sidebar-search input:focus{border-color:var(--primary-dim)}
 .sidebar-nav{flex:1;overflow-y:auto;font-size:.88rem}
 .sidebar-nav > a{display:block;padding:.35rem .5rem;border-radius:.375rem;color:var(--fg-dim);margin-bottom:.15rem;transition:background .15s,color .15s}
 .sidebar-nav > a:hover{color:var(--fg);background:var(--raised);text-decoration:none}
 .sidebar-nav > a.active{color:var(--primary);background:var(--primary-bg);font-weight:500}
-.sidebar-nav details{margin-top:.5rem}
-.sidebar-nav summary{padding:.3rem .5rem;border-radius:.375rem;cursor:pointer;color:var(--fg-dim);font-weight:600;user-select:none;transition:background .15s;list-style:none}
-.sidebar-nav summary::-webkit-details-marker{display:none}
-.sidebar-nav summary:hover{background:var(--raised)}
-.sidebar-nav details[open] > summary{color:var(--fg)}
-.sidebar-nav details a{display:block;padding:.2rem .5rem .2rem 1.5rem;border-radius:.375rem;color:var(--fg-dim);font-size:.82rem;transition:background .15s,color .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sidebar-nav details a:hover{color:var(--fg);background:var(--raised);text-decoration:none}
-.sidebar-nav details a.active{color:var(--primary);background:var(--primary-bg);font-weight:500}
+.mod-category{margin-top:.5rem}
+.mod-category summary{padding:.3rem .5rem;border-radius:.375rem;cursor:pointer;color:var(--fg-dim);font-weight:600;user-select:none;transition:background .15s;list-style:none;font-size:.82rem}
+.mod-category summary::-webkit-details-marker{display:none}
+.mod-category summary:hover{background:var(--raised)}
+.mod-category[open] > summary{color:var(--fg)}
+.mod-link{display:block;padding:.2rem .5rem .2rem 1.5rem;border-radius:.375rem;color:var(--fg-dim);font-size:.82rem;transition:background .15s,color .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mod-link:hover{color:var(--fg);background:var(--raised);text-decoration:none}
+.mod-link.active{color:var(--primary);background:var(--primary-bg);font-weight:500}
+.mod-link.hidden{display:none}
+.mod-category.empty-cat{display:none}
+.mod-category:has(.mod-link:not(.hidden)) .mod-filter-none{display:none}
+.mod-filter-none{display:none;padding:.2rem .5rem;color:var(--fg-faint);font-size:.78rem;font-style:italic}
 .sidebar-footer{padding-top:.75rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;font-size:.8rem;color:var(--fg-faint)}
 
 /* ── Topbar (mobile) ────────────────────────────────────────── */
@@ -59,6 +65,12 @@ body{display:flex;min-height:100vh}
 .topbar .logo-text{font-weight:700;font-size:1rem}
 .theme-btn{background:none;border:1px solid var(--border);color:var(--fg-dim);font-size:.9rem;cursor:pointer;padding:.25rem .4rem;border-radius:.375rem;transition:background .15s,border-color .15s;display:flex;align-items:center;gap:.25rem}
 .theme-btn:hover{background:var(--surface);border-color:var(--fg-dim)}
+
+/* ── Breadcrumbs ────────────────────────────────────────────── */
+.breadcrumbs{padding:.65rem 0;margin-bottom:.75rem;font-size:.82rem;color:var(--fg-faint)}
+.breadcrumbs a{color:var(--fg-dim)}
+.breadcrumbs a:hover{color:var(--link);text-decoration:none}
+.bc-sep{margin:0 .4rem;color:var(--fg-faint)}
 
 /* ── Hero ───────────────────────────────────────────────────── */
 .hero{padding:2rem 0 1.5rem;margin-bottom:1rem;border-bottom:1px solid var(--border)}
@@ -73,6 +85,11 @@ body{display:flex;min-height:100vh}
 /* ── Sections ───────────────────────────────────────────────── */
 section{padding:1.5rem 0;border-bottom:1px solid var(--border)}
 section:last-of-type{border-bottom:none}
+.section-header{display:flex;align-items:baseline;gap:.75rem;margin-bottom:.5rem}
+.section-header h3{margin:0}
+.source-inline{font-size:.75rem;color:var(--fg-faint);border:1px solid var(--border);padding:.1rem .4rem;border-radius:.25rem;text-decoration:none}
+.source-inline:hover{background:var(--surface);text-decoration:none}
+.hl-inline{border-color:var(--primary-dim);color:var(--primary)}
 h2{font-size:1.5rem;font-weight:700;margin-bottom:.75rem;color:var(--fg)}
 h3{font-size:1.15rem;font-weight:600;margin:1rem 0 .5rem;color:var(--fg)}
 h4{font-size:1rem;font-weight:600;margin:1rem 0 .4rem;color:var(--fg-dim)}
@@ -89,9 +106,15 @@ p{margin-bottom:.75rem;max-width:44rem}
 .kind-badge{display:inline-block;font-size:.75rem;font-weight:600;padding:.1rem .4rem;border-radius:.375rem;background:var(--primary-bg);color:var(--primary);text-transform:uppercase;letter-spacing:.03em}
 .meth-row td{background:var(--surface);border-top-style:dashed}
 .meth-indent{color:var(--fg-faint);font-size:.75rem;margin-right:.3rem}
+.decl-doc{margin-top:.25rem;font-size:.78rem;color:var(--fg-dim);font-style:italic}
+.extend-header td{background:var(--primary-bg);font-size:.78rem;color:var(--primary-dim);padding:.3rem .75rem}
+.extend-label{text-transform:uppercase;letter-spacing:.04em;font-size:.72rem;margin-right:.3rem;color:var(--primary)}
+.permalink{opacity:0;margin-left:.35rem;color:var(--fg-faint);font-size:.8rem;text-decoration:none}
+tr:hover .permalink{opacity:1}
+.permalink:hover{color:var(--link);text-decoration:none}
 
 /* ── Tables ─────────────────────────────────────────────────── */
-.table-wrap{overflow-x:auto;margin:1rem 0 1.5rem}
+.table-wrap{overflow-x:auto;margin:.5rem 0 1rem}
 .attr-table th{font-size:.82rem;color:var(--fg-dim);white-space:nowrap}
 .attr-table td{font-size:.85rem}
 .attr-table td:first-child{white-space:nowrap}
@@ -133,6 +156,7 @@ p{margin-bottom:.75rem;max-width:44rem}
   .topbar{display:flex}
   .hero h1{font-size:1.8rem}
   .hero{padding:1rem 0}
+  .breadcrumbs{padding:.4rem 0}
   .code-wrap pre{padding:.75rem .85rem;font-size:.82rem}
   h2{font-size:1.3rem}
   h3{font-size:1.05rem}

@@ -8,6 +8,22 @@ module MilkTea
   class DocsApp < Sinatra::Base
     SNAPSHOT_CACHE = {}
 
+    MODULE_CATEGORIES = {
+      "Collections" => %w[vec deque binary_heap priority_queue ordered_set ordered_map map set linked_map linked_set counter multiset queue stack],
+      "Memory" => %w[mem cell],
+      "Text & Format" => %w[string str fmt cstring encoding base64],
+      "Math & Random" => %w[math random],
+      "Data & Serialization" => %w[binary bytes json toml tar gzip zstd crypto hash],
+      "Concurrency" => %w[async jobs sync thread],
+      "Files & I/O" => %w[fs path stdio],
+      "System" => %w[ctype errno process time c],
+      "Network & HTTP" => %w[net http uri cookie curl],
+      "Game & Graphics" => %w[raylib box2d flecs enet cgltf cjson],
+      "Algorithms & AI" => %w[fsm behavior_tree goap],
+      "Database & Matching" => %w[sqlite3 pcre2],
+      "Utilities" => %w[cli terminal span spatial asset_pack],
+    }.freeze
+
     configure do
       set :views, File.expand_path("views", __dir__)
       set :public_folder, File.expand_path("public", __dir__)
@@ -35,6 +51,25 @@ module MilkTea
 
       def stdlib_modules
         @stdlib_modules ||= discover_modules.freeze
+      end
+
+      def categorized_modules
+        @categorized_modules ||= begin
+          cats = {}
+          uncategorized = []
+
+          stdlib_modules.each do |mod|
+            cat = MODULE_CATEGORIES.find { |_, names| names.include?(mod[:name]) }&.first
+            if cat
+              (cats[cat] ||= []) << mod
+            else
+              uncategorized << mod
+            end
+          end
+
+          cats["Other"] = uncategorized unless uncategorized.empty?
+          cats
+        end.freeze
       end
 
       def snapshot_available?
@@ -131,12 +166,18 @@ module MilkTea
         decls = []
         extend_parent = nil
         extend_indent = nil
+        doc_lines = []
 
         source.each_line do |line|
           stripped = line.strip
-          next if stripped.empty? || stripped.start_with?("#") || stripped.start_with?("import")
-
           indent = line[/\A */].length
+
+          if stripped.start_with?("##")
+            doc_lines << stripped.sub(/^## ?/, "").rstrip
+            next
+          end
+
+          next if stripped.empty? || stripped.start_with?("#") || stripped.start_with?("import")
 
           if extend_parent && indent <= extend_indent
             extend_parent = nil
@@ -145,7 +186,10 @@ module MilkTea
 
           kind, name = classify_declaration(stripped)
 
-          next unless kind && name
+          unless kind && name
+            doc_lines = []
+            next
+          end
 
           if kind == "extend"
             extend_parent = name
@@ -153,10 +197,13 @@ module MilkTea
             next
           end
 
+          doc = doc_lines.empty? ? nil : doc_lines.join("\n")
+          doc_lines = []
+
           if extend_parent && indent > extend_indent
-            decls << { kind:, name:, line: stripped, parent: extend_parent }
+            decls << { kind:, name:, line: stripped, parent: extend_parent, doc: }
           else
-            decls << { kind:, name:, line: stripped }
+            decls << { kind:, name:, line: stripped, doc: }
           end
         end
         decls
@@ -164,7 +211,7 @@ module MilkTea
 
       def classify_declaration(stripped)
         case stripped
-        when /\A(public\s+)?(?:(?:external|foreign|async|const)\s+)*function\s+(\w+)/
+        when /\A(public\s+)?(?:(?:external|foreign|async|const|static|editable)\s+)*function\s+(\w+)/
           ["func", $2]
         when /\A(public\s+)?const\s+(\w+)/
           ["const", $2]
@@ -238,6 +285,7 @@ module MilkTea
     end
 
     get "/stdlib" do
+      @breadcrumbs = [["Reference", "/"], ["Standard Library", nil]]
       @modules = stdlib_modules.map do |mod|
         primary = if mod[:kind] == :dir
           File.join(mod[:path], "#{mod[:name]}.mt")
@@ -257,6 +305,7 @@ module MilkTea
       mod = stdlib_modules.find { |m| m[:name] == @name }
       halt 404 unless mod
 
+      @breadcrumbs = [["Reference", "/"], ["Standard Library", "/stdlib"], [@name, nil]]
       @mod = mod
       @files = module_files(mod).filter_map do |f|
         source = read_module_source(f[:path])

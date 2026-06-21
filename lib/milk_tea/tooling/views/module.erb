@@ -16,37 +16,77 @@
     </div>
   <% end %>
 
-  <% unless file[:decls].empty? %>
+  <% unless file[:decls].empty?
+    top = file[:decls].select { |d| !d[:parent] }
+    children = file[:decls].select { |d| d[:parent] }
+    groups = children.group_by { |d| d[:parent] }
+    orphan_parents = groups.keys - top.map { |t| t[:name] }
+  %>
   <section>
-    <h3><%= file[:name] %>.mt</h3>
+    <div class="section-header">
+      <h3><%= file[:name] %>.mt</h3>
+      <a href="/stdlib/<%= @name %>/source/<%= file[:name] %>" class="source-inline">source</a>
+      <% if snapshot_available? %>
+        <a href="/stdlib/<%= @name %>/source/<%= file[:name] %>/hl" class="source-inline hl-inline">highlighted</a>
+      <% end %>
+    </div>
     <div class="table-wrap">
       <table class="attr-table">
         <tr><th>Kind</th><th>Name</th><th>Declaration</th></tr>
-        <%
-          top = file[:decls].select { |d| !d[:parent] }
-          children = file[:decls].select { |d| d[:parent] }
-          groups = children.group_by { |d| d[:parent] }
-        %>
+
         <% top.each do |decl| %>
-          <tr>
+          <tr id="d-<%= decl[:name] %>">
             <td><span class="kind-badge"><%= decl[:kind] %></span></td>
-            <td><code><%= decl[:name] %></code></td>
-            <td><code class="code-inline"><%= h(decl[:line]) %></code></td>
+            <td>
+              <code><%= decl[:name] %></code>
+              <a href="#d-<%= decl[:name] %>" class="permalink" title="Permalink">&para;</a>
+            </td>
+            <td>
+              <code class="code-inline"><%= h(decl[:line]) %></code>
+              <% if decl[:doc] %>
+                <div class="decl-doc"><%= h(decl[:doc]).gsub("\n", "<br>") %></div>
+              <% end %>
+            </td>
           </tr>
           <% (groups[decl[:name]] || []).each do |child| %>
-            <tr class="meth-row">
+            <tr class="meth-row" id="d-<%= child[:name] %>">
               <td></td>
-              <td><span class="meth-indent">&vellip;</span> <code><%= child[:name] %></code></td>
-              <td><code class="code-inline"><%= h(child[:line]) %></code></td>
+              <td>
+                <span class="meth-indent">&vellip;</span>
+                <code><%= child[:name] %></code>
+                <a href="#d-<%= child[:name] %>" class="permalink" title="Permalink">&para;</a>
+              </td>
+              <td>
+                <code class="code-inline"><%= h(child[:line]) %></code>
+                <% if child[:doc] %>
+                  <div class="decl-doc"><%= h(child[:doc]).gsub("\n", "<br>") %></div>
+                <% end %>
+              </td>
             </tr>
           <% end %>
         <% end %>
-        <% (groups.keys - top.map { |t| t[:name] }).each do |orphan_parent| %>
-          <% groups[orphan_parent].each do |child| %>
-            <tr>
-              <td><span class="kind-badge">func</span></td>
-              <td><code><%= child[:name] %></code></td>
-              <td><code class="code-inline"><%= h(child[:line]) %></code></td>
+
+        <% orphan_parents.each do |parent_name| %>
+          <tr class="extend-header">
+            <td colspan="3">
+              <span class="extend-label">extending</span>
+              <code><%= parent_name %></code>
+            </td>
+          </tr>
+          <% groups[parent_name].each do |child| %>
+            <tr class="meth-row" id="d-<%= child[:name] %>">
+              <td></td>
+              <td>
+                <span class="meth-indent">&vellip;</span>
+                <code><%= child[:name] %></code>
+                <a href="#d-<%= child[:name] %>" class="permalink" title="Permalink">&para;</a>
+              </td>
+              <td>
+                <code class="code-inline"><%= h(child[:line]) %></code>
+                <% if child[:doc] %>
+                  <div class="decl-doc"><%= h(child[:doc]).gsub("\n", "<br>") %></div>
+                <% end %>
+              </td>
             </tr>
           <% end %>
         <% end %>
@@ -55,22 +95,3 @@
   </section>
   <% end %>
 <% end %>
-
-<section>
-  <h3>Source Code</h3>
-  <div class="source-files">
-    <% source_files = if @mod[:kind] == :dir
-      @files.map { |f| [f[:name], "/stdlib/#{@name}/source/#{f[:name]}"] }
-    else
-      [[@name, "/stdlib/#{@name}/source/#{@name}"]]
-    end %>
-    <% source_files.each do |name, raw_path| %>
-      <div class="source-file-group">
-        <a href="<%= raw_path %>" class="source-link">&#128196; <%= name %>.mt</a>
-        <% if snapshot_available? %>
-          <a href="<%= raw_path %>/hl" class="source-link hl-link">&#128065; highlighted</a>
-        <% end %>
-      </div>
-    <% end %>
-  </div>
-</section>
