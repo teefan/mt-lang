@@ -126,18 +126,20 @@ module MilkTea
         root = stdlib_root
         return mods unless File.directory?(root)
 
-        Dir.glob(File.join(root, "*.mt")).sort.each do |file|
-          name = File.basename(file, ".mt")
-          next if name.end_with?(".linux", ".windows", ".wasm")
-          mods << { name:, path: file, kind: :file }
-        end
-
-        Dir.glob(File.join(root, "*")).sort.each do |entry|
+        dir_names = Dir.glob(File.join(root, "*")).filter_map do |entry|
           next unless File.directory?(entry)
           name = File.basename(entry)
           mts = Dir.glob(File.join(entry, "*.mt"))
           next if mts.empty?
           mods << { name:, path: entry, kind: :dir }
+          name
+        end
+
+        Dir.glob(File.join(root, "*.mt")).sort.each do |file|
+          name = File.basename(file, ".mt")
+          next if name.end_with?(".linux", ".windows", ".wasm")
+          next if dir_names.include?(name)
+          mods << { name:, path: file, kind: :file }
         end
 
         mods
