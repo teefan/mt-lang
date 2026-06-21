@@ -2,9 +2,9 @@
 
 ## 1. Project Overview
 
-The `projects/mtc` directory contains a self-hosting Milk Tea compiler written in Milk Tea. It compiles to C using the existing Ruby `mtc` compiler and currently provides `lex`, `parse`, `check`, and `lower` subcommands.
+The `projects/mtc` directory contains a self-hosting Milk Tea compiler written in Milk Tea. It compiles to C using the existing Ruby `mtc` compiler and provides `lex`, `parse`, `check`, `lower`, and `combine` subcommands.
 
-**Total**: ~4,400 lines of Milk Tea across 9 source files.
+**Total**: ~4,500 lines of Milk Tea across 9 source files.
 
 ## 2. File Map
 
@@ -12,7 +12,7 @@ The `projects/mtc` directory contains a self-hosting Milk Tea compiler written i
 projects/mtc/
 ├── package.toml
 └── src/
-    ├── main.mt                          # ~346 lines — CLI entry point
+    ├── main.mt                          # ~374 lines — CLI entry point
     └── mtc/
         ├── lexer/
         │   ├── token.mt                 # ~137 lines — TokenKind enum (122 members) + Token struct
@@ -26,60 +26,53 @@ projects/mtc/
         │   ├── checker.mt               # ~271 lines — 3-pass check: imports → register → validate
         │   └── loader.mt                # ~97 lines — Module loader, path resolution
         └── lowering/
-            └── lower.mt                 # ~847 lines — Tree-based declaration + body C lowering
+            └── lower.mt                 # ~931 lines — Tree-based declaration + body C lowering
 ```
 
 ## 3. Lexer — Complete
 
-Token-for-token match with Ruby lexer on all 400+ `.mt` files. 122 member `TokenKind` enum, byte-scanning with full escape validation, indentation tracking. Token struct includes `src_offset` for source-position-based text extraction.
+Token-for-token match with Ruby lexer on all 400+ `.mt` files. 122 member `TokenKind` enum, byte-scanning with full escape validation, indentation tracking.
 
 ## 4. Parser — Complete (Tree AST)
 
-Full recursive-descent parser with tree AST. All declarations, expressions, and statements produce heap-allocated tree nodes via `self_heapify()` / `self_alloc_type()` / `self_alloc_block()`.
+Full recursive-descent parser with tree AST. Heap-allocated nodes via `self_heapify()` / `self_alloc_type()` / `self_alloc_block()`.
 
-**Key data structures:**
-- `Type` — `TypeKind` enum (named/constructed/nullable), recursive `inner: ptr[Type]?`, handles dotted paths, bracket args, `?` wrapper
+**Data structures:**
+- `Type` — named/constructed/nullable, recursive `inner: ptr[Type]?`
 - `Expr` — `left`/`right: ptr[Expr]?`, `args: vec.Vec[ptr[Expr]?]` for call arguments
-- `Stmt` — `expr`/`value: ptr[Expr]?` (condition/RHS), `body`/`else_body: ptr[Block]?`
-- `Block` — `stmts: vec.Vec[Stmt]`, returned by `parse_block()` as `ptr[Block]`
+- `Stmt` — `expr`/`value: ptr[Expr]?`, `body`/`else_body: ptr[Block]?`
+- `Block` — `stmts: vec.Vec[Stmt]`
 
 **Verification**: 9/9 self-host + 13/13 examples parse with 0 errors.
 
 ## 5. Semantic Analysis — Complete
 
-Two-level symbol table (local `symbols` + `import_scopes` with `ModuleScope` entries). 40 built-in types. Module loading with cycle detection. String-based compat via `self_type_name()` / `self_type_param_name()`.
+Two-level symbol table. 40 built-in types. Module loading with cycle detection. String-based compat via `self_type_name()` / `self_type_param_name()`.
 
 **Verification**: 9/9 self-host + 13/13 examples pass `mtc check` with 0 errors.
 
-## 6. Lowering — Tree-Based (Declaration + Body)
+## 6. Lowering — Tree-Based
 
 ### Declaration lowering
 - Struct → `typedef struct module_Name { fields } module_Name;`
 - Enum/Flags → `enum { module_Name_member = value, ... };`
 - Functions/methods → full C signatures with tree-lowered bodies
-- Const/Var → `static [const] type module_name [= value];`
-- **Type lowering** via `write_ctype_node()`:
-  - Primitives: `bool`, `int32_t`, `uintptr_t`, `mt_str`, `void*`, etc.
-  - `ptr[T]` / `ref[T]` → `T*` (recurse inner type)
-  - Non-pointer constructed types (Vec, array, etc.) → `void*`
-  - Local named types → prefix with `module_name_` (e.g., `Type` → `nodes_Type`)
-  - Module-qualified names → dots→underscores (e.g., `vec.Vec` → `vec_Vec`)
-- **Output ordering**: struct/type definitions emit before function bodies (3-pass: fwd decls → types → functions)
+- Output ordering: forward decls → type definitions → function bodies
+- **Type lowering** (`write_ctype_node`): ptr/ref→`T*`, local types→`module_Type`, constructed→`void*`
 
 ### Body lowering (tree walk)
-- `self_lower_block()` iterates statements; `self_lower_stmt()` dispatches per `StmtKind`
-- Control flow: `if`/`while` → `if (cond) { ... }`, `else { ... }`
+- Control flow: `if (cond) { ... }`, `else { ... }`, `while (cond) { ... }`
 - Declarations: `let`→`auto`, `var` with Type tree
-- Expression lowering (`self_write_expr_buf`): identifiers, literals, binary (`and`→`&&`, `or`→`||`, `not`→`!`), member/index access, calls
-- **Call forms** (3-way classification):
-  - Struct ctor (even-pair args, all identifiers) → `(Type){ .field = val, ... }` designated init
-  - Method call (callee is member_access) → `receiver.method(args)`
-  - Function call → `f(args...)` with full argument list
-- Assignment: `lhs op rhs;` from `Stmt.name` (operator) + `Stmt.value` (RHS)
-- `unsafe:` blocks emit inner statements directly
-- `write_extending` emits full function bodies (not just signatures) for methods with `body_block`
+- **Call forms** (method-first classification): method call → `receiver(args)`, struct ctor → `(Type){ .field = val }`, function call → `f(args)`
+- **Member access** (4-level heuristic):
+  1. Left is `this` → `->` (pointer receiver)
+  2. Root is `this` → `.` (deeper struct field chain)
+  3. Left is member_access chain → `_` (namespace continuation)
+  4. Top-level: uppercase member → `_`, lowercase → `.`
+- Assignment: `lhs op rhs;` from `Stmt.name` + `Stmt.value`
+- Methods: `body_block` captured in `parse_extending`, lowered in `write_extending`
 
-### C output example
+### C output example (from parser.mt)
 ```c
 void* parser_self_alloc_type(nodes_TypeKind kind, mt_str name) {
     auto tp = heap.must_alloc[nodes.Type](1);
@@ -90,26 +83,25 @@ void* parser_self_alloc_type(nodes_TypeKind kind, mt_str name) {
     return tp;
 }
 
-bool parser_Parser_at_end() {
-    return (this.pos >= this.tokens.len());
+bool parser_Parser_at_end(parser_Parser *this) {
+    return (this->pos >= this->source.len);
 }
 ```
 
-**Verification**: 9/9 self-host files pass `mtc check`. 280+ function bodies emitted from parser.mt alone.
-
 ## 7. Ruby Compiler Fixes
 
-- **Enum comparison operators**: `common_numeric_type` unwraps `EnumBase` to `backing_type` before primitive checks
-- **Cycle detection**: Three methods fixed with `visited = Set.new` parameter
+- **Enum comparison**: `common_numeric_type` unwraps `EnumBase` to `backing_type`
+- **Cycle detection**: Three methods fixed with `visited = Set.new`
 
 ## 8. CLI Commands
 
 ```
-mtc lex <file>     — Token stream (text or --json)
-mtc parse <file>   — AST/IR (text or --json)
-mtc check <file>   — Semantic analysis
-mtc lower <file>   — C lowering (emits to stdout)
-mtc --help         — Usage info
+mtc lex <file>        — Token stream (text or --json)
+mtc parse <file>      — AST/IR (text or --json)
+mtc check <file>      — Semantic analysis
+mtc lower <file>      — C lowering (emits to stdout)
+mtc combine <files..> — Combined C lowering for multiple files
+mtc --help            — Usage info
 ```
 
 ## 9. Verification — All Pass
@@ -132,45 +124,46 @@ mtc --help         — Usage info
 | 4 | Full function body lowering | ✅ |
 | 4b | Expression capture (call args, assignment RHS) | ✅ |
 | 4c | Method body + struct ctor + unsafe lowering | ✅ |
-| 5a | GCC syntax-check of lowered C | 🟡 (2/9 pass) |
+| 5a | Combine subcommand + GCC validation | 🟡 ~778 err combined |
 
-### Step 5a Findings (GCC `-fsyntax-only` on each lowered `.c` file)
+### Step 5a Current State
 
-| Selfhost file | GCC errors | Root causes |
-|---------------|-----------|-------------|
-| **nodes.mt** | **0** | ✅ passes clean |
-| **token.mt** | **0** | ✅ passes clean |
-| lexer.mt | 135 | implicit fn calls (`is_alpha`, etc.); member access `.` for `lexer_*` prefix |
-| lower.mt | 88 | imported type decls missing; method call `.` for stdlib; implicit fn calls |
-| parser.mt | 373 | imported type decls missing; method call `.`; implicit fn calls; large function count |
-| checker.mt | 24 | `symbol_SemaContext` undeclared; `loader_ModuleLoader` undeclared; member access `.` |
-| loader.mt | 33 | imported type decls missing; member access `.` for stdlib (`vec.Vec[str]`) |
-| symbol.mt | 62 | `SemaContext` undeclared (self-referential struct ctor); imported types; method `.` |
-| main.mt | (many) | imported types; method `.`; switch-on-non-integer from `match`→`switch` |
+**Native `mtc combine`** — lowers multiple files into one combined C translation unit (matches Ruby compiler approach). Combined output: ~4243 lines.
 
-**Three recurring error categories:**
+**GCC error reduction**: 1000+ standalone → 968 combined → 899 method/ctor reorder → 804 typed `this` → **778** (case-based member access heuristic).
 
-1. **Cross-module type declarations** — Types imported from other modules (e.g., `symbol.SemaContext` in checker.mt) are not forward-declared in the lowered C. The lowered C is a standalone translation unit with no `#include` for external types. Fix: emit `typedef struct module_Type module_Type;` forward decls for all types referenced in struct fields.
+**Key fixes from this session:**
+- `skip_header` flag in Lowerer + `combine` subcommand in CLI
+- Method/ctor detection reorder (method_call before struct_ctor) — eliminated 69 misclassifications
+- Typed `this` parameter in method declarations (`module_Type *this`)
+- Member access heuristic with `->` for `this`, `.` for struct fields, `_` for namespaces
 
-2. **Function call declarations** — Calls to functions defined in other modules (e.g., `checker_loader_ModuleLoader_create`) or stdlib (e.g., `vec.Vec[str].create()`) have no forward declaration. The lowered C references these symbols but they're never declared. Fix: collect and emit forward declarations for all callee symbols, or produce a combined `.c` file that merges all modules.
+**Remaining error categories (~778, need expression type info):**
 
-3. **Member access dots in module-qualified names** — Expressions like `symbol.SemaContext.create()` use `.` member access in the expression tree. The lowering emits `symbol.SemaContext.create()` but C expects `symbol_SemaContext_create(...)` (or `symbol_SemaContext_create(&ctx, ...)` with receiver). Fix: distinguish module-qualified access (dots→underscores) from struct field access in the expression lowerer.
+| Category | Count | Root cause |
+|----------|-------|-----------|
+| `mt_str` vs `char*` comparison | 53 | String literals vs `mt_str` struct type mismatch |
+| struct ctor as expression | 50 | `(Type){ }` compound literal in argument context |
+| Return type mismatch | 46 | Struct types returned from `auto` functions |
+| `vec_Vec` undeclared | 17 | Stdlib type declarations not emitted |
+| void* member access | 40 | `ptr[Expr]` lowered as `void*`, breaking `.kind` etc. |
 
 ### Planned Next Steps (resume order)
 
-**5a.2 — Cross-module type forward declarations** *(target: pass lexer & lower)*
-When lowering a file, scan all struct field types. For each named type in a different module (dotted path like `symbol.SemaContext`), emit a `typedef struct symbol_SemaContext symbol_SemaContext;` forward declaration in the file header. This makes struct definitions that reference imported types compile.
+**5b — Full sema: expression type checking** *(target: break through ~778 error floor)*
+Add expression type tracking to the semantic analyzer. Minimum needed:
+1. Track types of local variables (`let`/`var` declarations)
+2. Track `extending` receiver type for `this` (enables correct C type in method declarations)
+3. Resolve call callee types to distinguish functions/methods/struct ctors
+4. Use type information in the lowerer for correct C output
 
-**5a.3 — Fix member access in module-qualified expression contexts** *(target: pass checker & loader)*
-Expressions like `symbol.SemaContext.create()` use `.` for both module access and struct field access. The lowerer needs to distinguish these cases. Strategy: if a member_access's left side is itself a member_access chain (dotted path), emit `_` instead of `.` (e.g., `symbol_SemaContext_create`). For simple `receiver.field`, keep `.` (struct field access).
+Specific fixes this enables:
+- `mt_str` comparison → emit `mt_str_equal()` for `str == str`
+- Struct return → emit proper C struct return
+- Method calls → emit `module_Type_method(&receiver, args)` 
+- `vec.Vec` declarations → forward-declare with element type
 
-**5a.4 — Function call declarations / emit missing forward decls** *(target: pass parser)*
-Collect all function call callee names during lowering, then emit `extern` or `static` forward declarations in the file header. Alternatively, merge all modules into a single combined `.c` file (like the Ruby compiler does).
-
-**5b — Full sema for method call lowering** *(longer term)*
-Track receiver types so that `this.advance()` can be lowered to `parser_Parser_advance(&this)` instead of `this.advance()`. Requires expression type inference and method resolution.
-
-**6 — True self-host** — Compile the compiler with itself using `mtc lower` + GCC.
+**6 — True self-host** — Compile the compiler with itself using `mtc combine` + GCC.
 
 ### Longer-term
 
@@ -183,16 +176,19 @@ Track receiver types so that `this.advance()` can be lowered to `parser_Parser_a
 ## 11. Test Commands
 
 ```sh
-# Build + GCC syntax-check all selfhost files
+# Build
 cd projects/mtc && ../../bin/mtc build .
-for f in src/mtc/**/*.mt; do
-    fn=$(basename "$f" .mt)
-    ../../projects/mtc/build/bin/linux/debug/mtc lower "$f" > "/tmp/mtc_${fn}.c"
-    echo -n "$fn: " && gcc -fsyntax-only -x c "/tmp/mtc_${fn}.c" 2>&1 | grep -c "error:"
-done
+
+# Native combine + GCC check
+./build/bin/linux/debug/mtc combine \
+  src/mtc/ast/nodes.mt src/mtc/lexer/token.mt src/mtc/lexer/lexer.mt \
+  src/mtc/parser/parser.mt src/mtc/sema/symbol.mt src/mtc/sema/loader.mt \
+  src/mtc/sema/checker.mt src/mtc/lowering/lower.mt src/main.mt \
+  > /tmp/mtc_combined.c
+gcc -fsyntax-only -x c /tmp/mtc_combined.c 2>&1 | grep -c "error:"
 
 # Full check sweep
 for f in examples/*.mt src/mtc/**/*.mt src/main.mt; do
-    ../../projects/mtc/build/bin/linux/debug/mtc check "$f" 2>&1 | tail -1
+    ./build/bin/linux/debug/mtc check "$f" 2>&1 | tail -1
 done
 ```

@@ -10,12 +10,13 @@ public struct Lowerer:
     source_text: str
     indent_level: ptr_uint
     out_buf: str_buffer[32768]
+    skip_header: bool
 
 
 extending Lowerer:
     public static function create(module_name: str, source_text: str) -> Lowerer:
         var ob: str_buffer[32768]
-        return Lowerer(module_name = module_name, source_text = source_text, indent_level = 0, out_buf = ob)
+        return Lowerer(module_name = module_name, source_text = source_text, indent_level = 0, out_buf = ob, skip_header = false)
 
 
     function pline(line: str) -> void:
@@ -187,7 +188,8 @@ extending Lowerer:
 
 
     public editable function lower_module(source: nodes.SourceFile) -> void:
-        this.write_header()
+        if not this.skip_header:
+            this.write_header()
 
         var i: ptr_uint = 0
         while i < source.decls.len():
@@ -564,15 +566,26 @@ extending Lowerer:
             unsafe: this.out_buf.append(op)
             this.self_write_expr_buf(e.left)
         else if kind == nodes.ExprKind.call:
-            if this.self_is_struct_ctor(expr_ptr):
-                this.self_write_struct_call(expr_ptr)
-            else if this.self_is_method_call(expr_ptr):
+            if this.self_is_method_call(expr_ptr):
                 this.self_write_method_call(expr_ptr)
+            else if this.self_is_struct_ctor(expr_ptr):
+                this.self_write_struct_call(expr_ptr)
             else:
                 this.self_write_func_call(expr_ptr)
         else if kind == nodes.ExprKind.member_access:
             this.self_write_expr_buf(e.left)
-            unsafe: this.out_buf.append(".")
+            if this.self_is_this_expr(e.left):
+                unsafe: this.out_buf.append("->")
+            else if this.self_has_this_root(e.left):
+                unsafe: this.out_buf.append(".")
+            else if this.self_is_member_access(e.left):
+                unsafe: this.out_buf.append("_")
+            else:
+                var first = unsafe: e.name.byte_at(0)
+                if first >= 'A' and first <= 'Z':
+                    unsafe: this.out_buf.append("_")
+                else:
+                    unsafe: this.out_buf.append(".")
             unsafe: this.out_buf.append(e.name)
         else if kind == nodes.ExprKind.index_access:
             this.self_write_expr_buf(e.left)
@@ -617,9 +630,46 @@ extending Lowerer:
         return unsafe: read(expr_ptr).kind == nodes.ExprKind.member_access
 
 
+    editable function self_is_this_expr(expr_ptr: ptr[nodes.Expr]?) -> bool:
+        if expr_ptr == null:
+            return false
+        return unsafe: read(expr_ptr).name == "this"
+
+
+    editable function self_has_this_root(expr_ptr: ptr[nodes.Expr]?) -> bool:
+        var cur: ptr[nodes.Expr]? = expr_ptr
+        var root: ptr[nodes.Expr]? = null
+        while cur != null:
+            let ce = unsafe: read(cur)
+            if ce.kind == nodes.ExprKind.member_access:
+                cur = ce.left
+            else:
+                root = cur
+                break
+        if root == null:
+            return false
+        return unsafe: read(root).name == "this"
+
+
     editable function self_is_method_call(expr_ptr: ptr[nodes.Expr]) -> bool:
         let e = unsafe: read(expr_ptr)
         return this.self_is_member_access(e.left)
+
+
+    editable function self_is_this_method(expr_ptr: ptr[nodes.Expr]) -> bool:
+        if not this.self_is_method_call(expr_ptr):
+            return false
+        let e = unsafe: read(expr_ptr)
+        var cur: ptr[nodes.Expr]? = e.left
+        while cur != null:
+            let ce = unsafe: read(cur)
+            if ce.kind == nodes.ExprKind.member_access:
+                cur = ce.left
+            else:
+                break
+        if cur == null:
+            return false
+        return unsafe: read(cur).name == "this"
 
 
     editable function self_write_struct_call(expr_ptr: ptr[nodes.Expr]) -> void:
@@ -666,10 +716,43 @@ extending Lowerer:
             this.self_write_expr_buf(expr_ptr)
 
 
+    editable function self_write_callee_expr(expr_ptr: ptr[nodes.Expr]?) -> void:
+        if expr_ptr == null:
+            return
+        let e = unsafe: read(expr_ptr)
+        if e.kind == nodes.ExprKind.identifier:
+            unsafe: this.out_buf.append(e.name)
+        else if e.kind == nodes.ExprKind.member_access:
+            this.self_write_callee_expr(e.left)
+            unsafe: this.out_buf.append("_")
+            unsafe: this.out_buf.append(e.name)
+        else:
+            this.self_write_expr_buf(expr_ptr)
+
+
+    editable function self_write_receiver(callee: ptr[nodes.Expr]?) -> void:
+        if callee == null:
+            return
+        var cur: ptr[nodes.Expr]? = callee
+        while cur != null:
+            let ce = unsafe: read(cur)
+            if ce.kind == nodes.ExprKind.member_access:
+                cur = ce.left
+            else:
+                break
+        if cur != null:
+            unsafe: this.out_buf.append("&")
+            this.self_write_expr_buf(cur)
+
+
     editable function self_write_method_call(expr_ptr: ptr[nodes.Expr]) -> void:
         let e = unsafe: read(expr_ptr)
-        this.self_write_expr_buf(e.left)
+        this.self_write_callee_expr(e.left)
         unsafe: this.out_buf.append("(")
+        if this.self_is_this_method(expr_ptr):
+            unsafe: this.out_buf.append("this")
+            if unsafe: e.args.len() > 0:
+                unsafe: this.out_buf.append(", ")
         var ai: ptr_uint = 0
         while ai < unsafe: e.args.len():
             let a = unsafe: e.args.get(ai) else:
@@ -789,13 +872,14 @@ extending Lowerer:
             buf.append(" ")
             this.write_fname(ptr_of(buf), method.name, decl.name)
             buf.append("(")
+            this.write_tname(ptr_of(buf), decl.name)
+            buf.append(" *this")
             var ji: ptr_uint = 0
             while ji < method.params.len():
                 let p = method.params.get(ji) else:
                     break
+                buf.append(", ")
                 let param = unsafe: read(p)
-                if ji > 0:
-                    buf.append(", ")
                 this.write_ctype_node(ptr_of(buf), param.type_node)
                 buf.append(" ")
                 buf.append(param.name)

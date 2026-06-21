@@ -271,6 +271,8 @@ function print_usage() -> void:
     stdio.print_line("  lex <file>          Lex a source file and print the token stream")
     stdio.print_line("  parse <file>        Parse a source file and print the AST (IR)")
     stdio.print_line("  check <file>        Run semantic analysis on a source file")
+    stdio.print_line("  lower <file>        Lower a source file to C and print")
+    stdio.print_line("  combine <files...>  Lower multiple files to combined C output")
     stdio.print_line("")
     stdio.print_line("Options:")
     stdio.print_line("  --json, -j          Output as JSON (for lex and parse commands)")
@@ -341,6 +343,32 @@ function main(args: span[str]) -> int:
             Option.none:
                 stdio.print_line("error: no file specified")
                 return 1
+
+    if cmd == "combine":
+        if args.len < 2:
+            stdio.print_line("error: no files specified")
+            return 1
+        var i: ptr_uint = 1
+        while i < args.len:
+            var file_path = unsafe: read(args.data + i)
+            match fs.read_text(file_path):
+                Result.failure as err:
+                    stdio.print_line(f"error: cannot read '#{file_path}'")
+                    return 1
+                Result.success as ok:
+                    var source = ok.value
+                    var source_str = source.as_str()
+                    var lex = lexer.Lexer.create(source_str)
+                    var tokens = lex.lex()
+                    var p = parser.Parser.create(source_str, tokens)
+                    var ast = p.parse()
+                    var module_name = self_module_basename(file_path)
+                    var lr = lower.Lowerer.create(module_name, source_str)
+                    if i > 1:
+                        lr.skip_header = true
+                    lr.lower_module(ast)
+            i += 1
+        return 0
 
     stdio.print_line(f"error: unknown command '#{cmd}'")
     return 1
