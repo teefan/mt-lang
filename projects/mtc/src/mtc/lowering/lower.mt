@@ -479,12 +479,41 @@ extending Lowerer:
     editable function self_write_let(stmt_ptr: ptr[nodes.Stmt]) -> void:
         let s = unsafe: read(stmt_ptr)
         this.self_write_indent()
-        unsafe: this.out_buf.append("auto ")
+        var tp = s.type_node
+        if tp != null:
+            var tbuf: str_buffer[512]
+            this.write_ctype_node(ptr_of(tbuf), tp)
+            unsafe: this.out_buf.append(unsafe: tbuf.as_str())
+            unsafe: this.out_buf.append(" ")
+        else if s.expr != null:
+            var itype = this.self_infer_expr_type(s.expr)
+            if itype != "":
+                unsafe: this.out_buf.append(itype)
+                unsafe: this.out_buf.append(" ")
+            else:
+                unsafe: this.out_buf.append("auto ")
+        else:
+            unsafe: this.out_buf.append("auto ")
         unsafe: this.out_buf.append(s.name)
         if s.expr != null:
             unsafe: this.out_buf.append(" = ")
             this.self_write_expr_buf(s.expr)
         unsafe: this.out_buf.append(";\n")
+
+
+    function self_infer_expr_type(expr_ptr: ptr[nodes.Expr]?) -> str:
+        if expr_ptr == null:
+            return ""
+        let e = unsafe: read(expr_ptr)
+        if e.kind == nodes.ExprKind.integer_literal:
+            return "uintptr_t"
+        if e.kind == nodes.ExprKind.float_literal:
+            return "double"
+        if e.kind == nodes.ExprKind.boolean_literal:
+            return "bool"
+        if e.kind == nodes.ExprKind.char_literal:
+            return "char"
+        return ""
 
 
     editable function self_write_var(stmt_ptr: ptr[nodes.Stmt]) -> void:
