@@ -524,6 +524,25 @@ module MilkTea
             return [:struct_with, nil, callee.receiver, resolved_receiver_type]
           end
 
+          if (precomputed = @ctx.resolved_call_kinds[@ctx.ast.node_ids[callee.object_id]])
+            case precomputed
+            when :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format,
+                :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr
+              return [precomputed, nil, callee.receiver, str_buffer_method_type(precomputed, resolved_receiver_type)]
+            when :event_subscribe, :event_subscribe_once, :event_unsubscribe, :event_emit, :event_wait
+              event_type = infer_expression_type(callee.receiver, env:)
+              return [precomputed, nil, callee.receiver, event_method_type(precomputed, event_type)]
+            when :atomic_load, :atomic_store, :atomic_add, :atomic_sub, :atomic_exchange, :atomic_compare_exchange
+              elem = atomic_element_type(resolved_receiver_type)
+              ret = case precomputed
+                    when :atomic_load, :atomic_add, :atomic_sub, :atomic_exchange then elem
+                    when :atomic_store then @ctx.types.fetch("void")
+                    when :atomic_compare_exchange then @ctx.types.fetch("bool")
+                    end
+              return [precomputed, nil, callee.receiver, Types::Function.new(nil, params: [], return_type: ret)]
+            end
+          end
+
           if (str_buffer_method = str_buffer_method_kind(resolved_receiver_type, callee.member))
             return [str_buffer_method, nil, callee.receiver, str_buffer_method_type(str_buffer_method, resolved_receiver_type)]
           end
