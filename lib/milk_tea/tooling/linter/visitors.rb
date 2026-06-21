@@ -568,14 +568,11 @@ module MilkTea
       def expression_literal_type_name(expr)
         case expr
         when AST::IntegerLiteral then "int"
-        when AST::StringLiteral  then "str"
-        when AST::CStringLiteral then "cstr"
+        when AST::StringLiteral  then expr.cstring ? "cstr" : "str"
         when AST::FloatLiteral   then "float"
         when AST::BooleanLiteral then "bool"
         else nil
         end
-      rescue StandardError
-        nil
       end
       # ── borrow facts helpers ──────────────────────────────────────────────────
   
