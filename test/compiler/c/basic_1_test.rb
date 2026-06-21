@@ -2149,8 +2149,8 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/double sum = \(double\) 1 \+ 2\.5;/, generated)
-    assert_match(/if \(\(double\) 3 < 3\.5 && sum > 3\.0\)/, generated)
+    assert_match(/float sum = \(float\) 1 \+ 2\.5f;/, generated)
+    assert_match(/if \(\(float\) 3 < 3\.5f && sum > 3\.0f\)/, generated)
   end
 
   def test_generate_c_for_prefix_cast_syntax
@@ -2285,7 +2285,7 @@ function main() -> int:
       },
     )
 
-    assert_match(/int32_t whole = \(int32_t\) 2\.0;/, generated)
+    assert_match(/int32_t whole = \(int32_t\) 2\.0f;/, generated)
     assert_match(/set_channel\(\(uint8_t\) local_opaque\);/, generated)
     assert_match(/set_scale\(\(float\) 200\);/, generated)
   end

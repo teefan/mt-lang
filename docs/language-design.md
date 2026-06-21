@@ -816,7 +816,7 @@ c"hello"
 ```
 
 Integer literals are untyped until context resolves them, defaulting to `int`.
-Float literals default to `double` when unconstrained.
+Float literals default to `float` when unconstrained.
 
 Typed contexts may adopt the expected numeric type for a literal directly. This is limited to literal typing, not general implicit conversion.
 
@@ -824,7 +824,7 @@ Exact compile-time numeric constants may also fit an explicit numeric target wit
 
 There is one additional narrow boundary rule for float-heavy code: a primitive integer expression may flow into an expected float type for an explicitly typed local declaration, an assignment to a float-typed lvalue (`=` and arithmetic compound assignment operators), a return expression from a float-returning function, an ordinary function argument with a float parameter type, or an aggregate/variant field initializer with a float field type.
 
-This is still a boundary cast, not a general usual-arithmetic-conversions model. It does not widen public constant initialization or arbitrary expression typing. Integer arithmetic stays integer arithmetic until that final boundary cast, so `let ratio: float = hits / total` still performs integer division before the result is converted. When a float boundary is already known, mixed arithmetic under that boundary may type float literals as `float` instead of defaulting the whole expression to `double`, so code like `takes_float(angle * 0.5)` does not need a manual `float<-` on the literal.
+This is still a boundary cast, not a general usual-arithmetic-conversions model. It does not widen public constant initialization or arbitrary expression typing. Integer arithmetic stays integer arithmetic until that final boundary cast, so `let ratio: float = hits / total` still performs integer division before the result is converted.
 
 Foreign/external numeric boundaries are stricter: runtime implicit conversion is limited to provably lossless widening within the same numeric family. Truncating conversions and runtime implicit integer-to-float or float-to-integer conversions at foreign boundaries require an explicit cast. Exact compile-time numeric constants are still allowed when the target type can represent them exactly.
 
