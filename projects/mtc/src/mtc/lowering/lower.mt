@@ -103,6 +103,20 @@ extending Lowerer:
                 i += 1
 
 
+    function write_ctype_node(buf: ptr[str_buffer[512]], tp: ptr[nodes.Type]?) -> void:
+        if tp == null:
+            return
+        if unsafe: read(tp).kind == nodes.TypeKind.type_nullable:
+            this.write_ctype_node(buf, unsafe: read(tp).inner)
+            return
+        var name = unsafe: read(tp).name
+        if name == "const_ptr":
+            name = "ptr"
+        if name == "usize":
+            name = "ptr_uint"
+        this.write_ctype(buf, name)
+
+
     function write_tname(buf: ptr[str_buffer[512]], type_name: str) -> void:
         if type_name == "":
             return
@@ -163,7 +177,7 @@ extending Lowerer:
     function self_has_output(decl: nodes.Decl) -> bool:
         if decl.name == "":
             return false
-        if decl.kind == nodes.DeclKind.const_decl and decl.stmt_count == 0 and decl.type_name == "" and decl.value_text == "":
+        if decl.kind == nodes.DeclKind.const_decl and decl.stmt_count == 0 and decl.type_node == null and decl.value_text == "":
             return false
         return true
 
@@ -180,7 +194,7 @@ extending Lowerer:
         else if decl.kind == nodes.DeclKind.enum_decl or decl.kind == nodes.DeclKind.flags_decl:
             var buf: str_buffer[512]
             buf.assign("typedef ")
-            this.write_ctype(ptr_of(buf), decl.type_name)
+            this.write_ctype_node(ptr_of(buf), decl.type_node)
             buf.append(" ")
             this.write_tname(ptr_of(buf), decl.name)
             buf.append(";")
@@ -229,7 +243,7 @@ extending Lowerer:
                 break
             let field = unsafe: read(f)
             buf.assign("  ")
-            this.write_ctype(ptr_of(buf), field.type_text)
+            this.write_ctype_node(ptr_of(buf), field.type_node)
             buf.append(" ")
             buf.append(field.name)
             buf.append(";")
@@ -267,7 +281,7 @@ extending Lowerer:
     editable function write_type_alias(decl: nodes.Decl) -> void:
         var buf: str_buffer[512]
         buf.assign("typedef ")
-        this.write_ctype(ptr_of(buf), decl.type_name)
+        this.write_ctype_node(ptr_of(buf), decl.type_node)
         buf.append(" ")
         this.write_tname(ptr_of(buf), decl.name)
         buf.append(";")
@@ -279,7 +293,7 @@ extending Lowerer:
         var buf: str_buffer[512]
         if decl.kind == nodes.DeclKind.const_decl:
             buf.append("static ")
-        this.write_ctype(ptr_of(buf), decl.return_text)
+        this.write_ctype_node(ptr_of(buf), decl.return_node)
         buf.append(" ")
         this.write_fname(ptr_of(buf), decl.name, "")
         buf.append("(")
@@ -290,7 +304,7 @@ extending Lowerer:
             let param = unsafe: read(p)
             if i > 0:
                 buf.append(", ")
-            this.write_ctype(ptr_of(buf), param.type_text)
+            this.write_ctype_node(ptr_of(buf), param.type_node)
             buf.append(" ")
             buf.append(param.name)
             i += 1
@@ -383,7 +397,7 @@ extending Lowerer:
 
     editable function write_function_sig(decl: nodes.Decl) -> void:
         var buf: str_buffer[512]
-        this.write_ctype(ptr_of(buf), decl.return_text)
+        this.write_ctype_node(ptr_of(buf), decl.return_node)
         buf.append(" ")
         this.write_fname(ptr_of(buf), decl.name, "")
         buf.append("(")
@@ -394,7 +408,7 @@ extending Lowerer:
             let param = unsafe: read(p)
             if i > 0:
                 buf.append(", ")
-            this.write_ctype(ptr_of(buf), param.type_text)
+            this.write_ctype_node(ptr_of(buf), param.type_node)
             buf.append(" ")
             buf.append(param.name)
             i += 1
@@ -408,7 +422,7 @@ extending Lowerer:
             buf.assign("static const ")
         else:
             buf.assign("static ")
-        this.write_ctype(ptr_of(buf), decl.type_name)
+        this.write_ctype_node(ptr_of(buf), decl.type_node)
         buf.append(" ")
         this.write_fname(ptr_of(buf), decl.name, "")
         if decl.value_text != "":
@@ -421,7 +435,7 @@ extending Lowerer:
     editable function write_var(decl: nodes.Decl) -> void:
         var buf: str_buffer[512]
         buf.assign("static ")
-        this.write_ctype(ptr_of(buf), decl.type_name)
+        this.write_ctype_node(ptr_of(buf), decl.type_node)
         buf.append(" ")
         this.write_fname(ptr_of(buf), decl.name, "")
         if decl.value_text != "":
@@ -439,7 +453,7 @@ extending Lowerer:
             let method = unsafe: read(m)
             var buf: str_buffer[512]
             buf.assign("static ")
-            this.write_ctype(ptr_of(buf), method.return_text)
+            this.write_ctype_node(ptr_of(buf), method.return_node)
             buf.append(" ")
             this.write_fname(ptr_of(buf), method.name, decl.name)
             buf.append("(")
@@ -450,7 +464,7 @@ extending Lowerer:
                 let param = unsafe: read(p)
                 if ji > 0:
                     buf.append(", ")
-                this.write_ctype(ptr_of(buf), param.type_text)
+                this.write_ctype_node(ptr_of(buf), param.type_node)
                 buf.append(" ")
                 buf.append(param.name)
                 ji += 1

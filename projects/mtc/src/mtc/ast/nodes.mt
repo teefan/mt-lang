@@ -52,6 +52,18 @@ public enum ExprKind: ubyte
     proc_expr = 16
     prefix_cast = 17
 
+public enum TypeKind: ubyte
+    type_named = 1
+    type_constructed = 2
+    type_nullable = 3
+
+
+public struct Type:
+    kind: TypeKind
+    name: str
+    inner: ptr[Type]?
+    size_text: str
+
 
 public struct SourceFile:
     module_name: str
@@ -70,15 +82,16 @@ public struct Import:
 public struct Decl:
     kind: DeclKind
     name: str
-    type_name: str
+    type_node: ptr[Type]?
     value_text: str
     params: vec.Vec[Param]
-    return_text: str
+    return_node: ptr[Type]?
     fields: vec.Vec[Field]
     members: vec.Vec[EnumMember]
     arms: vec.Vec[VariantArm]
     methods: vec.Vec[Decl]
     impl_list: vec.Vec[str]
+    mapping: str
     is_public: bool
     is_async: bool
     is_const_fn: bool
@@ -91,13 +104,13 @@ public struct Decl:
 
 public struct Param:
     name: str
-    type_text: str
+    type_node: ptr[Type]?
     line: ptr_uint
     column: ptr_uint
 
 public struct Field:
     name: str
-    type_text: str
+    type_node: ptr[Type]?
     line: ptr_uint
     column: ptr_uint
 
@@ -115,7 +128,7 @@ public struct VariantArm:
 public struct Stmt:
     kind: StmtKind
     name: str
-    type_text: str
+    type_node: ptr[Type]?
     value_text: str
     cond_text: str
     body_text: str

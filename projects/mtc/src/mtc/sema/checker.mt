@@ -97,15 +97,15 @@ extending Checker:
         else if decl.kind == nodes.DeclKind.union_decl:
             this.ctx.register_type(decl.name, decl.line, decl.column)
         else if decl.kind == nodes.DeclKind.function_def:
-            this.ctx.register_function(decl.name, decl.return_text, decl.is_public, decl.line, decl.column)
+            this.ctx.register_function(decl.name, self_type_name(decl.return_node), decl.is_public, decl.line, decl.column)
         else if decl.kind == nodes.DeclKind.extern_function:
-            this.ctx.register_function(decl.name, decl.return_text, false, decl.line, decl.column)
+            this.ctx.register_function(decl.name, self_type_name(decl.return_node), false, decl.line, decl.column)
         else if decl.kind == nodes.DeclKind.foreign_function:
-            this.ctx.register_function(decl.name, decl.return_text, false, decl.line, decl.column)
+            this.ctx.register_function(decl.name, self_type_name(decl.return_node), false, decl.line, decl.column)
         else if decl.kind == nodes.DeclKind.const_decl:
-            this.ctx.register_const_or_var(decl.name, symbol.SymbolKind.const_symbol, decl.type_name, decl.line, decl.column)
+            this.ctx.register_const_or_var(decl.name, symbol.SymbolKind.const_symbol, self_type_name(decl.type_node), decl.line, decl.column)
         else if decl.kind == nodes.DeclKind.var_decl:
-            this.ctx.register_const_or_var(decl.name, symbol.SymbolKind.var_symbol, decl.type_name, decl.line, decl.column)
+            this.ctx.register_const_or_var(decl.name, symbol.SymbolKind.var_symbol, self_type_name(decl.type_node), decl.line, decl.column)
         else if decl.kind == nodes.DeclKind.extending_block:
             this.register_extending_methods(decl)
 
@@ -119,7 +119,7 @@ extending Checker:
             this.ctx.symbols.push(symbol.Symbol(
                 kind = symbol.SymbolKind.method_symbol,
                 name = f"#{decl.name}.#{method.name}",
-                type_text = method.return_text,
+                type_text = self_type_name(method.return_node),
                 is_public = false,
                 line = method.line,
                 column = method.column,
@@ -143,7 +143,7 @@ extending Checker:
             let p = decl.params.get(j) else:
                 break
             let param = unsafe: read(p)
-            this.ctx.validate_type_ref(param.type_text, param.line, param.column)
+            this.ctx.validate_type_ref(self_type_name(param.type_node), param.line, param.column)
             j += 1
 
         j = 0
@@ -151,7 +151,7 @@ extending Checker:
             let f = decl.fields.get(j) else:
                 break
             let field = unsafe: read(f)
-            this.ctx.validate_type_ref(field.type_text, field.line, field.column)
+            this.ctx.validate_type_ref(self_type_name(field.type_node), field.line, field.column)
             j += 1
 
         j = 0
@@ -160,20 +160,19 @@ extending Checker:
                 break
             j += 1
 
-        if decl.return_text != "":
-            this.ctx.validate_type_ref(decl.return_text, decl.line, decl.column)
+        if decl.return_node != null:
+            this.ctx.validate_type_ref(self_type_name(decl.return_node), decl.line, decl.column)
 
-        if decl.type_name != "" and decl.type_name != "0" and decl.type_name != "1":
-            var is_numeric = true
-            var ti: ptr_uint = 0
-            while ti < decl.type_name.len:
-                let tc = decl.type_name.byte_at(ti)
-                if not (tc >= '0' and tc <= '9'):
-                    is_numeric = false
-                    break
-                ti += 1
-            if not is_numeric:
-                this.ctx.validate_type_ref(decl.type_name, decl.line, decl.column)
+        if decl.type_node != null:
+            this.ctx.validate_type_ref(self_type_name(decl.type_node), decl.line, decl.column)
+
+
+function self_type_name(tp: ptr[nodes.Type]?) -> str:
+    if tp == null:
+        return ""
+    if unsafe: read(tp).kind == nodes.TypeKind.type_nullable:
+        return self_type_name(unsafe: read(tp).inner)
+    return unsafe: read(tp).name
 
 
 function empty_string_vec() -> vec.Vec[str]:
@@ -186,8 +185,9 @@ function self_collect_type_params(decl: nodes.Decl, output: ref[vec.Vec[str]]) -
         let f = decl.fields.get(i) else:
             break
         let field = unsafe: read(f)
-        if self_is_type_param_name(field.type_text):
-            output.push(field.type_text)
+        var tpname = self_type_param_name(field.type_node)
+        if tpname != "":
+            output.push(tpname)
         i += 1
 
     i = 0
@@ -195,12 +195,14 @@ function self_collect_type_params(decl: nodes.Decl, output: ref[vec.Vec[str]]) -
         let p = decl.params.get(i) else:
             break
         let param = unsafe: read(p)
-        if self_is_type_param_name(param.type_text):
-            output.push(param.type_text)
+        var tpname = self_type_param_name(param.type_node)
+        if tpname != "":
+            output.push(tpname)
         i += 1
 
-    if self_is_type_param_name(decl.return_text):
-        output.push(decl.return_text)
+    var tpname = self_type_param_name(decl.return_node)
+    if tpname != "":
+        output.push(tpname)
 
     i = 0
     while i < decl.arms.len():
@@ -212,17 +214,23 @@ function self_collect_type_params(decl: nodes.Decl, output: ref[vec.Vec[str]]) -
             let af = arm.fields.get(j) else:
                 break
             let afield = unsafe: read(af)
-            if self_is_type_param_name(afield.type_text):
-                output.push(afield.type_text)
+            var tpname = self_type_param_name(afield.type_node)
+            if tpname != "":
+                output.push(tpname)
             j += 1
         i += 1
 
 
-function self_is_type_param_name(name: str) -> bool:
+function self_type_param_name(tp: ptr[nodes.Type]?) -> str:
+    if tp == null:
+        return ""
+    let name = unsafe: read(tp).name
     if name.len != 1:
-        return false
+        return ""
     let ch = name.byte_at(0)
-    return ch >= 'A' and ch <= 'Z'
+    if ch >= 'A' and ch <= 'Z':
+        return name
+    return ""
 
 
 function self_last_component(path: str) -> str:
@@ -261,4 +269,3 @@ function extract_public_symbols(source: nodes.SourceFile) -> vec.Vec[symbol.Symb
 
 function kind_is_type(kind: nodes.DeclKind) -> bool:
     return kind == nodes.DeclKind.type_alias or kind == nodes.DeclKind.struct_decl or kind == nodes.DeclKind.enum_decl or kind == nodes.DeclKind.flags_decl or kind == nodes.DeclKind.variant_decl or kind == nodes.DeclKind.interface_decl or kind == nodes.DeclKind.opaque_decl or kind == nodes.DeclKind.union_decl
-

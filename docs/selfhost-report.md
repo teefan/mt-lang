@@ -116,13 +116,24 @@ mtc --help         — Usage info
 
 ### Immediate (next session)
 
-**1. Tree AST — Type nodes (~300 lines)**
+**1. Tree AST — Type nodes (~300 lines)** ✅ COMPLETED
 Replace flat `type_text: str` with recursive `Type` tree. Add `TypeKind` enum + `Type` struct to `nodes.mt`. Rewrite `parse_type_text() → parse_type()` in `parser.mt` to build `ptr[Type]?` trees. Update `write_ctype()` in `lower.mt` to traverse the tree. This is the smallest tree-AST piece and proves the heap-allocation pattern.
 
 ```
-TypeKind: primitive | named | ptr_type | ref_type | span_type | array_type | fn_type | nullable | ...
-Type: { kind, name, inner: ptr[Type]?, array_size, fn_params: Vec[Type], fn_return: ptr[Type]? }
+TypeKind: type_named | type_constructed | type_nullable
+Type: { kind, name, inner: ptr[Type]?, size_text: str }
 ```
+
+**Completed implementation:**
+- Added `TypeKind` enum (type_named=1, type_constructed=2, type_nullable=3) and `Type` struct to `nodes.mt`
+- Changed `Decl.type_name` → `Decl.type_node` (ptr[Type]?), `Decl.return_text` → `Decl.return_node` (ptr[Type]?), added `Decl.mapping: str` for foreign function mappings
+- Changed `Param.type_text` → `Param.type_node` (ptr[Type]?), `Field.type_text` → `Field.type_node` (ptr[Type]?)
+- Rewrote parser: `parse_type(){→parse_type_base(){` with proper tree construction, nullable wrapping, dotted name support, bracket argument parsing
+- Added `self_alloc_type()` helper using `std.mem.heap.must_alloc`
+- Added `self_type_name()` and `self_type_param_name()` helpers in sema checker for string-based compat
+- Updated `write_ctype_node()` in lowerer to traverse tree (with same C type output as before)
+- Heap allocation pattern proven via `ptr[Type]` nodes linked through `inner` field
+- All 9 selfhost + 13 example files pass `mtc check` with 0 errors
 
 **2. Tree AST — Expression nodes (~800 lines)**
 Replace flat `Expr` with recursive tree. Covers literals, identifiers, binary/unary ops, calls, member/index access, proc expressions, cast, if/match-expr. Rewrite all `parse_*` expression functions to return `ptr[Expr]?`. Heap allocation via `std.mem.heap.must_alloc`.
