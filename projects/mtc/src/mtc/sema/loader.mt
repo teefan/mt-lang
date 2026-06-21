@@ -94,4 +94,4 @@ function self_is_function_decl(kind: nodes.DeclKind) -> bool:
 
 
 function empty_source() -> nodes.SourceFile:
-    return nodes.SourceFile(module_name = "", imports = vec.Vec[nodes.Import].create(), decls = vec.Vec[nodes.Decl].create(), line = 0)
+    return nodes.SourceFile(module_name = "", imports = vec.Vec[nodes.Import].create(), decls = vec.Vec[nodes.Decl].create(), is_external = false, line = 0)

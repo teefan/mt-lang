@@ -57,6 +57,7 @@ public struct SourceFile:
     module_name: str
     imports: vec.Vec[Import]
     decls: vec.Vec[Decl]
+    is_external: bool
     line: ptr_uint
 
 public struct Import:

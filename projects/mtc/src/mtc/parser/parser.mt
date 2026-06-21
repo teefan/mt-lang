@@ -116,13 +116,27 @@ extending Parser:
     public editable function parse() -> nodes.SourceFile:
         var imports = vec.Vec[nodes.Import].create()
         var decls = vec.Vec[nodes.Decl].create()
+        var is_external = false
         this.skip_newlines()
+
+        if this.match_kind(token.TokenKind.tk_external):
+            is_external = true
+            this.skip_newlines()
 
         while not this.at_end():
             this.skip_newlines()
             if not this.check(token.TokenKind.tk_import):
                 break
             this.parse_import(ref_of(imports))
+
+        if is_external:
+            while not this.at_end():
+                this.skip_newlines()
+                if this.check(token.TokenKind.tk_include) or this.check(token.TokenKind.tk_link) or this.check(token.TokenKind.tk_compiler_flag):
+                    this.advance()
+                    this.skip_expr_value()
+                else:
+                    break
 
         while not this.at_end() and this.peek_kind() != token.TokenKind.tk_eof:
             this.skip_newlines()
@@ -141,7 +155,7 @@ extending Parser:
                 ni += 1
             this.nested_decls.clear()
 
-        return nodes.SourceFile(module_name = "", imports = imports, decls = decls, line = 1)
+        return nodes.SourceFile(module_name = "", imports = imports, decls = decls, is_external = is_external, line = 1)
 
 
     editable function parse_import(imports: ref[vec.Vec[nodes.Import]]) -> void:
@@ -280,7 +294,7 @@ extending Parser:
             this.skip_newlines()
             if this.match_kind(token.TokenKind.tk_indent):
                 this.skip_block_body()
-            return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "when", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+            return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
         if this.check(token.TokenKind.tk_inline):
             this.advance()
             if this.check(token.TokenKind.tk_for) or this.check(token.TokenKind.tk_while) or this.check(token.TokenKind.tk_match) or this.check(token.TokenKind.tk_if):
@@ -359,6 +373,7 @@ extending Parser:
         let col = this.tok_col()
         this.advance()
         let name = this.expect_id()
+        this.skip_bracketed(token.TokenKind.tk_lbracket, token.TokenKind.tk_rbracket)
         var impls = this.empty_impls()
         if this.match_id("implements"):
             while not this.check(token.TokenKind.tk_colon):
