@@ -294,9 +294,9 @@ module MilkTea
       end
 
       def infer_float_literal(expression, expected_type)
-        if expression.lexeme.end_with?("float")
+        if expression.lexeme.end_with?("f")
           @ctx.types.fetch("float")
-        elsif expression.lexeme.end_with?("double")
+        elsif expression.lexeme.end_with?("d")
           @ctx.types.fetch("double")
         elsif expected_type.is_a?(Types::Primitive) && expected_type.float?
           expected_type
