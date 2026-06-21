@@ -6,13 +6,15 @@ import mtc.ast.nodes
 
 
 public struct Parser:
+    source_text: str
     tokens: vec.Vec[token.Token]
     pos: ptr_uint
+    nested_decls: vec.Vec[nodes.Decl]
 
 
 extending Parser:
-    public static function create(tokens: vec.Vec[token.Token]) -> Parser:
-        return Parser(tokens = tokens, pos = 0)
+    public static function create(source_text: str, tokens: vec.Vec[token.Token]) -> Parser:
+        return Parser(source_text = source_text, tokens = tokens, pos = 0, nested_decls = vec.Vec[nodes.Decl].create())
 
 
     function at_end() -> bool:
@@ -21,7 +23,7 @@ extending Parser:
 
     function peek_tok() -> token.Token:
         let t = this.tokens.get(this.pos) else:
-            return token.Token(kind = token.TokenKind.tk_eof, lexeme = "", line = 0, column = 0)
+            return token.Token(kind = token.TokenKind.tk_eof, lexeme = "", line = 0, column = 0, src_offset = 0)
         return unsafe: read(t)
 
 
@@ -129,6 +131,15 @@ extending Parser:
             var decl = this.parse_declaration()
             if decl.name != "":
                 decls.push(decl)
+            var ni: ptr_uint = 0
+            while ni < this.nested_decls.len():
+                let nd = this.nested_decls.get(ni) else:
+                    break
+                let nested = unsafe: read(nd)
+                if nested.name != "":
+                    decls.push(nested)
+                ni += 1
+            this.nested_decls.clear()
 
         return nodes.SourceFile(module_name = "", imports = imports, decls = decls, line = 1)
 
@@ -137,14 +148,36 @@ extending Parser:
         let line = this.tok_line()
         let col = this.tok_col()
         this.expect(token.TokenKind.tk_import)
-        var first = this.expect_id()
+        let first_tok = this.peek_tok()
+        var path_start = first_tok.src_offset
+        var path_len: ptr_uint = 0
+        var first = this.expect_word()
+        path_len += first.len
         while this.match_kind(token.TokenKind.tk_dot):
-            var part = this.expect_id()
-            pass
+            path_len += 1
+            var part = this.expect_word()
+            path_len += part.len
         var alias = ""
         if this.match_kind(token.TokenKind.tk_as):
             alias = this.expect_id()
-        imports.push(nodes.Import(path = first, alias = alias, line = line, column = col))
+        var full_path = this.source_text.slice(path_start, path_len)
+        imports.push(nodes.Import(path = full_path, alias = alias, line = line, column = col))
+
+
+    editable function expect_word() -> str:
+        if this.at_end():
+            return ""
+        let kind = this.peek_kind()
+        if kind == token.TokenKind.tk_identifier:
+            let name = this.tok_lexeme()
+            this.advance()
+            return name
+        if kind >= token.TokenKind.tk_align_of and kind <= token.TokenKind.tk_while:
+            let name = this.tok_lexeme()
+            this.advance()
+            return name
+        this.advance()
+        return ""
 
 
     function check_next(kind: token.TokenKind) -> bool:
@@ -340,9 +373,13 @@ extending Parser:
             this.skip_newlines()
             if this.check(token.TokenKind.tk_dedent):
                 break
-            if this.check(token.TokenKind.tk_public) or this.check(token.TokenKind.tk_event):
+            if this.check(token.TokenKind.tk_public) or this.check(token.TokenKind.tk_event) or this.check(token.TokenKind.tk_at):
                 while not this.at_end() and not this.check(token.TokenKind.tk_newline) and not this.check(token.TokenKind.tk_dedent):
                     this.advance()
+                continue
+            if this.check(token.TokenKind.tk_struct):
+                var nested = this.parse_struct()
+                this.nested_decls.push(nested)
                 continue
             let fname = this.expect_id()
             this.expect(token.TokenKind.tk_colon)
@@ -497,7 +534,7 @@ extending Parser:
             this.skip_newlines()
             if this.check(token.TokenKind.tk_dedent):
                 break
-            if this.check(token.TokenKind.tk_public) or this.check(token.TokenKind.tk_event):
+            if this.check(token.TokenKind.tk_public) or this.check(token.TokenKind.tk_event) or this.check(token.TokenKind.tk_at):
                 while not this.at_end() and not this.check(token.TokenKind.tk_newline) and not this.check(token.TokenKind.tk_dedent):
                     this.advance()
                 continue
@@ -604,29 +641,37 @@ extending Parser:
 
 
     editable function parse_type_text() -> str:
-        if this.check(token.TokenKind.tk_identifier):
+        let kind = this.peek_kind()
+        if kind == token.TokenKind.tk_identifier:
             var text = this.expect_id()
             if text == "ptr" or text == "ref" or text == "span" or text == "dyn" or text == "array" or text == "const_ptr":
-                if this.match_kind(token.TokenKind.tk_lbracket):
-                    this.skip_bracketed(token.TokenKind.tk_lbracket, token.TokenKind.tk_rbracket)
+                this.skip_bracketed(token.TokenKind.tk_lbracket, token.TokenKind.tk_rbracket)
                 if this.match_kind(token.TokenKind.tk_at):
                     this.advance()
-                    if this.match_kind(token.TokenKind.tk_lbracket):
-                        this.skip_bracketed(token.TokenKind.tk_lbracket, token.TokenKind.tk_rbracket)
-                if this.match_kind(token.TokenKind.tk_question):
-                    pass
-            else:
-                if this.match_kind(token.TokenKind.tk_lbracket):
                     this.skip_bracketed(token.TokenKind.tk_lbracket, token.TokenKind.tk_rbracket)
                 if this.match_kind(token.TokenKind.tk_question):
                     pass
-            return text
+                return text
 
-        if this.check(token.TokenKind.tk_fn) or this.check(token.TokenKind.tk_proc):
+            let first_tok = this.tokens.get(this.pos - 1) else:
+                return ""
+            var tp_start = unsafe: read(first_tok).src_offset
+            var tp_len: ptr_uint = text.len
+            while this.match_kind(token.TokenKind.tk_dot):
+                tp_len += 1
+                var part = this.expect_word()
+                tp_len += part.len
+            var full_text = this.source_text.slice(tp_start, tp_len)
+
+            this.skip_bracketed(token.TokenKind.tk_lbracket, token.TokenKind.tk_rbracket)
+            if this.match_kind(token.TokenKind.tk_question):
+                pass
+            return full_text
+
+        if kind == token.TokenKind.tk_fn or kind == token.TokenKind.tk_proc:
             var text = this.tok_lexeme()
             this.advance()
-            if this.match_kind(token.TokenKind.tk_lparen):
-                this.skip_bracketed(token.TokenKind.tk_lparen, token.TokenKind.tk_rparen)
+            this.skip_bracketed(token.TokenKind.tk_lparen, token.TokenKind.tk_rparen)
             if this.match_kind(token.TokenKind.tk_arrow):
                 this.parse_type_text()
             return text
@@ -722,17 +767,19 @@ extending Parser:
                 var bind = this.expect_id()
                 expr = nodes.Expr(kind = nodes.ExprKind.identifier, name = bind, left_text = expr.name, line = this.tok_line(), column = this.tok_col())
             else if this.match_kind(token.TokenKind.tk_lparen):
-                var args = vec.Vec[nodes.Expr].create()
                 if not this.check(token.TokenKind.tk_rparen):
                     while true:
                         var arg = this.parse_expression()
-                        args.push(arg)
+                        if this.match_kind(token.TokenKind.tk_equal):
+                            this.parse_expression()
                         if not this.match_kind(token.TokenKind.tk_comma):
                             break
                 this.expect(token.TokenKind.tk_rparen)
                 expr = nodes.Expr(kind = nodes.ExprKind.call, name = expr.name, left_text = expr.name, line = this.tok_line(), column = this.tok_col())
             else if this.match_kind(token.TokenKind.tk_lbracket):
                 var idx = this.parse_expression()
+                while this.match_kind(token.TokenKind.tk_comma):
+                    this.parse_expression()
                 this.expect(token.TokenKind.tk_rbracket)
                 expr = nodes.Expr(kind = nodes.ExprKind.index_access, name = idx.name, left_text = expr.name, line = this.tok_line(), column = this.tok_col())
             else if this.match_kind(token.TokenKind.tk_question):
@@ -956,6 +1003,8 @@ extending Parser:
             if this.match_kind(token.TokenKind.tk_equal) or this.check(token.TokenKind.tk_colon):
                 this.parse_expression()
             if this.match_kind(token.TokenKind.tk_else):
+                if this.match_kind(token.TokenKind.tk_as):
+                    this.expect_id()
                 if this.check(token.TokenKind.tk_colon):
                     this.advance()
                 this.skip_newlines()
@@ -1029,6 +1078,11 @@ extending Parser:
             return nodes.Stmt(kind = nodes.StmtKind.block, line = line, column = col)
 
         var expr = this.parse_expression()
+        var next_kind = this.peek_kind()
+        if next_kind == token.TokenKind.tk_equal or next_kind == token.TokenKind.tk_plus_equal or next_kind == token.TokenKind.tk_minus_equal or next_kind == token.TokenKind.tk_star_equal or next_kind == token.TokenKind.tk_slash_equal or next_kind == token.TokenKind.tk_percent_equal or next_kind == token.TokenKind.tk_amp_equal or next_kind == token.TokenKind.tk_pipe_equal or next_kind == token.TokenKind.tk_caret_equal or next_kind == token.TokenKind.tk_shift_left_equal or next_kind == token.TokenKind.tk_shift_right_equal:
+            this.advance()
+            this.parse_expression()
+
         if this.check(token.TokenKind.tk_colon):
             this.advance()
             this.skip_newlines()

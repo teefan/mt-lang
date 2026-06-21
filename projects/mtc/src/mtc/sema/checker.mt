@@ -42,13 +42,15 @@ extending Checker:
                 line = imp.line,
                 column = imp.column,
             ))
-            if imp.alias != "":
-                this.ctx.register_type_param(imp.alias, imp.line, imp.column)
-            else:
-                var last = self_last_component(imp.path)
-                if last != "":
-                    this.ctx.register_type_param(last, imp.line, imp.column)
-            this.loader.load_and_register(ref_of(this.ctx), imp.path)
+            var alias = imp.alias
+            if alias == "":
+                alias = self_last_component(imp.path)
+            if alias != "" and not this.loader.already_loaded(imp.path):
+                this.loader.loaded.push(imp.path)
+                var ast = this.loader.load_module(imp.path)
+                if ast.decls.len() > 0:
+                    var scope_symbols = extract_public_symbols(ast)
+                    this.ctx.add_import_scope(alias, imp.path, scope_symbols)
             i += 1
 
 
@@ -189,6 +191,18 @@ function self_collect_type_params(decl: nodes.Decl, output: ref[vec.Vec[str]]) -
         i += 1
 
     i = 0
+    while i < decl.params.len():
+        let p = decl.params.get(i) else:
+            break
+        let param = unsafe: read(p)
+        if self_is_type_param_name(param.type_text):
+            output.push(param.type_text)
+        i += 1
+
+    if self_is_type_param_name(decl.return_text):
+        output.push(decl.return_text)
+
+    i = 0
     while i < decl.arms.len():
         let a = decl.arms.get(i) else:
             break
@@ -222,4 +236,29 @@ function self_last_component(path: str) -> str:
     if dot_pos >= path.len:
         return ""
     return path.slice(dot_pos + 1, path.len - dot_pos - 1)
+
+
+function extract_public_symbols(source: nodes.SourceFile) -> vec.Vec[symbol.Symbol]:
+    var result = vec.Vec[symbol.Symbol].create()
+    var i: ptr_uint = 0
+    while i < source.decls.len():
+        let d = source.decls.get(i) else:
+            break
+        let decl = unsafe: read(d)
+        if decl.is_public and decl.name != "":
+            if kind_is_type(decl.kind):
+                result.push(symbol.Symbol(
+                    kind = symbol.SymbolKind.type_symbol,
+                    name = decl.name,
+                    type_text = "",
+                    is_public = true,
+                    line = decl.line,
+                    column = decl.column,
+                ))
+        i += 1
+    return result
+
+
+function kind_is_type(kind: nodes.DeclKind) -> bool:
+    return kind == nodes.DeclKind.type_alias or kind == nodes.DeclKind.struct_decl or kind == nodes.DeclKind.enum_decl or kind == nodes.DeclKind.flags_decl or kind == nodes.DeclKind.variant_decl or kind == nodes.DeclKind.interface_decl or kind == nodes.DeclKind.opaque_decl or kind == nodes.DeclKind.union_decl
 

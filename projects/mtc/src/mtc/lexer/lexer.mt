@@ -182,7 +182,7 @@ extending Lexer:
 
     ## Emit a token at the current position.
     editable function emit_token(kind: token.TokenKind, lexeme: str) -> void:
-        this.tokens.push(token.Token(kind = kind, lexeme = lexeme, line = this.line, column = this.column))
+        this.tokens.push(token.Token(kind = kind, lexeme = lexeme, line = this.line, column = this.column, src_offset = 0))
 
 
     ## Check if a token kind is a line continuation operator.
@@ -367,7 +367,7 @@ extending Lexer:
             this.advance()
         let lexeme = this.source.slice(start, this.pos - start)
         let kind = this.keyword_kind(lexeme)
-        this.tokens.push(token.Token(kind = kind, lexeme = lexeme, line = this.line, column = start_column))
+        this.tokens.push(token.Token(kind = kind, lexeme = lexeme, line = this.line, column = start_column, src_offset = start))
 
 
     ## Lex an integer or float literal.
@@ -418,9 +418,9 @@ extending Lexer:
 
         let lexeme = this.source.slice(start, this.pos - start)
         if is_float:
-            this.tokens.push(token.Token(kind = token.TokenKind.tk_float, lexeme = lexeme, line = this.line, column = start_column))
+            this.tokens.push(token.Token(kind = token.TokenKind.tk_float, lexeme = lexeme, line = this.line, column = start_column, src_offset = start))
         else:
-            this.tokens.push(token.Token(kind = token.TokenKind.tk_integer, lexeme = lexeme, line = this.line, column = start_column))
+            this.tokens.push(token.Token(kind = token.TokenKind.tk_integer, lexeme = lexeme, line = this.line, column = start_column, src_offset = start))
 
 
     editable function scan_numeric_suffix() -> void:
@@ -579,10 +579,11 @@ extending Lexer:
                 this.column += 1
 
         let lexeme = this.source.slice(start, this.pos - start)
+        var src_off = start
         if cstring:
-            this.tokens.push(token.Token(kind = token.TokenKind.tk_cstring, lexeme = lexeme, line = start_line, column = start_column))
+            this.tokens.push(token.Token(kind = token.TokenKind.tk_cstring, lexeme = lexeme, line = start_line, column = start_column, src_offset = src_off))
         else:
-            this.tokens.push(token.Token(kind = token.TokenKind.tk_string, lexeme = lexeme, line = start_line, column = start_column))
+            this.tokens.push(token.Token(kind = token.TokenKind.tk_string, lexeme = lexeme, line = start_line, column = start_column, src_offset = src_off))
 
 
     ## Lex a format string literal f"...".
@@ -597,7 +598,7 @@ extending Lexer:
             if ch == '"':
                 this.advance()
                 let lexeme = this.source.slice(start, this.pos - start)
-                this.tokens.push(token.Token(kind = token.TokenKind.tk_fstring, lexeme = lexeme, line = this.line, column = start_column))
+                this.tokens.push(token.Token(kind = token.TokenKind.tk_fstring, lexeme = lexeme, line = this.line, column = start_column, src_offset = start))
                 return
             else if ch == '#' and this.peek_at(this.pos + 1) == '{':
                 this.advance()
@@ -717,7 +718,7 @@ extending Lexer:
         this.advance()
 
         let lexeme = this.source.slice(start, this.pos - start)
-        this.tokens.push(token.Token(kind = token.TokenKind.tk_char_literal, lexeme = lexeme, line = this.line, column = start_column))
+        this.tokens.push(token.Token(kind = token.TokenKind.tk_char_literal, lexeme = lexeme, line = this.line, column = start_column, src_offset = start))
 
 
     ## Lex a heredoc: <<-TAG, c<<-TAG, or f<<-TAG.
@@ -781,12 +782,13 @@ extending Lexer:
             return
 
         let lexeme = this.source.slice(start, terminator_end - start)
+        var src_off = start
         if cstring:
-            this.tokens.push(token.Token(kind = token.TokenKind.tk_cstring, lexeme = lexeme, line = start_line, column = start_column))
+            this.tokens.push(token.Token(kind = token.TokenKind.tk_cstring, lexeme = lexeme, line = start_line, column = start_column, src_offset = src_off))
         else if format:
-            this.tokens.push(token.Token(kind = token.TokenKind.tk_fstring, lexeme = lexeme, line = start_line, column = start_column))
+            this.tokens.push(token.Token(kind = token.TokenKind.tk_fstring, lexeme = lexeme, line = start_line, column = start_column, src_offset = src_off))
         else:
-            this.tokens.push(token.Token(kind = token.TokenKind.tk_string, lexeme = lexeme, line = start_line, column = start_column))
+            this.tokens.push(token.Token(kind = token.TokenKind.tk_string, lexeme = lexeme, line = start_line, column = start_column, src_offset = src_off))
 
 
     function is_heredoc_terminator(line: str, tag: str) -> bool:
@@ -953,7 +955,7 @@ extending Lexer:
 
     editable function emit_symbol(kind: token.TokenKind, start: ptr_uint, start_column: ptr_uint) -> void:
         let lexeme = this.source.slice(start, this.pos - start)
-        this.tokens.push(token.Token(kind = kind, lexeme = lexeme, line = this.line, column = start_column))
+        this.tokens.push(token.Token(kind = kind, lexeme = lexeme, line = this.line, column = start_column, src_offset = start))
 
 
     ## Main lexing loop.

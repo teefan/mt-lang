@@ -37,7 +37,7 @@ function parse_file(file_path: str, use_json: bool) -> int:
             var source = ok.value
             var lex = lexer.Lexer.create(source.as_str())
             var tokens = lex.lex()
-            var p = parser.Parser.create(tokens)
+            var p = parser.Parser.create(source.as_str(), tokens)
             var ast = p.parse()
             if use_json:
                 print_parse_json(ref_of(ast))
@@ -55,10 +55,11 @@ function check_file(file_path: str) -> int:
             var source = ok.value
             var lex = lexer.Lexer.create(source.as_str())
             var tokens = lex.lex()
-            var p = parser.Parser.create(tokens)
+            var source_str = source.as_str()
+            var p = parser.Parser.create(source_str, tokens)
             var ast = p.parse()
 
-            var source_root = dirname_of(file_path)
+            var source_root = find_source_root(file_path)
             var stdlib_root = find_stdlib_root()
 
             var c = checker.Checker.create(stdlib_root, source_root)
@@ -197,7 +198,7 @@ function decl_kind_name(kind: nodes.DeclKind) -> str:
 
 
 function find_stdlib_root() -> str:
-    return "std"
+    return "."
 
 
 function dirname_of(path: str) -> str:
@@ -207,6 +208,22 @@ function dirname_of(path: str) -> str:
         if path.byte_at(i) == '/':
             return path.slice(0, i)
     return ""
+
+
+function find_source_root(file_path: str) -> str:
+    var i: ptr_uint = 0
+    while i < file_path.len:
+        if file_path.byte_at(i) == '/':
+            var rem_len = file_path.len - i - 1
+            if rem_len >= 3:
+                let a = file_path.byte_at(i + 1)
+                let b = file_path.byte_at(i + 2)
+                let c = file_path.byte_at(i + 3)
+                if a == 's' and b == 'r' and c == 'c':
+                    if rem_len == 3 or file_path.byte_at(i + 4) == '/':
+                        return file_path.slice(0, i + 4)
+        i += 1
+    return dirname_of(file_path)
 
 
 function print_usage() -> void:

@@ -1,3 +1,4 @@
+import std.str
 import std.vec as vec
 
 public enum SymbolKind: ubyte
@@ -24,8 +25,15 @@ public struct SemError:
     column: ptr_uint
 
 
+public struct ModuleScope:
+    alias: str
+    path: str
+    symbols: vec.Vec[Symbol]
+
+
 public struct SemaContext:
     symbols: vec.Vec[Symbol]
+    import_scopes: vec.Vec[ModuleScope]
     errors: vec.Vec[SemError]
     builtin_types: vec.Vec[str]
     module_name: str
@@ -35,6 +43,7 @@ extending SemaContext:
     public static function create(module_name: str) -> SemaContext:
         var ctx = SemaContext(
             symbols = vec.Vec[Symbol].create(),
+            import_scopes = vec.Vec[ModuleScope].create(),
             errors = vec.Vec[SemError].create(),
             builtin_types = vec.Vec[str].create(),
             module_name = module_name,
@@ -84,6 +93,7 @@ extending SemaContext:
         names.push("Result")
         names.push("type")
         names.push("atomic")
+        names.push("str_buffer")
 
         var i: ptr_uint = 0
         while i < names.len():
@@ -105,6 +115,13 @@ extending SemaContext:
         return this.errors.len() > 0
 
 
+    public editable function register_imported_type(name: str, line: ptr_uint, column: ptr_uint) -> void:
+        if this.builtin_type_exists(name):
+            return
+        if this.lookup(name) != null:
+            return
+        this.symbols.push(Symbol(kind = SymbolKind.type_symbol, name = name, type_text = "", is_public = false, line = line, column = column))
+
     public editable function register_type(name: str, line: ptr_uint, column: ptr_uint) -> void:
         if this.builtin_type_exists(name):
             return
@@ -122,12 +139,22 @@ extending SemaContext:
         this.symbols.push(Symbol(kind = SymbolKind.type_symbol, name = name, type_text = "", is_public = false, line = line, column = column))
 
 
+    public editable function register_imported_function(name: str, return_text: str, line: ptr_uint, column: ptr_uint) -> void:
+        if this.lookup(name) != null:
+            return
+        this.symbols.push(Symbol(kind = SymbolKind.function_symbol, name = name, type_text = return_text, is_public = true, line = line, column = column))
+
     public editable function register_function(name: str, return_text: str, is_public: bool, line: ptr_uint, column: ptr_uint) -> void:
         if this.lookup(name) != null:
             this.add_error("duplicate declaration", line, column)
             return
         this.symbols.push(Symbol(kind = SymbolKind.function_symbol, name = name, type_text = return_text, is_public = is_public, line = line, column = column))
 
+
+    public editable function register_imported_const_or_var(name: str, kind: SymbolKind, type_text: str, line: ptr_uint, column: ptr_uint) -> void:
+        if this.lookup(name) != null:
+            return
+        this.symbols.push(Symbol(kind = kind, name = name, type_text = type_text, is_public = false, line = line, column = column))
 
     public editable function register_const_or_var(name: str, kind: SymbolKind, type_text: str, line: ptr_uint, column: ptr_uint) -> void:
         if this.lookup(name) != null:
@@ -164,6 +191,8 @@ extending SemaContext:
             return true
         if this.lookup_type(name) != null:
             return true
+        if this.resolve_dotted_type(name):
+            return true
         return false
 
 
@@ -184,3 +213,42 @@ extending SemaContext:
             return
         if not this.is_valid_type(type_name):
             this.add_error("unknown type", line, column)
+
+
+    public editable function add_import_scope(alias: str, path: str, symbols: vec.Vec[Symbol]) -> void:
+        this.import_scopes.push(ModuleScope(alias = alias, path = path, symbols = symbols))
+
+
+    function lookup_in_import_scope(alias: str, type_name: str) -> ptr[Symbol]?:
+        var i: ptr_uint = 0
+        while i < this.import_scopes.len():
+            let s = this.import_scopes.get(i) else:
+                break
+            let scope = unsafe: read(s)
+            if scope.alias == alias:
+                var j: ptr_uint = 0
+                while j < scope.symbols.len():
+                    let sym = scope.symbols.get(j) else:
+                        break
+                    let ts = unsafe: read(sym)
+                    if ts.name == type_name and ts.kind == SymbolKind.type_symbol:
+                        return sym
+                    j += 1
+                return null
+            i += 1
+        return null
+
+
+    function resolve_dotted_type(name: str) -> bool:
+        var dot_pos: ptr_uint = name.len
+        var i: ptr_uint = name.len
+        while i > 0:
+            i -= 1
+            if name.byte_at(i) == '.':
+                dot_pos = i
+                break
+        if dot_pos >= name.len:
+            return false
+        let alias = name.slice(0, dot_pos)
+        let type_part = name.slice(dot_pos + 1, name.len - dot_pos - 1)
+        return this.lookup_in_import_scope(alias, type_part) != null

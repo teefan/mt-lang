@@ -22,36 +22,7 @@ extending ModuleLoader:
         return ModuleLoader(search_paths = paths, loaded = loaded)
 
 
-    public function resolve_module(import_path: str) -> Option[str]:
-        var pi: ptr_uint = 0
-        while pi < this.search_paths.len():
-            let root = this.search_paths.get(pi) else:
-                break
-            let r = unsafe: read(root)
-            var base = self_to_path(f"#{r}/#{import_path}")
-
-            var dotted = f"#{r}/#{import_path}"
-            var platform_path = ""
-            var j: ptr_uint = 0
-            while j < dotted.len:
-                let dc = dotted.byte_at(j)
-                if dc == '.':
-                    platform_path = f"#{platform_path}/"
-                else:
-                    platform_path = f"#{platform_path}#"
-                j += 1
-
-            var linux_path = f"#{platform_path}.linux.mt"
-            if fs.exists(linux_path):
-                return Option[str].some(value = linux_path)
-
-            if fs.exists(base):
-                return Option[str].some(value = base)
-            pi += 1
-        return Option[str].none
-
-
-    function already_loaded(import_path: str) -> bool:
+    public function already_loaded(import_path: str) -> bool:
         var i: ptr_uint = 0
         while i < this.loaded.len():
             let p = this.loaded.get(i) else:
@@ -63,67 +34,55 @@ extending ModuleLoader:
 
 
     public function load_module(import_path: str) -> nodes.SourceFile:
-        let file_path = this.resolve_module(import_path)
-        match file_path:
-            Option.none:
-                return empty_source()
-            Option.some as resolved:
-                match fs.read_text(resolved.value):
+        var pi: ptr_uint = 0
+        while pi < this.search_paths.len():
+            let root = this.search_paths.get(pi) else:
+                break
+            let r = unsafe: read(root)
+
+            var path_buf = self_build_module_path(r, import_path, "mt")
+            if fs.exists(path_buf.as_str()):
+                match fs.read_text(path_buf.as_str()):
                     Result.failure:
-                        return empty_source()
+                        pass
                     Result.success as ok:
                         var source = ok.value
-                        var lex = lexer.Lexer.create(source.as_str())
+                        var source_str = source.as_str()
+                        var lex = lexer.Lexer.create(source_str)
                         var tokens = lex.lex()
-                        var p = parser.Parser.create(tokens)
+                        var p = parser.Parser.create(source_str, tokens)
                         return p.parse()
 
+            var linux_buf = self_build_module_path(r, import_path, "linux.mt")
+            if fs.exists(linux_buf.as_str()):
+                match fs.read_text(linux_buf.as_str()):
+                    Result.failure:
+                        pass
+                    Result.success as ok:
+                        var source = ok.value
+                        var source_str = source.as_str()
+                        var lex = lexer.Lexer.create(source_str)
+                        var tokens = lex.lex()
+                        var p = parser.Parser.create(source_str, tokens)
+                        return p.parse()
+            pi += 1
+        return empty_source()
 
-    public editable function load_and_register(ctx: ref[symbol.SemaContext], import_path: str) -> bool:
-        if this.already_loaded(import_path):
-            return true
-        this.loaded.push(import_path)
-
-        var ast = this.load_module(import_path)
-        if ast.decls.len() == 0 and ast.imports.len() == 0:
-            return false
-
-        var ii: ptr_uint = 0
-        while ii < ast.imports.len():
-            let imp_ptr = ast.imports.get(ii) else:
-                break
-            let imp = unsafe: read(imp_ptr)
-            this.load_and_register(ctx, imp.path)
-            ii += 1
-
-        var i: ptr_uint = 0
-        while i < ast.decls.len():
-            let d = ast.decls.get(i) else:
-                break
-            let decl = unsafe: read(d)
-            if decl.is_public and decl.name != "":
-                if self_is_type_decl(decl.kind):
-                    ctx.register_type(decl.name, decl.line, decl.column)
-                else if self_is_function_decl(decl.kind):
-                    ctx.register_function(decl.name, decl.return_text, true, decl.line, decl.column)
-                else if decl.kind == nodes.DeclKind.const_decl:
-                    ctx.register_const_or_var(decl.name, symbol.SymbolKind.const_symbol, decl.type_name, decl.line, decl.column)
-            i += 1
-        return true
-
-
-function self_to_path(dotted: str) -> str:
-    var result = ""
+function self_build_module_path(search_root: str, dotted_path: str, extension: str) -> str_buffer[256]:
+    var buf: str_buffer[256]
+    buf.append(search_root)
+    buf.append("/")
     var i: ptr_uint = 0
-    while i < dotted.len:
-        let ch = dotted.byte_at(i)
+    while i < dotted_path.len:
+        let ch = dotted_path.byte_at(i)
         if ch == '.':
-            result = f"#{result}/"
+            buf.append("/")
         else:
-            result = f"#{result}#"
+            buf.append(dotted_path.slice(i, 1))
         i += 1
-    result = f"#{result}.mt"
-    return result
+    buf.append(".")
+    buf.append(extension)
+    return buf
 
 
 function self_is_type_decl(kind: nodes.DeclKind) -> bool:

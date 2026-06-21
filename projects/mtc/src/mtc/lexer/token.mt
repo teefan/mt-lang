@@ -134,3 +134,4 @@ public struct Token:
     lexeme: str
     line: ptr_uint
     column: ptr_uint
+    src_offset: ptr_uint
