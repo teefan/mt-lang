@@ -96,7 +96,7 @@ module MilkTea
     EqualResolution = Data.define(:target_type, :binding)
     OrderResolution = Data.define(:target_type, :binding)
 
-    INSTALLABLE_BUILTIN_TYPE_NAMES = (Types::BUILTIN_PRIMITIVE_NAMES + %w[
+    INSTALLABLE_BUILTIN_TYPE_NAMES = (MilkTea::BUILTIN_PRIMITIVE_NAMES + %w[
       Subscription EventError
       struct_handle field_handle callable_handle attribute_handle member_handle type
     ]).freeze
