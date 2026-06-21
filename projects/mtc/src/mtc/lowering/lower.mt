@@ -371,8 +371,11 @@ extending Lowerer:
             this.self_write_indent()
             unsafe: this.out_buf.append(";\n")
         else if kind == nodes.StmtKind.defer_stmt or kind == nodes.StmtKind.unsafe_stmt:
-            this.self_write_indent()
-            unsafe: this.out_buf.append("/* defer/unsafe */\n")
+            if s.body != null:
+                this.self_lower_block(s.body)
+            else:
+                this.self_write_indent()
+                unsafe: this.out_buf.append("/* defer/unsafe */\n")
         else:
             this.self_write_indent()
             unsafe: this.out_buf.append("/* block */\n")
@@ -505,17 +508,12 @@ extending Lowerer:
             unsafe: this.out_buf.append(op)
             this.self_write_expr_buf(e.left)
         else if kind == nodes.ExprKind.call:
-            this.self_write_expr_buf(e.left)
-            unsafe: this.out_buf.append("(")
-            var ai: ptr_uint = 0
-            while ai < unsafe: e.args.len():
-                let a = unsafe: e.args.get(ai) else:
-                    break
-                if ai > 0:
-                    unsafe: this.out_buf.append(", ")
-                this.self_write_expr_buf(unsafe: read(a))
-                ai += 1
-            unsafe: this.out_buf.append(")")
+            if this.self_is_struct_ctor(expr_ptr):
+                this.self_write_struct_call(expr_ptr)
+            else if this.self_is_method_call(expr_ptr):
+                this.self_write_method_call(expr_ptr)
+            else:
+                this.self_write_func_call(expr_ptr)
         else if kind == nodes.ExprKind.member_access:
             this.self_write_expr_buf(e.left)
             unsafe: this.out_buf.append(".")
@@ -533,6 +531,114 @@ extending Lowerer:
             unsafe: this.out_buf.append(")")
         else:
             unsafe: this.out_buf.append(e.name)
+
+
+    editable function self_is_struct_ctor(expr_ptr: ptr[nodes.Expr]) -> bool:
+        let e = unsafe: read(expr_ptr)
+        var len = unsafe: e.args.len()
+        # Struct ctors have named args: (name, value, name, value, ...) → even count
+        if len < 2:
+            return false
+        if (len & 1) != 0:
+            return false
+        var ai: ptr_uint = 0
+        while ai < len:
+            let a = unsafe: e.args.get(ai) else:
+                break
+            let ap: ptr[nodes.Expr]? = unsafe: read(a)
+            if ap == null:
+                return false
+            let ae = unsafe: read(ap)
+            if ae.kind != nodes.ExprKind.identifier:
+                return false
+            ai += 2
+        return true
+
+
+    editable function self_is_member_access(expr_ptr: ptr[nodes.Expr]?) -> bool:
+        if expr_ptr == null:
+            return false
+        return unsafe: read(expr_ptr).kind == nodes.ExprKind.member_access
+
+
+    editable function self_is_method_call(expr_ptr: ptr[nodes.Expr]) -> bool:
+        let e = unsafe: read(expr_ptr)
+        return this.self_is_member_access(e.left)
+
+
+    editable function self_write_struct_call(expr_ptr: ptr[nodes.Expr]) -> void:
+        let e = unsafe: read(expr_ptr)
+        unsafe: this.out_buf.append("(")
+        this.self_write_tname_expr(e.left)
+        unsafe: this.out_buf.append("){ ")
+        var ai: ptr_uint = 0
+        while ai < unsafe: e.args.len():
+            let aname = unsafe: e.args.get(ai) else:
+                break
+            let aval_ptr = unsafe: e.args.get(ai + 1) else:
+                break
+            let ap: ptr[nodes.Expr]? = unsafe: read(aname)
+            if ap == null:
+                break
+            let an = unsafe: read(ap)
+            if ai > 0:
+                unsafe: this.out_buf.append(", ")
+            unsafe: this.out_buf.append(".")
+            unsafe: this.out_buf.append(an.name)
+            unsafe: this.out_buf.append(" = ")
+            let vp: ptr[nodes.Expr]? = unsafe: read(aval_ptr)
+            if vp != null:
+                this.self_write_expr_buf(vp)
+            ai += 2
+        unsafe: this.out_buf.append(" }")
+
+
+    editable function self_write_tname_expr(expr_ptr: ptr[nodes.Expr]?) -> void:
+        if expr_ptr == null:
+            return
+        let e = unsafe: read(expr_ptr)
+        if e.kind == nodes.ExprKind.identifier:
+            unsafe: this.out_buf.append(e.name)
+        else if e.kind == nodes.ExprKind.member_access:
+            this.self_write_tname_expr(e.left)
+            unsafe: this.out_buf.append("_")
+            unsafe: this.out_buf.append(e.name)
+        else:
+            this.self_write_expr_buf(expr_ptr)
+
+
+    editable function self_write_method_call(expr_ptr: ptr[nodes.Expr]) -> void:
+        let e = unsafe: read(expr_ptr)
+        this.self_write_expr_buf(e.left)
+        unsafe: this.out_buf.append("(")
+        var ai: ptr_uint = 0
+        while ai < unsafe: e.args.len():
+            let a = unsafe: e.args.get(ai) else:
+                break
+            let ap: ptr[nodes.Expr]? = unsafe: read(a)
+            if ai > 0:
+                unsafe: this.out_buf.append(", ")
+            if ap != null:
+                this.self_write_expr_buf(ap)
+            ai += 1
+        unsafe: this.out_buf.append(")")
+
+
+    editable function self_write_func_call(expr_ptr: ptr[nodes.Expr]) -> void:
+        let e = unsafe: read(expr_ptr)
+        this.self_write_expr_buf(e.left)
+        unsafe: this.out_buf.append("(")
+        var ai: ptr_uint = 0
+        while ai < unsafe: e.args.len():
+            let a = unsafe: e.args.get(ai) else:
+                break
+            let ap: ptr[nodes.Expr]? = unsafe: read(a)
+            if ai > 0:
+                unsafe: this.out_buf.append(", ")
+            if ap != null:
+                this.self_write_expr_buf(ap)
+            ai += 1
+        unsafe: this.out_buf.append(")")
 
 
     editable function self_write_indent() -> void:
@@ -635,7 +741,21 @@ extending Lowerer:
                 buf.append(" ")
                 buf.append(param.name)
                 ji += 1
-            buf.append(");")
+            buf.append(") {")
             this.pline(buf.as_str())
+
+            if method.body_block != null:
+                this.indent_level = 4
+                unsafe: this.out_buf.clear()
+                this.self_lower_block(method.body_block)
+                this.pline(unsafe: this.out_buf.as_str())
+            else if method.body_src_start > 0:
+                var end_pos = method.body_src_end
+                if end_pos == 0 or end_pos <= method.body_src_start:
+                    end_pos = this.source_text.len
+                var body_raw = this.source_text.slice(method.body_src_start, end_pos - method.body_src_start)
+                this.self_write_raw_body(body_raw)
+
+            this.pline("}")
+            this.pline("")
             i += 1
-        this.pline("")
