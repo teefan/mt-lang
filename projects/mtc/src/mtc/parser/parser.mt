@@ -127,7 +127,8 @@ extending Parser:
             if this.at_end() or this.peek_kind() == token.TokenKind.tk_eof:
                 break
             var decl = this.parse_declaration()
-            decls.push(decl)
+            if decl.name != "":
+                decls.push(decl)
 
         return nodes.SourceFile(module_name = "", imports = imports, decls = decls, line = 1)
 
@@ -519,8 +520,10 @@ extending Parser:
             this.expect(token.TokenKind.tk_colon)
             this.skip_newlines()
             this.skip_indent()
-            this.skip_block_body()
-            return nodes.Decl(kind = if is_const: nodes.DeclKind.const_decl else: nodes.DeclKind.var_decl, name = name, type_name = vtype, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+            var body = this.parse_block()
+            var count = body.len()
+            body.release()
+            return nodes.Decl(kind = if is_const: nodes.DeclKind.const_decl else: nodes.DeclKind.var_decl, name = name, type_name = vtype, stmt_count = count, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
 
         this.expect(token.TokenKind.tk_colon)
         let vtype = this.parse_type_text()
@@ -715,6 +718,9 @@ extending Parser:
             if this.match_kind(token.TokenKind.tk_dot):
                 var member = this.expect_id()
                 expr = nodes.Expr(kind = nodes.ExprKind.member_access, name = member, left_text = expr.name, line = this.tok_line(), column = this.tok_col())
+            else if this.match_kind(token.TokenKind.tk_as):
+                var bind = this.expect_id()
+                expr = nodes.Expr(kind = nodes.ExprKind.identifier, name = bind, left_text = expr.name, line = this.tok_line(), column = this.tok_col())
             else if this.match_kind(token.TokenKind.tk_lparen):
                 var args = vec.Vec[nodes.Expr].create()
                 if not this.check(token.TokenKind.tk_rparen):
@@ -775,20 +781,109 @@ extending Parser:
             this.advance()
             return nodes.Expr(kind = nodes.ExprKind.identifier, name = name, lexeme = name, line = line, column = col)
 
+        if kind == token.TokenKind.tk_proc:
+            this.advance()
+            if this.match_kind(token.TokenKind.tk_lparen):
+                while not this.check(token.TokenKind.tk_rparen) and not this.at_end():
+                    this.advance()
+                this.expect(token.TokenKind.tk_rparen)
+            if this.match_kind(token.TokenKind.tk_arrow):
+                this.parse_type_text()
+            if this.match_kind(token.TokenKind.tk_colon):
+                this.skip_newlines()
+                if this.match_kind(token.TokenKind.tk_indent):
+                    this.parse_block()
+                else:
+                    this.parse_expression()
+            return nodes.Expr(kind = nodes.ExprKind.proc_expr, name = "proc", line = line, column = col)
+
+        if kind == token.TokenKind.tk_if:
+            this.advance()
+            this.parse_expression()
+            if this.match_kind(token.TokenKind.tk_colon):
+                this.parse_expression()
+                if this.match_kind(token.TokenKind.tk_else):
+                    if this.check(token.TokenKind.tk_colon):
+                        this.advance()
+                    this.parse_expression()
+            return nodes.Expr(kind = nodes.ExprKind.if_expr, name = "if", line = line, column = col)
+
+        if kind == token.TokenKind.tk_match:
+            this.advance()
+            this.parse_expression()
+            if this.match_kind(token.TokenKind.tk_colon):
+                this.skip_newlines()
+                if this.match_kind(token.TokenKind.tk_indent):
+                    while not this.at_end() and not this.check(token.TokenKind.tk_dedent):
+                        this.skip_newlines()
+                        if this.check(token.TokenKind.tk_dedent):
+                            break
+                        this.parse_expression()
+                        if this.check(token.TokenKind.tk_colon):
+                            this.advance()
+                            this.skip_newlines()
+            if this.match_kind(token.TokenKind.tk_indent):
+                while not this.at_end() and not this.check(token.TokenKind.tk_dedent) and this.peek_kind() != token.TokenKind.tk_eof:
+                    this.skip_newlines()
+                    if this.check(token.TokenKind.tk_dedent) or this.peek_kind() == token.TokenKind.tk_eof:
+                        break
+                    this.parse_expression()
+                    if this.match_kind(token.TokenKind.tk_as):
+                        this.expect_id()
+                    if this.check(token.TokenKind.tk_colon):
+                        this.advance()
+                    this.skip_newlines()
+                    if this.match_kind(token.TokenKind.tk_indent):
+                        this.parse_block()
+                    else if not this.check(token.TokenKind.tk_dedent):
+                        this.parse_expression()
+                this.skip_dedent()
+            return nodes.Expr(kind = nodes.ExprKind.match_expr, name = "match", line = line, column = col)
+
+        if kind == token.TokenKind.tk_unsafe:
+            this.advance()
+            if this.match_kind(token.TokenKind.tk_colon):
+                this.parse_expression()
+            else:
+                this.skip_newlines()
+                if this.match_kind(token.TokenKind.tk_indent):
+                    this.parse_block()
+            return nodes.Expr(kind = nodes.ExprKind.if_expr, name = "unsafe", line = line, column = col)
+
         if this.match_kind(token.TokenKind.tk_lparen):
             var expr = this.parse_expression()
             this.expect(token.TokenKind.tk_rparen)
             return expr
 
-        this.advance()
+        if this.check(token.TokenKind.tk_less):
+            var lex = ""
+            this.advance()
+            if this.match_kind(token.TokenKind.tk_minus):
+                lex = "<-"
+                var target = this.parse_expression()
+                return nodes.Expr(kind = nodes.ExprKind.prefix_cast, name = target.name, lexeme = lex, line = line, column = col)
+            return nodes.Expr(kind = nodes.ExprKind.identifier, name = "<", line = line, column = col)
+
+        this.skip_expr_value()
         return nodes.Expr(kind = nodes.ExprKind.identifier, name = "?", line = line, column = col)
 
 
     ## --- STATEMENT / BLOCK PARSING ---
 
     editable function skip_expr_value() -> void:
-        var expr = this.parse_expression()
-        pass
+        var depth: ptr_uint = 0
+        while not this.at_end() and this.pos < this.tokens.len():
+            let kind = this.peek_kind()
+            if kind == token.TokenKind.tk_newline or kind == token.TokenKind.tk_dedent or kind == token.TokenKind.tk_eof:
+                break
+            if kind == token.TokenKind.tk_colon and depth == 0:
+                break
+            if kind == token.TokenKind.tk_lparen or kind == token.TokenKind.tk_lbracket:
+                depth += 1
+            else if kind == token.TokenKind.tk_rparen or kind == token.TokenKind.tk_rbracket:
+                if depth > 0:
+                    depth -= 1
+            this.advance()
 
 
     editable function parse_block() -> vec.Vec[nodes.Stmt]:
@@ -860,6 +955,12 @@ extending Parser:
                 this.parse_type_text()
             if this.match_kind(token.TokenKind.tk_equal) or this.check(token.TokenKind.tk_colon):
                 this.parse_expression()
+            if this.match_kind(token.TokenKind.tk_else):
+                if this.check(token.TokenKind.tk_colon):
+                    this.advance()
+                this.skip_newlines()
+                if this.match_kind(token.TokenKind.tk_indent):
+                    this.parse_block()
             return nodes.Stmt(kind = if kind == token.TokenKind.tk_let: nodes.StmtKind.local_let else: nodes.StmtKind.local_var, name = name, line = line, column = col)
 
         if kind == token.TokenKind.tk_return:
