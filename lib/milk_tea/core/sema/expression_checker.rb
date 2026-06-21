@@ -867,6 +867,7 @@ module MilkTea
 
       def infer_call(expression, scopes:, expected_type: nil)
         callable_kind, callable, receiver = resolve_callable(expression.callee, scopes:)
+        @resolved_call_kinds[@ctx.ast.node_ids[expression.callee.object_id]] = callable_kind
 
         case callable_kind
         when :function

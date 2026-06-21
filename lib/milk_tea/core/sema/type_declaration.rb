@@ -27,6 +27,7 @@ module MilkTea
           required_unsafe_lines: @required_unsafe_lines.uniq.freeze,
           uses_parallel_for: @uses_parallel_for,
           resolved_expr_types: @resolved_expr_types.dup.freeze,
+          resolved_call_kinds: @resolved_call_kinds.dup.freeze,
         )
       end
 
