@@ -7,7 +7,13 @@ module MilkTea
       def event_method_kind(receiver_type, member_name)
         return unless receiver_type.is_a?(Types::Event)
 
-        CompatibilityHelpers::EVENT_METHOD_KINDS[member_name]
+        case member_name
+        when "subscribe" then :event_subscribe
+        when "subscribe_once" then :event_subscribe_once
+        when "unsubscribe" then :event_unsubscribe
+        when "emit" then :event_emit
+        when "wait" then :event_wait
+        end
       end
 
       def event_method_type(kind, event_type)
