@@ -21,6 +21,9 @@ function is_identifier_start(ch: ubyte) -> bool:
 function is_binary_digit(ch: ubyte) -> bool:
     return ch == '0' or ch == '1'
 
+function is_valid_escape(ch: ubyte) -> bool:
+    return ch == 'n' or ch == 'r' or ch == 't' or ch == '\\' or ch == '"' or ch == '\'' or ch == '0' or ch == 'x'
+
 
 public struct Lexer:
     source: str
@@ -423,25 +426,30 @@ extending Lexer:
     editable function scan_numeric_suffix() -> void:
         let ch = this.peek()
         if ch == 'u':
-            this.advance()
-            let next = this.peek()
-            if next == 'b':
+            let next = this.peek_at(this.pos + 1)
+            if next == 'b' and not this.is_suffix_followed_by_identifier_part(2):
                 this.advance()
-            else if next == 's':
                 this.advance()
-            else if next == 'l':
+            else if next == 's' and not this.is_suffix_followed_by_identifier_part(2):
                 this.advance()
-        else if ch == 'i':
-            this.advance()
-            let next = this.peek()
-            if next == 'z':
                 this.advance()
-        else if ch == 'b' or ch == 's':
+            else if next == 'l' and not this.is_suffix_followed_by_identifier_part(2):
+                this.advance()
+                this.advance()
+            else if not this.is_suffix_followed_by_identifier_part(1):
+                this.advance()
+        else if ch == 'i' and this.peek_at(this.pos + 1) == 'z' and not this.is_suffix_followed_by_identifier_part(2):
             this.advance()
-        else if ch == 'l':
             this.advance()
-        else if ch == 'z':
+        else if (ch == 'b' or ch == 's' or ch == 'l' or ch == 'z') and not this.is_suffix_followed_by_identifier_part(1):
             this.advance()
+
+
+    function is_suffix_followed_by_identifier_part(len: ptr_uint) -> bool:
+        let check_offset = this.pos + len
+        if check_offset >= this.source.len:
+            return false
+        return is_alphanumeric(this.source.byte_at(check_offset))
 
 
     editable function scan_float_suffix() -> void:
@@ -466,7 +474,20 @@ extending Lexer:
                 break
             else if ch == '\\':
                 this.advance()
-                if this.pos < this.source.len:
+                if this.pos >= this.source.len:
+                    fatal("lexer: unterminated escape in string literal")
+                    return
+                let esc = this.peek()
+                if not is_valid_escape(esc):
+                    fatal("lexer: invalid escape sequence in string literal")
+                    return
+                if esc == 'x':
+                    this.advance()
+                    var hi: ptr_uint = 0
+                    while hi < 2 and this.pos < this.source.len and is_hex_digit(this.peek()):
+                        this.advance()
+                        hi += 1
+                else:
                     this.advance()
             else if ch == '\n':
                 fatal("lexer: unterminated string literal")
@@ -512,7 +533,15 @@ extending Lexer:
                 else if inner == '\\':
                     scan += 1
                     if scan < this.source.len:
-                        scan += 1
+                        let esc2 = this.source.byte_at(scan)
+                        if esc2 == 'x':
+                            scan += 1
+                            var hx: ptr_uint = 0
+                            while hx < 2 and scan < this.source.len and is_hex_digit(this.source.byte_at(scan)):
+                                scan += 1
+                                hx += 1
+                        else:
+                            scan += 1
                 else if inner == '\n':
                     break
                 else:
@@ -576,7 +605,17 @@ extending Lexer:
                 this.skip_format_interpolation()
             else if ch == '\\':
                 this.advance()
-                if this.pos < this.source.len:
+                if this.pos >= this.source.len:
+                    fatal("lexer: unterminated escape in format string")
+                    return
+                let esc = this.peek()
+                if esc == 'x':
+                    this.advance()
+                    var hf: ptr_uint = 0
+                    while hf < 2 and this.pos < this.source.len and is_hex_digit(this.peek()):
+                        this.advance()
+                        hf += 1
+                else:
                     this.advance()
             else if ch == '\n':
                 this.advance()
@@ -603,7 +642,15 @@ extending Lexer:
                     if this.peek() == '\\':
                         this.advance()
                         if this.pos < this.source.len:
-                            this.advance()
+                            let esc3 = this.peek()
+                            if esc3 == 'x':
+                                this.advance()
+                                var hk: ptr_uint = 0
+                                while hk < 2 and this.pos < this.source.len and is_hex_digit(this.peek()):
+                                    this.advance()
+                                    hk += 1
+                            else:
+                                this.advance()
                     else:
                         this.advance()
                 if this.pos < this.source.len:
@@ -613,7 +660,15 @@ extending Lexer:
                 if this.peek() == '\\':
                     this.advance()
                     if this.pos < this.source.len:
-                        this.advance()
+                        let ec = this.peek()
+                        if ec == 'x':
+                            this.advance()
+                            var hl: ptr_uint = 0
+                            while hl < 2 and this.pos < this.source.len and is_hex_digit(this.peek()):
+                                this.advance()
+                                hl += 1
+                        else:
+                            this.advance()
                 else if this.pos < this.source.len:
                     this.advance()
                 if this.pos < this.source.len and this.peek() == '\'':
@@ -925,6 +980,10 @@ extending Lexer:
             if ch == ' ':
                 this.skip_spaces()
                 continue
+
+            if ch == '\t':
+                fatal("lexer: tabs are not allowed in source files")
+                return this.tokens
 
             if ch == '#':
                 this.skip_to_end_of_line()
