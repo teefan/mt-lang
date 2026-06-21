@@ -165,6 +165,8 @@ module MilkTea
       end
 
       def common_numeric_type(left_type, right_type)
+        left_type = left_type.backing_type if left_type.is_a?(Types::EnumBase)
+        right_type = right_type.backing_type if right_type.is_a?(Types::EnumBase)
         return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
         return unless left_type.numeric? && right_type.numeric?
         return left_type if left_type == right_type
@@ -179,6 +181,8 @@ module MilkTea
       end
 
       def common_integer_type(left_type, right_type)
+        left_type = left_type.backing_type if left_type.is_a?(Types::EnumBase)
+        right_type = right_type.backing_type if right_type.is_a?(Types::EnumBase)
         return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
         return unless left_type.integer? && right_type.integer?
         return left_type if left_type == right_type
