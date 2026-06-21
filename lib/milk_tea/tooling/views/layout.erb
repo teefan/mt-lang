@@ -18,17 +18,24 @@
       Milk Tea
     </a>
   </div>
+  <div class="sidebar-search">
+    <input type="text" id="mod-filter" placeholder="Filter modules&hellip;" autocomplete="off">
+  </div>
   <nav class="sidebar-nav">
     <a href="/" class="<%= active?("/") %>">Reference</a>
 
-    <details open>
-      <summary>Standard Library</summary>
-      <% stdlib_modules.each do |mod| %>
-        <a href="/stdlib/<%= mod[:name] %>" class="<%= "active" if @name == mod[:name] %>">
-          <%= mod[:name] %>
-        </a>
+    <div class="stdlib-section">
+      <% categorized_modules.each do |category, mods| %>
+        <details open class="mod-category">
+          <summary><%= category %></summary>
+          <% mods.each do |mod| %>
+            <a href="/stdlib/<%= mod[:name] %>" class="mod-link <%= "active" if @name == mod[:name] %>" data-mod="<%= mod[:name] %>">
+              <%= mod[:name] %>
+            </a>
+          <% end %>
+        </details>
       <% end %>
-    </details>
+    </div>
   </nav>
   <div class="sidebar-footer">
     <button class="theme-btn" id="theme-toggle" aria-label="Toggle theme">
@@ -46,6 +53,14 @@
 </div>
 
 <main class="main" id="main">
+  <% if @breadcrumbs %>
+    <nav class="breadcrumbs">
+      <% @breadcrumbs.each_with_index do |(label, href), i| %>
+        <% if i > 0 %><span class="bc-sep">/</span><% end %>
+        <% if href %><a href="<%= href %>"><%= label %></a><% else %><span><%= label %></span><% end %>
+      <% end %>
+    </nav>
+  <% end %>
   <%= yield %>
 </main>
 
