@@ -3588,11 +3588,11 @@ class TypeCheckingTest < Minitest::Test
       # module demo.variant_match
 
       variant Shape:
-          circle(radius: double)
-          rect(w: double, h: double)
+          circle(radius: float)
+          rect(w: float, h: float)
           point
 
-      function area(s: Shape) -> double:
+      function area(s: Shape) -> float:
           var result = 0.0
           match s:
               Shape.circle as c:

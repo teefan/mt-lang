@@ -667,10 +667,14 @@ module MilkTea
         when AST::CharLiteral
           @ctx.types.fetch("ubyte")
         when AST::FloatLiteral
-          if expected_type.is_a?(Types::Primitive) && expected_type.float?
+          if expression.lexeme.end_with?("f")
+            @ctx.types.fetch("float")
+          elsif expression.lexeme.end_with?("d")
+            @ctx.types.fetch("double")
+          elsif expected_type.is_a?(Types::Primitive) && expected_type.float?
             expected_type
           else
-            @ctx.types.fetch("double")
+            @ctx.types.fetch("float")
           end
         when AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr
           @ctx.types.fetch("ptr_uint")

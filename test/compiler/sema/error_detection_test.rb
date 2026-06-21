@@ -970,7 +970,7 @@ class ErrorDetectionTest < Minitest::Test
 
       function main() -> int:
           var angle = 1
-          let radians = angle * 0.5
+          let radians = angle * 0.5d
           let target: float = radians
           return int<-target
     MT
@@ -996,7 +996,7 @@ class ErrorDetectionTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/operator \+= requires matching numeric types, got int and double/, error.message)
+    assert_match(/operator \+= requires matching numeric types, got int and float/, error.message)
   end
 
   def test_rejects_lossy_numeric_coercion_for_external_function_boundaries
@@ -1069,7 +1069,7 @@ class ErrorDetectionTest < Minitest::Test
       )
     end
 
-    assert_match(/cannot assign double to whole: expected int/, error.message)
+    assert_match(/cannot assign float to whole: expected int/, error.message)
   end
 
   def test_rejects_ambiguous_imported_extension_method_calls

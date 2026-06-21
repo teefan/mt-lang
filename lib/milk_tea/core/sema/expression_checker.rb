@@ -301,7 +301,7 @@ module MilkTea
         elsif expected_type.is_a?(Types::Primitive) && expected_type.float?
           expected_type
         else
-          @ctx.types.fetch("double")
+          @ctx.types.fetch("float")
         end
       end
 
