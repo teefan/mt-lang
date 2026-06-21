@@ -55,6 +55,40 @@ extending Lowerer:
             unsafe: read(buf).append("uintptr_t")
         else if mt_type == "ptr":
             unsafe: read(buf).append("void*")
+        else if mt_type == "ref":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "span":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "dyn":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "fn":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "proc":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "array":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "SoA":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "Task":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "Option":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "Result":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "type":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "atomic":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "vec2" or mt_type == "vec3" or mt_type == "vec4":
+            unsafe: read(buf).append("float")
+        else if mt_type == "ivec2" or mt_type == "ivec3" or mt_type == "ivec4":
+            unsafe: read(buf).append("int32_t")
+        else if mt_type == "mat3" or mt_type == "mat4":
+            unsafe: read(buf).append("float")
+        else if mt_type == "quat":
+            unsafe: read(buf).append("float")
+        else if mt_type == "str_buffer":
+            unsafe: read(buf).append("mt_str")
         else if mt_type == "" or mt_type == "?":
             pass
         else:
@@ -164,11 +198,13 @@ extending Lowerer:
         else if decl.kind == nodes.DeclKind.type_alias:
             this.write_type_alias(decl)
         else if decl.kind == nodes.DeclKind.function_def:
-            this.write_function_sig(decl)
+            this.write_function(decl)
         else if decl.kind == nodes.DeclKind.extern_function:
             this.write_function_sig(decl)
+            this.pline(";")
+            this.pline("")
         else if decl.kind == nodes.DeclKind.const_decl and decl.stmt_count > 0:
-            this.write_function_sig(decl)
+            this.write_function(decl)
         else if decl.kind == nodes.DeclKind.extending_block:
             this.write_extending(decl)
         else if decl.kind == nodes.DeclKind.var_decl:
@@ -238,9 +274,11 @@ extending Lowerer:
         this.pline("")
 
 
-    editable function write_function_sig(decl: nodes.Decl) -> void:
+    editable function write_function(decl: nodes.Decl) -> void:
         var buf: str_buffer[512]
         if decl.kind == nodes.DeclKind.const_decl:
+            buf.append("static ")
+        else if decl.is_async:
             buf.append("static ")
         this.write_ctype(ptr_of(buf), decl.return_text)
         buf.append(" ")
@@ -257,16 +295,35 @@ extending Lowerer:
             buf.append(" ")
             buf.append(param.name)
             i += 1
-        buf.append(")")
-        if decl.kind == nodes.DeclKind.const_decl and decl.stmt_count == 0:
-            if decl.value_text != "":
-                buf.append(" = ")
-                buf.append(decl.value_text)
-            buf.append(";")
-        else:
-            buf.append(";")
+        buf.append(") {")
         this.pline(buf.as_str())
+        if decl.stmt_count == 0:
+            this.pline("}")
+        else:
+            this.pline("    /* body not lowered */")
+            this.pline("}")
         this.pline("")
+
+
+    editable function write_function_sig(decl: nodes.Decl) -> void:
+        var buf: str_buffer[512]
+        this.write_ctype(ptr_of(buf), decl.return_text)
+        buf.append(" ")
+        this.write_fname(ptr_of(buf), decl.name, "")
+        buf.append("(")
+        var i: ptr_uint = 0
+        while i < decl.params.len():
+            let p = decl.params.get(i) else:
+                break
+            let param = unsafe: read(p)
+            if i > 0:
+                buf.append(", ")
+            this.write_ctype(ptr_of(buf), param.type_text)
+            buf.append(" ")
+            buf.append(param.name)
+            i += 1
+        buf.append(")")
+        this.pline(buf.as_str())
 
 
     editable function write_const(decl: nodes.Decl) -> void:
