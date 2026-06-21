@@ -600,7 +600,25 @@ function expressions_demo(x: int, y: int) -> int:
     let continued = x + y - acc
 
     let expr_result = wrapped + continued + chosen + vx_val + elem + pair.first
-    return expr_result
+    let s_idle    = State.idle
+    let s_running = State.running
+    let enum_eq  = s_idle == s_idle
+    let enum_ne  = s_idle != s_running
+    let enum_lt  = s_idle <  s_running
+    let enum_le  = s_idle <= s_running
+    let enum_gt  = s_running >  s_idle
+    let enum_ge  = s_running >= s_idle
+    let enum_op  = (
+        int<-(s_idle) + int<-(enum_eq) + int<-(enum_ne)
+        + int<-(enum_lt) + int<-(enum_le) + int<-(enum_gt) + int<-(enum_ge)
+    )
+
+    let mask_a = Mask.a
+    let mask_b = Mask.b
+    let flags_eq = mask_a == mask_a
+    let flags_ne = mask_a != mask_b
+
+    return expr_result + enum_op + int<-(flags_eq) + int<-(flags_ne)
 
 # =============================================================================
 # 10  Built-in callable surface
