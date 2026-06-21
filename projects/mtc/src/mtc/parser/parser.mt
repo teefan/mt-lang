@@ -305,7 +305,7 @@ extending Parser:
                 this.skip_newlines()
                 if this.match_kind(token.TokenKind.tk_indent):
                     this.skip_block_body()
-            return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "inline", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+            return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
 
         this.advance()
         return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
