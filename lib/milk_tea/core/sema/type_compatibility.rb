@@ -37,9 +37,11 @@ module MilkTea
         return true if mutable_to_const_pointer_compatibility?(actual_type, expected_type)
         return true if string_literal_cstr_compatibility?(expression, expected_type)
         return true if exact_compile_time_numeric_compatibility?(actual_type, expression, expected_type, scopes:)
-        return true if integer_to_char_compatibility?(actual_type, expected_type)
+        return true if integer_to_char_compatibility?(actual_type, expected_type) &&
+                       (!expression || !scopes || integer_constant_fits_in_char?(expression, scopes))
         return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
-        return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
+        return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type) &&
+                       (!expression || !scopes || contextual_int_to_float_fits?(expression, expected_type, scopes))
         return true if same_external_opaque_handle_pointer_compatibility?(actual_type, expected_type)
         return true if actual_type.is_a?(Types::Function) && expected_type.is_a?(Types::Function) &&
                        !actual_type.receiver_type && !actual_type.variadic &&
@@ -136,6 +138,20 @@ module MilkTea
         return false unless value.is_a?(Numeric)
 
         numeric_constant_fits_type?(value, expected_type)
+      end
+
+      def integer_constant_fits_in_char?(expression, scopes)
+        value = evaluate_compile_time_const_value(expression, scopes:)
+        return true unless value.is_a?(Integer)
+
+        value >= 0 && value <= 255
+      end
+
+      def contextual_int_to_float_fits?(expression, expected_type, scopes)
+        value = evaluate_compile_time_const_value(expression, scopes:)
+        return true unless value.is_a?(Numeric)
+
+        float_constant_fits_type?(value, expected_type)
       end
 
       def extern_enum_integer_argument_compatibility?(actual_type, expected_type)
