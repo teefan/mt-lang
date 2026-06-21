@@ -82,6 +82,7 @@ public struct Decl:
     is_async: bool
     is_const_fn: bool
     is_extern: bool
+    stmt_count: ptr_uint
     line: ptr_uint
     column: ptr_uint
 

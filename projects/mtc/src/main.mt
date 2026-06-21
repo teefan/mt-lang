@@ -63,7 +63,7 @@ function print_parse_text(ast: ref[nodes.SourceFile]) -> void:
             break
         let decl = unsafe: read(d)
         let kind_str = decl_kind_name(decl.kind)
-        stdio.print_line(f"#{kind_str} #{decl.name}")
+        stdio.print_line(f"#{kind_str} #{decl.name} stmts=#{decl.stmt_count} params=#{decl.params.len()}")
         i += 1
 
 
@@ -85,7 +85,7 @@ function print_parse_json(ast: ref[nodes.SourceFile]) -> void:
             break
         let decl = unsafe: read(d)
         var comma = if i + 1 < ast.decls.len(): "," else: ""
-        stdio.print_line(f"    {\"kind\":\"#{decl_kind_name(decl.kind)}\",\"name\":\"#{decl.name}\"}#{comma}")
+        stdio.print_line(f"    {\"kind\":\"#{decl_kind_name(decl.kind)}\",\"name\":\"#{decl.name}\",\"stmts\":#{decl.stmt_count},\"params\":#{decl.params.len()}}#{comma}")
         i += 1
     stdio.print_line("  ]}")
 
