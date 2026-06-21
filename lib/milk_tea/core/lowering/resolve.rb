@@ -1015,14 +1015,16 @@ module MilkTea
         end
       end
 
-      def type_contains_array_storage?(type)
+      def type_contains_array_storage?(type, visited = Set.new)
         return true if array_type?(type)
+        return false if visited.include?(type.object_id)
 
         case type
         when Types::Struct, Types::StructInstance
-          type.fields.each_value.any? { |field_type| type_contains_array_storage?(field_type) }
+          visited.add(type.object_id)
+          type.fields.each_value.any? { |field_type| type_contains_array_storage?(field_type, visited) }
         when Types::Nullable
-          type_contains_array_storage?(type.base)
+          type_contains_array_storage?(type.base, visited)
         else
           false
         end

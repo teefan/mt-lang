@@ -505,35 +505,42 @@ module MilkTea
         type.is_a?(Types::Function) || proc_type?(type)
       end
 
-      def contains_proc_storage_type?(type)
+      def contains_proc_storage_type?(type, visited = Set.new)
+        return false if visited.include?(type.object_id)
+
         case type
         when Types::Proc
           true
         when Types::Struct, Types::StructInstance
-          type.fields.each_value.any? { |field_type| contains_proc_storage_type?(field_type) }
+          visited.add(type.object_id)
+          type.fields.each_value.any? { |field_type| contains_proc_storage_type?(field_type, visited) }
         when Types::Nullable
-          contains_proc_storage_type?(type.base)
+          contains_proc_storage_type?(type.base, visited)
         else
           false
         end
       end
 
-      def contains_task_type?(type)
+      def contains_task_type?(type, visited = Set.new)
+        return false if visited.include?(type.object_id)
+
         case type
         when Types::Task
           true
         when Types::Struct, Types::StructInstance, Types::Union, Types::GenericStructDefinition, Types::VariantArmPayload
-          type.fields.each_value.any? { |ft| contains_task_type?(ft) }
+          visited.add(type.object_id)
+          type.fields.each_value.any? { |ft| contains_task_type?(ft, visited) }
         when Types::VariantInstance
-          type.arguments.any? { |arg| contains_task_type?(arg) }
+          type.arguments.any? { |arg| contains_task_type?(arg, visited) }
         when Types::Variant, Types::GenericVariantDefinition
+          visited.add(type.object_id)
           type.arms.each_value.any? do |arm_fields|
-            arm_fields.each_value.any? { |ft| contains_task_type?(ft) }
+            arm_fields.each_value.any? { |ft| contains_task_type?(ft, visited) }
           end
         when Types::GenericInstance
-          type.arguments.any? { |arg| contains_task_type?(arg) }
+          type.arguments.any? { |arg| contains_task_type?(arg, visited) }
         when Types::Nullable
-          contains_task_type?(type.base)
+          contains_task_type?(type.base, visited)
         else
           false
         end
