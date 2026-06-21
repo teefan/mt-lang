@@ -8,14 +8,14 @@ const REPO_ROOT = path.resolve(VSCODE_ROOT, '..', '..');
 
 const GRAMMAR_PATH = path.join(VSCODE_ROOT, 'syntaxes', 'milk-tea.tmLanguage.json');
 const TOKEN_PATH = path.join(REPO_ROOT, 'lib', 'milk_tea', 'core', 'token.rb');
-const TYPES_PATH = path.join(REPO_ROOT, 'lib', 'milk_tea', 'core', 'types.rb');
+const TYPES_PATH = path.join(REPO_ROOT, 'lib', 'milk_tea', 'core', 'types', 'types.rb');
 const LSP_PATH = path.join(REPO_ROOT, 'lib', 'milk_tea', 'lsp', 'server.rb');
 
 const EXPECTED_SCHEMA_URL = 'https://json.schemastore.org/tmlanguage.json';
 
-const CONTROL_KEYWORD_WORDS = ['if', 'else', 'for', 'in', 'while', 'break', 'continue', 'pass', 'return', 'match', 'defer', 'unsafe', 'await', 'when'];
+const CONTROL_KEYWORD_WORDS = ['if', 'else', 'for', 'in', 'while', 'break', 'continue', 'pass', 'return', 'match', 'defer', 'unsafe', 'await', 'when', 'parallel', 'gather', 'detach'];
 const CONTEXTUAL_KEYWORDS = new Set(['when']);
-const OPERATOR_KEYWORD_WORDS = ['and', 'or', 'not', 'as', 'in', 'implements', 'size_of', 'align_of', 'offset_of', 'consuming', 'inout', 'out'];
+const OPERATOR_KEYWORD_WORDS = ['and', 'or', 'not', 'is', 'as', 'in', 'implements', 'size_of', 'align_of', 'offset_of', 'consuming', 'inout', 'out'];
 const MODIFIER_KEYWORD_WORDS = ['public', 'async', 'editable'];
 const CONSTANT_LANGUAGE_WORDS = ['true', 'false', 'null'];
 const SPECIAL_LANGUAGE_WORDS = ['this'];
