@@ -728,6 +728,16 @@ extending Parser:
                         if this.check(token.TokenKind.tk_integer):
                             size = this.tok_lexeme()
                             this.advance()
+                        else:
+                            this.parse_type()
+                    # Skip additional type arguments (e.g. Pair[T, int] → skip "int")
+                    while this.match_kind(token.TokenKind.tk_comma):
+                        if this.check(token.TokenKind.tk_integer):
+                            this.advance()
+                        else if this.check(token.TokenKind.tk_rbracket):
+                            break
+                        else:
+                            this.parse_type()
 
                 # Skip lifetime annotation @[...]
                 if this.match_kind(token.TokenKind.tk_at):
@@ -765,7 +775,7 @@ extending Parser:
         var expr = this.parse_and()
         while this.match_kind(token.TokenKind.tk_or):
             var right = this.parse_and()
-            expr = nodes.Expr(kind = nodes.ExprKind.binary_op, operator = "or", left_text = expr.name, right_text = right.name, line = this.tok_line(), column = this.tok_col())
+            expr = nodes.Expr(kind = nodes.ExprKind.binary_op, name = "or", left = self_heapify(expr), right = self_heapify(right), line = this.tok_line(), column = this.tok_col())
         return expr
 
 
@@ -773,7 +783,7 @@ extending Parser:
         var expr = this.parse_equality()
         while this.match_kind(token.TokenKind.tk_and):
             var right = this.parse_equality()
-            expr = nodes.Expr(kind = nodes.ExprKind.binary_op, operator = "and", left_text = expr.name, right_text = right.name, line = this.tok_line(), column = this.tok_col())
+            expr = nodes.Expr(kind = nodes.ExprKind.binary_op, name = "and", left = self_heapify(expr), right = self_heapify(right), line = this.tok_line(), column = this.tok_col())
         return expr
 
 
@@ -783,7 +793,7 @@ extending Parser:
             var op = if this.peek_kind() == token.TokenKind.tk_equal_equal: "==" else: "!="
             this.advance()
             var right = this.parse_comparison()
-            expr = nodes.Expr(kind = nodes.ExprKind.binary_op, operator = op, left_text = expr.name, right_text = right.name, line = this.tok_line(), column = this.tok_col())
+            expr = nodes.Expr(kind = nodes.ExprKind.binary_op, name = op, left = self_heapify(expr), right = self_heapify(right), line = this.tok_line(), column = this.tok_col())
         return expr
 
 
@@ -793,7 +803,7 @@ extending Parser:
             var op = this.tok_lexeme()
             this.advance()
             var right = this.parse_additive()
-            expr = nodes.Expr(kind = nodes.ExprKind.binary_op, operator = op, left_text = expr.name, right_text = right.name, line = this.tok_line(), column = this.tok_col())
+            expr = nodes.Expr(kind = nodes.ExprKind.binary_op, name = op, left = self_heapify(expr), right = self_heapify(right), line = this.tok_line(), column = this.tok_col())
         return expr
 
 
@@ -803,7 +813,7 @@ extending Parser:
             var op = this.tok_lexeme()
             this.advance()
             var right = this.parse_multiplicative()
-            expr = nodes.Expr(kind = nodes.ExprKind.binary_op, operator = op, left_text = expr.name, right_text = right.name, line = this.tok_line(), column = this.tok_col())
+            expr = nodes.Expr(kind = nodes.ExprKind.binary_op, name = op, left = self_heapify(expr), right = self_heapify(right), line = this.tok_line(), column = this.tok_col())
         return expr
 
 
@@ -813,7 +823,7 @@ extending Parser:
             var op = this.tok_lexeme()
             this.advance()
             var right = this.parse_unary()
-            expr = nodes.Expr(kind = nodes.ExprKind.binary_op, operator = op, left_text = expr.name, right_text = right.name, line = this.tok_line(), column = this.tok_col())
+            expr = nodes.Expr(kind = nodes.ExprKind.binary_op, name = op, left = self_heapify(expr), right = self_heapify(right), line = this.tok_line(), column = this.tok_col())
         return expr
 
 
@@ -823,10 +833,10 @@ extending Parser:
             if op == "":
                 op = "-"
             var operand = this.parse_unary()
-            return nodes.Expr(kind = nodes.ExprKind.unary_op, operator = op, name = operand.name, line = this.tok_line(), column = this.tok_col())
+            return nodes.Expr(kind = nodes.ExprKind.unary_op, name = op, left = self_heapify(operand), line = this.tok_line(), column = this.tok_col())
         if this.match_kind(token.TokenKind.tk_await):
             var expr = this.parse_unary()
-            return nodes.Expr(kind = nodes.ExprKind.await_expr, name = expr.name, line = this.tok_line(), column = this.tok_col())
+            return nodes.Expr(kind = nodes.ExprKind.await_expr, left = self_heapify(expr), line = this.tok_line(), column = this.tok_col())
         return this.parse_postfix()
 
 
@@ -836,10 +846,10 @@ extending Parser:
         while true:
             if this.match_kind(token.TokenKind.tk_dot):
                 var member = this.expect_id()
-                expr = nodes.Expr(kind = nodes.ExprKind.member_access, name = member, left_text = expr.name, line = this.tok_line(), column = this.tok_col())
+                expr = nodes.Expr(kind = nodes.ExprKind.member_access, name = member, left = self_heapify(expr), line = this.tok_line(), column = this.tok_col())
             else if this.match_kind(token.TokenKind.tk_as):
                 var bind = this.expect_id()
-                expr = nodes.Expr(kind = nodes.ExprKind.identifier, name = bind, left_text = expr.name, line = this.tok_line(), column = this.tok_col())
+                expr = nodes.Expr(kind = nodes.ExprKind.identifier, name = bind, left = self_heapify(expr), line = this.tok_line(), column = this.tok_col())
             else if this.match_kind(token.TokenKind.tk_lparen):
                 if not this.check(token.TokenKind.tk_rparen):
                     while true:
@@ -849,15 +859,15 @@ extending Parser:
                         if not this.match_kind(token.TokenKind.tk_comma):
                             break
                 this.expect(token.TokenKind.tk_rparen)
-                expr = nodes.Expr(kind = nodes.ExprKind.call, name = expr.name, left_text = expr.name, line = this.tok_line(), column = this.tok_col())
+                expr = nodes.Expr(kind = nodes.ExprKind.call, name = expr.name, left = self_heapify(expr), line = this.tok_line(), column = this.tok_col())
             else if this.match_kind(token.TokenKind.tk_lbracket):
                 var idx = this.parse_expression()
                 while this.match_kind(token.TokenKind.tk_comma):
                     this.parse_expression()
                 this.expect(token.TokenKind.tk_rbracket)
-                expr = nodes.Expr(kind = nodes.ExprKind.index_access, name = idx.name, left_text = expr.name, line = this.tok_line(), column = this.tok_col())
+                expr = nodes.Expr(kind = nodes.ExprKind.index_access, name = idx.name, left = self_heapify(expr), right = self_heapify(idx), line = this.tok_line(), column = this.tok_col())
             else if this.match_kind(token.TokenKind.tk_question):
-                expr = nodes.Expr(kind = nodes.ExprKind.await_expr, name = expr.name, line = this.tok_line(), column = this.tok_col())
+                expr = nodes.Expr(kind = nodes.ExprKind.await_expr, left = self_heapify(expr), line = this.tok_line(), column = this.tok_col())
             else:
                 break
         return expr
@@ -1173,4 +1183,10 @@ function self_alloc_type(kind: nodes.TypeKind, name: str) -> ptr[nodes.Type]:
         tp.inner = null
         tp.size_text = ""
     return tp
+
+
+function self_heapify(expr: nodes.Expr) -> ptr[nodes.Expr]:
+    let heap_expr = heap.must_alloc[nodes.Expr](1)
+    unsafe: read(heap_expr) = expr
+    return heap_expr
 

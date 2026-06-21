@@ -151,8 +151,7 @@ public struct Expr:
     value_float: float
     value_bool: bool
     value_str: str
-    operator: str
-    left_text: str
-    right_text: str
+    left: ptr[Expr]?
+    right: ptr[Expr]?
     line: ptr_uint
     column: ptr_uint

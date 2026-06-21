@@ -135,8 +135,18 @@ Type: { kind, name, inner: ptr[Type]?, size_text: str }
 - Heap allocation pattern proven via `ptr[Type]` nodes linked through `inner` field
 - All 9 selfhost + 13 example files pass `mtc check` with 0 errors
 
-**2. Tree AST — Expression nodes (~800 lines)**
+**2. Tree AST — Expression nodes (~800 lines)** ✅ COMPLETED
 Replace flat `Expr` with recursive tree. Covers literals, identifiers, binary/unary ops, calls, member/index access, proc expressions, cast, if/match-expr. Rewrite all `parse_*` expression functions to return `ptr[Expr]?`. Heap allocation via `std.mem.heap.must_alloc`.
+
+**Completed implementation:**
+- Added `left: ptr[Expr]?` and `right: ptr[Expr]?` child pointer fields to `Expr` struct, removed `operator`/`left_text`/`right_text` string fields
+- Added `self_heapify()` helper to allocate and deep-copy Expr nodes to heap
+- Updated all 6 binary op parse functions (or/and/equality/comparison/additive/multiplicative) to store child pointers
+- Updated `parse_unary` to store operand via `left` pointer
+- Updated `parse_postfix` chain: member access (receiver → left), call (callee → left), index access (receiver → left, index → right), await propagation (operand → left)
+- Fixed `parse_type_base` to handle multi-arg generics like `Pair[T, int]` by skipping additional comma-separated type args
+- Heap allocation pattern extended: expression trees link children through `ptr[Expr]?` pointers
+- All 9 selfhost + 13 example files pass `mtc check` with 0 errors
 
 **3. Tree AST — Statement nodes (~500 lines)**
 Replace flat `Stmt` with recursive tree. Covers let/var, assignment, if/else/while/for/match, return/break/continue, defer/unsafe, blocks. Rewrite `parse_statement()` and `parse_block()`.
