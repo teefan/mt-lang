@@ -1558,7 +1558,7 @@ module MilkTea
                statements
              else
                statement = parse_statement
-               raise ParseError.new("inline unsafe local declarations must use expression form", token:) if statement.is_a?(AST::LocalDecl)
+               raise ParseError.new("inline unsafe local declarations must use expression form", token:, path: @path) if statement.is_a?(AST::LocalDecl)
 
                [statement]
              end
