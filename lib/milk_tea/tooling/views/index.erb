@@ -1,0 +1,87 @@
+<% @title = "Home" %>
+
+<div class="hero">
+  <h1>Milk Tea <span>Documentation</span></h1>
+  <p class="tagline">A statically typed, indentation-based systems language for games. Safe by default, explicit by design, compiling to <strong>beautiful C</strong>.</p>
+  <div class="badges">
+    <span class="badge">&#9889; Statically Typed</span>
+    <span class="badge">&#127758; Compiles to C</span>
+    <span class="badge ac">&#128274; Safe by Default</span>
+    <span class="badge">&#128295; Data-Oriented</span>
+    <span class="badge">&#9752; No GC</span>
+    <span class="badge ac">&#128279; First-Class C FFI</span>
+  </div>
+</div>
+
+<div class="cards">
+  <a href="/reference/" class="card">
+    <h2>&#128214; Language Reference</h2>
+    <p>Complete language guide: syntax, types, generics, interfaces, control flow, error handling, concurrency, FFI, and more.</p>
+  </a>
+
+  <a href="/stdlib" class="card">
+    <h2>&#128218; Standard Library</h2>
+    <p>Browse the standard library modules: collections, memory allocators, async runtime, text formatting, and more.</p>
+  </a>
+
+  <a href="<%= active?("/reference/") %>" class="card">
+    <h2>&#128296; Command-Line Tools</h2>
+    <p><code>mtc build</code>, <code>mtc run</code>, <code>mtc check</code>, <code>mtc lint</code>, <code>mtc format</code>, <code>mtc deps</code>, and more.</p>
+  </a>
+</div>
+
+<section>
+  <h2>Quick Start</h2>
+
+  <div class="code-wrap">
+    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    <pre><code>function main() -&gt; int:
+    return 0</code></pre>
+  </div>
+
+  <p>Save as <code class="code-inline">hello.mt</code> and run:</p>
+  <div class="code-wrap">
+    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    <pre><code>mtc run hello.mt</code></pre>
+  </div>
+
+  <h3>Essential CLI</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Command</th><th>Description</th></tr>
+      <tr><td><code>mtc check &lt;path&gt;</code></td><td>Type-check + lint</td></tr>
+      <tr><td><code>mtc run &lt;path&gt;</code></td><td>Build and execute</td></tr>
+      <tr><td><code>mtc build &lt;path&gt;</code></td><td>Build only (emit C, compile, link)</td></tr>
+      <tr><td><code>mtc format &lt;path&gt;</code></td><td>Format sources in place</td></tr>
+      <tr><td><code>mtc lint &lt;path&gt;</code></td><td>Run linter</td></tr>
+      <tr><td><code>mtc new &lt;name&gt;</code></td><td>Scaffold a new package</td></tr>
+      <tr><td><code>mtc docs</code></td><td>Start this documentation server</td></tr>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Design Principles</h2>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Principle</th><th>Description</th></tr>
+      <tr><td><strong>What you see is what runs</strong></td><td>No hidden allocation, dispatch, or heap traffic.</td></tr>
+      <tr><td><strong>C is the ABI ground truth</strong></td><td>Structs, pointers, calling conventions map directly.</td></tr>
+      <tr><td><strong>Safe by default</strong></td><td>Pointer operations require <code>unsafe</code>. Indexing is bounds-checked.</td></tr>
+      <tr><td><strong>Data-oriented first</strong></td><td>Plain structs, arrays, spans, pools over object systems.</td></tr>
+      <tr><td><strong>One job, one canonical surface</strong></td><td>No duplicated everyday spellings for the same concept.</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="stdlib-preview">
+  <h2>Standard Library (<%= stdlib_modules.size %> modules)</h2>
+  <div class="stdlib-grid">
+    <% stdlib_modules.each do |mod| %>
+      <a href="/stdlib/<%= mod[:name] %>" class="stdlib-item">
+        <span class="stdlib-name"><%= mod[:name] %></span>
+        <span class="stdlib-kind"><%= mod[:kind] == :dir ? "package" : "module" %></span>
+      </a>
+    <% end %>
+  </div>
+</section>

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title><%= @title || "Milk Tea" %> &mdash; Documentation</title>
+<link rel="stylesheet" href="/css/docs.css">
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+<div class="overlay" id="overlay"></div>
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <a href="/" style="color:inherit;text-decoration:none;display:flex;align-items:center;gap:.5rem">
+      <span class="icon">&#129483;</span>
+      Milk Tea
+    </a>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="/" class="<%= active?("/") %>">Reference</a>
+
+    <details open>
+      <summary>Standard Library</summary>
+      <% stdlib_modules.each do |mod| %>
+        <a href="/stdlib/<%= mod[:name] %>" class="<%= "active" if @name == mod[:name] %>">
+          <%= mod[:name] %>
+        </a>
+      <% end %>
+    </details>
+  </nav>
+  <div class="sidebar-footer">
+    <button class="theme-btn" id="theme-toggle" aria-label="Toggle theme">
+      <span class="icon-sun">&#9728;</span>
+      <span class="icon-moon">&#127769;</span>
+    </button>
+    <span>Milk Tea</span>
+  </div>
+</aside>
+
+<div class="topbar">
+  <button class="menu-btn" id="menu-btn" aria-label="Toggle menu">&#9776;</button>
+  <span class="logo-text">&#127861; Milk Tea</span>
+  <button class="theme-btn" id="theme-toggle-mbl" aria-label="Toggle theme" style="margin-left:auto">&#127769;</button>
+</div>
+
+<main class="main" id="main">
+  <%= yield %>
+</main>
+
+<script src="/js/docs.js"></script>
+</body>
+</html>

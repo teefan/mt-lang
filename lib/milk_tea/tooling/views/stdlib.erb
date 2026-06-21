@@ -1,0 +1,21 @@
+<% @title = "Standard Library" %>
+
+<div class="hero">
+  <h1>Standard <span>Library</span></h1>
+  <p class="tagline"><%= @modules.size %> modules &mdash; collections, memory allocators, async runtime, text formatting, math, and FFI support.</p>
+</div>
+
+<section>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Module</th><th>Description</th><th>Declarations</th></tr>
+      <% @modules.each do |mod| %>
+      <tr>
+        <td><a href="/stdlib/<%= mod[:name] %>"><code><%= mod[:name] %></code></a></td>
+        <td><%= h(mod[:doc].lines.first&.strip || "") %></td>
+        <td><%= mod[:decl_count] %></td>
+      </tr>
+      <% end %>
+    </table>
+  </div>
+</section>
