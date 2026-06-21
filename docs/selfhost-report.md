@@ -4,7 +4,7 @@
 
 The `projects/mtc` directory contains a self-hosting Milk Tea compiler written in Milk Tea. It compiles to C using the existing Ruby `mtc` compiler and currently provides `lex`, `parse`, `check`, and `lower` subcommands.
 
-**Total**: ~4,400 lines of Milk Tea across 9 source files.
+**Total**: ~4,200 lines of Milk Tea across 9 source files.
 
 ## 2. File Map
 
@@ -12,30 +12,40 @@ The `projects/mtc` directory contains a self-hosting Milk Tea compiler written i
 projects/mtc/
 ├── package.toml                         # Project manifest
 └── src/
-    ├── main.mt                          # ~340 lines — CLI entry point
+    ├── main.mt                          # ~346 lines — CLI entry point
     └── mtc/
         ├── lexer/
         │   ├── token.mt                 # ~137 lines — TokenKind enum (122 members) + Token struct
-        │   └── lexer.mt                 # ~1070 lines — Byte-scanning lexer
+        │   └── lexer.mt                 # ~1068 lines — Byte-scanning lexer
         ├── parser/
-        │   └── parser.mt                # ~1112 lines — Recursive descent + operator precedence
+        │   └── parser.mt                # ~1203 lines — Recursive descent + tree AST builder
         ├── ast/
-        │   └── nodes.mt                 # ~146 lines — Decl/Stmt/Expr structs, enum kinds
+        │   └── nodes.mt                 # ~161 lines — AST structs (Type / Expr / Stmt / Block + enum kinds)
         ├── sema/
-        │   ├── symbol.mt                # ~260 lines — SymbolKind, SemaContext, ModuleScope
-        │   ├── checker.mt               # ~260 lines — 3-pass check: imports → register → validate
-        │   └── loader.mt                # ~130 lines — Module loader, path resolution
+        │   ├── symbol.mt                # ~254 lines — SymbolKind, SemaContext, ModuleScope
+        │   ├── checker.mt               # ~271 lines — 3-pass check: imports → register → validate
+        │   └── loader.mt                # ~97 lines — Module loader, path resolution
         └── lowering/
-            └── lower.mt                 # ~470 lines — Source-to-C lowering + body C translation
+            └── lower.mt                 # ~627 lines — Tree-based declaration + body C lowering
 ```
 
 ## 3. Lexer — Complete
 
 Token-for-token match with Ruby lexer on all 400+ `.mt` files. 122 member `TokenKind` enum, byte-scanning with full escape validation, indentation tracking. Token struct includes `src_offset` for source-position-based text extraction.
 
-## 4. Parser — Complete
+## 4. Parser — Complete (Tree AST)
 
-18 declaration types, full operator precedence chain, postfix chain with named-arg + multi-arg support, all statement variants including guard forms, assignment operators, match patterns. Types parsed as full dotted paths via `source_text.slice()`. Brackets consumed without double-consumption bug. All previously known gaps resolved: nested structs, `@[attr]` skipping, lifetime annotations, `else as error:`, external file headers, `when`/`inline` placeholders. Body byte offsets (`body_src_start`/`body_src_end`) captured for function bodies.
+18 declaration types, full operator precedence chain, postfix chain with named-arg + multi-arg support, all statement variants including guard forms, assignment operators, match patterns.
+
+**Tree AST already built** (replaces the original flat text-based representations):
+- **Type tree** — `TypeKind` enum (`type_named`/`type_constructed`/`type_nullable`) + recursive `Type` struct with `inner: ptr[Type]?`. Handles dotted paths, bracket args, nullable `?` wrapper. Types parsed via `parse_type() → parse_type_base()`.
+- **Expression tree** — `Expr` struct with `left: ptr[Expr]?` / `right: ptr[Expr]?` child pointers replacing flat `operator`/`left_text`/`right_text` strings. Nodes heap-allocated via `self_heapify()`. Covers binary/unary ops, member access, calls, index access, literals, identifiers.
+- **Statement tree** — `Stmt` struct with `expr: ptr[Expr]?` (condition/value), `body: ptr[Block]?`, `else_body: ptr[Block]?`. `Block` struct holds `vec.Vec[Stmt]`. `parse_block()` returns `ptr[Block]` via `self_alloc_block()`.
+
+**Known parser gaps** (expression capture, not parsing):
+- Call arguments are parsed but discarded (the Expr tree stores the callee but not args)
+- Assignment RHS (`i += expr`) is parsed but discarded
+- `else if` chains are parsed as nested `if` inside `else` body (structurally correct)
 
 **Verification**: 8/8 self-host + 13/13 examples parse with 0 errors.
 
@@ -43,48 +53,33 @@ Token-for-token match with Ruby lexer on all 400+ `.mt` files. 122 member `Token
 
 Two-level symbol table (local `symbols` + `import_scopes` with `ModuleScope` entries). 40 built-in types. `resolve_dotted_type()` traverses import chain. Silent import registration avoids duplicate errors. Type params collected from fields/params/return/arms. Module loading via `self_build_module_path()` with `str_buffer[256]` and cycle detection. `find_source_root()` walks path for `/src/` component.
 
+String-based compat layer added: `self_type_name()` and `self_type_param_name()` extract flat type names from `ptr[Type]?` nodes for validation.
+
 **Verification**: 9/9 self-host + 13/13 examples pass `mtc check` with 0 errors.
 
-## 6. Lowering + Body C Translation — Complete
+## 6. Lowering — Declaration Complete, Body Tree-Based
 
-### Declaration lowering
+### Declaration lowering (unchanged)
 - Struct → `typedef struct module_Name { fields } module_Name;`
 - Enum/Flags → `enum { module_Name_member = value, ... };`
-- Functions → full C signatures with body
+- Functions → full C signatures
 - Extending methods → `static ret_type module_Type_method(params);`
 - Const/Var → `static [const] type module_name [= value];`
-- 40-type C mapping (primitives → stdint.h, constructors → void*, str → mt_str, native types → float/int32_t)
-- Dotted types: `token.Token` → `token_Token` (underscore substitution)
-- All output via `str_buffer` + `ptr[str_buffer]` + `unsafe: read` to avoid f-string lifetime and `ref[str_buffer]` auto-deref issues
+- Types mapped via `write_ctype_node()` which traverses the Type tree
 
-### Body text extraction (`body_src_start`/`body_src_end`)
-- Body byte offsets captured in `parse_function_def` and `parse_const_var` by peeking at token `src_offset` before/after `parse_block()`
-- `source_text` passed to `Lowerer`, body text extracted via `source_text.slice(start, end - start)`
-- EOF fallback: when `body_end == 0`, uses `source_text.len`
+### Body lowering (tree-based, replaces text-based translation)
+The old character-level `self_translate_body` is replaced by a recursive tree walk:
+- **`self_lower_block(block)`** — iterates statements in a Block
+- **`self_lower_stmt(stmt_ptr)`** — dispatches per `StmtKind`:
+  - Control flow: `if`/`match`/`while` → proper C brace blocks with indentation
+  - Declarations: `let`→`auto`, `var` with type from Type tree
+  - Control transfer: `return`, `break`, `continue`, `pass`→`;`
+  - Expression statement: emits expression + `;`
+- **`self_write_expr_buf(expr_ptr)`** — dispatches per `ExprKind`:
+  - Literals, identifiers, binary (`and`→`&&`, `or`→`||`), unary (`not`→`!`), member/index access, calls, `unsafe:` wrapper passthrough
+- **Output**: uses `out_buf: str_buffer[32768]` with `indent_level` tracking, flushed via `pline()`
 
-### C translation (`self_translate_body`)
-Single-pass character-level translation applied to extracted body text:
-
-| Milk Tea | C |
-|-----------|-----|
-| `and` | `&&` |
-| `or` | `\|\|` |
-| `not` | `!` |
-| `unsafe:` | (removed) |
-| `let x =` | `auto x =` |
-| `;` after statements | auto-inserted (skipped after `:`, `{`, `}`, `;`, `#`) |
-
-### C output example
-```c
-bool checker_self_is_type_param_name(mt_str name) {
-if name.len != 1:
-        return false;
-    auto ch = name.byte_at(0);
-    return ch >= 'A' && ch <= 'Z';
-}
-```
-
-**Verification**: 9/9 self-host files pass `mtc check` with 0 errors. Body text extracted and C-translated for all function definitions.
+**Verification**: 9/9 self-host files pass `mtc check` with 0 errors. `mtc lower` emits structurally correct C control flow for all function bodies. Raw body text fallback for functions without tree.
 
 ## 7. Ruby Compiler Fixes
 
@@ -112,51 +107,48 @@ mtc --help         — Usage info
 | Example files | 13 | 0 |
 | `mtc lower` output | all | clean |
 
-## 10. Next Steps (Resumption Plan)
+## 10. Progress Summary & Next Steps
 
-### Immediate (next session)
+### Completed (Steps 1–4)
 
-**1. Tree AST — Type nodes (~300 lines)** ✅ COMPLETED
-Replace flat `type_text: str` with recursive `Type` tree. Add `TypeKind` enum + `Type` struct to `nodes.mt`. Rewrite `parse_type_text() → parse_type()` in `parser.mt` to build `ptr[Type]?` trees. Update `write_ctype()` in `lower.mt` to traverse the tree. This is the smallest tree-AST piece and proves the heap-allocation pattern.
+| Step | Description | Lines | Status |
+|------|-------------|-------|--------|
+| 1 | Tree AST — Type nodes | ~300 | ✅ |
+| 2 | Tree AST — Expression nodes | ~800 | ✅ |
+| 3 | Tree AST — Statement nodes | ~500 | ✅ |
+| 4 | Full function body lowering | ~400 | ✅ |
 
-```
-TypeKind: type_named | type_constructed | type_nullable
-Type: { kind, name, inner: ptr[Type]?, size_text: str }
-```
+The recursive AST (Type → Expr → Stmt → Block) and tree-based lowering are in place. Control flow (if/else/while/return) emits correct C structure.
 
-**Completed implementation:**
-- Added `TypeKind` enum (type_named=1, type_constructed=2, type_nullable=3) and `Type` struct to `nodes.mt`
-- Changed `Decl.type_name` → `Decl.type_node` (ptr[Type]?), `Decl.return_text` → `Decl.return_node` (ptr[Type]?), added `Decl.mapping: str` for foreign function mappings
-- Changed `Param.type_text` → `Param.type_node` (ptr[Type]?), `Field.type_text` → `Field.type_node` (ptr[Type]?)
-- Rewrote parser: `parse_type(){→parse_type_base(){` with proper tree construction, nullable wrapping, dotted name support, bracket argument parsing
-- Added `self_alloc_type()` helper using `std.mem.heap.must_alloc`
-- Added `self_type_name()` and `self_type_param_name()` helpers in sema checker for string-based compat
-- Updated `write_ctype_node()` in lowerer to traverse tree (with same C type output as before)
-- Heap allocation pattern proven via `ptr[Type]` nodes linked through `inner` field
-- All 9 selfhost + 13 example files pass `mtc check` with 0 errors
+### Current Gap: Expression Capture for Compilable C (~300–400 lines) ✅ COMPLETED
 
-**2. Tree AST — Expression nodes (~800 lines)** ✅ COMPLETED
-Replace flat `Expr` with recursive tree. Covers literals, identifiers, binary/unary ops, calls, member/index access, proc expressions, cast, if/match-expr. Rewrite all `parse_*` expression functions to return `ptr[Expr]?`. Heap allocation via `std.mem.heap.must_alloc`.
+The tree-based lowering produces structurally correct C, but two expression capture gaps prevented the output from being compilable. Both are now fixed:
 
-**Completed implementation:**
-- Added `left: ptr[Expr]?` and `right: ptr[Expr]?` child pointer fields to `Expr` struct, removed `operator`/`left_text`/`right_text` string fields
-- Added `self_heapify()` helper to allocate and deep-copy Expr nodes to heap
-- Updated all 6 binary op parse functions (or/and/equality/comparison/additive/multiplicative) to store child pointers
-- Updated `parse_unary` to store operand via `left` pointer
-- Updated `parse_postfix` chain: member access (receiver → left), call (callee → left), index access (receiver → left, index → right), await propagation (operand → left)
-- Fixed `parse_type_base` to handle multi-arg generics like `Pair[T, int]` by skipping additional comma-separated type args
-- Heap allocation pattern extended: expression trees link children through `ptr[Expr]?` pointers
-- All 9 selfhost + 13 example files pass `mtc check` with 0 errors
+1. **Call arguments not captured** — Fixed by adding `args: vec.Vec[ptr[Expr]?]` to `Expr`. Arguments are captured in `parse_postfix` via `self_heapify()` and stored in the args vector. Lowering emits comma-separated argument lists.
 
-**3. Tree AST — Statement nodes (~500 lines)**
-Replace flat `Stmt` with recursive tree. Covers let/var, assignment, if/else/while/for/match, return/break/continue, defer/unsafe, blocks. Rewrite `parse_statement()` and `parse_block()`.
+2. **Assignment RHS not captured** — Fixed by adding `value: ptr[Expr]?` to `Stmt`. The assignment operator is stored in `Stmt.name` and the RHS in `Stmt.value`. Lowering emits `lhs op rhs;`.
 
-**4. Full function body lowering (~400 lines)**
-With expression/statement trees, emit real compilable C for function bodies. Lower each expression kind to C. Lower statement control flow (if→if{}, while→while{}, for→for{}). Lower types correctly from the Type tree.
+**Verification**: All 22 files pass `mtc check`. Lowered C now emits correct call arguments (`read(tp)`, `decl.fields.get(i)`) and assignment operators (`i += 1;`). Struct ctors (named args only) are emitted with field names as positional args — structurally present but need designated-initializer lowering for full compilability.
+
+The tree-based lowering produces structurally correct C, but two expression capture gaps prevent the output from being compilable by a real C compiler:
+
+1. **Call arguments not captured** — `f(a, b)` parses arguments but discards them. The Expr struct needs an `args: vec.Vec[ptr[Expr]?]` field. The generated C currently emits `f()` for every call, losing all arguments. This affects virtually every line of lowered function bodies.
+
+2. **Assignment RHS not captured** — `i += expr` parses the RHS but discards it. The generated C emits just the LHS (`i;`) without the operation. The Stmt or Expr tree needs to capture the full assignment.
+
+**Recommended next step: Fix expression capture gaps (Step 4b)**
+
+Priority order:
+1. Add `args: vec.Vec[ptr[Expr]?]` to `Expr`, capture call arguments in `parse_postfix`
+2. Update `self_write_call` to emit comma-separated argument list
+3. Capture assignment RHS in `parse_statement` via `expr` and `right` fields
+4. Verify `mtc lower` on selfhost sources produces roughly correct call signatures
+
+This should make `mtc lower` output roughly compilable C, which is the prerequisite for true self-hosting (Step 5).
 
 ### Medium-term
 
-**5. Self-host** — Compile the compiler with itself. Requires the above steps to produce compilable C for all source files.
+**5. Self-host** — Compile the compiler with itself. Requires gap fixes above to produce compilable C.
 
 **6. Full sema** — Expression type checking, call arg validation, match exhaustiveness, control flow analysis.
 
@@ -182,7 +174,7 @@ cd projects/mtc
 ./build/bin/linux/debug/mtc lower examples/language_baseline.mt
 
 # Full sweep
-for f in examples/*.mt; do
+for f in examples/*.mt projects/mtc/src/**/*.mt projects/mtc/src/main.mt; do
     ./build/bin/linux/debug/mtc check "$f" 2>&1 | grep -c "error:"
 done
 ```

@@ -8,11 +8,14 @@ import mtc.ast.nodes
 public struct Lowerer:
     module_name: str
     source_text: str
+    indent_level: ptr_uint
+    out_buf: str_buffer[32768]
 
 
 extending Lowerer:
     public static function create(module_name: str, source_text: str) -> Lowerer:
-        return Lowerer(module_name = module_name, source_text = source_text)
+        var ob: str_buffer[32768]
+        return Lowerer(module_name = module_name, source_text = source_text, indent_level = 0, out_buf = ob)
 
 
     function pline(line: str) -> void:
@@ -310,89 +313,253 @@ extending Lowerer:
             i += 1
         buf.append(") {")
         this.pline(buf.as_str())
-        if decl.body_src_start > 0:
+
+        if decl.body_block != null:
+            this.indent_level = 4
+            unsafe: this.out_buf.clear()
+            this.self_lower_block(decl.body_block)
+            this.pline(unsafe: this.out_buf.as_str())
+        else if decl.body_src_start > 0:
             var end_pos = decl.body_src_end
             if end_pos == 0 or end_pos <= decl.body_src_start:
                 end_pos = this.source_text.len
             var body_raw = this.source_text.slice(decl.body_src_start, end_pos - decl.body_src_start)
-            var translated = this.self_translate_body(body_raw)
-            this.pline(translated)
+            this.self_write_raw_body(body_raw)
         else:
             this.pline("    /* body not lowered */")
         this.pline("}")
         this.pline("")
 
 
-    function self_translate_body(raw: str) -> str:
-        var result: str_buffer[16384]
+    editable function self_lower_block(block: ptr[nodes.Block]?) -> void:
+        if block == null:
+            return
+        var i: ptr_uint = 0
+        while i < unsafe: read(block).stmts.len():
+            let s = unsafe: read(block).stmts.get(i) else:
+                break
+            this.self_lower_stmt(s)
+            i += 1
+
+
+    editable function self_lower_stmt(stmt_ptr: ptr[nodes.Stmt]) -> void:
+        let s = unsafe: read(stmt_ptr)
+        var kind = s.kind
+
+        if kind == nodes.StmtKind.if_stmt or kind == nodes.StmtKind.match_stmt:
+            this.self_write_ctrl_if(stmt_ptr)
+        else if kind == nodes.StmtKind.while_stmt:
+            this.self_write_ctrl_while(stmt_ptr)
+        else if kind == nodes.StmtKind.for_stmt:
+            this.self_write_indent()
+            unsafe: this.out_buf.append("/* for */\n")
+        else if kind == nodes.StmtKind.return_stmt:
+            this.self_write_return(stmt_ptr)
+        else if kind == nodes.StmtKind.local_let:
+            this.self_write_let(stmt_ptr)
+        else if kind == nodes.StmtKind.local_var:
+            this.self_write_var(stmt_ptr)
+        else if kind == nodes.StmtKind.expression_stmt:
+            this.self_write_expr_stmt(stmt_ptr)
+        else if kind == nodes.StmtKind.break_stmt:
+            this.self_write_indent()
+            unsafe: this.out_buf.append("break;\n")
+        else if kind == nodes.StmtKind.continue_stmt:
+            this.self_write_indent()
+            unsafe: this.out_buf.append("continue;\n")
+        else if kind == nodes.StmtKind.pass_stmt:
+            this.self_write_indent()
+            unsafe: this.out_buf.append(";\n")
+        else if kind == nodes.StmtKind.defer_stmt or kind == nodes.StmtKind.unsafe_stmt:
+            this.self_write_indent()
+            unsafe: this.out_buf.append("/* defer/unsafe */\n")
+        else:
+            this.self_write_indent()
+            unsafe: this.out_buf.append("/* block */\n")
+
+
+    editable function self_write_ctrl_if(stmt_ptr: ptr[nodes.Stmt]) -> void:
+        let s = unsafe: read(stmt_ptr)
+        this.self_write_indent()
+        if s.kind == nodes.StmtKind.match_stmt:
+            unsafe: this.out_buf.append("switch (")
+        else:
+            unsafe: this.out_buf.append("if (")
+        this.self_write_expr_buf(s.expr)
+        unsafe: this.out_buf.append(") {\n")
+        this.indent_level += 4
+        if s.body != null:
+            this.self_lower_block(s.body)
+        this.indent_level -= 4
+        this.self_write_indent()
+        if s.else_body != null:
+            unsafe: this.out_buf.append("} else {\n")
+            this.indent_level += 4
+            this.self_lower_block(s.else_body)
+            this.indent_level -= 4
+            this.self_write_indent()
+        unsafe: this.out_buf.append("}\n")
+
+
+    editable function self_write_ctrl_while(stmt_ptr: ptr[nodes.Stmt]) -> void:
+        let s = unsafe: read(stmt_ptr)
+        this.self_write_indent()
+        unsafe: this.out_buf.append("while (")
+        this.self_write_expr_buf(s.expr)
+        unsafe: this.out_buf.append(") {\n")
+        this.indent_level += 4
+        if s.body != null:
+            this.self_lower_block(s.body)
+        this.indent_level -= 4
+        this.self_write_indent()
+        unsafe: this.out_buf.append("}\n")
+
+
+    editable function self_write_let(stmt_ptr: ptr[nodes.Stmt]) -> void:
+        let s = unsafe: read(stmt_ptr)
+        this.self_write_indent()
+        unsafe: this.out_buf.append("auto ")
+        unsafe: this.out_buf.append(s.name)
+        if s.expr != null:
+            unsafe: this.out_buf.append(" = ")
+            this.self_write_expr_buf(s.expr)
+        unsafe: this.out_buf.append(";\n")
+
+
+    editable function self_write_var(stmt_ptr: ptr[nodes.Stmt]) -> void:
+        let s = unsafe: read(stmt_ptr)
+        this.self_write_indent()
+        var tp = s.type_node
+        if tp != null:
+            var tbuf: str_buffer[512]
+            this.write_ctype_node(ptr_of(tbuf), tp)
+            unsafe: this.out_buf.append(unsafe: tbuf.as_str())
+            unsafe: this.out_buf.append(" ")
+        else:
+            unsafe: this.out_buf.append("auto ")
+        unsafe: this.out_buf.append(s.name)
+        if s.expr != null:
+            unsafe: this.out_buf.append(" = ")
+            this.self_write_expr_buf(s.expr)
+        unsafe: this.out_buf.append(";\n")
+
+
+    editable function self_write_return(stmt_ptr: ptr[nodes.Stmt]) -> void:
+        let s = unsafe: read(stmt_ptr)
+        this.self_write_indent()
+        unsafe: this.out_buf.append("return")
+        if s.expr != null:
+            unsafe: this.out_buf.append(" ")
+            this.self_write_expr_buf(s.expr)
+        unsafe: this.out_buf.append(";\n")
+
+
+    editable function self_write_expr_stmt(stmt_ptr: ptr[nodes.Stmt]) -> void:
+        let s = unsafe: read(stmt_ptr)
+        this.self_write_indent()
+        if s.expr != null:
+            this.self_write_expr_buf(s.expr)
+        if s.value != null:
+            unsafe: this.out_buf.append(" ")
+            unsafe: this.out_buf.append(s.name)
+            unsafe: this.out_buf.append(" ")
+            this.self_write_expr_buf(s.value)
+        unsafe: this.out_buf.append(";\n")
+
+
+    editable function self_write_expr_buf(expr_ptr: ptr[nodes.Expr]?) -> void:
+        if expr_ptr == null:
+            return
+        let e = unsafe: read(expr_ptr)
+        var kind = e.kind
+
+        if kind == nodes.ExprKind.identifier:
+            unsafe: this.out_buf.append(e.name)
+        else if kind == nodes.ExprKind.integer_literal or kind == nodes.ExprKind.float_literal:
+            unsafe: this.out_buf.append(e.lexeme)
+        else if kind == nodes.ExprKind.string_literal:
+            unsafe: this.out_buf.append(e.lexeme)
+        else if kind == nodes.ExprKind.char_literal:
+            unsafe: this.out_buf.append(e.lexeme)
+        else if kind == nodes.ExprKind.boolean_literal:
+            unsafe: this.out_buf.append(e.name)
+        else if kind == nodes.ExprKind.null_literal:
+            unsafe: this.out_buf.append("NULL")
+        else if kind == nodes.ExprKind.binary_op:
+            unsafe: this.out_buf.append("(")
+            this.self_write_expr_buf(e.left)
+            var op = e.name
+            if op == "or":
+                op = "||"
+            else if op == "and":
+                op = "&&"
+            unsafe: this.out_buf.append(" ")
+            unsafe: this.out_buf.append(op)
+            unsafe: this.out_buf.append(" ")
+            this.self_write_expr_buf(e.right)
+            unsafe: this.out_buf.append(")")
+        else if kind == nodes.ExprKind.unary_op:
+            var op = e.name
+            if op == "not":
+                op = "!"
+            unsafe: this.out_buf.append(op)
+            this.self_write_expr_buf(e.left)
+        else if kind == nodes.ExprKind.call:
+            this.self_write_expr_buf(e.left)
+            unsafe: this.out_buf.append("(")
+            var ai: ptr_uint = 0
+            while ai < unsafe: e.args.len():
+                let a = unsafe: e.args.get(ai) else:
+                    break
+                if ai > 0:
+                    unsafe: this.out_buf.append(", ")
+                this.self_write_expr_buf(unsafe: read(a))
+                ai += 1
+            unsafe: this.out_buf.append(")")
+        else if kind == nodes.ExprKind.member_access:
+            this.self_write_expr_buf(e.left)
+            unsafe: this.out_buf.append(".")
+            unsafe: this.out_buf.append(e.name)
+        else if kind == nodes.ExprKind.index_access:
+            this.self_write_expr_buf(e.left)
+            unsafe: this.out_buf.append("[")
+            this.self_write_expr_buf(e.right)
+            unsafe: this.out_buf.append("]")
+        else if kind == nodes.ExprKind.await_expr:
+            this.self_write_expr_buf(e.left)
+        else if kind == nodes.ExprKind.prefix_cast:
+            unsafe: this.out_buf.append("(")
+            unsafe: this.out_buf.append(e.name)
+            unsafe: this.out_buf.append(")")
+        else:
+            unsafe: this.out_buf.append(e.name)
+
+
+    editable function self_write_indent() -> void:
+        var i: ptr_uint = 0
+        while i < this.indent_level:
+            unsafe: this.out_buf.append(" ")
+            i += 1
+
+
+    editable function self_write_raw_body(raw: str) -> void:
         var pos: ptr_uint = 0
+        var line_start: ptr_uint = 0
+        this.indent_level = 4
         while pos < raw.len:
             let ch = raw.byte_at(pos)
-            if ch == 'a':
-                var rest = raw.len - pos
-                if rest >= 4 and raw.byte_at(pos+1) == 'n' and raw.byte_at(pos+2) == 'd':
-                    var after = raw.byte_at(pos+3)
-                    if after == ' ' or after == '\n' or after == '\r':
-                        result.append("&&")
-                        pos += 3
-                        continue
-            if ch == 'o':
-                var rest = raw.len - pos
-                if rest >= 3 and raw.byte_at(pos+1) == 'r':
-                    var after = raw.byte_at(pos+2)
-                    if after == ' ' or after == '\n' or after == '\r':
-                        result.append("||")
-                        pos += 2
-                        continue
-            if ch == 'n':
-                var rest = raw.len - pos
-                if rest >= 4 and raw.byte_at(pos+1) == 'o' and raw.byte_at(pos+2) == 't':
-                    var after = raw.byte_at(pos+3)
-                    if after == ' ' or after == '\n' or after == '\r':
-                        result.append("!")
-                        pos += 3
-                        continue
-            if ch == 'u':
-                var rest = raw.len - pos
-                if rest >= 7 and raw.byte_at(pos+1) == 'n' and raw.byte_at(pos+2) == 's' and raw.byte_at(pos+3) == 'a' and raw.byte_at(pos+4) == 'f' and raw.byte_at(pos+5) == 'e':
-                    if raw.byte_at(pos+6) == ':' or raw.byte_at(pos+6) == ' ':
-                        pos += 6
-                        continue
-            if ch == 'l':
-                var rest = raw.len - pos
-                if rest >= 4 and raw.byte_at(pos+1) == 'e' and raw.byte_at(pos+2) == 't' and raw.byte_at(pos+3) == ' ':
-                    result.append("auto ")
-                    pos += 4
-                    continue
             if ch == '\n':
-                var skip_semi = false
-                var pp: ptr_uint = pos
-                while pp > 0:
-                    pp -= 1
-                    if raw.byte_at(pp) == '\n' or raw.byte_at(pp) == '\r':
-                        break
-                    if raw.byte_at(pp) == ':':
-                        skip_semi = true
-                        break
-                    if raw.byte_at(pp) == '{' or raw.byte_at(pp) == '}' or raw.byte_at(pp) == ';' or raw.byte_at(pp) == '#':
-                        skip_semi = true
-                        break
-                    if raw.byte_at(pp) != ' ':
-                        break
-                var is_blank = true
-                pp = pos
-                while pp > 0:
-                    pp -= 1
-                    if raw.byte_at(pp) == '\n' or raw.byte_at(pp) == '\r':
-                        break
-                    if raw.byte_at(pp) != ' ':
-                        is_blank = false
-                        break
-                if not skip_semi and not is_blank:
-                    result.append(";")
-            result.append(raw.slice(pos, 1))
+                var line = raw.slice(line_start, pos - line_start)
+                this.self_write_indent()
+                unsafe: this.out_buf.append(line)
+                unsafe: this.out_buf.append("\n")
+                line_start = pos + 1
             pos += 1
-        return result.as_str()
+        if line_start < raw.len:
+            var line = raw.slice(line_start, raw.len - line_start)
+            this.self_write_indent()
+            unsafe: this.out_buf.append(line)
+            unsafe: this.out_buf.append("\n")
 
 
     editable function write_function_sig(decl: nodes.Decl) -> void:

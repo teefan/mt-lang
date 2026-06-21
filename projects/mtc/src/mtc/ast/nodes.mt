@@ -97,6 +97,7 @@ public struct Decl:
     is_const_fn: bool
     is_extern: bool
     stmt_count: ptr_uint
+    body_block: ptr[Block]?
     body_src_start: ptr_uint
     body_src_end: ptr_uint
     line: ptr_uint
@@ -125,14 +126,18 @@ public struct VariantArm:
     fields: vec.Vec[Field]
 
 
+public struct Block:
+    stmts: vec.Vec[Stmt]
+
+
 public struct Stmt:
     kind: StmtKind
     name: str
     type_node: ptr[Type]?
-    value_text: str
-    cond_text: str
-    body_text: str
-    else_text: str
+    expr: ptr[Expr]?
+    value: ptr[Expr]?
+    body: ptr[Block]?
+    else_body: ptr[Block]?
     line: ptr_uint
     column: ptr_uint
 
@@ -153,5 +158,6 @@ public struct Expr:
     value_str: str
     left: ptr[Expr]?
     right: ptr[Expr]?
+    args: vec.Vec[ptr[Expr]?]
     line: ptr_uint
     column: ptr_uint
