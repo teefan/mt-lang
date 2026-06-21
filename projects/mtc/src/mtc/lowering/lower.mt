@@ -7,11 +7,12 @@ import mtc.ast.nodes
 
 public struct Lowerer:
     module_name: str
+    source_text: str
 
 
 extending Lowerer:
-    public static function create(module_name: str) -> Lowerer:
-        return Lowerer(module_name = module_name)
+    public static function create(module_name: str, source_text: str) -> Lowerer:
+        return Lowerer(module_name = module_name, source_text = source_text)
 
 
     function pline(line: str) -> void:
@@ -295,12 +296,89 @@ extending Lowerer:
             i += 1
         buf.append(") {")
         this.pline(buf.as_str())
-        if decl.stmt_count == 0:
-            this.pline("}")
+        if decl.body_src_start > 0:
+            var end_pos = decl.body_src_end
+            if end_pos == 0 or end_pos <= decl.body_src_start:
+                end_pos = this.source_text.len
+            var body_raw = this.source_text.slice(decl.body_src_start, end_pos - decl.body_src_start)
+            var translated = this.self_translate_body(body_raw)
+            this.pline(translated)
         else:
             this.pline("    /* body not lowered */")
-            this.pline("}")
+        this.pline("}")
         this.pline("")
+
+
+    function self_translate_body(raw: str) -> str:
+        var result: str_buffer[16384]
+        var pos: ptr_uint = 0
+        while pos < raw.len:
+            let ch = raw.byte_at(pos)
+            if ch == 'a':
+                var rest = raw.len - pos
+                if rest >= 4 and raw.byte_at(pos+1) == 'n' and raw.byte_at(pos+2) == 'd':
+                    var after = raw.byte_at(pos+3)
+                    if after == ' ' or after == '\n' or after == '\r':
+                        result.append("&&")
+                        pos += 3
+                        continue
+            if ch == 'o':
+                var rest = raw.len - pos
+                if rest >= 3 and raw.byte_at(pos+1) == 'r':
+                    var after = raw.byte_at(pos+2)
+                    if after == ' ' or after == '\n' or after == '\r':
+                        result.append("||")
+                        pos += 2
+                        continue
+            if ch == 'n':
+                var rest = raw.len - pos
+                if rest >= 4 and raw.byte_at(pos+1) == 'o' and raw.byte_at(pos+2) == 't':
+                    var after = raw.byte_at(pos+3)
+                    if after == ' ' or after == '\n' or after == '\r':
+                        result.append("!")
+                        pos += 3
+                        continue
+            if ch == 'u':
+                var rest = raw.len - pos
+                if rest >= 7 and raw.byte_at(pos+1) == 'n' and raw.byte_at(pos+2) == 's' and raw.byte_at(pos+3) == 'a' and raw.byte_at(pos+4) == 'f' and raw.byte_at(pos+5) == 'e':
+                    if raw.byte_at(pos+6) == ':' or raw.byte_at(pos+6) == ' ':
+                        pos += 6
+                        continue
+            if ch == 'l':
+                var rest = raw.len - pos
+                if rest >= 4 and raw.byte_at(pos+1) == 'e' and raw.byte_at(pos+2) == 't' and raw.byte_at(pos+3) == ' ':
+                    result.append("auto ")
+                    pos += 4
+                    continue
+            if ch == '\n':
+                var skip_semi = false
+                var pp: ptr_uint = pos
+                while pp > 0:
+                    pp -= 1
+                    if raw.byte_at(pp) == '\n' or raw.byte_at(pp) == '\r':
+                        break
+                    if raw.byte_at(pp) == ':':
+                        skip_semi = true
+                        break
+                    if raw.byte_at(pp) == '{' or raw.byte_at(pp) == '}' or raw.byte_at(pp) == ';' or raw.byte_at(pp) == '#':
+                        skip_semi = true
+                        break
+                    if raw.byte_at(pp) != ' ':
+                        break
+                var is_blank = true
+                pp = pos
+                while pp > 0:
+                    pp -= 1
+                    if raw.byte_at(pp) == '\n' or raw.byte_at(pp) == '\r':
+                        break
+                    if raw.byte_at(pp) != ' ':
+                        is_blank = false
+                        break
+                if not skip_semi and not is_blank:
+                    result.append(";")
+            result.append(raw.slice(pos, 1))
+            pos += 1
+        return result.as_str()
 
 
     editable function write_function_sig(decl: nodes.Decl) -> void:

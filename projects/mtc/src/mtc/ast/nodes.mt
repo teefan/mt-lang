@@ -84,6 +84,8 @@ public struct Decl:
     is_const_fn: bool
     is_extern: bool
     stmt_count: ptr_uint
+    body_src_start: ptr_uint
+    body_src_end: ptr_uint
     line: ptr_uint
     column: ptr_uint
 

@@ -280,12 +280,12 @@ extending Parser:
             this.advance()
             this.skip_bracketed(token.TokenKind.tk_lparen, token.TokenKind.tk_rparen)
             this.skip_newlines()
-            return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+            return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
         if this.check(token.TokenKind.tk_attribute):
             this.advance()
             this.skip_expr_value()
             this.skip_newlines()
-            return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+            return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
         if this.check(token.TokenKind.tk_when):
             this.advance()
             this.skip_expr_value()
@@ -294,7 +294,7 @@ extending Parser:
             this.skip_newlines()
             if this.match_kind(token.TokenKind.tk_indent):
                 this.skip_block_body()
-            return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+            return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
         if this.check(token.TokenKind.tk_inline):
             this.advance()
             if this.check(token.TokenKind.tk_for) or this.check(token.TokenKind.tk_while) or this.check(token.TokenKind.tk_match) or this.check(token.TokenKind.tk_if):
@@ -305,10 +305,10 @@ extending Parser:
                 this.skip_newlines()
                 if this.match_kind(token.TokenKind.tk_indent):
                     this.skip_block_body()
-            return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+            return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
         this.advance()
-        return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = nodes.DeclKind.const_decl, name = "", line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
 
     editable function parse_function_def(is_const: bool, is_async: bool) -> nodes.Decl:
@@ -327,10 +327,16 @@ extending Parser:
         this.expect(token.TokenKind.tk_colon)
         this.skip_newlines()
         this.skip_indent()
+        var body_start: ptr_uint = 0
+        if not this.at_end():
+            body_start = this.peek_tok().src_offset
         var body = this.parse_block()
+        var body_end: ptr_uint = 0
+        if not this.at_end():
+            body_end = this.peek_tok().src_offset
         var count = body.len()
         body.release()
-        return nodes.Decl(kind = nodes.DeclKind.function_def, name = name, params = params, return_text = rtype, is_const_fn = is_const, is_async = is_async, stmt_count = count, line = line, column = col, type_name = "", value_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = nodes.DeclKind.function_def, name = name, params = params, return_text = rtype, is_const_fn = is_const, is_async = is_async, stmt_count = count, line = line, column = col, type_name = "", value_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = body_start, body_src_end = body_end)
 
 
     editable function parse_extern_function() -> nodes.Decl:
@@ -347,7 +353,7 @@ extending Parser:
             rtype = this.parse_type_text()
         if this.check(token.TokenKind.tk_ellipsis):
             this.advance()
-        return nodes.Decl(kind = nodes.DeclKind.extern_function, name = name, params = params, return_text = rtype, is_extern = true, line = line, column = col, type_name = "", value_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = nodes.DeclKind.extern_function, name = name, params = params, return_text = rtype, is_extern = true, line = line, column = col, type_name = "", value_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
 
     editable function parse_foreign_function() -> nodes.Decl:
@@ -365,7 +371,7 @@ extending Parser:
         var mapping = ""
         if this.match_kind(token.TokenKind.tk_equal):
             mapping = this.parse_type_text()
-        return nodes.Decl(kind = nodes.DeclKind.foreign_function, name = name, params = params, return_text = rtype, type_name = mapping, line = line, column = col, value_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = nodes.DeclKind.foreign_function, name = name, params = params, return_text = rtype, type_name = mapping, line = line, column = col, value_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
 
     editable function parse_struct() -> nodes.Decl:
@@ -425,7 +431,7 @@ extending Parser:
                 mval = this.parse_value_text()
             members.push(nodes.EnumMember(name = mname, value_text = mval, line = line, column = col))
         this.skip_dedent()
-        return nodes.Decl(kind = nodes.DeclKind.enum_decl, name = name, type_name = btype, members = members, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = nodes.DeclKind.enum_decl, name = name, type_name = btype, members = members, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
 
     editable function parse_flags() -> nodes.Decl:
@@ -449,7 +455,7 @@ extending Parser:
                 mval = this.parse_value_text()
             members.push(nodes.EnumMember(name = mname, value_text = mval, line = line, column = col))
         this.skip_dedent()
-        return nodes.Decl(kind = nodes.DeclKind.flags_decl, name = name, type_name = btype, members = members, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = nodes.DeclKind.flags_decl, name = name, type_name = btype, members = members, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
 
     editable function parse_variant() -> nodes.Decl:
@@ -479,7 +485,7 @@ extending Parser:
                 this.expect(token.TokenKind.tk_rparen)
             arms.push(nodes.VariantArm(name = aname, fields = afields))
         this.skip_dedent()
-        return nodes.Decl(kind = nodes.DeclKind.variant_decl, name = name, arms = arms, line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), methods = this.empty_methods(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = nodes.DeclKind.variant_decl, name = name, arms = arms, line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
 
     editable function parse_interface() -> nodes.Decl:
@@ -507,9 +513,9 @@ extending Parser:
             var rtype = ""
             if this.match_kind(token.TokenKind.tk_arrow):
                 rtype = this.parse_type_text()
-            methods.push(nodes.Decl(kind = nodes.DeclKind.function_def, name = mname, params = mparams, return_text = rtype, line = line, column = col, type_name = "", value_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls()))
+            methods.push(nodes.Decl(kind = nodes.DeclKind.function_def, name = mname, params = mparams, return_text = rtype, line = line, column = col, type_name = "", value_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0))
         this.skip_dedent()
-        return nodes.Decl(kind = nodes.DeclKind.interface_decl, name = name, methods = methods, line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = nodes.DeclKind.interface_decl, name = name, methods = methods, line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
 
     editable function parse_type_alias() -> nodes.Decl:
@@ -519,7 +525,7 @@ extending Parser:
         let name = this.expect_id()
         this.expect(token.TokenKind.tk_equal)
         let target = this.parse_type_text()
-        return nodes.Decl(kind = nodes.DeclKind.type_alias, name = name, type_name = target, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = nodes.DeclKind.type_alias, name = name, type_name = target, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
 
     editable function parse_opaque() -> nodes.Decl:
@@ -558,7 +564,7 @@ extending Parser:
             let ftype = this.parse_type_text()
             fields.push(nodes.Field(name = fname, type_text = ftype, line = line, column = col))
         this.skip_dedent()
-        return nodes.Decl(kind = nodes.DeclKind.union_decl, name = name, fields = fields, line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = nodes.DeclKind.union_decl, name = name, fields = fields, line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
 
     editable function parse_const_var(is_const: bool) -> nodes.Decl:
@@ -572,16 +578,22 @@ extending Parser:
             this.expect(token.TokenKind.tk_colon)
             this.skip_newlines()
             this.skip_indent()
+            var body_start: ptr_uint = 0
+            if not this.at_end():
+                body_start = this.peek_tok().src_offset
             var body = this.parse_block()
+            var body_end: ptr_uint = 0
+            if not this.at_end():
+                body_end = this.peek_tok().src_offset
             var count = body.len()
             body.release()
-            return nodes.Decl(kind = if is_const: nodes.DeclKind.const_decl else: nodes.DeclKind.var_decl, name = name, type_name = vtype, stmt_count = count, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+            return nodes.Decl(kind = if is_const: nodes.DeclKind.const_decl else: nodes.DeclKind.var_decl, name = name, type_name = vtype, stmt_count = count, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = body_start, body_src_end = body_end)
 
         this.expect(token.TokenKind.tk_colon)
         let vtype = this.parse_type_text()
         if this.match_kind(token.TokenKind.tk_equal):
             this.skip_expr_value()
-        return nodes.Decl(kind = if is_const: nodes.DeclKind.const_decl else: nodes.DeclKind.var_decl, name = name, type_name = vtype, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = if is_const: nodes.DeclKind.const_decl else: nodes.DeclKind.var_decl, name = name, type_name = vtype, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
 
     editable function parse_event() -> nodes.Decl:
@@ -593,7 +605,7 @@ extending Parser:
             if this.check(token.TokenKind.tk_integer):
                 this.advance()
             this.expect(token.TokenKind.tk_rbracket)
-        return nodes.Decl(kind = nodes.DeclKind.event_decl, name = name, line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = nodes.DeclKind.event_decl, name = name, line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
 
     editable function parse_extending() -> nodes.Decl:
@@ -625,9 +637,9 @@ extending Parser:
             this.skip_newlines()
             this.skip_indent()
             this.skip_block_body()
-            methods.push(nodes.Decl(kind = nodes.DeclKind.function_def, name = mname, return_text = rtype, line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls()))
+            methods.push(nodes.Decl(kind = nodes.DeclKind.function_def, name = mname, return_text = rtype, line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0))
         this.skip_dedent()
-        return nodes.Decl(kind = nodes.DeclKind.extending_block, name = type_name, methods = methods, line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), impl_list = this.empty_impls())
+        return nodes.Decl(kind = nodes.DeclKind.extending_block, name = type_name, methods = methods, line = line, column = col, type_name = "", value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), impl_list = this.empty_impls(), body_src_start = 0, body_src_end = 0)
 
 
     editable function parse_value_text() -> str:

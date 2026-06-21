@@ -113,7 +113,7 @@ function lower_file(file_path: str) -> int:
             var ast = p.parse()
 
             var module_name = self_module_basename(file_path)
-            var lr = lower.Lowerer.create(module_name)
+            var lr = lower.Lowerer.create(module_name, source_str)
             lr.lower_module(ast)
             return 0
 
