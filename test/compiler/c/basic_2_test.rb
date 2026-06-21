@@ -101,10 +101,10 @@ function main() -> int:
         # module std.c.sample
         external
         struct Color:
-            r: byte
-            g: byte
-            b: byte
-            a: byte
+            r: ubyte
+            g: ubyte
+            b: ubyte
+            a: ubyte
 
         const WHITE: Color = Color(r = 255, g = 255, b = 255, a = 255)
       MT
