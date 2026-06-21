@@ -738,28 +738,28 @@ function main() -&gt; int:
 
     ## ── Concurrency ─────────────────────────────────────────────────────
     ## parallel for: data-parallel loop dispatched across CPU cores
-    var positions = array[<span class="syn-type">float</span>, <span class="syn-num">4</span>](<span class="syn-num">0.0</span>, <span class="syn-num">1.0</span>, <span class="syn-num">2.0</span>, <span class="syn-num">3.0</span>)
-    var velocities = array[<span class="syn-type">float</span>, <span class="syn-num">4</span>](<span class="syn-num">0.1</span>, <span class="syn-num">0.2</span>, <span class="syn-num">0.3</span>, <span class="syn-num">0.4</span>)
-    let dt: <span class="syn-type">float</span> = <span class="syn-num">0.016</span>
-    <span class="syn-kw">parallel for</span> i <span class="syn-kw">in</span> <span class="syn-num">0</span>..<span class="syn-num">4</span>:
+    var positions = array[float, 4](0.0, 1.0, 2.0, 3.0)
+    var velocities = array[float, 4](0.1, 0.2, 0.3, 0.4)
+    let dt: float = 0.016
+    parallel for i in 0..4:
         positions[i] += velocities[i] * dt
 
     ## parallel: block for structured fork-join
-    var pa: <span class="syn-type">int</span> = <span class="syn-num">0</span>
-    var pb: <span class="syn-type">int</span> = <span class="syn-num">0</span>
-    <span class="syn-kw">parallel</span>:
-        pa = <span class="syn-num">42</span>
-        pb = <span class="syn-num">99</span>
+    var pa: int = 0
+    var pb: int = 0
+    parallel:
+        pa = 42
+        pb = 99
 
     ## atomic[T]: lock-free concurrent access
-    var counter: <span class="syn-type">atomic</span>[<span class="syn-type">int</span>]
-    counter.store(<span class="syn-num">0</span>)
-    <span class="syn-kw">let</span> prev = counter.add(<span class="syn-num">1</span>)
+    var counter: atomic[int]
+    counter.store(0)
+    let prev = counter.add(1)
 
     ## detach + gather: detached concurrency with explicit join
-    <span class="syn-kw">let</span> a = <span class="syn-kw">detach</span> load_entity(<span class="syn-num">100</span>)
-    <span class="syn-kw">let</span> b = <span class="syn-kw">detach</span> load_entity(<span class="syn-num">200</span>)
-    <span class="syn-kw">gather</span> a, b
+    let a = detach load_entity(100)
+    let b = detach load_entity(200)
+    gather a, b
 
     ## static_assert: compile-time assertions
     static_assert(size_of(int) == 4, "expected 32-bit int")
@@ -1187,6 +1187,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)</code></pre>
       <tr><td><code>proc(params...) -&gt; R</code></td><td>Closure type (value captures)</td></tr>
       <tr><td><code>SoA[T, N]</code></td><td>Structure-of-Arrays: fields become separate arrays</td></tr>
       <tr><td><code>dyn[Interface]</code></td><td>Runtime interface value (fat pointer)</td></tr>
+      <tr><td><code>atomic[T]</code></td><td>Atomic value for lock-free concurrent access</td></tr>
       <tr><td><code>(T, U)</code></td><td>Tuple type</td></tr>
     </table>
   </div>
@@ -1653,7 +1654,7 @@ let sized = name[32]</code></pre>
 <pre><code>inline for field in fields_of(Point):
     let sz = size_of(field.type)
     let off = offset_of(Point, field)
-    emit("## field ", field.name, " size=", sz, " offset=", off)</code></pre>
+    static_assert(sz > 0, "field has non-zero size")</code></pre>
 </div>
 </section>
 
@@ -1791,7 +1792,7 @@ let r = aio.result(task)</code></pre>
   <p>Dispatches loop iterations across CPU cores. Each iteration writes to its own index range &mdash; the bread and butter of data-oriented game programming.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-<pre><code><span class="syn-kw">parallel for</span> i <span class="syn-kw">in</span> <span class="syn-num">0</span>..entity_count:
+<pre><code>parallel for i in 0..entity_count:
     positions[i] += velocities[i] * dt</code></pre>
 </div>
   <p>Rules: range iteration only (<code>0..N</code>). No <code>break</code>, <code>continue</code>, <code>return</code>, <code>defer</code>, or nested <code>parallel for</code> in the body. <code>ref[T]</code> captures rejected.</p>
@@ -1800,7 +1801,7 @@ let r = aio.result(task)</code></pre>
   <p>Run heterogeneous work concurrently. Each statement runs on its own OS thread. The parent blocks until all complete.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-<pre><code><span class="syn-kw">parallel</span>:
+<pre><code>parallel:
     load_textures(path)
     load_sounds(path)</code></pre>
 </div>
@@ -1810,12 +1811,12 @@ let r = aio.result(task)</code></pre>
   <p><code class="code-inline">atomic[T]</code> provides lock-free concurrent access to integer values. <code>T</code> must be a primitive integer or <code>bool</code>.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-<pre><code><span class="syn-kw">var</span> counter: <span class="syn-type">atomic</span>[<span class="syn-type">int</span>]
-counter.store(<span class="syn-num">0</span>)
-<span class="syn-kw">let</span> prev = counter.add(<span class="syn-num">1</span>)     <span class="syn-cmt"># returns previous value</span>
-<span class="syn-kw">let</span> value = counter.load()
-counter.sub(<span class="syn-num">1</span>)
-<span class="syn-kw">let</span> old = counter.exchange(<span class="syn-num">42</span>)</code></pre>
+<pre><code>var counter: atomic[int]
+counter.store(0)
+let prev = counter.add(1)     # returns previous value
+let value = counter.load()
+counter.sub(1)
+let old = counter.exchange(42)</code></pre>
 </div>
 
   <div class="table-wrap">
@@ -1834,10 +1835,10 @@ counter.sub(<span class="syn-num">1</span>)
   <p><code class="code-inline">detach</code> spawns work on a separate thread and returns a <code>Handle</code>. <code>gather</code> blocks until all handles complete.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-<pre><code><span class="syn-kw">let</span> a = <span class="syn-kw">detach</span> load_textures(path)
-<span class="syn-kw">let</span> b = <span class="syn-kw">detach</span> load_sounds(path)
+<pre><code>let a = detach load_textures(path)
+let b = detach load_sounds(path)
 process_other_stuff()
-<span class="syn-kw">gather</span> a, b</code></pre>
+gather a, b</code></pre>
 </div>
   <p>Rules: <code>detach</code> returns a <code>Handle</code> — must be bound with <code>let</code> or <code>var</code>. Currently supports global function calls with no captured local variables. <code>gather</code> joins handles in order. <code>ref[T]</code> captures rejected.</p>
 
