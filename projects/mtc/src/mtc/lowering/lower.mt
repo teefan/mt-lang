@@ -18,15 +18,76 @@ extending Lowerer:
         stdio.print_line(line)
 
 
+    function write_ctype(buf: ptr[str_buffer[512]], mt_type: str) -> void:
+        if mt_type == "bool":
+            unsafe: read(buf).append("bool")
+        else if mt_type == "int":
+            unsafe: read(buf).append("int32_t")
+        else if mt_type == "uint":
+            unsafe: read(buf).append("uint32_t")
+        else if mt_type == "byte":
+            unsafe: read(buf).append("int8_t")
+        else if mt_type == "ubyte":
+            unsafe: read(buf).append("uint8_t")
+        else if mt_type == "short":
+            unsafe: read(buf).append("int16_t")
+        else if mt_type == "ushort":
+            unsafe: read(buf).append("uint16_t")
+        else if mt_type == "long":
+            unsafe: read(buf).append("int64_t")
+        else if mt_type == "ulong":
+            unsafe: read(buf).append("uint64_t")
+        else if mt_type == "float":
+            unsafe: read(buf).append("float")
+        else if mt_type == "double":
+            unsafe: read(buf).append("double")
+        else if mt_type == "char":
+            unsafe: read(buf).append("char")
+        else if mt_type == "void":
+            unsafe: read(buf).append("void")
+        else if mt_type == "str":
+            unsafe: read(buf).append("mt_str")
+        else if mt_type == "cstr":
+            unsafe: read(buf).append("const char*")
+        else if mt_type == "ptr_int":
+            unsafe: read(buf).append("intptr_t")
+        else if mt_type == "ptr_uint":
+            unsafe: read(buf).append("uintptr_t")
+        else if mt_type == "ptr":
+            unsafe: read(buf).append("void*")
+        else if mt_type == "" or mt_type == "?":
+            pass
+        else:
+            var i: ptr_uint = 0
+            while i < mt_type.len:
+                let ch = mt_type.byte_at(i)
+                if ch == '.':
+                    unsafe: read(buf).append("_")
+                else:
+                    unsafe: read(buf).append(mt_type.slice(i, 1))
+                i += 1
+
+
+    function write_tname(buf: ptr[str_buffer[512]], type_name: str) -> void:
+        if type_name == "":
+            return
+        if this.module_name != "":
+            unsafe: read(buf).append(this.module_name)
+            unsafe: read(buf).append("_")
+        unsafe: read(buf).append(type_name)
+
+
+    function write_fname(buf: ptr[str_buffer[512]], func_name: str, receiver_type: str) -> void:
+        if this.module_name != "":
+            unsafe: read(buf).append(this.module_name)
+            unsafe: read(buf).append("_")
+        if receiver_type != "":
+            unsafe: read(buf).append(receiver_type)
+            unsafe: read(buf).append("_")
+        unsafe: read(buf).append(func_name)
+
+
     editable function write_header() -> void:
-        var dbg: str_buffer[512]
-        dbg.assign("// module: ")
-        dbg.append(this.module_name)
-        dbg.append(" len=")
-        var len_buf: str_buffer[32]
-        len_buf.assign(f"#{this.module_name.len}")
-        dbg.append(len_buf.as_str())
-        this.pline(dbg.as_str())
         this.pline("#include <stdbool.h>")
         this.pline("#include <stdint.h>")
         this.pline("#include <string.h>")
@@ -39,7 +100,7 @@ extending Lowerer:
         this.pline("")
 
 
-    public     editable function lower_module(source: nodes.SourceFile) -> void:
+    public editable function lower_module(source: nodes.SourceFile) -> void:
         this.write_header()
 
         var i: ptr_uint = 0
@@ -47,7 +108,7 @@ extending Lowerer:
             let d = source.decls.get(i) else:
                 break
             let decl = unsafe: read(d)
-            if decl.name == "":
+            if not this.self_has_output(decl):
                 continue
             this.write_forward_decl(decl)
             i += 1
@@ -58,42 +119,40 @@ extending Lowerer:
             let d = source.decls.get(i) else:
                 break
             let decl = unsafe: read(d)
-            if decl.name == "":
+            if not this.self_has_output(decl):
                 continue
             this.write_decl(decl)
             i += 1
 
 
-    editable function write_forward_decl(decl: nodes.Decl) -> void:
-        if decl.kind == nodes.DeclKind.function_def or decl.kind == nodes.DeclKind.const_decl or decl.kind == nodes.DeclKind.extern_function:
-            return
+    function self_has_output(decl: nodes.Decl) -> bool:
         if decl.name == "":
-            return
-        if decl.kind == nodes.DeclKind.const_decl and decl.type_name == "" and decl.value_text == "" and decl.stmt_count == 0:
-            return
-        if decl.kind == nodes.DeclKind.enum_decl or decl.kind == nodes.DeclKind.flags_decl:
-            var buf: str_buffer[512]
-            buf.assign("typedef ")
-            this.self_ctype_into(ptr_of(buf), decl.type_name)
-            buf.append(" ")
-            this.self_tname_into(ptr_of(buf), decl.name)
-            buf.append(";")
-            this.pline(buf.as_str())
-        else if decl.kind == nodes.DeclKind.struct_decl or decl.kind == nodes.DeclKind.union_decl or decl.kind == nodes.DeclKind.opaque_decl:
+            return false
+        if decl.kind == nodes.DeclKind.const_decl and decl.stmt_count == 0 and decl.type_name == "" and decl.value_text == "":
+            return false
+        return true
+
+
+    editable function write_forward_decl(decl: nodes.Decl) -> void:
+        if decl.kind == nodes.DeclKind.struct_decl or decl.kind == nodes.DeclKind.union_decl or decl.kind == nodes.DeclKind.opaque_decl:
             var buf: str_buffer[512]
             buf.assign("typedef struct ")
-            this.self_tname_into(ptr_of(buf), decl.name)
+            this.write_tname(ptr_of(buf), decl.name)
             buf.append(" ")
-            this.self_tname_into(ptr_of(buf), decl.name)
+            this.write_tname(ptr_of(buf), decl.name)
+            buf.append(";")
+            this.pline(buf.as_str())
+        else if decl.kind == nodes.DeclKind.enum_decl or decl.kind == nodes.DeclKind.flags_decl:
+            var buf: str_buffer[512]
+            buf.assign("typedef ")
+            this.write_ctype(ptr_of(buf), decl.type_name)
+            buf.append(" ")
+            this.write_tname(ptr_of(buf), decl.name)
             buf.append(";")
             this.pline(buf.as_str())
 
 
     editable function write_decl(decl: nodes.Decl) -> void:
-        if decl.name == "":
-            return
-        if decl.kind == nodes.DeclKind.const_decl and decl.type_name == "" and decl.value_text == "" and decl.stmt_count == 0:
-            return
         if decl.kind == nodes.DeclKind.struct_decl:
             this.write_struct(decl)
         else if decl.kind == nodes.DeclKind.enum_decl:
@@ -124,7 +183,7 @@ extending Lowerer:
             buf.assign("typedef union ")
         else:
             buf.assign("typedef struct ")
-        this.self_tname_into(ptr_of(buf), decl.name)
+        this.write_tname(ptr_of(buf), decl.name)
         buf.append(" {")
         this.pline(buf.as_str())
         var i: ptr_uint = 0
@@ -133,14 +192,14 @@ extending Lowerer:
                 break
             let field = unsafe: read(f)
             buf.assign("  ")
-            this.self_ctype_into(ptr_of(buf), field.type_text)
+            this.write_ctype(ptr_of(buf), field.type_text)
             buf.append(" ")
             buf.append(field.name)
             buf.append(";")
             this.pline(buf.as_str())
             i += 1
         buf.assign("} ")
-        this.self_tname_into(ptr_of(buf), decl.name)
+        this.write_tname(ptr_of(buf), decl.name)
         buf.append(";")
         this.pline(buf.as_str())
         this.pline("")
@@ -155,7 +214,7 @@ extending Lowerer:
             let member = unsafe: read(m)
             var buf: str_buffer[512]
             buf.assign("  ")
-            this.self_tname_into(ptr_of(buf), decl.name)
+            this.write_tname(ptr_of(buf), decl.name)
             buf.append("_")
             buf.append(member.name)
             if member.value_text != "":
@@ -171,9 +230,9 @@ extending Lowerer:
     editable function write_type_alias(decl: nodes.Decl) -> void:
         var buf: str_buffer[512]
         buf.assign("typedef ")
-        this.self_ctype_into(ptr_of(buf), decl.type_name)
+        this.write_ctype(ptr_of(buf), decl.type_name)
         buf.append(" ")
-        this.self_tname_into(ptr_of(buf), decl.name)
+        this.write_tname(ptr_of(buf), decl.name)
         buf.append(";")
         this.pline(buf.as_str())
         this.pline("")
@@ -183,9 +242,9 @@ extending Lowerer:
         var buf: str_buffer[512]
         if decl.kind == nodes.DeclKind.const_decl:
             buf.append("static ")
-        this.self_ctype_into(ptr_of(buf), decl.return_text)
+        this.write_ctype(ptr_of(buf), decl.return_text)
         buf.append(" ")
-        this.self_fname_into(ptr_of(buf), decl.name, "")
+        this.write_fname(ptr_of(buf), decl.name, "")
         buf.append("(")
         var i: ptr_uint = 0
         while i < decl.params.len():
@@ -194,7 +253,7 @@ extending Lowerer:
             let param = unsafe: read(p)
             if i > 0:
                 buf.append(", ")
-            this.self_ctype_into(ptr_of(buf), param.type_text)
+            this.write_ctype(ptr_of(buf), param.type_text)
             buf.append(" ")
             buf.append(param.name)
             i += 1
@@ -216,9 +275,9 @@ extending Lowerer:
             buf.assign("static const ")
         else:
             buf.assign("static ")
-        this.self_ctype_into(ptr_of(buf), decl.type_name)
+        this.write_ctype(ptr_of(buf), decl.type_name)
         buf.append(" ")
-        this.self_fname_into(ptr_of(buf), decl.name, "")
+        this.write_fname(ptr_of(buf), decl.name, "")
         if decl.value_text != "":
             buf.append(" = ")
             buf.append(decl.value_text)
@@ -229,9 +288,9 @@ extending Lowerer:
     editable function write_var(decl: nodes.Decl) -> void:
         var buf: str_buffer[512]
         buf.assign("static ")
-        this.self_ctype_into(ptr_of(buf), decl.type_name)
+        this.write_ctype(ptr_of(buf), decl.type_name)
         buf.append(" ")
-        this.self_fname_into(ptr_of(buf), decl.name, "")
+        this.write_fname(ptr_of(buf), decl.name, "")
         if decl.value_text != "":
             buf.append(" = ")
             buf.append(decl.value_text)
@@ -247,9 +306,9 @@ extending Lowerer:
             let method = unsafe: read(m)
             var buf: str_buffer[512]
             buf.assign("static ")
-            this.self_ctype_into(ptr_of(buf), method.return_text)
+            this.write_ctype(ptr_of(buf), method.return_text)
             buf.append(" ")
-            this.self_fname_into(ptr_of(buf), method.name, decl.name)
+            this.write_fname(ptr_of(buf), method.name, decl.name)
             buf.append("(")
             var ji: ptr_uint = 0
             while ji < method.params.len():
@@ -258,7 +317,7 @@ extending Lowerer:
                 let param = unsafe: read(p)
                 if ji > 0:
                     buf.append(", ")
-                this.self_ctype_into(ptr_of(buf), param.type_text)
+                this.write_ctype(ptr_of(buf), param.type_text)
                 buf.append(" ")
                 buf.append(param.name)
                 ji += 1
@@ -266,74 +325,3 @@ extending Lowerer:
             this.pline(buf.as_str())
             i += 1
         this.pline("")
-
-
-    function self_ctype_into(buf_ptr: ptr[str_buffer[512]], mt_type: str) -> void:
-        var buf = unsafe: read(buf_ptr)
-        if mt_type == "bool":
-            buf.append("bool")
-        else if mt_type == "int":
-            buf.append("int32_t")
-        else if mt_type == "uint":
-            buf.append("uint32_t")
-        else if mt_type == "byte":
-            buf.append("int8_t")
-        else if mt_type == "ubyte":
-            buf.append("uint8_t")
-        else if mt_type == "short":
-            buf.append("int16_t")
-        else if mt_type == "ushort":
-            buf.append("uint16_t")
-        else if mt_type == "long":
-            buf.append("int64_t")
-        else if mt_type == "ulong":
-            buf.append("uint64_t")
-        else if mt_type == "float":
-            buf.append("float")
-        else if mt_type == "double":
-            buf.append("double")
-        else if mt_type == "char":
-            buf.append("char")
-        else if mt_type == "void":
-            buf.append("void")
-        else if mt_type == "str":
-            buf.append("mt_str")
-        else if mt_type == "cstr":
-            buf.append("const char*")
-        else if mt_type == "ptr_int":
-            buf.append("intptr_t")
-        else if mt_type == "ptr_uint":
-            buf.append("uintptr_t")
-        else if mt_type == "ptr":
-            buf.append("void*")
-        else if mt_type == "" or mt_type == "?":
-            pass
-        else:
-            var i: ptr_uint = 0
-            while i < mt_type.len:
-                let ch = mt_type.byte_at(i)
-                if ch == '.':
-                    buf.append("_")
-                else:
-                    buf.append(mt_type.slice(i, 1))
-                i += 1
-
-
-    function self_tname_into(buf_ptr: ptr[str_buffer[512]], type_name: str) -> void:
-        var buf = unsafe: read(buf_ptr)
-        var mn = this.module_name
-        if mn != "":
-            buf.append(mn)
-            buf.append("_")
-        buf.append(type_name)
-
-
-    function self_fname_into(buf_ptr: ptr[str_buffer[512]], func_name: str, receiver_type: str) -> void:
-        var buf = unsafe: read(buf_ptr)
-        if this.module_name != "":
-            buf.append(this.module_name)
-            buf.append("_")
-        if receiver_type != "":
-            buf.append(receiver_type)
-            buf.append("_")
-        buf.append(func_name)
