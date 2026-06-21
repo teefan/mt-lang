@@ -17,16 +17,30 @@ const GRAMMAR_MAP = {
   "source.sql": "sql.tmLanguage.json",
 };
 
+const SCOPE_MAP = {
+  keyword:      "keyword.control.milk-tea",
+  variable:     "variable.other.milk-tea",
+  parameter:    "variable.other.milk-tea",
+  property:     "variable.other.milk-tea",
+  function:     "entity.name.function.milk-tea",
+  method:       "support.function.milk-tea",
+  type:         "entity.name.type.milk-tea",
+  namespace:    "entity.name.type.milk-tea",
+  number:       "constant.numeric.milk-tea",
+  string:       "string.quoted.milk-tea",
+  operator:     "keyword.operator.arithmetic.milk-tea",
+  enumMember:   "constant.other.enum.milk-tea",
+  macro:        "entity.name.annotation.milk-tea",
+  decorator:    "entity.name.annotation.milk-tea",
+  comment:      "comment.line.milk-tea",
+};
+
 const MODIFIER_STYLES = {
   declaration: { boldOverride: true },
-  readonly: { },
   static: { italicOverride: true },
   deprecated: { strikethrough: true },
   abstract: { italicOverride: true },
-  defaultLibrary: { },
   async: { italicOverride: true },
-  modification: { },
-  documentation: { },
 };
 
 function parseArgs() {
@@ -119,29 +133,12 @@ function buildColorResolver(theme) {
 function buildSemanticOverlay(entries, theme) {
   if (!entries || entries.length === 0) return null;
   const themeSemColors = (theme && theme.semanticTokenColors) || {};
-  const themeTokenColors = buildColorResolver(theme);
-  const scopeMap = {
-    keyword:      "keyword.control.milk-tea",
-    variable:     "variable.other.milk-tea",
-    parameter:    "variable.other.milk-tea",
-    property:     "variable.other.milk-tea",
-    function:     "entity.name.function.milk-tea",
-    method:       "support.function.milk-tea",
-    type:         "entity.name.type.milk-tea",
-    namespace:    "entity.name.type.milk-tea",
-    number:       "constant.numeric.milk-tea",
-    string:       "string.quoted.milk-tea",
-    operator:     "keyword.operator.arithmetic.milk-tea",
-    enumMember:   "constant.other.enum.milk-tea",
-    macro:        "entity.name.annotation.milk-tea",
-    decorator:    "entity.name.annotation.milk-tea",
-    comment:      "comment.line.milk-tea",
-  };
+  const resolveTextMate = buildColorResolver(theme);
   const overlay = [];
   for (const entry of entries) {
     const lineNum = entry.line;
     if (!overlay[lineNum]) overlay[lineNum] = {};
-    const fg = themeSemColors[entry.tokenType] || deriveSemanticColor(entry, themeTokenColors, scopeMap);
+    const fg = themeSemColors[entry.tokenType] || deriveSemanticColor(entry, resolveTextMate);
     if (!fg) continue;
     const result = { foreground: fg };
     for (const mod of entry.modifiers || []) {
@@ -158,8 +155,8 @@ function buildSemanticOverlay(entries, theme) {
   return overlay;
 }
 
-function deriveSemanticColor(entry, resolveTextMate, scopeMap) {
-  let scope = scopeMap[entry.tokenType];
+function deriveSemanticColor(entry, resolveTextMate) {
+  let scope = SCOPE_MAP[entry.tokenType];
   if (!scope) return null;
   const mods = entry.modifiers || [];
   if (entry.tokenType === "variable" && mods.includes("readonly")) {
@@ -210,20 +207,10 @@ class StyleRegistry {
 
   _buildLabelMap(semanticEntries, theme, resolveTextMate) {
     const themeSemColors = (theme && theme.semanticTokenColors) || {};
-    const scopeMap = {
-      keyword: "keyword.control.milk-tea", variable: "variable.other.milk-tea",
-      parameter: "variable.other.milk-tea", property: "variable.other.milk-tea",
-      function: "entity.name.function.milk-tea", method: "support.function.milk-tea",
-      type: "entity.name.type.milk-tea", namespace: "entity.name.type.milk-tea",
-      number: "constant.numeric.milk-tea", string: "string.quoted.milk-tea",
-      operator: "keyword.operator.arithmetic.milk-tea", enumMember: "constant.other.enum.milk-tea",
-      macro: "entity.name.annotation.milk-tea", decorator: "entity.name.annotation.milk-tea",
-      comment: "comment.line.milk-tea",
-    };
     for (const entry of semanticEntries || []) {
       let fg = themeSemColors[entry.tokenType];
       if (!fg && resolveTextMate) {
-        let scope = scopeMap[entry.tokenType];
+        let scope = SCOPE_MAP[entry.tokenType];
         if (scope && entry.tokenType === "variable" && (entry.modifiers || []).includes("readonly")) {
           scope = "variable.other.constant.milk-tea";
         }
@@ -252,14 +239,10 @@ class StyleRegistry {
     const parts = scope.replace(/\.milk-tea$/, "").split(".");
     if (parts[0] === "comment") return "comment";
     if (parts[0] === "string") return "string";
-    if (parts[0] === "constant") {
-      return parts[1] === "numeric" ? "number" : parts.slice(0, 2).join("-");
-    }
-    if (parts[0] === "keyword") return parts.slice(0, 2).join("-");
-    if (parts[0] === "storage") return parts.slice(0, 2).join("-");
-    if (parts[0] === "entity") return parts.slice(1, 2).join("-") || parts[0];
+    if (parts[0] === "constant") return parts[1] === "numeric" ? "number" : parts.slice(0, 2).join("-");
+    if (parts[0] === "keyword" || parts[0] === "storage") return parts.slice(0, 2).join("-");
     if (parts[0] === "variable" || parts[0] === "support") return parts.slice(0, 2).join("-");
-    return parts.length <= 2 ? parts.join("-") : parts.slice(0, 2).join("-");
+    return parts.slice(0, 2).join("-");
   }
 
   _cssSafe(label) {
@@ -412,13 +395,16 @@ async function main() {
 
   let ruleStack = null;
   const htmlLines = [];
+  const digitCount = String(lines.length).length;
 
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const line = lines[lineIdx];
     const result = grammar.tokenizeLine(line, ruleStack);
     ruleStack = result.ruleStack;
     const semanticLine = semanticOverlay ? semanticOverlay[lineIdx] : null;
-    htmlLines.push(buildLineHtml(line, result.tokens, resolveTextMate, semanticLine, styles));
+    const lineHtml = buildLineHtml(line, result.tokens, resolveTextMate, semanticLine, styles);
+    const num = String(lineIdx + 1).padStart(digitCount);
+    htmlLines.push(`<span class="line" id="L${lineIdx + 1}"><span class="ln">${num}</span>${lineHtml}</span>`);
   }
 
   let titleExtra = "";
@@ -427,6 +413,8 @@ async function main() {
   } else if (hadSemantic) {
     titleExtra = " (semantic)";
   }
+
+  const padW = digitCount + 2;
 
   const html = `<!DOCTYPE html>
 <html>
@@ -442,7 +430,18 @@ body {
   line-height: 1.5;
   margin: 0;
   padding: 16px;
+}
+.line {
+  display: block;
   white-space: pre;
+}
+.ln {
+  display: inline-block;
+  width: ${padW}ch;
+  margin-right: 1ch;
+  text-align: right;
+  color: ${colors["editorLineNumber.foreground"] || "#6e7681"};
+  user-select: none;
 }
 ${styles.getCSS()}
 </style>

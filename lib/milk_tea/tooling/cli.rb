@@ -971,22 +971,17 @@ module MilkTea
         source = File.read(input_path)
         lines = source.split("\n", -1)
         semantic_result[:entries].each do |entry|
-          sc = entry[:startChar] || entry["startChar"] || 0
-          len = entry[:length] || entry["length"] || 0
-          sc = 0 if sc.negative?
-          line_text = lines[entry[:line] || entry["line"]]
-          unless line_text
+          byte_start = entry[:startChar]
+          byte_len = entry[:length]
+          line_text = lines[entry[:line]]
+          unless line_text && byte_start && byte_len
             entry[:startChar] = 0
             entry[:length] = 0
             next
           end
-          byte_start = sc
           char_start = line_text.byteslice(0, byte_start).length
-          byte_region = line_text.byteslice(byte_start, len)
-          char_length = byte_region.length
-          char_start = 0 if char_start.negative? || char_start > line_text.length
+          char_length = line_text.byteslice(byte_start, byte_len).length
           char_length = line_text.length - char_start if char_start + char_length > line_text.length
-          char_length = 0 if char_length.negative?
           entry[:startChar] = char_start
           entry[:length] = char_length
         end
