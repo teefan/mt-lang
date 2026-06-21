@@ -2,6 +2,7 @@
 
 require "json"
 require "pp"
+require "socket"
 require "tempfile"
 
 module MilkTea
@@ -845,15 +846,11 @@ module MilkTea
     end
 
     def docs_command
-      doc_root = nil
       port = nil
       open_flag = false
 
       while (arg = @argv.first)
         case arg
-        when "--root", "-r"
-          @argv.shift
-          doc_root = @argv.shift
         when "--port", "-p"
           @argv.shift
           port = @argv.shift.to_i
@@ -866,32 +863,37 @@ module MilkTea
         end
       end
 
-      doc_root ||= find_default_docs_root
-      unless doc_root && File.directory?(doc_root)
-        @err.puts("docs: reference documentation not found at #{doc_root || '(none)'}")
-        @err.puts("  use --root PATH to specify a custom directory")
-        @err.puts("  generate the reference site into docs/reference/ and try again")
-        return 1
+      port = resolve_docs_port(port)
+
+      DocsApp.set :port, port
+      DocsApp.set :bind, "127.0.0.1"
+      DocsApp.set :environment, :production
+      DocsApp.set :server, :puma
+
+      url = "http://127.0.0.1:#{port}/"
+
+      @out.puts("Serving Milk Tea docs at #{url}")
+      @out.puts("Press Ctrl+C to stop.")
+
+      if open_flag
+        open_browser(url)
       end
 
-      begin
-        server = DocsServer.new(root_dir: doc_root, port:)
-        server.start
-        server_url = server.url
-
-        @out.puts("Serving Milk Tea reference at #{server_url}")
-        @out.puts("Press Ctrl+C to stop.")
-
-        if open_flag
-          open_browser(server_url)
-        end
-
-        server.join
-      rescue Interrupt
-        nil
-      end
-
+      DocsApp.run!
       0
+    rescue Interrupt
+      0
+    end
+
+    def resolve_docs_port(preferred)
+      return preferred if preferred
+
+      server = TCPServer.new("127.0.0.1", 0)
+      port = server.addr[1]
+      server.close
+      port
+    rescue StandardError
+      4567
     end
 
     def snapshot_command
@@ -1653,12 +1655,12 @@ module MilkTea
       "docs"            => <<~HELP,
         Usage: mtc docs [OPTIONS]
 
-          Start a local HTTP server serving the Milk Tea language reference.
+          Start a local documentation server for Milk Tea with language reference
+          and standard library exploration.
 
           Options:
-            --open, -o            Open the reference in your default browser.
+            --open, -o            Open the docs in your default browser.
             --port, -p PORT       Listen on a specific port (default: random).
-            --root, -r PATH       Serve a custom directory instead of the bundled reference.
         HELP
       "snapshot"        => <<~HELP,
         Usage: mtc snapshot INPUT.mt [OPTIONS]

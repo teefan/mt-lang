@@ -29,12 +29,11 @@ Gem::Specification.new do |spec|
     ]
     gem_files += Dir.glob("lib/**/*.rb").to_a
     gem_files += Dir.glob("lib/**/*.html").to_a
+    gem_files += Dir.glob("lib/**/*.erb").to_a
+    gem_files += Dir.glob("lib/**/public/**/*").to_a
     gem_files += Dir.glob("bin/*").to_a
-    gem_files += Dir.glob("std/**/*").to_a
-    gem_files += Dir.glob("bindings/imported/**/*").to_a
-    gem_files += Dir.glob("bindings/vscode/scripts/snapshot.js").to_a
-    gem_files += Dir.glob("bindings/vscode/themes/*.json").to_a
-    gem_files += Dir.glob("bindings/vscode/syntaxes/*.json").to_a
+    gem_files += Dir.glob("docs/reference/**/*").to_a
+
     gem_files
   end
 
@@ -46,6 +45,9 @@ Gem::Specification.new do |spec|
   spec.add_dependency "fiddle"
   spec.add_dependency "racc",     "~> 1.8"
   spec.add_dependency "tomlrb",   "~> 2.0", ">= 2.0.4"
+  spec.add_dependency "sinatra",  "~> 4.0"
+  spec.add_dependency "rackup",   "~> 2.0"
+  spec.add_dependency "puma",     "~> 6.0"
 
   spec.post_install_message = <<~MSG
     Milk Tea #{MilkTea::VERSION} installed!
