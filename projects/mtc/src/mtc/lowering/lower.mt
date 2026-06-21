@@ -79,6 +79,8 @@ extending Lowerer:
             unsafe: read(buf).append("void*")
         else if mt_type == "atomic":
             unsafe: read(buf).append("void*")
+        else if mt_type == "str_buffer":
+            unsafe: read(buf).append("mt_str")
         else if mt_type == "vec2" or mt_type == "vec3" or mt_type == "vec4":
             unsafe: read(buf).append("float")
         else if mt_type == "ivec2" or mt_type == "ivec3" or mt_type == "ivec4":
@@ -87,8 +89,6 @@ extending Lowerer:
             unsafe: read(buf).append("float")
         else if mt_type == "quat":
             unsafe: read(buf).append("float")
-        else if mt_type == "str_buffer":
-            unsafe: read(buf).append("mt_str")
         else if mt_type == "" or mt_type == "?":
             pass
         else:
@@ -277,8 +277,6 @@ extending Lowerer:
     editable function write_function(decl: nodes.Decl) -> void:
         var buf: str_buffer[512]
         if decl.kind == nodes.DeclKind.const_decl:
-            buf.append("static ")
-        else if decl.is_async:
             buf.append("static ")
         this.write_ctype(ptr_of(buf), decl.return_text)
         buf.append(" ")

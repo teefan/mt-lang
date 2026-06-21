@@ -26,7 +26,7 @@ projects/mtc/
         │   ├── checker.mt               # ~260 lines — 3-pass check: imports → register → validate
         │   └── loader.mt                # ~130 lines — Module loader, path resolution
         └── lowering/
-            └── lower.mt                 # ~310 lines — Source-to-C lowering pass
+            └── lower.mt                 # ~370 lines — Source-to-C lowering pass
 ```
 
 ## 3. Lexer (`mtc/lexer/`)
@@ -48,24 +48,14 @@ projects/mtc/
 
 ### parser.mt
 - **Declarations**: 18 types including function, const function, async, external, foreign, struct (with implements + lifetime annotations), enum, flags, variant, interface, type alias, opaque, union, const, var, event, extending, placeholder for when/inline
-- **Expressions**: Full precedence chain (`or → and → | → ^ → & → ==/!= → </<=/>/>= → << >> → +- → */% → unary → postfix → primary`)
-- **Postfix**: `.member`, `(args)` with named-arg support, `[index]` with multi-arg comma, `?`, `as name`
-- **Statements**: `if/else`, `while`, `for`, `match`, `when`, `let/var` (with `else:` / `else as error:`), `return`, `defer`, `unsafe`, `inline`, `parallel`, `break/continue/pass`, assignment (`=`, `+=`, etc.)
-- **Types**: Full dotted paths via `source_text.slice()`. Type constructors, keyword tokens (`expect_word()`), `fn`/`proc` types, nullable, bracketed args with no double-consumption.
+- **Expressions**: Full precedence chain. Postfix chain with named-arg support, multi-arg comma handling.
+- **Statements**: All variants including guard forms, assignment operators, match patterns.
+- **Types**: Full dotted paths via `source_text.slice()`. Type constructors, keyword tokens (`expect_word()`), bracketed args with no double-consumption.
 
-### Key fixes (Phase A)
-- Bracket double-consumption in `parse_type_text` / `skip_bracketed`
-- Named-arg call parsing (`=` in call arguments)
-- Multi-arg bracket specialization (comma handling)
-- Nested struct detection + `@[attr]` skip in struct/union bodies
-- Lifetime annotation handling (`[@a]`)
-- `else as error:` handling
-- Assignment statement parsing
-- Type param collection from params/return types
-- External file header parsing
-- `when`/`inline` empty-name placeholders
+### Key fixes
+- Bracket double-consumption, named-arg parsing, multi-arg specialization, nested structs, `@[attr]` skipping, lifetime annotations, `else as error:`, assignment parsing, type param collection, external file headers
 
-**Status**: Complete. All known gaps resolved. 8/8 self-host + 13/13 examples parse successfully with 0 errors.
+**Status**: Complete. All gaps resolved. 8/8 self-host + 13/13 examples parse with 0 errors.
 
 ## 5. Semantic Analysis (`mtc/sema/`)
 
@@ -76,14 +66,13 @@ projects/mtc/
 - Silent import registration variants avoid spurious duplicate errors
 
 ### checker.mt
-- 3-pass: (1) resolve imports → create ModuleScopes, (2) register declarations → collect type params from fields/params/return/arms, (3) validate type references → full dotted-path lookup
-- `extract_public_symbols()` extracts public type declarations from loaded modules
+- 3-pass: resolve imports → create ModuleScopes → register declarations → validate type references
+- Type params collected from fields, params, return types, and variant arms
 
 ### loader.mt
-- Resolves `std.vec` → `std/vec.mt` via `self_build_module_path()` using `str_buffer[256]`
-- Cycle detection via `loaded` set. Platform-specific fallback.
-- `load_module()` actually loads, lexes, and parses imported files.
-- Source root resolution via `find_source_root()` → walks path for `/src/` component.
+- Module resolution via `self_build_module_path()` with `str_buffer[256]`
+- Cycle detection, platform fallback, `find_source_root()` via `/src/` walking
+- `load_module()` actually loads, lexes, and parses imported files
 
 **Status**: Complete. 8/8 self-host + 13/13 examples pass with 0 errors.
 
@@ -92,22 +81,23 @@ projects/mtc/
 - Source-to-C lowering pass with module-prefixed type name generation
 - Struct → `typedef struct module_Name { fields } module_Name;`
 - Enum/Flags → `enum { module_Name_member = value, ... };`
-- Functions → `ret_type module_name(params);` (signature only)
+- Functions → `ret_type module_name(params) { /* body not lowered */ }`
 - Extending methods → `static ret_type module_Type_method(params);`
 - Const/Var → `static [const] type module_name [= value];`
-- Type mapping: `int`→`int32_t`, `uint`→`uint32_t`, `str`→`mt_str`, etc.
+- **40-type C mapping**: all primitives, type constructors (ref→void*, span→void*, etc.), native types (vec2→float, ivec3→int32_t, etc.), str→mt_str
 - Dotted types: `token.Token` → `token_Token` (underscore substitution)
-- All output built with `str_buffer[512]` to avoid f-string lifetime issues
+- Centralized `self_has_output()` filter eliminates empty typedefs
+- All output built with `str_buffer[512]` via `ptr[str_buffer]` + `unsafe: read` to avoid `ref[str_buffer]` auto-deref limitation and f-string lifetime issues
 
-**Status**: First pass complete. Emits valid C declarations (structs, enums, function signatures, variables). Function bodies are not yet emitted (signatures only).
+**Status**: V1 complete. Emits clean C declarations with stubbed function bodies. Clean C output demonstrated for all compiler source files.
 
 ## 7. Ruby Compiler Fixes
 
 ### Enum comparison operators
-`common_numeric_type` / `common_integer_type` in both sema and lowering now unwrap `EnumBase` to `backing_type` before primitive checks. Enables `>=`, `<=`, `>`, `<`, `==`, `!=`, `%` on enum/flags values.
+`common_numeric_type` / `common_integer_type` in both sema (`type_compatibility.rb`) and lowering (`resolve.rb`) now unwrap `EnumBase` to `backing_type` before primitive checks. Enables all comparison operators on enum/flags.
 
 ### Cycle detection in lowering
-Three methods (`contains_proc_storage_type?`, `contains_task_type?`, `type_contains_array_storage?`) fixed with `visited = Set.new` parameter.
+Three methods (`contains_proc_storage_type?`, `contains_task_type?`, `type_contains_array_storage?`) fixed with `visited = Set.new`.
 
 ## 8. CLI Commands
 
@@ -119,18 +109,20 @@ mtc lower <file>   — C lowering (emits to stdout)
 mtc --help         — Usage info
 ```
 
-## 9. Known Issues — None
+## 9. Verification
 
-All previously known issues resolved. All self-host and example files pass `check` and `lower` with 0 errors.
+All 9 self-host source files pass `mtc check` with 0 errors.
+All 13 example files pass `mtc check` with 0 errors.
+`mtc lower` produces clean C output for all files.
 
 ## 10. Next Steps — Prioritized
 
-1. **C Backend completion** — emit compilable C: add function body pass-through, generate `main()`, add `mtc build` command that invokes `cc`.
-2. **Self-host** — compile the compiler with itself (the defining milestone).
-3. **Tree AST** — upgrade from text-based AST to recursive tree nodes (unlocks full expression type checking).
-4. **Full sema** — expression type checking, call arg validation, match exhaustiveness, control flow analysis.
-5. **Import resolution** — properly resolve packages from `source_root` in `package.toml`.
-6. **Platform variants** — select `*.linux.mt` / `*.windows.mt` / `*.wasm.mt`.
+1. **Tree AST — Type nodes** — Replace flat `type_text: str` with recursive `Type` tree (primitive, named, dotted, constructor, fn, nullable). Smallest high-impact piece (~300 lines). Unlocks proper type lowering and expression type checking.
+2. **Tree AST — Expression/Statement nodes** — Recursive `Expr` (literal, ident, binary, call, member, index, proc) and `Stmt` (let, var, if, while, for, return, etc.) trees (~1200 lines). Unlocks real function body lowering.
+3. **Full function body lowering** — With expression/statement trees, emit real C for function bodies (control flow, expressions, types).
+4. **Self-host** — Compile the compiler with itself.
+5. **Full sema** — Expression type checking, call arg validation, match exhaustiveness, control flow analysis.
+6. **Import resolution depth** — Properly resolve packages from `source_root` in `package.toml`.
 
 ## 11. Test Commands
 
@@ -144,10 +136,6 @@ cd projects/mtc
 ./build/bin/linux/debug/mtc parse examples/language_baseline.mt
 ./build/bin/linux/debug/mtc check examples/language_baseline.mt
 ./build/bin/linux/debug/mtc lower examples/language_baseline.mt
-
-# JSON output
-./build/bin/linux/debug/mtc lex examples/language_baseline.mt --json
-./build/bin/linux/debug/mtc parse examples/language_baseline.mt --json
 
 # Full sweep
 for f in examples/*.mt; do
