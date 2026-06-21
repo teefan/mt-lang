@@ -75,12 +75,17 @@ module MilkTea
 
     def float_constant_fits_type?(value, expected_type)
       return false unless value.is_a?(Numeric)
+      return false unless value.finite?
 
-      float_value = value.to_f
-      return false unless float_value.finite?
-      return true if expected_type.name == "double"
+      if expected_type.name == "float"
+        return value.abs <= (1 << 24) if value.is_a?(Integer)
 
-      exactly_representable_float32?(float_value)
+        exactly_representable_float32?(value.to_f)
+      else
+        return true if expected_type.name == "double"
+
+        false
+      end
     end
 
     def exact_integer_constant_value(value)

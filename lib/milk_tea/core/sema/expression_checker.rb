@@ -268,7 +268,8 @@ module MilkTea
         suffix_type = integer_suffix_type(expression.lexeme)
         return @ctx.types.fetch(suffix_type) if suffix_type
 
-        if expected_type.is_a?(Types::Primitive) && expected_type.integer?
+        if expected_type.is_a?(Types::Primitive) && expected_type.integer? &&
+           value_fits_integer_type?(expression.value, expected_type)
           expected_type
         else
           @ctx.types.fetch("int")
@@ -461,6 +462,13 @@ module MilkTea
           @ctx.types.fetch("bool")
         when "+", "-"
           raise_sema_error("operator #{expression.operator} requires a numeric operand, got #{operand_type}") unless operand_type.numeric?
+
+          if expression.operator == "-" && operand_type.integer?
+            ct_value = evaluate_compile_time_const_value(expression, scopes:)
+            if ct_value.is_a?(Integer) && !value_fits_integer_type?(ct_value, operand_type)
+              raise_sema_error("negated value #{ct_value} does not fit in type #{operand_type}", expression)
+            end
+          end
 
           operand_type
         when "~"
