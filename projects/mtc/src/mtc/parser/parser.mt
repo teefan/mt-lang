@@ -339,6 +339,10 @@ extending Parser:
             this.skip_newlines()
             if this.check(token.TokenKind.tk_dedent):
                 break
+            if this.check(token.TokenKind.tk_public) or this.check(token.TokenKind.tk_event):
+                while not this.at_end() and not this.check(token.TokenKind.tk_newline) and not this.check(token.TokenKind.tk_dedent):
+                    this.advance()
+                continue
             let fname = this.expect_id()
             this.expect(token.TokenKind.tk_colon)
             let ftype = this.parse_type_text()
@@ -492,6 +496,10 @@ extending Parser:
             this.skip_newlines()
             if this.check(token.TokenKind.tk_dedent):
                 break
+            if this.check(token.TokenKind.tk_public) or this.check(token.TokenKind.tk_event):
+                while not this.at_end() and not this.check(token.TokenKind.tk_newline) and not this.check(token.TokenKind.tk_dedent):
+                    this.advance()
+                continue
             let fname = this.expect_id()
             this.expect(token.TokenKind.tk_colon)
             let ftype = this.parse_type_text()
@@ -505,6 +513,15 @@ extending Parser:
         let col = this.tok_col()
         this.advance()
         let name = this.expect_id()
+
+        if this.match_kind(token.TokenKind.tk_arrow):
+            var vtype = this.parse_type_text()
+            this.expect(token.TokenKind.tk_colon)
+            this.skip_newlines()
+            this.skip_indent()
+            this.skip_block_body()
+            return nodes.Decl(kind = if is_const: nodes.DeclKind.const_decl else: nodes.DeclKind.var_decl, name = name, type_name = vtype, line = line, column = col, value_text = "", params = this.empty_params(), return_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls())
+
         this.expect(token.TokenKind.tk_colon)
         let vtype = this.parse_type_text()
         if this.match_kind(token.TokenKind.tk_equal):
@@ -586,11 +603,31 @@ extending Parser:
     editable function parse_type_text() -> str:
         if this.check(token.TokenKind.tk_identifier):
             var text = this.expect_id()
-            if this.match_kind(token.TokenKind.tk_lbracket):
-                this.skip_bracketed(token.TokenKind.tk_lbracket, token.TokenKind.tk_rbracket)
-            if this.match_kind(token.TokenKind.tk_question):
-                pass
+            if text == "ptr" or text == "ref" or text == "span" or text == "dyn" or text == "array" or text == "const_ptr":
+                if this.match_kind(token.TokenKind.tk_lbracket):
+                    this.skip_bracketed(token.TokenKind.tk_lbracket, token.TokenKind.tk_rbracket)
+                if this.match_kind(token.TokenKind.tk_at):
+                    this.advance()
+                    if this.match_kind(token.TokenKind.tk_lbracket):
+                        this.skip_bracketed(token.TokenKind.tk_lbracket, token.TokenKind.tk_rbracket)
+                if this.match_kind(token.TokenKind.tk_question):
+                    pass
+            else:
+                if this.match_kind(token.TokenKind.tk_lbracket):
+                    this.skip_bracketed(token.TokenKind.tk_lbracket, token.TokenKind.tk_rbracket)
+                if this.match_kind(token.TokenKind.tk_question):
+                    pass
             return text
+
+        if this.check(token.TokenKind.tk_fn) or this.check(token.TokenKind.tk_proc):
+            var text = this.tok_lexeme()
+            this.advance()
+            if this.match_kind(token.TokenKind.tk_lparen):
+                this.skip_bracketed(token.TokenKind.tk_lparen, token.TokenKind.tk_rparen)
+            if this.match_kind(token.TokenKind.tk_arrow):
+                this.parse_type_text()
+            return text
+
         if this.match_kind(token.TokenKind.tk_question):
             return "?"
         return ""

@@ -7,45 +7,120 @@ import mtc.ast.nodes
 import mtc.lexer.token
 import mtc.lexer.lexer
 import mtc.parser.parser
+import mtc.sema.symbol
+import mtc.sema.checker
+import mtc.sema.loader
 
 
 function lex_file(file_path: str, use_json: bool) -> int:
     match fs.read_text(file_path):
         Result.failure as err:
-            stdio.print_line(f"error: cannot read '#{file_path}': #{err.error.message.as_str()}")
+            stdio.print_line(f"error: cannot read '#{file_path}'")
             return 1
         Result.success as ok:
             var source = ok.value
             var lex = lexer.Lexer.create(source.as_str())
             var tokens = lex.lex()
-
             if use_json:
                 print_tokens_json(ref_of(tokens))
             else:
                 print_tokens_text(ref_of(tokens))
-
             return 0
 
 
 function parse_file(file_path: str, use_json: bool) -> int:
     match fs.read_text(file_path):
         Result.failure as err:
-            stdio.print_line(f"error: cannot read '#{file_path}': #{err.error.message.as_str()}")
+            stdio.print_line(f"error: cannot read '#{file_path}'")
             return 1
         Result.success as ok:
             var source = ok.value
             var lex = lexer.Lexer.create(source.as_str())
             var tokens = lex.lex()
-
-            var parser_def = parser.Parser.create(tokens)
-            var ast = parser_def.parse()
-
+            var p = parser.Parser.create(tokens)
+            var ast = p.parse()
             if use_json:
                 print_parse_json(ref_of(ast))
             else:
                 print_parse_text(ref_of(ast))
-
             return 0
+
+
+function check_file(file_path: str) -> int:
+    match fs.read_text(file_path):
+        Result.failure as err:
+            stdio.print_line(f"error: cannot read '#{file_path}'")
+            return 1
+        Result.success as ok:
+            var source = ok.value
+            var lex = lexer.Lexer.create(source.as_str())
+            var tokens = lex.lex()
+            var p = parser.Parser.create(tokens)
+            var ast = p.parse()
+
+            var source_root = dirname_of(file_path)
+            var stdlib_root = find_stdlib_root()
+
+            var c = checker.Checker.create(stdlib_root, source_root)
+            var ctx = c.check(ast)
+
+            var type_count: ptr_uint = 0
+            var fn_count: ptr_uint = 0
+            var val_count: ptr_uint = 0
+            var i: ptr_uint = 0
+            while i < ctx.symbols.len():
+                let s = ctx.symbols.get(i) else:
+                    break
+                let sym = unsafe: read(s)
+                if sym.kind == symbol.SymbolKind.type_symbol:
+                    type_count += 1
+                else if sym.kind == symbol.SymbolKind.function_symbol:
+                    fn_count += 1
+                else if sym.kind == symbol.SymbolKind.const_symbol or sym.kind == symbol.SymbolKind.var_symbol:
+                    val_count += 1
+                i += 1
+
+            stdio.print_line(f"types: #{type_count}  functions: #{fn_count}  values: #{val_count}  symbols: #{ctx.symbols.len()}")
+
+            if ctx.errors.len() == 0:
+                stdio.print_line("OK")
+            else:
+                stdio.print_line("")
+                i = 0
+                while i < ctx.errors.len():
+                    let e = ctx.errors.get(i) else:
+                        break
+                    let err = unsafe: read(e)
+                    stdio.print_line(f"  error: #{err.message} at #{err.line}:#{err.column}")
+                    i += 1
+
+            return if ctx.errors.len() == 0: 0 else: 1
+
+
+function print_tokens_text(tokens: ref[vec.Vec[token.Token]]) -> void:
+    var i: ptr_uint = 0
+    while i < tokens.len():
+        let t = tokens.get(i) else:
+            break
+        unsafe:
+            let tok = read(t)
+            stdio.print_line(f"#{tok.kind} #{tok.lexeme} #{tok.line}:#{tok.column}")
+        i += 1
+
+
+function print_tokens_json(tokens: ref[vec.Vec[token.Token]]) -> void:
+    stdio.print_line("[")
+    var i: ptr_uint = 0
+    var count = tokens.len()
+    while i < count:
+        let t = tokens.get(i) else:
+            break
+        unsafe:
+            let tok = read(t)
+            var comma = if i + 1 < count: "," else: ""
+            stdio.print_line(f"  {\"kind\":#{tok.kind},\"lexeme\":\"#{tok.lexeme}\",\"line\":#{tok.line},\"column\":#{tok.column}}#{comma}")
+        i += 1
+    stdio.print_line("]")
 
 
 function print_parse_text(ast: ref[nodes.SourceFile]) -> void:
@@ -56,14 +131,12 @@ function print_parse_text(ast: ref[nodes.SourceFile]) -> void:
         let imp = unsafe: read(imp_ptr)
         stdio.print_line(f"import #{imp.path}")
         i += 1
-
     i = 0
     while i < ast.decls.len():
         let d = ast.decls.get(i) else:
             break
         let decl = unsafe: read(d)
-        let kind_str = decl_kind_name(decl.kind)
-        stdio.print_line(f"#{kind_str} #{decl.name} stmts=#{decl.stmt_count} params=#{decl.params.len()}")
+        stdio.print_line(f"#{decl_kind_name(decl.kind)} #{decl.name} stmts=#{decl.stmt_count} params=#{decl.params.len()}")
         i += 1
 
 
@@ -78,7 +151,6 @@ function print_parse_json(ast: ref[nodes.SourceFile]) -> void:
         stdio.print_line(f"    {\"path\":\"#{imp.path}\",\"alias\":\"#{imp.alias}\"}#{comma}")
         i += 1
     stdio.print_line("  ],\"decls\":[")
-
     i = 0
     while i < ast.decls.len():
         let d = ast.decls.get(i) else:
@@ -124,32 +196,17 @@ function decl_kind_name(kind: nodes.DeclKind) -> str:
     return "?"
 
 
-function print_tokens_text(tokens: ref[vec.Vec[token.Token]]) -> void:
-    var i: ptr_uint = 0
-    while i < tokens.len():
-        let t = tokens.get(i) else:
-            break
-        unsafe:
-            let tok = read(t)
-            stdio.print_line(f"#{tok.kind} #{tok.lexeme} #{tok.line}:#{tok.column}")
-        i += 1
+function find_stdlib_root() -> str:
+    return "std"
 
 
-function print_tokens_json(tokens: ref[vec.Vec[token.Token]]) -> void:
-    stdio.print_line("[")
-    var i: ptr_uint = 0
-    var count = tokens.len()
-    while i < count:
-        let t = tokens.get(i) else:
-            break
-        unsafe:
-            let tok = read(t)
-            var comma = if i + 1 < count: "," else: ""
-            stdio.print_line(
-                f"  {\"kind\":#{tok.kind},\"lexeme\":\"#{tok.lexeme}\",\"line\":#{tok.line},\"column\":#{tok.column}}#{comma}"
-            )
-        i += 1
-    stdio.print_line("]")
+function dirname_of(path: str) -> str:
+    var i: ptr_uint = path.len
+    while i > 0:
+        i -= 1
+        if path.byte_at(i) == '/':
+            return path.slice(0, i)
+    return ""
 
 
 function print_usage() -> void:
@@ -160,6 +217,7 @@ function print_usage() -> void:
     stdio.print_line("Commands:")
     stdio.print_line("  lex <file>          Lex a source file and print the token stream")
     stdio.print_line("  parse <file>        Parse a source file and print the AST (IR)")
+    stdio.print_line("  check <file>        Run semantic analysis on a source file")
     stdio.print_line("")
     stdio.print_line("Options:")
     stdio.print_line("  --json, -j          Output as JSON (for lex and parse commands)")
@@ -200,7 +258,7 @@ function main(args: span[str]) -> int:
                 let use_json = has_flag(args, "--json") or has_flag(args, "-j")
                 return lex_file(file_path.value, use_json)
             Option.none:
-                stdio.print_line("error: no file specified. Usage: mtc lex <file>")
+                stdio.print_line("error: no file specified")
                 return 1
 
     if cmd == "parse":
@@ -210,7 +268,16 @@ function main(args: span[str]) -> int:
                 let use_json = has_flag(args, "--json") or has_flag(args, "-j")
                 return parse_file(file_path.value, use_json)
             Option.none:
-                stdio.print_line("error: no file specified. Usage: mtc parse <file>")
+                stdio.print_line("error: no file specified")
+                return 1
+
+    if cmd == "check":
+        let file_arg = positional_after_command(args)
+        match file_arg:
+            Option.some as file_path:
+                return check_file(file_path.value)
+            Option.none:
+                stdio.print_line("error: no file specified")
                 return 1
 
     stdio.print_line(f"error: unknown command '#{cmd}'")
