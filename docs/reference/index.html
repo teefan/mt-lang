@@ -238,6 +238,7 @@ p + p{margin-top:-.25rem}
 
 <details><summary>Reference</summary>
 <a href="#std-library">Standard Library</a>
+<a href="#linting">Linting</a>
 <a href="#cli">CLI Reference</a>
 <a href="#limitations">Language Limitations</a>
 </details>
@@ -333,6 +334,47 @@ function main() -> int:
     </table>
   </div>
   <p>See <a href="#cli">CLI Reference</a> for the full command surface.</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="generated-c">
+  <h2>Generated C</h2>
+  <p>Milk Tea compiles to readable C that mirrors the source structure. No hidden runtime, no hidden heap traffic, no hidden dispatch. The output is designed for a human to debug, diff, and ship.</p>
+
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## Milk Tea
+function add(a: int, b: int) -> int:
+    return a + b
+
+struct Vec2:
+    x: float
+    y: float
+
+extending Vec2:
+    editable function scale(factor: float):
+        this.x *= factor
+        this.y *= factor</code></pre>
+</div>
+
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>/* Generated C */
+int main_add(int a, int b) {
+    return a + b;
+}
+
+typedef struct { float x; float y; } main_Vec2;
+
+void main_Vec2_scale(main_Vec2* this, float factor) {
+    this->x *= factor;
+    this->y *= factor;
+}</code></pre>
+</div>
+
+  <div class="callout note">
+    <strong>Method lowering:</strong> <code>editable function</code> receives a writable pointer prefix. <code>function</code> (value receiver) passes the struct by value. <code>static function</code> receives no receiver. <code>defer</code> lowers to C cleanup labels. Module names prefix generated symbols to avoid collisions.
+  </div>
 </section>
 
 <!-- ────────────────────────────────────────────────────────────────────────── -->
@@ -778,7 +820,7 @@ function main() -&gt; int:
 <section id="source-files">
   <h2>Source Files &amp; Modules</h2>
 
-  <p>Milk Tea source files use the <code class="code-inline">.mt</code> extension. A file is either an <strong>ordinary</strong> source file or an <strong>external</strong> file for raw ABI bindings.</p>
+  <p>Milk Tea source files use the <code class="code-inline">.mt</code> extension. A file is either an <strong>ordinary</strong> source file or an <strong>external</strong> file for raw ABI bindings. There are no wildcard imports — every module must be imported by name.</p>
 
   <h3>Ordinary Files</h3>
   <p>The normal source form. No module header; module identity is inferred from the file path relative to <code class="code-inline">package.source_root</code>. <code class="code-inline">import</code> statements appear only at the top.</p>
@@ -792,13 +834,13 @@ function main() -> int:
 </div>
 
   <h3>External Files</h3>
-  <p>Dedicated raw ABI surface, usually for <code class="code-inline">std.c.*</code> bindings. Start with <code>external</code> and accept <code>include</code>, <code>link</code>, and <code>compiler_flag</code> directives. After directives, only raw ABI declarations are allowed.</p>
+  <p>Dedicated raw ABI surface, usually for <code class="code-inline">std.c.*</code> bindings and bindgen output. Start with <code>external</code> and accept <code>include</code>, <code>link</code>, and <code>compiler_flag</code> directives. After directives, only raw ABI declarations are allowed. The <code>mtc bindgen</code> command generates external files from C headers.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>external
-
 include "raylib.h"
 link "raylib"
+compiler_flag "-DPLATFORM_DESKTOP"
 
 struct Color:
     r: ubyte
@@ -810,7 +852,7 @@ external function InitWindow(width: int, height: int, title: cstr) -> void</code
 </div>
 
   <h3>Module Resolution</h3>
-  <p>Module lookup resolves <code class="code-inline">a.b.c</code> to <code class="code-inline">a/b/c.mt</code>. Platform-specific files (<code class="code-inline">name.linux.mt</code>) still map to module <code class="code-inline">name</code>. Valid platform suffixes: <code>linux</code>, <code>windows</code>, <code>wasm</code>.</p>
+  <p>Module lookup resolves <code class="code-inline">a.b.c</code> to <code class="code-inline">a/b/c.mt</code>. For an active target platform <code>P</code>, the compiler prefers <code>a/b/c.P.mt</code> and falls back to <code>a/b/c.mt</code>. Platform-specific files still map to module <code class="code-inline">name</code>. Valid platform suffixes: <code>linux</code>, <code>windows</code>, <code>wasm</code>. There is no <code>#if</code> or <code>#ifdef</code> — use <code>when</code>, <code>inline if</code>, or platform-specific file variants instead.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>import std.str
@@ -872,6 +914,7 @@ let total = subtotal +
       <tr><th>Kind</th><th>Examples</th><th>Type</th></tr>
       <tr><td>Integer</td><td><code>42</code>, <code>0xff</code>, <code>0b1010</code>, <code>1_000_000</code></td><td><code>int</code> (default)</td></tr>
       <tr><td>Float</td><td><code>3.14</code>, <code>1.2e-3</code>, <code>1.0f</code>, <code>1.0d</code></td><td><code>double</code> (default)</td></tr>
+      <tr><td>Character</td><td><code>'a'</code>, <code>'\n'</code>, <code>'\t'</code>, <code>'\0'</code>, <code>'\x41'</code></td><td><code>ubyte</code></td></tr>
       <tr><td>Boolean</td><td><code>true</code>, <code>false</code></td><td><code>bool</code></td></tr>
       <tr><td>String</td><td><code>"hello"</code></td><td><code>str</code></td></tr>
       <tr><td>C String</td><td><code>c"hello"</code></td><td><code>cstr</code></td></tr>
@@ -882,6 +925,7 @@ let total = subtotal +
       <tr><td>Null</td><td><code>null</code>, <code>null[ptr[char]]</code></td><td><code>T?</code></td></tr>
     </table>
   </div>
+  <p>Digits may be grouped with <code class="code-inline">_</code> separators: <code>1_000_000</code>, <code>0xFF_FF</code>, <code>0b1010_0101</code>. Integer literals accept type suffixes: <code>42u</code> (<code>uint</code>), <code>0xFFub</code> (<code>ubyte</code>), <code>100z</code> (<code>ptr_uint</code>), <code>7i</code> (<code>int</code>), <code>-1l</code> (<code>long</code>). Float literals accept <code>f</code> (<code>float</code>) and <code>d</code> (<code>double</code>) suffixes: <code>1.0f</code>, <code>1.0d</code>.</p>
 
   <h3>Operators &amp; Punctuation</h3>
   <div class="table-wrap">
@@ -1062,16 +1106,20 @@ variant Result[T, E]:
     failure(error: E)</code></pre>
 </div>
 
+  <div class="callout tip">
+    <strong>Prelude types.</strong> <code>Option[T]</code> and <code>Result[T, E]</code> are auto-imported — no <code>import</code> statement is needed. They are available in every Milk Tea source file. Their extending methods (<code>is_some</code>, <code>unwrap</code>, <code>is_success</code>, <code>map_error</code>, etc.) are always accessible.
+  </div>
+
   <h3>Opaque</h3>
-  <p>For C handles whose layout is unknown.</p>
+  <p>For C handles whose layout is unknown. Opaque types may implement interfaces, enabling constrained generics and <code>dyn</code> dispatch over C handles.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-<pre><code>opaque SDL_Window
+<pre><code>opaque SDL_Window implements Closable
 opaque ma_engine</code></pre>
 </div>
 
   <h3>Attributes</h3>
-  <p>User-defined attributes target specific declaration kinds. Built-in attributes: <code>packed</code>, <code>align(bytes)</code>, <code>deprecated(message)</code>.</p>
+  <p>User-defined attributes target specific declaration kinds: <code>attribute[field]</code>, <code>attribute[callable]</code>, <code>attribute[const]</code>, <code>attribute[event]</code>, <code>attribute[enum]</code>, <code>attribute[flags]</code>, <code>attribute[union]</code>, <code>attribute[variant]</code>, <code>attribute[struct]</code>. Multiple targets may be combined: <code>attribute[const, event]</code>. Built-in attributes: <code>packed</code>, <code>align(bytes)</code>, <code>deprecated(message)</code>.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>attribute[field] rename(name: str)
@@ -1081,6 +1129,14 @@ attribute[struct, event] trace(name: str)
 struct Player:
     @[rename(name = "hp")]
     health: int</code></pre>
+</div>
+
+  <h3>static_assert</h3>
+  <p><code class="code-inline">static_assert(condition, message)</code> checks a compile-time boolean condition. If false, compilation fails with the given message. Valid at module level and inside function bodies, <code>inline for</code> loops, and <code>const function</code> bodies.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>static_assert(size_of(int) == 4, "expected 32-bit int")
+static_assert(MAX_ENTITIES &gt; 0, "need at least one entity")</code></pre>
 </div>
 </section>
 
@@ -1122,7 +1178,7 @@ struct NPC implements Damageable:
 </div>
 
   <h3>Dynamic Dispatch (<code>dyn[I]</code>)</h3>
-  <p>Runtime interface values are fat pointers (data + vtable). Construct with <code>adapt[I](value: ref[T])</code>.</p>
+  <p>Runtime interface values are fat pointers (data + vtable). Construct with <code>adapt[I](value: ref[T])</code>. For generic interfaces, the type parameter must be fully specified: <code>dyn[Mapper[int]]</code> is valid; <code>dyn[Mapper]</code> is rejected.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>function render_all(drawables: span[dyn[Drawable]]):
@@ -1144,7 +1200,7 @@ let d: dyn[Drawable] = adapt[Drawable](ref_of(entity))</code></pre>
       <tr><td><code>bool</code></td><td>Boolean</td></tr>
       <tr><td><code>byte</code> <code>short</code> <code>int</code> <code>long</code></td><td>Signed integers</td></tr>
       <tr><td><code>ubyte</code> <code>ushort</code> <code>uint</code> <code>ulong</code></td><td>Unsigned integers</td></tr>
-      <tr><td><code>char</code></td><td>Single-byte character (ABI-facing)</td></tr>
+      <tr><td><code>char</code></td><td>Single-byte character (ABI-facing). Not a general arithmetic integer type — cast to an integer explicitly for arithmetic.</td></tr>
       <tr><td><code>ptr_int</code> <code>ptr_uint</code></td><td>Pointer-sized integers</td></tr>
       <tr><td><code>float</code> <code>double</code></td><td>Floating-point</td></tr>
       <tr><td><code>void</code></td><td>No value</td></tr>
@@ -1156,6 +1212,7 @@ let d: dyn[Drawable] = adapt[Drawable](ref_of(entity))</code></pre>
       <tr><td><code>quat</code></td><td>Quaternion (layout-compatible with <code>vec4</code>)</td></tr>
     </table>
   </div>
+  <p>Primitive type names (<code>int</code>, <code>float</code>, <code>str</code>, <code>bool</code>, etc.) are reserved and cannot be reused for variable bindings, parameters, locals, import aliases, or type parameters.</p>
 
   <h3>Native Type Construction</h3>
 <div class="code-wrap">
@@ -1193,6 +1250,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)</code></pre>
   </div>
 
   <h3>Nullability</h3>
+  <p>Only nullable pointer-like types may hold <code>null</code>. Use <code>null</code> to express absence; use <code>zero[T]</code> for generic value-initialization. <code>zero[ptr[T]]</code> is rejected when the expected type is already a nullable pointer-like type — write <code>null</code> instead.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>let window: ptr[Window]? = null
@@ -1201,6 +1259,22 @@ let name: cstr? = null
 ## Typed null for ambiguous contexts
 let handle = null[ptr[char]]</code></pre>
 </div>
+
+  <h3>Memory Model</h3>
+  <p>Milk Tea follows <strong>value semantics by default</strong>. Scalars, structs, and fixed arrays copy by value. There is no hidden heap boxing, no garbage collector, and no hidden reference counting. Heap allocation is always explicit and allocator-driven:</p>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Module</th><th>Use Case</th></tr>
+      <tr><td><code>std.mem.heap</code></td><td>General-purpose allocation</td></tr>
+      <tr><td><code>std.mem.arena</code></td><td>Frame, level, and scratch lifetimes (bulk free)</td></tr>
+      <tr><td><code>std.mem.pool</code></td><td>Fixed-size object pools</td></tr>
+      <tr><td><code>std.mem.stack</code></td><td>Explicit temporary allocators</td></tr>
+    </table>
+  </div>
+
+  <div class="callout tip">
+    <strong>ref[T] convenience:</strong> Passing a mutable addressable <code>T</code> to a <code>ref[T]</code> parameter borrows it implicitly — you don't need <code>ref_of()</code> at every call site. Member access and method calls auto-dereference <code>ref[T]</code> receivers, so <code>handle.field</code> and <code>handle.method()</code> work without <code>read(handle)</code>.
+  </div>
 </section>
 
 <!-- ────────────────────────────────────────────────────────────────────────── -->
@@ -1241,6 +1315,7 @@ let s64 = Slice[ubyte](data = ptr, len = 32)</code></pre>
 <!-- ────────────────────────────────────────────────────────────────────────── -->
 <section id="functions">
   <h2>Functions</h2>
+  <p>There is no overloading. One function name maps to exactly one callable symbol. Parameters must be typed; the return type defaults to <code>void</code> if omitted.</p>
 
   <h3>Ordinary Functions</h3>
 <div class="code-wrap">
@@ -1254,7 +1329,7 @@ function say_hello(name: str):
 </div>
 
   <h3>const function</h3>
-  <p>Evaluable at compile time. Generates both a compile-time constant-folding path and a normal runtime function.</p>
+  <p>Evaluable at compile time. Generates both a compile-time constant-folding path and a normal runtime function. Recursive calls between <code>const</code> functions are supported. Use <code>const function</code> for reusable compile-time logic; use a block-bodied <code>const X -&gt; T: ...</code> for one-shot computed constants.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>const function square(x: int) -> int:
@@ -1271,13 +1346,14 @@ const RESULT: int = square(5)   ## folded to 25 at compile time</code></pre>
 </div>
 
   <h3>foreign function</h3>
-  <p>Projects a C function into Milk Tea types with boundary marshalling.</p>
+  <p>Projects a C function into Milk Tea types with boundary marshalling. <code>in</code>, <code>out</code>, and <code>inout</code> are declared on the parameter; callers pass ordinary expressions or lvalues. The <code>= c.Symbol(...)</code> mapping supports a fan-out form when a surface parameter must be split into multiple raw C arguments.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>foreign function init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
 foreign function load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
 foreign function close_window(consuming window: Window) -> void = c.CloseWindow</code></pre>
 </div>
+  <p><strong>consuming parameters:</strong> After the call, the passed variable is bound to <code>null</code> (the foreign function takes ownership). Consuming foreign calls must appear as top-level expression statements, and the foreign function must return <code>void</code>.</p>
 
   <h3>Procs (Closures)</h3>
 <div class="code-wrap">
@@ -1332,6 +1408,31 @@ for item in items:
 <pre><code>for entity, position, velocity in entities, positions, velocities:
     update(entity, position, velocity)</code></pre>
 </div>
+
+  <h3>pass</h3>
+  <p><code class="code-inline">pass</code> is an explicit no-op statement for intentionally empty block bodies. It produces no code in the output.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>if debug_mode:
+    pass
+else:
+    do_work()</code></pre>
+</div>
+
+  <h3>Range Index Assignment</h3>
+  <p>Assign a tuple to a contiguous slice using an exclusive range with literal bounds. The tuple width must match the slice width exactly.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>var buf: array[float, 4]
+buf[0..3] = (1.0, 2.0, 3.0)   # assigns buf[0], buf[1], buf[2]</code></pre>
+</div>
+
+  <h3>Custom Iterables</h3>
+  <p>Types can participate in <code>for</code> loops by exposing a non-editable zero-argument <code>iter()</code> method. The returned iterator must expose either:</p>
+  <ul style="margin-left:1.25rem;margin-bottom:1rem">
+    <li><code>next() -&gt; ptr[T]?</code> — returns a nullable pointer to each element; iteration stops on <code>null</code>, or</li>
+    <li><code>next() -&gt; bool</code> together with <code>current() -&gt; T</code> — <code>next()</code> advances and returns whether another element exists; <code>current()</code> returns the current element.</li>
+  </ul>
 </section>
 
 <!-- ────────────────────────────────────────────────────────────────────────── -->
@@ -1453,7 +1554,7 @@ match record:
 </div>
 
   <h3>unsafe</h3>
-  <p>Required for: pointer indexing, raw dereference, pointer arithmetic, pointer casts, <code>reinterpret[...]</code>.</p>
+  <p>Required for: pointer indexing, raw dereference, pointer arithmetic, pointer casts, <code>reinterpret[...]</code>. Calling a <code>foreign function</code> that declares <code>str as cstr</code> or <code>out</code> parameters is ordinary safe code — the foreign boundary handles marshalling. <code>unsafe</code> is for raw <code>std.c.*</code> bindings, pointer reinterpretation, and manual memory walking.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>## Expression form
@@ -1491,7 +1592,7 @@ unsafe:
 </div>
 
   <h3>inline if</h3>
-  <p>Only the chosen branch is emitted; dead branch may reference nonexistent symbols.</p>
+  <p>Only the chosen branch is emitted; dead branch may reference nonexistent symbols. Supports <code>else</code> and <code>else if</code> branches with the same dead-branch elimination.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>const DEBUG_RENDER: bool = false
@@ -1515,10 +1616,22 @@ function draw() -> void:
 </div>
 
   <h3>inline while</h3>
+  <p>The condition must be a compile-time constant. The loop unrolls to a fixed number of iterations, <strong>capped at 10,000</strong>. A non-terminating <code>inline while</code> (condition that never becomes false) is a compile error.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>inline while n &lt; 1024:
     n = n * 2</code></pre>
+</div>
+
+  <h3>emit (Compile-Time Code Generation)</h3>
+  <p><code class="code-inline">emit</code> generates declarations at compile time. It is only valid inside <code>const function</code> or <code>inline</code> bodies. Currently supports emitting <code>function</code>, <code>struct</code>, and <code>const</code> declarations. Not to be confused with <code>event.emit()</code> which fires runtime events.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>const function generate_helpers() -> void:
+    emit function meaning_of_life() -> int:
+        return 42
+    emit function greet() -> str:
+        return "hello"</code></pre>
 </div>
 </section>
 
@@ -1617,7 +1730,7 @@ let sized = name[32]</code></pre>
       <tr><td><code>default[T]</code></td><td>Semantic default via <code>T.default()</code></td></tr>
       <tr><td><code>hash[T](value)</code></td><td>Canonical hash (lowers to <code>T.hash(...)</code>)</td></tr>
       <tr><td><code>equal[T](left, right)</code></td><td>Canonical equality (lowers to <code>T.equal(...)</code>)</td></tr>
-      <tr><td><code>order[T](left, right)</code></td><td>Canonical ordering (lowers to <code>T.order(...)</code>)</td></tr>
+      <tr><td><code>order[T](left, right)</code></td><td>Canonical ordering: returns negative when <code>left &lt; right</code>, <code>0</code> when equal, positive when <code>left &gt; right</code></td></tr>
       <tr><td><code>array[T, N](...)</code></td><td>Array literal constructor</td></tr>
       <tr><td><code>span[T](data, len)</code></td><td>Span construction</td></tr>
       <tr><td><code>get(coll, index)</code></td><td>Recoverable bounds-checked access, returns <code>ptr[T]?</code></td></tr>
@@ -1632,7 +1745,7 @@ let sized = name[32]</code></pre>
 <!-- ────────────────────────────────────────────────────────────────────────── -->
 <section id="reflection">
   <h2>Compile-Time Reflection</h2>
-  <p>Reflection builtins return handle values representing type structure. Handles expose <code>.name</code> (<code>str</code>) and <code>.type</code> (for <code>field_handle</code>).</p>
+  <p>Reflection builtins return handle values representing type structure. <code>field_handle</code> exposes <code>.name</code> (<code>str</code>) and <code>.type</code> (the field's type). <code>member_handle</code> exposes <code>.name</code> (<code>str</code>) and, for enum members with explicit values, <code>.value</code> (an integer). <code>attribute_handle</code> provides access to attribute arguments via <code>attribute_arg[T]</code>.</p>
 
   <div class="table-wrap">
     <table class="attr-table">
@@ -1665,10 +1778,11 @@ let sized = name[32]</code></pre>
   <h3>Text Types</h3>
   <div class="table-wrap">
     <table class="attr-table">
-      <tr><th>Type</th><th>Description</th></tr>
-      <tr><td><code>str</code></td><td>Borrowed UTF-8 string view</td></tr>
-      <tr><td><code>cstr</code></td><td>NUL-terminated C ABI string</td></tr>
-      <tr><td><code>str_buffer[N]</code></td><td>Fixed-capacity mutable UTF-8 text buffer</td></tr>
+      <tr><th>Type</th><th>Ownership</th><th>Use Case</th></tr>
+      <tr><td><code>str</code></td><td>Borrowed</td><td>Read-only UTF-8 view (literals, format strings, slicing)</td></tr>
+      <tr><td><code>cstr</code></td><td>Borrowed</td><td>NUL-terminated C ABI string (<code>c"hello"</code>)</td></tr>
+      <tr><td><code>str_buffer[N]</code></td><td>Owned (stack)</td><td>Fixed-capacity mutable UTF-8 builder</td></tr>
+      <tr><td><code>std.string.String</code></td><td>Owned (heap)</td><td>Growable owned text via <code>fmt.format(f"...")</code></td></tr>
     </table>
   </div>
 
@@ -1687,8 +1801,33 @@ let hex = f"address=#{ptr_value:x}"
 import std.fmt
 let owned = fmt.format(f"count=#{count}")  ## -> string.String</code></pre>
 </div>
+  <p>Interpolated expressions must be <code>str</code>, <code>cstr</code>, <code>bool</code>, a numeric primitive, an integer-backed enum or flags type, or a type implementing <code>format_len()</code> and <code>append_format()</code> (custom formatting hooks). The compiler lowers <code>fmt.format(f"...")</code>, <code>str_buffer.append_format(f"...")</code>, and <code>string.String.append_format(f"...")</code> directly to the formatted output without an intermediate allocation.</p>
+
+  <h3>Format Specifiers</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Specifier</th><th>Example</th><th>Applies To</th></tr>
+      <tr><td><code>:.N</code></td><td><code>f"pi=#{3.14159:.2}"</code> → <code>"pi=3.14"</code></td><td><code>float</code>, <code>double</code></td></tr>
+      <tr><td><code>:x</code> / <code>:X</code></td><td><code>f"addr=#{255:x}"</code> → <code>"addr=ff"</code></td><td>Integers, enums, flags</td></tr>
+      <tr><td><code>:o</code> / <code>:O</code></td><td><code>f"perm=#{8:o}"</code> → <code>"perm=10"</code></td><td>Integers</td></tr>
+      <tr><td><code>:b</code> / <code>:B</code></td><td><code>f"mask=#{5:b}"</code> → <code>"mask=101"</code></td><td>Integers</td></tr>
+    </table>
+  </div>
+
+  <h3>Custom Formatting Hooks</h3>
+  <p>Types can participate in format strings by implementing two associated functions:</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>extending MyType:
+    function format_len() -> ptr_uint:
+        return ...  # byte length of formatted output
+    function append_format(output: ref[string.String]) -> void:
+        ...         # write formatted bytes into output</code></pre>
+</div>
+  <p>The compiler calls <code>append_format</code> directly when the sink is a <code>string.String</code> (via <code>fmt.format</code>). For <code>f"..."</code> literals and <code>str_buffer</code> sinks, the formatter must write exactly <code>format_len()</code> bytes — fewer or more raises a runtime error.</p>
 
   <h3>Heredocs</h3>
+  <p>Nonblank content lines are dedented by their shared leading spaces. The trailing newline before the terminator tag is preserved.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>## str heredoc
@@ -1728,6 +1867,15 @@ MSG</code></pre>
       <tr><td><code>.as_cstr()</code></td><td>Borrow as <code>cstr</code></td></tr>
     </table>
   </div>
+
+  <h3>Adjacent String Literals</h3>
+  <p>Ordinary <code>"..."</code> and <code>c"..."</code> literals may continue across following indented lines when each continued line starts with the same literal kind. The segments concatenate exactly with no implicit separator:</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>let text = "hello "
+    "from multiple "
+    "indented lines"   # produces "hello from multiple indented lines"</code></pre>
+</div>
 </section>
 
 <!-- ────────────────────────────────────────────────────────────────────────── -->
@@ -1745,8 +1893,10 @@ MSG</code></pre>
       <tr><td><code>%</code> requires integer operands</td><td></td></tr>
       <tr><td>Bitwise ops require matching types</td><td>Integer or flags types</td></tr>
       <tr><td>Shift ops require integer operands</td><td></td></tr>
-      <tr><td>No implicit struct equality</td><td>Use <code>equal[T](a, b)</code></td></tr>
+      <tr><td>No implicit struct equality</td><td>Structs cannot be compared with <code>==</code>/<code>!=</code>. Use <code>equal[T](a, b)</code>. Variants <em>do</em> support <code>==</code> and <code>!=</code> with generated per-type comparison.</td></tr>
       <tr><td>No <code>str</code>/<code>cstr</code> concatenation</td><td>Use format strings or <code>std.str</code> helpers</td></tr>
+      <tr><td>Compile-time constant fit</td><td>Exact compile-time numeric constants (literals, <code>const</code> values) fit an explicit numeric target without a manual cast when representable exactly</td></tr>
+      <tr><td>Integer-to-float at typed boundaries</td><td>A primitive integer expression may flow into an expected float type for explicit typed locals, assignments, returns, function arguments, or field initializers. Integer arithmetic stays integer arithmetic until that final boundary cast.</td></tr>
     </table>
   </div>
 </section>
@@ -1781,6 +1931,9 @@ let task = some_async_work()
 aio.wait(task)
 let r = aio.result(task)</code></pre>
 </div>
+
+  <h3>Limitations</h3>
+  <p><code>await</code> is supported inside <code>if</code> expressions and bodies, <code>while</code> bodies and conditions, <code>for</code> bodies and iterables, <code>match</code> discriminants and arms, <code>let ... else:</code> initializers and else bodies, <code>unsafe</code> blocks, short-circuit <code>and</code>/<code>or</code> expressions, and assignment targets. <code>defer</code> is supported in async functions, including cleanup bodies that <code>await</code>. <code>async main</code> pre-lift return type must be <code>int</code> or <code>void</code>. <code>?</code> propagation inside async functions completes the task early on failure.</p>
 </section>
 
 <!-- ────────────────────────────────────────────────────────────────────────── -->
@@ -1798,7 +1951,7 @@ let r = aio.result(task)</code></pre>
   <p>Rules: range iteration only (<code>0..N</code>). No <code>break</code>, <code>continue</code>, <code>return</code>, <code>defer</code>, or nested <code>parallel for</code> in the body. <code>ref[T]</code> captures rejected.</p>
 
   <h3>Parallel Blocks (structured fork-join)</h3>
-  <p>Run heterogeneous work concurrently. Each statement runs on its own OS thread. The parent blocks until all complete.</p>
+  <p>Run heterogeneous work concurrently. Each statement runs concurrently on OS threads (one on the calling thread, the rest on worker threads). The parent blocks until all complete.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>parallel:
@@ -1857,7 +2010,7 @@ gather a, b</code></pre>
 <!-- ────────────────────────────────────────────────────────────────────────── -->
 <section id="events">
   <h2>Events</h2>
-  <p>Built-in typed publisher/subscriber with fixed-capacity listener storage. Zero heap allocation during dispatch.</p>
+  <p>Built-in typed publisher/subscriber with fixed-capacity listener storage. Zero heap allocation during dispatch — emit snapshots active listeners into a stack-allocated array, guaranteeing predictable latency critical for real-time, audio, and embedded contexts.</p>
 
   <h3>Declaration</h3>
 <div class="code-wrap">
@@ -1891,6 +2044,20 @@ resized.emit(ResizeEvent(width = 800, height = 600))
 let payload = await event.wait()</code></pre>
 </div>
 
+  <h3>Event API Reference</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Expression</th><th>Description</th></tr>
+      <tr><td><code>event.subscribe(fn) -> Result[Subscription, EventError]</code></td><td>Register listener; fails with <code>EventError.full</code> when at capacity</td></tr>
+      <tr><td><code>event.subscribe(state, fn)</code></td><td>Stateful subscription — state pointer passed as first arg to listener</td></tr>
+      <tr><td><code>event.subscribe_once(fn)</code></td><td>One-shot listener; auto-unsubscribes after first emission</td></tr>
+      <tr><td><code>event.unsubscribe(sub) -> bool</code></td><td>Returns <code>true</code> if active and removed, <code>false</code> if already stale</td></tr>
+      <tr><td><code>event.emit(payload?)</code></td><td>Fire event (only callable from the declaring module)</td></tr>
+      <tr><td><code>event.wait() -> Task[Result[T, EventError]]</code></td><td>Async await for next emission</td></tr>
+    </table>
+  </div>
+  <p><code>Subscription</code> is an opaque handle returned by <code>subscribe</code>. <code>EventError</code> is a built-in enum with single member <code>full = 0</code>. Event methods do not support named arguments.</p>
+
   <h3>Full Example</h3>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
@@ -1923,21 +2090,21 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
   <h3>Collections</h3>
   <div class="table-wrap">
     <table class="attr-table">
-      <tr><th>Module</th><th>Type</th><th>Description</th></tr>
-      <tr><td><code>std.vec</code></td><td><code>Vec[T]</code></td><td>Contiguous growable array</td></tr>
-      <tr><td><code>std.deque</code></td><td><code>Deque[T]</code></td><td>Growable ring buffer</td></tr>
-      <tr><td><code>std.map</code></td><td><code>Map[K, V]</code></td><td>Hash table (keyed by <code>hash</code>/<code>equal</code>)</td></tr>
-      <tr><td><code>std.set</code></td><td><code>Set[T]</code></td><td>Hash set</td></tr>
-      <tr><td><code>std.ordered_map</code></td><td><code>OrderedMap[K,V]</code></td><td>AVL tree (keyed by <code>order</code>)</td></tr>
-      <tr><td><code>std.ordered_set</code></td><td><code>OrderedSet[T]</code></td><td>AVL sorted unique set</td></tr>
-      <tr><td><code>std.linked_map</code></td><td><code>LinkedMap[K,V]</code></td><td>Insertion-ordered hash map</td></tr>
-      <tr><td><code>std.linked_set</code></td><td><code>LinkedSet[T]</code></td><td>Insertion-ordered hash set</td></tr>
-      <tr><td><code>std.binary_heap</code></td><td><code>BinaryHeap[T]</code></td><td>Max-heap (keyed by <code>order</code>)</td></tr>
-      <tr><td><code>std.priority_queue</code></td><td><code>PriorityQueue[T]</code></td><td>Task-oriented facade over heap</td></tr>
-      <tr><td><code>std.counter</code></td><td><code>Counter[T]</code></td><td>Insertion-ordered frequency table</td></tr>
-      <tr><td><code>std.multiset</code></td><td><code>MultiSet[T]</code></td><td>Bag with per-element counts</td></tr>
-      <tr><td><code>std.queue</code></td><td><code>Queue[T]</code></td><td>FIFO facade over Deque</td></tr>
-      <tr><td><code>std.stack</code></td><td><code>Stack[T]</code></td><td>LIFO facade over Deque</td></tr>
+      <tr><th>Module</th><th>Type</th><th>Iteration</th><th>Description</th></tr>
+      <tr><td><code>std.vec</code></td><td><code>Vec[T]</code></td><td>Mutable <code>ptr[T]?</code></td><td>Contiguous growable array</td></tr>
+      <tr><td><code>std.deque</code></td><td><code>Deque[T]</code></td><td>Mutable <code>ptr[T]?</code></td><td>Growable ring buffer</td></tr>
+      <tr><td><code>std.map</code></td><td><code>Map[K, V]</code></td><td>Keys read-only; values mutable; entries <code>current()</code></td><td>Hash table (<code>hash</code>/<code>equal</code>)</td></tr>
+      <tr><td><code>std.set</code></td><td><code>Set[T]</code></td><td>Read-only <code>ptr[T]?</code></td><td>Hash set</td></tr>
+      <tr><td><code>std.ordered_map</code></td><td><code>OrderedMap[K,V]</code></td><td>Keys read-only; values mutable; entries <code>current()</code></td><td>AVL tree (<code>order</code>)</td></tr>
+      <tr><td><code>std.ordered_set</code></td><td><code>OrderedSet[T]</code></td><td>Read-only <code>ptr[T]?</code></td><td>AVL sorted unique set</td></tr>
+      <tr><td><code>std.linked_map</code></td><td><code>LinkedMap[K,V]</code></td><td>Keys read-only; values mutable; entries <code>current()</code></td><td>Insertion-ordered hash map</td></tr>
+      <tr><td><code>std.linked_set</code></td><td><code>LinkedSet[T]</code></td><td>Read-only <code>ptr[T]?</code></td><td>Insertion-ordered hash set</td></tr>
+      <tr><td><code>std.binary_heap</code></td><td><code>BinaryHeap[T]</code></td><td>Read-only <code>ptr[T]?</code></td><td>Max-heap (<code>order</code>)</td></tr>
+      <tr><td><code>std.priority_queue</code></td><td><code>PriorityQueue[T]</code></td><td>Read-only <code>ptr[T]?</code></td><td>Task-oriented facade over heap</td></tr>
+      <tr><td><code>std.counter</code></td><td><code>Counter[T]</code></td><td>Keys read-only; entries <code>current()</code></td><td>Insertion-ordered frequency table</td></tr>
+      <tr><td><code>std.multiset</code></td><td><code>MultiSet[T]</code></td><td>Values read-only; entries <code>current()</code></td><td>Bag with per-element counts</td></tr>
+      <tr><td><code>std.queue</code></td><td><code>Queue[T]</code></td><td>Mutable <code>ptr[T]?</code></td><td>FIFO facade over Deque</td></tr>
+      <tr><td><code>std.stack</code></td><td><code>Stack[T]</code></td><td>Mutable <code>ptr[T]?</code></td><td>LIFO facade over Deque</td></tr>
     </table>
   </div>
 
@@ -1956,8 +2123,8 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>std.mem.pool</code></td><td>Fixed-size object pool</td></tr>
       <tr><td><code>std.mem.stack</code></td><td>Explicit temporary allocator</td></tr>
       <tr><td><code>std.async</code></td><td>Async runtime: <code>sleep</code>, <code>work</code>, <code>completed</code>, <code>result</code>, <code>wait</code>, <code>run</code></td></tr>
-      <tr><td><code>std.option</code></td><td><code>Option[T]</code> — optional value; methods: <code>is_some</code>, <code>is_none</code>, <code>unwrap</code>, <code>expect</code>, <code>unwrap_or</code>, <code>unwrap_or_else</code></td></tr>
-      <tr><td><code>std.result</code></td><td><code>Result[T, E]</code> — fallible computation; methods: <code>is_success</code>, <code>is_failure</code>, <code>unwrap</code>, <code>unwrap_error</code>, <code>unwrap_or</code>, <code>unwrap_or_else</code>, <code>ok</code>, <code>error</code>, <code>map_error</code></td></tr>
+      <tr><td><code>std.option</code></td><td><code>Option[T]</code> — optional value (prelude type; methods always available without import). Methods: <code>is_some</code>, <code>is_none</code>, <code>unwrap</code>, <code>expect</code>, <code>unwrap_or</code>, <code>unwrap_or_else</code></td></tr>
+      <tr><td><code>std.result</code></td><td><code>Result[T, E]</code> — fallible computation (prelude type; methods always available without import). Methods: <code>is_success</code>, <code>is_failure</code>, <code>unwrap</code>, <code>unwrap_error</code>, <code>unwrap_or</code>, <code>unwrap_or_else</code>, <code>ok</code>, <code>error</code>, <code>map_error</code></td></tr>
     </table>
   </div>
 
@@ -2038,6 +2205,62 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
 </section>
 
 <!-- ────────────────────────────────────────────────────────────────────────── -->
+<section id="linting">
+  <h2>Linting</h2>
+  <p>Milk Tea ships with a built-in linter providing rules across correctness, style, performance, and convention. Run with <code>mtc lint</code>.</p>
+
+  <h3>CLI Usage</h3>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>mtc lint path/to/file.mt           # report all diagnostics
+mtc lint path/to/file.mt --fix     # auto-apply safe fixes
+mtc lint path/to/file.mt --select unused-import  # only selected rules
+mtc lint path/to/file.mt --ignore line-too-long  # skip selected rules</code></pre>
+</div>
+
+  <h3>Inline Suppression</h3>
+  <p>Suppress a rule for the next line with <code># lint: ignore &lt;rule-code&gt;</code>:</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code># lint: ignore unused-import
+import std.math  # intentionally available for downstream</code></pre>
+</div>
+
+  <h3>Configuration</h3>
+  <p>Place a <code>.mt-lint.yml</code> file in your package root to customize rule severity:</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>rules:
+  prefer-let-else: warn
+  unused-import: error
+  line-too-long: off</code></pre>
+</div>
+
+  <h3>Rule Reference</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Category</th><th>Code</th><th>Description</th></tr>
+      <tr><td>Correctness</td><td><code>constant-condition</code></td><td>Always-true or always-false conditions</td></tr>
+      <tr><td>Correctness</td><td><code>dead-assignment</code></td><td>Variable assigned but never read</td></tr>
+      <tr><td>Correctness</td><td><code>unreachable-code</code></td><td>Code after a terminating statement</td></tr>
+      <tr><td>Correctness</td><td><code>redundant-null-check</code></td><td>Null check on already-proven non-null</td></tr>
+      <tr><td>Correctness</td><td><code>loop-single-iteration</code></td><td>Loop with known single iteration</td></tr>
+      <tr><td>Style</td><td><code>prefer-let-else</code></td><td>Var followed by null check; suggest let...else</td></tr>
+      <tr><td>Style</td><td><code>prefer-var-else</code></td><td>Same as above for mutable bindings</td></tr>
+      <tr><td>Style</td><td><code>redundant-return</code></td><td>Unnecessary return at end of void function</td></tr>
+      <tr><td>Style</td><td><code>trailing-list-comma</code></td><td>Multiline lists should end with trailing comma</td></tr>
+      <tr><td>Style</td><td><code>line-too-long</code></td><td>Line exceeds recommended width</td></tr>
+      <tr><td>Style</td><td><code>doc-tag</code></td><td>Documentation comment formatting</td></tr>
+      <tr><td>Convention</td><td><code>unused-import</code></td><td>Imported module never referenced</td></tr>
+      <tr><td>Convention</td><td><code>unused-var</code></td><td>Variable declared but never read</td></tr>
+      <tr><td>Convention</td><td><code>reserved-names</code></td><td>Binding shadows a primitive type or built-in name</td></tr>
+      <tr><td>Convention</td><td><code>event-capacity</code></td><td>Event capacity too large or unbounded</td></tr>
+    </table>
+  </div>
+  <p>Severity levels: <code>error</code> (fail build), <code>warn</code> (report only), <code>off</code> (disabled). Rules default to <code>warn</code> unless noted in the manual.</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
 <section id="limitations">
   <h2>Language Limitations</h2>
   <p>This is a quick-reference summary of the current compiler's rejection surface. See the <a href="https://github.com/teefan/mt-lang/blob/main/docs/language-manual.md">full manual</a> for complete rules.</p>
@@ -2080,7 +2303,7 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
     <li>Enum and flags values do not implicitly coerce to backing integers</li>
     <li><code>+</code> does not support <code>str</code>/<code>cstr</code> concatenation</li>
     <li><code>==</code> and <code>!=</code> not supported on struct types; use <code>equal[T]</code></li>
-    <li>Functions and methods are not usable as bare values</li>
+    <li>Bare function and method names are not usable as values (cannot be assigned or passed without calling). Use <code>fn(...)</code> function pointer types or <code>proc(...)</code> closures for callable values.</li>
   </ul>
 
   <h3>Event Restrictions</h3>
