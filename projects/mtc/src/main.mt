@@ -10,6 +10,7 @@ import mtc.parser.parser
 import mtc.sema.symbol
 import mtc.sema.checker
 import mtc.sema.loader
+import mtc.lowering.lower as lower
 
 
 function lex_file(file_path: str, use_json: bool) -> int:
@@ -96,6 +97,41 @@ function check_file(file_path: str) -> int:
                     i += 1
 
             return if ctx.errors.len() == 0: 0 else: 1
+
+
+function lower_file(file_path: str) -> int:
+    match fs.read_text(file_path):
+        Result.failure as err:
+            stdio.print_line(f"error: cannot read '#{file_path}'")
+            return 1
+        Result.success as ok:
+            var source = ok.value
+            var source_str = source.as_str()
+            var lex = lexer.Lexer.create(source_str)
+            var tokens = lex.lex()
+            var p = parser.Parser.create(source_str, tokens)
+            var ast = p.parse()
+
+            var module_name = self_module_basename(file_path)
+            var lr = lower.Lowerer.create(module_name)
+            lr.lower_module(ast)
+            return 0
+
+
+function self_module_basename(file_path: str) -> str:
+    var start: ptr_uint = file_path.len
+    var i: ptr_uint = file_path.len
+    while i > 0:
+        i -= 1
+        if file_path.byte_at(i) == '/':
+            start = i + 1
+            break
+    var end: ptr_uint = start
+    while end < file_path.len:
+        if file_path.byte_at(end) == '.':
+            break
+        end += 1
+    return file_path.slice(start, end - start)
 
 
 function print_tokens_text(tokens: ref[vec.Vec[token.Token]]) -> void:
@@ -293,6 +329,15 @@ function main(args: span[str]) -> int:
         match file_arg:
             Option.some as file_path:
                 return check_file(file_path.value)
+            Option.none:
+                stdio.print_line("error: no file specified")
+                return 1
+
+    if cmd == "lower":
+        let file_arg = positional_after_command(args)
+        match file_arg:
+            Option.some as file_path:
+                return lower_file(file_path.value)
             Option.none:
                 stdio.print_line("error: no file specified")
                 return 1
