@@ -69,7 +69,7 @@ Supported literals:
 
 - integers: `42`, `0xff`, `0b1010`, `_` separators allowed. Integer type suffixes: `42u` (`uint`), `0xFFub` (`ubyte`), `100z` (`ptr_uint`), `7i` (`int`), `-1l` (`long`), etc.
 - floats: `3.14`, `1.2e-3`, `1.0f` (float suffix), `1.0d` (double suffix)
-- character: `'a'`, `'\n'`, `'\t'`, `'\\'`, `'\''`, `'\0'`, `'\x41'`. Type is `byte`. Escape sequences: `\n`, `\r`, `\t`, `\\`, `\'`, `\"`, `\0` (null byte), `\xNN` (hex byte).
+- character: `'a'`, `'\n'`, `'\t'`, `'\\'`, `'\''`, `'\0'`, `'\x41'`. Type is `ubyte`. Escape sequences: `\n`, `\r`, `\t`, `\\`, `\'`, `\"`, `\0` (null byte), `\xNN` (hex byte).
 - booleans: `true`, `false`
 - string: `"hello"` -> `str`
 - cstring: `c"hello"` -> `cstr`
@@ -1073,18 +1073,18 @@ The `mtc` CLI is the primary tool for checking, building, and running Milk Tea p
 Essential commands:
 
 ```
-mtc check <path>              # Type-check + lint; reports all diagnostics sorted by line
-mtc run   <path>              # Build and execute
-mtc build <path>              # Build only (emit C, compile, link)
-mtc lex   <file.mt>           # Print lexer token stream
-mtc parse <path>              # Print parsed AST
-mtc lower <path>              # Print lowered IR
-mtc debug <file.mt>           # Print debug info (tokens, AST, facts, bindings, diagnostics)
+mtc check  <path>             # Type-check + lint; reports all diagnostics sorted by line
+mtc build  <path>             # Build only (emit C, compile, link, --no-cache to build without cache)
+mtc run    <path>             # Build and execute (--no-cache to build and run without cache)
+mtc debug  <file.mt>          # Print debug info (tokens, AST, facts, bindings, diagnostics)
 mtc emit-c <path>             # Emit generated C to stdout
 mtc format <path>             # Format sources in place (--check for dry-run)
-mtc lint <path>               # Run linter (--fix to apply fixes, --select/--ignore to filter)
-mtc new <name>                # Scaffold a new package (package.toml + src/main.mt)
+mtc lint   <path>             # Run linter (--fix to apply fixes, --select/--ignore to filter)
+mtc new    <name>             # Scaffold a new package (package.toml + src/main.mt)
 mtc cache status              # Show build cache stats
+mtc lex    <file.mt>          # Print lexer token stream
+mtc parse  <path>             # Print parsed AST
+mtc lower  <path>             # Print lowered IR
 ```
 
 Package management:
@@ -1092,7 +1092,7 @@ Package management:
 ```
 mtc deps tree <path>          # Print the dependency graph
 mtc deps lock <path>          # Write/refresh package.lock
-mtc deps add <path> <name>   # Add a dependency
+mtc deps add <path> <name>    # Add a dependency
 mtc deps remove <path> <name> # Remove a dependency
 mtc deps update <path>        # Update dependencies
 mtc deps publish <path>       # Publish a package to the local registry
