@@ -156,6 +156,7 @@ module MilkTea
             @ctx.types.fetch("ptr_uint")
           when AST::OffsetofExpr
             infer_offsetof_type(expression.type, expression.field, scopes:)
+            resolve_and_store_offset(expression, scopes:)
             @ctx.types.fetch("ptr_uint")
           when AST::StringLiteral
             @ctx.types.fetch(expression.cstring ? "cstr" : "str")

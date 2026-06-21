@@ -11,6 +11,7 @@ module MilkTea
       attr_accessor :current_type_substitutions
       attr_accessor :resolved_expr_types
       attr_accessor :resolved_call_kinds
+      attr_accessor :const_values
 
       def initialize
         @imports = {}
@@ -28,6 +29,7 @@ module MilkTea
         @current_type_substitutions = nil
         @resolved_expr_types = {}
         @resolved_call_kinds = {}
+        @const_values = {}
       end
 
       def install(analysis, module_roots: nil)
@@ -47,6 +49,7 @@ module MilkTea
         @directives = analysis.directives
         @resolved_expr_types = analysis.resolved_expr_types
         @resolved_call_kinds = analysis.resolved_call_kinds
+        @const_values = analysis.const_values
         @struct_types = {}
         @union_types = {}
         @opaque_types = {}
@@ -65,6 +68,7 @@ module MilkTea
           opaque_types: @opaque_types, current_type_substitutions: @current_type_substitutions,
           resolved_expr_types: @resolved_expr_types,
           resolved_call_kinds: @resolved_call_kinds,
+          const_values: @const_values,
         }
       end
 

@@ -598,6 +598,19 @@ module MilkTea
 
 
 
+      def resolve_and_store_offset(expression, scopes:)
+        type = resolve_type_ref(expression.type)
+        return unless layout_aggregate_type?(type)
+
+        binding = lookup_value(expression.field, scopes)
+        return unless binding && binding.const_value.is_a?(Types::FieldHandle)
+
+        offset = CompileTime::Layout.offset_of(type, binding.const_value.field_name)
+        return unless offset
+
+        @const_values[@ctx.ast.node_ids[expression.object_id]] = offset
+      end
+
       def infer_offsetof_type(type_ref, field_name, scopes: nil)
         type = resolve_type_ref(type_ref)
         unless layout_aggregate_type?(type)
