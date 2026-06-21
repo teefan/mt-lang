@@ -104,20 +104,15 @@ function buildColorResolver(theme) {
   rules.sort((a, b) => b.specificity - a.specificity || b.index - a.index);
 
   return function resolveToken(scopes) {
-    let best = null;
-    let bestSpec = 0;
-    for (const ts of scopes) {
+    for (let i = scopes.length - 1; i >= 0; i--) {
+      const ts = scopes[i];
       for (const rule of rules) {
-        if (rule.specificity < bestSpec) continue;
         if (ts === rule.scope || ts.startsWith(rule.scope + ".")) {
-          if (rule.specificity > bestSpec) {
-            bestSpec = rule.specificity;
-            best = rule;
-          }
+          return rule;
         }
       }
     }
-    return best;
+    return null;
   };
 }
 
