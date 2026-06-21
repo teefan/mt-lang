@@ -609,8 +609,11 @@
         { "include": "#type-constructor" },
         { "include": "#type-primitive" },
         { "include": "#type-name" },
+        { "include": "#keyword-declaration" },
+        { "include": "#keyword-control" },
         { "include": "#keyword-operator" },
         { "include": "#keyword-modifier" },
+        { "include": "#identifier" },
         { "include": "#operator" },
         { "include": "#punctuation" }
       ]

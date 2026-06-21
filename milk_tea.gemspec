@@ -32,6 +32,9 @@ Gem::Specification.new do |spec|
     gem_files += Dir.glob("bin/*").to_a
     gem_files += Dir.glob("std/**/*").to_a
     gem_files += Dir.glob("bindings/imported/**/*").to_a
+    gem_files += Dir.glob("bindings/vscode/scripts/snapshot.js").to_a
+    gem_files += Dir.glob("bindings/vscode/themes/*.json").to_a
+    gem_files += Dir.glob("bindings/vscode/syntaxes/*.json").to_a
     gem_files
   end
 
