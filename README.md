@@ -290,6 +290,8 @@ Rules:
 - `field_of(...)`, `callable_of(...)`, and `attribute_of(...)` produce compile-time handle values with source-visible handle types `field_handle`, `callable_handle`, and `attribute_handle`.
 - The current C backend lowers `packed` / `align(...)` attributes with GNU-style `__attribute__((...))`, so these layout controls currently require a Clang/GCC-family compiler. On Windows that means Clang or GCC-family toolchains such as MinGW; `cl.exe` is not a supported backend for these attributes today. On wasm/browser targets the same feature works through Emscripten `emcc`, which is Clang-based.
 
+Enum and flags values support the full set of comparison operators (`==`, `!=`, `<`, `<=`, `>`, `>=`) against values of the same enum type and against their backing integer type. Comparisons use the underlying integer backing values. Flags also support bitwise operators (`|`, `&`, `^`, `~`).
+
 Generic variants and structs are supported, for example `Option[int]`.
 
 ## 6. Interfaces And Methods
