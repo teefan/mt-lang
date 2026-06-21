@@ -603,6 +603,7 @@
       },
       "end": "(?=:\\s*(?:#.*)?$)",
       "patterns": [
+        { "include": "#comments" },
         { "include": "#function-type-params" },
         { "include": "#function-parameters" },
         { "include": "#type-constructor" },
