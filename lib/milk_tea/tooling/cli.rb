@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
+require "json"
 require "pp"
+require "tempfile"
 
 module MilkTea
   class CLI
@@ -72,6 +74,8 @@ module MilkTea
         cache_command
       when "docs"
         docs_command
+      when "snapshot"
+        snapshot_command
       else
         print_usage(@err)
         1
@@ -890,6 +894,115 @@ module MilkTea
       0
     end
 
+    def snapshot_command
+      input_path = nil
+      theme_path = nil
+      output_path = nil
+
+      until @argv.empty?
+        arg = @argv.first
+        case arg
+        when "--theme", "-t"
+          @argv.shift
+          theme_path = @argv.shift
+          unless theme_path
+            @err.puts("snapshot: missing value for --theme")
+            return 1
+          end
+        when "--output", "-o"
+          @argv.shift
+          output_path = @argv.shift
+          unless output_path
+            @err.puts("snapshot: missing value for --output")
+            return 1
+          end
+        else
+          if arg.start_with?("-")
+            @err.puts("snapshot: unknown option #{arg}")
+            return 1
+          end
+          unless input_path
+            input_path = @argv.shift
+          else
+            @err.puts("snapshot: unexpected argument #{@argv.shift}")
+            return 1
+          end
+        end
+      end
+
+      unless input_path
+        @err.puts("snapshot: missing source file path")
+        print_usage(@err)
+        return 1
+      end
+
+      unless File.file?(input_path)
+        @err.puts("snapshot: source file not found: #{input_path}")
+        return 1
+      end
+
+      input_path = File.expand_path(input_path)
+      theme_path = File.expand_path(theme_path) if theme_path
+      output_path = File.expand_path(output_path) if output_path
+
+      if theme_path && !File.file?(theme_path)
+        @err.puts("snapshot: theme file not found: #{theme_path}")
+        return 1
+      end
+
+      snapshot_script = MilkTea.root.join("bindings/vscode/scripts/snapshot.js").to_s
+      unless File.file?(snapshot_script)
+        @err.puts("snapshot: internal script not found at #{snapshot_script}")
+        return 1
+      end
+
+      args = ["node", snapshot_script, input_path]
+      args.push("-t", theme_path) if theme_path
+      args.push("-o", output_path) if output_path
+
+      semantic_result = nil
+      begin
+        semantic_result = MilkTea::LSP::Server.semantic_tokens_for_path(input_path)
+      rescue => e
+        @err.puts("snapshot: semantic analysis skipped: #{e.message}")
+      end
+
+      if semantic_result && semantic_result[:entries] && !semantic_result[:entries].empty?
+        source = File.read(input_path)
+        lines = source.split("\n", -1)
+        semantic_result[:entries].each do |entry|
+          sc = entry[:startChar] || entry["startChar"] || 0
+          len = entry[:length] || entry["length"] || 0
+          sc = 0 if sc.negative?
+          line_text = lines[entry[:line] || entry["line"]]
+          unless line_text
+            entry[:startChar] = 0
+            entry[:length] = 0
+            next
+          end
+          byte_start = sc
+          char_start = line_text.byteslice(0, byte_start).length
+          byte_region = line_text.byteslice(byte_start, len)
+          char_length = byte_region.length
+          char_start = 0 if char_start.negative? || char_start > line_text.length
+          char_length = line_text.length - char_start if char_start + char_length > line_text.length
+          char_length = 0 if char_length.negative?
+          entry[:startChar] = char_start
+          entry[:length] = char_length
+        end
+
+        temp = Tempfile.new(["mt_semantic", ".json"])
+        temp.write(JSON.generate(semantic_result[:entries]))
+        temp.close
+        args.push("-s", temp.path)
+        system(*args)
+        temp.unlink
+      else
+        system(*args)
+      end
+      $?.success? ? 0 : 1
+    end
+
     def toolchain_command
       ToolchainCLI.start(
         @argv,
@@ -1552,6 +1665,16 @@ module MilkTea
             --port, -p PORT       Listen on a specific port (default: random).
             --root, -r PATH       Serve a custom directory instead of the bundled reference.
         HELP
+      "snapshot"        => <<~HELP,
+        Usage: mtc snapshot INPUT.mt [OPTIONS]
+
+          Generate an HTML snapshot of a Milk Tea source file with VS Code syntax
+          highlighting using the active TextMate grammar and the configured theme.
+
+          Options:
+            --theme, -t PATH      VS Code theme JSON file (default: 2026 Dark).
+            --output, -o PATH     Write HTML to PATH instead of stdout.
+        HELP
     }.freeze
 
     def format_size(bytes)
@@ -1615,6 +1738,7 @@ module MilkTea
       io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--nullable-report PATH] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
       io.puts("       mtc cache purge|status")
       io.puts("       mtc docs [--open] [--port PORT] [--root PATH]")
+      io.puts("       mtc snapshot INPUT.mt [--theme PATH] [-o OUTPUT]")
     end
   end
 end

@@ -2717,7 +2717,7 @@ module MilkTea
     end
 
     def check_when_start?
-      check(:identifier) && peek.lexeme == "when"
+      check(:when)
     end
 
     def check(type)
