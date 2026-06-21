@@ -632,14 +632,15 @@ extending Parser:
             this.skip_newlines()
             if this.check(token.TokenKind.tk_dedent):
                 break
+            this.match_kind(token.TokenKind.tk_public)
             this.match_kind(token.TokenKind.tk_static)
             this.match_kind(token.TokenKind.tk_editable)
             this.expect(token.TokenKind.tk_function)
             let mname = this.expect_id()
             this.skip_bracketed(token.TokenKind.tk_lbracket, token.TokenKind.tk_rbracket)
+            var mparams = this.empty_params()
             this.expect(token.TokenKind.tk_lparen)
-            while not this.check(token.TokenKind.tk_rparen) and not this.at_end():
-                this.advance()
+            this.parse_param_list(ref_of(mparams))
             this.expect(token.TokenKind.tk_rparen)
             var rtype_node: ptr[nodes.Type]? = null
             if this.match_kind(token.TokenKind.tk_arrow):
@@ -655,7 +656,7 @@ extending Parser:
             if not this.at_end():
                 body_end = this.peek_tok().src_offset
             var count = unsafe: body.stmts.len()
-            methods.push(nodes.Decl(kind = nodes.DeclKind.function_def, name = mname, return_node = rtype_node, stmt_count = count, body_block = body, line = line, column = col, type_node = null, value_text = "", params = this.empty_params(), fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), mapping = "", body_src_start = body_start, body_src_end = body_end))
+            methods.push(nodes.Decl(kind = nodes.DeclKind.function_def, name = mname, return_node = rtype_node, params = mparams, stmt_count = count, body_block = body, line = line, column = col, type_node = null, value_text = "", fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), methods = this.empty_methods(), impl_list = this.empty_impls(), mapping = "", body_src_start = body_start, body_src_end = body_end))
         this.skip_dedent()
         return nodes.Decl(kind = nodes.DeclKind.extending_block, name = type_name, methods = methods, line = line, column = col, type_node = null, value_text = "", params = this.empty_params(), return_node = null, fields = this.empty_fields(), members = this.empty_members(), arms = this.empty_arms(), impl_list = this.empty_impls(), mapping = "", body_src_start = 0, body_src_end = 0)
 

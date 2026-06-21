@@ -109,15 +109,49 @@ extending Lowerer:
     function write_ctype_node(buf: ptr[str_buffer[512]], tp: ptr[nodes.Type]?) -> void:
         if tp == null:
             return
-        if unsafe: read(tp).kind == nodes.TypeKind.type_nullable:
-            this.write_ctype_node(buf, unsafe: read(tp).inner)
+        var inner_tp = unsafe: read(tp)
+        if inner_tp.kind == nodes.TypeKind.type_nullable:
+            this.write_ctype_node(buf, inner_tp.inner)
             return
-        var name = unsafe: read(tp).name
-        if name == "const_ptr":
-            name = "ptr"
+        var name = inner_tp.name
+
+        if inner_tp.kind == nodes.TypeKind.type_constructed:
+            if name == "const_ptr":
+                if inner_tp.inner != null:
+                    this.write_ctype_node(buf, inner_tp.inner)
+                else:
+                    unsafe: read(buf).append("void")
+                unsafe: read(buf).append("*")
+                return
+            if name == "ptr" or name == "ref":
+                if inner_tp.inner != null:
+                    this.write_ctype_node(buf, inner_tp.inner)
+                else:
+                    unsafe: read(buf).append("void")
+                unsafe: read(buf).append("*")
+                return
+            unsafe: read(buf).append("void*")
+            return
+
         if name == "usize":
             name = "ptr_uint"
-        this.write_ctype(buf, name)
+
+        var is_dotted = false
+        var di: ptr_uint = 0
+        while di < name.len:
+            if name.byte_at(di) == '.':
+                is_dotted = true
+                break
+            di += 1
+
+        if not is_dotted and name != "" and not self_is_c_primitive(name):
+            if this.module_name != "":
+                unsafe: read(buf).append(this.module_name)
+                unsafe: read(buf).append("_")
+            unsafe: read(buf).append(name)
+        else:
+            this.write_ctype(buf, name)
+
 
 
     function write_tname(buf: ptr[str_buffer[512]], type_name: str) -> void:
@@ -173,8 +207,30 @@ extending Lowerer:
             let decl = unsafe: read(d)
             if not this.self_has_output(decl):
                 continue
-            this.write_decl(decl)
+            if not this.self_is_function_decl(decl.kind):
+                this.write_decl(decl)
             i += 1
+
+        i = 0
+        while i < source.decls.len():
+            let d = source.decls.get(i) else:
+                break
+            let decl = unsafe: read(d)
+            if not this.self_has_output(decl):
+                continue
+            if this.self_is_function_decl(decl.kind):
+                this.write_decl(decl)
+            i += 1
+
+
+    function self_is_function_decl(kind: nodes.DeclKind) -> bool:
+        if kind == nodes.DeclKind.function_def:
+            return true
+        if kind == nodes.DeclKind.extending_block:
+            return true
+        if kind == nodes.DeclKind.const_decl or kind == nodes.DeclKind.var_decl:
+            return true
+        return false
 
 
     function self_has_output(decl: nodes.Decl) -> bool:
@@ -598,6 +654,9 @@ extending Lowerer:
             return
         let e = unsafe: read(expr_ptr)
         if e.kind == nodes.ExprKind.identifier:
+            if not self_is_c_primitive(e.name) and this.module_name != "":
+                unsafe: this.out_buf.append(this.module_name)
+                unsafe: this.out_buf.append("_")
             unsafe: this.out_buf.append(e.name)
         else if e.kind == nodes.ExprKind.member_access:
             this.self_write_tname_expr(e.left)
@@ -759,3 +818,30 @@ extending Lowerer:
             this.pline("}")
             this.pline("")
             i += 1
+
+function self_is_c_primitive(name: str) -> bool:
+    if name == "bool" or name == "int" or name == "uint" or name == "byte" or name == "ubyte":
+        return true
+    if name == "short" or name == "ushort" or name == "long" or name == "ulong":
+        return true
+    if name == "float" or name == "double" or name == "char" or name == "void":
+        return true
+    if name == "str" or name == "cstr" or name == "ptr_int" or name == "ptr_uint":
+        return true
+    if name == "ptr" or name == "ref" or name == "span" or name == "dyn":
+        return true
+    if name == "fn" or name == "proc" or name == "array" or name == "SoA":
+        return true
+    if name == "Task" or name == "Option" or name == "Result" or name == "type":
+        return true
+    if name == "atomic" or name == "str_buffer":
+        return true
+    if name == "vec2" or name == "vec3" or name == "vec4":
+        return true
+    if name == "ivec2" or name == "ivec3" or name == "ivec4":
+        return true
+    if name == "mat3" or name == "mat4" or name == "quat":
+        return true
+    if name == "" or name == "?" or name == "const_ptr" or name == "usize":
+        return true
+    return false
