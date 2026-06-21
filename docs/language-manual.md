@@ -353,6 +353,17 @@ Compile-time reflection over validated attributes uses `has_attribute`, `attribu
 
 The current C backend lowers `packed` / `align(...)` attributes with GNU-style `__attribute__((...))`, so these layout controls currently require a Clang/GCC-family compiler. On Windows that means Clang or GCC-family toolchains such as MinGW; `cl.exe` is not a supported backend for these attributes today. On wasm/browser targets the same feature works through Emscripten `emcc`, which is Clang-based.
 
+### 3.4a Enum and flags operators
+
+Enum and flags values support the full set of comparison operators (`==`, `!=`, `<`, `<=`, `>`, `>=`) against values of the same enum type and against their backing integer type. Comparisons use the underlying integer backing values.
+
+```mt
+const IS_RUNNING: bool = State.running == State.running
+const IS_AFTER:   bool = State.running > State.idle
+```
+
+Flags values also support bitwise operators (`|`, `&`, `^`, `~`) where both operands share the same flags type.
+
 ### 3.5 Interfaces
 
 ```mt
