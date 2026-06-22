@@ -389,4 +389,57 @@ module MilkTea
       end
     end
   end
+
+  class ValidateSpecializedTypeVisitor < TypeVisitor
+    def initialize(function_name:, context:, on_error:, on_generic_instance: nil)
+      super()
+      @function_name = function_name
+      @context = context
+      @on_error = on_error
+      @on_generic_instance = on_generic_instance
+    end
+
+    def visit_literal_type_arg(type)
+      @on_error.call("#{@context} of function #{@function_name} must be a type, got #{type}")
+    end
+
+    def visit_type_var(type)
+      @on_error.call("cannot infer type argument #{type.name} for function #{@function_name}")
+    end
+
+    def visit_generic_instance(type)
+      @on_generic_instance&.call(type.name, type.arguments)
+      visit_children(type)
+    end
+
+    def visit_proc(type)
+      type.params.each do |param|
+        with_context("#{@context} parameter #{param.name}") { visit(param.type) }
+      end
+      with_context("#{@context} return type") { visit(type.return_type) }
+    end
+
+    def visit_function(type)
+      type.params.each do |param|
+        with_context("#{@context} parameter #{param.name}") { visit(param.type) }
+        if param.boundary_type
+          with_context("#{@context} boundary parameter #{param.name}") { visit(param.boundary_type) }
+        end
+      end
+      with_context("#{@context} return type") { visit(type.return_type) }
+      if type.receiver_type
+        with_context("#{@context} receiver type") { visit(type.receiver_type) }
+      end
+    end
+
+    private
+
+    def with_context(new_context)
+      old = @context
+      @context = new_context
+      yield
+    ensure
+      @context = old
+    end
+  end
 end
