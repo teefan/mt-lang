@@ -8,6 +8,10 @@ module MilkTea
 
       module_function
 
+      def reset!
+        @mutex.synchronize { @pool.clear }
+      end
+
       def _intern(key, &construct)
         @mutex.synchronize do
           @pool[key] ||= construct.call

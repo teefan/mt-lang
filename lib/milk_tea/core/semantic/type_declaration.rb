@@ -456,6 +456,7 @@ module MilkTea
             type_param_constraints = struct_type.is_a?(Types::GenericStructDefinition) ? struct_type.type_param_constraints : {}
             fields = {}
             events = {}
+            field_errors = []
 
             auto_lifetimes = []
 
@@ -499,8 +500,15 @@ module MilkTea
                 end
                 fields[field.name] = field_type
               rescue SemanticError => e
-                collect_structural_error(e)
+                fields[field.name] = @error_type
+                field_errors << e
+                @structural_errors << e if @structural_errors
               end
+            end
+
+            unless field_errors.empty?
+              struct_type.define_fields(fields)
+              raise field_errors.first
             end
 
             if decl.is_a?(AST::StructDecl)
@@ -631,6 +639,7 @@ module MilkTea
                 seen_arms << arm.name
                 field_types = {}
                 seen_fields = []
+                arm_field_errors = []
                 arm.fields.each do |field|
                   begin
                     raise_sema_error("duplicate field #{arm.name}.#{field.name}") if seen_fields.include?(field.name)
@@ -651,9 +660,13 @@ module MilkTea
                     end
                     field_types[field.name] = field_type
                   rescue SemanticError => e
-                    collect_structural_error(e)
+                    field_types[field.name] = @error_type
+                    arm_field_errors << e
+                    @structural_errors << e if @structural_errors
                   end
                 end
+
+                raise arm_field_errors.first unless arm_field_errors.empty?
                 arms_hash[arm.name] = field_types
               rescue SemanticError => e
                 collect_structural_error(e)
@@ -786,7 +799,8 @@ module MilkTea
               validate_stored_ref_type!(field_type, "field #{qualified_name}.#{field.name}")
               fields[field.name] = field_type
             rescue SemanticError => e
-              collect_structural_error(e)
+              fields[field.name] = @error_type
+              @structural_errors << e if @structural_errors
             end
           end
           nested_type.define_fields(fields)

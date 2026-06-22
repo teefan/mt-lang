@@ -220,6 +220,7 @@ module MilkTea
     end
 
     def build
+      Types::Registry.reset!
       ensure_compiler_available!
       ensure_supported_backend!
 
