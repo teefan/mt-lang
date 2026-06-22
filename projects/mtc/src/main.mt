@@ -348,6 +348,31 @@ function main(args: span[str]) -> int:
         if args.len < 2:
             stdio.print_line("error: no files specified")
             return 1
+
+        # Pre-scan: accumulate type maps from all modules
+        var global_lr = lower.Lowerer.create("", "")
+        var g_i: ptr_uint = 1
+        while g_i < args.len:
+            var file_path = unsafe: read(args.data + g_i)
+            match fs.read_text(file_path):
+                Result.failure as err:
+                    stdio.print_line(f"error: cannot read '#{file_path}'")
+                    return 1
+                Result.success as ok:
+                    var source = ok.value
+                    var source_str = source.as_str()
+                    var lex = lexer.Lexer.create(source_str)
+                    var tokens = lex.lex()
+                    var p = parser.Parser.create(source_str, tokens)
+                    var ast = p.parse()
+                    var module_name = self_module_basename(file_path)
+                    var saved_name = global_lr.module_name
+                    global_lr.module_name = module_name
+                    global_lr.build_type_maps(ast)
+                    global_lr.module_name = saved_name
+            g_i += 1
+
+        # Main loop: lower each file referencing global type maps
         var i: ptr_uint = 1
         while i < args.len:
             var file_path = unsafe: read(args.data + i)
@@ -366,6 +391,7 @@ function main(args: span[str]) -> int:
                     var lr = lower.Lowerer.create(module_name, source_str)
                     if i > 1:
                         lr.skip_header = true
+                    lr.set_global_type_maps(ptr_of(global_lr))
                     lr.lower_module(ast)
             i += 1
         return 0
