@@ -110,7 +110,7 @@ module MilkTea
             )
             ast = with_inferred_module_name(ast, loader:, path:)
             import_resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
-            MilkTea::Sema.tooling_snapshot(
+            MilkTea::SemanticAnalyzer.tooling_snapshot(
               ast,
               imported_modules: import_resolution.modules,
               allow_missing_imports: true,
@@ -118,9 +118,9 @@ module MilkTea
             ).facts
           else
             ast = MilkTea::Parser.parse(content, path: uri)
-            MilkTea::Sema.check(ast)
+            MilkTea::SemanticAnalyzer.check(ast)
           end
-        rescue MilkTea::LexError, MilkTea::SemaError, ModuleLoadError
+        rescue MilkTea::LexError, MilkTea::SemanticError, ModuleLoadError
           nil
         end
 
@@ -148,7 +148,7 @@ module MilkTea
                          )
                          ast = with_inferred_module_name(ast, loader:, path:)
                          import_resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
-                         MilkTea::Sema.tooling_snapshot(
+                         MilkTea::SemanticAnalyzer.tooling_snapshot(
                            ast,
                            imported_modules: import_resolution.modules,
                            allow_missing_imports: true,
@@ -158,9 +158,9 @@ module MilkTea
                           ast = get_ast(uri)
                           return @last_good_tooling_snapshot_cache[uri] if ast.nil?
 
-                          result = MilkTea::Sema.check_collecting_errors(ast)
+                          result = MilkTea::SemanticAnalyzer.check_collecting_errors(ast)
                           facts = result[:analysis]
-                          MilkTea::Sema::ToolingSnapshot.new(facts:, diagnostics: (Array(result[:errors]).map { |e| e.to_diagnostic(path: uri) } || []).freeze)
+                          MilkTea::SemanticAnalyzer::ToolingSnapshot.new(facts:, diagnostics: (Array(result[:errors]).map { |e| e.to_diagnostic(path: uri) } || []).freeze)
                         end
               if snapshot&.facts
                 @last_good_tooling_snapshot_cache[uri] = snapshot
@@ -168,7 +168,7 @@ module MilkTea
                 @document_module_names[uri] = snapshot.facts.module_name
               end
             snapshot
-          rescue MilkTea::LexError, MilkTea::SemaError, ModuleLoadError, PackageLockError
+          rescue MilkTea::LexError, MilkTea::SemanticError, ModuleLoadError, PackageLockError
             @last_good_tooling_snapshot_cache[uri]
           rescue StandardError => e
             warn "LSP sema error #{uri}: #{e.message}"

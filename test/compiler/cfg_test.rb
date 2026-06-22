@@ -402,7 +402,7 @@ class MilkTeaCFGTest < Minitest::Test
 
   def sema_function_context(source, function_name = "main")
     ast = MilkTea::Parser.parse(source, path: "demo.mt")
-    facts = MilkTea::Sema.check(ast)
+    facts = MilkTea::SemanticAnalyzer.check(ast)
     function = ast.declarations.find { |decl| decl.is_a?(MilkTea::AST::FunctionDef) && decl.name == function_name }
     binding = facts.functions.fetch(function_name)
     { facts:, function:, binding: }

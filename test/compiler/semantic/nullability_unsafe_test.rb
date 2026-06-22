@@ -165,7 +165,7 @@ class NullabilityUnsafeTest < Minitest::Test
               return read(value)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -198,7 +198,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -370,7 +370,7 @@ class NullabilityUnsafeTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(root_source, imported_sources)
     end
 
@@ -424,7 +424,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return str(data = data, len = len)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -471,7 +471,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return reinterpret[uint](value)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -659,7 +659,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -679,7 +679,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return read(counter_ptr).value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -700,7 +700,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return counter.value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -724,7 +724,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return counter_ptr.read()
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -744,7 +744,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return read(counter_ptr).value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -763,7 +763,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -782,7 +782,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -836,7 +836,7 @@ class NullabilityUnsafeTest < Minitest::Test
           let maybe_buffer: ptr[char]? = zero[ptr[char]]
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -852,7 +852,7 @@ class NullabilityUnsafeTest < Minitest::Test
           maybe_buffer = zero[ptr[char]]
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -869,7 +869,7 @@ class NullabilityUnsafeTest < Minitest::Test
           set_buffer(zero[ptr[char]])
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -884,7 +884,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return zero[ptr[char]]
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -916,7 +916,7 @@ class NullabilityUnsafeTest < Minitest::Test
           let maybe_buffer: ptr[char]? = null[int]
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -931,7 +931,7 @@ class NullabilityUnsafeTest < Minitest::Test
           let maybe_buffer = null[ptr[char]]
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -949,7 +949,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -998,7 +998,7 @@ class NullabilityUnsafeTest < Minitest::Test
           let _ = const_ptr_of(r)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1085,7 +1085,7 @@ class NullabilityUnsafeTest < Minitest::Test
               return reinterpret[int](value)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1113,7 +1113,7 @@ class NullabilityUnsafeTest < Minitest::Test
           return read(p)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1184,7 +1184,7 @@ class NullabilityUnsafeTest < Minitest::Test
           let raw = ptr_of(42)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 

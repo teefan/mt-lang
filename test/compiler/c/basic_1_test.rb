@@ -172,7 +172,7 @@ function main() -> int:
 
       )
       program = MilkTea::ModuleLoader.new(module_roots: [dir]).check_program(root_path)
-      generated = MilkTea::Codegen.generate_c(MilkTea::Lowering.lower(program))
+      generated = MilkTea::CBackend.generate_c(MilkTea::Lowering.lower(program))
 
       assert_match(/static const int32_t std_math_TEN = 10;/, generated)
       refute_match(/static const int32_t std_math_UNUSED = 99;/, generated)
@@ -1155,7 +1155,7 @@ function main() -> int:
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       generate_c_from_program_source(source, imported_sources)
     end
 
@@ -2054,7 +2054,7 @@ function main() -> int:
           return value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       generate_c_from_program_source(source)
     end
 

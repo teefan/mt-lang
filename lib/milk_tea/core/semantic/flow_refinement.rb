@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
@@ -169,7 +169,7 @@ module MilkTea
         binding = resolve_attribute_name_argument(expression.arguments[1].value)
         validate_attribute_target_compatibility!(target, binding)
         attribute_presence_refinement_key(target, binding)
-      rescue SemaError
+      rescue SemanticError
         nil
       end
 

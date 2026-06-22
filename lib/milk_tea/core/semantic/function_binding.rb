@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
@@ -40,13 +40,13 @@ module MilkTea
                   raise_sema_error("duplicate method #{decl.type_name}.#{binding.name}") if @ctx.methods[dispatch_receiver_type].key?(method_key)
 
                   @ctx.methods[dispatch_receiver_type][method_key] = binding
-                rescue SemaError => e
+                rescue SemanticError => e
                   collect_structural_error(e)
                 end
               end
             end
           end
-        rescue SemaError => e
+        rescue SemanticError => e
           collect_structural_error(e)
         end
       end
@@ -129,7 +129,7 @@ module MilkTea
               record_declaration_binding(param, param_binding)
               public_params << Types::Registry.parameter(param.name, type) if external
             end
-          rescue SemaError => e
+          rescue SemanticError => e
             collect_structural_error(e)
             param_binding = value_binding(name: param.name, type: @error_type, mutable: false, kind: :param)
             body_params << param_binding
@@ -255,7 +255,7 @@ module MilkTea
       end
 
       # Per-function error collection used by check_collecting_errors.
-      # Continues past individual function failures, accumulating SemaErrors.
+      # Continues past individual function failures, accumulating SemanticErrors.
       def check_functions_collecting(errors)
         @ctx.top_level_functions.each_value do |binding|
           next if @checked_function_bindings[binding.object_id]
@@ -263,7 +263,7 @@ module MilkTea
           prev_count = @structural_errors.length
           begin
             check_function(binding)
-          rescue SemaError => e
+          rescue SemanticError => e
             errors << e
           end
           errors.concat(@structural_errors[prev_count..].to_a)
@@ -276,7 +276,7 @@ module MilkTea
             prev_count = @structural_errors.length
             begin
               check_function(binding)
-            rescue SemaError => e
+            rescue SemanticError => e
               errors << e
             end
             errors.concat(@structural_errors[prev_count..].to_a)

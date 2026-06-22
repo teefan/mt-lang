@@ -49,7 +49,7 @@ class GenericsTest < Minitest::Test
           holder: Holder[U]
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../sema/helpers"
+require_relative "../semantic/helpers"
 require_relative "helpers"
 
 class AtomicTest < Minitest::Test
@@ -32,7 +32,7 @@ class AtomicTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_program_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_program_source(source) }
     assert_match(/primitive integer or bool/, error.message)
   end
 
@@ -69,7 +69,7 @@ class AtomicTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_program_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_program_source(source) }
     assert_match(/immutable/, error.message)
   end
 

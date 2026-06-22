@@ -5019,7 +5019,7 @@ class TypeCheckingTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/serialize cannot target const/, error.message)
   end
 

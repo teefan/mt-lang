@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
@@ -22,7 +22,7 @@ module MilkTea
                   apply_nullability_continuation_refinements!(nested_scopes, statements[idx + 1])
                 end
                 record_local_completion_snapshot(statement_end_line(statement), 1_000_000, nested_scopes)
-              rescue SemaError => e
+              rescue SemanticError => e
                 if @collecting_errors
                   @structural_errors << e
                   next
@@ -233,7 +233,7 @@ module MilkTea
 
           begin
             zero_initializable_type?(declared_type)
-          rescue SemaError
+          rescue SemanticError
             raise_sema_error("local #{statement.name} without initializer requires a zero-initializable type, got #{declared_type}")
           end
 

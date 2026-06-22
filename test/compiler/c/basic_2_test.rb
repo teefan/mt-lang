@@ -420,7 +420,7 @@ function main() -> int:
           return str(data = data, len = len)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       generate_c_from_source(source)
     end
 
@@ -437,7 +437,7 @@ function main() -> int:
           return left + right
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       generate_c_from_source(source)
     end
 
@@ -770,7 +770,7 @@ function main() -> int:
 
       )
       program = MilkTea::ModuleLoader.new(module_roots: [dir]).check_program(source_path)
-      generated = MilkTea::Codegen.generate_c(MilkTea::Lowering.lower(program))
+      generated = MilkTea::CBackend.generate_c(MilkTea::Lowering.lower(program))
 
       assert_match(/static demo_math_RawVec demo_math_RawVec_zero_static\(void\)/, generated)
       assert_match(/demo_math_RawVec value = demo_math_RawVec_zero_static\(\);/, generated)
@@ -1145,7 +1145,7 @@ function main() -> int:
 
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       generate_c_from_source(source)
     end
 
@@ -1302,7 +1302,7 @@ function main() -> int:
           var labels: cstr_list_buffer[3, 64]
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       generate_c_from_program_source(source)
     end
 
@@ -1337,7 +1337,7 @@ function main() -> int:
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       generate_c_from_program_source(source, imported_sources)
     end
 

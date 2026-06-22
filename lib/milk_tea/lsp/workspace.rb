@@ -48,12 +48,12 @@ module MilkTea
         @tokens_cache = {}   # uri -> [Token]
         @last_good_tokens_cache = {} # uri -> last known-good [Token]
         @ast_cache = {}      # uri -> AST::SourceFile (nil on parse failure)
-        @facts_cache = {} # uri -> Sema::Facts (projection of cached tooling snapshot facts)
-        @tooling_snapshot_cache = {} # uri -> Sema::ToolingSnapshot (facts may be nil on structural failure)
+        @facts_cache = {} # uri -> SemanticAnalyzer::Facts (projection of cached tooling snapshot facts)
+        @tooling_snapshot_cache = {} # uri -> SemanticAnalyzer::ToolingSnapshot (facts may be nil on structural failure)
         @symbols_cache = {}  # uri -> [{name, kind, line, column}]
         @doc_comments_cache = {} # uri -> {"line:column" => structured_doc_comment_hash}
-        @last_good_facts_cache = {} # uri -> last Sema::Facts that succeeded
-        @last_good_tooling_snapshot_cache = {} # uri -> last Sema::ToolingSnapshot with facts that succeeded
+        @last_good_facts_cache = {} # uri -> last SemanticAnalyzer::Facts that succeeded
+        @last_good_tooling_snapshot_cache = {} # uri -> last SemanticAnalyzer::ToolingSnapshot with facts that succeeded
         @document_module_names = {} # uri -> module name string (populated from last-good facts)
         @shared_module_cache = {}
         @facts_cache_mutex = Mutex.new

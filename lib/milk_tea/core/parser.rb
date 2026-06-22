@@ -2,7 +2,7 @@
 
 require_relative "parser/blocks"
 require_relative "parser/recovery"
-require_relative "parser/types"
+require_relative "parser/type_parsing"
 require_relative "parser/attributes"
 require_relative "parser/expressions"
 require_relative "parser/declarations"
