@@ -350,7 +350,7 @@ extending Iter[T]:
                 while i < this.len:
                     var j = i
                     let temp = read(data_ptr + j)
-                    while j >= gap and order[T](read(data_ptr + j - gap), temp) > 0:
+                    while j >= gap and order[T](data_ptr + j - gap, temp) > 0:
                         read(data_ptr + j) = read(data_ptr + j - gap)
                         j -= gap
 
