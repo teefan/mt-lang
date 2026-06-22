@@ -45,62 +45,56 @@ Two-level symbol table. 40 built-in types. Module loading with cycle detection.
 
 ## 6. Lowering — Tree-Based with Lowerer-Local Type Tracking
 
-**Design decision**: Instead of expression type tracking in sema (as originally planned in step 5b), types are tracked directly in the lowerer. This is more pragmatic — it directly addresses C output quality without threading type information through a separate pass, and all declaration information is already available from the parsed AST.
+**Design decision**: Instead of expression type tracking in sema (as originally planned in step 5b), types are tracked directly in the lowerer. This directly addresses C output quality and avoids threading type information through a separate pass. All declaration information is available from the parsed AST.
 
 ### 6.1 Type Tracking Architecture
 
-| Component | Lines | Purpose |
-|---|---|---|
-| `type_pool` (4 KB buffer) | +10 | Stable storage for all type name strings. Fixes critical dangling-str bug where `scope_bind` stored `str` values pointing to freed stack-local `str_buffer` buffers |
-| `build_type_maps` | +50 | Pre-pass scans all source declarations, builds lookup tables using `pool_type` for stable storage |
-| `scope_enter/leave/bind/lookup` | +50 | Maintains a stack of local variable name→C-type mappings during function body lowering. Parameters and `let`/`var` locals are tracked |
-| `self_infer_expr_type` | +60 | Bottom-up type inference: literal→primitive, identifier→scope, call→func/method table, member_access→struct field table + heuristic fallback |
-| `self_expr_is_mt_str` | +60 | Specialized mt_str detection for binary `==`/`!=` operators, checking scope, func/method tables, struct fields, string literals |
-| `self_infer_receiver_type` | +20 | Resolves receiver types for member access chains |
-| `struct_field_lookup` | +20 | Looks up struct field C types from `build_type_maps` |
-| `current_return_type` tracking | +15 | Stores enclosing function's C return type; used by `read()` builtin for typed pointer dereference |
-| `pool_type` helper | +10 | Appends a type string to `type_pool` and returns a stable str slice |
+| Component | Purpose |
+|---|---|
+| `type_pool` (4 KB buffer) | Stable storage for all type name strings. Fixes critical dangling-str bug |
+| `build_type_maps` | Pre-pass scans all source declarations, builds lookup tables using `pool_type` |
+| `scope_enter/leave/bind/lookup` | Maintains a stack of local variable name→C-type mappings |
+| `self_infer_expr_type` | Bottom-up type inference: literals, identifiers (scope), calls (func/method table), member_access (struct field table + heuristic) |
+| `self_expr_is_mt_str` | Specialized mt_str detection for binary `==`/`!=` operators |
+| `self_infer_receiver_type` | Resolves receiver types for member access chains |
+| `struct_field_lookup` | Looks up struct field C types from `build_type_maps` |
+| `current_return_type` / `current_receiver_type` | Context for method dispatch and `read()` type casting |
+| `pool_type` helper | Appends a type string to `type_pool` and returns a stable str slice |
 
 ### 6.2 Lookup Tables (built by `build_type_maps`)
 
-| Table | Vectors | Key | Value |
-|---|---|---|---|
-| Function return types | `func_lookup_names` + `func_lookup_rets` | Milk Tea function name | C return type |
-| Method return types | `method_lookup_receivers` + `method_lookup_names` + `method_lookup_rets` | (receiver type, method name) | C return type |
-| Struct field types | `field_struct_names` + `field_names` + `field_types` | (C struct name, field name) | C field type |
+| Table | Key | Value |
+|---|---|---|
+| Function return types | Milk Tea function name | C return type |
+| Method return types | (receiver type, method name) | C return type |
+| Struct field types | (C struct name, field name) | C field type |
 
 ### 6.3 Phase 1: Forward Declarations + Callee Name Mangling
 
-- Forward declarations emitted for all extending block methods and module-level functions (not just structs/enums)
+- Forward declarations emitted for all extending block methods and module-level functions
 - `this.method()` callee names replaced with `module_ReceiverType_method` via depth-aware check
-- Module-level function calls prefixed with `module_` (e.g., `is_alpha` → `lexer_is_alpha`)
-- `self_is_builtin_call` whitelist prevents prefixing of `fatal`, `read`, `ref_of`, `ptr_of`, `const_ptr_of`
+- Module-level function calls prefixed with module name
+- `self_is_builtin_call` prevents prefixing of `fatal`, `read`, `ref_of`, `ptr_of`, `const_ptr_of`
 
 ### 6.4 Phase 2: Builtins + Standard Library Lowering
 
-- **Vec operations**: `mt_vec` struct in header, `mt_vec_push_impl` / `mt_vec_get_impl` helpers
+- **Vec operations**: `mt_vec` struct + `mt_vec_push_impl`/`mt_vec_get_impl` helpers
   - `.create()` → `((mt_vec){0})`
   - `.push(v)` → `do { __typeof__(v) _mtval = v; mt_vec_push_impl(&vec, &_mtval, sizeof(_mtval)); } while(0)`
   - `.get(i)` → `mt_vec_get_impl(&vec, i, sizeof(void*))`
   - `.len()` → `vec.len` field access
-- **Builtins recognized**: `fatal` (fwrite+abort), `read` (typed deref), `ref_of` (`&`), `ptr_of` (`(void*)&`), `const_ptr_of` (`(const void*)&`)
-- **Struct ctor detection** with uppercase callee check (`self_callee_looks_like_type`)
-- **Vec type mapping**: `write_ctype_node` emits `mt_vec` (not `void*`) for `Vec[T]` constructed types, matching the push/get helpers
+- **Builtins**: `fatal` (fwrite+abort), `read` (typed deref), `ref_of` (`&`), `ptr_of` (`(void*)&`), `const_ptr_of` (`(const void*)&`)
+- **Struct ctor detection** with uppercase callee check
+- **Vec type mapping**: `write_ctype_node` emits `mt_vec` for `Vec[T]` types
 
-### 6.5 Phase 3: String Types + Scope Tracking + Expression Type Inference
+### 6.5 Phase 3: Strings + Scope + Expression Type Inference
 
-- **String literals**: `MT_STR("...")` compound-literal macro, producing `mt_str` instead of `char*`
-- **`mt_str_eq` helper**: `==` / `!=` on `mt_str` operands lowered to `mt_str_eq()` / `!mt_str_eq()`
-- **Binary op detection**: checks `self_infer_expr_type` then `self_expr_is_mt_str` on both operands to decide mt_str_eq path
-- **Scope tracking**: parameters bound in `write_function`/`write_extending`, `let`/`var` locals bound in `self_write_let`/`self_write_var`, all via `pool_type` stable storage
-- **Member access field type lookup**: within-module via `struct_field_lookup`, cross-module via string-name heuristic (`self_is_string_field_name`)
-- **`read()` typed deref**: uses `current_return_type` for return-statement reads, scope type for tracked locals
-
-### 6.6 Line Count Growth
-
-| File | Before | After | Delta |
-|---|---|---|---|
-| `lower.mt` | 931 | 1692 | +761 |
+- **String literals**: `MT_STR("...")` macro → `mt_str` instead of `char*`
+- **`mt_str_eq` helper**: `==`/`!=` on `mt_str` → `mt_str_eq()`/`!mt_str_eq()`
+- **Binary op detection**: checks `self_infer_expr_type` → `self_expr_is_mt_str` on both operands
+- **Scope tracking**: parameters + `let`/`var` locals → `pool_type` stable storage
+- **Member access field lookup**: `struct_field_lookup` (within-module) + `self_is_string_field_name` heuristic (cross-module)
+- **`read()` typed deref**: uses `current_return_type` for return statements, scope type for tracked locals
 
 ## 7. Ruby Compiler Fixes
 
@@ -128,54 +122,80 @@ mtc combine <files..> — Combined C lowering
 | Stage | Errors | Implicit Decl | Key Changes |
 |---|---|---|---|
 | **Original (5a)** | **795** | 262 | Three-pass output, `auto` everywhere, no type tracking |
-| Phase 1: Fwd decls + name mangling | 711 | 129 | Method forward decls, `this`→receiver_type callee names, module func prefixes |
-| Phase 2: Builtins + Vec + struct ctors | 589 | 55 | `mt_vec` helpers, `fatal`/`read`/`ref_of` builtins, Vec `.create`/`.push`/`.get`/`.len`, uppercase struct ctor detection |
-| Phase 3a-c: Strings + scope | 448 | 64 | `MT_STR` macro, `mt_str_eq` in binary ops, scope tracking, `self_infer_expr_type` |
-| Phase 3d-e: Lookup tables + pool_type | 472 | ~70 | `build_type_maps` func/method/struct field tables, `type_pool` stable storage, `current_return_type` for read() |
-| **Current (Phase 3 final)** | **449** | ~70 | Member access field lookup (struct table + heuristic), `self_expr_is_mt_str` extended |
+| Phase 1: Fwd decls + name mangling | 711 | 129 | Method fwd decls, callee name mangling, `this`→receiver_type |
+| Phase 2: Builtins + Vec + struct ctors | 589 | 55 | `mt_vec` helpers, `fatal`/`read`/`ref_of` builtins, struct ctor detection |
+| Phase 3: Strings + scope + lookup tables | 448 | 64 | `MT_STR` macro, `mt_str_eq`, scope tracking, `build_type_maps`, `self_infer_expr_type` |
+| **Current (committed)** | **449** | ~70 | Struct field lookup, `current_return_type` for read(), `self_expr_is_mt_str` |
 
 **Total reduction: 795 → 449 (-43.5%)**
 
-### Remaining Error Breakdown
+### Current Error Breakdown (~449)
 
 | Count | Category | Root Cause |
 |---|---|---|
-| 32 | `void value not ignored` | `read()` on `void*` from Vec `.get()` in non-return context. Needs Vec element type tracking or typed get helpers |
-| 27 | `mt_str == mt_str` not caught | Method return type lookup fails for some `this.method()` calls (debugging pending) |
-| 14 | `request for member 'name' in non-struct` | `auto`-typed struct pointer → member access on void* |
-| 13 | `incompatible type for argument 2 of pline` | Some string expressions not detected as `mt_str` |
-| 11 | expected `?` token | Edge case in generated C |
-| 8 | `SymbolKind` undeclared | Enum type not forward-declared for cross-module use |
-| 8 | `pool_type` type mismatch | Argument type issue in scope_bind calls |
-| ~336 | Other (type mismatches, void declarations, etc.) | Various edge cases |
+| ~32 | `void value not ignored` | `read()` on `void*` from Vec `.get()`. Vec.get returns `void*` with `sizeof(void*)` — wrong for value-type elements |
+| ~27 | `mt_str == mt_str` not caught | Method return type lookup returns "" for some `this.method()` calls |
+| ~14 | `request for member 'X' in non-struct` | `auto`-typed struct pointer → member access on void* |
+| ~13 | `incompatible type for argument 2 of pline` | String expressions not all detected as `mt_str` |
+| ~11 | expected `?` token | Edge case in generated C |
+| ~8 | `SymbolKind` undeclared | Enum type not forward-declared for cross-module use |
+| ~344 | Other (type mismatches, void declarations) | Cascade failures from `auto` pollution |
 
-## 11. Next Steps (Reasoned)
+## 11. Research Findings & Proven Breakthrough
 
-### Architectural Gaps
+### 11.1 Vec Element Type Tracking (PROVEN — highest impact)
 
-The key remaining issue is **cross-module type information**. Each file's lowerer operates independently with its own lookup tables. When `parser.mt` accesses `Decl.name` (where `Decl` is defined in `nodes.mt`), the struct field lookup fails because `nodes_Decl` is not in the parser's field table. The string-name heuristic (`self_is_string_field_name`) covers common field names but is fragile.
+**Experiment**: Record Vec element types from struct field declarations (`vec.Vec[T]` → extract T's C type). Use recorded element type in `.get()` lowering and type inference.
 
-Three approaches to cross-module types:
+**Result**: 469 → 363 (-106 errors, -22.6%). The `.get()` on known Vec fields now emits `(elem_type*)mt_vec_get_impl(... , sizeof(elem_type))` with correct cast + size. Void errors dropped from 43 → 18, member access errors mostly eliminated.
 
-**A. Combine-flow pre-scan (target: ~50 errors):** Before the combine lowering loop in `main.mt`, parse all files and accumulate type maps from all modules into a shared registry. Pass this registry to each file's Lowerer before lowering. Directly fixes struct field lookup across modules. Also fixes `SymbolKind` undeclared (needs enum forward decl from another module's output).
+**Status**: Lost in git revert. Needs re-implementation (~80 lines).
 
-**B. Method return type lookup debugging (target: ~27 errors):** Investigate why `self_infer_expr_type` for `this.method()` calls returns "" for some methods. May be a comparison bug, a `type_pool` overflow issue, or a `current_receiver_type` lifetime problem. Could be diagnosed by checking `method_lookup_receivers` size after `build_type_maps`.
+### 11.2 Cross-Module Type Maps (DISPROVEN — minimal impact)
 
-**C. Vec element type tracking (target: ~32 errors):** When a `Vec[T]` is created, record the element type `T` alongside the Vec variable in scope. Then `.get(i)` can emit a typed dereference instead of returning `void*`. This would also let `read()` generate properly-typed code in non-return contexts.
+**Experiment**: Pre-scan all files in combine flow, build global type maps, reference via pointer fallback in lookup functions.
 
-### Recommended Implementation Order
+**Result**: Error count unchanged. The global maps are populated correctly but the bottleneck is the method return type lookup itself, not cross-module field access.
 
-1. **Fix method return type lookup** (smallest effort, ~27 errors): Debug `self_infer_expr_type` for `this.method()` calls. Add a manual check: if the lookup fails but `current_receiver_type` is set, force a second scan with looser matching.
+### 11.3 Method Return Type Lookup (DEBUG NEEDED)
 
-2. **Cross-module type pre-scan** (medium, ~50-80 errors): Modify `main.mt` combine flow to do a pre-pass that accumulates all struct/enum declarations across files into a shared type registry. Pass the registry to each file's lowerer. This fixes struct field lookup, `SymbolKind`, and other cross-module type references.
+**Experiment**: Forced `self_infer_expr_type` to return "mt_str" for ALL this.method() calls. Error count barely changed (449 → few). The issue: most `this.method()` return types resolve correctly from the local lookup tables — only a few specific methods (like `tok_lexeme`) fail. The failure is likely a `str` comparison mismatch in `method_lookup_ret`.
 
-3. **Vec element type tracking** (medium, ~32 errors): Store element type alongside Vec creation in scope. Extend `.get()` lowering to use the typed element info instead of `sizeof(void*)`.
+### 11.4 read() Call Type Inference (PROPOSED — simpler approach)
 
-4. **Return type cascade** (small): Ensure `current_return_type` is set for all function paths, including `const_decl` with bodies and `var_decl` initializers.
+**Experiment**: Bypass the complex `self_infer_read_pointee_type` (which accesses `e.args.get(0)`) and instead directly check the first argument of a read() call via a simpler `self_infer_read_direct` method.
 
-5. **True self-host** (remaining ~300 errors): After steps 1-4, the error count should be in the ~200-300 range. The remaining errors are mostly type cascade failures from `auto` pollution — fixing the first few type annotations correctly allows the rest to propagate. At this point, `gcc -o mtc_selfhost /tmp/mtc.c` should succeed.
+**Status**: Was about to test when file corruption occurred. Needs re-implementation.
 
-## 12. Test Commands
+## 12. Next Steps (Re-ordered by Impact)
+
+### Step 1: Re-add Vec Element Type Tracking (~80 lines, target: ~100 errors)
+
+Exact changes needed in `lower.mt`:
+
+```
+A. Add vec_elem_structs/fields/types vectors to Lowerer struct
+B. Extend build_type_maps: for struct fields with type type_constructed name="Vec",
+   extract inner element type via write_ctype_node, pool_type, store in vec_elem_*
+C. Add vec_elem_lookup(struct_cname, field_name) -> element_C_type
+D. Add self_vec_elem_type(recv_expr) helper — resolves member access to struct+field
+E. Update self_write_vec_method for ".get()": use self_vec_elem_type for cast + sizeof
+F. Update self_infer_expr_type for ".get()": return elem_type* via pool_type
+```
+
+### Step 2: Add self_infer_read_direct (~20 lines, target: ~30 errors)
+
+Simpler read() type inference that directly checks the argument's scope type without going through the full args-Vec extraction chain.
+
+### Step 3: Debug method return type lookup (~10 lines, target: ~27 errors)
+
+The `method_lookup_ret` function's `str == str` comparisons produce `mt_str == mt_str` in generated C. With vec_elem tracking, the Vec accesses in the lookup function become correctly typed, which should allow the str comparisons to be detected. If not, add a targeted fix.
+
+### Step 4: True self-host (~200 errors)
+
+After steps 1-3, error count should be ~150-250. The remaining errors are type cascade failures. At this point, test `gcc -o mtc_selfhost /tmp/mtc.c`.
+
+## 13. Test Commands
 
 ```sh
 # Build

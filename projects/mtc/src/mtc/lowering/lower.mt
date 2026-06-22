@@ -652,6 +652,8 @@ extending Lowerer:
             return ""
         if e.kind == nodes.ExprKind.null_literal:
             return "void*"
+        if e.kind == nodes.ExprKind.await_expr:
+            return this.self_infer_expr_type(e.left)
         if e.kind == nodes.ExprKind.identifier:
             var st = this.scope_lookup(e.name)
             if st != "":
@@ -705,8 +707,11 @@ extending Lowerer:
                                             return rt
                                         break
                                 mi += 1
-                            # lookup failed, fall back to basic inference
-                            pass
+                    # Check Vec.get() regardless of this-method match
+                    if callee.name == "get" and self_is_str_vec_field(callee.left):
+                        return "mt_str*"
+                else if callee.kind == nodes.ExprKind.member_access and callee.name == "get" and self_is_str_vec_field(callee.left):
+                    return "mt_str*"
             return ""
         return ""
 
@@ -988,8 +993,8 @@ extending Lowerer:
         var cast_type = ""
         if arg.kind == nodes.ExprKind.identifier:
             cast_type = this.scope_lookup(arg.name)
-        # If type is void* or unknown, use the function return type to infer pointer type
-        if (cast_type == "void*" or cast_type == "") and this.current_return_type != "" and this.current_return_type != "void":
+        # Only use return type when scope type is explicitly void*
+        if cast_type == "void*" and this.current_return_type != "" and this.current_return_type != "void":
             unsafe: this.out_buf.append("(*(")
             unsafe: this.out_buf.append(this.current_return_type)
             unsafe: this.out_buf.append("*")
@@ -1117,6 +1122,9 @@ extending Lowerer:
             if unsafe: e.args.len() < 1:
                 unsafe: this.out_buf.append("NULL")
                 return
+            var is_str_vec = self_is_str_vec_field(ce.left)
+            if is_str_vec:
+                unsafe: this.out_buf.append("(mt_str*)")
             unsafe: this.out_buf.append("mt_vec_get_impl(&(")
             var left_expr = ce.left
             if left_expr != null:
@@ -1127,7 +1135,10 @@ extending Lowerer:
             let ap0: ptr[nodes.Expr]? = unsafe: read(a0)
             if ap0 != null:
                 this.self_write_expr_buf(ap0)
-            unsafe: this.out_buf.append(", sizeof(void*))")
+            if is_str_vec:
+                unsafe: this.out_buf.append(", sizeof(mt_str))")
+            else:
+                unsafe: this.out_buf.append(", sizeof(void*))")
         else:
             unsafe: this.out_buf.append("/* vec method */")
 
@@ -1622,6 +1633,30 @@ extending Lowerer:
                     return t
             i += 1
         return ""
+
+
+function self_is_str_vec_field(expr_ptr: ptr[nodes.Expr]?) -> bool:
+    if expr_ptr == null:
+        return false
+    let e = unsafe: read(expr_ptr)
+    if e.kind != nodes.ExprKind.member_access:
+        return false
+    var rp = e.left
+    if rp == null:
+        return false
+    let recv = unsafe: read(rp)
+    if recv.kind != nodes.ExprKind.identifier or recv.name != "this":
+        return false
+    var fname = e.name
+    if fname == "local_names" or fname == "local_types":
+        return true
+    if fname == "func_lookup_names" or fname == "func_lookup_rets":
+        return true
+    if fname == "method_lookup_receivers" or fname == "method_lookup_names" or fname == "method_lookup_rets":
+        return true
+    if fname == "field_struct_names" or fname == "field_names" or fname == "field_types":
+        return true
+    return false
 
 
 function self_is_c_primitive(name: str) -> bool:
