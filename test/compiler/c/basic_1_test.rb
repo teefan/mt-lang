@@ -132,7 +132,7 @@ function main() -> int:
     assert_match(/typedef union demo_codegen_surface_Payload/, generated)
     assert_match(/static const demo_codegen_surface_State demo_codegen_surface_DEFAULT_STATE = demo_codegen_surface_State_idle;/, generated)
     assert_match(/static const demo_codegen_surface_WindowFlags demo_codegen_surface_DEFAULT_FLAGS = demo_codegen_surface_WindowFlags_visible \| demo_codegen_surface_WindowFlags_resizable;/, generated)
-    assert_match(/if \(current == demo_codegen_surface_State_running\)/, generated)
+    assert_match(/if \(\(int32_t\) current == \(int32_t\) demo_codegen_surface_State_running\)/, generated)
     assert_match(/return 1;/, generated)
     end
 
