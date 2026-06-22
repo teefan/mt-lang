@@ -208,22 +208,22 @@ module MilkTea
 
         raise_sema_error("ref types are non-null and cannot be nullable", type_ref) if type_ref.nullable && ref_type?(base)
 
-        type_ref.nullable ? Types::Nullable.new(base) : base
+        type_ref.nullable ? Types::Registry.nullable(base) : base
       end
 
       def resolve_non_nullable_type(type_ref, type_params: {}, type_param_constraints: {}, nested_types: nil)
         if type_ref.is_a?(AST::FunctionType)
           params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
+            Types::Registry.parameter(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
           end
-          return Types::Function.new(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
+          return Types::Registry.function(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
         end
 
         if type_ref.is_a?(AST::ProcType)
           params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
+            Types::Registry.parameter(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
           end
-          return Types::Proc.new(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
+          return Types::Registry.proc(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
         end
 
         if type_ref.is_a?(AST::DynType)
@@ -231,7 +231,7 @@ module MilkTea
           raise_sema_error("generic interface #{interface.name} requires type arguments") if interface.is_a?(GenericInterfaceBinding)
           type_arguments = interface.type_arguments || []
           type = Types::Dyn.new(interface, type_arguments)
-          type = Types::Nullable.new(type) if type_ref.nullable
+          type = Types::Registry.nullable(type) if type_ref.nullable
           return type
         end
 
@@ -248,7 +248,7 @@ module MilkTea
             end
           end
           has_named = names.any?
-          return Types::Tuple.new(element_types, field_names: has_named ? names : nil)
+          return Types::Registry.tuple(element_types, field_names: has_named ? names : nil)
         end
 
         parts = type_ref.name.parts
@@ -263,7 +263,7 @@ module MilkTea
 
           if name == "Task"
             validate_generic_type!(name, arguments)
-            return Types::Task.new(arguments[0])
+            return Types::Registry.task(arguments[0])
           end
 
           if (generic_type = resolve_named_generic_type(parts))
@@ -287,12 +287,12 @@ module MilkTea
           end
 
           validate_generic_type!(name, arguments)
-          return Types::Span.new(arguments.first) if name == "span"
+          return Types::Registry.span(arguments.first) if name == "span"
 
-          return Types::SoA.new(arguments[0], count: arguments[1].value) if name == "SoA"
+          return Types::Registry.soa(arguments[0], count: arguments[1].value) if name == "SoA"
 
           arguments = [type_ref.lifetime] + arguments if name == "ref" && type_ref.lifetime
-          return Types::GenericInstance.new(name, arguments)
+          return Types::Registry.generic_instance(name, arguments)
         end
 
         if parts.length == 1 && type_ref.lifetime

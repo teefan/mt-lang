@@ -218,7 +218,7 @@ module MilkTea
           end
 
           def void_type
-            @void_type ||= Types::Primitive.new("void")
+            @void_type ||= Types::Registry.primitive("void")
           end
     end
   end

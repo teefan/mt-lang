@@ -35,7 +35,7 @@ module MilkTea
                               when :str_buffer_clear
                                 [@ctx.types.fetch("void"), []]
                               when :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format
-                                [@ctx.types.fetch("void"), [Types::Parameter.new("value", @ctx.types.fetch("str"))]]
+                                [@ctx.types.fetch("void"), [Types::Registry.parameter("value", @ctx.types.fetch("str"))]]
                               when :str_buffer_len, :str_buffer_capacity
                                 [@ctx.types.fetch("ptr_uint"), []]
                               when :str_buffer_as_str
@@ -46,7 +46,7 @@ module MilkTea
                                 raise LoweringError, "unsupported str_buffer method #{kind}"
                               end
 
-        Types::Function.new(
+        Types::Registry.function(
           kind.to_s,
           params:,
           return_type:,
@@ -78,7 +78,7 @@ module MilkTea
             receiver: IR::Member.new(
               receiver: lowered_receiver,
               member: "data",
-              type: Types::GenericInstance.new(
+              type: Types::Registry.generic_instance(
                 "array",
                 [@ctx.types.fetch("char"), Types::LiteralTypeArg.new(str_buffer_storage_capacity(lowered_receiver.type))],
               ),

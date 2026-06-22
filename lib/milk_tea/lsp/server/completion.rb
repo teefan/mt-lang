@@ -725,12 +725,12 @@ module MilkTea
           dispatch_base_type = method_dispatch_receiver_type_for_completion(receiver_type.base)
           return receiver_type if dispatch_base_type == receiver_type.base
 
-          return Types::Nullable.new(dispatch_base_type)
+          return Types::Registry.nullable(dispatch_base_type)
         end
 
         return receiver_type unless receiver_type.is_a?(Types::GenericInstance)
 
-        dispatch_receiver_type = Types::GenericInstance.new(
+        dispatch_receiver_type = Types::Registry.generic_instance(
           receiver_type.name,
           receiver_type.arguments.each_with_index.map do |argument, index|
             argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")

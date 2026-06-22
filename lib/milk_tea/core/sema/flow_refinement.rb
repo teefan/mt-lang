@@ -330,7 +330,7 @@ module MilkTea
         return unless nullable_candidate?(other_type)
         return if null_type.target_type && null_type.target_type != other_type
 
-        Types::Nullable.new(other_type)
+        Types::Registry.nullable(other_type)
       end
 
       def describe_expression(expression)

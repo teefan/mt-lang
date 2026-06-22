@@ -8,11 +8,11 @@ module MilkTea
         dispatch_base_type = method_dispatch_receiver_type(receiver_type.base)
         return receiver_type if dispatch_base_type == receiver_type.base
 
-        return Types::Nullable.new(dispatch_base_type)
+        return Types::Registry.nullable(dispatch_base_type)
       end
       return receiver_type unless receiver_type.is_a?(Types::GenericInstance)
 
-      dispatch_receiver_type = Types::GenericInstance.new(
+      dispatch_receiver_type = Types::Registry.generic_instance(
         receiver_type.name,
         receiver_type.arguments.each_with_index.map do |argument, index|
           argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
@@ -50,7 +50,7 @@ module MilkTea
       return false unless actual_type.is_a?(Types::Null)
       return false unless actual_type.target_type
       return false if expected_type.is_a?(Types::Nullable)
-      return true if expected_type == Types::Primitive.new("cstr") && char_pointer_type?(actual_type.target_type)
+      return true if expected_type == Types::Registry.primitive("cstr") && char_pointer_type?(actual_type.target_type)
       return false unless pointer_type?(expected_type)
 
       actual_type.target_type == expected_type
@@ -176,7 +176,7 @@ module MilkTea
     def foreign_char_pointer_buffer_boundary_compatible?(public_type, boundary_type)
       return false unless char_pointer_type?(boundary_type)
 
-      return true if public_type.is_a?(Types::Span) && public_type.element_type == Types::Primitive.new("char")
+      return true if public_type.is_a?(Types::Span) && public_type.element_type == Types::Registry.primitive("char")
       return true if char_array_text_type?(public_type)
       return true if str_buffer_type?(public_type)
 
@@ -185,8 +185,8 @@ module MilkTea
 
     def foreign_boundary_element_compatible?(public_type, boundary_type)
       return true if public_type == boundary_type
-      return true if public_type == Types::StringView.new && boundary_type == Types::Primitive.new("cstr")
-      return true if public_type == Types::StringView.new && char_pointer_type?(boundary_type)
+      return true if public_type == Types::Registry.string_view && boundary_type == Types::Registry.primitive("cstr")
+      return true if public_type == Types::Registry.string_view && char_pointer_type?(boundary_type)
 
       foreign_identity_projection_compatible?(public_type, boundary_type)
     end
@@ -225,8 +225,8 @@ module MilkTea
 
       return true if void_pointer_type?(actual_type) && opaque_type?(expected_type)
       return true if opaque_type?(actual_type) && void_pointer_type?(expected_type)
-      return true if char_pointer_type?(actual_type) && expected_type == Types::Primitive.new("cstr")
-      return true if actual_type == Types::Primitive.new("cstr") && char_pointer_type?(expected_type)
+      return true if char_pointer_type?(actual_type) && expected_type == Types::Registry.primitive("cstr")
+      return true if actual_type == Types::Registry.primitive("cstr") && char_pointer_type?(expected_type)
 
       false
     end
@@ -323,7 +323,7 @@ module MilkTea
     end
 
     def void_pointer_type?(type)
-      pointer_type?(type) && type.arguments.first == Types::Primitive.new("void")
+      pointer_type?(type) && type.arguments.first == Types::Registry.primitive("void")
     end
 
     def native_foreign_layout_compatible?(native_type, foreign_type)
@@ -368,7 +368,7 @@ module MilkTea
     end
 
     def char_pointer_type?(type)
-      pointer_type?(type) && type.arguments.first == Types::Primitive.new("char")
+      pointer_type?(type) && type.arguments.first == Types::Registry.primitive("char")
     end
 
     def opaque_type?(type)
@@ -438,7 +438,7 @@ module MilkTea
     end
 
     def const_pointer_to(type)
-      Types::GenericInstance.new("const_ptr", [type])
+      Types::Registry.generic_instance("const_ptr", [type])
     end
 
     def call_arity_matches?(function_type, actual_count)
@@ -500,7 +500,7 @@ module MilkTea
       return nil unless Types.array_type?(iterable_type) || iterable_type.is_a?(Types::Span)
       return nil unless collection_loop_ref_element_type?(element_type)
 
-      Types::GenericInstance.new("ref", [element_type])
+      Types::Registry.generic_instance("ref", [element_type])
     end
 
     def collection_loop_ref_element_type?(type)

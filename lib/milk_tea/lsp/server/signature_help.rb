@@ -105,7 +105,7 @@ module MilkTea
       def build_signature_from_binding(binding, name, ctx)
         if binding.is_a?(Types::Struct) || binding.is_a?(Types::StructInstance)
           fields = binding.fields
-          params_list = fields.map { |fname, ftype| Types::Parameter.new(fname, ftype) }
+          params_list = fields.map { |fname, ftype| Types::Registry.parameter(fname, ftype) }
           return_type_label = binding.is_a?(Types::StructInstance) ? binding.to_s : binding.name
         elsif binding.respond_to?(:[])
           builtin_name = binding[:builtin]

@@ -42,7 +42,7 @@ module MilkTea
             ),
           ],
         )
-        root_proc_type = Types::Proc.new(params: [], return_type: task_type)
+        root_proc_type = Types::Registry.proc(params: [], return_type: task_type)
         proc_setup, proc_value = lower_proc_expression_for_local(proc_expression, env:, local_name: root_proc_name, proc_type: root_proc_type)
         body.concat(proc_setup)
         body << IR::LocalDecl.new(

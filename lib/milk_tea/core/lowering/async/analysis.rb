@@ -7,9 +7,9 @@ module MilkTea
     def analyze_async_function(binding, statements)
       env = empty_env
       void_ptr = pointer_to(@ctx.types.fetch("void"))
-      wake_type = Types::Function.new(
+      wake_type = Types::Registry.function(
         nil,
-        params: [Types::Parameter.new("frame", void_ptr)],
+        params: [Types::Registry.parameter("frame", void_ptr)],
         return_type: @ctx.types.fetch("void"),
       )
       param_fields = {}

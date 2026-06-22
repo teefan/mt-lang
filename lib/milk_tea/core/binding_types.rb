@@ -56,7 +56,7 @@ module MilkTea
       return true if private_methods.fetch(receiver_type, {}).key?(name)
 
       if receiver_type.is_a?(Types::GenericInstance)
-        dispatch_receiver_type = Types::GenericInstance.new(
+        dispatch_receiver_type = Types::Registry.generic_instance(
           receiver_type.name,
           receiver_type.arguments.each_with_index.map do |argument, index|
             argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
@@ -70,7 +70,7 @@ module MilkTea
         if dispatch_base_type.is_a?(Types::StructInstance)
           dispatch_base_type = dispatch_base_type.definition
         elsif dispatch_base_type.is_a?(Types::GenericInstance)
-          dispatch_base_type = Types::GenericInstance.new(
+          dispatch_base_type = Types::Registry.generic_instance(
             dispatch_base_type.name,
             dispatch_base_type.arguments.each_with_index.map do |argument, index|
               argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
@@ -78,7 +78,7 @@ module MilkTea
           )
         end
 
-        dispatch_receiver_type = Types::Nullable.new(dispatch_base_type)
+        dispatch_receiver_type = Types::Registry.nullable(dispatch_base_type)
         return true if dispatch_receiver_type != receiver_type && private_methods.fetch(dispatch_receiver_type, {}).key?(name)
       end
 
@@ -106,7 +106,7 @@ module MilkTea
       AttributeBinding.new(
         name: "align",
         targets: [:struct].freeze,
-        params: [Types::Parameter.new("bytes", types.fetch("ptr_uint"))].freeze,
+        params: [Types::Registry.parameter("bytes", types.fetch("ptr_uint"))].freeze,
         module_name: nil,
         builtin: true,
         ast: nil,
@@ -115,7 +115,7 @@ module MilkTea
       AttributeBinding.new(
         name: "deprecated",
         targets: %i[callable struct const enum flags union variant event].freeze,
-        params: [Types::Parameter.new("message", types.fetch("str"))].freeze,
+        params: [Types::Registry.parameter("message", types.fetch("str"))].freeze,
         module_name: nil,
         builtin: true,
         ast: nil,

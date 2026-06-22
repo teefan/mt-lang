@@ -741,7 +741,7 @@ module MilkTea
         case parameter.passing_mode
         when :plain, :consuming
           if parameter.boundary_type.nil? || parameter.boundary_type == parameter.type
-            expected = parameter.passing_mode == :consuming ? Types::Nullable.new(parameter.type) : parameter.type
+            expected = parameter.passing_mode == :consuming ? Types::Registry.nullable(parameter.type) : parameter.type
             lower_contextual_expression(argument.value, env:, expected_type: expected)
           elsif parameter.boundary_type == @ctx.types.fetch("cstr") && parameter.type == @ctx.types.fetch("str")
             if argument.value.is_a?(AST::StringLiteral) && !argument.value.cstring
@@ -989,7 +989,7 @@ module MilkTea
         return lower_contextual_expression(argument.value, env:, expected_type: nil) unless actual_type == @ctx.types.fetch("str")
 
         lowered_argument = lower_foreign_argument_value(
-          Types::Parameter.new("__mt_variadic", actual_type, passing_mode: :plain, boundary_type: @ctx.types.fetch("cstr")),
+          Types::Registry.parameter("__mt_variadic", actual_type, passing_mode: :plain, boundary_type: @ctx.types.fetch("cstr")),
           argument,
           env:,
         )
@@ -1597,7 +1597,7 @@ module MilkTea
       def lower_atomic_method_call(kind, receiver, expression, env:, type:)
         receiver_type = infer_expression_type(receiver, env:)
         elem_type = atomic_element_type(receiver_type)
-        ptr_type = Types::GenericInstance.new("ptr", [elem_type])
+        ptr_type = Types::Registry.generic_instance("ptr", [elem_type])
         receiver_ir = lower_expression(receiver, env:)
         addr = IR::AddressOf.new(expression: receiver_ir, type: ptr_type)
         seq_cst = IR::IntegerLiteral.new(value: 5, type: @ctx.types.fetch("int"))

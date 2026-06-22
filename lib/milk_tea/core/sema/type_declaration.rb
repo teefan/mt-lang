@@ -36,7 +36,7 @@ module MilkTea
         INSTALLABLE_BUILTIN_TYPE_NAMES.each do |name|
           @ctx.types[name] = case name
                           when "str"
-                            Types::StringView.new
+                            Types::Registry.string_view
                           when "Subscription"
                            builtin_subscription_type
                          when "EventError"
@@ -72,7 +72,7 @@ module MilkTea
                           when "quat"
                             Types::Quaternion.new("quat")
                           else
-                            Types::Primitive.new(name)
+                            Types::Registry.primitive(name)
                          end
         end
       end
@@ -309,7 +309,7 @@ module MilkTea
               raise_sema_error("duplicate attribute parameter #{decl.name}.#{param.name}") if seen.key?(param.name)
 
               seen[param.name] = true
-              params << Types::Parameter.new(param.name, resolve_type_ref(param.type))
+              params << Types::Registry.parameter(param.name, resolve_type_ref(param.type))
             end
 
             @ctx.attributes[decl.name] = AttributeBinding.new(
@@ -376,7 +376,7 @@ module MilkTea
           type = resolve_type_ref(param.type, type_params:, type_param_constraints:)
           validate_parameter_ref_type!(type, function_name: method_decl.name, parameter_name: param.name, external: false)
           validate_parameter_proc_type!(type, function_name: method_decl.name, parameter_name: param.name, external: false, foreign: false)
-          params << Types::Parameter.new(param.name, type)
+          params << Types::Registry.parameter(param.name, type)
         end
 
         return_type = method_decl.return_type ? resolve_type_ref(method_decl.return_type, type_params:, type_param_constraints:) : @ctx.types.fetch("void")
@@ -485,7 +485,7 @@ module MilkTea
                   auto_lt_name = "@_mt_#{auto_lifetimes.length}"
                   auto_lifetimes << auto_lt_name
                   type_params[auto_lt_name] = Types::LifetimeRef.new(auto_lt_name)
-                  field_type = Types::GenericInstance.new("ref", [auto_lt_name] + field_type.arguments)
+                  field_type = Types::Registry.generic_instance("ref", [auto_lt_name] + field_type.arguments)
                 end
                 if decl.respond_to?(:lifetime_params) && (lt = ref_lifetime(field_type))
                   unless decl.lifetime_params.include?(lt) || auto_lifetimes.include?(lt)

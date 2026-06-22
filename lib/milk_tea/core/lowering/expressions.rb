@@ -712,7 +712,7 @@ module MilkTea
       def format_string_part_append_statements(part, result_value, offset_value, env:)
         if part[:kind] == :custom_expression
           output_type = part[:append_output_type]
-          output_ref_type = Types::GenericInstance.new("ref", [output_type])
+          output_ref_type = Types::Registry.generic_instance("ref", [output_type])
           output_value_name = fresh_c_temp_name(env, "fmt_part_output")
           output_value = IR::Name.new(name: output_value_name, type: output_type, pointer: false)
           output_len = IR::Member.new(receiver: output_value, member: "len", type: @ctx.types.fetch("ptr_uint"))

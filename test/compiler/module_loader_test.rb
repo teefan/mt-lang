@@ -780,7 +780,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
       imported = program.root_analysis.imports.fetch("ext")
       handle_type = program.analyses_by_module_name.fetch("demo.dep").types.fetch("Handle")
-      receiver_type = MilkTea::Types::GenericInstance.new("ptr", [handle_type])
+      receiver_type = MilkTea::Types::Registry.generic_instance("ptr", [handle_type])
 
       assert_equal %w[read_code], imported.methods.fetch(receiver_type).keys.sort
     end
@@ -808,7 +808,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
       imported = program.root_analysis.imports.fetch("ext")
-      receiver_type = MilkTea::Types::GenericInstance.new("const_ptr", [MilkTea::Types::TypeVar.new("__receiver_arg0")])
+      receiver_type = MilkTea::Types::Registry.generic_instance("const_ptr", [MilkTea::Types::TypeVar.new("__receiver_arg0")])
 
       assert_equal %w[read_value], imported.methods.fetch(receiver_type).keys.sort
     end
@@ -839,7 +839,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
       imported = program.root_analysis.imports.fetch("ext")
-      receiver_type = MilkTea::Types::Nullable.new(MilkTea::Types::GenericInstance.new("const_ptr", [MilkTea::Types::TypeVar.new("__receiver_arg0")]))
+      receiver_type = MilkTea::Types::Registry.nullable(MilkTea::Types::Registry.generic_instance("const_ptr", [MilkTea::Types::TypeVar.new("__receiver_arg0")]))
 
       assert_equal %w[require_value], imported.methods.fetch(receiver_type).keys.sort
     end
