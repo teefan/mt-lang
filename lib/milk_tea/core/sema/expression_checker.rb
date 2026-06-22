@@ -242,7 +242,7 @@ module MilkTea
                 end
               end
               has_named = names.any?
-              Types::Tuple.new(element_types, field_names: has_named ? names : nil)
+              Types::Registry.tuple(element_types, field_names: has_named ? names : nil)
             end
           else
             raise_sema_error("unsupported expression #{expression.class.name}")
@@ -393,7 +393,7 @@ module MilkTea
 
         if array_type?(field_receiver_type) && expression.member == "as_span"
           element_type = array_element_type(field_receiver_type)
-          return Types::Span.new(element_type)
+          return Types::Registry.span(element_type)
         end
         if char_array_removed_text_method?(method_receiver_type, expression.member)
           raise_sema_error("#{method_receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_buffer[N] or an explicit helper")
@@ -904,7 +904,7 @@ module MilkTea
         when :array_as_span
           raise_sema_error("as_span does not support named arguments") if expression.arguments.any?(&:name)
           raise_sema_error("as_span expects 0 arguments, got #{expression.arguments.length}") unless expression.arguments.empty?
-          Types::Span.new(array_element_type(callable))
+          Types::Registry.span(array_element_type(callable))
         when :event_subscribe, :event_subscribe_once, :event_unsubscribe, :event_emit, :event_wait
           check_event_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :atomic_load, :atomic_store, :atomic_add, :atomic_sub, :atomic_exchange, :atomic_compare_exchange

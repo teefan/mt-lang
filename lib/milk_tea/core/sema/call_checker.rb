@@ -578,7 +578,7 @@ module MilkTea
         when :event_wait
           raise_sema_error("wait expects 0 arguments, got #{arguments.length}") unless arguments.empty?
 
-          Types::Task.new(event_wait_result_type(receiver_type))
+          Types::Registry.task(event_wait_result_type(receiver_type))
         else
           raise_sema_error("unsupported event method #{kind}")
         end
@@ -586,9 +586,9 @@ module MilkTea
 
       def event_listener_type(event_type)
         params = []
-        params << Types::Parameter.new("value", event_type.payload_type) if event_type.payload_type
+        params << Types::Registry.parameter("value", event_type.payload_type) if event_type.payload_type
 
-        Types::Function.new(
+        Types::Registry.function(
           nil,
           params:,
           return_type: @ctx.types.fetch("void"),
@@ -597,10 +597,10 @@ module MilkTea
       end
 
       def event_stateful_listener_type(event_type, state_type)
-        params = [Types::Parameter.new("state", Types::GenericInstance.new("ptr", [state_type]))]
-        params << Types::Parameter.new("value", event_type.payload_type) if event_type.payload_type
+        params = [Types::Registry.parameter("state", Types::Registry.generic_instance("ptr", [state_type]))]
+        params << Types::Registry.parameter("value", event_type.payload_type) if event_type.payload_type
 
-        Types::Function.new(
+        Types::Registry.function(
           nil,
           params:,
           return_type: @ctx.types.fetch("void"),
@@ -815,9 +815,9 @@ module MilkTea
         if array_type?(source_type)
           raise_sema_error("get requires an addressable array value") unless addressable_storage_expression?(source_expr, scopes:)
 
-          Types::Nullable.new(pointer_to(array_element_type(source_type)))
+          Types::Registry.nullable(pointer_to(array_element_type(source_type)))
         elsif source_type.is_a?(Types::Span)
-          Types::Nullable.new(pointer_to(source_type.element_type))
+          Types::Registry.nullable(pointer_to(source_type.element_type))
         else
           raise_sema_error("get expects an array or span, got #{source_type}")
         end
@@ -827,7 +827,7 @@ module MilkTea
         raise_sema_error("ref_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
         source_type = infer_addr_source_type(arguments.first.value, scopes:)
-        Types::GenericInstance.new("ref", [source_type])
+        Types::Registry.generic_instance("ref", [source_type])
       end
       def check_const_ptr_of_call(arguments, scopes:)
         raise_sema_error("const_ptr_of does not support named arguments") if arguments.any?(&:name)

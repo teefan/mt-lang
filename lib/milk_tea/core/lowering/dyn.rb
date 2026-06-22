@@ -17,12 +17,12 @@ module MilkTea
       vtable_struct_full = dyn_vtable_struct_type(interface)
       vtable_c_name = ensure_dyn_vtable(interface, concrete_type)
 
-      void_ptr = Types::GenericInstance.new("ptr", [@ctx.types.fetch("void")])
+      void_ptr = Types::Registry.generic_instance("ptr", [@ctx.types.fetch("void")])
       vtable_field = IR::Cast.new(
         target_type: void_ptr,
         expression: IR::AddressOf.new(
           expression: IR::Name.new(name: vtable_c_name, type: vtable_struct_full, pointer: false),
-          type: Types::GenericInstance.new("ptr", [vtable_struct_full]),
+          type: Types::Registry.generic_instance("ptr", [vtable_struct_full]),
         ),
         type: void_ptr,
       )
@@ -40,7 +40,7 @@ module MilkTea
 
     def lower_dyn_method_call(expression, receiver, method_binding, env:, type:)
       ir_expr = lower_expression(receiver, env:)
-      void_ptr = Types::GenericInstance.new("ptr", [@ctx.types.fetch("void")])
+      void_ptr = Types::Registry.generic_instance("ptr", [@ctx.types.fetch("void")])
       dyn_type = infer_expression_type(receiver, env:)
       interface = dyn_type.interface_binding
 
@@ -48,7 +48,7 @@ module MilkTea
       vtable_field = IR::Member.new(receiver: ir_expr, member: "vtable", type: void_ptr)
 
       vtable_full = dyn_vtable_struct_type(interface)
-      vtable_ptr_type = Types::GenericInstance.new("ptr", [vtable_full])
+      vtable_ptr_type = Types::Registry.generic_instance("ptr", [vtable_full])
       vtable_cast = IR::Cast.new(target_type: vtable_ptr_type, expression: vtable_field, type: vtable_ptr_type)
 
       fn_type = vtable_full.field(method_binding.name)
@@ -59,11 +59,11 @@ module MilkTea
     end
 
     def dyn_vtable_struct_type(interface)
-      void_ptr = Types::GenericInstance.new("ptr", [@ctx.types.fetch("void")])
+      void_ptr = Types::Registry.generic_instance("ptr", [@ctx.types.fetch("void")])
       fields = {}
       interface.methods.each do |method_name, method_binding|
-        fn_params = [Types::Parameter.new("data", void_ptr), *method_binding.params]
-        fn_type = Types::Function.new(nil, params: fn_params, return_type: method_binding.return_type)
+        fn_params = [Types::Registry.parameter("data", void_ptr), *method_binding.params]
+        fn_type = Types::Registry.function(nil, params: fn_params, return_type: method_binding.return_type)
         fields[method_name] = fn_type
       end
       Types::DynVtable.new(interface.name, fields)
@@ -86,10 +86,10 @@ module MilkTea
       vtable_c_name = "mt_vtable_#{interface.name}"
       return if @artifacts.synthetic_structs.any? { |s| s.linkage_name == vtable_c_name }
 
-      void_ptr = Types::GenericInstance.new("ptr", [Types::Primitive.new("void")])
+      void_ptr = Types::Registry.generic_instance("ptr", [Types::Registry.primitive("void")])
       fields = interface.methods.map do |method_name, method_binding|
-        fn_params = [Types::Parameter.new("data", void_ptr), *method_binding.params]
-        fn_type = Types::Function.new(nil, params: fn_params, return_type: method_binding.return_type)
+        fn_params = [Types::Registry.parameter("data", void_ptr), *method_binding.params]
+        fn_type = Types::Registry.function(nil, params: fn_params, return_type: method_binding.return_type)
         IR::Field.new(name: method_name, type: fn_type)
       end
 
@@ -103,10 +103,10 @@ module MilkTea
     end
 
     def gen_dyn_vtable_wrappers(concrete_type, interface)
-      void_ptr = Types::GenericInstance.new("ptr", [Types::Primitive.new("void")])
+      void_ptr = Types::Registry.generic_instance("ptr", [Types::Registry.primitive("void")])
       wrappers = {}
       concrete_type_name = sanitize_identifier(concrete_type.to_s)
-      ptr_to_concrete = Types::GenericInstance.new("ptr", [concrete_type])
+      ptr_to_concrete = Types::Registry.generic_instance("ptr", [concrete_type])
 
       interface.methods.each do |method_name, method_binding|
         method_info = @method_definitions[[concrete_type, method_name]]

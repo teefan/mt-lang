@@ -6,7 +6,7 @@ module MilkTea
   module CompatibilityHelpers
     include TypePredicates
 
-    BUILTIN_CSTR = Types::Primitive.new("cstr")
+    BUILTIN_CSTR = Types::Registry.primitive("cstr")
 
     EVENT_METHOD_KINDS = {
       "subscribe" => :event_subscribe,

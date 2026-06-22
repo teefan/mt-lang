@@ -350,7 +350,7 @@ module MilkTea
       end
 
       def pointer_to(type)
-        Types::GenericInstance.new("ptr", [type])
+        Types::Registry.generic_instance("ptr", [type])
       end
 
       def with_analysis_context(analysis)
@@ -423,11 +423,11 @@ module MilkTea
         end
         raise LoweringError, "unsupported compile-time builtin #{name}" unless return_type
 
-        Types::Function.new(name, params: [], return_type: return_type)
+        Types::Registry.function(name, params: [], return_type: return_type)
       end
 
       def compile_time_builtin_specialization_function_type(callee)
-        Types::Function.new("attribute_arg", params: [], return_type: resolve_type_ref(callee.arguments.fetch(0).value))
+        Types::Registry.function("attribute_arg", params: [], return_type: resolve_type_ref(callee.arguments.fetch(0).value))
       end
 
 
@@ -551,25 +551,25 @@ module MilkTea
       end
 
       def proc_invoke_function_type(proc_type)
-        Types::Function.new(
+        Types::Registry.function(
           nil,
-          params: [Types::Parameter.new("env", proc_env_pointer_type), *proc_type.params],
+          params: [Types::Registry.parameter("env", proc_env_pointer_type), *proc_type.params],
           return_type: proc_type.return_type,
         )
       end
 
       def proc_release_function_type
-        @proc_release_function_type ||= Types::Function.new(
+        @proc_release_function_type ||= Types::Registry.function(
           nil,
-          params: [Types::Parameter.new("env", proc_env_pointer_type)],
+          params: [Types::Registry.parameter("env", proc_env_pointer_type)],
           return_type: @ctx.types.fetch("void"),
         )
       end
 
       def proc_retain_function_type
-        @proc_retain_function_type ||= Types::Function.new(
+        @proc_retain_function_type ||= Types::Registry.function(
           nil,
-          params: [Types::Parameter.new("env", proc_env_pointer_type)],
+          params: [Types::Registry.parameter("env", proc_env_pointer_type)],
           return_type: @ctx.types.fetch("void"),
         )
       end
@@ -720,7 +720,7 @@ module MilkTea
         return unless nullable_candidate?(other_type)
         return if null_type.target_type && null_type.target_type != other_type
 
-        Types::Nullable.new(other_type)
+        Types::Registry.nullable(other_type)
       end
 
       def null_type

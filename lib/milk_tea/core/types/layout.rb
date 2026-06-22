@@ -197,9 +197,9 @@ module MilkTea
     def str_buffer_fields(type)
       storage_capacity = type.arguments.first.value + 1
       {
-        "data" => Types::GenericInstance.new("array", [Types::Primitive.new("char"), Types::LiteralTypeArg.new(storage_capacity)]),
-        "len" => Types::Primitive.new("ptr_uint"),
-        "dirty" => Types::Primitive.new("bool"),
+        "data" => Types::Registry.generic_instance("array", [Types::Registry.primitive("char"), Types::LiteralTypeArg.new(storage_capacity)]),
+        "len" => Types::Registry.primitive("ptr_uint"),
+        "dirty" => Types::Registry.primitive("bool"),
       }
     end
 

@@ -318,7 +318,7 @@ module MilkTea
           end
 
           def pointer_to(type)
-            Types::GenericInstance.new("ptr", [type])
+            Types::Registry.generic_instance("ptr", [type])
           end
     end
   end

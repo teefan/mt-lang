@@ -277,18 +277,18 @@ module MilkTea
         @substitutions.fetch(type.name, type)
       when Types::Nullable
         substituted = apply(type.base)
-        substituted.equal?(type.base) ? type : Types::Nullable.new(substituted)
+        substituted.equal?(type.base) ? type : Types::Registry.nullable(substituted)
       when Types::GenericInstance
         new_args = type.arguments.map do |arg|
           arg.is_a?(Types::LiteralTypeArg) ? arg : apply(arg)
         end
-        type.arguments.zip(new_args).all? { |old, new| old.equal?(new) } ? type : Types::GenericInstance.new(type.name, new_args)
+        type.arguments.zip(new_args).all? { |old, new| old.equal?(new) } ? type : Types::Registry.generic_instance(type.name, new_args)
       when Types::Span
         substituted = apply(type.element_type)
-        substituted.equal?(type.element_type) ? type : Types::Span.new(substituted)
+        substituted.equal?(type.element_type) ? type : Types::Registry.span(substituted)
       when Types::Task
         substituted = apply(type.result_type)
-        substituted.equal?(type.result_type) ? type : Types::Task.new(substituted)
+        substituted.equal?(type.result_type) ? type : Types::Registry.task(substituted)
       when Types::Event
         new_payload = type.payload_type ? apply(type.payload_type) : nil
         if new_payload.equal?(type.payload_type)
@@ -302,24 +302,24 @@ module MilkTea
           new_param_type = apply(param.type)
           new_boundary = param.boundary_type ? apply(param.boundary_type) : nil
           changed = true unless new_param_type.equal?(param.type) && new_boundary.equal?(param.boundary_type)
-          Types::Parameter.new(param.name, new_param_type, mutable: param.mutable, passing_mode: param.passing_mode, boundary_type: new_boundary)
+          Types::Registry.parameter(param.name, new_param_type, mutable: param.mutable, passing_mode: param.passing_mode, boundary_type: new_boundary)
         end
         new_return = apply(type.return_type)
         changed = true unless new_return.equal?(type.return_type)
-        changed ? Types::Proc.new(params: new_params, return_type: new_return) : type
+        changed ? Types::Registry.proc(params: new_params, return_type: new_return) : type
       when Types::Function
         changed = false
         new_params = type.params.map do |param|
           new_param_type = apply(param.type)
           new_boundary = param.boundary_type ? apply(param.boundary_type) : nil
           changed = true unless new_param_type.equal?(param.type) && new_boundary.equal?(param.boundary_type)
-          Types::Parameter.new(param.name, new_param_type, mutable: param.mutable, passing_mode: param.passing_mode, boundary_type: new_boundary)
+          Types::Registry.parameter(param.name, new_param_type, mutable: param.mutable, passing_mode: param.passing_mode, boundary_type: new_boundary)
         end
         new_return = apply(type.return_type)
         changed = true unless new_return.equal?(type.return_type)
         new_receiver = type.receiver_type ? apply(type.receiver_type) : nil
         changed = true unless new_receiver.equal?(type.receiver_type)
-        changed ? Types::Function.new(type.name, params: new_params, return_type: new_return, receiver_type: new_receiver, receiver_editable: type.receiver_editable, variadic: type.variadic, external: type.external) : type
+        changed ? Types::Registry.function(type.name, params: new_params, return_type: new_return, receiver_type: new_receiver, receiver_editable: type.receiver_editable, variadic: type.variadic, external: type.external) : type
       when Types::StructInstance
         new_args = type.arguments.map { |arg| apply(arg) }
         type.arguments.zip(new_args).all? { |old, new| old.equal?(new) } ? type : type.definition.instantiate(new_args)

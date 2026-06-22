@@ -69,7 +69,7 @@ module MilkTea
         substituted_methods = methods.transform_values do |method|
           InterfaceMethodBinding.new(
             name: method.name,
-            params: method.params.map { |p| Types::Parameter.new(p.name, Types.substitute_type_variables(p.type, substitutions)) },
+            params: method.params.map { |p| Types::Registry.parameter(p.name, Types.substitute_type_variables(p.type, substitutions)) },
             return_type: Types.substitute_type_variables(method.return_type, substitutions),
             kind: method.kind,
             async: method.async,

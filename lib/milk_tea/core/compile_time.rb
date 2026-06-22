@@ -305,10 +305,10 @@ module MilkTea
           case callee_name
           when "ptr" then pointer_to.call(evaluated_args.first)
           when "const_ptr" then const_pointer_to.call(evaluated_args.first)
-          when "span" then Types::Span.new(evaluated_args.first)
-          when "array" then Types::GenericInstance.new("array", evaluated_args)
-          when "str_buffer" then Types::GenericInstance.new("str_buffer", evaluated_args)
-          when "Task" then Types::Task.new(evaluated_args.first)
+          when "span" then Types::Registry.span(evaluated_args.first)
+          when "array" then Types::Registry.generic_instance("array", evaluated_args)
+          when "str_buffer" then Types::Registry.generic_instance("str_buffer", evaluated_args)
+          when "Task" then Types::Registry.task(evaluated_args.first)
           end
         else
           func = top_level_functions.call(callee_name)

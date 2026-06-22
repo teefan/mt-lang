@@ -362,13 +362,13 @@ module MilkTea
           end
 
           def proc_field_types(type)
-            void_ptr = Types::GenericInstance.new("ptr", [Types::Primitive.new("void")])
+            void_ptr = Types::Registry.generic_instance("ptr", [Types::Registry.primitive("void")])
 
             {
               "env" => void_ptr,
-              "invoke" => Types::Function.new(nil, params: [Types::Parameter.new("env", void_ptr)] + type.params, return_type: type.return_type),
-              "release" => Types::Function.new(nil, params: [Types::Parameter.new("env", void_ptr)], return_type: Types::Primitive.new("void")),
-              "retain" => Types::Function.new(nil, params: [Types::Parameter.new("env", void_ptr)], return_type: Types::Primitive.new("void")),
+              "invoke" => Types::Registry.function(nil, params: [Types::Registry.parameter("env", void_ptr)] + type.params, return_type: type.return_type),
+              "release" => Types::Registry.function(nil, params: [Types::Registry.parameter("env", void_ptr)], return_type: Types::Registry.primitive("void")),
+              "retain" => Types::Registry.function(nil, params: [Types::Registry.parameter("env", void_ptr)], return_type: Types::Registry.primitive("void")),
             }
           end
 
@@ -378,9 +378,9 @@ module MilkTea
                 name: type.to_s,
                 linkage_name: str_buffer_type_name(type),
                 fields: [
-                  IR::Field.new(name: "data", type: Types::GenericInstance.new("array", [Types::Primitive.new("char"), Types::LiteralTypeArg.new(str_buffer_storage_capacity(type))])),
-                  IR::Field.new(name: "len", type: Types::Primitive.new("ptr_uint")),
-                  IR::Field.new(name: "dirty", type: Types::Primitive.new("bool")),
+                  IR::Field.new(name: "data", type: Types::Registry.generic_instance("array", [Types::Registry.primitive("char"), Types::LiteralTypeArg.new(str_buffer_storage_capacity(type))])),
+                  IR::Field.new(name: "len", type: Types::Registry.primitive("ptr_uint")),
+                  IR::Field.new(name: "dirty", type: Types::Registry.primitive("bool")),
                 ],
                 packed: false,
                 alignment: nil,
@@ -1335,7 +1335,7 @@ module MilkTea
           end
 
           def collect_dyn_decls
-            void_ptr = Types::GenericInstance.new("ptr", [Types::Primitive.new("void")])
+            void_ptr = Types::Registry.generic_instance("ptr", [Types::Registry.primitive("void")])
             collect_dyn_types.map do |type|
               IR::StructDecl.new(
                 name: type.to_s,

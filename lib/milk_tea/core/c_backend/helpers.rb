@@ -1024,7 +1024,7 @@ module MilkTea
 
           def emit_checked_array_index_helper(type)
             helper_name = checked_array_index_helper_name(type)
-            params = [c_declaration(type, '(*array)'), c_declaration(Types::Primitive.new('ptr_uint'), 'index')].join(', ')
+            params = [c_declaration(type, '(*array)'), c_declaration(Types::Registry.primitive('ptr_uint'), 'index')].join(', ')
             [
               "static inline #{c_function_declaration(pointer_to(array_element_type(type)), helper_name, params)} {",
               "#{INDENT}if (index >= #{array_length(type)}) mt_fatal(\"array index out of bounds\");",
@@ -1035,7 +1035,7 @@ module MilkTea
 
           def emit_checked_span_index_helper(type)
             helper_name = checked_span_index_helper_name(type)
-            params = [c_declaration(type, 'span'), c_declaration(Types::Primitive.new('ptr_uint'), 'index')].join(', ')
+            params = [c_declaration(type, 'span'), c_declaration(Types::Registry.primitive('ptr_uint'), 'index')].join(', ')
             [
               "static inline #{c_function_declaration(pointer_to(type.element_type), helper_name, params)} {",
               "#{INDENT}if (index >= span.len) mt_fatal(\"span index out of bounds\");",
@@ -1046,7 +1046,7 @@ module MilkTea
 
           def emit_nullable_array_index_helper(type)
             helper_name = nullable_array_index_helper_name(type)
-            params = [c_declaration(type, '(*array)'), c_declaration(Types::Primitive.new('ptr_uint'), 'index')].join(', ')
+            params = [c_declaration(type, '(*array)'), c_declaration(Types::Registry.primitive('ptr_uint'), 'index')].join(', ')
             [
               "static inline #{c_function_declaration(pointer_to(array_element_type(type)), helper_name, params)} {",
               "#{INDENT}if (index >= #{array_length(type)}) return NULL;",
@@ -1057,7 +1057,7 @@ module MilkTea
 
           def emit_nullable_span_index_helper(type)
             helper_name = nullable_span_index_helper_name(type)
-            params = [c_declaration(type, 'span'), c_declaration(Types::Primitive.new('ptr_uint'), 'index')].join(', ')
+            params = [c_declaration(type, 'span'), c_declaration(Types::Registry.primitive('ptr_uint'), 'index')].join(', ')
             [
               "static inline #{c_function_declaration(pointer_to(type.element_type), helper_name, params)} {",
               "#{INDENT}if (index >= span.len) return NULL;",

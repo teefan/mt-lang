@@ -297,12 +297,12 @@ module MilkTea
                   kind: :param,
                 )
               end
-              public_params << Types::Parameter.new(param.name, type, passing_mode: param.mode, boundary_type: boundary_type)
+              public_params << Types::Registry.parameter(param.name, type, passing_mode: param.mode, boundary_type: boundary_type)
             else
               param_binding = value_binding(name: param.name, type:, mutable: false, kind: :param)
               body_params << param_binding
               record_declaration_binding(param, param_binding)
-              public_params << Types::Parameter.new(param.name, type) if external
+              public_params << Types::Registry.parameter(param.name, type) if external
             end
           rescue SemaError => e
             collect_structural_error(e)
@@ -342,11 +342,11 @@ module MilkTea
         if external && array_type?(body_return_type)
           raise_sema_error("external function #{decl.name} cannot return arrays")
         end
-        function_return_type = async_function ? Types::Task.new(body_return_type) : body_return_type
+        function_return_type = async_function ? Types::Registry.task(body_return_type) : body_return_type
 
-        function_type = Types::Function.new(
+        function_type = Types::Registry.function(
           decl.name,
-          params: (foreign || external) ? call_params : call_params.map { |param| Types::Parameter.new(param.name, param.type) },
+          params: (foreign || external) ? call_params : call_params.map { |param| Types::Registry.parameter(param.name, param.type) },
           return_type: function_return_type,
           receiver_type: function_receiver_type,
           receiver_editable:,

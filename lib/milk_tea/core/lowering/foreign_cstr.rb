@@ -98,7 +98,7 @@ module MilkTea
 
         source = lower_expression(argument_value, env:, expected_type: actual_type)
         item_type = array_element_type(actual_type)
-        items_array_type = Types::GenericInstance.new("array", [boundary_element_type, Types::LiteralTypeArg.new(len)])
+        items_array_type = Types::Registry.generic_instance("array", [boundary_element_type, Types::LiteralTypeArg.new(len)])
         items_name = fresh_c_temp_name(env, "foreign_cstr_items")
         items = (0...len).map do |index|
           item = IR::Index.new(

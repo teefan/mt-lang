@@ -181,7 +181,7 @@ module MilkTea
             [
               "typedef struct #{span_type} {",
               "#{INDENT}#{c_declaration(pointer_to(type.element_type), 'data')};",
-              "#{INDENT}#{c_declaration(Types::Primitive.new('ptr_uint'), 'len')};",
+              "#{INDENT}#{c_declaration(Types::Registry.primitive('ptr_uint'), 'len')};",
               "} #{span_type};",
             ]
           end

@@ -19,32 +19,32 @@ module MilkTea
       def event_method_type(kind, event_type)
         case kind
         when :event_subscribe, :event_subscribe_once
-          Types::Function.new(
+          Types::Registry.function(
             kind.to_s,
-            params: [Types::Parameter.new("listener", event_listener_function_type(event_type))],
+            params: [Types::Registry.parameter("listener", event_listener_function_type(event_type))],
             return_type: event_subscription_result_type,
           )
         when :event_subscribe_stateful, :event_subscribe_once_stateful
-          Types::Function.new(
+          Types::Registry.function(
             kind.to_s,
             params: [
-              Types::Parameter.new("state", pointer_to(@ctx.types.fetch("void"))),
-              Types::Parameter.new("listener", event_stateful_listener_function_type(event_type)),
+              Types::Registry.parameter("state", pointer_to(@ctx.types.fetch("void"))),
+              Types::Registry.parameter("listener", event_stateful_listener_function_type(event_type)),
             ],
             return_type: event_subscription_result_type,
           )
         when :event_unsubscribe
-          Types::Function.new(
+          Types::Registry.function(
             kind.to_s,
-            params: [Types::Parameter.new("subscription", @ctx.types.fetch("Subscription"))],
+            params: [Types::Registry.parameter("subscription", @ctx.types.fetch("Subscription"))],
             return_type: @ctx.types.fetch("bool"),
           )
         when :event_emit
           params = []
-          params << Types::Parameter.new("payload", event_type.payload_type) if event_type.payload_type
-          Types::Function.new(kind.to_s, params:, return_type: @ctx.types.fetch("void"))
+          params << Types::Registry.parameter("payload", event_type.payload_type) if event_type.payload_type
+          Types::Registry.function(kind.to_s, params:, return_type: @ctx.types.fetch("void"))
         when :event_wait
-          Types::Function.new(kind.to_s, params: [], return_type: Types::Task.new(event_wait_result_type(event_type)))
+          Types::Registry.function(kind.to_s, params: [], return_type: Types::Registry.task(event_wait_result_type(event_type)))
         else
           raise LoweringError, "unsupported event method #{kind}"
         end
@@ -82,18 +82,18 @@ module MilkTea
 
       def event_listener_function_type(event_type)
         params = []
-        params << Types::Parameter.new("payload", event_type.payload_type) if event_type.payload_type
-        Types::Function.new("#{event_type.name}__listener", params:, return_type: @ctx.types.fetch("void"))
+        params << Types::Registry.parameter("payload", event_type.payload_type) if event_type.payload_type
+        Types::Registry.function("#{event_type.name}__listener", params:, return_type: @ctx.types.fetch("void"))
       end
 
       def event_stateful_listener_function_type(event_type)
-        params = [Types::Parameter.new("state", pointer_to(@ctx.types.fetch("void")))]
-        params << Types::Parameter.new("payload", event_type.payload_type) if event_type.payload_type
-        Types::Function.new("#{event_type.name}__stateful_listener", params:, return_type: @ctx.types.fetch("void"))
+        params = [Types::Registry.parameter("state", pointer_to(@ctx.types.fetch("void")))]
+        params << Types::Registry.parameter("payload", event_type.payload_type) if event_type.payload_type
+        Types::Registry.function("#{event_type.name}__stateful_listener", params:, return_type: @ctx.types.fetch("void"))
       end
 
       def array_of(type, length)
-        Types::GenericInstance.new("array", [type, Types::LiteralTypeArg.new(length)])
+        Types::Registry.generic_instance("array", [type, Types::LiteralTypeArg.new(length)])
       end
 
       def ensure_subscription_runtime
@@ -143,8 +143,8 @@ module MilkTea
         listener_type = event_listener_function_type(event_type)
         subscription_result_type = event_subscription_result_type
         wait_result_type = event_wait_result_type(event_type)
-        task_type = Types::Task.new(wait_result_type)
-        wake_type = task_type.field("ready").params.fetch(0).type == void_ptr ? task_type.field("set_waiter").params.fetch(2).type : Types::Function.new(nil, params: [Types::Parameter.new("frame", void_ptr)], return_type: @ctx.types.fetch("void"))
+        task_type = Types::Registry.task(wait_result_type)
+        wake_type = task_type.field("ready").params.fetch(0).type == void_ptr ? task_type.field("set_waiter").params.fetch(2).type : Types::Registry.function(nil, params: [Types::Registry.parameter("frame", void_ptr)], return_type: @ctx.types.fetch("void"))
         slot_type = Types::Struct.new("#{event_type.linkage_name}__slot").define_fields(
           "active" => @ctx.types.fetch("bool"),
           "once" => @ctx.types.fetch("bool"),

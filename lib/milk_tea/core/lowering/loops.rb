@@ -483,7 +483,7 @@ module MilkTea
         validate_pfor_no_ref_captures!(captures)
 
         void_type = @ctx.types.fetch("void")
-        void_ptr_type = Types::GenericInstance.new("ptr", [void_type])
+        void_ptr_type = Types::Registry.generic_instance("ptr", [void_type])
         long_type = @ctx.types.fetch("long")
 
         array_capture_names = Set.new
@@ -491,7 +491,7 @@ module MilkTea
           if array_type?(c.type)
             array_capture_names << c.name
             elem = array_element_type(c.type)
-            IR::Field.new(name: c.name, type: Types::GenericInstance.new("ptr", [elem]))
+            IR::Field.new(name: c.name, type: Types::Registry.generic_instance("ptr", [elem]))
           else
             IR::Field.new(name: c.name, type: c.type)
           end
@@ -501,7 +501,7 @@ module MilkTea
           fields: cap_fields, packed: false, alignment: nil,
         )
 
-        cap_ptr_type = Types::GenericInstance.new("ptr", [Types::Struct.new(cap_struct_c_name)])
+        cap_ptr_type = Types::Registry.generic_instance("ptr", [Types::Struct.new(cap_struct_c_name)])
         cap_name_ir = IR::Name.new(name: "mt_cap", type: cap_ptr_type, pointer: true)
         worker_body = [
           IR::LocalDecl.new(
@@ -515,7 +515,7 @@ module MilkTea
         ]
         captures.each do |c|
           alias_type = if array_capture_names.include?(c.name)
-                         Types::GenericInstance.new("ptr", [array_element_type(c.type)])
+                         Types::Registry.generic_instance("ptr", [array_element_type(c.type)])
                        else
                          c.type
                        end
@@ -562,7 +562,7 @@ module MilkTea
         cap_struct_type = Types::Struct.new(cap_struct_c_name, linkage_name: cap_struct_c_name).tap do |s|
           s.define_fields(captures.each_with_object({}) do |c, h|
             h[c.name] = if array_capture_names.include?(c.name)
-                          Types::GenericInstance.new("ptr", [array_element_type(c.type)])
+                          Types::Registry.generic_instance("ptr", [array_element_type(c.type)])
                         else
                           c.type
                         end
@@ -574,7 +574,7 @@ module MilkTea
           fields: captures.map do |c|
             if array_capture_names.include?(c.name)
               elem = array_element_type(c.type)
-              ptr_type = Types::GenericInstance.new("ptr", [elem])
+              ptr_type = Types::Registry.generic_instance("ptr", [elem])
               IR::AggregateField.new(name: c.name, value: IR::Name.new(name: c.name, type: ptr_type, pointer: false))
             else
               IR::AggregateField.new(name: c.name, value: c)
@@ -582,7 +582,7 @@ module MilkTea
           end,
         )
 
-        worker_fn_type = Types::Function.new(nil, params: [], return_type: void_type)
+        worker_fn_type = Types::Registry.function(nil, params: [], return_type: void_type)
         call_site = [
           IR::LocalDecl.new(name: cap_local_name, linkage_name: cap_local_name, type: cap_struct_type, value: cap_init),
           IR::ExpressionStmt.new(expression: IR::Call.new(
@@ -604,7 +604,7 @@ module MilkTea
 
       def lower_parallel_block_stmt(statement, env:, active_defers:)
         void_type = @ctx.types.fetch("void")
-        void_ptr_type = Types::GenericInstance.new("ptr", [void_type])
+        void_ptr_type = Types::Registry.generic_instance("ptr", [void_type])
 
         @parallel_for_counter += 1
         uid_base = "#{@ctx.module_prefix}_spawn_#{@parallel_for_counter}".gsub(/[^A-Za-z0-9_]/, "_")
@@ -639,7 +639,7 @@ module MilkTea
             cap_fields = captures.map do |c|
               if array_type?(c.type)
                 array_capture_names << c.name
-                IR::Field.new(name: c.name, type: Types::GenericInstance.new("ptr", [array_element_type(c.type)]))
+                IR::Field.new(name: c.name, type: Types::Registry.generic_instance("ptr", [array_element_type(c.type)]))
               else
                 IR::Field.new(name: c.name, type: c.type)
               end
@@ -650,7 +650,7 @@ module MilkTea
               fields: cap_fields, packed: false, alignment: nil,
             )
 
-            cap_ptr_type = Types::GenericInstance.new("ptr", [Types::Struct.new(cap_struct_c_name)])
+            cap_ptr_type = Types::Registry.generic_instance("ptr", [Types::Struct.new(cap_struct_c_name)])
             cap_name_ir = IR::Name.new(name: "mt_cap", type: cap_ptr_type, pointer: true)
             worker_body = [
               IR::LocalDecl.new(
@@ -664,7 +664,7 @@ module MilkTea
             ]
             captures.each do |c|
               alias_type = if array_capture_names.include?(c.name)
-                             Types::GenericInstance.new("ptr", [array_element_type(c.type)])
+                             Types::Registry.generic_instance("ptr", [array_element_type(c.type)])
                            else
                              c.type
                            end
@@ -692,7 +692,7 @@ module MilkTea
                               Types::Struct.new(cap_struct_c_name, linkage_name: cap_struct_c_name).tap do |s|
                                 s.define_fields(captures.each_with_object({}) do |c, h|
                                   h[c.name] = if array_capture_names.include?(c.name)
-                                                Types::GenericInstance.new("ptr", [array_element_type(c.type)])
+                                                Types::Registry.generic_instance("ptr", [array_element_type(c.type)])
                                               else
                                                 c.type
                                               end
@@ -708,7 +708,7 @@ module MilkTea
                          fields: captures.map do |c|
                            if array_capture_names.include?(c.name)
                              elem = array_element_type(c.type)
-                             ptr_type = Types::GenericInstance.new("ptr", [elem])
+                             ptr_type = Types::Registry.generic_instance("ptr", [elem])
                              IR::AggregateField.new(name: c.name, value: IR::Name.new(name: c.name, type: ptr_type, pointer: false))
                            else
                              IR::AggregateField.new(name: c.name, value: c)
@@ -722,7 +722,7 @@ module MilkTea
 
         validate_pfor_write_conflicts!(block_infos)
 
-        fn_type = Types::Function.new(nil, params: [], return_type: void_type)
+        fn_type = Types::Registry.function(nil, params: [], return_type: void_type)
         spawn_item_type = Types::Struct.new("mt_spawn_item", linkage_name: "mt_spawn_item").tap do |s|
           s.define_fields({ "work" => fn_type, "data" => void_ptr_type })
         end
@@ -739,7 +739,7 @@ module MilkTea
 
         tasks_local = "mt_spawn_tasks"
         tasks_count = block_infos.length
-        tasks_array_type = Types::GenericInstance.new("array", [spawn_item_type, Types::LiteralTypeArg.new(tasks_count)])
+        tasks_array_type = Types::Registry.generic_instance("array", [spawn_item_type, Types::LiteralTypeArg.new(tasks_count)])
         tasks_init = IR::ArrayLiteral.new(
           type: tasks_array_type,
           elements: block_infos.map { |info|
@@ -814,17 +814,17 @@ module MilkTea
 
         @artifacts.synthetic_functions << IR::Function.new(
           name: worker_c_name, linkage_name: worker_c_name,
-          params: [IR::Param.new(name: "mt_pfor_data", linkage_name: "mt_pfor_data", type: @ctx.types.fetch("void").then { |v| Types::GenericInstance.new("ptr", [v]) }, pointer: false)],
+          params: [IR::Param.new(name: "mt_pfor_data", linkage_name: "mt_pfor_data", type: @ctx.types.fetch("void").then { |v| Types::Registry.generic_instance("ptr", [v]) }, pointer: false)],
           return_type: @ctx.types.fetch("void"),
           body: worker_body,
           entry_point: false,
         )
 
-        void_ptr_type = Types::GenericInstance.new("ptr", [@ctx.types.fetch("void")])
+        void_ptr_type = Types::Registry.generic_instance("ptr", [@ctx.types.fetch("void")])
         IR::Call.new(
           callee: "mt_detach_run",
           arguments: [
-            IR::Name.new(name: worker_c_name, type: Types::Function.new(nil, params: [], return_type: @ctx.types.fetch("void")), pointer: false),
+            IR::Name.new(name: worker_c_name, type: Types::Registry.function(nil, params: [], return_type: @ctx.types.fetch("void")), pointer: false),
             IR::IntegerLiteral.new(value: 0, type: void_ptr_type),
           ],
           type: void_ptr_type,
@@ -948,7 +948,7 @@ module MilkTea
              array_names.include?(expr.receiver.expression.name)
             name_node = expr.receiver.expression
             elem = array_element_type(name_node.type) if array_type?(name_node.type)
-            ptr_type = elem ? Types::GenericInstance.new("ptr", [elem]) : name_node.type
+            ptr_type = elem ? Types::Registry.generic_instance("ptr", [elem]) : name_node.type
             IR::Index.new(
               receiver: IR::Name.new(name: name_node.name, type: ptr_type, pointer: false),
               index: rewrite_pfor_expr(expr.index, array_names),
@@ -958,7 +958,7 @@ module MilkTea
                 array_names.include?(expr.receiver.name)
             name_node = expr.receiver
             elem = array_element_type(expr.receiver_type)
-            ptr_type = elem ? Types::GenericInstance.new("ptr", [elem]) : expr.receiver_type
+            ptr_type = elem ? Types::Registry.generic_instance("ptr", [elem]) : expr.receiver_type
             IR::Index.new(
               receiver: IR::Name.new(name: name_node.name, type: ptr_type, pointer: false),
               index: rewrite_pfor_expr(expr.index, array_names),

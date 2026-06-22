@@ -539,7 +539,7 @@ module MilkTea
                     when :atomic_store then @ctx.types.fetch("void")
                     when :atomic_compare_exchange then @ctx.types.fetch("bool")
                     end
-              return [precomputed, nil, callee.receiver, Types::Function.new(nil, params: [], return_type: ret)]
+              return [precomputed, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: ret)]
             end
           end
 
@@ -559,12 +559,12 @@ module MilkTea
                   when :atomic_store then @ctx.types.fetch("void")
                   when :atomic_compare_exchange then @ctx.types.fetch("bool")
                   end
-            return [atomic_method, nil, callee.receiver, Types::Function.new(nil, params: [], return_type: ret)]
+            return [atomic_method, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: ret)]
           end
 
           field_receiver_type = infer_field_receiver_type(callee.receiver, env:)
           if array_type?(field_receiver_type) && callee.member == "as_span"
-            return [:array_as_span, nil, callee.receiver, Types::Span.new(array_element_type(field_receiver_type))]
+            return [:array_as_span, nil, callee.receiver, Types::Registry.span(array_element_type(field_receiver_type))]
           end
 
           member_type = field_receiver_type.respond_to?(:field) ? field_receiver_type.field(callee.member) : nil
@@ -575,7 +575,7 @@ module MilkTea
         when AST::Specialization
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "reinterpret"
             target_type = resolve_type_ref(callee.arguments.fetch(0).value)
-            return [:reinterpret, nil, nil, Types::Function.new("reinterpret", params: [Types::Parameter.new("value", target_type)], return_type: target_type)]
+            return [:reinterpret, nil, nil, Types::Registry.function("reinterpret", params: [Types::Registry.parameter("value", target_type)], return_type: target_type)]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "array"
@@ -590,30 +590,30 @@ module MilkTea
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "zero"
             target_type = resolve_type_ref(callee.arguments.fetch(0).value)
-            return [:zero, nil, nil, Types::Function.new("zero", params: [], return_type: target_type)]
+            return [:zero, nil, nil, Types::Registry.function("zero", params: [], return_type: target_type)]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "hash"
             resolution = resolve_hash_specialization(callee, env:)
-            return [:hash, resolution.callee_name, nil, Types::Function.new("hash", params: [Types::Parameter.new("value", resolution.target_type)], return_type: @ctx.types.fetch("uint")), resolution.binding]
+            return [:hash, resolution.callee_name, nil, Types::Registry.function("hash", params: [Types::Registry.parameter("value", resolution.target_type)], return_type: @ctx.types.fetch("uint")), resolution.binding]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "equal"
             resolution = resolve_equal_specialization(callee, env:)
             params = [
-              Types::Parameter.new("left", resolution.target_type),
-              Types::Parameter.new("right", resolution.target_type),
+              Types::Registry.parameter("left", resolution.target_type),
+              Types::Registry.parameter("right", resolution.target_type),
             ]
-            return [:equal, resolution.callee_name, nil, Types::Function.new("equal", params:, return_type: @ctx.types.fetch("bool")), resolution.binding]
+            return [:equal, resolution.callee_name, nil, Types::Registry.function("equal", params:, return_type: @ctx.types.fetch("bool")), resolution.binding]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "order"
             resolution = resolve_order_specialization(callee, env:)
             params = [
-              Types::Parameter.new("left", resolution.target_type),
-              Types::Parameter.new("right", resolution.target_type),
+              Types::Registry.parameter("left", resolution.target_type),
+              Types::Registry.parameter("right", resolution.target_type),
             ]
-            return [:order, resolution.callee_name, nil, Types::Function.new("order", params:, return_type: @ctx.types.fetch("int")), resolution.binding]
+            return [:order, resolution.callee_name, nil, Types::Registry.function("order", params:, return_type: @ctx.types.fetch("int")), resolution.binding]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "attribute_arg"
@@ -833,18 +833,18 @@ module MilkTea
             callee_type
           when :ref_of
             argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
-            Types::GenericInstance.new("ref", [argument_type])
+            Types::Registry.generic_instance("ref", [argument_type])
           when :const_ptr_of
             argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
-            Types::GenericInstance.new("const_ptr", [argument_type])
+            Types::Registry.generic_instance("const_ptr", [argument_type])
           when :read
             infer_value_type(expression.arguments.fetch(0).value, env:)
           when :ptr_of
             argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
             if ref_type?(argument_type)
-              Types::GenericInstance.new("ptr", [referenced_type(argument_type)])
+              Types::Registry.generic_instance("ptr", [referenced_type(argument_type)])
             else
-              Types::GenericInstance.new("ptr", [infer_expression_type(expression.arguments.fetch(0).value, env:, expected_type: expected_type && pointer_type?(expected_type) ? pointee_type(expected_type) : nil)])
+              Types::Registry.generic_instance("ptr", [infer_expression_type(expression.arguments.fetch(0).value, env:, expected_type: expected_type && pointer_type?(expected_type) ? pointee_type(expected_type) : nil)])
             end
           when :array_as_span
             callee_type
@@ -857,7 +857,7 @@ module MilkTea
                         else
                           receiver_type.element_type
                         end
-            Types::Nullable.new(Types::GenericInstance.new("ptr", [elem_type]))
+            Types::Registry.nullable(Types::Registry.generic_instance("ptr", [elem_type]))
           when :atomic_load, :atomic_add, :atomic_sub, :atomic_exchange, :atomic_store, :atomic_compare_exchange
             callee_type.return_type
           else
@@ -894,7 +894,7 @@ module MilkTea
             end
           end
           has_named = names.any?
-          Types::Tuple.new(element_types, field_names: has_named ? names : nil)
+          Types::Registry.tuple(element_types, field_names: has_named ? names : nil)
         when AST::DetachExpr
           Types::Handle.new
         else
@@ -2365,16 +2365,16 @@ module MilkTea
       def resolve_type_ref(type_ref, type_params: current_type_params)
         if type_ref.is_a?(AST::FunctionType)
           params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:))
+            Types::Registry.parameter(param.name, resolve_type_ref(param.type, type_params:))
           end
-          return Types::Function.new(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
+          return Types::Registry.function(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
         end
 
         if type_ref.is_a?(AST::ProcType)
           params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:))
+            Types::Registry.parameter(param.name, resolve_type_ref(param.type, type_params:))
           end
-          return Types::Proc.new(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
+          return Types::Registry.proc(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
         end
 
         if type_ref.is_a?(AST::DynType)
@@ -2397,7 +2397,7 @@ module MilkTea
             end
           end
           has_named = names.any?
-          return Types::Tuple.new(element_types, field_names: has_named ? names : nil)
+          return Types::Registry.tuple(element_types, field_names: has_named ? names : nil)
         end
 
         parts = type_ref.name.parts
@@ -2409,18 +2409,18 @@ module MilkTea
                  end
                  if name == "Task"
                    validate_generic_type!(name, args)
-                   Types::Task.new(args.fetch(0))
+                   Types::Registry.task(args.fetch(0))
                  elsif (generic_type = resolve_named_generic_type(parts))
                    generic_type.instantiate(args)
                  elsif name == "span"
-                   Types::Span.new(args.fetch(0))
+                   Types::Registry.span(args.fetch(0))
                  elsif name == "SoA"
                    validate_generic_type!(name, args)
-                   Types::SoA.new(args.fetch(0), count: args.fetch(1).value)
+                   Types::Registry.soa(args.fetch(0), count: args.fetch(1).value)
                  else
                    validate_generic_type!(name, args)
                    args = [type_ref.lifetime] + args if name == "ref" && type_ref.lifetime
-                   Types::GenericInstance.new(name, args)
+                   Types::Registry.generic_instance(name, args)
                  end
                elsif parts.length == 1 && type_params.key?(parts.first)
                  type_params.fetch(parts.first)
@@ -2455,7 +2455,7 @@ module MilkTea
 
          raise LoweringError, "ref types are non-null and cannot be nullable" if type_ref.nullable && ref_type?(base)
 
-         type_ref.nullable ? Types::Nullable.new(base) : base
+         type_ref.nullable ? Types::Registry.nullable(base) : base
       end
 
       def resolve_nested_type_ref(parts)
