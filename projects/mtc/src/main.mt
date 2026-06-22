@@ -348,7 +348,30 @@ function main(args: span[str]) -> int:
         if args.len < 2:
             stdio.print_line("error: no files specified")
             return 1
+
+        var global_lr = lower.Lowerer.create("", "")
+
         var i: ptr_uint = 1
+        while i < args.len:
+            var file_path = unsafe: read(args.data + i)
+            match fs.read_text(file_path):
+                Result.failure as err:
+                    stdio.print_line(f"error: cannot read '#{file_path}'")
+                    return 1
+                Result.success as ok:
+                    var source = ok.value
+                    var source_str = source.as_str()
+                    var lex = lexer.Lexer.create(source_str)
+                    var tokens = lex.lex()
+                    var p = parser.Parser.create(source_str, tokens)
+                    var ast = p.parse()
+                    var module_name = self_module_basename(file_path)
+                    var temp_lr = lower.Lowerer.create(module_name, source_str)
+                    temp_lr.build_type_maps(ast)
+                    global_lr.copy_global_maps_from(ptr_of(temp_lr))
+            i += 1
+
+        i = 1
         while i < args.len:
             var file_path = unsafe: read(args.data + i)
             match fs.read_text(file_path):
@@ -366,6 +389,7 @@ function main(args: span[str]) -> int:
                     var lr = lower.Lowerer.create(module_name, source_str)
                     if i > 1:
                         lr.skip_header = true
+                    lr.copy_global_maps_from(ptr_of(global_lr))
                     lr.lower_module(ast)
             i += 1
         return 0

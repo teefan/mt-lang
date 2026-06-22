@@ -25,6 +25,14 @@ public struct Lowerer:
     field_struct_names: vec.Vec[str]
     field_names: vec.Vec[str]
     field_types: vec.Vec[str]
+    global_func_names: vec.Vec[str]
+    global_func_rets: vec.Vec[str]
+    global_method_receivers: vec.Vec[str]
+    global_method_names: vec.Vec[str]
+    global_method_rets: vec.Vec[str]
+    global_vec_structs: vec.Vec[str]
+    global_vec_names: vec.Vec[str]
+    global_vec_types: vec.Vec[str]
 
 
 extending Lowerer:
@@ -634,7 +642,7 @@ extending Lowerer:
         return ""
 
 
-    function self_infer_expr_type(expr_ptr: ptr[nodes.Expr]?) -> str:
+    editable function self_infer_expr_type(expr_ptr: ptr[nodes.Expr]?) -> str:
         if expr_ptr == null:
             return ""
         let e = unsafe: read(expr_ptr)
@@ -708,10 +716,19 @@ extending Lowerer:
                                         break
                                 mi += 1
                     # Check Vec.get() regardless of this-method match
-                    if callee.name == "get" and self_is_str_vec_field(callee.left):
-                        return "mt_str*"
-                else if callee.kind == nodes.ExprKind.member_access and callee.name == "get" and self_is_str_vec_field(callee.left):
-                    return "mt_str*"
+                    var et = self_vec_elem_type(callee.left, this.module_name, this.current_receiver_type, ref_of(this.global_vec_structs), ref_of(this.global_vec_names), ref_of(this.global_vec_types))
+                    if callee.name == "get" and et != "":
+                        var erb: str_buffer[256]
+                        erb.assign(et)
+                        erb.append("*")
+                        return this.pool_type(unsafe: erb.as_str())
+                else if callee.kind == nodes.ExprKind.member_access:
+                    var et2 = self_vec_elem_type(callee.left, this.module_name, this.current_receiver_type, ref_of(this.global_vec_structs), ref_of(this.global_vec_names), ref_of(this.global_vec_types))
+                    if callee.name == "get" and et2 != "":
+                        var erb2: str_buffer[256]
+                        erb2.assign(et2)
+                        erb2.append("*")
+                        return this.pool_type(unsafe: erb2.as_str())
             return ""
         return ""
 
@@ -725,6 +742,14 @@ extending Lowerer:
             this.write_ctype_node(ptr_of(resolved_type), tp)
             unsafe: this.out_buf.append(unsafe: resolved_type.as_str())
             unsafe: this.out_buf.append(" ")
+        else if s.expr != null:
+            var itype = this.self_infer_expr_type(s.expr)
+            if itype != "":
+                unsafe: this.out_buf.append(itype)
+                unsafe: this.out_buf.append(" ")
+                resolved_type.assign(itype)
+            else:
+                unsafe: this.out_buf.append("auto ")
         else:
             unsafe: this.out_buf.append("auto ")
         unsafe: this.out_buf.append(s.name)
@@ -747,8 +772,12 @@ extending Lowerer:
         unsafe: this.out_buf.append(";\n")
 
 
-    function self_expr_is_mt_str(expr_ptr: ptr[nodes.Expr]) -> str:
+    function self_expr_is_mt_str(expr_ptr: ptr[nodes.Expr]?) -> str:
+        if expr_ptr == null:
+            return ""
         let ep = unsafe: read(expr_ptr)
+        if ep.kind == nodes.ExprKind.await_expr:
+            return this.self_expr_is_mt_str(ep.left)
         if ep.kind == nodes.ExprKind.identifier:
             var st = this.scope_lookup(ep.name)
             if st == "mt_str":
@@ -835,7 +864,10 @@ extending Lowerer:
         var kind = e.kind
 
         if kind == nodes.ExprKind.identifier:
-            unsafe: this.out_buf.append(e.name)
+            if e.name == "?":
+                unsafe: this.out_buf.append("NULL")
+            else:
+                unsafe: this.out_buf.append(e.name)
         else if kind == nodes.ExprKind.integer_literal or kind == nodes.ExprKind.float_literal:
             unsafe: this.out_buf.append(e.lexeme)
         else if kind == nodes.ExprKind.string_literal:
@@ -944,6 +976,38 @@ extending Lowerer:
         if callee == null:
             return false
         let ce = unsafe: read(callee)
+        if ce.kind == nodes.ExprKind.index_access:
+            var heap_name = ""
+            var heap_op = ""
+            var type_expr: ptr[nodes.Expr]? = null
+            var cap = ce.left
+            if cap != null:
+                let ci = unsafe: read(cap)
+                if ci.kind == nodes.ExprKind.member_access:
+                    heap_op = ci.name
+                    var mp = ci.left
+                    if mp != null:
+                        let mi = unsafe: read(mp)
+                        if mi.kind == nodes.ExprKind.identifier and mi.name == "heap":
+                            heap_name = "heap"
+                            type_expr = ce.right
+            if heap_name == "heap" and (heap_op == "alloc" or heap_op == "must_alloc") and type_expr != null:
+                unsafe: this.out_buf.append("((")
+                this.self_write_tname_expr(type_expr)
+                unsafe: this.out_buf.append("*)")
+                unsafe: this.out_buf.append("malloc(sizeof(")
+                this.self_write_tname_expr(type_expr)
+                unsafe: this.out_buf.append(") * ")
+                if e.args.len() >= 1:
+                    let a0 = unsafe: e.args.get(0) else:
+                        return true
+                    let ap0: ptr[nodes.Expr]? = unsafe: read(a0)
+                    if ap0 != null:
+                        this.self_write_expr_buf(ap0)
+                else:
+                    unsafe: this.out_buf.append("1")
+                unsafe: this.out_buf.append("))")
+                return true
         if ce.kind != nodes.ExprKind.identifier:
             return false
         if ce.name == "fatal":
@@ -1122,9 +1186,11 @@ extending Lowerer:
             if unsafe: e.args.len() < 1:
                 unsafe: this.out_buf.append("NULL")
                 return
-            var is_str_vec = self_is_str_vec_field(ce.left)
-            if is_str_vec:
-                unsafe: this.out_buf.append("(mt_str*)")
+            var et = self_vec_elem_type(ce.left, this.module_name, this.current_receiver_type, ref_of(this.global_vec_structs), ref_of(this.global_vec_names), ref_of(this.global_vec_types))
+            if et != "":
+                unsafe: this.out_buf.append("(")
+                unsafe: this.out_buf.append(et)
+                unsafe: this.out_buf.append("*)")
             unsafe: this.out_buf.append("mt_vec_get_impl(&(")
             var left_expr = ce.left
             if left_expr != null:
@@ -1135,8 +1201,10 @@ extending Lowerer:
             let ap0: ptr[nodes.Expr]? = unsafe: read(a0)
             if ap0 != null:
                 this.self_write_expr_buf(ap0)
-            if is_str_vec:
-                unsafe: this.out_buf.append(", sizeof(mt_str))")
+            if et != "":
+                unsafe: this.out_buf.append(", sizeof(")
+                unsafe: this.out_buf.append(et)
+                unsafe: this.out_buf.append("))")
             else:
                 unsafe: this.out_buf.append(", sizeof(void*))")
         else:
@@ -1504,7 +1572,7 @@ extending Lowerer:
         return unsafe: this.type_pool.as_str().slice(start, ctype.len)
 
 
-    editable function build_type_maps(source: nodes.SourceFile) -> void:
+    public editable function build_type_maps(source: nodes.SourceFile) -> void:
         var i: ptr_uint = 0
         while i < source.decls.len():
             let d = source.decls.get(i) else:
@@ -1516,6 +1584,8 @@ extending Lowerer:
                 var pooled = this.pool_type(unsafe: buf.as_str())
                 this.func_lookup_names.push(decl.name)
                 this.func_lookup_rets.push(pooled)
+                this.global_func_names.push(decl.name)
+                this.global_func_rets.push(pooled)
             else if decl.kind == nodes.DeclKind.extending_block:
                 var mi: ptr_uint = 0
                 while mi < decl.methods.len():
@@ -1528,6 +1598,9 @@ extending Lowerer:
                     this.method_lookup_receivers.push(decl.name)
                     this.method_lookup_names.push(method.name)
                     this.method_lookup_rets.push(pooled)
+                    this.global_method_receivers.push(decl.name)
+                    this.global_method_names.push(method.name)
+                    this.global_method_rets.push(pooled)
                     mi += 1
             else if decl.kind == nodes.DeclKind.struct_decl or decl.kind == nodes.DeclKind.union_decl:
                 var sname_buf: str_buffer[512]
@@ -1544,6 +1617,20 @@ extending Lowerer:
                     this.field_struct_names.push(struct_cname)
                     this.field_names.push(field.name)
                     this.field_types.push(ftype)
+                    var tnp = field.type_node
+                    if tnp != null:
+                        var tn = unsafe: read(tnp)
+                        if tn.kind == nodes.TypeKind.type_constructed:
+                            var nm = tn.name
+                            if nm == "Vec" or self_str_ends_with(nm, ".Vec"):
+                                var inp = tn.inner
+                                if inp != null:
+                                    var ebuf: str_buffer[512]
+                                    this.write_ctype_node(ptr_of(ebuf), inp)
+                                    var et = this.pool_type(unsafe: ebuf.as_str())
+                                    this.global_vec_structs.push(struct_cname)
+                                    this.global_vec_names.push(field.name)
+                                    this.global_vec_types.push(et)
                     fi += 1
             i += 1
 
@@ -1594,6 +1681,17 @@ extending Lowerer:
                 let r = unsafe: read(rp)
                 return r
             i += 1
+        i = 0
+        while i < this.global_func_names.len():
+            let np = this.global_func_names.get(i) else:
+                break
+            let n = unsafe: read(np)
+            if n == name:
+                let rp = this.global_func_rets.get(i) else:
+                    break
+                let r = unsafe: read(rp)
+                return r
+            i += 1
         return ""
 
 
@@ -1609,6 +1707,21 @@ extending Lowerer:
                 let m = unsafe: read(mp)
                 if m == method_name:
                     let tp = this.method_lookup_rets.get(i) else:
+                        break
+                    let t = unsafe: read(tp)
+                    return t
+            i += 1
+        i = 0
+        while i < this.global_method_receivers.len():
+            let rp = this.global_method_receivers.get(i) else:
+                break
+            let r = unsafe: read(rp)
+            if r == receiver_type:
+                let mp = this.global_method_names.get(i) else:
+                    break
+                let m = unsafe: read(mp)
+                if m == method_name:
+                    let tp = this.global_method_rets.get(i) else:
                         break
                     let t = unsafe: read(tp)
                     return t
@@ -1635,6 +1748,87 @@ extending Lowerer:
         return ""
 
 
+    function global_vec_elem_lookup(struct_cname: str, field_name: str) -> str:
+        var i: ptr_uint = 0
+        while i < this.global_vec_structs.len():
+            let sp = this.global_vec_structs.get(i) else:
+                break
+            let s = unsafe: read(sp)
+            if s == struct_cname:
+                let fp = this.global_vec_names.get(i) else:
+                    break
+                let f = unsafe: read(fp)
+                if f == field_name:
+                    let tp = this.global_vec_types.get(i) else:
+                        break
+                    let t = unsafe: read(tp)
+                    return t
+            i += 1
+        return ""
+
+
+    public editable function copy_global_maps_from(master: ptr[Lowerer]) -> void:
+        var src = unsafe: read(master)
+        var i: ptr_uint = 0
+        while i < src.global_vec_structs.len():
+            let s = src.global_vec_structs.get(i) else:
+                break
+            let n = src.global_vec_names.get(i) else:
+                break
+            let t = src.global_vec_types.get(i) else:
+                break
+            this.global_vec_structs.push(unsafe: read(s))
+            this.global_vec_names.push(unsafe: read(n))
+            this.global_vec_types.push(unsafe: read(t))
+            i += 1
+        i = 0
+        while i < src.global_func_names.len():
+            let n = src.global_func_names.get(i) else:
+                break
+            let t = src.global_func_rets.get(i) else:
+                break
+            this.global_func_names.push(unsafe: read(n))
+            this.global_func_rets.push(unsafe: read(t))
+            i += 1
+        i = 0
+        while i < src.global_method_receivers.len():
+            let r = src.global_method_receivers.get(i) else:
+                break
+            let n = src.global_method_names.get(i) else:
+                break
+            let t = src.global_method_rets.get(i) else:
+                break
+            this.global_method_receivers.push(unsafe: read(r))
+            this.global_method_names.push(unsafe: read(n))
+            this.global_method_rets.push(unsafe: read(t))
+            i += 1
+        i = 0
+        while i < src.field_struct_names.len():
+            let s = src.field_struct_names.get(i) else:
+                break
+            let n = src.field_names.get(i) else:
+                break
+            let t = src.field_types.get(i) else:
+                break
+            var j: ptr_uint = 0
+            var already_got = false
+            while j < this.field_struct_names.len():
+                let es = this.field_struct_names.get(j) else:
+                    break
+                let ef = this.field_names.get(j) else:
+                    break
+                if unsafe: read(es) == unsafe: read(s):
+                    if unsafe: read(ef) == unsafe: read(n):
+                        already_got = true
+                        break
+                j += 1
+            if not already_got:
+                this.field_struct_names.push(unsafe: read(s))
+                this.field_names.push(unsafe: read(n))
+                this.field_types.push(unsafe: read(t))
+            i += 1
+
+
 function self_is_str_vec_field(expr_ptr: ptr[nodes.Expr]?) -> bool:
     if expr_ptr == null:
         return false
@@ -1657,6 +1851,50 @@ function self_is_str_vec_field(expr_ptr: ptr[nodes.Expr]?) -> bool:
     if fname == "field_struct_names" or fname == "field_names" or fname == "field_types":
         return true
     return false
+
+
+function self_vec_elem_type(
+    recv_expr: ptr[nodes.Expr]?,
+    module_name: str,
+    current_receiver_type: str,
+    glob_structs: ref[vec.Vec[str]],
+    glob_names: ref[vec.Vec[str]],
+    glob_types: ref[vec.Vec[str]]
+) -> str:
+    if recv_expr == null:
+        return ""
+    let re = unsafe: read(recv_expr)
+    if re.kind != nodes.ExprKind.member_access:
+        return ""
+    var field_name = re.name
+    let left_ptr = re.left else:
+        return ""
+    let le = unsafe: read(left_ptr)
+    if le.kind == nodes.ExprKind.identifier and le.name == "this":
+        if current_receiver_type != "":
+            var rbuf: str_buffer[256]
+            unsafe: rbuf.append(module_name)
+            unsafe: rbuf.append("_")
+            unsafe: rbuf.append(current_receiver_type)
+            var cname = unsafe: rbuf.as_str()
+            var i: ptr_uint = 0
+            while i < glob_structs.len():
+                let sp = glob_structs.get(i) else:
+                    break
+                let s = unsafe: read(sp)
+                if s == cname:
+                    let fp = glob_names.get(i) else:
+                        break
+                    let f = unsafe: read(fp)
+                    if f == field_name:
+                        let tp = glob_types.get(i) else:
+                            break
+                        let t = unsafe: read(tp)
+                        return t
+                i += 1
+        if self_is_str_vec_field(recv_expr):
+            return "mt_str"
+    return ""
 
 
 function self_is_c_primitive(name: str) -> bool:

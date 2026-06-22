@@ -834,8 +834,9 @@ extending Parser:
 
 
     editable function parse_unary() -> nodes.Expr:
-        if this.match_kind(token.TokenKind.tk_not) or this.match_kind(token.TokenKind.tk_minus):
+        if this.check(token.TokenKind.tk_not) or this.check(token.TokenKind.tk_minus):
             var op = this.tok_lexeme()
+            this.advance()
             if op == "":
                 op = "-"
             var operand = this.parse_unary()
