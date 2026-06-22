@@ -85,6 +85,33 @@ module MilkTea
         @foreign_mapping_depth.positive?
       end
 
+      def with_return_context(return_type, allow_return:)
+        @return_context_stack << { return_type:, allow_return: }
+        yield
+      ensure
+        @return_context_stack.pop
+      end
+
+      def current_return_context
+        @return_context_stack.last
+      end
+
+      def with_scope(bindings)
+        scope = {}
+        bindings.each do |binding|
+          raise_sema_error("duplicate local #{binding.name}") if scope.key?(binding.name)
+
+          scope[binding.name] = binding
+        end
+
+        yield([scope])
+      end
+
+      def with_nested_scope(scopes)
+        nested_scopes = scopes + [{}]
+        yield(nested_scopes)
+      end
+
       def validate_async_function_body!(statements)
         statements.each { |statement| validate_async_statement!(statement) }
       end
@@ -236,6 +263,42 @@ module MilkTea
         else
           false
         end
+      end
+
+      def suggest_name(wrong, candidates, max_distance: 2)
+        return nil if wrong.nil? || wrong.to_s.empty? || candidates.nil? || candidates.empty?
+
+        wrong_str = wrong.to_s
+        closest = nil
+        closest_dist = max_distance + 1
+        candidates.each do |candidate|
+          next if candidate.nil?
+          cand_str = candidate.to_s
+          next if cand_str.empty? || cand_str == wrong_str
+          dist = levenshtein(wrong_str, cand_str)
+          if dist < closest_dist
+            closest_dist = dist
+            closest = cand_str
+          end
+        end
+        closest_dist <= max_distance ? closest : nil
+      end
+
+      def levenshtein(s, t)
+        m = s.length
+        n = t.length
+        return m if n.zero?
+        return n if m.zero?
+        d = Array.new(m + 1) { Array.new(n + 1, 0) }
+        (0..m).each { |i| d[i][0] = i }
+        (0..n).each { |j| d[0][j] = j }
+        (1..m).each do |i|
+          (1..n).each do |j|
+            cost = s[i - 1] == t[j - 1] ? 0 : 1
+            d[i][j] = [d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost].min
+          end
+        end
+        d[m][n]
       end
 
     end

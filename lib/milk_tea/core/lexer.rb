@@ -87,6 +87,8 @@ module MilkTea
       "~" => :tilde,
     }.freeze
 
+    INTEGER_SUFFIX_STRINGS = %w[ub us ul iz b s i u l z].sort_by { |s| -s.length }.freeze
+
     def self.lex(source, path: nil, mode: :syntax_only, recovery_errors: nil)
       result = new(source, path: path, mode:, recovery_errors:).lex
       mode == :with_trivia ? result.tokens : result
@@ -121,7 +123,6 @@ module MilkTea
       while line_index < lines.length
         raw_line = lines[line_index]
         has_newline = raw_line.end_with?("\n")
-        # Use byte-indexed scanning so token offsets remain consistent for UTF-8 content.
         line = raw_line.delete_suffix("\n").b
         consumed_lines = lex_line(lines, line_index, line, line_number, line_offset, has_newline:)
 
@@ -202,7 +203,6 @@ module MilkTea
 
       if @grouping_depth.zero?
         if @continuation_pending
-          # indentation is ignored while line continuation is active
         elsif @recovery_errors
           begin
             emit_indentation(index, line_number, line_offset)
@@ -350,6 +350,8 @@ module MilkTea
       1
     end
 
+    # ── trivia helpers ──────────────────────────────────────────────
+
     def register_detached_line_trivia(kind, line, line_number, line_offset, has_newline:)
       return unless with_trivia?
 
@@ -387,6 +389,8 @@ module MilkTea
         @tokens[-1] = token
       end
     end
+
+    # ── indentation ─────────────────────────────────────────────────
 
     def emit_indentation(indent, line_number, line_offset)
       if (indent % 4) != 0
@@ -440,6 +444,8 @@ module MilkTea
       return if @indent_stack.last == recovered_indent
     end
 
+    # ── identifier lexing ───────────────────────────────────────────
+
     def lex_identifier(line, index, line_number, line_offset:)
       start = index
       index += 1
@@ -459,6 +465,8 @@ module MilkTea
       @tokens << token(type, lexeme, literal, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
       index
     end
+
+    # ── numeric lexing ──────────────────────────────────────────────
 
     def lex_number(line, index, line_number, line_offset:)
       start = index
@@ -526,7 +534,7 @@ module MilkTea
       end
     end
 
-    INTEGER_SUFFIX_STRINGS = %w[ub us ul iz b s i u l z].sort_by { |s| -s.length }.freeze
+    # ── text-literal lexing (string / char / heredoc / format) ──────
 
     def lex_string(lines, line_index, line, index, line_number, line_offset:, cstring: false)
       segment = scan_string_segment(line, index, line_number, cstring:, recover: @recovery_errors)
@@ -629,6 +637,46 @@ module MilkTea
       end
 
       raise LexError.new("unterminated string literal", line: line_number, column: start + 1, path: @path)
+    end
+
+    def lex_char_literal(line, index, line_number, line_offset:)
+      start = index
+      index += 1
+      if index >= line.length
+        raise LexError.new("unterminated character literal", line: line_number, column: start + 1, path: @path)
+      end
+
+      char = line[index]
+      if char == "\\"
+        index += 1
+        if index >= line.length
+          raise LexError.new("unterminated escape in character literal", line: line_number, column: start + 1, path: @path)
+        end
+        escape_char = line[index]
+        if escape_char == "x"
+          hex = line[index + 1, 2]
+          unless hex&.match?(/\A[0-9a-fA-F]{2}\z/)
+            raise LexError.new("invalid hex escape in character literal", line: line_number, column: index + 1, path: @path)
+          end
+          value = hex.to_i(16)
+          index += 3
+        else
+          value = decode_escape(escape_char).ord
+          index += 1
+        end
+      else
+        value = char.ord
+        index += 1
+      end
+
+      if index >= line.length || line[index] != "'"
+        raise LexError.new("expected closing ' in character literal", line: line_number, column: index + 1, path: @path)
+      end
+      index += 1
+
+      lexeme = line[start...index]
+      @tokens << token(:char_literal, lexeme, value, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
+      index
     end
 
     def lex_heredoc(lines, line_index, index, line_number, line_offset, cstring:, format: false)
@@ -873,6 +921,8 @@ module MilkTea
       raise LexError.new("unterminated format string literal", line: line_number, column: start + 1, path: @path)
     end
 
+    # ── heredoc helpers ─────────────────────────────────────────────
+
     def heredoc_start?(line, index, cstring: false, format: false)
       prefix = heredoc_prefix(cstring:, format:)
       line[index, prefix.length] == prefix && identifier_start?(line[index + prefix.length])
@@ -932,25 +982,7 @@ module MilkTea
       end
     end
 
-    def emit_line_newline(line, line_number, line_offset, has_newline)
-      newline_start = line_offset + line.bytesize
-      newline_end = has_newline ? (newline_start + 1) : newline_start
-
-      if @grouping_depth.zero?
-        @tokens << token(:newline, "\n", nil, line_number, line.bytesize + 1, start_offset: newline_start, end_offset: newline_end)
-      elsif with_trivia? && has_newline
-        append_trailing_or_pending(
-          TriviaToken.new(
-            kind: :newline,
-            text: "\n",
-            line: line_number,
-            column: line.bytesize + 1,
-            start_offset: newline_start,
-            end_offset: newline_end,
-          ),
-        )
-      end
-    end
+    # ── format interpolation helpers ────────────────────────────────
 
     def scan_format_interpolation_end(line, index, line_number, column, recover: false)
       depth = 1
@@ -1008,10 +1040,6 @@ module MilkTea
       raise LexError.new("unterminated string literal", line: line_number, column: index + 1, path: @path)
     end
 
-    # Splits a format interpolation source string into [expression_source, format_spec_string].
-    # Only a trailing top-level `:.N` or `:[xXoObB]` suffix is treated as a format spec so
-    # expression forms like `unsafe: read(ptr)` and `if cond: a else: b` keep
-    # their internal colons inside the embedded expression.
     def split_format_interpolation_source(source)
       depth = 0
       format_spec_index = nil
@@ -1064,6 +1092,30 @@ module MilkTea
     def format_spec_suffix?(source)
       source && source.strip.match?(/\A(?:\.\d+|[xXoObB])\z/)
     end
+
+    # ── newline emission ────────────────────────────────────────────
+
+    def emit_line_newline(line, line_number, line_offset, has_newline)
+      newline_start = line_offset + line.bytesize
+      newline_end = has_newline ? (newline_start + 1) : newline_start
+
+      if @grouping_depth.zero?
+        @tokens << token(:newline, "\n", nil, line_number, line.bytesize + 1, start_offset: newline_start, end_offset: newline_end)
+      elsif with_trivia? && has_newline
+        append_trailing_or_pending(
+          TriviaToken.new(
+            kind: :newline,
+            text: "\n",
+            line: line_number,
+            column: line.bytesize + 1,
+            start_offset: newline_start,
+            end_offset: newline_end,
+          ),
+        )
+      end
+    end
+
+    # ── symbol / operator lexing ────────────────────────────────────
 
     def lex_symbol(line, index, line_number, line_offset:)
       start = index
@@ -1126,6 +1178,8 @@ module MilkTea
       end
     end
 
+    # ── recovery ────────────────────────────────────────────────────
+
     def top_level_resync_line?(line)
       return false if line.strip.empty?
       return false if leading_space_count(line).positive?
@@ -1146,6 +1200,8 @@ module MilkTea
         false
       end
     end
+
+    # ── integer / escape utilities ──────────────────────────────────
 
     def parse_integer(lexeme)
       cleaned = lexeme.delete("_")
@@ -1172,45 +1228,7 @@ module MilkTea
       end
     end
 
-    def lex_char_literal(line, index, line_number, line_offset:)
-      start = index
-      index += 1 # skip opening '
-      if index >= line.length
-        raise LexError.new("unterminated character literal", line: line_number, column: start + 1, path: @path)
-      end
-
-      char = line[index]
-      if char == "\\"
-        index += 1
-        if index >= line.length
-          raise LexError.new("unterminated escape in character literal", line: line_number, column: start + 1, path: @path)
-        end
-        escape_char = line[index]
-        if escape_char == "x"
-          hex = line[index + 1, 2]
-          unless hex&.match?(/\A[0-9a-fA-F]{2}\z/)
-            raise LexError.new("invalid hex escape in character literal", line: line_number, column: index + 1, path: @path)
-          end
-          value = hex.to_i(16)
-          index += 3
-        else
-          value = decode_escape(escape_char).ord
-          index += 1
-        end
-      else
-        value = char.ord
-        index += 1
-      end
-
-      if index >= line.length || line[index] != "'"
-        raise LexError.new("expected closing ' in character literal", line: line_number, column: index + 1, path: @path)
-      end
-      index += 1 # skip closing '
-
-      lexeme = line[start...index]
-      @tokens << token(:char_literal, lexeme, value, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
-      index
-    end
+    # ── character classification ────────────────────────────────────
 
     def leading_space_count(line)
       line[/\A */].length
@@ -1247,6 +1265,8 @@ module MilkTea
       exponent_index += 1 if %w[+ -].include?(line[exponent_index])
       digit?(line[exponent_index])
     end
+
+    # ── token construction ──────────────────────────────────────────
 
     def token(type, lexeme, literal, line, column, start_offset:, end_offset:)
       Token.new(

@@ -43,7 +43,7 @@ require_relative "lowering/resolve"
 require_relative "lowering/dyn"
 require_relative "lowering/utils"
 require_relative "lowering/artifacts"
-require_relative "lowering/module_context"
+require_relative "lowering/lowering_context"
 
 module MilkTea
   class LoweringError < StandardError; end

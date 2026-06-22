@@ -185,38 +185,6 @@ module MilkTea
       token && Token::KEYWORDS.key?(token.lexeme)
     end
 
-    def check_inline_stmt_start?
-      return false unless check(:inline)
-
-      next_idx = @current + 1
-      return false if next_idx >= @tokens.length
-
-      next_token = @tokens[next_idx]
-      %i[for while match if].include?(next_token.type)
-    end
-
-    def check_parallel_for_start?
-      return false unless check(:parallel)
-
-      next_idx = @current + 1
-      return false if next_idx >= @tokens.length
-
-      @tokens[next_idx].type == :for
-    end
-
-    def check_parallel_block_start?
-      return false unless check(:parallel)
-
-      next_idx = @current + 1
-      return false if next_idx >= @tokens.length
-
-      @tokens[next_idx].type == :colon
-    end
-
-    def check_when_start?
-      check(:when)
-    end
-
     def check(type)
       return false if eof?
 

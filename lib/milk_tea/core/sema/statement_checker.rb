@@ -5,6 +5,41 @@ module MilkTea
     class Checker
       private
 
+      def check_block(statements, scopes:, return_type:, allow_return: true)
+        statements ||= []
+        with_return_context(return_type, allow_return:) do
+          with_nested_scope(scopes) do |nested_scopes|
+            statements.each_with_index do |statement, idx|
+              begin
+                record_local_completion_snapshot(
+                  statement.respond_to?(:line) ? statement.line : nil,
+                  statement.respond_to?(:column) ? statement.column : 0,
+                  nested_scopes,
+                )
+                refinements = check_statement(statement, scopes: nested_scopes, return_type:, allow_return:)
+                apply_continuation_refinements!(nested_scopes, refinements)
+                if @nullability_flow_result && idx + 1 < statements.length
+                  apply_nullability_continuation_refinements!(nested_scopes, statements[idx + 1])
+                end
+                record_local_completion_snapshot(statement_end_line(statement), 1_000_000, nested_scopes)
+              rescue SemaError => e
+                if @collecting_errors
+                  @structural_errors << e
+                  next
+                end
+
+                raise e unless e.line.nil?
+
+                stmt_line = statement.respond_to?(:line) ? statement.line : nil
+                raise e if stmt_line.nil?
+
+                raise_sema_error(e.message, statement)
+              end
+            end
+          end
+        end
+      end
+
       def cfg_block_always_terminates?(statements)
         CFG::Termination.block_always_terminates?(statements, ignore_name: ->(_name) { false })
       end

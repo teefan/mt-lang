@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "sema/type_declaration"
+require_relative "sema/attribute_checker"
 require_relative "sema/function_binding"
 require_relative "sema/top_level"
 require_relative "sema/interface_conformance"
