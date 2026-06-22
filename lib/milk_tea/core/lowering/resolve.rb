@@ -1016,18 +1016,9 @@ module MilkTea
       end
 
       def type_contains_array_storage?(type, visited = Set.new)
-        return true if array_type?(type)
-        return false if visited.include?(type.object_id)
-
-        case type
-        when Types::Struct, Types::StructInstance
-          visited.add(type.object_id)
-          type.fields.each_value.any? { |field_type| type_contains_array_storage?(field_type, visited) }
-        when Types::Nullable
-          type_contains_array_storage?(type.base, visited)
-        else
-          false
-        end
+        visitor = ContainsArrayStorageVisitor.new
+        visitor.visit(type)
+        visitor.found?
       end
 
       def reinterpret_expression(expression, target_type)
@@ -2312,58 +2303,7 @@ module MilkTea
       end
 
       def substitute_type(type, substitutions)
-        case type
-        when Types::TypeVar
-          substitutions.fetch(type.name, type)
-        when Types::Nullable
-          Types::Nullable.new(substitute_type(type.base, substitutions))
-        when Types::GenericInstance
-          Types::GenericInstance.new(
-            type.name,
-            type.arguments.map { |argument| argument.is_a?(Types::LiteralTypeArg) ? argument : substitute_type(argument, substitutions) },
-          )
-        when Types::Span
-          Types::Span.new(substitute_type(type.element_type, substitutions))
-        when Types::Task
-          Types::Task.new(substitute_type(type.result_type, substitutions))
-        when Types::Proc
-          Types::Proc.new(
-            params: type.params.map do |param|
-              Types::Parameter.new(
-                param.name,
-                substitute_type(param.type, substitutions),
-                mutable: param.mutable,
-                passing_mode: param.passing_mode,
-                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
-              )
-            end,
-            return_type: substitute_type(type.return_type, substitutions),
-          )
-        when Types::StructInstance
-          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
-        when Types::VariantInstance
-          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
-        when Types::Function
-          Types::Function.new(
-            type.name,
-            params: type.params.map do |param|
-              Types::Parameter.new(
-                param.name,
-                substitute_type(param.type, substitutions),
-                mutable: param.mutable,
-                passing_mode: param.passing_mode,
-                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
-              )
-            end,
-            return_type: substitute_type(type.return_type, substitutions),
-            receiver_type: type.receiver_type ? substitute_type(type.receiver_type, substitutions) : nil,
-            receiver_editable: type.receiver_editable,
-            variadic: type.variadic,
-            external: type.external,
-          )
-        else
-          type
-        end
+        SubstituteTypeVisitor.new(substitutions).apply(type)
       end
 
       def analysis_for_module(module_name)
