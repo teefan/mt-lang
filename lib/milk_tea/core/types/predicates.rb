@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require_relative "types"
-
 module MilkTea
   module TypePredicates
     def method_dispatch_receiver_type(receiver_type)
@@ -480,71 +478,15 @@ module MilkTea
     end
 
     def contains_ref_type?(type, visited = {}, allow_lifetimes: [])
-      return false unless type
-
-      visit_key = [type.class, type.object_id]
-      return false if visited[visit_key]
-
-      visited[visit_key] = true
-      case type
-      when Types::Nullable
-        contains_ref_type?(type.base, visited, allow_lifetimes:)
-      when Types::GenericInstance
-        if ref_type?(type)
-          lt = ref_lifetime(type)
-          return false if lt && allow_lifetimes.include?(lt)
-          return true
-        end
-
-        type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_ref_type?(argument, visited, allow_lifetimes:) }
-      when Types::Span
-        contains_ref_type?(type.element_type, visited, allow_lifetimes:)
-      when Types::Task
-        contains_ref_type?(type.result_type, visited, allow_lifetimes:)
-      when Types::Struct, Types::Union
-        type.fields.each_value.any? { |field_type| contains_ref_type?(field_type, visited, allow_lifetimes:) }
-      when Types::StructInstance
-        type.arguments.any? { |argument| contains_ref_type?(argument, visited, allow_lifetimes:) }
-      when Types::Variant
-        type.arm_names.any? { |arm_name| type.arm(arm_name).each_value.any? { |field_type| contains_ref_type?(field_type, visited, allow_lifetimes:) } }
-      when Types::VariantInstance
-        type.arguments.any? { |argument| contains_ref_type?(argument, visited, allow_lifetimes:) }
-      when Types::Proc
-        type.params.any? { |param| contains_ref_type?(param.type, visited, allow_lifetimes:) } || contains_ref_type?(type.return_type, visited, allow_lifetimes:)
-      when Types::Function
-        type.params.any? { |param| contains_ref_type?(param.type, visited, allow_lifetimes:) } ||
-          contains_ref_type?(type.return_type, visited, allow_lifetimes:) ||
-          (type.receiver_type && contains_ref_type?(type.receiver_type, visited, allow_lifetimes:))
-      else
-        false
-      end
+      visitor = ContainsRefTypeVisitor.new(allow_lifetimes:)
+      visitor.visit(type)
+      visitor.found?
     end
 
     def contains_type_var?(type)
-      case type
-      when Types::TypeVar
-        true
-      when Types::Nullable
-        contains_type_var?(type.base)
-      when Types::GenericInstance
-        type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_type_var?(argument) }
-      when Types::Span
-        contains_type_var?(type.element_type)
-      when Types::Task
-        contains_type_var?(type.result_type)
-      when Types::StructInstance
-        type.arguments.any? { |argument| contains_type_var?(argument) }
-      when Types::VariantInstance
-        type.arguments.any? { |argument| contains_type_var?(argument) }
-      when Types::Proc
-        type.params.any? { |param| contains_type_var?(param.type) } || contains_type_var?(type.return_type)
-      when Types::Function
-        type.params.any? { |param| contains_type_var?(param.type) } ||
-          contains_type_var?(type.return_type) ||
-          (type.receiver_type && contains_type_var?(type.receiver_type))
-      else
-        false
-      end
+      visitor = ContainsTypeVarVisitor.new
+      visitor.visit(type)
+      visitor.found?
     end
 
     def collection_loop_type(type)

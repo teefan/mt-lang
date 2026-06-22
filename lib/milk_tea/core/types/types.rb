@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "fiddle"
+require_relative "registry"
+require_relative "visitor"
 
 module MilkTea
   module Types
@@ -11,65 +13,7 @@ module MilkTea
     RESERVED_TYPE_BINDING_NAMES = BUILTIN_TYPE_NAMES
 
     def self.substitute_type_variables(type, substitutions)
-      case type
-      when TypeVar
-        substitutions.fetch(type.name, type)
-      when LifetimeRef
-        substitutions.fetch(type.name, type)
-      when Nullable
-        Nullable.new(substitute_type_variables(type.base, substitutions))
-      when GenericInstance
-        GenericInstance.new(type.name, type.arguments.map { |argument| argument.is_a?(LiteralTypeArg) ? argument : substitute_type_variables(argument, substitutions) })
-      when Span
-        Span.new(substitute_type_variables(type.element_type, substitutions))
-      when Task
-        Task.new(substitute_type_variables(type.result_type, substitutions))
-      when Proc
-        Proc.new(
-          params: type.params.map do |param|
-            Parameter.new(
-              param.name,
-              substitute_type_variables(param.type, substitutions),
-              mutable: param.mutable,
-              passing_mode: param.passing_mode,
-              boundary_type: param.boundary_type ? substitute_type_variables(param.boundary_type, substitutions) : nil,
-            )
-          end,
-          return_type: substitute_type_variables(type.return_type, substitutions),
-        )
-      when Function
-        Function.new(
-          type.name,
-          params: type.params.map do |param|
-            Parameter.new(
-              param.name,
-              substitute_type_variables(param.type, substitutions),
-              mutable: param.mutable,
-              passing_mode: param.passing_mode,
-              boundary_type: param.boundary_type ? substitute_type_variables(param.boundary_type, substitutions) : nil,
-            )
-          end,
-          return_type: substitute_type_variables(type.return_type, substitutions),
-          receiver_type: type.receiver_type ? substitute_type_variables(type.receiver_type, substitutions) : nil,
-          receiver_editable: type.receiver_editable,
-          external: type.external,
-        )
-      when Event
-        Event.new(
-          type.name,
-          capacity: type.capacity,
-          payload_type: type.payload_type ? substitute_type_variables(type.payload_type, substitutions) : nil,
-          module_name: type.module_name,
-          visibility: type.visibility,
-          owner_type_name: type.owner_type_name,
-        )
-      when StructInstance
-        type.definition.instantiate(type.arguments.map { |argument| substitute_type_variables(argument, substitutions) })
-      when VariantInstance
-        type.definition.instantiate(type.arguments.map { |argument| substitute_type_variables(argument, substitutions) })
-      else
-        type
-      end
+      SubstituteTypeVisitor.new(substitutions).apply(type)
     end
 
     class Base
@@ -102,11 +46,19 @@ module MilkTea
       end
 
       def sendable?
-        false
+        SendableCheckVisitor.new.tap { |v| v.visit(self) }.sendable?
       end
 
       def field_c_name(name)
         name
+      end
+
+      def children
+        []
+      end
+
+      def accept(visitor)
+        visitor.visit(self)
       end
     end
 
@@ -128,9 +80,6 @@ module MilkTea
         [self.class, name].hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         name
@@ -158,9 +107,6 @@ module MilkTea
         self.class.hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         "type"
@@ -256,10 +202,6 @@ module MilkTea
         name == "void"
       end
 
-      def sendable?
-        name != "str"
-      end
-
       def to_s
         name
       end
@@ -283,12 +225,13 @@ module MilkTea
         [self.class, target_type].hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         target_type ? "null[#{target_type}]" : "null"
+      end
+
+      def children
+        [target_type].compact
       end
     end
 
@@ -327,9 +270,6 @@ module MilkTea
         [self.class, struct_type].hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         "field target #{struct_type}"
@@ -356,9 +296,6 @@ module MilkTea
         [self.class, struct_handle, field_name].hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         "field_of(#{struct_handle.struct_type}, #{field_name})"
@@ -384,9 +321,6 @@ module MilkTea
         [self.class, display_name].hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         "callable_of(#{display_name})"
@@ -418,9 +352,6 @@ module MilkTea
         [self.class, attribute_module_name, attribute_name, target].hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         qualifier = attribute_module_name ? "#{attribute_module_name}." : ""
@@ -456,9 +387,6 @@ module MilkTea
         [self.class, enum_handle, member_name].hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         "member_of(#{enum_handle}, #{member_name})"
@@ -487,12 +415,12 @@ module MilkTea
         true
       end
 
-      def sendable?
-        base.sendable?
-      end
-
       def to_s
         "#{base}?"
+      end
+
+      def children
+        [base]
       end
     end
 
@@ -538,24 +466,12 @@ module MilkTea
         [self.class, name, arguments].hash
       end
 
-      def sendable?
-        case name
-        when "ptr", "const_ptr", "ref"
-          false
-        when "array"
-          el = arguments.first
-          el.is_a?(LiteralTypeArg) ? true : el.sendable?
-        when "str_buffer"
-          true
-        when "atomic"
-          true
-        else
-          false
-        end
-      end
-
       def to_s
         "#{name}[#{arguments.join(', ')}]"
+      end
+
+      def children
+        arguments.reject { |a| a.is_a?(Types::LiteralTypeArg) }
       end
     end
 
@@ -578,9 +494,6 @@ module MilkTea
         @name.hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         name
@@ -605,9 +518,6 @@ module MilkTea
         @name.hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         name
@@ -650,6 +560,10 @@ module MilkTea
 
       def to_s
         "span[#{element_type}]"
+      end
+
+      def children
+        [element_type]
       end
     end
 
@@ -757,12 +671,12 @@ module MilkTea
         @fields[name]
       end
 
-      def sendable?
-        result_type.sendable?
-      end
-
       def to_s
         "Task[#{result_type}]"
+      end
+
+      def children
+        [result_type]
       end
     end
 
@@ -803,9 +717,6 @@ module MilkTea
         self.class.hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         "Subscription"
@@ -835,9 +746,6 @@ module MilkTea
         self.class.hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         "Handle"
@@ -890,6 +798,10 @@ module MilkTea
         label = owner_type_name ? "#{owner_type_name}.#{name}" : name
         payload = payload_type ? "(#{payload_type})" : ""
         "event #{label}[#{capacity}]#{payload}"
+      end
+
+      def children
+        [payload_type].compact
       end
     end
 
@@ -955,12 +867,6 @@ module MilkTea
         !@events.empty?
       end
 
-      def sendable?
-        return false if has_events?
-
-        fields.each_value.all?(&:sendable?)
-      end
-
       def field_c_name(name)
         stripped = name.delete_suffix("_")
         return stripped if stripped != name && MilkTea::KEYWORDS.key?(stripped)
@@ -1006,6 +912,10 @@ module MilkTea
 
       def to_s
         module_name ? "#{module_name}.#{name}" : name
+      end
+
+      def children
+        fields.values
       end
     end
 
@@ -1073,12 +983,6 @@ module MilkTea
         !@events.empty?
       end
 
-      def sendable?
-        return false if has_events?
-
-        fields.each_value.all?(&:sendable?)
-      end
-
       def field_c_name(name)
         stripped = name.delete_suffix("_")
         return stripped if stripped != name && MilkTea::KEYWORDS.key?(stripped)
@@ -1104,6 +1008,10 @@ module MilkTea
 
       def to_s
         module_name ? "#{module_name}.#{name}" : name
+      end
+
+      def children
+        fields.values
       end
     end
 
@@ -1138,6 +1046,10 @@ module MilkTea
       def to_s
         base = module_name ? "#{module_name}.#{name}" : name
         "#{base}[#{arguments.join(', ')}]"
+      end
+
+      def children
+        fields.values
       end
     end
 
@@ -1175,10 +1087,6 @@ module MilkTea
         fields && !fields.empty?
       end
 
-      def sendable?
-        @arm_names.all? { |arm_name| @arms[arm_name].each_value.all?(&:sendable?) }
-      end
-
       def eql?(other)
         other.class == self.class && other.name == name && other.module_name == module_name
       end
@@ -1191,6 +1099,10 @@ module MilkTea
 
       def to_s
         module_name ? "#{module_name}.#{name}" : name
+      end
+
+      def children
+        arm_names.flat_map { |a| arm(a).values }
       end
     end
 
@@ -1218,10 +1130,6 @@ module MilkTea
       def define_type_param_constraints(type_param_constraints)
         @type_param_constraints = type_param_constraints.freeze
         self
-      end
-
-      def sendable?
-        @arms.each_value.all? { |fields| fields.each_value.all?(&:sendable?) }
       end
 
       def eql?(other)
@@ -1256,6 +1164,10 @@ module MilkTea
       def to_s
         module_name ? "#{module_name}.#{name}" : name
       end
+
+      def children
+        arms.values.flat_map(&:values)
+      end
     end
 
     class VariantInstance < Variant
@@ -1280,6 +1192,10 @@ module MilkTea
       def to_s
         base = module_name ? "#{module_name}.#{name}" : name
         "#{base}[#{arguments.join(', ')}]"
+      end
+
+      def children
+        arm_names.flat_map { |a| arm(a).values }
       end
     end
 
@@ -1367,9 +1283,6 @@ module MilkTea
         @members.keys
       end
 
-      def sendable?
-        true
-      end
 
       def eql?(other)
         other.class == self.class &&
@@ -1427,6 +1340,10 @@ module MilkTea
       def hash
         [self.class, type, mutable, passing_mode, boundary_type].hash
       end
+
+      def children
+        [type, boundary_type].compact
+      end
     end
 
     class Function < Base
@@ -1458,15 +1375,19 @@ module MilkTea
         [self.class, params, return_type, receiver_type, receiver_editable, variadic].hash
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         pieces = []
         pieces << receiver_type.to_s if receiver_type
         pieces << name if name
         "fn #{pieces.join('.')}"
+      end
+
+      def children
+        result = params.flat_map { |p| [p.type, p.boundary_type].compact }
+        result << return_type
+        result << receiver_type if receiver_type
+        result
       end
     end
 
@@ -1491,6 +1412,10 @@ module MilkTea
 
       def to_s
         "proc(#{params.map(&:type).join(', ')}) -> #{return_type}"
+      end
+
+      def children
+        params.map(&:type) + [return_type]
       end
     end
 
@@ -1535,9 +1460,6 @@ module MilkTea
         true
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         name
@@ -1580,9 +1502,6 @@ module MilkTea
         true
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         name
@@ -1625,9 +1544,6 @@ module MilkTea
         true
       end
 
-      def sendable?
-        true
-      end
 
       def to_s
         name
@@ -1670,12 +1586,12 @@ module MilkTea
         @fields[name]
       end
 
-      def sendable?
-        fields.each_value.all?(&:sendable?)
-      end
-
       def to_s
         @name
+      end
+
+      def children
+        [element_type]
       end
     end
 
@@ -1709,10 +1625,6 @@ module MilkTea
         @fields[name]
       end
 
-      def sendable?
-        element_types.all?(&:sendable?)
-      end
-
       def to_s
         if field_names == element_types.each_with_index.map { |_, i| "_#{i}" }
           "(#{element_types.map(&:to_s).join(', ')})"
@@ -1720,6 +1632,10 @@ module MilkTea
           fields_parts = field_names.each_with_index.map { |n, i| "#{n}: #{element_types[i]}" }
           "(#{fields_parts.join(', ')})"
         end
+      end
+
+      def children
+        element_types
       end
     end
 
@@ -1753,6 +1669,10 @@ module MilkTea
       def field(name)
         void_ptr = GenericInstance.new("ptr", [Primitive.new("void")])
         { "data" => void_ptr, "vtable" => void_ptr }[name]
+      end
+
+      def children
+        type_arguments
       end
     end
 

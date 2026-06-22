@@ -1381,13 +1381,6 @@ module MilkTea
           pattern_type.arguments.zip(actual_type.arguments).each do |expected_argument, actual_argument|
             collect_type_substitutions(expected_argument, actual_argument, substitutions, function_name)
           end
-        when Types::VariantInstance
-          return unless actual_type.is_a?(Types::VariantInstance)
-          return unless actual_type.definition == pattern_type.definition && actual_type.arguments.length == pattern_type.arguments.length
-
-          pattern_type.arguments.zip(actual_type.arguments).each do |expected_argument, actual_argument|
-            collect_type_substitutions(expected_argument, actual_argument, substitutions, function_name)
-          end
         when Types::Function
           return unless actual_type.is_a?(Types::Function)
           return unless actual_type.params.length == pattern_type.params.length
@@ -1467,58 +1460,7 @@ module MilkTea
       end
 
       def substitute_type(type, substitutions)
-        case type
-        when Types::TypeVar
-          substitutions.fetch(type.name, type)
-        when Types::Nullable
-          Types::Nullable.new(substitute_type(type.base, substitutions))
-        when Types::GenericInstance
-          Types::GenericInstance.new(
-            type.name,
-            type.arguments.map { |argument| argument.is_a?(Types::LiteralTypeArg) ? argument : substitute_type(argument, substitutions) },
-          )
-        when Types::Span
-          Types::Span.new(substitute_type(type.element_type, substitutions))
-        when Types::Task
-          Types::Task.new(substitute_type(type.result_type, substitutions))
-        when Types::Proc
-          Types::Proc.new(
-            params: type.params.map do |param|
-              Types::Parameter.new(
-                param.name,
-                substitute_type(param.type, substitutions),
-                mutable: param.mutable,
-                passing_mode: param.passing_mode,
-                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
-              )
-            end,
-            return_type: substitute_type(type.return_type, substitutions),
-          )
-        when Types::StructInstance
-          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
-        when Types::VariantInstance
-          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
-        when Types::Function
-          Types::Function.new(
-            type.name,
-            params: type.params.map do |param|
-              Types::Parameter.new(
-                param.name,
-                substitute_type(param.type, substitutions),
-                mutable: param.mutable,
-                passing_mode: param.passing_mode,
-                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
-              )
-            end,
-            return_type: substitute_type(type.return_type, substitutions),
-            receiver_type: type.receiver_type ? substitute_type(type.receiver_type, substitutions) : nil,
-            receiver_editable: type.receiver_editable,
-            variadic: type.variadic,
-            external: type.external,
-          )
-        else
-          type
-        end
+        SubstituteTypeVisitor.new(substitutions).apply(type)
       end
 
       def bitwise_type?(type)
@@ -1583,129 +1525,28 @@ module MilkTea
       end
 
       def stored_ref_supported_type?(type, visited = {}, allow_lifetimes: [])
-        return true unless type
-
-        visit_key = [type.class, type.object_id]
-        return true if visited[visit_key]
-
-        visited[visit_key] = true
-        case type
-        when Types::Nullable
-          stored_ref_supported_type?(type.base, visited, allow_lifetimes:)
-        when Types::GenericInstance
-          if ref_type?(type)
-            lt = ref_lifetime(type)
-            return true if lt && allow_lifetimes.include?(lt)
-            return false
-          end
-
-          type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) || stored_ref_supported_type?(argument, visited, allow_lifetimes:) }
-        when Types::Span
-          stored_ref_supported_type?(type.element_type, visited, allow_lifetimes:)
-        when Types::Task
-          stored_ref_supported_type?(type.result_type, visited, allow_lifetimes:)
-        when Types::Struct, Types::Union
-          type.fields.each_value.all? { |field_type| stored_ref_supported_type?(field_type, visited, allow_lifetimes:) }
-        when Types::StructInstance, Types::VariantInstance
-          type.arguments.all? { |argument| stored_ref_supported_type?(argument, visited, allow_lifetimes:) }
-        when Types::Variant
-          type.arm_names.all? { |arm_name| type.arm(arm_name).each_value.all? { |field_type| stored_ref_supported_type?(field_type, visited, allow_lifetimes:) } }
-        when Types::Proc, Types::Function
-          callable_param_ref_supported?(type)
-        else
-          !contains_ref_type?(type, allow_lifetimes:)
-        end
+        visitor = StoredRefSupportedVisitor.new(allow_lifetimes:)
+        visitor.visit(type)
+        visitor.result?
       end
 
       def contains_callable_ref_type?(type, visited = {})
-        return false unless type
-
-        visit_key = [type.class, type.object_id]
-        return false if visited[visit_key]
-
-        visited[visit_key] = true
-        case type
-        when Types::Nullable
-          contains_callable_ref_type?(type.base, visited)
-        when Types::GenericInstance
-          type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_callable_ref_type?(argument, visited) }
-        when Types::Span
-          contains_callable_ref_type?(type.element_type, visited)
-        when Types::Task
-          contains_callable_ref_type?(type.result_type, visited)
-        when Types::Struct, Types::Union
-          type.fields.each_value.any? { |field_type| contains_callable_ref_type?(field_type, visited) }
-        when Types::StructInstance, Types::VariantInstance
-          type.arguments.any? { |argument| contains_callable_ref_type?(argument, visited) }
-        when Types::Variant
-          type.arm_names.any? { |arm_name| type.arm(arm_name).each_value.any? { |field_type| contains_callable_ref_type?(field_type, visited) } }
-        when Types::Proc, Types::Function
-          contains_ref_type?(type)
-        else
-          false
-        end
+        visitor = ContainsCallableRefTypeVisitor.new
+        visitor.visit(type)
+        visitor.found?
       end
 
       def contains_proc_type?(type, visited = {})
-        return false unless type
-
-        visit_key = [type.class, type.object_id]
-        return false if visited[visit_key]
-
-        visited[visit_key] = true
-        case type
-        when Types::Nullable
-          contains_proc_type?(type.base, visited)
-        when Types::GenericInstance
-          if type.name == "array" && type.arguments.first && !type.arguments.first.is_a?(Types::LiteralTypeArg)
-            contains_proc_type?(type.arguments.first, visited)
-          else
-            false
-          end
-        when Types::Span
-          contains_proc_type?(type.element_type, visited)
-        when Types::Task
-          contains_proc_type?(type.result_type, visited)
-        when Types::StructInstance
-          type.arguments.any? { |argument| contains_proc_type?(argument, visited) }
-        when Types::Struct, Types::Union
-          type.fields.each_value.any? { |field_type| contains_proc_type?(field_type, visited) }
-        when Types::Variant
-          type.arm_names.any? { |arm_name| type.arm(arm_name).each_value.any? { |field_type| contains_proc_type?(field_type, visited) } }
-        when Types::Proc
-          true
-        when Types::Function
-          type.params.any? { |param| contains_proc_type?(param.type, visited) } ||
-            contains_proc_type?(type.return_type, visited) ||
-            (type.receiver_type && contains_proc_type?(type.receiver_type, visited))
-        else
-          false
-        end
+        visitor = ContainsProcTypeVisitor.new
+        visitor.visit(type)
+        visitor.found?
       end
 
       def proc_storage_supported_type?(type, visited = {})
         return true unless contains_proc_type?(type)
-
-        visit_key = [type.class, type.object_id]
-        return true if visited[visit_key]
-
-        visited[visit_key] = true
-        case type
-        when Types::Proc
-          true
-        when Types::GenericInstance
-          type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) || proc_storage_supported_type?(argument, visited) }
-        when Types::Struct
-          type.fields.each_value.all? { |field_type| proc_storage_supported_type?(field_type, visited) }
-        when Types::StructInstance, Types::VariantInstance
-          type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) || proc_storage_supported_type?(argument, visited) }
-        when Types::Variant
-          type.arm_names.all? { |arm_name| type.arm(arm_name).each_value.all? { |field_type| proc_storage_supported_type?(field_type, visited) } }
-        when Types::Nullable
-          proc_storage_supported_type?(type.base, visited)
-        else
-          false
-        end
+        visitor = ProcStorageSupportedVisitor.new
+        visitor.visit(type)
+        visitor.result?
       end
 
       def validate_stored_proc_type!(type, context)
