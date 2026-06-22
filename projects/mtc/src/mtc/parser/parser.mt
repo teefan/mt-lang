@@ -1059,7 +1059,10 @@ extending Parser:
             var else_block: ptr[nodes.Block]? = null
             if kind == token.TokenKind.tk_if and this.match_kind(token.TokenKind.tk_else):
                 if this.check(token.TokenKind.tk_if):
-                    this.parse_statement()
+                    var inner_if = this.parse_statement()
+                    var eb = self_alloc_block()
+                    unsafe: eb.stmts.push(inner_if)
+                    else_block = eb
                 else:
                     if this.check(token.TokenKind.tk_colon):
                         this.advance()
@@ -1131,14 +1134,14 @@ extending Parser:
 
         if kind == token.TokenKind.tk_unsafe:
             this.advance()
-            var unsafe_body: ptr[nodes.Block]? = null
             if this.match_kind(token.TokenKind.tk_colon):
                 this.skip_newlines()
             if this.match_kind(token.TokenKind.tk_indent):
-                unsafe_body = this.parse_block()
+                var unsafe_body = this.parse_block()
+                return nodes.Stmt(kind = nodes.StmtKind.unsafe_stmt, body = unsafe_body, line = line, column = col)
             else:
-                this.parse_expression()
-            return nodes.Stmt(kind = nodes.StmtKind.unsafe_stmt, body = unsafe_body, line = line, column = col)
+                var inner_expr = self_heapify(this.parse_expression())
+                return nodes.Stmt(kind = nodes.StmtKind.unsafe_stmt, expr = inner_expr, line = line, column = col)
 
         if kind == token.TokenKind.tk_break:
             this.advance()
@@ -1190,7 +1193,8 @@ extending Parser:
             this.advance()
             this.skip_newlines()
             if this.match_kind(token.TokenKind.tk_indent):
-                this.parse_block()
+                var arm_body = this.parse_block()
+                return nodes.Stmt(kind = nodes.StmtKind.expression_stmt, expr = self_heapify(expr), body = arm_body, line = line, column = col)
         return nodes.Stmt(kind = nodes.StmtKind.expression_stmt, expr = self_heapify(expr), line = line, column = col)
 
 

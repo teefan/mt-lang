@@ -9,11 +9,11 @@ public struct Lowerer:
     module_name: str
     source_text: str
     indent_level: ptr_uint
-    out_buf: str_buffer[32768]
+    out_buf: str_buffer[65536]
     skip_header: bool
     current_receiver_type: str
     current_return_type: str
-    type_pool: str_buffer[4096]
+    type_pool: str_buffer[32768]
     local_names: vec.Vec[str]
     local_types: vec.Vec[str]
     scope_stack: vec.Vec[ptr_uint]
@@ -33,11 +33,13 @@ public struct Lowerer:
     global_vec_structs: vec.Vec[str]
     global_vec_names: vec.Vec[str]
     global_vec_types: vec.Vec[str]
+    global_type_names: vec.Vec[str]
+    global_type_mods: vec.Vec[str]
 
 
 extending Lowerer:
     public static function create(module_name: str, source_text: str) -> Lowerer:
-        var ob: str_buffer[32768]
+        var ob: str_buffer[65536]
         return Lowerer(module_name = module_name, source_text = source_text, indent_level = 0, out_buf = ob, skip_header = false, current_receiver_type = "")
 
 
@@ -156,6 +158,10 @@ extending Lowerer:
             if name == "Vec" or self_str_ends_with(name, ".Vec"):
                 unsafe: read(buf).append("mt_vec")
                 return
+            if name == "str_buffer":
+                unsafe: read(buf).append("mt_strbuf_")
+                unsafe: read(buf).append(inner_tp.size_text)
+                return
             unsafe: read(buf).append("void*")
             return
 
@@ -234,6 +240,29 @@ extending Lowerer:
         this.pline("  if (index >= v->len) return NULL;")
         this.pline("  return (char*)v->data + index * item_size;")
         this.pline("}")
+        this.pline("")
+        this.pline("typedef struct { char data[65537]; uintptr_t len; bool dirty; } mt_strbuf_65536;")
+        this.pline("typedef struct { char data[32769]; uintptr_t len; bool dirty; } mt_strbuf_32768;")
+        this.pline("typedef struct { char data[4097]; uintptr_t len; bool dirty; } mt_strbuf_4096;")
+        this.pline("typedef struct { char data[513]; uintptr_t len; bool dirty; } mt_strbuf_512;")
+        this.pline("typedef struct { char data[257]; uintptr_t len; bool dirty; } mt_strbuf_256;")
+        this.pline("typedef struct { char data[129]; uintptr_t len; bool dirty; } mt_strbuf_128;")
+        this.pline("typedef struct { char data[65]; uintptr_t len; bool dirty; } mt_strbuf_64;")
+        this.pline("")
+        this.pline("static void mt_strbuf_assign_impl(mt_str v, char* d, uintptr_t c, uintptr_t* l, bool* db) {")
+        this.pline("  if(v.len>c)return; memcpy(d,v.data,v.len); d[v.len]='\\0'; *l=v.len; *db=false;")
+        this.pline("}")
+        this.pline("static void mt_strbuf_append_impl(mt_str v, char* d, uintptr_t c, uintptr_t* l, bool* db) {")
+        this.pline("  uintptr_t cur=*l; if(v.len>c-cur)return;")
+        this.pline("  memcpy(d+cur,v.data,v.len); cur+=v.len; d[cur]='\\0'; *l=cur; *db=false;")
+        this.pline("}")
+        this.pline("static void mt_strbuf_clear_impl(char* d, uintptr_t c, uintptr_t* l, bool* db) {")
+        this.pline("  *l=0; *db=false; d[0]='\\0';")
+        this.pline("}")
+        this.pline("static uintptr_t mt_strbuf_len_impl(char* d, uintptr_t c, uintptr_t* l, bool* db) {")
+        this.pline("  if(*db){*l=strlen(d); *db=false;} if(*l>c)*l=c; return *l;")
+        this.pline("}")
+        this.pline("#define MT_STRBUF_AS(buf) ((mt_str){(buf).data, mt_strbuf_len_impl((buf).data, sizeof((buf).data)-1, &(buf).len, &(buf).dirty)})")
         this.pline("")
 
 
@@ -546,12 +575,20 @@ extending Lowerer:
         else if kind == nodes.StmtKind.pass_stmt:
             this.self_write_indent()
             unsafe: this.out_buf.append(";\n")
-        else if kind == nodes.StmtKind.defer_stmt or kind == nodes.StmtKind.unsafe_stmt:
+        else if kind == nodes.StmtKind.defer_stmt:
             if s.body != null:
                 this.self_lower_block(s.body)
             else:
                 this.self_write_indent()
-                unsafe: this.out_buf.append("/* defer/unsafe */\n")
+                unsafe: this.out_buf.append("/* defer */\n")
+        else if kind == nodes.StmtKind.unsafe_stmt:
+            if s.body != null:
+                this.self_lower_block(s.body)
+            else if s.expr != null:
+                this.self_write_expr_stmt(stmt_ptr)
+            else:
+                this.self_write_indent()
+                unsafe: this.out_buf.append("/* unsafe */\n")
         else:
             this.self_write_indent()
             unsafe: this.out_buf.append("/* block */\n")
@@ -686,44 +723,50 @@ extending Lowerer:
                 let callee = unsafe: read(callee_ptr)
                 if callee.kind == nodes.ExprKind.identifier:
                     if callee.name == "read":
-                        # read(x) returns pointee type of x
                         var arg_types = this.self_infer_read_pointee_type(e)
                         if arg_types != "":
                             return arg_types
                     var rt = this.func_lookup_ret(callee.name)
                     if rt != "" and rt != "void":
                         return rt
-                else if callee.kind == nodes.ExprKind.member_access and this.current_receiver_type != "":
-                    var recv_ptr = callee.left
-                    if recv_ptr != null:
-                        let receiver_expr = unsafe: read(recv_ptr)
-                        if receiver_expr.kind == nodes.ExprKind.identifier and receiver_expr.name == "this":
-                            var mi: ptr_uint = 0
-                            while mi < this.method_lookup_receivers.len():
-                                let rcp = this.method_lookup_receivers.get(mi) else:
-                                    break
-                                let rc = unsafe: read(rcp)
-                                if rc == this.current_receiver_type:
-                                    let mnp = this.method_lookup_names.get(mi) else:
+                else if callee.kind == nodes.ExprKind.member_access:
+                    if this.current_receiver_type != "":
+                        var recv_ptr = callee.left
+                        if recv_ptr != null:
+                            let receiver_expr = unsafe: read(recv_ptr)
+                            if receiver_expr.kind == nodes.ExprKind.identifier and receiver_expr.name == "this":
+                                var mi: ptr_uint = 0
+                                while mi < this.method_lookup_receivers.len():
+                                    let rcp = this.method_lookup_receivers.get(mi) else:
                                         break
-                                    let mn = unsafe: read(mnp)
-                                    if mn == callee.name:
-                                        let rtp = this.method_lookup_rets.get(mi) else:
+                                    let rc = unsafe: read(rcp)
+                                    if rc == this.current_receiver_type:
+                                        let mnp = this.method_lookup_names.get(mi) else:
                                             break
-                                        let rt = unsafe: read(rtp)
-                                        if rt != "" and rt != "void":
-                                            return rt
-                                        break
-                                mi += 1
+                                        let mn = unsafe: read(mnp)
+                                        if mn == callee.name:
+                                            let rtp = this.method_lookup_rets.get(mi) else:
+                                                break
+                                            let rt = unsafe: read(rtp)
+                                            if rt != "" and rt != "void":
+                                                return rt
+                                            break
+                                    mi += 1
+                    else if self_callee_has_static_method(callee_ptr):
+                        var rcvr = self_callee_receiver_type(callee_ptr)
+                        if rcvr != "":
+                            var rt = this.method_lookup_ret(rcvr, callee.name)
+                            if rt != "" and rt != "void":
+                                return rt
                     # Check Vec.get() regardless of this-method match
-                    var et = self_vec_elem_type(callee.left, this.module_name, this.current_receiver_type, ref_of(this.global_vec_structs), ref_of(this.global_vec_names), ref_of(this.global_vec_types))
+                    var et = self_vec_elem_type(callee.left, this.module_name, this.current_receiver_type, ref_of(this.global_vec_structs), ref_of(this.global_vec_names), ref_of(this.global_vec_types), ref_of(this.local_names), ref_of(this.local_types))
                     if callee.name == "get" and et != "":
                         var erb: str_buffer[256]
                         erb.assign(et)
                         erb.append("*")
                         return this.pool_type(unsafe: erb.as_str())
                 else if callee.kind == nodes.ExprKind.member_access:
-                    var et2 = self_vec_elem_type(callee.left, this.module_name, this.current_receiver_type, ref_of(this.global_vec_structs), ref_of(this.global_vec_names), ref_of(this.global_vec_types))
+                    var et2 = self_vec_elem_type(callee.left, this.module_name, this.current_receiver_type, ref_of(this.global_vec_structs), ref_of(this.global_vec_names), ref_of(this.global_vec_types), ref_of(this.local_names), ref_of(this.local_types))
                     if callee.name == "get" and et2 != "":
                         var erb2: str_buffer[256]
                         erb2.assign(et2)
@@ -848,13 +891,23 @@ extending Lowerer:
         let s = unsafe: read(stmt_ptr)
         this.self_write_indent()
         if s.expr != null:
+            if s.body != null:
+                unsafe: this.out_buf.append("case ")
             this.self_write_expr_buf(s.expr)
         if s.value != null:
             unsafe: this.out_buf.append(" ")
             unsafe: this.out_buf.append(s.name)
             unsafe: this.out_buf.append(" ")
             this.self_write_expr_buf(s.value)
-        unsafe: this.out_buf.append(";\n")
+        if s.body != null:
+            unsafe: this.out_buf.append(": {\n")
+            this.indent_level += 4
+            this.self_lower_block(s.body)
+            this.indent_level -= 4
+            this.self_write_indent()
+            unsafe: this.out_buf.append("}\n")
+        else:
+            unsafe: this.out_buf.append(";\n")
 
 
     editable function self_write_expr_buf(expr_ptr: ptr[nodes.Expr]?) -> void:
@@ -867,7 +920,30 @@ extending Lowerer:
             if e.name == "?":
                 unsafe: this.out_buf.append("NULL")
             else:
-                unsafe: this.out_buf.append(e.name)
+                var tpname = e.name
+                var gi: ptr_uint = 0
+                var found_mod: str = ""
+                if tpname == "SymbolKind" and this.module_name != "symbol":
+                    unsafe: this.out_buf.append("symbol_")
+                else if tpname == "TokenKind" and this.module_name != "token":
+                    unsafe: this.out_buf.append("token_")
+                else:
+                    while gi < this.global_type_names.len():
+                        let np = this.global_type_names.get(gi) else:
+                            break
+                        let n = unsafe: read(np)
+                        if n == tpname:
+                            let mp = this.global_type_mods.get(gi) else:
+                                break
+                            let m = unsafe: read(mp)
+                            if m != this.module_name and m != "":
+                                found_mod = m
+                            break
+                        gi += 1
+                    if found_mod != "":
+                        unsafe: this.out_buf.append(found_mod)
+                        unsafe: this.out_buf.append("_")
+                unsafe: this.out_buf.append(tpname)
         else if kind == nodes.ExprKind.integer_literal or kind == nodes.ExprKind.float_literal:
             unsafe: this.out_buf.append(e.lexeme)
         else if kind == nodes.ExprKind.string_literal:
@@ -936,6 +1012,10 @@ extending Lowerer:
                 this.self_write_struct_call(expr_ptr)
             else if this.self_is_vec_method(expr_ptr):
                 this.self_write_vec_method(expr_ptr)
+            else if this.self_is_strbuf_call(expr_ptr):
+                this.self_write_strbuf_call(expr_ptr)
+            else if this.self_is_str_call(expr_ptr):
+                this.self_write_str_call(expr_ptr)
             else if this.self_is_method_call(expr_ptr):
                 this.self_write_method_call(expr_ptr)
             else:
@@ -1138,12 +1218,17 @@ extending Lowerer:
             return false
         var method_name = ce.name
         if method_name == "create" or method_name == "push" or method_name == "get" or method_name == "len":
-            # Only reject direct this.method() calls, not this.field.method() chains
             var left_ptr = ce.left
             if left_ptr != null:
                 let left_inner = unsafe: read(left_ptr)
                 if left_inner.kind == nodes.ExprKind.identifier and left_inner.name == "this":
                     return false
+                if left_inner.kind == nodes.ExprKind.member_access:
+                    var inner_name = left_inner.name
+                    if inner_name != "":
+                        var first_ch = unsafe: inner_name.byte_at(0)
+                        if first_ch >= 'A' and first_ch <= 'Z':
+                            return false
             return true
         return false
 
@@ -1186,7 +1271,7 @@ extending Lowerer:
             if unsafe: e.args.len() < 1:
                 unsafe: this.out_buf.append("NULL")
                 return
-            var et = self_vec_elem_type(ce.left, this.module_name, this.current_receiver_type, ref_of(this.global_vec_structs), ref_of(this.global_vec_names), ref_of(this.global_vec_types))
+            var et = self_vec_elem_type(ce.left, this.module_name, this.current_receiver_type, ref_of(this.global_vec_structs), ref_of(this.global_vec_names), ref_of(this.global_vec_types), ref_of(this.local_names), ref_of(this.local_types))
             if et != "":
                 unsafe: this.out_buf.append("(")
                 unsafe: this.out_buf.append(et)
@@ -1209,6 +1294,102 @@ extending Lowerer:
                 unsafe: this.out_buf.append(", sizeof(void*))")
         else:
             unsafe: this.out_buf.append("/* vec method */")
+
+
+    editable function self_is_strbuf_call(expr_ptr: ptr[nodes.Expr]) -> bool:
+        if not this.self_is_method_call(expr_ptr):
+            return false
+        let e = unsafe: read(expr_ptr)
+        let callee = e.left
+        if callee == null:
+            return false
+        let ce = unsafe: read(callee)
+        if ce.kind != nodes.ExprKind.member_access:
+            return false
+        var mn = ce.name
+        if mn != "append" and mn != "assign" and mn != "clear" and mn != "as_str" and mn != "len":
+            return false
+        var rt = this.self_infer_expr_type(ce.left)
+        if rt == "":
+            return false
+        return rt == "mt_strbuf_65536" or rt == "mt_strbuf_32768" or rt == "mt_strbuf_4096" or rt == "mt_strbuf_512" or rt == "mt_strbuf_256" or rt == "mt_strbuf_128" or rt == "mt_strbuf_64"
+
+
+    editable function self_write_strbuf_call(expr_ptr: ptr[nodes.Expr]) -> void:
+        let e = unsafe: read(expr_ptr)
+        let callee = e.left
+        if callee == null:
+            return
+        let ce = unsafe: read(callee)
+        var method_name = ce.name
+        if method_name == "as_str":
+            unsafe: this.out_buf.append("MT_STRBUF_AS(")
+            this.self_write_expr_buf(ce.left)
+        else:
+            unsafe: this.out_buf.append("mt_strbuf_")
+            unsafe: this.out_buf.append(method_name)
+            unsafe: this.out_buf.append("_impl(")
+            var si: ptr_uint = 0
+            while si < unsafe: e.args.len():
+                if si > 0:
+                    unsafe: this.out_buf.append(", ")
+                let a = unsafe: e.args.get(si) else:
+                    break
+                let ap: ptr[nodes.Expr]? = unsafe: read(a)
+                if ap != null:
+                    this.self_write_expr_buf(ap)
+                si += 1
+            if unsafe: e.args.len() > 0:
+                unsafe: this.out_buf.append(", ")
+            this.self_write_expr_buf(ce.left)
+            unsafe: this.out_buf.append(".data, sizeof(")
+            this.self_write_expr_buf(ce.left)
+            unsafe: this.out_buf.append(".data)-1, &")
+            this.self_write_expr_buf(ce.left)
+            unsafe: this.out_buf.append(".len, &")
+            this.self_write_expr_buf(ce.left)
+            unsafe: this.out_buf.append(".dirty")
+        unsafe: this.out_buf.append(")")
+
+
+    editable function self_is_str_call(expr_ptr: ptr[nodes.Expr]) -> bool:
+        if not this.self_is_method_call(expr_ptr):
+            return false
+        let e = unsafe: read(expr_ptr)
+        let callee = e.left
+        if callee == null:
+            return false
+        let ce = unsafe: read(callee)
+        if ce.kind != nodes.ExprKind.member_access:
+            return false
+        var mn = ce.name
+        if mn != "byte_at" and mn != "slice":
+            return false
+        var rt = this.self_infer_expr_type(ce.left)
+        return rt == "mt_str"
+
+
+    editable function self_write_str_call(expr_ptr: ptr[nodes.Expr]) -> void:
+        let e = unsafe: read(expr_ptr)
+        let callee = e.left
+        if callee == null:
+            return
+        let ce = unsafe: read(callee)
+        var method_name = ce.name
+        unsafe: this.out_buf.append("(")
+        this.self_write_expr_buf(ce.left)
+        unsafe: this.out_buf.append(").data[")
+        var si: ptr_uint = 0
+        while si < unsafe: e.args.len():
+            if si > 0:
+                unsafe: this.out_buf.append(", ")
+            let a = unsafe: e.args.get(si) else:
+                break
+            let ap: ptr[nodes.Expr]? = unsafe: read(a)
+            if ap != null:
+                this.self_write_expr_buf(ap)
+            si += 1
+        unsafe: this.out_buf.append("]")
 
 
     editable function self_is_struct_ctor(expr_ptr: ptr[nodes.Expr]) -> bool:
@@ -1355,6 +1536,17 @@ extending Lowerer:
                         unsafe: this.out_buf.append("_")
                         unsafe: this.out_buf.append(e.name)
                         return
+            if is_top:
+                let left_expr2 = e.left
+                if left_expr2 != null:
+                    let left2 = unsafe: read(left_expr2)
+                    if left2.kind == nodes.ExprKind.identifier and left2.name != "this":
+                        var vt = this.scope_lookup(left2.name)
+                        if vt != "" and vt != "mt_vec" and vt != "void*" and vt != "mt_str":
+                            unsafe: this.out_buf.append(vt)
+                            unsafe: this.out_buf.append("_")
+                            unsafe: this.out_buf.append(e.name)
+                            return
             this.self_write_callee_expr_depth(e.left, false)
             unsafe: this.out_buf.append("_")
             unsafe: this.out_buf.append(e.name)
@@ -1389,6 +1581,21 @@ extending Lowerer:
             unsafe: this.out_buf.append("this")
             if unsafe: e.args.len() > 0:
                 unsafe: this.out_buf.append(", ")
+        else:
+            var ce = e.left
+            if ce != null:
+                let c = unsafe: read(ce)
+                if c.kind == nodes.ExprKind.member_access:
+                    var rp = c.left
+                    if rp != null:
+                        let rx = unsafe: read(rp)
+                        if rx.kind == nodes.ExprKind.identifier and rx.name != "this":
+                            var vt = this.scope_lookup(rx.name)
+                            if vt != "" and vt != "mt_vec" and vt != "void*" and vt != "mt_str":
+                                unsafe: this.out_buf.append("&")
+                                unsafe: this.out_buf.append(rx.name)
+                                if unsafe: e.args.len() > 0:
+                                    unsafe: this.out_buf.append(", ")
         var ai: ptr_uint = 0
         while ai < unsafe: e.args.len():
             let a = unsafe: e.args.get(ai) else:
@@ -1603,6 +1810,8 @@ extending Lowerer:
                     this.global_method_rets.push(pooled)
                     mi += 1
             else if decl.kind == nodes.DeclKind.struct_decl or decl.kind == nodes.DeclKind.union_decl:
+                this.global_type_names.push(decl.name)
+                this.global_type_mods.push(this.module_name)
                 var sname_buf: str_buffer[512]
                 this.write_tname(ptr_of(sname_buf), decl.name)
                 var struct_cname = this.pool_type(unsafe: sname_buf.as_str())
@@ -1632,6 +1841,9 @@ extending Lowerer:
                                     this.global_vec_names.push(field.name)
                                     this.global_vec_types.push(et)
                     fi += 1
+            else if decl.kind == nodes.DeclKind.enum_decl or decl.kind == nodes.DeclKind.flags_decl or decl.kind == nodes.DeclKind.variant_decl or decl.kind == nodes.DeclKind.opaque_decl:
+                this.global_type_names.push(decl.name)
+                this.global_type_mods.push(this.module_name)
             i += 1
 
 
@@ -1777,9 +1989,9 @@ extending Lowerer:
                 break
             let t = src.global_vec_types.get(i) else:
                 break
-            this.global_vec_structs.push(unsafe: read(s))
-            this.global_vec_names.push(unsafe: read(n))
-            this.global_vec_types.push(unsafe: read(t))
+            this.global_vec_structs.push(this.pool_type(unsafe: read(s)))
+            this.global_vec_names.push(this.pool_type(unsafe: read(n)))
+            this.global_vec_types.push(this.pool_type(unsafe: read(t)))
             i += 1
         i = 0
         while i < src.global_func_names.len():
@@ -1787,8 +1999,8 @@ extending Lowerer:
                 break
             let t = src.global_func_rets.get(i) else:
                 break
-            this.global_func_names.push(unsafe: read(n))
-            this.global_func_rets.push(unsafe: read(t))
+            this.global_func_names.push(this.pool_type(unsafe: read(n)))
+            this.global_func_rets.push(this.pool_type(unsafe: read(t)))
             i += 1
         i = 0
         while i < src.global_method_receivers.len():
@@ -1798,9 +2010,9 @@ extending Lowerer:
                 break
             let t = src.global_method_rets.get(i) else:
                 break
-            this.global_method_receivers.push(unsafe: read(r))
-            this.global_method_names.push(unsafe: read(n))
-            this.global_method_rets.push(unsafe: read(t))
+            this.global_method_receivers.push(this.pool_type(unsafe: read(r)))
+            this.global_method_names.push(this.pool_type(unsafe: read(n)))
+            this.global_method_rets.push(this.pool_type(unsafe: read(t)))
             i += 1
         i = 0
         while i < src.field_struct_names.len():
@@ -1823,9 +2035,18 @@ extending Lowerer:
                         break
                 j += 1
             if not already_got:
-                this.field_struct_names.push(unsafe: read(s))
-                this.field_names.push(unsafe: read(n))
-                this.field_types.push(unsafe: read(t))
+                this.field_struct_names.push(this.pool_type(unsafe: read(s)))
+                this.field_names.push(this.pool_type(unsafe: read(n)))
+                this.field_types.push(this.pool_type(unsafe: read(t)))
+            i += 1
+        i = 0
+        while i < src.global_type_names.len():
+            let n = src.global_type_names.get(i) else:
+                break
+            let m = src.global_type_mods.get(i) else:
+                break
+            this.global_type_names.push(this.pool_type(unsafe: read(n)))
+            this.global_type_mods.push(this.pool_type(unsafe: read(m)))
             i += 1
 
 
@@ -1850,6 +2071,14 @@ function self_is_str_vec_field(expr_ptr: ptr[nodes.Expr]?) -> bool:
         return true
     if fname == "field_struct_names" or fname == "field_names" or fname == "field_types":
         return true
+    if fname == "global_func_names" or fname == "global_func_rets":
+        return true
+    if fname == "global_method_receivers" or fname == "global_method_names" or fname == "global_method_rets":
+        return true
+    if fname == "global_vec_structs" or fname == "global_vec_names" or fname == "global_vec_types":
+        return true
+    if fname == "global_type_names" or fname == "global_type_mods":
+        return true
     return false
 
 
@@ -1859,7 +2088,9 @@ function self_vec_elem_type(
     current_receiver_type: str,
     glob_structs: ref[vec.Vec[str]],
     glob_names: ref[vec.Vec[str]],
-    glob_types: ref[vec.Vec[str]]
+    glob_types: ref[vec.Vec[str]],
+    local_ns: ref[vec.Vec[str]],
+    local_ts: ref[vec.Vec[str]]
 ) -> str:
     if recv_expr == null:
         return ""
@@ -1870,19 +2101,37 @@ function self_vec_elem_type(
     let left_ptr = re.left else:
         return ""
     let le = unsafe: read(left_ptr)
-    if le.kind == nodes.ExprKind.identifier and le.name == "this":
-        if current_receiver_type != "":
-            var rbuf: str_buffer[256]
-            unsafe: rbuf.append(module_name)
-            unsafe: rbuf.append("_")
-            unsafe: rbuf.append(current_receiver_type)
-            var cname = unsafe: rbuf.as_str()
+    if le.kind == nodes.ExprKind.identifier:
+        var struct_cname = ""
+        if le.name == "this":
+            if current_receiver_type != "":
+                var rbuf: str_buffer[256]
+                unsafe: rbuf.append(module_name)
+                unsafe: rbuf.append("_")
+                unsafe: rbuf.append(current_receiver_type)
+                struct_cname = unsafe: rbuf.as_str()
+        if struct_cname == "":
+            var lni: ptr_uint = local_ns.len()
+            while lni > 0:
+                lni -= 1
+                let np2 = local_ns.get(lni) else:
+                    break
+                let n2 = unsafe: read(np2)
+                if n2 == le.name:
+                    let tp2 = local_ts.get(lni) else:
+                        break
+                    let t2 = unsafe: read(tp2)
+                    struct_cname = t2
+                    break
+            if self_str_ends_with(struct_cname, "*"):
+                struct_cname = struct_cname.slice(0, struct_cname.len - 1)
+        if struct_cname != "":
             var i: ptr_uint = 0
             while i < glob_structs.len():
                 let sp = glob_structs.get(i) else:
                     break
                 let s = unsafe: read(sp)
-                if s == cname:
+                if s == struct_cname:
                     let fp = glob_names.get(i) else:
                         break
                     let f = unsafe: read(fp)
@@ -1952,8 +2201,44 @@ function self_callee_looks_like_type(callee: ptr[nodes.Expr]?) -> bool:
     if ce.kind == nodes.ExprKind.identifier:
         return ce.name != "" and self_char_is_uppercase(ce.name.byte_at(0))
     if ce.kind == nodes.ExprKind.member_access:
-        return self_callee_looks_like_type(ce.left) or self_char_is_uppercase(ce.name.byte_at(0))
+        if not self_char_is_uppercase(ce.name.byte_at(0)):
+            return false
+        var left = ce.left
+        if left == null:
+            return false
+        let le = unsafe: read(left)
+        if le.kind == nodes.ExprKind.identifier:
+            return true
+        return self_callee_looks_like_type(ce.left)
     return false
+
+function self_callee_has_static_method(callee: ptr[nodes.Expr]?) -> bool:
+    if callee == null:
+        return false
+    let ce = unsafe: read(callee)
+    if ce.kind != nodes.ExprKind.member_access:
+        return false
+    var left = ce.left
+    if left == null:
+        return false
+    let le = unsafe: read(left)
+    return le.kind == nodes.ExprKind.member_access
+
+
+function self_callee_receiver_type(callee: ptr[nodes.Expr]?) -> str:
+    if callee == null:
+        return ""
+    let ce = unsafe: read(callee)
+    if ce.kind != nodes.ExprKind.member_access:
+        return ""
+    var left = ce.left
+    if left == null:
+        return ""
+    let le = unsafe: read(left)
+    if le.kind == nodes.ExprKind.member_access:
+        return le.name
+    return ""
+
 
 function self_is_string_field_name(name: str) -> bool:
     if name == "name" or name == "lexeme" or name == "text" or name == "path":
