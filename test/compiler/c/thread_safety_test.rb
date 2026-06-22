@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../sema/helpers"
+require_relative "../semantic/helpers"
 require_relative "helpers"
 
 class ThreadSafetyTest < Minitest::Test

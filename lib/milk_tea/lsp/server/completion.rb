@@ -324,7 +324,7 @@ module MilkTea
           end
 
           # Types
-          builtin_names = Sema::INSTALLABLE_BUILTIN_TYPE_NAMES
+          builtin_names = SemanticAnalyzer::INSTALLABLE_BUILTIN_TYPE_NAMES
           facts.types.each do |name, type|
             next if builtin_names.include?(name)
             next unless prefix.empty? || name.start_with?(prefix)

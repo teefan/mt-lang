@@ -543,7 +543,7 @@ class MilkTeaLinterTest < Minitest::Test
     MT
 
     ast = MilkTea::Parser.parse(source, path: "demo.mt")
-    analysis = MilkTea::Sema.check(ast, imported_modules: {})
+    analysis = MilkTea::SemanticAnalyzer.check(ast, imported_modules: {})
     warnings = MilkTea::Linter.lint_source(source, path: "demo.mt", sema_facts: analysis)
 
     refute warnings.any? { |warning| warning.code == "prefer-let" && warning.message.include?("counter") }
@@ -597,7 +597,7 @@ class MilkTeaLinterTest < Minitest::Test
     MT
 
     ast = MilkTea::Parser.parse(source, path: "demo.mt")
-    analysis = MilkTea::Sema.check(ast, imported_modules: {})
+    analysis = MilkTea::SemanticAnalyzer.check(ast, imported_modules: {})
     warnings = MilkTea::Linter.lint_source(source, path: "demo.mt", sema_facts: analysis)
 
     refute warnings.any? { |warning| warning.code == "prefer-let" && warning.message.include?("result") }
@@ -867,7 +867,7 @@ class MilkTeaLinterTest < Minitest::Test
 
       ast = MilkTea::Parser.parse(source, path: path)
       loader = MilkTea::ModuleLoader.new(module_roots: [dir])
-      analysis = MilkTea::Sema.check(ast, imported_modules: loader.imported_modules_for_ast(ast))
+      analysis = MilkTea::SemanticAnalyzer.check(ast, imported_modules: loader.imported_modules_for_ast(ast))
       warnings = MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis)
 
       refute warnings.any? { |warning| warning.code == "unused-import" && warning.message.include?("string") }
@@ -2327,7 +2327,7 @@ end
 class MilkTeaLinterPreferLetElseTest < Minitest::Test
   private def lint_with_sema(source, path: "demo.mt", **kwargs)
     ast = MilkTea::Parser.parse(source, path: path)
-    analysis = MilkTea::Sema.check(ast, imported_modules: {})
+    analysis = MilkTea::SemanticAnalyzer.check(ast, imported_modules: {})
     MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis, **kwargs)
   end
 
@@ -2527,7 +2527,7 @@ class MilkTeaLinterProfileBootstrapTest < Minitest::Test
     MT
 
     ast = MilkTea::Parser.parse(source, path: "demo.mt")
-    facts = MilkTea::Sema.check(ast, imported_modules: {})
+    facts = MilkTea::SemanticAnalyzer.check(ast, imported_modules: {})
     profile = MilkTea::Linter::Profile.new
 
     warnings = MilkTea::Linter.lint_source(source, path: "demo.mt", sema_facts: facts, profile:)
@@ -2544,7 +2544,7 @@ class MilkTeaLinterProfileBootstrapTest < Minitest::Test
     MT
 
     ast = MilkTea::Parser.parse(source, path: "demo.mt")
-    facts = MilkTea::Sema.check(ast, imported_modules: {})
+    facts = MilkTea::SemanticAnalyzer.check(ast, imported_modules: {})
 
     fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", sema_facts: facts)
 
@@ -2584,7 +2584,7 @@ end
 class MilkTeaLinterPreferVarElseTest < Minitest::Test
   private def lint_with_sema(source, path: "demo.mt", **kwargs)
     ast = MilkTea::Parser.parse(source, path: path)
-    analysis = MilkTea::Sema.check(ast, imported_modules: {})
+    analysis = MilkTea::SemanticAnalyzer.check(ast, imported_modules: {})
     MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis, **kwargs)
   end
 

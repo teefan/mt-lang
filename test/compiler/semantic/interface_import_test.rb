@@ -19,7 +19,7 @@ class InterfaceImportTest < Minitest::Test
   end
 
   def test_rejects_import_alias_named_after_reserved_builtin_result_type
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(<<~MT)
         # module demo.bad
 
@@ -94,7 +94,7 @@ class InterfaceImportTest < Minitest::Test
           return npc.hp
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -120,7 +120,7 @@ class InterfaceImportTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -142,7 +142,7 @@ class InterfaceImportTest < Minitest::Test
               return
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -261,7 +261,7 @@ class InterfaceImportTest < Minitest::Test
               return this.value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -398,7 +398,7 @@ class InterfaceImportTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(root_source, imported_sources)
     end
 
@@ -509,7 +509,7 @@ extending Counter:
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source, imported)
     end
 
@@ -541,7 +541,7 @@ extending Counter:
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source, imported)
     end
 
@@ -568,7 +568,7 @@ extending Counter:
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source, imported)
     end
 
@@ -621,7 +621,7 @@ extending Counter:
       var counter: int = seed()
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -638,7 +638,7 @@ extending Counter:
           publisher.ready.emit()
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source, {
         File.join("demo", "publisher.mt") => <<~PUBLISHER,
           # module demo.publisher

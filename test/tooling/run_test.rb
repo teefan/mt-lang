@@ -1642,7 +1642,7 @@ function main() -> int:
       MT
 
       )
-      error = assert_raises(MilkTea::SemaError) do
+      error = assert_raises(MilkTea::SemanticError) do
         MilkTea::Run.run(source_path)
       end
 
@@ -1664,7 +1664,7 @@ function main() -> int:
       MT
 
       )
-      error = assert_raises(MilkTea::SemaError) do
+      error = assert_raises(MilkTea::SemanticError) do
         MilkTea::Run.run(source_path)
       end
 

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
@@ -1104,7 +1104,7 @@ module MilkTea
         return unless foreign_function_binding?(callable)
 
         { call:, binding: callable }
-      rescue SemaError
+      rescue SemanticError
         nil
       end
 

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class ModuleContext
       attr_accessor :ast, :module_name, :module_kind
       attr_accessor :imported_modules, :global_import_index

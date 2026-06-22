@@ -232,7 +232,7 @@ module MilkTea
           begin
             analysis = check_path(resolved_path)
             Thread.current[:analysis] = analysis
-          rescue ModuleLoadError, PackageLockError, SemaError => e
+          rescue ModuleLoadError, PackageLockError, SemanticError => e
             Thread.current[:error] = e
           end
         end
@@ -291,7 +291,7 @@ module MilkTea
           import_path = @path_resolver.resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
           import_analysis = check_path_collecting_errors(import_path)
           modules[import.path.to_s] = @binder.module_binding(import_analysis)
-        rescue ModuleLoadError, PackageLockError, SemaError => e
+        rescue ModuleLoadError, PackageLockError, SemanticError => e
           errors << ImportResolutionError.new(import:, error: e)
         end
       end
@@ -351,7 +351,7 @@ module MilkTea
       imported_modules = imported_modules_for_ast(ast, importer_path: resolved_path)
 
       global_index = build_global_import_index(ast)
-      analysis = Sema.check(ast, imported_modules:, path: resolved_path, global_import_index: global_index)
+      analysis = SemanticAnalyzer.check(ast, imported_modules:, path: resolved_path, global_import_index: global_index)
       @analysis_cache[resolved_path] = analysis
 
       if use_shared_cache?
@@ -392,7 +392,7 @@ module MilkTea
       @checking_paths << resolved_path
       ast = load_file(resolved_path)
       imported_modules = imported_modules_for_ast_collecting_errors(ast, importer_path: resolved_path).modules
-      result = Sema.check_collecting_errors(ast, imported_modules:, path: resolved_path)
+      result = SemanticAnalyzer.check_collecting_errors(ast, imported_modules:, path: resolved_path)
       analysis = result[:analysis]
       raise(result[:errors].first || ModuleLoadError.new("module analysis unavailable", path: resolved_path)) unless analysis
 

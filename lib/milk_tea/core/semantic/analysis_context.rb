@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
@@ -27,7 +27,7 @@ module MilkTea
 
         suggestion = "wrap in an unsafe block: `unsafe: <expression>`"
         if line || column
-          raise SemaError.new(message, line:, column:, path: @path, suggestion:)
+          raise SemanticError.new(message, line:, column:, path: @path, suggestion:)
         end
 
         raise_sema_error(message, suggestion:)

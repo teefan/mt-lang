@@ -1,16 +1,16 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
-      def validate_attribute_applications
+      def check_attribute_applications
         expanded_declarations.each do |decl|
           with_error_node(decl) do
             case decl
             when AST::StructDecl
-              packed, alignment = validate_decl_attribute_applications!(decl.attributes, target_kind: :struct, target_label: "struct #{decl.name}", target_node: decl)
+              packed, alignment = check_decl_attribute_applications!(decl.attributes, target_kind: :struct, target_label: "struct #{decl.name}", target_node: decl)
               @ctx.types.fetch(decl.name).set_layout(packed:, alignment:)
 
               decl.fields.each do |field|
@@ -19,41 +19,41 @@ module MilkTea
                     raise_sema_error("attributes are not allowed on fields in external files")
                   end
 
-                  validate_decl_attribute_applications!(field.attributes, target_kind: :field, target_label: "field #{decl.name}.#{field.name}", target_node: field)
+                  check_decl_attribute_applications!(field.attributes, target_kind: :field, target_label: "field #{decl.name}.#{field.name}", target_node: field)
                 end
               end
             when AST::FunctionDef, AST::ExternFunctionDecl, AST::ForeignFunctionDecl
-              validate_decl_attribute_applications!(decl.attributes, target_kind: :callable, target_label: "callable #{decl.name}", target_node: decl)
+              check_decl_attribute_applications!(decl.attributes, target_kind: :callable, target_label: "callable #{decl.name}", target_node: decl)
             when AST::InterfaceDecl
               decl.methods.each do |method|
                 with_error_node(method) do
-                  validate_decl_attribute_applications!(method.attributes, target_kind: :callable, target_label: "callable #{decl.name}.#{method.name}", target_node: method)
+                  check_decl_attribute_applications!(method.attributes, target_kind: :callable, target_label: "callable #{decl.name}.#{method.name}", target_node: method)
                 end
               end
             when AST::ExtendingBlock
               decl.methods.each do |method|
                 with_error_node(method) do
-                  validate_decl_attribute_applications!(method.attributes, target_kind: :callable, target_label: "callable #{decl.type_name}.#{method.name}", target_node: method)
+                  check_decl_attribute_applications!(method.attributes, target_kind: :callable, target_label: "callable #{decl.type_name}.#{method.name}", target_node: method)
                 end
               end
             when AST::ConstDecl
-              validate_decl_attribute_applications!(decl.attributes, target_kind: :const, target_label: "const #{decl.name}", target_node: decl)
+              check_decl_attribute_applications!(decl.attributes, target_kind: :const, target_label: "const #{decl.name}", target_node: decl)
             when AST::EventDecl
-              validate_decl_attribute_applications!(decl.attributes, target_kind: :event, target_label: "event #{decl.name}", target_node: decl)
+              check_decl_attribute_applications!(decl.attributes, target_kind: :event, target_label: "event #{decl.name}", target_node: decl)
             when AST::UnionDecl
-              validate_decl_attribute_applications!(decl.attributes, target_kind: :union, target_label: "union #{decl.name}", target_node: decl)
+              check_decl_attribute_applications!(decl.attributes, target_kind: :union, target_label: "union #{decl.name}", target_node: decl)
             when AST::EnumDecl
-              validate_decl_attribute_applications!(decl.attributes, target_kind: :enum, target_label: "enum #{decl.name}", target_node: decl)
+              check_decl_attribute_applications!(decl.attributes, target_kind: :enum, target_label: "enum #{decl.name}", target_node: decl)
             when AST::FlagsDecl
-              validate_decl_attribute_applications!(decl.attributes, target_kind: :flags, target_label: "flags #{decl.name}", target_node: decl)
+              check_decl_attribute_applications!(decl.attributes, target_kind: :flags, target_label: "flags #{decl.name}", target_node: decl)
             when AST::VariantDecl
-              validate_decl_attribute_applications!(decl.attributes, target_kind: :variant, target_label: "variant #{decl.name}", target_node: decl)
+              check_decl_attribute_applications!(decl.attributes, target_kind: :variant, target_label: "variant #{decl.name}", target_node: decl)
             end
           end
         end
       end
 
-      def validate_decl_attribute_applications!(applications, target_kind:, target_label:, target_node:)
+      def check_decl_attribute_applications!(applications, target_kind:, target_label:, target_node:)
         seen = {}
         packed = false
         alignment = nil
@@ -75,7 +75,7 @@ module MilkTea
             raise_sema_error("duplicate attribute #{binding.name} on #{target_label}") if seen.key?(binding_key)
 
             seen[binding_key] = true
-            argument_values = validate_attribute_arguments!(binding, application)
+            argument_values = check_attribute_arguments!(binding, application)
             argument_values = argument_values.freeze
             @ctx.attribute_application_bindings[application.object_id] = binding
             @ctx.validated_attribute_arguments[application.object_id] = argument_values
@@ -99,7 +99,7 @@ module MilkTea
         [packed, alignment]
       end
 
-      def validate_attribute_arguments!(binding, application)
+      def check_attribute_arguments!(binding, application)
         params = binding.params
         arguments = application.arguments
 

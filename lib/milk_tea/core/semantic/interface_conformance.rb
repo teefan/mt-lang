@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
@@ -21,7 +21,7 @@ module MilkTea
 
               seen[interface] = true
               resolved_interfaces << interface
-              validate_interface_conformance!(receiver_type, interface)
+              check_interface_conformance!(receiver_type, interface)
             end
 
             @ctx.implemented_interfaces[interface_implementation_key(receiver_type)] = resolved_interfaces.freeze
@@ -29,12 +29,12 @@ module MilkTea
         end
       end
 
-      def validate_interface_conformance!(receiver_type, interface)
+      def check_interface_conformance!(receiver_type, interface)
         interface.methods.each_value do |interface_method|
           method = lookup_local_method_for_interface(receiver_type, interface_method.name)
           raise_sema_error("type #{receiver_type} implements interface #{interface.name} but is missing method #{interface_method.name}") unless method
 
-          validate_interface_method_match!(receiver_type, interface, interface_method, method)
+          check_interface_method_match!(receiver_type, interface, interface_method, method)
         end
       end
 
@@ -49,7 +49,7 @@ module MilkTea
         method
       end
 
-      def validate_interface_method_match!(receiver_type, interface, interface_method, method)
+      def check_interface_method_match!(receiver_type, interface, interface_method, method)
         if method.ast.is_a?(AST::MethodDef) && method.ast.type_params.any?
           raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: interface methods cannot be implemented by generic methods")
         end

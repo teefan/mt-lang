@@ -10,7 +10,7 @@ module CodegenTestHelpers
       File.write(root_path, source)
 
       program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
-      MilkTea::Codegen.generate_c(MilkTea::Lowering.lower(program))
+      MilkTea::CBackend.generate_c(MilkTea::Lowering.lower(program))
     end
   end
 
@@ -27,7 +27,7 @@ module CodegenTestHelpers
       end
 
       program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
-      MilkTea::Codegen.generate_c(MilkTea::Lowering.lower(program))
+      MilkTea::CBackend.generate_c(MilkTea::Lowering.lower(program))
     end
   end
 

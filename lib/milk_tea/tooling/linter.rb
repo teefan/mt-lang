@@ -567,7 +567,7 @@ module MilkTea
       end
 
       sema_snapshot = profile_phase(profile, "#{label}.sema") do
-        Sema.tooling_snapshot(ast, imported_modules: imported_modules, path: resolved_path || path)
+        SemanticAnalyzer.tooling_snapshot(ast, imported_modules: imported_modules, path: resolved_path || path)
       end
 
       {

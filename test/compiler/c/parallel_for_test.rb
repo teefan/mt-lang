@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../sema/helpers"
+require_relative "../semantic/helpers"
 require_relative "helpers"
 
 class ParallelForTest < Minitest::Test
@@ -33,7 +33,7 @@ class ParallelForTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_program_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_program_source(source) }
     assert_match(/range/, error.message)
   end
 
@@ -47,7 +47,7 @@ class ParallelForTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_program_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_program_source(source) }
     assert_match(/break.*not allowed.*parallel/, error.message)
   end
 
@@ -61,7 +61,7 @@ class ParallelForTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_program_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_program_source(source) }
     assert_match(/continue.*not allowed.*parallel/, error.message)
   end
 
@@ -75,7 +75,7 @@ class ParallelForTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_program_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_program_source(source) }
     assert_match(/return.*not allowed.*parallel/, error.message)
   end
 
@@ -92,7 +92,7 @@ class ParallelForTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_program_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_program_source(source) }
     assert_match(/defer.*not allowed.*parallel/, error.message)
   end
 

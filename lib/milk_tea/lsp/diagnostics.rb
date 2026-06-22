@@ -37,13 +37,13 @@ module MilkTea
           return { diagnostics: diagnostics, facts: sema_facts, sema_snapshot: sema_snapshot } unless ast
 
           if resolution.error_message
-            diagnostics << format_error(SemaError.new(resolution.error_message, line: 1, column: 1))
+            diagnostics << format_error(SemanticError.new(resolution.error_message, line: 1, column: 1))
             return { diagnostics: diagnostics, facts: sema_facts, sema_snapshot: sema_snapshot }
           end
 
           conflict_error = root_platform_conflict_error(path, effective_platform)
           if conflict_error
-            diagnostics << format_error(SemaError.new(conflict_error.message, line: 1, column: 1))
+            diagnostics << format_error(SemanticError.new(conflict_error.message, line: 1, column: 1))
             return { diagnostics: diagnostics, facts: sema_facts, sema_snapshot: sema_snapshot }
           end
 
@@ -80,7 +80,7 @@ module MilkTea
           # Semantic analysis — collect errors from all functions, not just first.
           begin
             sema_start = total_start ? monotonic_time : nil
-            sema_snapshot ||= Sema.tooling_snapshot(ast, imported_modules: imported_modules.fetch(:modules), path: path, allow_missing_imports: true)
+            sema_snapshot ||= SemanticAnalyzer.tooling_snapshot(ast, imported_modules: imported_modules.fetch(:modules), path: path, allow_missing_imports: true)
             sema_facts = sema_snapshot.facts
             sema_snapshot.diagnostics.reject { |diagnostic| redundant_unknown_import_diagnostic?(diagnostic, unresolved_import_paths) }
                            .each { |diagnostic| diagnostics << format_tooling_diagnostic(diagnostic, stage: 'sema') }
@@ -177,7 +177,7 @@ module MilkTea
             diagnostics << format_import_error(entry.error, entry.import, content: content)
             unresolved_import_paths << entry.import.path.to_s if entry.import
           else
-            diagnostics << format_error(SemaError.new(entry.error.message))
+            diagnostics << format_error(SemanticError.new(entry.error.message))
           end
         end
 
@@ -187,7 +187,7 @@ module MilkTea
           import = ast.imports.find { |candidate| candidate.path.to_s == e.path }
           diagnostics << format_import_error(e, import, content: content)
         else
-          diagnostics << format_error(SemaError.new(e.message))
+          diagnostics << format_error(SemanticError.new(e.message))
         end
         { modules: {}, unresolved_import_paths: [], module_name: nil }
       end
@@ -275,7 +275,7 @@ module MilkTea
         program = loader.check_program(path)
         Build.frontend_build_artifacts(program)
         []
-      rescue ModuleLoadError, PackageLockError, SemaError, LoweringError, BuildError => e
+      rescue ModuleLoadError, PackageLockError, SemanticError, LoweringError, BuildError => e
         [format_strict_root_error(e, path: path)]
       end
       private_class_method :collect_strict_root_diagnostics
@@ -327,7 +327,7 @@ module MilkTea
         case error
         when MilkTea::ModuleLoadError
           'import/load-error'
-        when MilkTea::SemaError
+        when MilkTea::SemanticError
           'sema/error'
         when MilkTea::LoweringError
           'lowering/error'
@@ -443,7 +443,7 @@ module MilkTea
       end
 
       def self.format_import_error(error, import, content: nil)
-        return format_error(SemaError.new(error.message)) unless import
+        return format_error(SemanticError.new(error.message)) unless import
 
         column, length = import_path_span(import, content)
         line_index = [import.line.to_i - 1, 0].max
@@ -479,7 +479,7 @@ module MilkTea
           'parse/error'
         when MilkTea::ModuleLoadError
           'import/load-error'
-        when MilkTea::SemaError
+        when MilkTea::SemanticError
           'sema/error'
         else
           'tooling/error'
@@ -494,7 +494,7 @@ module MilkTea
           'parse'
         when MilkTea::ModuleLoadError
           'import'
-        when MilkTea::SemaError
+        when MilkTea::SemanticError
           'sema'
         else
           'tooling'
@@ -522,7 +522,7 @@ module MilkTea
           error.line || 1
         when MilkTea::ParseError
           error.token&.line || 1
-        when MilkTea::SemaError
+        when MilkTea::SemanticError
           error.line || 1
         else
           1
@@ -535,7 +535,7 @@ module MilkTea
           error.column || 1
         when MilkTea::ParseError
           error.token&.column || 1
-        when MilkTea::SemaError
+        when MilkTea::SemanticError
           error.column || 1
         else
           1
@@ -546,7 +546,7 @@ module MilkTea
         case error
         when MilkTea::ParseError
           error.token&.lexeme.to_s.length
-        when MilkTea::SemaError
+        when MilkTea::SemanticError
           error.length || 1
         else
           1

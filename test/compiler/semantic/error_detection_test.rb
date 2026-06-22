@@ -15,7 +15,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -40,7 +40,7 @@ class ErrorDetectionTest < Minitest::Test
           return Result[void, int].success(value= done())
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -59,7 +59,7 @@ class ErrorDetectionTest < Minitest::Test
           return value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -78,7 +78,7 @@ class ErrorDetectionTest < Minitest::Test
           return Result[int, int].success(value= value)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -103,7 +103,7 @@ class ErrorDetectionTest < Minitest::Test
           return Result[int, int].success(value= value)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -119,7 +119,7 @@ class ErrorDetectionTest < Minitest::Test
           return Result[int, int].success(value= value)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -133,7 +133,7 @@ class ErrorDetectionTest < Minitest::Test
       const value: int = Result[int, int].success(value= 1)?
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -152,7 +152,7 @@ class ErrorDetectionTest < Minitest::Test
           return value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -174,7 +174,7 @@ class ErrorDetectionTest < Minitest::Test
           return Result[int, Err].success(value = value)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -196,7 +196,7 @@ class ErrorDetectionTest < Minitest::Test
           return Option[int].some(value = value)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -221,7 +221,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -243,7 +243,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -261,7 +261,7 @@ class ErrorDetectionTest < Minitest::Test
               return read(value)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -309,7 +309,7 @@ class ErrorDetectionTest < Minitest::Test
           return waited + 41
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -326,7 +326,7 @@ class ErrorDetectionTest < Minitest::Test
           return true
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -344,7 +344,7 @@ class ErrorDetectionTest < Minitest::Test
           return await child()
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -401,7 +401,7 @@ class ErrorDetectionTest < Minitest::Test
           return text.len
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -419,7 +419,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -437,7 +437,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -456,7 +456,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -472,7 +472,7 @@ class ErrorDetectionTest < Minitest::Test
           tv_nsec: ptr_int
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -487,7 +487,7 @@ class ErrorDetectionTest < Minitest::Test
           return true
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -506,7 +506,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -521,7 +521,7 @@ class ErrorDetectionTest < Minitest::Test
       const width: int = 2
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -536,7 +536,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -551,7 +551,7 @@ class ErrorDetectionTest < Minitest::Test
           return byte
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -567,7 +567,7 @@ class ErrorDetectionTest < Minitest::Test
           return byte
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -591,7 +591,7 @@ class ErrorDetectionTest < Minitest::Test
           return value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source)
     end
 
@@ -608,7 +608,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -625,7 +625,7 @@ class ErrorDetectionTest < Minitest::Test
           return callback(1)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -640,7 +640,7 @@ class ErrorDetectionTest < Minitest::Test
           return value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -656,17 +656,17 @@ class ErrorDetectionTest < Minitest::Test
           return value
     MT
 
-    checker_class = MilkTea::Sema::Checker
+    checker_class = MilkTea::SemanticAnalyzer::Checker
     original = checker_class.instance_method(:check_local_decl)
     verbose = $VERBOSE
     $VERBOSE = nil
     checker_class.send(:define_method, :check_local_decl) do |_statement, scopes:, return_type:, allow_return:|
-      raise MilkTea::SemaError.new("forced missing location")
+      raise MilkTea::SemanticError.new("forced missing location")
     end
     checker_class.send(:private, :check_local_decl)
     $VERBOSE = verbose
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -691,7 +691,7 @@ class ErrorDetectionTest < Minitest::Test
           callback: proc() -> ref[Counter]
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -723,7 +723,7 @@ class ErrorDetectionTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(root_source, imported_sources)
     end
 
@@ -763,7 +763,7 @@ class ErrorDetectionTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(root_source, imported_sources)
     end
 
@@ -797,7 +797,7 @@ class ErrorDetectionTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(root_source, imported_sources)
     end
 
@@ -816,7 +816,7 @@ class ErrorDetectionTest < Minitest::Test
           return write(out number)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -834,7 +834,7 @@ class ErrorDetectionTest < Minitest::Test
           return sum
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -852,7 +852,7 @@ class ErrorDetectionTest < Minitest::Test
           set_text(text)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -869,7 +869,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -887,7 +887,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -905,7 +905,7 @@ class ErrorDetectionTest < Minitest::Test
           return offset_of(Header, missing)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -923,7 +923,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -939,7 +939,7 @@ class ErrorDetectionTest < Minitest::Test
           return count
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -957,7 +957,7 @@ class ErrorDetectionTest < Minitest::Test
               return int<-bits
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -975,7 +975,7 @@ class ErrorDetectionTest < Minitest::Test
           return int<-target
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -992,7 +992,7 @@ class ErrorDetectionTest < Minitest::Test
           return total
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1000,7 +1000,7 @@ class ErrorDetectionTest < Minitest::Test
   end
 
   def test_rejects_lossy_numeric_coercion_for_external_function_boundaries
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(
         <<~MT,
           # module demo.external_numeric_lossy_call
@@ -1026,7 +1026,7 @@ class ErrorDetectionTest < Minitest::Test
   end
 
   def test_rejects_lossy_numeric_coercion_for_external_field_boundaries
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(
         <<~MT,
           # module demo.external_numeric_lossy_field
@@ -1057,7 +1057,7 @@ class ErrorDetectionTest < Minitest::Test
   end
 
   def test_rejects_inexact_compile_time_numeric_coercion_for_typed_boundaries
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(
         <<~MT,
           # module demo.inexact_numeric_constants
@@ -1112,7 +1112,7 @@ class ErrorDetectionTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source, imported)
     end
 
@@ -1161,7 +1161,7 @@ class ErrorDetectionTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source, imported)
     end
 
@@ -1185,7 +1185,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1202,7 +1202,7 @@ class ErrorDetectionTest < Minitest::Test
           return printf()
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1221,7 +1221,7 @@ class ErrorDetectionTest < Minitest::Test
           return int<-gesture
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1237,7 +1237,7 @@ class ErrorDetectionTest < Minitest::Test
           data: array[float, 16]
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1255,7 +1255,7 @@ class ErrorDetectionTest < Minitest::Test
           value: uint
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1270,7 +1270,7 @@ class ErrorDetectionTest < Minitest::Test
           break
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(break_source)
     end
     assert_match(/break must be inside a loop/, error.message)
@@ -1282,7 +1282,7 @@ class ErrorDetectionTest < Minitest::Test
           continue
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(continue_source)
     end
     assert_match(/continue must be inside a loop/, error.message)
@@ -1298,7 +1298,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1314,7 +1314,7 @@ class ErrorDetectionTest < Minitest::Test
               let x = i
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1344,7 +1344,7 @@ class ErrorDetectionTest < Minitest::Test
               buf[0..n] = (1.0, 2.0, 3.0)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1360,7 +1360,7 @@ class ErrorDetectionTest < Minitest::Test
               buf[0..3] = (1.0, 2.0)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1382,7 +1382,7 @@ class ErrorDetectionTest < Minitest::Test
           return 1
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1398,7 +1398,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1420,7 +1420,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1436,7 +1436,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1452,7 +1452,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1474,7 +1474,7 @@ class ErrorDetectionTest < Minitest::Test
           return plain.hp
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1490,7 +1490,7 @@ class ErrorDetectionTest < Minitest::Test
           return value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1506,7 +1506,7 @@ class ErrorDetectionTest < Minitest::Test
           return value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1521,7 +1521,7 @@ class ErrorDetectionTest < Minitest::Test
           return cast[long](value)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1544,7 +1544,7 @@ class ErrorDetectionTest < Minitest::Test
           return player.hp
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1558,7 +1558,7 @@ class ErrorDetectionTest < Minitest::Test
       external function take(values: array[int, 4]) -> int
     MT
 
-    param_error = assert_raises(MilkTea::SemaError) do
+    param_error = assert_raises(MilkTea::SemanticError) do
       check_source(param_source)
     end
 
@@ -1570,7 +1570,7 @@ class ErrorDetectionTest < Minitest::Test
       external function make() -> array[int, 4]
     MT
 
-    return_error = assert_raises(MilkTea::SemaError) do
+    return_error = assert_raises(MilkTea::SemanticError) do
       check_source(return_source)
     end
 
@@ -1584,7 +1584,7 @@ class ErrorDetectionTest < Minitest::Test
       external function install(callback: proc() -> void) -> void
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1610,7 +1610,7 @@ class ErrorDetectionTest < Minitest::Test
           return counter.value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1626,7 +1626,7 @@ class ErrorDetectionTest < Minitest::Test
           return value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1642,7 +1642,7 @@ class ErrorDetectionTest < Minitest::Test
           return value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1655,7 +1655,7 @@ class ErrorDetectionTest < Minitest::Test
           return unsafe: read(ptr[int]<-0)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1690,7 +1690,7 @@ class ErrorDetectionTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(root_source, imported_sources)
     end
 
@@ -1723,7 +1723,7 @@ class ErrorDetectionTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(root_source, imported_sources)
     end
 
@@ -1756,7 +1756,7 @@ class ErrorDetectionTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(root_source, imported_sources)
     end
 
@@ -1788,7 +1788,7 @@ class ErrorDetectionTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(root_source, imported_sources)
     end
 
@@ -1806,7 +1806,7 @@ class ErrorDetectionTest < Minitest::Test
           write(const_ptr_of(value))
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1825,7 +1825,7 @@ class ErrorDetectionTest < Minitest::Test
           return int<-used
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1842,7 +1842,7 @@ class ErrorDetectionTest < Minitest::Test
           return view.len
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1857,7 +1857,7 @@ class ErrorDetectionTest < Minitest::Test
           let callback: fn(value: int) -> void
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1875,7 +1875,7 @@ class ErrorDetectionTest < Minitest::Test
           return int<-view.len
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1892,7 +1892,7 @@ class ErrorDetectionTest < Minitest::Test
           var buffer: #{removed_type_name}[8]
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1907,7 +1907,7 @@ class ErrorDetectionTest < Minitest::Test
           var labels: cstr_list_buffer[3, 64]
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1922,7 +1922,7 @@ class ErrorDetectionTest < Minitest::Test
           return zero[array[char, 8]].as_str()
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1937,7 +1937,7 @@ class ErrorDetectionTest < Minitest::Test
           return zero[array[char, 8]].as_cstr()
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -1971,7 +1971,7 @@ class ErrorDetectionTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(root_source, imported_sources)
     end
 
@@ -1987,7 +1987,7 @@ class ErrorDetectionTest < Minitest::Test
           return value + 1
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2004,7 +2004,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2020,7 +2020,7 @@ class ErrorDetectionTest < Minitest::Test
       external function take(value: ref[int]) -> void
     MT
 
-    extern_error = assert_raises(MilkTea::SemaError) do
+    extern_error = assert_raises(MilkTea::SemanticError) do
       check_source(extern_source)
     end
 
@@ -2033,7 +2033,7 @@ class ErrorDetectionTest < Minitest::Test
           return value
     MT
 
-    return_error = assert_raises(MilkTea::SemaError) do
+    return_error = assert_raises(MilkTea::SemanticError) do
       check_source(return_source)
     end
 
@@ -2079,7 +2079,7 @@ class ErrorDetectionTest < Minitest::Test
           callback: fn() -> ref[Counter]
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2094,7 +2094,7 @@ class ErrorDetectionTest < Minitest::Test
           visible = 1
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2119,7 +2119,7 @@ class ErrorDetectionTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source, imported)
     end
 
@@ -2138,7 +2138,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2190,7 +2190,7 @@ class ErrorDetectionTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_program_source(source, imported_sources)
     end
 
@@ -2238,7 +2238,7 @@ class ErrorDetectionTest < Minitest::Test
           return dispatch(65)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2262,7 +2262,7 @@ class ErrorDetectionTest < Minitest::Test
           return dispatch(65)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2286,7 +2286,7 @@ class ErrorDetectionTest < Minitest::Test
           return dispatch(65)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2310,7 +2310,7 @@ class ErrorDetectionTest < Minitest::Test
           return dispatch(65)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2334,7 +2334,7 @@ class ErrorDetectionTest < Minitest::Test
                   return r.w
     MT
 
-    assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_raises(MilkTea::SemanticError) { check_source(source) }
   end
 
   def test_rejects_variant_construction_with_missing_fields
@@ -2349,7 +2349,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_raises(MilkTea::SemanticError) { check_source(source) }
   end
 
   def test_rejects_as_binding_on_no_payload_arm
@@ -2366,7 +2366,7 @@ class ErrorDetectionTest < Minitest::Test
                   return 0
     MT
 
-    assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_raises(MilkTea::SemanticError) { check_source(source) }
   end
 
   def test_rejects_while_loop_with_non_bool_condition
@@ -2379,7 +2379,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2397,7 +2397,7 @@ class ErrorDetectionTest < Minitest::Test
           return
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2405,7 +2405,7 @@ class ErrorDetectionTest < Minitest::Test
   end
 
   def test_rejects_get_on_non_array_non_span
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(<<~MT)
         function main() -> int:
             let x = 42
@@ -2419,7 +2419,7 @@ class ErrorDetectionTest < Minitest::Test
   end
 
   def test_rejects_get_with_non_integer_index
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(<<~MT)
         function main() -> int:
             var arr = array[int, 2](1, 2)
@@ -2433,7 +2433,7 @@ class ErrorDetectionTest < Minitest::Test
   end
 
   def test_rejects_get_with_named_arguments
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(<<~MT)
         function main() -> int:
             var arr = array[int, 2](1, 2)
@@ -2447,7 +2447,7 @@ class ErrorDetectionTest < Minitest::Test
   end
 
   def test_rejects_get_with_wrong_argument_count
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(<<~MT)
         function main() -> int:
             var arr = array[int, 2](1, 2)
@@ -2461,7 +2461,7 @@ class ErrorDetectionTest < Minitest::Test
   end
 
   def test_rejects_get_on_temporary_array_value
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(<<~MT)
         function main() -> int:
             let p = get(array[int, 3](1, 2, 3), 0) else:
@@ -2486,7 +2486,7 @@ class ErrorDetectionTest < Minitest::Test
               return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/inline if condition must be a compile-time constant/, error.message)
   end
 
@@ -2503,7 +2503,7 @@ class ErrorDetectionTest < Minitest::Test
               return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/inline if condition must be bool/, error.message)
   end
 
@@ -2518,7 +2518,7 @@ class ErrorDetectionTest < Minitest::Test
           return n
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/must be a compile-time constant/, error.message)
   end
 
@@ -2531,7 +2531,7 @@ class ErrorDetectionTest < Minitest::Test
               return
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/inline for iterable must be a compile-time constant/, error.message)
   end
 
@@ -2547,7 +2547,7 @@ class ErrorDetectionTest < Minitest::Test
                   return 2
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/compile-time constant/, error.message)
   end
 
@@ -2563,7 +2563,7 @@ class ErrorDetectionTest < Minitest::Test
           return p.with(bad = 5.0)
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/unknown field/, error.message)
   end
 
@@ -2579,7 +2579,7 @@ class ErrorDetectionTest < Minitest::Test
           return p.with(5.0)
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/requires named arguments/, error.message)
   end
 
@@ -2594,7 +2594,7 @@ class ErrorDetectionTest < Minitest::Test
               return 42
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/emit is only allowed inside const function or inline blocks/, error.message)
   end
 
@@ -2608,7 +2608,7 @@ class ErrorDetectionTest < Minitest::Test
           data: ref[@a, int]
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/uses lifetime @a not declared on struct/, error.message)
   end
 
@@ -2618,7 +2618,7 @@ class ErrorDetectionTest < Minitest::Test
       var bad_ref: ref[int]
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/cannot store ref types/, error.message)
   end
 
@@ -2635,7 +2635,7 @@ class ErrorDetectionTest < Minitest::Test
           value: int
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/generic interface Mapper requires type arguments/, error.message)
   end
 
@@ -2654,7 +2654,7 @@ class ErrorDetectionTest < Minitest::Test
               return x
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/signature does not match/, error.message)
   end
 
@@ -2670,7 +2670,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2689,7 +2689,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2708,7 +2708,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2732,7 +2732,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2758,7 +2758,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2784,7 +2784,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2802,7 +2802,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2827,7 +2827,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2845,7 +2845,7 @@ class ErrorDetectionTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2867,7 +2867,7 @@ class ErrorDetectionTest < Minitest::Test
           return ready.subscribe_once(on_ready, 0, 1)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2887,7 +2887,7 @@ class ErrorDetectionTest < Minitest::Test
           return ready.subscribe_once(listener = on_ready)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2910,7 +2910,7 @@ class ErrorDetectionTest < Minitest::Test
           return ticked.subscribe(s, on_tick)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2935,7 +2935,7 @@ class ErrorDetectionTest < Minitest::Test
                   return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2958,7 +2958,7 @@ class ErrorDetectionTest < Minitest::Test
                   return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -2981,7 +2981,7 @@ class ErrorDetectionTest < Minitest::Test
                   return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 

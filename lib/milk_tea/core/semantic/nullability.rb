@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
@@ -43,7 +43,7 @@ module MilkTea
         return unless first_issue
 
         name = @binding_name_by_id[first_issue.binding_key] || first_issue.binding_key
-        raise SemaError.new(
+        raise SemanticError.new(
           "read of '#{name}' before definite assignment",
           line: first_issue.line,
           column: first_issue.column,

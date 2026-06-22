@@ -576,10 +576,10 @@ module MilkTea
 
       analysis = nil
       begin
-        result = Sema.check_collecting_errors(ast, imported_modules: import_result.modules, path: resolved_path)
+        result = SemanticAnalyzer.check_collecting_errors(ast, imported_modules: import_result.modules, path: resolved_path)
         errors.concat(result[:errors])
         analysis = result[:analysis]
-      rescue SemaError => e
+      rescue SemanticError => e
         errors << e
       end
 
@@ -590,7 +590,7 @@ module MilkTea
       end
 
       [errors, module_name]
-    rescue ModuleLoadError, PackageLockError, SemaError => e
+    rescue ModuleLoadError, PackageLockError, SemanticError => e
       [[e], nil]
     end
 
@@ -653,7 +653,7 @@ module MilkTea
         if multiple
           @out.puts("/* --- #{path} --- */")
         end
-        @out.write(Codegen.generate_c(Lowering.lower(program), emit_line_directives: false))
+        @out.write(CBackend.generate_c(Lowering.lower(program), emit_line_directives: false))
         @out.puts if multiple && index < program_paths.length - 1
       end
       0
@@ -1050,14 +1050,14 @@ module MilkTea
           import_errors = import_result.respond_to?(:errors) ? import_result.errors : []
           parse_errors.concat(import_errors) unless import_errors.empty?
 
-          snapshot = MilkTea::Sema.tooling_snapshot(
+          snapshot = MilkTea::SemanticAnalyzer.tooling_snapshot(
             loader_ast,
             imported_modules: import_result.modules,
             allow_missing_imports: true,
             path: resolved_path,
           )
           facts = snapshot&.facts
-        rescue MilkTea::LexError, MilkTea::ParseError, ModuleLoadError, SemaError => e
+        rescue MilkTea::LexError, MilkTea::ParseError, ModuleLoadError, SemanticError => e
           parse_errors << e
         end
       end
@@ -1315,7 +1315,7 @@ module MilkTea
     end
 
     def handled_error_classes
-      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError, FormatterError, PackageManifestError, PackageManifestEditorError, PackageGraphError, PackageLockError, PackageSourceResolverError, PackageSourceFetcherError, PackageRegistryStoreError, PackageRegistryMetadataProviderError, PackageDependencySolverError, PackageVersionError, ProjectScaffoldError]
+      classes = [LexError, ParseError, ModuleLoadError, SemanticError, LoweringError, BuildError, RunError, FormatterError, PackageManifestError, PackageManifestEditorError, PackageGraphError, PackageLockError, PackageSourceResolverError, PackageSourceFetcherError, PackageRegistryStoreError, PackageRegistryMetadataProviderError, PackageDependencySolverError, PackageVersionError, ProjectScaffoldError]
       classes << BindgenError if MilkTea.const_defined?(:BindgenError, false)
       classes << UpstreamSources::Error if MilkTea.const_defined?(:UpstreamSources, false)
       classes
@@ -1442,8 +1442,8 @@ module MilkTea
     def lint_sema_facts_for(source, path, locked: false)
       ast = Parser.parse(source, path: path)
       imported_modules = make_module_loader(path, locked:, platform: ModuleLoader.default_host_platform).imported_modules_for_ast(ast, importer_path: path)
-      Sema.tooling_snapshot(ast, imported_modules: imported_modules, path: path).facts
-    rescue MilkTea::LexError, MilkTea::ParseError, SemaError, ModuleLoadError
+      SemanticAnalyzer.tooling_snapshot(ast, imported_modules: imported_modules, path: path).facts
+    rescue MilkTea::LexError, MilkTea::ParseError, SemanticError, ModuleLoadError
       nil
     end
 

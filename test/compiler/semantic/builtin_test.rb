@@ -6,7 +6,7 @@ class BuiltinTest < Minitest::Test
   include SemaTestHelpers
 
   def test_rejects_local_named_after_reserved_builtin_result_type
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(<<~MT)
         function main() -> int:
             let Result = 1
@@ -112,7 +112,7 @@ class BuiltinTest < Minitest::Test
           return read_hash[Key](key)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -130,7 +130,7 @@ class BuiltinTest < Minitest::Test
           return read_hash[int](1)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -254,7 +254,7 @@ class BuiltinTest < Minitest::Test
           return compare[Key](left, right)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -276,7 +276,7 @@ class BuiltinTest < Minitest::Test
           return hash[Key](Key(value = 1))
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -340,7 +340,7 @@ class BuiltinTest < Minitest::Test
           return value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -358,7 +358,7 @@ class BuiltinTest < Minitest::Test
           value: int
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -374,7 +374,7 @@ class BuiltinTest < Minitest::Test
           ok = 1
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -389,7 +389,7 @@ class BuiltinTest < Minitest::Test
           ptr_uint: int
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -405,7 +405,7 @@ class BuiltinTest < Minitest::Test
           payload(value: int)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -420,7 +420,7 @@ class BuiltinTest < Minitest::Test
           payload(Result: int)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::SemanticError) do
       check_source(source)
     end
 
@@ -436,7 +436,7 @@ class BuiltinTest < Minitest::Test
           return 0
     MT
 
-    ok_error = assert_raises(MilkTea::SemaError) do
+    ok_error = assert_raises(MilkTea::SemanticError) do
       check_source(ok_source)
     end
 
@@ -450,7 +450,7 @@ class BuiltinTest < Minitest::Test
           return 0
     MT
 
-    err_error = assert_raises(MilkTea::SemaError) do
+    err_error = assert_raises(MilkTea::SemanticError) do
       check_source(err_source)
     end
 
@@ -505,7 +505,7 @@ class BuiltinTest < Minitest::Test
           return order[int](a, b)
     MT
 
-    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
     assert_match(/requires associated function/, error.message)
   end
 

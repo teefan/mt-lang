@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
@@ -268,7 +268,7 @@ module MilkTea
               @ctx.interfaces[decl.name] = declare_interface_binding(decl)
             end
           end
-        rescue SemaError => e
+        rescue SemanticError => e
           collect_structural_error(e)
         end
       end
@@ -293,7 +293,7 @@ module MilkTea
         @ctx.ast.declarations.grep(AST::TypeAliasDecl).each do |decl|
           ensure_available_type_name!(decl.name)
           @ctx.types[decl.name] = resolve_type_ref(decl.target)
-        rescue SemaError => e
+        rescue SemanticError => e
           collect_structural_error(e)
         end
       end
@@ -498,7 +498,7 @@ module MilkTea
                   raise_sema_error("field #{decl.name}.#{field.name} uses unsupported proc nesting")
                 end
                 fields[field.name] = field_type
-              rescue SemaError => e
+              rescue SemanticError => e
                 collect_structural_error(e)
               end
             end
@@ -524,7 +524,7 @@ module MilkTea
                     owner_type_name: decl.name,
                     nested_types: nested_scope,
                   )
-                rescue SemaError => e
+                rescue SemanticError => e
                   collect_structural_error(e)
                 end
               end
@@ -536,7 +536,7 @@ module MilkTea
             struct_type.define_fields(fields)
             struct_type.define_events(events) if struct_type.respond_to?(:define_events)
           end
-        rescue SemaError => e
+        rescue SemanticError => e
           collect_structural_error(e)
         end
       end
@@ -584,14 +584,14 @@ module MilkTea
                 raise_sema_error("member #{decl.name}.#{member.name} must be a compile-time integer constant", member) unless const_value.is_a?(Integer)
 
                 member_values[member.name] = const_value
-              rescue SemaError => e
+              rescue SemanticError => e
                 collect_structural_error(e)
               end
             end
 
             enum_type.define_member_values(member_values)
           end
-        rescue SemaError => e
+        rescue SemanticError => e
           collect_structural_error(e)
         end
       end
@@ -650,19 +650,19 @@ module MilkTea
                       raise_sema_error("field #{decl.name}.#{arm.name}.#{field.name} uses unsupported proc nesting")
                     end
                     field_types[field.name] = field_type
-                  rescue SemaError => e
+                  rescue SemanticError => e
                     collect_structural_error(e)
                   end
                 end
                 arms_hash[arm.name] = field_types
-              rescue SemaError => e
+              rescue SemanticError => e
                 collect_structural_error(e)
               end
             end
 
             variant_type.define_arms(arms_hash)
           end
-        rescue SemaError => e
+        rescue SemanticError => e
           collect_structural_error(e)
         end
       end
@@ -718,7 +718,7 @@ module MilkTea
                   mutable: false,
                   kind: :const,
                 )
-              rescue SemaError => e
+              rescue SemanticError => e
                 collect_structural_error(e)
                 @ctx.top_level_values[decl.name] = value_binding(
                   name: decl.name,
@@ -749,7 +749,7 @@ module MilkTea
               )
             end
           end
-        rescue SemaError => e
+        rescue SemanticError => e
           collect_structural_error(e)
         end
       end
@@ -785,7 +785,7 @@ module MilkTea
               field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:, nested_types: nested_scope)
               validate_stored_ref_type!(field_type, "field #{qualified_name}.#{field.name}")
               fields[field.name] = field_type
-            rescue SemaError => e
+            rescue SemanticError => e
               collect_structural_error(e)
             end
           end
@@ -795,7 +795,7 @@ module MilkTea
             raise_sema_error("duplicate event #{qualified_name}.#{event_decl.name}") if nested_events.key?(event_decl.name)
             begin
               nested_events[event_decl.name] = resolve_event_decl_type(event_decl, type_params:, type_param_constraints:, owner_type_name: qualified_name, nested_types: nested_scope)
-            rescue SemaError => e
+            rescue SemanticError => e
               collect_structural_error(e)
             end
           end

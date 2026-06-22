@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
@@ -676,7 +676,7 @@ module MilkTea
         )
         receiver_type = project_field_receiver_type(receiver_type, require_mutable_pointer: true)
         !event_member_type(receiver_type, receiver_expression.member).nil?
-      rescue SemaError
+      rescue SemanticError
         false
       end
 
@@ -719,7 +719,7 @@ module MilkTea
         else
           false
         end
-      rescue SemaError
+      rescue SemanticError
         false
       end
 

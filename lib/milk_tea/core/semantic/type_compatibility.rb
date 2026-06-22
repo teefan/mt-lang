@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
@@ -23,7 +23,7 @@ module MilkTea
 
         infer_lvalue(expression, scopes:)
         true
-      rescue SemaError
+      rescue SemanticError
         false
       end
 

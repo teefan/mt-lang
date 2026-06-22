@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
@@ -361,7 +361,7 @@ module MilkTea
         return resolve_type_ref(type_ref, type_params:, type_param_constraints:) unless literal_type_argument_name_candidate?(type_ref)
 
         resolve_type_ref(type_ref, type_params:, type_param_constraints:)
-      rescue SemaError => error
+      rescue SemanticError => error
         literal_type_argument = resolve_named_literal_type_argument(type_ref)
         return literal_type_argument if literal_type_argument
 
@@ -426,7 +426,7 @@ module MilkTea
 
         unless types_compatible?(actual_type, expected_type, expression:, scopes:, external_numeric:, external_pointer_null:, contextual_int_to_float:)
           suggestion = explicit_cast_suggestion(actual_type, expected_type)
-          raise SemaError.new(message, line:, column:, path: @path, suggestion:)
+          raise SemanticError.new(message, line:, column:, path: @path, suggestion:)
         end
       end
 
@@ -454,7 +454,7 @@ module MilkTea
         column = source_column(expression)
         unless argument_types_compatible?(actual_type, expected_type, external:, expression:, scopes:)
           suggestion = explicit_cast_suggestion(actual_type, expected_type)
-          raise SemaError.new(message, line:, column:, path: @path, suggestion:)
+          raise SemanticError.new(message, line:, column:, path: @path, suggestion:)
         end
       end
 
@@ -474,7 +474,7 @@ module MilkTea
         line ||= source_line(target)
         column ||= source_column(target)
         length ||= source_length(target)
-        raise SemaError.new(message, line:, column:, length:, path: @path, suggestion:)
+        raise SemanticError.new(message, line:, column:, length:, path: @path, suggestion:)
       end
 
       def source_line(node)
@@ -1005,7 +1005,7 @@ module MilkTea
             end
 
             return [receiver_type, receiver_type, [], {}]
-          rescue MilkTea::SemaError => error
+          rescue MilkTea::SemanticError => error
             receiver_type_param_names = methods_receiver_type_argument_names!(type_ref)
             raise error if receiver_type_param_names.empty?
 
@@ -1608,7 +1608,7 @@ module MilkTea
         end
 
         false
-      rescue SemaError
+      rescue SemanticError
         false
       end
 
@@ -1841,7 +1841,7 @@ module MilkTea
       def assignable_receiver?(receiver_expression, scopes)
         infer_lvalue_receiver(receiver_expression, scopes:, allow_ref_identifier: true, allow_pointer_identifier: true, require_mutable_pointer: true)
         true
-      rescue SemaError
+      rescue SemanticError
         false
       end
 

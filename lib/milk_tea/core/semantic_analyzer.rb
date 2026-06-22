@@ -1,22 +1,22 @@
 # frozen_string_literal: true
 
-require_relative "sema/type_declaration"
-require_relative "sema/attribute_checker"
-require_relative "sema/function_binding"
-require_relative "sema/top_level"
-require_relative "sema/interface_conformance"
-require_relative "sema/nullability"
-require_relative "sema/statement_checker"
-require_relative "sema/expression_checker"
-require_relative "sema/call_checker"
-require_relative "sema/context_manager"
-require_relative "sema/type_compatibility"
-require_relative "sema/flow_refinement"
-require_relative "sema/resolve"
-require_relative "sema/module_context"
+require_relative "semantic/type_declaration"
+require_relative "semantic/attribute_checker"
+require_relative "semantic/function_binding"
+require_relative "semantic/top_level"
+require_relative "semantic/interface_conformance"
+require_relative "semantic/nullability"
+require_relative "semantic/statement_checker"
+require_relative "semantic/expression_checker"
+require_relative "semantic/call_checker"
+require_relative "semantic/analysis_context"
+require_relative "semantic/type_compatibility"
+require_relative "semantic/flow_refinement"
+require_relative "semantic/name_resolution"
+require_relative "semantic/module_context"
 
 module MilkTea
-  class SemaError < StandardError
+  class SemanticError < StandardError
     attr_reader :line, :column, :length, :path, :suggestion
 
     def initialize(msg = nil, line: nil, column: nil, length: nil, path: nil, suggestion: nil)
@@ -41,11 +41,10 @@ module MilkTea
     end
   end
 
-  class Sema
+  class SemanticAnalyzer
     Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :attributes, :attribute_applications, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines, :uses_parallel_for, :resolved_expr_types, :resolved_call_kinds, :const_values) do
       def initialize(ast:, module_name:, module_kind:, directives:, imports:, types:, interfaces:, attributes:, attribute_applications:, values:, functions:, methods:, implemented_interfaces:, local_completion_frames:, binding_resolution:, callable_value_identifier_sites:, callable_value_member_access_sites:, required_unsafe_lines:, uses_parallel_for:, resolved_expr_types: {}, resolved_call_kinds: {}, const_values: {}) = super
     end
-    Facts = Analysis
     ToolingSnapshot = Data.define(:facts, :diagnostics)
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
@@ -109,10 +108,10 @@ module MilkTea
     # LSP-oriented entry point: runs all sema phases and collects every error
     # instead of stopping at the first one.  Structural phases collect per-
     # declaration, and function-body phases collect per function/method.
-    # Returns { analysis: Analysis|nil, errors: [SemaError] }.
+    # Returns { analysis: Analysis|nil, errors: [SemanticError] }.
     def self.check_collecting_errors(ast, imported_modules: {}, allow_missing_imports: false, path: nil)
       Checker.new(ast, imported_modules:, allow_missing_imports:, path:).check_collecting_errors
-    rescue SemaError => e
+    rescue SemanticError => e
       { analysis: nil, errors: [e] }
     end
 
@@ -194,7 +193,7 @@ module MilkTea
         resolve_variant_arms
         collect_emit_declarations
         declare_top_level_values
-        validate_attribute_applications
+        check_attribute_applications
         declare_functions
         check_interface_conformances
         check_top_level_values
@@ -266,7 +265,7 @@ module MilkTea
       # Like check, but collects per-function errors instead of raising at first.
       # Structural phases (imports, type resolution, declaration) collect errors per
       # declaration so that the maximum number of diagnostics are surfaced.
-      # Returns { analysis: Analysis, errors: [SemaError] }.
+      # Returns { analysis: Analysis, errors: [SemanticError] }.
       def check_collecting_errors
         @collecting_errors = true
         @structural_errors = []
@@ -283,7 +282,7 @@ module MilkTea
         catch_structural { resolve_enum_members }
         catch_structural { resolve_variant_arms }
         catch_structural { declare_top_level_values }
-        catch_structural { validate_attribute_applications }
+        catch_structural { check_attribute_applications }
         catch_structural { collect_emit_declarations }
         catch_structural { declare_functions }
         catch_structural { check_interface_conformances }
@@ -292,20 +291,20 @@ module MilkTea
 
         begin
           check_top_level_values
-        rescue SemaError => e
+        rescue SemanticError => e
           errors << e
         end
         errors.concat(@structural_errors.drop(errors.length))
 
         begin
           finalize_top_level_const_values
-        rescue SemaError => e
+        rescue SemanticError => e
           errors << e
         end
 
         begin
           check_top_level_static_asserts
-        rescue SemaError => e
+        rescue SemanticError => e
           errors << e
         end
 
@@ -318,7 +317,7 @@ module MilkTea
 
       def catch_structural
         yield
-      rescue SemaError => e
+      rescue SemanticError => e
         @structural_errors << e
       end
 

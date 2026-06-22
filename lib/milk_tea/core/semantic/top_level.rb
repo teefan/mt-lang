@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Sema
+  class SemanticAnalyzer
     class Checker
       private
 
@@ -16,7 +16,7 @@ module MilkTea
                 else
                   check_expr_const(decl)
                 end
-              rescue SemaError => e
+              rescue SemanticError => e
                 collect_structural_error(e)
               end
             when AST::VarDecl

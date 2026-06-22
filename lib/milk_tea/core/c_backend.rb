@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-require_relative "c_backend/aggregate_utils"
+require_relative "c_backend/aggregate_sorting"
 require_relative "c_backend/type_emission"
-require_relative "c_backend/reachability"
+require_relative "c_backend/dead_code_elimination"
 require_relative "c_backend/feature_detection"
 require_relative "c_backend/type_collectors"
 require_relative "c_backend/statements"
 require_relative "c_backend/control_flow"
-require_relative "c_backend/helpers"
+require_relative "c_backend/runtime_helpers"
 require_relative "c_backend/forward_decls"
 require_relative "c_backend/expressions"
 require_relative "c_backend/reinterpret"
@@ -21,6 +21,10 @@ module MilkTea
 
     def self.emit(program, emit_line_directives: true)
       new(program, emit_line_directives:).emit
+    end
+
+    def self.generate_c(ir_program, emit_line_directives: true)
+      emit(ir_program, emit_line_directives:)
     end
 
     def initialize(program, emit_line_directives: true)
