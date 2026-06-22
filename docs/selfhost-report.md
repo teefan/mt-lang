@@ -4,7 +4,7 @@
 
 The `projects/mtc` directory contains a self-hosting Milk Tea compiler written in Milk Tea. It compiles to C using the existing Ruby `mtc` compiler and provides `lex`, `parse`, `check`, `lower`, and `combine` subcommands.
 
-**Total**: ~4,500 lines of Milk Tea across 9 source files.
+**Total**: ~6,200 lines of Milk Tea across 9 source files (lower.mt grew from 931 → 1692 lines during type tracking work).
 
 ## 2. File Map
 
@@ -26,7 +26,7 @@ projects/mtc/
         │   ├── checker.mt               # ~271 lines — 3-pass check
         │   └── loader.mt                # ~97 lines — Module loader
         └── lowering/
-            └── lower.mt                 # ~931 lines — Tree-based C lowering
+            └── lower.mt                 # ~1692 lines — Tree-based C lowering
 ```
 
 ## 3. Lexer — Complete
@@ -43,13 +43,64 @@ Two-level symbol table. 40 built-in types. Module loading with cycle detection.
 
 **Verification**: 9/9 self-host + 13/13 examples pass `mtc check`.
 
-## 6. Lowering — Tree-Based
+## 6. Lowering — Tree-Based with Lowerer-Local Type Tracking
 
-**Declarations**: Struct, enum, function signatures with tree-based body lowering. Three-pass output ordering (fwd decls → types → functions). `write_ctype_node` handles ptr/ref→`T*`, local types→`module_Type`, constructed→`void*`.
+**Design decision**: Instead of expression type tracking in sema (as originally planned in step 5b), types are tracked directly in the lowerer. This is more pragmatic — it directly addresses C output quality without threading type information through a separate pass, and all declaration information is already available from the parsed AST.
 
-**Body lowering**: Control flow (`if`/`while`), declarations (`let`/`var`), return, break/continue, expression statements, assignment. **Call forms**: method-first classification (method→member, struct ctor→designated init, func→plain). **Member access**: 4-level heuristic (`->` for `this`, `.` for struct fields, `_` for namespace chains).
+### 6.1 Type Tracking Architecture
 
-**Methods**: Extending block methods captured with `body_block`; `write_extending` emits typed `this` param + full tree-lowered bodies.
+| Component | Lines | Purpose |
+|---|---|---|
+| `type_pool` (4 KB buffer) | +10 | Stable storage for all type name strings. Fixes critical dangling-str bug where `scope_bind` stored `str` values pointing to freed stack-local `str_buffer` buffers |
+| `build_type_maps` | +50 | Pre-pass scans all source declarations, builds lookup tables using `pool_type` for stable storage |
+| `scope_enter/leave/bind/lookup` | +50 | Maintains a stack of local variable name→C-type mappings during function body lowering. Parameters and `let`/`var` locals are tracked |
+| `self_infer_expr_type` | +60 | Bottom-up type inference: literal→primitive, identifier→scope, call→func/method table, member_access→struct field table + heuristic fallback |
+| `self_expr_is_mt_str` | +60 | Specialized mt_str detection for binary `==`/`!=` operators, checking scope, func/method tables, struct fields, string literals |
+| `self_infer_receiver_type` | +20 | Resolves receiver types for member access chains |
+| `struct_field_lookup` | +20 | Looks up struct field C types from `build_type_maps` |
+| `current_return_type` tracking | +15 | Stores enclosing function's C return type; used by `read()` builtin for typed pointer dereference |
+| `pool_type` helper | +10 | Appends a type string to `type_pool` and returns a stable str slice |
+
+### 6.2 Lookup Tables (built by `build_type_maps`)
+
+| Table | Vectors | Key | Value |
+|---|---|---|---|
+| Function return types | `func_lookup_names` + `func_lookup_rets` | Milk Tea function name | C return type |
+| Method return types | `method_lookup_receivers` + `method_lookup_names` + `method_lookup_rets` | (receiver type, method name) | C return type |
+| Struct field types | `field_struct_names` + `field_names` + `field_types` | (C struct name, field name) | C field type |
+
+### 6.3 Phase 1: Forward Declarations + Callee Name Mangling
+
+- Forward declarations emitted for all extending block methods and module-level functions (not just structs/enums)
+- `this.method()` callee names replaced with `module_ReceiverType_method` via depth-aware check
+- Module-level function calls prefixed with `module_` (e.g., `is_alpha` → `lexer_is_alpha`)
+- `self_is_builtin_call` whitelist prevents prefixing of `fatal`, `read`, `ref_of`, `ptr_of`, `const_ptr_of`
+
+### 6.4 Phase 2: Builtins + Standard Library Lowering
+
+- **Vec operations**: `mt_vec` struct in header, `mt_vec_push_impl` / `mt_vec_get_impl` helpers
+  - `.create()` → `((mt_vec){0})`
+  - `.push(v)` → `do { __typeof__(v) _mtval = v; mt_vec_push_impl(&vec, &_mtval, sizeof(_mtval)); } while(0)`
+  - `.get(i)` → `mt_vec_get_impl(&vec, i, sizeof(void*))`
+  - `.len()` → `vec.len` field access
+- **Builtins recognized**: `fatal` (fwrite+abort), `read` (typed deref), `ref_of` (`&`), `ptr_of` (`(void*)&`), `const_ptr_of` (`(const void*)&`)
+- **Struct ctor detection** with uppercase callee check (`self_callee_looks_like_type`)
+- **Vec type mapping**: `write_ctype_node` emits `mt_vec` (not `void*`) for `Vec[T]` constructed types, matching the push/get helpers
+
+### 6.5 Phase 3: String Types + Scope Tracking + Expression Type Inference
+
+- **String literals**: `MT_STR("...")` compound-literal macro, producing `mt_str` instead of `char*`
+- **`mt_str_eq` helper**: `==` / `!=` on `mt_str` operands lowered to `mt_str_eq()` / `!mt_str_eq()`
+- **Binary op detection**: checks `self_infer_expr_type` then `self_expr_is_mt_str` on both operands to decide mt_str_eq path
+- **Scope tracking**: parameters bound in `write_function`/`write_extending`, `let`/`var` locals bound in `self_write_let`/`self_write_var`, all via `pool_type` stable storage
+- **Member access field type lookup**: within-module via `struct_field_lookup`, cross-module via string-name heuristic (`self_is_string_field_name`)
+- **`read()` typed deref**: uses `current_return_type` for return-statement reads, scope type for tracked locals
+
+### 6.6 Line Count Growth
+
+| File | Before | After | Delta |
+|---|---|---|---|
+| `lower.mt` | 931 | 1692 | +761 |
 
 ## 7. Ruby Compiler Fixes
 
@@ -72,46 +123,59 @@ mtc combine <files..> — Combined C lowering
 | Self-host source files | 9 | 0 |
 | Example files | 13 | 0 |
 
-## 10. Progress Summary & Next Steps
+## 10. Progress Summary & Error Reduction
 
-### Completed
+| Stage | Errors | Implicit Decl | Key Changes |
+|---|---|---|---|
+| **Original (5a)** | **795** | 262 | Three-pass output, `auto` everywhere, no type tracking |
+| Phase 1: Fwd decls + name mangling | 711 | 129 | Method forward decls, `this`→receiver_type callee names, module func prefixes |
+| Phase 2: Builtins + Vec + struct ctors | 589 | 55 | `mt_vec` helpers, `fatal`/`read`/`ref_of` builtins, Vec `.create`/`.push`/`.get`/`.len`, uppercase struct ctor detection |
+| Phase 3a-c: Strings + scope | 448 | 64 | `MT_STR` macro, `mt_str_eq` in binary ops, scope tracking, `self_infer_expr_type` |
+| Phase 3d-e: Lookup tables + pool_type | 472 | ~70 | `build_type_maps` func/method/struct field tables, `type_pool` stable storage, `current_return_type` for read() |
+| **Current (Phase 3 final)** | **449** | ~70 | Member access field lookup (struct table + heuristic), `self_expr_is_mt_str` extended |
 
-| Step | Description | Status |
-|------|-------------|--------|
-| 1 | Tree AST — Type nodes | ✅ |
-| 2 | Tree AST — Expression nodes | ✅ |
-| 3 | Tree AST — Statement nodes | ✅ |
-| 4 | Full function body lowering | ✅ |
-| 4b | Expression capture (call args, assignment RHS) | ✅ |
-| 4c | Method body + struct ctor + unsafe lowering | ✅ |
-| 5a | Combine subcommand + GCC validation | 🟡 ~795 err |
+**Total reduction: 795 → 449 (-43.5%)**
 
-### Step 5a Status
+### Remaining Error Breakdown
 
-Native `mtc combine` lowers all files to combined C. **Errors reduced from 1000+ to ~795** through:
-- Combined output (single translation unit)
-- Method/ctor classification reorder
-- Typed `this` param + member access heuristic (`->`/`.`/`_`)
-- Numeric/bool/char literal type inference
+| Count | Category | Root Cause |
+|---|---|---|
+| 32 | `void value not ignored` | `read()` on `void*` from Vec `.get()` in non-return context. Needs Vec element type tracking or typed get helpers |
+| 27 | `mt_str == mt_str` not caught | Method return type lookup fails for some `this.method()` calls (debugging pending) |
+| 14 | `request for member 'name' in non-struct` | `auto`-typed struct pointer → member access on void* |
+| 13 | `incompatible type for argument 2 of pline` | Some string expressions not detected as `mt_str` |
+| 11 | expected `?` token | Edge case in generated C |
+| 8 | `SymbolKind` undeclared | Enum type not forward-declared for cross-module use |
+| 8 | `pool_type` type mismatch | Argument type issue in scope_bind calls |
+| ~336 | Other (type mismatches, void declarations, etc.) | Various edge cases |
 
-**Error floor analysis:** Most remaining errors are from function call return types being unknown (e.g., `let d = read(ptr)` → `auto d = read(ptr)` → `auto` infers `void*` → member access fails). The ~795 floor requires expression type tracking in sema.
+## 11. Next Steps (Reasoned)
 
-### Planned Next Steps (resume order)
+### Architectural Gaps
 
-**5b — Expression type tracking in sema** *(target: break ~795 floor)*
-Add an expression type annotation pass. Minimum:
-1. Track `let`/`var` local variable types (use `type_node` or infer from initializer)
-2. Track `extending` receiver type for `this` in method bodies
-3. Propagate types through expression trees (identifier→lookup, literal→primitive, call→declared return)
-4. Lowerer reads annotated types for correct C variable declarations and member access
+The key remaining issue is **cross-module type information**. Each file's lowerer operates independently with its own lookup tables. When `parser.mt` accesses `Decl.name` (where `Decl` is defined in `nodes.mt`), the struct field lookup fails because `nodes_Decl` is not in the parser's field table. The string-name heuristic (`self_is_string_field_name`) covers common field names but is fragile.
 
-**6 — True self-host** — Compile the compiler with itself via `mtc combine` + GCC.
+Three approaches to cross-module types:
 
-### Longer-term
+**A. Combine-flow pre-scan (target: ~50 errors):** Before the combine lowering loop in `main.mt`, parse all files and accumulate type maps from all modules into a shared registry. Pass this registry to each file's Lowerer before lowering. Directly fixes struct field lookup across modules. Also fixes `SymbolKind` undeclared (needs enum forward decl from another module's output).
 
-**7. Import resolution** — `source_root` in `package.toml`. **8. Platform variants**. **9. CFG**.
+**B. Method return type lookup debugging (target: ~27 errors):** Investigate why `self_infer_expr_type` for `this.method()` calls returns "" for some methods. May be a comparison bug, a `type_pool` overflow issue, or a `current_receiver_type` lifetime problem. Could be diagnosed by checking `method_lookup_receivers` size after `build_type_maps`.
 
-## 11. Test Commands
+**C. Vec element type tracking (target: ~32 errors):** When a `Vec[T]` is created, record the element type `T` alongside the Vec variable in scope. Then `.get(i)` can emit a typed dereference instead of returning `void*`. This would also let `read()` generate properly-typed code in non-return contexts.
+
+### Recommended Implementation Order
+
+1. **Fix method return type lookup** (smallest effort, ~27 errors): Debug `self_infer_expr_type` for `this.method()` calls. Add a manual check: if the lookup fails but `current_receiver_type` is set, force a second scan with looser matching.
+
+2. **Cross-module type pre-scan** (medium, ~50-80 errors): Modify `main.mt` combine flow to do a pre-pass that accumulates all struct/enum declarations across files into a shared type registry. Pass the registry to each file's lowerer. This fixes struct field lookup, `SymbolKind`, and other cross-module type references.
+
+3. **Vec element type tracking** (medium, ~32 errors): Store element type alongside Vec creation in scope. Extend `.get()` lowering to use the typed element info instead of `sizeof(void*)`.
+
+4. **Return type cascade** (small): Ensure `current_return_type` is set for all function paths, including `const_decl` with bodies and `var_decl` initializers.
+
+5. **True self-host** (remaining ~300 errors): After steps 1-4, the error count should be in the ~200-300 range. The remaining errors are mostly type cascade failures from `auto` pollution — fixing the first few type annotations correctly allows the rest to propagate. At this point, `gcc -o mtc_selfhost /tmp/mtc.c` should succeed.
+
+## 12. Test Commands
 
 ```sh
 # Build
