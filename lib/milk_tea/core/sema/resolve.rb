@@ -1418,45 +1418,12 @@ module MilkTea
       end
 
       def validate_specialized_function_type!(type, function_name:, context:)
-        case type
-        when nil, Types::Primitive, Types::Enum, Types::Flags, Types::Opaque, Types::Struct
-          nil
-        when Types::LiteralTypeArg
-          raise_sema_error("#{context} of function #{function_name} must be a type, got #{type}")
-        when Types::TypeVar
-          raise_sema_error("cannot infer type argument #{type.name} for function #{function_name}")
-        when Types::Nullable
-          validate_specialized_function_type!(type.base, function_name:, context:)
-        when Types::GenericInstance
-          validate_generic_type!(type.name, type.arguments)
-          type.arguments.each do |argument|
-            next if argument.is_a?(Types::LiteralTypeArg)
-
-            validate_specialized_function_type!(argument, function_name:, context:)
-          end
-        when Types::Span
-          validate_specialized_function_type!(type.element_type, function_name:, context:)
-        when Types::Task
-          validate_specialized_function_type!(type.result_type, function_name:, context:)
-        when Types::Proc
-          type.params.each do |param|
-            validate_specialized_function_type!(param.type, function_name:, context: "#{context} parameter #{param.name}")
-          end
-          validate_specialized_function_type!(type.return_type, function_name:, context: "#{context} return type")
-        when Types::StructInstance
-          type.arguments.each do |argument|
-            next if argument.is_a?(Types::LiteralTypeArg)
-
-            validate_specialized_function_type!(argument, function_name:, context:)
-          end
-        when Types::Function
-          type.params.each do |param|
-            validate_specialized_function_type!(param.type, function_name:, context: "#{context} parameter #{param.name}")
-            validate_specialized_function_type!(param.boundary_type, function_name:, context: "#{context} boundary parameter #{param.name}") if param.boundary_type
-          end
-          validate_specialized_function_type!(type.return_type, function_name:, context: "#{context} return type")
-          validate_specialized_function_type!(type.receiver_type, function_name:, context: "#{context} receiver type") if type.receiver_type
-        end
+        ValidateSpecializedTypeVisitor.new(
+          function_name:,
+          context:,
+          on_error: ->(msg) { raise_sema_error(msg) },
+          on_generic_instance: ->(name, args) { validate_generic_type!(name, args) },
+        ).visit(type)
       end
 
       def substitute_type(type, substitutions)
