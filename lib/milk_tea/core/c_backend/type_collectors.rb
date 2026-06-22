@@ -262,11 +262,11 @@ module MilkTea
 
           def collect_soa_type(type, soa_types, visited)
             return unless type
-            return if visited[type.object_id]
+            return if visited[type]
 
             if type.is_a?(Types::SoA)
               soa_types << type
-              visited[type.object_id] = true
+              visited[type] = true
             end
           end
 
@@ -311,11 +311,11 @@ module MilkTea
 
           def r_collect_tuple_type(type, tuple_types, visited)
             return unless type
-            return if visited[type.object_id]
+            return if visited[type]
             return unless type.is_a?(Types::Tuple)
 
             tuple_types << type
-            visited[type.object_id] = true
+            visited[type] = true
             type.element_types.each { |et| r_collect_tuple_type(et, tuple_types, visited) }
           end
 
@@ -1302,9 +1302,9 @@ module MilkTea
 
           def collect_span_type(type, span_types, visited)
             return unless type
-            return if visited[type.object_id]
+            return if visited[type]
 
-            visited[type.object_id] = true
+            visited[type] = true
 
             case type
             when Types::Nullable
