@@ -765,20 +765,36 @@ extending Parser:
 
         let base = this.parse_type_primary()
 
+        var has_mod = false
+        var mod_prefix: ast.IdentId
         if base_tok.kind == T.tk_eof:
             return base
         if this.cur.at_end():
             return base
+
+        unsafe:
+            match read(base):
+                ast.Type.qualified_type(module_id, type_name, _):
+                    base_tok.ident = type_name
+                    mod_prefix = module_id
+                    has_mod = true
+                _:
+                    pass
+
         if this.cur.current().kind != T.tk_lbracket:
             return base
 
         this.cur.advance()
-        let result = this.parse_type_constructor(base_tok)
+        let result = this.parse_type_constructor(base_tok, has_mod, mod_prefix)
         this.expect(T.tk_rbracket)
         return result
 
 
-    editable function parse_type_constructor(base_tok: token_mod.Token) -> ptr[ast.Type]:
+    editable function parse_type_constructor(
+        base_tok: token_mod.Token,
+        has_mod: bool,
+        mod_prefix: ast.IdentId,
+    ) -> ptr[ast.Type]:
         if this.is_type_ptr(base_tok):
             let pointee = this.parse_type()
             return this.new_type(ast.Type.pointer_type(
@@ -821,12 +837,19 @@ extending Parser:
                 loc = this.make_loc(base_tok.start, this.cur_end()),
             ))
 
-        ## Generic type with args: Name[T1, T2, ...]
+        ## Generic type with args: Name[T1, T2, ...] or Module.Name[T1, T2, ...]
         var type_args = vec.Vec[ptr[ast.Type]].create()
         type_args.push(this.parse_type())
         while not this.cur.at_end() and this.cur.current().kind == T.tk_comma:
             this.cur.advance()
             type_args.push(this.parse_type())
+        if has_mod:
+            return this.new_type(ast.Type.qualified_generic_type(
+                module_id = mod_prefix,
+                name = base_tok.ident,
+                args = this.span_of_type_ptrs(ref_of(type_args)),
+                loc = this.make_loc(base_tok.start, this.cur_end()),
+            ))
         return this.new_type(ast.Type.generic_type(
             name = base_tok.ident,
             args = this.span_of_type_ptrs(ref_of(type_args)),

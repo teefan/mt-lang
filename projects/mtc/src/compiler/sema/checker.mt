@@ -36,7 +36,11 @@ public struct Checker:
     bool_id: TypeId
     void_id: TypeId
     str_id: TypeId
+    cstr_id: TypeId
     errors: vec.Vec[str]
+    vec_id: IdentId
+    map_id: IdentId
+
 
 
 public function create(
@@ -57,6 +61,8 @@ public function create(
         void_id = TypeId<-0,
         str_id = TypeId<-0,
         errors = vec.Vec[str].create(),
+        vec_id = 0,
+        map_id = 0,
     )
     c.init_builtins(interner_ref)
     return c
@@ -85,6 +91,8 @@ extending Checker:
         this.register_typename(interner_ref.intern("bool"), this.bool_id)
         this.register_typename(interner_ref.intern("void"), this.void_id)
         this.register_typename(interner_ref.intern("str"), this.str_id)
+        this.vec_id = interner_ref.intern("Vec")
+        this.map_id = interner_ref.intern("Map")
 
 
     editable function register_typename(name: IdentId, tid: TypeId) -> void:
@@ -214,6 +222,10 @@ extending Checker:
                 ast.Type.nullable_type(inner, _):
                     let inner_tid = this.resolve_type(inner)
                     return this.registry.nullable(inner_tid)
+                ast.Type.generic_type(name, args, _):
+                    return this.resolve_generic(name, 0, args)
+                ast.Type.qualified_generic_type(module_id, name, args, _):
+                    return this.resolve_generic(name, module_id, args)
                 _:
                     return TypeId<-0
 
@@ -350,6 +362,19 @@ extending Checker:
                                 return TypeId<-0
                 _:
                     return TypeId<-0
+
+
+    editable function resolve_generic(name: IdentId, module_id: IdentId, args: span[ptr[ast.Type]]) -> TypeId:
+        if args.len == 0:
+            return TypeId<-0
+        if name == this.vec_id and args.len == 1:
+            let elem = this.resolve_type(unsafe: read(args.data + 0))
+            return this.registry.vec(elem)
+        if name == this.map_id and args.len == 2:
+            let k = this.resolve_type(unsafe: read(args.data + 0))
+            let v = this.resolve_type(unsafe: read(args.data + 1))
+            return this.registry.map(k, v)
+        return TypeId<-0
 
 
     function check_binary(

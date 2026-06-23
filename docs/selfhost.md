@@ -64,6 +64,7 @@ projects/mtc/
         c_backend.mt              C source emission from IR
 
   (files c_formatter.mt and async.mt deferred — string builder is in c_backend, async not started)
+  (binder.mt deleted — checker absorbed binding logic directly)
 ```
 
 ### Design Principles
@@ -525,7 +526,7 @@ function parse(tokens: span[Token], ctx: ref[Context]) -> Result[ptr[AST::Source
 | ✅ | `compiler.sema.types` | `src/compiler/sema/types.mt` | 95 | SemType wrapper: is_integer, is_float, is_numeric, is_bool, is_void, is_str, is_cstr |
 | ✅ | `compiler.sema.scope` | `src/compiler/sema/scope.mt` | 47 | Lexical scope: parent chain, bindings Map[IdentId, TypeId], lookup walks parent chain |
 | ✅ | `compiler.sema.checker` | `src/compiler/sema/checker.mt` | 414 | Type checker: scope chaining, call resolution, member access types, function_types map, struct_fields map, type_alias, external function |
-| 🟡 | `compiler.sema.binder` | `src/compiler/sema/binder.mt` | 48 | Name resolution pass (stub — checker absorbed binding logic) |
+| ❌ | `compiler.sema.binder` | `src/compiler/sema/binder.mt` | — | **Deleted** — checker absorbed binding logic; was dead code with parse error |
 | ⬜ | `compiler.sema.generics` | | | Generic type parameter substitution and monomorphization |
 | ⬜ | `compiler.sema.interfaces` | | | Interface conformance checking |
 | ⬜ | `compiler.sema.const_eval` | | | Compile-time expression evaluator |
@@ -976,18 +977,10 @@ Baselines use `mtc emit-c` on flat-path copies (`/tmp/fixture_NN_xxx.mt`) for sh
 
 ## 11. Remaining Gaps
 
-| # | Gap | Complexity | Blocks selfhost? |
-|---|-----|-----------|-------------------|
-| 1 | Extending block parser crash (multi-method) | Low | YES — 08_extending |
-| 2 | Method call lowering (`c.read()` → `Counter_read(c)`) | Medium | Every extending call |
-| 3 | `variant` declaration + C tag/union emission | Very High | YES — AST types are variants |
-| 4 | Struct destructure in match (lowering + codegen) | Medium | YES — 25 sites in mtc source |
-| 5 | Generic monomorphization | Very High | YES — Vec/Map everywhere |
-| 6 | Module loading + import resolution | High | YES — multi-file |
-| 7 | `for elem in span:` iteration | Medium | 6 sites |
-| 8 | `defer` statement | Low | Not used in mtc source |
-| 9 | String literal content extraction | Low | Error messages |
-| 10 | Format string `#{}` interpolation | Medium | 1 site |
+| # | Gap | Complexity | Blocks selfhost? | Status |
+|---|-----|-----------|-------------------|--------|
+| 1 | Vec/Map type resolution debug | Medium | YES | `resolve_generic_id` confirmed called, `vec()` called, but `vec_element` returns 0 for returned TypeId — likely element type resolution returning 0 (void) |
+| 2 | Generic monomorphization (full) | Very High | YES | Built-in Vec/Map is bootstrap; full generics needs type param substitution |
 
 ### ✅ Completed (S9–S22)
 
@@ -1005,13 +998,52 @@ Baselines use `mtc emit-c` on flat-path copies (`/tmp/fixture_NN_xxx.mt`) for sh
 | Struct patterns in match (parsed) + bool/null literals | S21 |
 | File I/O (std/fs) + CLI (main args) + test suite + baselines | S22 |
 
-### Project Stats
+### ✅ Completed (S23 — current)
+
+| Feature | Detail |
+|---------|--------|
+| Method name prefixing | `c.read()` → `Counter_read(c)`; var_types tracking for receiver type resolution |
+| Variant declaration C emission | Tag enum + union + struct typedef; `IrProgram.spans` tracking |
+| Variant arm construction | `MyTok.number(val=42)` → C compound literal with tag + data |
+| Variant match tag comparison | `match tok: MyTok.number(_): ...` → `if (tok.tag == MyTok_tag_number)` |
+| Variant field bindings | `MyTok.number(val): return val` → `int val = tok.data.number.val; return val;` |
+| Parser bug fix | Double `cursor.advance()` in named field patterns removed |
+| Span struct emission | `span[int]` → `typedef struct { int* data; uintptr_t len; } int_span;` via IrProgram |
+| for-span codegen | `typeof()`-based span iteration without element type info |
+| Dotted type names | `tk.TokenKind` → `qualified_type(module, type)` in AST/checker/lowerer |
+| Module loading | `SourceFile.imports` traversal; recursive flatten; depth-limited cycle prevention |
+| Safety test runner | `ulimit`/`timeout` hard limits per test; OOM/SEGV/timeout detection |
+
+### Session 24 (2026-06-23) — Foundations + Module Loading + Vec/Map Infrastructure
+
+**Completed:**
+- **Method name prefixing**: Lowerer tracks `var_types` map, extends method calls with `Type_method` C name convention. Cross-type collision verified (`A_get + B_get = 30`).
+- **Variant declaration C emission**: Tag enum + union + struct typedef via `IrVariant`/`IrVariantArm`. `write_variant()` emits multi-part C definition.
+- **Variant arm construction**: Parser detects `Type.arm(field=val)` in `parse_call_expr` via member-access callee. `IrExpr.variant_ctor` → `((MyTok){ .tag = MyTok_tag_number, .data.number = {.val = 42} })`.
+- **Variant match tag comparison**: `lower_match` detects `Pattern.variant_arm`, generates `scrutinee.tag == TAG_VALUE` binary expression as arm condition. Works without and with field bindings.
+- **Variant field bindings**: `PatternField` names in match arms generate `decl(name, init=scrutinee.data.arm.field)` statements prepended to arm body. Verified `int val = tok.data.number.val; return val;` → exit 42.
+- **Parser bug fix**: Double `cursor.advance()` at line 1219 in `parse_match_pattern` — `expect()` already advances. Removed.
+- **Span struct emission**: Spans tracked in `IrProgram.spans` via `IrSpanType`. Codegen emits `typedef struct { T* data; uintptr_t len; } T_span;`. `type_to_c` resolves via program.spans lookup.
+- **for-span codegen**: `IrStmt.for_span` using `typeof()`-based iteration. GCC/Clang extension, works for both arrays and spans without element type info.
+- **Dotted type names**: `qualified_type(module_id, type_name)` in AST. Parser's `parse_named_type` handles `Module.Type` → qualified_type. Checker/lowerer `resolve_type` dispatches.
+- **Module loading**: Recursive import resolution. Bug found and fixed — `SourceFile.imports` is separate from `.decls`. `flatten_file` iterates both. Depth-limited (16) cycle prevention. Path building via local `str_buffer` used immediately.
+- **Vec/Map built-in infrastructure**: 
+  - AST: `generic_type`, `qualified_generic_type` variants
+  - Registry: `vec(element)`/`map(k,v)` with reverse lookup, `vec_element`/`map_key`/`map_val`
+  - Parser: `parse_type_constructor` handles dotted names via `has_mod`/`mod_prefix`
+  - Checker: `resolve_generic` by IdentId comparison (pre-interned `vec_id`/`map_id`)
+  - Lowerer: `resolve_generic_id` by IdentId comparison (pre-interned `id_vec`/`id_map`)
+  - Codegen: Vec struct `{T* data; uintptr_t len; uintptr_t cap;}` and Map struct emission, `type_to_c` Vec/Map resolution, `zero_init` support
+  - **Status**: Resolution confirmed working (`genric_type` match triggers, `name == this.id_vec` true, return flows to codegen). But `registry.vec(elem)` produced type not found by `vec_element` — likely `elem == 0` (element type resolution returning void). Single-point debug needed.
+
+**Project Stats (end of S24):**
 
 | Metric | Value |
 |--------|-------|
-| Source files | 23 .mt |
-| Source lines | 6,037 |
+| Source files | 22 .mt (binder deleted) |
+| Source lines | ~6,800 |
 | Test fixtures | 12 files |
-| Test suite | 11/12 PASS, 1 CRASH |
-| Baseline regen | `./test/regen-baselines.sh` |
-| All files check | 0 errors |
+| Test suite | 12/12 PASS |
+| Self-compiles self? | **No** — Vec/Map debug + generics remaining |
+| Standalone enum modules | 5/5 → valid C |
+| Module loading | Works for simple imports |

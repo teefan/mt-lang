@@ -49,6 +49,15 @@ struct NullableRevEntry:
     inner: TypeId
     id: TypeId
 
+struct VecEntry:
+    element: TypeId
+    id: TypeId
+
+struct MapEntry:
+    key_type: TypeId
+    val_type: TypeId
+    id: TypeId
+
 public struct Registry:
     counter: TypeId
     primitives: vec.Vec[TypeId]
@@ -67,6 +76,8 @@ public struct Registry:
     span_rev: vec.Vec[SpanRevEntry]
     ref_rev: vec.Vec[RefRevEntry]
     nullable_rev: vec.Vec[NullableRevEntry]
+    vecs: vec.Vec[VecEntry]
+    maps: vec.Vec[MapEntry]
 
 
 public function create() -> Registry:
@@ -92,6 +103,8 @@ public function create() -> Registry:
         span_rev = vec.Vec[SpanRevEntry].with_capacity(16),
         ref_rev = vec.Vec[RefRevEntry].with_capacity(8),
         nullable_rev = vec.Vec[NullableRevEntry].with_capacity(8),
+        vecs = vec.Vec[VecEntry].with_capacity(16),
+        maps = vec.Vec[MapEntry].with_capacity(16),
     )
     r.init_primitives()
     return r
@@ -272,6 +285,67 @@ extending Registry:
             if entry.id == tid:
                 return entry.is_const
         return false
+
+
+    public editable function vec(element: TypeId) -> TypeId:
+        var ei: ptr_uint = 0
+        while ei < this.vecs.len:
+            let entry = this.vecs.at(ei) else:
+                break
+            if entry.element == element:
+                return entry.id
+            ei += 1
+        this.counter += 1
+        let id = TypeId<-this.counter
+        this.vecs.push(VecEntry(element = element, id = id))
+        return id
+
+
+    public function vec_element(tid: TypeId) -> TypeId:
+        var ei: ptr_uint = 0
+        while ei < this.vecs.len:
+            let entry = this.vecs.at(ei) else:
+                return TypeId<-0
+            if entry.id == tid:
+                return entry.element
+            ei += 1
+        return TypeId<-0
+
+
+    public editable function map(key_type: TypeId, val_type: TypeId) -> TypeId:
+        var ei: ptr_uint = 0
+        while ei < this.maps.len:
+            let entry = this.maps.at(ei) else:
+                break
+            if entry.key_type == key_type and entry.val_type == val_type:
+                return entry.id
+            ei += 1
+        this.counter += 1
+        let id = TypeId<-this.counter
+        this.maps.push(MapEntry(key_type = key_type, val_type = val_type, id = id))
+        return id
+
+
+    public function map_key(tid: TypeId) -> TypeId:
+        var ei: ptr_uint = 0
+        while ei < this.maps.len:
+            let entry = this.maps.at(ei) else:
+                return TypeId<-0
+            if entry.id == tid:
+                return entry.key_type
+            ei += 1
+        return TypeId<-0
+
+
+    public function map_val(tid: TypeId) -> TypeId:
+        var ei: ptr_uint = 0
+        while ei < this.maps.len:
+            let entry = this.maps.at(ei) else:
+                return TypeId<-0
+            if entry.id == tid:
+                return entry.val_type
+            ei += 1
+        return TypeId<-0
 
 
     public function span_element(tid: TypeId) -> TypeId:

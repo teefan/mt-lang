@@ -136,6 +136,7 @@ public variant Type:
     nullable_type(inner: ptr[Type], loc: Span)
     tuple_type(elements: span[ptr[Type]], loc: Span)
     generic_type(name: IdentId, args: span[ptr[Type]], loc: Span)
+    qualified_generic_type(module_id: IdentId, name: IdentId, args: span[ptr[Type]], loc: Span)
     error_type(loc: Span)
 
 
