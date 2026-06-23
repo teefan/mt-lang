@@ -48,7 +48,7 @@ module MilkTea
         arms = []
         skip_newlines
         until check(:dedent) || eof?
-          arms << parse_match_expression_arm
+          arms.concat(parse_match_expression_arm)
           skip_newlines
         end
 
@@ -57,11 +57,15 @@ module MilkTea
       end
 
       def parse_match_expression_arm
-        pattern = if match(:else)
-                     AST::Identifier.new(name: "_", line: previous.line, column: previous.column)
-                   else
-                     parse_expression
-                   end
+        patterns = []
+        if match(:else)
+          patterns << AST::Identifier.new(name: "_", line: previous.line, column: previous.column)
+        else
+          patterns << parse_bitwise_xor
+          while match(:pipe)
+            patterns << parse_bitwise_xor
+          end
+        end
         binding_token = nil
         binding_name = if match(:as)
                          binding_token = consume_name("expected binding name after 'as'")
@@ -70,13 +74,15 @@ module MilkTea
         consume(:colon, "expected ':' after match expression arm pattern")
         value = parse_expression
         consume_end_of_statement unless block_expression?(value)
-        AST::MatchExprArm.new(
-          pattern:,
-          binding_name:,
-          binding_line: binding_token&.line,
-          binding_column: binding_token&.column,
-          value:,
-        )
+        patterns.map do |pattern|
+          AST::MatchExprArm.new(
+            pattern:,
+            binding_name:,
+            binding_line: binding_token&.line,
+            binding_column: binding_token&.column,
+            value:,
+          )
+        end
       end
 
       def parse_unsafe_expression

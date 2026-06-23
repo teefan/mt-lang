@@ -281,7 +281,7 @@ module MilkTea
       def parse_match_arm_body(arms = [])
         skip_newlines
         until check(:dedent) || eof?
-          arms << parse_match_arm
+          arms.concat(parse_match_arm)
           skip_newlines
         end
 
@@ -289,27 +289,32 @@ module MilkTea
       end
 
       def parse_match_arm
-        pattern = nil
+        patterns = []
         binding_token = nil
         binding_name = nil
 
         if match(:else)
-          pattern = AST::Identifier.new(name: "_", line: previous.line, column: previous.column)
+          patterns << AST::Identifier.new(name: "_", line: previous.line, column: previous.column)
         else
-          pattern = parse_expression
+          patterns << parse_bitwise_xor
+          while match(:pipe)
+            patterns << parse_bitwise_xor
+          end
         end
         binding_name = if match(:as)
                          binding_token = consume_name("expected binding name after 'as'")
                          binding_token.lexeme
                        end
         body = parse_block
-        AST::MatchArm.new(
-          pattern:,
-          binding_name:,
-          binding_line: binding_token&.line,
-          binding_column: binding_token&.column,
-          body:,
-        )
+        patterns.map do |pattern|
+          AST::MatchArm.new(
+            pattern:,
+            binding_name:,
+            binding_line: binding_token&.line,
+            binding_column: binding_token&.column,
+            body:,
+          )
+        end
       rescue ParseError => e
         raise unless @recovery_errors
 

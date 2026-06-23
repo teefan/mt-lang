@@ -2,7 +2,7 @@
 ##
 ## Prefix convention: `op_` for binary ops, `uop_` for unary ops.
 
-enum BinaryOp: int
+public enum BinaryOp: int
     # arithmetic
     op_add = 0
     op_sub = 1
@@ -30,7 +30,7 @@ enum BinaryOp: int
     op_logic_or = 17
 
 
-enum UnaryOp: int
+public enum UnaryOp: int
     uop_negate = 0
     uop_bit_not = 1
     uop_logic_not = 2
