@@ -32,6 +32,23 @@ struct NamedEntry:
     name: ptr_uint
     id: TypeId
 
+struct PtrRevEntry:
+    pointee: TypeId
+    is_const: bool
+    id: TypeId
+
+struct SpanRevEntry:
+    element: TypeId
+    id: TypeId
+
+struct RefRevEntry:
+    element: TypeId
+    id: TypeId
+
+struct NullableRevEntry:
+    inner: TypeId
+    id: TypeId
+
 public struct Registry:
     counter: TypeId
     primitives: vec.Vec[TypeId]
@@ -44,6 +61,12 @@ public struct Registry:
     functions: vec.Vec[FnEntry]
     tuples: vec.Vec[TupleEntry]
     named: vec.Vec[NamedEntry]
+    alias_map: map.Map[ptr_uint, TypeId]
+
+    ptr_rev: vec.Vec[PtrRevEntry]
+    span_rev: vec.Vec[SpanRevEntry]
+    ref_rev: vec.Vec[RefRevEntry]
+    nullable_rev: vec.Vec[NullableRevEntry]
 
 
 public function create() -> Registry:
@@ -64,6 +87,11 @@ public function create() -> Registry:
         functions = vec.Vec[FnEntry].with_capacity(32),
         tuples = vec.Vec[TupleEntry].with_capacity(8),
         named = vec.Vec[NamedEntry].with_capacity(32),
+        alias_map = map.Map[ptr_uint, TypeId].with_capacity(16),
+        ptr_rev = vec.Vec[PtrRevEntry].with_capacity(32),
+        span_rev = vec.Vec[SpanRevEntry].with_capacity(16),
+        ref_rev = vec.Vec[RefRevEntry].with_capacity(8),
+        nullable_rev = vec.Vec[NullableRevEntry].with_capacity(8),
     )
     r.init_primitives()
     return r
@@ -121,6 +149,7 @@ extending Registry:
                 this.counter += 1
                 let id = TypeId<-this.counter
                 let _ = this.const_ptr_of.set(key, id)
+                this.ptr_rev.push(PtrRevEntry(pointee = pointee, is_const = true, id = id))
                 return id
             unsafe:
                 return read(existing)
@@ -129,6 +158,7 @@ extending Registry:
             this.counter += 1
             let id = TypeId<-this.counter
             let _ = this.ptr_of.set(key, id)
+            this.ptr_rev.push(PtrRevEntry(pointee = pointee, is_const = false, id = id))
             return id
         unsafe:
             return read(existing)
@@ -140,6 +170,7 @@ extending Registry:
             this.counter += 1
             let id = TypeId<-this.counter
             let _ = this.ref_of.set(key, id)
+            this.ref_rev.push(RefRevEntry(element = pointee, id = id))
             return id
         unsafe:
             return read(existing)
@@ -151,6 +182,7 @@ extending Registry:
             this.counter += 1
             let id = TypeId<-this.counter
             let _ = this.span_of.set(key, id)
+            this.span_rev.push(SpanRevEntry(element = element, id = id))
             return id
         unsafe:
             return read(existing)
@@ -162,6 +194,7 @@ extending Registry:
             this.counter += 1
             let id = TypeId<-this.counter
             let _ = this.nullable_of.set(key, id)
+            this.nullable_rev.push(NullableRevEntry(inner = inner, id = id))
             return id
         unsafe:
             return read(existing)
@@ -227,12 +260,63 @@ extending Registry:
         return tid == this.primitive(kind) and tid != TypeId<-0
 
 
+    public function pointer_pointee(tid: TypeId) -> TypeId:
+        for entry in this.ptr_rev.as_span():
+            if entry.id == tid:
+                return entry.pointee
+        return TypeId<-0
+
+
+    public function pointer_is_const(tid: TypeId) -> bool:
+        for entry in this.ptr_rev.as_span():
+            if entry.id == tid:
+                return entry.is_const
+        return false
+
+
+    public function span_element(tid: TypeId) -> TypeId:
+        for entry in this.span_rev.as_span():
+            if entry.id == tid:
+                return entry.element
+        return TypeId<-0
+
+
+    public function ref_pointee(tid: TypeId) -> TypeId:
+        for entry in this.ref_rev.as_span():
+            if entry.id == tid:
+                return entry.element
+        return TypeId<-0
+
+
+    public function nullable_inner(tid: TypeId) -> TypeId:
+        for entry in this.nullable_rev.as_span():
+            if entry.id == tid:
+                return entry.inner
+        return TypeId<-0
+
+
     public function lookup_named(name: ptr_uint) -> TypeId:
         ## Returns the existing TypeId for name, or 0 if not found.
+        ## Also checks aliases.
+        let aid = this.alias_map.get(name)
+        if aid != null:
+            unsafe: return read(aid)
         for entry in this.named.as_span():
             if entry.name == name:
                 return entry.id
         return TypeId<-0
+
+
+    public editable function set_alias(alias_name: ptr_uint, target: TypeId) -> void:
+        let _ = this.alias_map.set(alias_name, target)
+
+
+    public editable function register_named_with_id(name: ptr_uint, id: TypeId) -> void:
+        ## Register a named entry with a pre-assigned TypeId (for aliases).
+        for entry in this.named.as_span():
+            if entry.name == name:
+                return
+        this.named.push(NamedEntry(name = name, id = id))
 
 
     public editable function named_type(name: ptr_uint) -> TypeId:

@@ -264,6 +264,19 @@ extending Parser:
             i += 1
         return span[ast.IfBranch](data = storage, len = src.len)
 
+    editable function span_of_pattern_fields(src: ref[vec.Vec[ast.PatternField]]) -> span[ast.PatternField]:
+        if src.len == 0:
+            return span[ast.PatternField](data = zero[ptr[ast.PatternField]], len = 0)
+        let storage = this.arena.alloc[ast.PatternField](src.len) else:
+            fatal(c"parser: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"parser: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ast.PatternField](data = storage, len = src.len)
+
     ## ── module ──────────────────────────────────────────────────────
 
     editable function parse_module() -> ptr[ast.SourceFile]:
@@ -322,16 +335,26 @@ extending Parser:
     ## ── declarations ────────────────────────────────────────────────
 
     editable function parse_declaration() -> ptr[ast.Decl]:
-        let tok = this.cur.current()
+        var vis = ast.Visibility.priv
+        var tok = this.cur.current()
+        if tok.kind == T.tk_kw_public:
+            vis = ast.Visibility.pub
+            this.cur.advance()
+            tok = this.cur.current()
+
         match tok.kind:
             T.tk_kw_function:
-                return this.parse_function_def()
+                return this.parse_function_def(vis)
             T.tk_kw_struct:
-                return this.parse_struct_def()
+                return this.parse_struct_def(vis)
             T.tk_kw_enum:
-                return this.parse_enum_def()
+                return this.parse_enum_def(vis)
             T.tk_kw_extending:
                 return this.parse_extending()
+            T.tk_kw_type:
+                return this.parse_type_alias(vis)
+            T.tk_kw_external:
+                return this.parse_external_decl(vis)
             _:
                 this.skip_to_newline()
                 let loc = this.make_loc(tok.start, this.cur_end())
@@ -341,7 +364,7 @@ extending Parser:
 
     ## ── function definition ─────────────────────────────────────────
 
-    editable function parse_function_def() -> ptr[ast.Decl]:
+    editable function parse_function_def(vis: ast.Visibility) -> ptr[ast.Decl]:
         let start_tok = this.cur.current()
         this.expect(T.tk_kw_function)
 
@@ -376,8 +399,10 @@ extending Parser:
             this.cur.advance()
             ret_type = this.parse_type()
 
-        this.expect(T.tk_colon)
-        let body = this.parse_statements()
+        var body = zero[ptr[ast.Stmt]]
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_colon:
+            this.cur.advance()
+            body = this.parse_statements()
 
         if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
             this.cur.advance()
@@ -392,7 +417,7 @@ extending Parser:
             params = params_span,
             return_type = ret_type,
             body = body,
-            visibility = ast.Visibility.priv,
+            visibility = vis,
             is_async = false,
             is_const = false,
             loc = this.make_loc(start_tok.start, end),
@@ -402,7 +427,7 @@ extending Parser:
 
     ## ── struct definition ────────────────────────────────────────────
 
-    editable function parse_struct_def() -> ptr[ast.Decl]:
+    editable function parse_struct_def(vis: ast.Visibility) -> ptr[ast.Decl]:
         let start_tok = this.cur.current()
         this.expect(T.tk_kw_struct)
 
@@ -442,7 +467,7 @@ extending Parser:
         let decl = ast.Decl.struct_decl(
             name = name,
             fields = fields_span,
-            visibility = ast.Visibility.priv,
+            visibility = vis,
             loc = this.make_loc(start_tok.start, end),
         )
         return this.new_decl(decl)
@@ -450,7 +475,7 @@ extending Parser:
 
     ## ── enum definition ──────────────────────────────────────────────
 
-    editable function parse_enum_def() -> ptr[ast.Decl]:
+    editable function parse_enum_def(vis: ast.Visibility) -> ptr[ast.Decl]:
         let start_tok = this.cur.current()
         this.expect(T.tk_kw_enum)
 
@@ -496,13 +521,51 @@ extending Parser:
             name = name,
             backing = backing,
             members = members_span,
-            visibility = ast.Visibility.priv,
+            visibility = vis,
             loc = this.make_loc(start_tok.start, end),
         )
         return this.new_decl(decl)
 
 
-    ## ── extending ────────────────────────────────────────────────────
+    ## ── type alias ───────────────────────────────────────────────────
+
+    editable function parse_type_alias(vis: ast.Visibility) -> ptr[ast.Decl]:
+        let start_tok = this.cur.current()
+        this.expect(T.tk_kw_type)
+
+        let name_tok = this.cur.current()
+        this.expect(T.tk_identifier)
+        let name = name_tok.ident
+
+        this.expect(T.tk_equal)
+        let target = this.parse_type()
+
+        let end = this.cur_end()
+        let decl = ast.Decl.type_alias(
+            name = name,
+            target = target,
+            visibility = vis,
+            loc = this.make_loc(start_tok.start, end),
+        )
+        return this.new_decl(decl)
+
+
+    ## ── external declaration ──────────────────────────────────────────
+
+    editable function parse_external_decl(vis: ast.Visibility) -> ptr[ast.Decl]:
+        this.expect(T.tk_kw_external)
+
+        if this.cur.current().kind == T.tk_kw_function:
+            return this.parse_function_def(vis)
+        if this.cur.current().kind == T.tk_kw_var:
+            return this.parse_function_def(vis)
+
+        ## bare `external` keyword for external file header
+        let tok = this.cur.current()
+        this.skip_to_newline()
+        let loc = this.make_loc(tok.start, this.cur_end())
+        let decl = ast.Decl.error_decl(loc = loc)
+        return this.new_decl(decl)
 
     editable function parse_extending() -> ptr[ast.Decl]:
         let start_tok = this.cur.current()
@@ -1056,11 +1119,51 @@ extending Parser:
             let member_tok = this.cur.current()
             this.expect(T.tk_identifier)
             loc = this.make_loc(tok.start, member_tok.end)
+
+            var fields = vec.Vec[ast.PatternField].create()
+            if not this.cur.at_end() and this.cur.current().kind == T.tk_lparen:
+                this.cur.advance()
+                while true:
+                    let field_tok = this.cur.current()
+                    if field_tok.kind == T.tk_rparen:
+                        this.cur.advance()
+                        break
+                    if fields.len > 0:
+                        this.expect(T.tk_comma)
+                    if this.cur.current().kind == T.tk_rparen:
+                        this.cur.advance()
+                        break
+
+                    if this.is_wildcard(this.cur.current()):
+                        this.cur.advance()
+                        fields.push(ast.PatternField(
+                            name = 0,
+                            value = zero[ptr[ast.Expr]],
+                            is_guard = false,
+                            loc = this.make_loc(field_tok.start, this.cur_end()),
+                        ))
+                    else:
+                        this.expect(T.tk_identifier)
+                        this.cur.advance()
+                        var fvalue = zero[ptr[ast.Expr]]
+                        var fguard = false
+                        if not this.cur.at_end() and this.cur.current().kind == T.tk_equal:
+                            this.cur.advance()
+                            fvalue = this.parse_expression()
+                            fguard = true
+                        fields.push(ast.PatternField(
+                            name = field_tok.ident,
+                            value = fvalue,
+                            is_guard = fguard,
+                            loc = this.make_loc(field_tok.start, this.cur_end()),
+                        ))
+                loc = this.make_loc(tok.start, this.cur_end())
+
             let p = ast.Pattern.variant_arm(
                 type_name = name,
                 arm_name = member_tok.ident,
                 binding = 0,
-                fields = span[ast.PatternField](data = zero[ptr[ast.PatternField]], len = 0),
+                fields = this.span_of_pattern_fields(ref_of(fields)),
                 loc = loc,
             )
             return this.new_pattern(p)
@@ -1306,6 +1409,15 @@ extending Parser:
                 return this.alloc_error_expr(tok)
             T.tk_string:
                 return this.parse_string()
+            T.tk_kw_true:
+                this.cur.advance()
+                return this.new_expr(ast.Expr.bool_literal(value = true, loc = this.make_loc(tok.start, tok.end)))
+            T.tk_kw_false:
+                this.cur.advance()
+                return this.new_expr(ast.Expr.bool_literal(value = false, loc = this.make_loc(tok.start, tok.end)))
+            T.tk_kw_null:
+                this.cur.advance()
+                return this.new_expr(ast.Expr.null_literal(loc = this.make_loc(tok.start, tok.end)))
             T.tk_lparen:
                 return this.parse_paren_or_tuple()
             _:
@@ -1431,7 +1543,11 @@ extending Parser:
         let tok = this.cur.current()
         this.cur.advance()
         let loc = this.make_loc(tok.start, tok.end)
-        let e = ast.Expr.string_literal(text = "", is_cstr = false, loc = loc)
+        var is_cstr = tok.kind == T.tk_cstring
+        ## TODO: extract string content from source bytes and create str value.
+        ## Currently passes empty string; sufficient for error messages since the
+        ## self-hosted compiler only uses cstrings in fatal() calls.
+        let e = ast.Expr.string_literal(text = "", is_cstr = is_cstr, loc = loc)
         return this.new_expr(e)
 
 

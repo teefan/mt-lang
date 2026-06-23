@@ -17,6 +17,7 @@ struct CWriter:
     indent_level: ptr_uint
     registry: reg.Registry
     program: ir.IrProgram
+    type_buf: str_buffer[128]
 
 
 public function write_program(program: ir.IrProgram, registry: reg.Registry) -> str:
@@ -25,6 +26,7 @@ public function write_program(program: ir.IrProgram, registry: reg.Registry) -> 
         indent_level = 0,
         registry = registry,
         program = program,
+        type_buf = zero[str_buffer[128]],
     )
     w.write_program_impl()
     return w.buf.as_str()
@@ -93,7 +95,7 @@ extending CWriter:
 
     ## ── type → C name ──────────────────────────────────────────────
 
-    function type_to_c(tid: reg.TypeId) -> str:
+    editable function type_to_c(tid: reg.TypeId) -> str:
         if tid == reg.TypeId<-0:
             return "void"
         if this.registry.is_primitive(tid, P.pk_void):
@@ -130,6 +132,34 @@ extending CWriter:
             return "char*"
         if this.registry.is_primitive(tid, P.pk_cstr):
             return "char*"
+
+        ## Check pointer / span / ref / nullable types via registry reverse lookup.
+        let ptr_inner = this.registry.pointer_pointee(tid)
+        if ptr_inner != reg.TypeId<-0:
+            let inner_name = this.type_to_c(ptr_inner)
+            if this.registry.pointer_is_const(tid):
+                if this.registry.is_primitive(ptr_inner, P.pk_char):
+                    return "const char*"
+                this.type_buf.clear()
+                this.type_buf.append(inner_name)
+                this.type_buf.append("*")
+                return this.type_buf.as_str()
+            this.type_buf.clear()
+            this.type_buf.append(inner_name)
+            this.type_buf.append("*")
+            return this.type_buf.as_str()
+
+        let null_inner = this.registry.nullable_inner(tid)
+        if null_inner != reg.TypeId<-0:
+            return this.type_to_c(null_inner)
+
+        let span_elem = this.registry.span_element(tid)
+        if span_elem != reg.TypeId<-0:
+            return this.type_to_c(span_elem)
+
+        let ref_inner = this.registry.ref_pointee(tid)
+        if ref_inner != reg.TypeId<-0:
+            return this.type_to_c(ref_inner)
 
         ## Check structs / enums via IrProgram.
         var si: ptr_uint = 0
@@ -491,9 +521,48 @@ extending CWriter:
     ## ── helpers ────────────────────────────────────────────────────
 
     editable function write_int(value: int) -> void:
-        var buf: str_buffer[32]
-        buf.assign_format(f"#{value}")
-        this.buf.append(buf.as_str())
+        if value == 0:
+            this.buf.append("0")
+            return
+        var v: int = value
+        var neg: bool = false
+        if v < 0:
+            neg = true
+            v = 0 - v
+        var digits: array[int, 16]
+        var pos: int = 0
+        while v > 0:
+            digits[pos] = v % 10
+            pos += 1
+            v = v / 10
+        if neg:
+            this.buf.append("-")
+        pos -= 1
+        while true:
+            let d = digits[pos]
+            if d == 0:
+                this.buf.append("0")
+            else if d == 1:
+                this.buf.append("1")
+            else if d == 2:
+                this.buf.append("2")
+            else if d == 3:
+                this.buf.append("3")
+            else if d == 4:
+                this.buf.append("4")
+            else if d == 5:
+                this.buf.append("5")
+            else if d == 6:
+                this.buf.append("6")
+            else if d == 7:
+                this.buf.append("7")
+            else if d == 8:
+                this.buf.append("8")
+            else:
+                this.buf.append("9")
+            if pos == 0:
+                break
+            pos -= 1
 
 
     editable function write(text: str) -> void:

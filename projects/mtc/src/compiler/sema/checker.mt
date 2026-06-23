@@ -102,6 +102,8 @@ extending Checker:
                     this.check_enum(name, backing, members)
                 ast.Decl.extending_decl(type_name, methods, _):
                     this.check_extending(type_name, methods)
+                ast.Decl.type_alias(name, target, _, _):
+                    this.check_type_alias(name, target)
                 ast.Decl.import_decl(_):
                     pass
                 _:
@@ -135,6 +137,12 @@ extending Checker:
         this.register_typename(name, tid)
 
 
+    editable function check_type_alias(name: ast.IdentId, target: ptr[ast.Type]) -> void:
+        let tid = this.resolve_type(target)
+        this.register_typename(name, tid)
+        this.registry.set_alias(name, tid)
+
+
     editable function check_extending(type_name: ast.IdentId, methods: span[ast.ExtendingMethod]) -> void:
         let _ = this.lookup_typename(type_name)
         var mi: ptr_uint = 0
@@ -160,10 +168,11 @@ extending Checker:
                     let ret_id = this.resolve_type(return_type)
                     if ret_id == TypeId<-0:
                         let _ = this.add_error("unknown return type")
-                    this.check_block(body, scope_ptr, ret_id)
                     let _ = this.function_types.set(name, ret_id)
                     let glob_ptr = ptr_of(this.global_scope)
                     scope_mod.define(glob_ptr, name, ret_id)
+                    if body != zero[ptr[ast.Stmt]]:
+                        this.check_block(body, scope_ptr, ret_id)
                 _:
                     pass
 

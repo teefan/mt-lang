@@ -1,0 +1,5 @@
+function add(a: int, b: int) -> int:
+    return a + b
+
+function main() -> int:
+    return add(2, 3)

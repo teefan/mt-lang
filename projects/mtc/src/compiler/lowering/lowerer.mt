@@ -59,6 +59,8 @@ struct Lowerer:
     id_ptr_of: ast.IdentId
     id_zero: ast.IdentId
 
+    enum_names: vec.Vec[ast.IdentId]
+
 
 public function lower(
     file: ptr[ast.SourceFile],
@@ -71,6 +73,7 @@ public function lower(
         registry = registry,
         void_tid = registry.primitive(P.pk_void),
         in_editable = false,
+        enum_names = vec.Vec[ast.IdentId].with_capacity(8),
         id_void = 0, id_bool = 0, id_byte = 0, id_ubyte = 0,
         id_char = 0, id_short = 0, id_ushort = 0,
         id_int = 0, id_uint = 0, id_long = 0, id_ulong = 0,
@@ -144,6 +147,19 @@ extending Lowerer:
                         enums.push(e)
                     ast.Decl.extending_decl(type_name, methods, _):
                         this.lower_extending(type_name, methods, ref_of(functions))
+                    ast.Decl.type_alias(name, target, _, _):
+                        let tid = this.resolve_type_id(target)
+                        this.registry.register_named_with_id(name, tid)
+                    ast.Decl.import_decl(_):
+                        pass
+                    ast.Decl.const_decl(_, _, _, _, _):
+                        pass
+                    ast.Decl.var_decl(_, _, _, _, _):
+                        pass
+                    ast.Decl.variant_decl(_, _, _, _):
+                        pass
+                    ast.Decl.error_decl(_):
+                        pass
                     _:
                         pass
             i += 1
@@ -177,6 +193,7 @@ extending Lowerer:
     editable function lower_enum(name: ast.IdentId, members: span[ast.EnumMember]) -> ir.IrEnum:
         let cname = this.name_str(name)
         let tid = this.registry.named_type(name)
+        this.enum_names.push(name)
         var ir_members = vec.Vec[ir.IrEnumMember].create()
         var autoval: int = 0
         var i: ptr_uint = 0
@@ -616,11 +633,13 @@ extending Lowerer:
                     return ir.IrExpr.unary(op = op, operand = op_ptr)
                 ast.Expr.call(callee, args, _):
                     let ident = this.callee_ident(callee)
-                    if ident == this.id_fatal:
+                    let is_member = this.callee_is_member(callee)
+
+                    if not is_member and ident == this.id_fatal:
                         let cname = this.callee_name(callee)
                         var a = this.lower_args(args)
                         return ir.IrExpr.call(name = cname, args = this.copy_ir_exprs(ref_of(a)))
-                    if ident == this.id_read:
+                    if not is_member and ident == this.id_read:
                         var a = this.lower_args(args)
                         if args.len > 0:
                             let val_opt = a.at(0)
@@ -629,7 +648,7 @@ extending Lowerer:
                             let op_ptr = this.new_ir_expr(op)
                             return ir.IrExpr.deref(operand = op_ptr)
                         return ir.IrExpr.integer(value = 0)
-                    if ident == this.id_ptr_of:
+                    if not is_member and ident == this.id_ptr_of:
                         var a2 = this.lower_args(args)
                         if args.len > 0:
                             let val_opt2 = a2.at(0)
@@ -638,10 +657,25 @@ extending Lowerer:
                             let op_ptr2 = this.new_ir_expr(op2)
                             return ir.IrExpr.address(operand = op_ptr2)
                         return ir.IrExpr.integer(value = 0)
+
+                    if is_member:
+                        let recv = this.lower_member_receiver(callee)
+                        let mname = this.callee_name(callee)
+                        var combined = vec.Vec[ir.IrExpr].create()
+                        combined.push(recv)
+                        var ai: ptr_uint = 0
+                        while ai < args.len:
+                            let arg = unsafe: read(args.data + ai)
+                            combined.push(this.lower_expr(arg))
+                            ai += 1
+                        return ir.IrExpr.call(name = mname, args = this.copy_ir_exprs(ref_of(combined)))
+
                     let cname = this.callee_name(callee)
                     var a = this.lower_args(args)
                     return ir.IrExpr.call(name = cname, args = this.copy_ir_exprs(ref_of(a)))
                 ast.Expr.member_access(receiver, member, _):
+                    if this.is_enum_type_expr(receiver):
+                        return ir.IrExpr.name(name = this.name_str(member))
                     let rec = this.lower_expr(receiver)
                     let rp = this.new_ir_expr(rec)
                     if this.in_editable:
@@ -682,6 +716,40 @@ extending Lowerer:
                     return member
                 _:
                     return 0
+
+
+    function callee_is_member(expr: ptr[ast.Expr]) -> bool:
+        unsafe:
+            match read(expr):
+                ast.Expr.member_access(_, _, _):
+                    return true
+                _:
+                    return false
+
+
+    editable function lower_member_receiver(expr: ptr[ast.Expr]) -> ir.IrExpr:
+        unsafe:
+            match read(expr):
+                ast.Expr.member_access(receiver, _, _):
+                    return this.lower_expr(receiver)
+                _:
+                    return ir.IrExpr.integer(value = 0)
+
+
+    function is_enum_type_expr(expr: ptr[ast.Expr]) -> bool:
+        unsafe:
+            match read(expr):
+                ast.Expr.identifier(name, _):
+                    var ei: ptr_uint = 0
+                    while ei < this.enum_names.len:
+                        let ename = this.enum_names.at(ei) else:
+                            return false
+                        if ename == name:
+                            return true
+                        ei += 1
+                    return false
+                _:
+                    return false
 
 
     editable function lower_args(args: span[ptr[ast.Expr]]) -> vec.Vec[ir.IrExpr]:
