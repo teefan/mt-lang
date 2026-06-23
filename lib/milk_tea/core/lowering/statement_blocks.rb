@@ -188,7 +188,7 @@ module MilkTea
               lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
               lowered.concat(cleanup_statements)
               update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
-              local_defers.concat(prepared_cleanups)
+              local_defers.concat(suppress_format_releases_for_assignment(prepared_cleanups, target.type))
               next
             else
               value = if statement.operator == "="
@@ -216,7 +216,7 @@ module MilkTea
               value = IR::AddressOf.new(expression: IR::Name.new(name: temp_name, type: target.type.base, pointer: false), type: target.type.base)
             end
             update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
-            local_defers.concat(prepared_cleanups)
+            local_defers.concat(suppress_format_releases_for_assignment(prepared_cleanups, target.type))
             if statement.operator == "=" && contains_proc_storage_type?(target.type)
               # Materialize the RHS to a C temp to avoid evaluating aggregate literals multiple times
               # and to ensure retain/release operate on a stable struct value throughout the sequence.
