@@ -32,7 +32,7 @@ module MilkTea
           elsif const_value && (decl.block_body || decl.value.is_a?(AST::ExpressionList))
             value = lower_const_value_literal(type, const_value)
           elsif decl.block_body || decl.value.is_a?(AST::ExpressionList)
-            value = IR::IntegerLiteral.new(value: 0, type:)
+            raise LoweringError.new("constant #{decl.name} has no compile-time value", line: decl.line, column: decl.column)
           else
             value = lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
           end

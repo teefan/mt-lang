@@ -551,11 +551,6 @@ module MilkTea
       end
 
       def infer_layout_query_type(type_ref, context:)
-        if type_ref.name.parts.join(".") == "field.type"
-          $stderr.puts "!!! infer_layout_query_type called for field.type"
-          $stderr.puts caller.join("\n")
-          exit 1
-        end
         type = resolve_type_ref(type_ref)
         return type if sized_layout_type?(type)
 
