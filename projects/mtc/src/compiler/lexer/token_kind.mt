@@ -156,3 +156,5 @@ public enum TokenKind: int
     tk_kw_attribute_of = 120
     tk_kw_has_attribute = 121
     tk_kw_attribute_arg = 122
+
+    tk_larrow = 123

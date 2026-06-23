@@ -1,25 +1,35 @@
 ## IR — flat C-oriented intermediate representation.
+##
+## Types are represented as reg.TypeId (canonical integer IDs from
+## the type registry). The C backend resolves TypeId → C name at
+## emission time, enabling type-based decisions (zero-init, switch
+## vs if/else, . vs ->).
+
+import compiler.sema.type_registry as reg
+
+type TypeId = reg.TypeId
 
 public struct IrParam:
     name: str
-    type_c: str
+    type_id: TypeId
 
 
 public struct IrFunction:
     name: str
     params: span[IrParam]
-    return_c: str
+    return_type: TypeId
     body: span[IrStmt]
     is_editable: bool
 
 
 public struct IrField:
     name: str
-    type_c: str
+    type_id: TypeId
 
 
 public struct IrStruct:
     name: str
+    type_id: TypeId
     fields: span[IrField]
 
 
@@ -35,6 +45,7 @@ public struct IrEnumMember:
 
 public struct IrEnum:
     name: str
+    type_id: TypeId
     members: span[IrEnumMember]
 
 
@@ -43,9 +54,21 @@ public struct IrAggregateField:
     value: IrExpr
 
 
+public struct IrVariantArm:
+    name: str
+    fields: span[IrField]
+
+
+public struct IrVariant:
+    name: str
+    type_id: TypeId
+    arms: span[IrVariantArm]
+
+
 public struct IrProgram:
     structs: span[IrStruct]
     enums: span[IrEnum]
+    variants: span[IrVariant]
     functions: span[IrFunction]
 
 
@@ -53,7 +76,7 @@ public variant IrStmt:
     return_stmt(value: IrExpr)
     return_void
     expr_stmt(expr: IrExpr)
-    decl(name: str, type_c: str, init: IrExpr)
+    decl(name: str, type_id: TypeId, init: IrExpr)
     assign(target: str, op_kind: str, value: IrExpr)
     assign_expr(target: IrExpr, op_kind: str, value: IrExpr)
     if_stmt(condition: IrExpr, then_body: span[IrStmt], else_body: span[IrStmt])
@@ -78,3 +101,4 @@ public variant IrExpr:
     deref(operand: ptr[IrExpr])
     address(operand: ptr[IrExpr])
     aggregate(name: str, fields: span[IrAggregateField])
+    cast_expr(type_c: str, operand: ptr[IrExpr])

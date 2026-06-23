@@ -458,6 +458,9 @@ extending Lexer:
         if ch == '.' and token_is(p1, '.'):
             this.push_two_char(T.tk_dot_dot, start, line, col)
             return
+        if ch == '<' and token_is(p1, '-'):
+            this.push_two_char(T.tk_larrow, start, line, col)
+            return
         if ch == '<' and token_is(p1, '<'):
             this.push_two_char(T.tk_shift_left, start, line, col)
             return

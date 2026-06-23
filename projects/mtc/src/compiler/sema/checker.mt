@@ -1,4 +1,9 @@
 ## Checker — semantic analysis: name binding + type checking + diagnostics.
+##
+## Names are resolved via parent-chained scopes.  Top-level
+## functions and types are stored in global_scope; function bodies
+## create child scopes that chain to global.  Return types are
+## recorded in function_types for call resolution.
 
 import compiler.parser.ast as ast
 import compiler.parser.operators as ops_mod
@@ -22,6 +27,10 @@ public struct Checker:
     types: types_mod.Types
     global_scope: scope_mod.Scope
     type_names: map.Map[IdentId, TypeId]
+    ## return type for each named function / method (used by check_call)
+    function_types: map.Map[IdentId, TypeId]
+    ## struct field types: (struct_type_id, field_name) → field_type_id
+    struct_fields: map.Map[IdentId, TypeId]
     int_id: TypeId
     float_id: TypeId
     bool_id: TypeId
@@ -40,6 +49,8 @@ public function create(
         types = types_mod.create(ref_of(reg_copy)),
         global_scope = scope_mod.create(null),
         type_names = map.Map[IdentId, TypeId].with_capacity(32),
+        function_types = map.Map[IdentId, TypeId].with_capacity(64),
+        struct_fields = map.Map[IdentId, TypeId].with_capacity(64),
         int_id = TypeId<-0,
         float_id = TypeId<-0,
         bool_id = TypeId<-0,
@@ -87,6 +98,8 @@ extending Checker:
                     this.check_function(decl)
                 ast.Decl.struct_decl(name, fields, _, _):
                     this.check_struct(name, fields)
+                ast.Decl.enum_decl(name, backing, members, _, _):
+                    this.check_enum(name, backing, members)
                 ast.Decl.extending_decl(type_name, methods, _):
                     this.check_extending(type_name, methods)
                 ast.Decl.import_decl(_):
@@ -105,7 +118,21 @@ extending Checker:
                 let ft = this.resolve_type(field.type_ref)
                 if ft == TypeId<-0:
                     let _ = this.add_error("unknown type in struct field")
+                let _ = this.struct_fields.set(this.struct_field_key(tid, field.name), ft)
             i += 1
+
+
+    function struct_field_key(struct_tid: TypeId, field_name: IdentId) -> IdentId:
+        return ptr_uint<-struct_tid ^ field_name
+
+
+    editable function check_enum(
+        name: ast.IdentId,
+        backing_type: ptr[ast.Type],
+        members: span[ast.EnumMember],
+    ) -> void:
+        let tid = this.registry.named_type(name)
+        this.register_typename(name, tid)
 
 
     editable function check_extending(type_name: ast.IdentId, methods: span[ast.ExtendingMethod]) -> void:
@@ -114,10 +141,11 @@ extending Checker:
         while mi < methods.len:
             unsafe:
                 let method = read(methods.data + mi)
-                var fn_scope = scope_mod.create(null)
+                var fn_scope = scope_mod.create(ptr_of(this.global_scope))
                 let scope_ptr = ptr_of(fn_scope)
                 this.bind_params(method.params, scope_ptr)
                 let ret_id = this.resolve_type(method.return_type)
+                let _ = this.function_types.set(method.name, ret_id)
                 this.check_block(method.body, scope_ptr, ret_id)
             mi += 1
 
@@ -126,15 +154,16 @@ extending Checker:
         unsafe:
             match read(decl):
                 ast.Decl.function_def(name, _, params, return_type, body, _, _, _, _):
-                    var fn_scope = scope_mod.create(null)
+                    var fn_scope = scope_mod.create(ptr_of(this.global_scope))
                     let scope_ptr = ptr_of(fn_scope)
                     this.bind_params(params, scope_ptr)
                     let ret_id = this.resolve_type(return_type)
                     if ret_id == TypeId<-0:
                         let _ = this.add_error("unknown return type")
                     this.check_block(body, scope_ptr, ret_id)
+                    let _ = this.function_types.set(name, ret_id)
                     let glob_ptr = ptr_of(this.global_scope)
-                    scope_mod.define(glob_ptr, name, TypeId<-0)
+                    scope_mod.define(glob_ptr, name, ret_id)
                 _:
                     pass
 
@@ -159,9 +188,21 @@ extending Checker:
             match read(type_ref):
                 ast.Type.named_type(name, _):
                     return this.lookup_typename(name)
-                ast.Type.pointer_type(pointee, _, _):
+                ast.Type.pointer_type(pointee, is_const, _):
                     let inner = this.resolve_type(pointee)
-                    return this.registry.pointer(inner, false)
+                    return this.registry.pointer(inner, is_const)
+                ast.Type.ref_type(pointee, _):
+                    let inner = this.resolve_type(pointee)
+                    return this.registry.ref(inner)
+                ast.Type.span_type(element, _):
+                    let inner = this.resolve_type(element)
+                    return this.registry.span(inner)
+                ast.Type.array_type(element, size, _):
+                    let inner = this.resolve_type(element)
+                    return this.registry.array(inner, size)
+                ast.Type.nullable_type(inner, _):
+                    let inner_tid = this.resolve_type(inner)
+                    return this.registry.nullable(inner_tid)
                 _:
                     return TypeId<-0
 
@@ -202,11 +243,13 @@ extending Checker:
                     this.check_return(value, scope, expected_ret)
                 ast.Stmt.expression(expr, _):
                     let _ = this.check_expr(expr, scope)
-                ast.Stmt.local_decl(_, name, type_ref, value, _, _, _):
+                ast.Stmt.local_decl(_, name, type_ref, value, else_binding, else_body, _):
                     var tid = this.resolve_type(type_ref)
                     if tid == TypeId<-0 and value != zero[ptr[ast.Expr]]:
                         tid = this.check_expr(value, scope)
                     scope_mod.define(scope, name, tid)
+                    if else_body != zero[ptr[ast.Stmt]]:
+                        this.check_block(else_body, scope, this.void_id)
                 ast.Stmt.if_stmt(branches, else_body, _):
                     var bi: ptr_uint = 0
                     while bi < branches.len:
@@ -280,13 +323,20 @@ extending Checker:
                     return this.check_call(callee, args, scope)
                 ast.Expr.unary_op(_, operand, _):
                     return this.check_expr(operand, scope)
-                ast.Expr.member_access(receiver, _, _):
-                    let _ = this.check_expr(receiver, scope)
-                    return TypeId<-0
+                ast.Expr.member_access(receiver, member, _):
+                    return this.check_member(receiver, member, scope)
                 ast.Expr.null_literal(_):
                     return TypeId<-0
                 ast.Expr.aggregate(type_name, _, _):
                     return this.lookup_typename(type_name)
+                ast.Expr.cast_expr(target_type, expr, _):
+                    let _ = this.check_expr(expr, scope)
+                    unsafe:
+                        match read(target_type):
+                            ast.Type.named_type(name, _):
+                                return this.lookup_typename(name)
+                            _:
+                                return TypeId<-0
                 _:
                     return TypeId<-0
 
@@ -315,6 +365,15 @@ extending Checker:
         args: span[ptr[ast.Expr]],
         scope: ptr[scope_mod.Scope],
     ) -> TypeId:
+        var ret: TypeId = TypeId<-0
+        unsafe:
+            match read(callee):
+                ast.Expr.identifier(name, _):
+                    let stored = this.function_types.get(name)
+                    if stored != null:
+                        ret = read(stored)
+                _:
+                    pass
         let _ = this.check_expr(callee, scope)
         var i: ptr_uint = 0
         while i < args.len:
@@ -322,7 +381,23 @@ extending Checker:
                 let arg = read(args.data + i)
                 let _ = this.check_expr(arg, scope)
             i += 1
-        return TypeId<-0
+        return ret
+
+
+    function check_member(
+        receiver: ptr[ast.Expr],
+        member: ast.IdentId,
+        scope: ptr[scope_mod.Scope],
+    ) -> TypeId:
+        let recv_tid = this.check_expr(receiver, scope)
+        if recv_tid == TypeId<-0:
+            return TypeId<-0
+        let key = this.struct_field_key(recv_tid, member)
+        let ft = this.struct_fields.get(key)
+        if ft == null:
+            return TypeId<-0
+        unsafe:
+            return read(ft)
 
 
     editable function add_error(msg: str) -> ptr_uint:

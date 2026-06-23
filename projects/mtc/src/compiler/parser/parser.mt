@@ -8,6 +8,7 @@ import compiler.lexer.token_kind as tk
 import compiler.parser.ast as ast
 import compiler.parser.operators as ops_mod
 import compiler.parser.token_cursor as cursor_mod
+import std.intern
 import std.mem.arena
 import std.vec
 
@@ -18,6 +19,14 @@ struct Parser:
     cur: cursor_mod.Cursor
     arena: arena.Arena
     source: span[ubyte]
+    interner: ptr[intern.Interner]
+    ## Pre-interned type constructor names for O(1) ident comparison.
+    id_underscore: ast.IdentId
+    id_ptr: ast.IdentId
+    id_const_ptr: ast.IdentId
+    id_span: ast.IdentId
+    id_ref: ast.IdentId
+    id_array: ast.IdentId
 
 
 ## ── entry ───────────────────────────────────────────────────────────
@@ -25,12 +34,21 @@ struct Parser:
 public function parse(
     source: span[ubyte],
     tokens: span[token_mod.Token],
+    interner: ptr[intern.Interner],
 ) -> ptr[ast.SourceFile]:
     var p = Parser(
         cur = cursor_mod.create(tokens),
         arena = arena.create(256 * 1024),
         source = source,
+        interner = interner,
+        id_underscore = 0,
+        id_ptr = 0,
+        id_const_ptr = 0,
+        id_span = 0,
+        id_ref = 0,
+        id_array = 0,
     )
+    p.init_interned_ids()
     let file = p.parse_module()
     return file
 
@@ -40,6 +58,18 @@ public function parse(
 ## ── extending Parser ────────────────────────────────────────────────
 
 extending Parser:
+    ## ── interned identifiers ──────────────────────────────────────────
+
+    editable function init_interned_ids() -> void:
+        unsafe:
+            this.id_underscore = this.interner.intern("_")
+            this.id_ptr = this.interner.intern("ptr")
+            this.id_const_ptr = this.interner.intern("const_ptr")
+            this.id_span = this.interner.intern("span")
+            this.id_ref = this.interner.intern("ref")
+            this.id_array = this.interner.intern("array")
+
+
     ## ── arena helpers ───────────────────────────────────────────────
 
     editable function new_decl(value: ast.Decl) -> ptr[ast.Decl]:
@@ -575,11 +605,167 @@ extending Parser:
     ## ── type ────────────────────────────────────────────────────────
 
     editable function parse_type() -> ptr[ast.Type]:
+        let base = this.parse_type_suffix()
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_question:
+            let qmark = this.cur.current()
+            this.cur.advance()
+            let loc = this.make_loc(qmark.start, qmark.end)
+            let t = ast.Type.nullable_type(inner = base, loc = loc)
+            return this.new_type(t)
+        return base
+
+
+    editable function parse_type_suffix() -> ptr[ast.Type]:
+        ## Peek at the identifier BEFORE parsing, so we can dispatch on
+        ## type-constructor names (ptr / span / ref / etc.) after primary.
+        var base_tok: token_mod.Token
+        base_tok.kind = T.tk_eof
+        base_tok.ident = 0
+        base_tok.start = 0
+        base_tok.end = 0
+        base_tok.line = 0
+        base_tok.col = 0
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_identifier:
+            base_tok = this.cur.current()
+
+        let base = this.parse_type_primary()
+
+        if base_tok.kind == T.tk_eof:
+            return base
+        if this.cur.at_end():
+            return base
+        if this.cur.current().kind != T.tk_lbracket:
+            return base
+
+        this.cur.advance()
+        let result = this.parse_type_constructor(base_tok)
+        this.expect(T.tk_rbracket)
+        return result
+
+
+    editable function parse_type_constructor(base_tok: token_mod.Token) -> ptr[ast.Type]:
+        if this.is_type_ptr(base_tok):
+            let pointee = this.parse_type()
+            return this.new_type(ast.Type.pointer_type(
+                pointee = pointee,
+                is_const = false,
+                loc = this.make_loc(base_tok.start, this.cur_end()),
+            ))
+
+        if this.is_type_const_ptr(base_tok):
+            let pointee = this.parse_type()
+            return this.new_type(ast.Type.pointer_type(
+                pointee = pointee,
+                is_const = true,
+                loc = this.make_loc(base_tok.start, this.cur_end()),
+            ))
+
+        if this.is_type_span(base_tok):
+            let element = this.parse_type()
+            return this.new_type(ast.Type.span_type(
+                element = element,
+                loc = this.make_loc(base_tok.start, this.cur_end()),
+            ))
+
+        if this.is_type_ref(base_tok):
+            let pointee = this.parse_type()
+            return this.new_type(ast.Type.ref_type(
+                pointee = pointee,
+                loc = this.make_loc(base_tok.start, this.cur_end()),
+            ))
+
+        if this.is_type_array(base_tok):
+            let element = this.parse_type()
+            this.expect(T.tk_comma)
+            let size_tok = this.cur.current()
+            this.expect(T.tk_integer)
+            let size = this.read_ptruint(size_tok)
+            return this.new_type(ast.Type.array_type(
+                element = element,
+                size = size,
+                loc = this.make_loc(base_tok.start, this.cur_end()),
+            ))
+
+        ## Generic type with args: Name[T1, T2, ...]
+        var type_args = vec.Vec[ptr[ast.Type]].create()
+        type_args.push(this.parse_type())
+        while not this.cur.at_end() and this.cur.current().kind == T.tk_comma:
+            this.cur.advance()
+            type_args.push(this.parse_type())
+        return this.new_type(ast.Type.generic_type(
+            name = base_tok.ident,
+            args = this.span_of_type_ptrs(ref_of(type_args)),
+            loc = this.make_loc(base_tok.start, this.cur_end()),
+        ))
+
+
+    editable function parse_type_primary() -> ptr[ast.Type]:
+        let tok = this.cur.current()
+
+        if tok.kind == T.tk_kw_fn:
+            this.cur.advance()
+            return this.parse_fn_type(tok.start)
+
+        if tok.kind == T.tk_kw_proc:
+            this.cur.advance()
+            return this.parse_proc_type(tok.start)
+
+        return this.parse_named_type()
+
+
+    editable function parse_named_type() -> ptr[ast.Type]:
         let tok = this.cur.current()
         this.expect(T.tk_identifier)
         let loc = this.make_loc(tok.start, tok.end)
         let t = ast.Type.named_type(name = tok.ident, loc = loc)
         return this.new_type(t)
+
+
+    editable function expr_to_type(expr: ptr[ast.Expr]) -> ptr[ast.Type]:
+        ## Convert an identifier expression to a named_type reference.
+        ## Only used for <- cast left-hand-side.
+        unsafe:
+            match read(expr):
+                ast.Expr.identifier(name, loc):
+                    return this.new_type(ast.Type.named_type(name = name, loc = loc))
+                _:
+                    fatal(c"parser: expected type name before <-")
+
+
+    editable function parse_fn_type(start: ptr_uint) -> ptr[ast.Type]:
+        this.expect(T.tk_lparen)
+        var params = vec.Vec[ast.Param].create()
+        if this.cur.current().kind != T.tk_rparen:
+            params.push(this.parse_one_param())
+            while this.cur.current().kind == T.tk_comma:
+                this.cur.advance()
+                params.push(this.parse_one_param())
+        this.expect(T.tk_rparen)
+        this.expect(T.tk_arrow)
+        let ret = this.parse_type()
+        return this.new_type(ast.Type.fn_type(
+            params = this.span_of_params(ref_of(params)),
+            return_type = ret,
+            loc = this.make_loc(start, this.cur_end()),
+        ))
+
+
+    editable function parse_proc_type(start: ptr_uint) -> ptr[ast.Type]:
+        this.expect(T.tk_lparen)
+        var params = vec.Vec[ast.Param].create()
+        if this.cur.current().kind != T.tk_rparen:
+            params.push(this.parse_one_param())
+            while this.cur.current().kind == T.tk_comma:
+                this.cur.advance()
+                params.push(this.parse_one_param())
+        this.expect(T.tk_rparen)
+        this.expect(T.tk_arrow)
+        let ret = this.parse_type()
+        return this.new_type(ast.Type.proc_type(
+            params = this.span_of_params(ref_of(params)),
+            return_type = ret,
+            loc = this.make_loc(start, this.cur_end()),
+        ))
 
 
     ## ── statements ──────────────────────────────────────────────────
@@ -890,15 +1076,27 @@ extending Parser:
 
 
     function is_wildcard(tok: token_mod.Token) -> bool:
-        if tok.kind != T.tk_identifier:
-            return false
-        if tok.end <= tok.start:
-            return false
-        if tok.end - tok.start != 1:
-            return false
-        unsafe:
-            let b = read(this.source.data + tok.start)
-            return b == 95
+        return tok.kind == T.tk_identifier and tok.ident == this.id_underscore
+
+
+    function is_type_ptr(tok: token_mod.Token) -> bool:
+        return tok.kind == T.tk_identifier and tok.ident == this.id_ptr
+
+
+    function is_type_const_ptr(tok: token_mod.Token) -> bool:
+        return tok.kind == T.tk_identifier and tok.ident == this.id_const_ptr
+
+
+    function is_type_span(tok: token_mod.Token) -> bool:
+        return tok.kind == T.tk_identifier and tok.ident == this.id_span
+
+
+    function is_type_ref(tok: token_mod.Token) -> bool:
+        return tok.kind == T.tk_identifier and tok.ident == this.id_ref
+
+
+    function is_type_array(tok: token_mod.Token) -> bool:
+        return tok.kind == T.tk_identifier and tok.ident == this.id_array
 
 
     editable function read_char(start: ptr_uint, end: ptr_uint) -> ubyte:
@@ -1016,14 +1214,30 @@ extending Parser:
             this.cur.advance()
             val_expr = this.parse_expression()
 
+        var else_binding: ast.IdentId = 0
+        var else_body = zero[ptr[ast.Stmt]]
+
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_kw_else:
+            this.cur.advance()
+            if this.cur.current().kind == T.tk_kw_as:
+                this.cur.advance()
+                let bind_tok = this.cur.current()
+                this.expect(T.tk_identifier)
+                else_binding = bind_tok.ident
+            this.expect(T.tk_colon)
+            this.expect(T.tk_indent)
+            else_body = this.parse_statements()
+            if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+                this.cur.advance()
+
         let loc = this.make_loc(kind_tok.start, this.cur_end())
         let s = ast.Stmt.local_decl(
             kind = kind,
             name = name_tok.ident,
             type_ref = type_ref,
             value = val_expr,
-            else_binding = 0,
-            else_body = zero[ptr[ast.Stmt]],
+            else_binding = else_binding,
+            else_body = else_body,
             loc = loc,
         )
         return this.new_stmt(s)
@@ -1044,6 +1258,14 @@ extending Parser:
             let right = this.parse_binary(0)
             let loc = this.make_loc(dot_start, this.cur_end())
             let e = ast.Expr.range_expr(start = left, end = right, loc = loc)
+            left = this.new_expr(e)
+
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_larrow:
+            let target_type = this.expr_to_type(left)
+            this.cur.advance()
+            let right = this.parse_binary(11)
+            let loc = this.make_loc(0, this.cur_end())
+            let e = ast.Expr.cast_expr(target_type = target_type, expr = right, loc = loc)
             left = this.new_expr(e)
 
         while true:
@@ -1172,6 +1394,37 @@ extending Parser:
         if negative:
             return 0 - val
         return val
+
+
+    function read_ptruint(tok: token_mod.Token) -> ptr_uint:
+        let v = this.read_int(tok.start, tok.end)
+        return ptr_uint<-v
+
+
+    editable function span_of_type_ptrs(src: ref[vec.Vec[ptr[ast.Type]]]) -> span[ptr[ast.Type]]:
+        if src.len == 0:
+            return span[ptr[ast.Type]](data = zero[ptr[ptr[ast.Type]]], len = 0)
+        let storage = this.arena.alloc[ptr[ast.Type]](src.len) else:
+            fatal(c"parser: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"parser: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ptr[ast.Type]](data = storage, len = src.len)
+
+
+    editable function parse_one_param() -> ast.Param:
+        let param_name = this.cur.current()
+        this.expect(T.tk_identifier)
+        this.expect(T.tk_colon)
+        let param_type = this.parse_type()
+        return ast.Param(
+            name = param_name.ident,
+            type_ref = param_type,
+            loc = this.make_loc(param_name.start, param_name.end),
+        )
 
 
     editable function parse_string() -> ptr[ast.Expr]:

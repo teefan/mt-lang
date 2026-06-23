@@ -1,33 +1,124 @@
 ## Lowerer — AST → IR transformation.
+##
+## Types are resolved via the shared type registry.  IdentId
+## values (interned string handles) are compared by integer
+## equality — zero str comparisons in the hot path.
 
 import compiler.lexer.token_kind as tk
 import compiler.parser.ast as ast
 import compiler.parser.operators as ops_mod
 import compiler.lowering.ir as ir
+import compiler.sema.primitive_kind as pk
+import compiler.sema.type_registry as reg
 import std.intern
 import std.mem.arena
 import std.str
 import std.vec
 
 type B = ops_mod.BinaryOp
+type P = pk.PrimitiveKind
 
 
 struct Lowerer:
     arena: arena.Arena
     interner: ptr[intern.Interner]
+    registry: reg.Registry
+    void_tid: reg.TypeId
     in_editable: bool
+
+    ## Pre-interned identifiers — integer comparison only, zero str ops.
+    id_void: ast.IdentId
+    id_bool: ast.IdentId
+    id_byte: ast.IdentId
+    id_ubyte: ast.IdentId
+    id_char: ast.IdentId
+    id_short: ast.IdentId
+    id_ushort: ast.IdentId
+    id_int: ast.IdentId
+    id_uint: ast.IdentId
+    id_long: ast.IdentId
+    id_ulong: ast.IdentId
+    id_ptr_int: ast.IdentId
+    id_ptr_uint: ast.IdentId
+    id_float: ast.IdentId
+    id_double: ast.IdentId
+    id_str: ast.IdentId
+    id_cstr: ast.IdentId
+    id_vec2: ast.IdentId
+    id_vec3: ast.IdentId
+    id_vec4: ast.IdentId
+    id_ivec2: ast.IdentId
+    id_ivec3: ast.IdentId
+    id_ivec4: ast.IdentId
+    id_mat3: ast.IdentId
+    id_mat4: ast.IdentId
+    id_quat: ast.IdentId
+
+    id_fatal: ast.IdentId
+    id_read: ast.IdentId
+    id_ptr_of: ast.IdentId
+    id_zero: ast.IdentId
 
 
 public function lower(
     file: ptr[ast.SourceFile],
     interner: ptr[intern.Interner],
+    registry: reg.Registry,
 ) -> ir.IrProgram:
     var l = Lowerer(
         arena = arena.create(64 * 1024),
         interner = interner,
+        registry = registry,
+        void_tid = registry.primitive(P.pk_void),
         in_editable = false,
+        id_void = 0, id_bool = 0, id_byte = 0, id_ubyte = 0,
+        id_char = 0, id_short = 0, id_ushort = 0,
+        id_int = 0, id_uint = 0, id_long = 0, id_ulong = 0,
+        id_ptr_int = 0, id_ptr_uint = 0,
+        id_float = 0, id_double = 0,
+        id_str = 0, id_cstr = 0,
+        id_vec2 = 0, id_vec3 = 0, id_vec4 = 0,
+        id_ivec2 = 0, id_ivec3 = 0, id_ivec4 = 0,
+        id_mat3 = 0, id_mat4 = 0, id_quat = 0,
+        id_fatal = 0, id_read = 0, id_ptr_of = 0, id_zero = 0,
     )
+    l.init_interned_ids()
     return l.lower_impl(file)
+
+
+extending Lowerer:
+    editable function init_interned_ids() -> void:
+        unsafe:
+            this.id_void     = this.interner.intern("void")
+            this.id_bool     = this.interner.intern("bool")
+            this.id_byte     = this.interner.intern("byte")
+            this.id_ubyte    = this.interner.intern("ubyte")
+            this.id_char     = this.interner.intern("char")
+            this.id_short    = this.interner.intern("short")
+            this.id_ushort   = this.interner.intern("ushort")
+            this.id_int      = this.interner.intern("int")
+            this.id_uint     = this.interner.intern("uint")
+            this.id_long     = this.interner.intern("long")
+            this.id_ulong    = this.interner.intern("ulong")
+            this.id_ptr_int  = this.interner.intern("ptr_int")
+            this.id_ptr_uint = this.interner.intern("ptr_uint")
+            this.id_float    = this.interner.intern("float")
+            this.id_double   = this.interner.intern("double")
+            this.id_str      = this.interner.intern("str")
+            this.id_cstr     = this.interner.intern("cstr")
+            this.id_vec2     = this.interner.intern("vec2")
+            this.id_vec3     = this.interner.intern("vec3")
+            this.id_vec4     = this.interner.intern("vec4")
+            this.id_ivec2    = this.interner.intern("ivec2")
+            this.id_ivec3    = this.interner.intern("ivec3")
+            this.id_ivec4    = this.interner.intern("ivec4")
+            this.id_mat3     = this.interner.intern("mat3")
+            this.id_mat4     = this.interner.intern("mat4")
+            this.id_quat     = this.interner.intern("quat")
+            this.id_fatal    = this.interner.intern("fatal")
+            this.id_read     = this.interner.intern("read")
+            this.id_ptr_of   = this.interner.intern("ptr_of")
+            this.id_zero     = this.interner.intern("zero")
 
 
 extending Lowerer:
@@ -35,6 +126,7 @@ extending Lowerer:
         var functions = vec.Vec[ir.IrFunction].create()
         var structs = vec.Vec[ir.IrStruct].create()
         var enums = vec.Vec[ir.IrEnum].create()
+        var variants = vec.Vec[ir.IrVariant].create()
         let decls_span = unsafe: file.decls.as_span()
         var i: ptr_uint = 0
         while i < decls_span.len:
@@ -58,29 +150,33 @@ extending Lowerer:
         return ir.IrProgram(
             structs = this.copy_structs(ref_of(structs)),
             enums = this.copy_enums(ref_of(enums)),
+            variants = this.copy_variants(ref_of(variants)),
             functions = this.copy_funcs(ref_of(functions)),
         )
 
 
     editable function lower_struct(name: ast.IdentId, fields: span[ast.Field]) -> ir.IrStruct:
         let cname = this.name_str(name)
+        let tid = this.registry.named_type(name)
         var ir_fields = vec.Vec[ir.IrField].create()
         var i: ptr_uint = 0
         while i < fields.len:
             let field = unsafe: read(fields.data + i)
             ir_fields.push(ir.IrField(
                 name = this.name_str(field.name),
-                type_c = this.type_c_name(field.type_ref),
+                type_id = this.resolve_type_id(field.type_ref),
             ))
             i += 1
         return ir.IrStruct(
             name = cname,
+            type_id = tid,
             fields = this.copy_fields(ref_of(ir_fields)),
         )
 
 
     editable function lower_enum(name: ast.IdentId, members: span[ast.EnumMember]) -> ir.IrEnum:
         let cname = this.name_str(name)
+        let tid = this.registry.named_type(name)
         var ir_members = vec.Vec[ir.IrEnumMember].create()
         var autoval: int = 0
         var i: ptr_uint = 0
@@ -98,6 +194,7 @@ extending Lowerer:
             i += 1
         return ir.IrEnum(
             name = cname,
+            type_id = tid,
             members = this.copy_enum_members(ref_of(ir_members)),
         )
 
@@ -116,30 +213,30 @@ extending Lowerer:
         methods: span[ast.ExtendingMethod],
         functions: ref[vec.Vec[ir.IrFunction]],
     ) -> void:
-        let tname = this.name_str(type_name)
         var mi: ptr_uint = 0
         while mi < methods.len:
             let method = unsafe: read(methods.data + mi)
-            let f = this.lower_method(tname, method)
+            let f = this.lower_method(type_name, method)
             functions.push(f)
             mi += 1
 
 
-    editable function lower_method(type_name: str, method: ast.ExtendingMethod) -> ir.IrFunction:
+    editable function lower_method(type_name: ast.IdentId, method: ast.ExtendingMethod) -> ir.IrFunction:
         let cname = this.name_str(method.name)
         var ir_params = vec.Vec[ir.IrParam].create()
 
+        let this_tid = this.registry.named_type(type_name)
         if method.method_kind == ast.MethodKind.mk_editable:
-            ir_params.push(ir.IrParam(name = "this", type_c = type_name))
+            ir_params.push(ir.IrParam(name = "this", type_id = this_tid))
         else if method.method_kind == ast.MethodKind.mk_plain:
-            ir_params.push(ir.IrParam(name = "this", type_c = type_name))
+            ir_params.push(ir.IrParam(name = "this", type_id = this_tid))
 
         var pi: ptr_uint = 0
         while pi < method.params.len:
             let param = unsafe: read(method.params.data + pi)
             ir_params.push(ir.IrParam(
                 name = this.name_str(param.name),
-                type_c = this.type_c_name(param.type_ref),
+                type_id = this.resolve_type_id(param.type_ref),
             ))
             pi += 1
 
@@ -151,7 +248,7 @@ extending Lowerer:
         return ir.IrFunction(
             name = cname,
             params = this.copy_params(ref_of(ir_params)),
-            return_c = this.type_c_name(method.return_type),
+            return_type = this.resolve_type_id(method.return_type),
             body = this.copy_stmts(ref_of(ir_body)),
             is_editable = method.method_kind == ast.MethodKind.mk_editable,
         )
@@ -170,7 +267,7 @@ extending Lowerer:
             let param = unsafe: read(params.data + i)
             ir_params.push(ir.IrParam(
                 name = this.name_str(param.name),
-                type_c = this.type_c_name(param.type_ref),
+                type_id = this.resolve_type_id(param.type_ref),
             ))
             i += 1
 
@@ -179,57 +276,93 @@ extending Lowerer:
         return ir.IrFunction(
             name = name,
             params = this.copy_params(ref_of(ir_params)),
-            return_c = this.type_c_name(return_type),
+            return_type = this.resolve_type_id(return_type),
             body = this.copy_stmts(ref_of(ir_body)),
         )
 
 
-    ## ── type → C name ──────────────────────────────────────────────
+    ## ── type resolution ────────────────────────────────────────────
 
-    function type_c_name(type_ref: ptr[ast.Type]) -> str:
+    editable function resolve_type_id(type_ref: ptr[ast.Type]) -> reg.TypeId:
         if type_ref == zero[ptr[ast.Type]]:
-            return "void"
+            return this.void_tid
         unsafe:
             match read(type_ref):
                 ast.Type.named_type(name, _):
-                    let s = this.name_str(name)
-                    return this.map_type_c(s)
+                    return this.resolve_named_type_id(name)
+                ast.Type.pointer_type(pointee, is_const, _):
+                    let inner = this.resolve_type_id(pointee)
+                    return this.registry.pointer(inner, is_const)
+                ast.Type.ref_type(pointee, _):
+                    let inner = this.resolve_type_id(pointee)
+                    return this.registry.ref(inner)
+                ast.Type.span_type(element, _):
+                    let inner = this.resolve_type_id(element)
+                    return this.registry.span(inner)
+                ast.Type.array_type(element, size, _):
+                    let inner = this.resolve_type_id(element)
+                    return this.registry.array(inner, size)
+                ast.Type.nullable_type(inner, _):
+                    let inner_tid = this.resolve_type_id(inner)
+                    return this.registry.nullable(inner_tid)
                 _:
-                    return "int"
+                    return reg.TypeId<-0
 
 
-    function map_type_c(mt_name: str) -> str:
-        if mt_name.equal("int"):
-            return "int"
-        if mt_name.equal("float"):
-            return "float"
-        if mt_name.equal("double"):
-            return "double"
-        if mt_name.equal("bool"):
-            return "bool"
-        if mt_name.equal("void"):
-            return "void"
-        if mt_name.equal("str"):
-            return "char*"
-        if mt_name.equal("cstr"):
-            return "char*"
-        if mt_name.equal("byte"):
-            return "int8_t"
-        if mt_name.equal("ubyte"):
-            return "uint8_t"
-        if mt_name.equal("short"):
-            return "int16_t"
-        if mt_name.equal("ushort"):
-            return "uint16_t"
-        if mt_name.equal("uint"):
-            return "uint32_t"
-        if mt_name.equal("long"):
-            return "int64_t"
-        if mt_name.equal("ulong"):
-            return "uint64_t"
-        if mt_name.equal("char"):
-            return "char"
-        return mt_name
+    function resolve_named_type_id(name: ast.IdentId) -> reg.TypeId:
+        if name == this.id_void:
+            return this.registry.primitive(P.pk_void)
+        if name == this.id_bool:
+            return this.registry.primitive(P.pk_bool)
+        if name == this.id_byte:
+            return this.registry.primitive(P.pk_byte)
+        if name == this.id_ubyte:
+            return this.registry.primitive(P.pk_ubyte)
+        if name == this.id_char:
+            return this.registry.primitive(P.pk_char)
+        if name == this.id_short:
+            return this.registry.primitive(P.pk_short)
+        if name == this.id_ushort:
+            return this.registry.primitive(P.pk_ushort)
+        if name == this.id_int:
+            return this.registry.primitive(P.pk_int)
+        if name == this.id_uint:
+            return this.registry.primitive(P.pk_uint)
+        if name == this.id_long:
+            return this.registry.primitive(P.pk_long)
+        if name == this.id_ulong:
+            return this.registry.primitive(P.pk_ulong)
+        if name == this.id_ptr_int:
+            return this.registry.primitive(P.pk_ptr_int)
+        if name == this.id_ptr_uint:
+            return this.registry.primitive(P.pk_ptr_uint)
+        if name == this.id_float:
+            return this.registry.primitive(P.pk_float)
+        if name == this.id_double:
+            return this.registry.primitive(P.pk_double)
+        if name == this.id_str:
+            return this.registry.primitive(P.pk_str)
+        if name == this.id_cstr:
+            return this.registry.primitive(P.pk_cstr)
+        if name == this.id_vec2:
+            return this.registry.primitive(P.pk_vec2)
+        if name == this.id_vec3:
+            return this.registry.primitive(P.pk_vec3)
+        if name == this.id_vec4:
+            return this.registry.primitive(P.pk_vec4)
+        if name == this.id_ivec2:
+            return this.registry.primitive(P.pk_ivec2)
+        if name == this.id_ivec3:
+            return this.registry.primitive(P.pk_ivec3)
+        if name == this.id_ivec4:
+            return this.registry.primitive(P.pk_ivec4)
+        if name == this.id_mat3:
+            return this.registry.primitive(P.pk_mat3)
+        if name == this.id_mat4:
+            return this.registry.primitive(P.pk_mat4)
+        if name == this.id_quat:
+            return this.registry.primitive(P.pk_quat)
+        return this.registry.lookup_named(name)
 
 
     ## ── statements ─────────────────────────────────────────────────
@@ -269,20 +402,34 @@ extending Lowerer:
                     this.lower_block_into(body, output)
                 ast.Stmt.block(stmts, _):
                     this.lower_block_stmts(stmts, output)
-                ast.Stmt.local_decl(_, name, type_ref, value, _, _, _):
+                ast.Stmt.local_decl(_, name, type_ref, value, else_binding, else_body, _):
                     let n = this.name_str(name)
-                    let tc = this.type_c_name(type_ref)
+                    let tid = this.resolve_type_id(type_ref)
                     var init = ir.IrExpr.integer(value = 0)
                     if value != zero[ptr[ast.Expr]]:
                         init = this.lower_expr(value)
-                    output.push(ir.IrStmt.decl(name = n, type_c = tc, init = init))
+                    output.push(ir.IrStmt.decl(name = n, type_id = tid, init = init))
+                    if else_body != zero[ptr[ast.Stmt]]:
+                        let name_ref = this.new_ir_expr(ir.IrExpr.name(name = n))
+                        let zero_val = this.new_ir_expr(ir.IrExpr.integer(value = 0))
+                        let cond = ir.IrExpr.binary(
+                            op = "==",
+                            left = name_ref,
+                            right = zero_val,
+                        )
+                        var guard_body = vec.Vec[ir.IrStmt].create()
+                        this.lower_block_into(else_body, ref_of(guard_body))
+                        output.push(ir.IrStmt.if_stmt(
+                            condition = cond,
+                            then_body = this.copy_stmts(ref_of(guard_body)),
+                            else_body = span[ir.IrStmt](data = zero[ptr[ir.IrStmt]], len = 0),
+                        ))
                 ast.Stmt.assignment(target, op, value, _):
                     let tname = this.target_name(target)
                     let v = this.lower_expr(value)
                     let op_str = this.assign_op_c(op)
                     if this.has_member_target(target):
                         let texpr = this.lower_expr(target)
-                        let tp = this.new_ir_expr(texpr)
                         output.push(ir.IrStmt.assign_expr(target = texpr, op_kind = op_str, value = v))
                     else:
                         output.push(ir.IrStmt.assign(target = tname, op_kind = op_str, value = v))
@@ -468,12 +615,12 @@ extending Lowerer:
                     let op_ptr = this.new_ir_expr(o)
                     return ir.IrExpr.unary(op = op, operand = op_ptr)
                 ast.Expr.call(callee, args, _):
-                    let cname = this.callee_name(callee)
-                    let m = cname
-                    if m.equal("fatal"):
+                    let ident = this.callee_ident(callee)
+                    if ident == this.id_fatal:
+                        let cname = this.callee_name(callee)
                         var a = this.lower_args(args)
                         return ir.IrExpr.call(name = cname, args = this.copy_ir_exprs(ref_of(a)))
-                    if m.equal("read"):
+                    if ident == this.id_read:
                         var a = this.lower_args(args)
                         if args.len > 0:
                             let val_opt = a.at(0)
@@ -482,7 +629,7 @@ extending Lowerer:
                             let op_ptr = this.new_ir_expr(op)
                             return ir.IrExpr.deref(operand = op_ptr)
                         return ir.IrExpr.integer(value = 0)
-                    if m.equal("ptr_of"):
+                    if ident == this.id_ptr_of:
                         var a2 = this.lower_args(args)
                         if args.len > 0:
                             let val_opt2 = a2.at(0)
@@ -491,6 +638,7 @@ extending Lowerer:
                             let op_ptr2 = this.new_ir_expr(op2)
                             return ir.IrExpr.address(operand = op_ptr2)
                         return ir.IrExpr.integer(value = 0)
+                    let cname = this.callee_name(callee)
                     var a = this.lower_args(args)
                     return ir.IrExpr.call(name = cname, args = this.copy_ir_exprs(ref_of(a)))
                 ast.Expr.member_access(receiver, member, _):
@@ -503,9 +651,11 @@ extending Lowerer:
                     return ir.IrExpr.null_value
                 ast.Expr.aggregate(type_name, fields, _):
                     return this.lower_aggregate(type_name, fields)
+                ast.Expr.cast_expr(target_type, expr, _):
+                    return this.lower_cast(target_type, expr)
                 ast.Expr.specialization(callee, _, _):
-                    let cname = this.callee_name(callee)
-                    if cname.equal("zero"):
+                    let ident = this.callee_ident(callee)
+                    if ident == this.id_zero:
                         return ir.IrExpr.null_value
                     return ir.IrExpr.integer(value = 0)
                 _:
@@ -523,6 +673,17 @@ extending Lowerer:
                     return ""
 
 
+    function callee_ident(expr: ptr[ast.Expr]) -> ast.IdentId:
+        unsafe:
+            match read(expr):
+                ast.Expr.identifier(name, _):
+                    return name
+                ast.Expr.member_access(_, member, _):
+                    return member
+                _:
+                    return 0
+
+
     editable function lower_args(args: span[ptr[ast.Expr]]) -> vec.Vec[ir.IrExpr]:
         var result = vec.Vec[ir.IrExpr].create()
         var i: ptr_uint = 0
@@ -533,7 +694,34 @@ extending Lowerer:
         return result
 
 
-    ## ── aggregate ────────────────────────────────────────────────────
+    ## ── cast ──────────────────────────────────────────────────────────
+
+    editable function lower_cast(target_type: ptr[ast.Type], expr: ptr[ast.Expr]) -> ir.IrExpr:
+        let tid = this.resolve_type_id(target_type)
+        ## We need the C type name here — use a simple lookup.
+        ## The C backend's type_to_c will handle TypeId → C name,
+        ## but we don't have the C backend here.  Store the TypeId
+        ## as the type_c string for now (the backend will resolve it).
+        var ctype: str
+        if tid == reg.TypeId<-0:
+            ctype = "void"
+        else:
+            let s = this.name_str_from_type(target_type)
+            ctype = s
+        let operand = this.lower_expr(expr)
+        let op_ptr = this.new_ir_expr(operand)
+        return ir.IrExpr.cast_expr(type_c = ctype, operand = op_ptr)
+
+
+    function name_str_from_type(type_ref: ptr[ast.Type]) -> str:
+        if type_ref == zero[ptr[ast.Type]]:
+            return "void"
+        unsafe:
+            match read(type_ref):
+                ast.Type.named_type(name, _):
+                    return this.name_str(name)
+                _:
+                    return "int"
 
     editable function lower_aggregate(type_name: ast.IdentId, fields: span[ast.TupleField]) -> ir.IrExpr:
         let cname = this.name_str(type_name)
@@ -780,6 +968,19 @@ extending Lowerer:
             unsafe: read(storage + i) = val
             i += 1
         return span[ir.IrEnumMember](data = storage, len = src.len)
+
+    editable function copy_variants(src: ref[vec.Vec[ir.IrVariant]]) -> span[ir.IrVariant]:
+        if src.len == 0:
+            return span[ir.IrVariant](data = zero[ptr[ir.IrVariant]], len = 0)
+        let storage = this.arena.alloc[ir.IrVariant](src.len) else:
+            fatal(c"lowerer: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"lowerer: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ir.IrVariant](data = storage, len = src.len)
 
     editable function copy_funcs(src: ref[vec.Vec[ir.IrFunction]]) -> span[ir.IrFunction]:
         if src.len == 0:

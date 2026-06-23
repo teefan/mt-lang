@@ -1,48 +1,185 @@
 ## C Backend — IR → C source emission.
+##
+## Types are resolved from TypeId → C name at emission time using
+## the type registry and IrProgram.  This keeps type decisions
+## (zero-init, switch vs if/else, . vs ->) in the backend where
+## they belong.
 
 import compiler.lowering.ir as ir
+import compiler.sema.primitive_kind as pk
+import compiler.sema.type_registry as reg
 import std.string
+
+type P = pk.PrimitiveKind
 
 struct CWriter:
     buf: string.String
     indent_level: ptr_uint
+    registry: reg.Registry
+    program: ir.IrProgram
 
 
-public function write_program(program: ir.IrProgram) -> str:
+public function write_program(program: ir.IrProgram, registry: reg.Registry) -> str:
     var w = CWriter(
         buf = string.String.with_capacity(8192),
         indent_level = 0,
+        registry = registry,
+        program = program,
     )
-    w.write_program_impl(program)
+    w.write_program_impl()
     return w.buf.as_str()
 
 
 extending CWriter:
-    editable function write_program_impl(program: ir.IrProgram) -> void:
+    editable function write_program_impl() -> void:
         this.writeln("#include <stdint.h>")
         this.writeln("#include <stdbool.h>")
         this.writeln("")
 
         var ei: ptr_uint = 0
-        while ei < program.enums.len:
-            let e = unsafe: read(program.enums.data + ei)
+        while ei < this.program.enums.len:
+            let e = unsafe: read(this.program.enums.data + ei)
             this.write_enum(e)
             this.writeln("")
             ei += 1
 
         var si: ptr_uint = 0
-        while si < program.structs.len:
-            let s = unsafe: read(program.structs.data + si)
+        while si < this.program.structs.len:
+            let s = unsafe: read(this.program.structs.data + si)
             this.write_struct(s)
             this.writeln("")
             si += 1
 
+        this.write_forward_decls()
+
         var fi: ptr_uint = 0
-        while fi < program.functions.len:
-            let func = unsafe: read(program.functions.data + fi)
+        while fi < this.program.functions.len:
+            let func = unsafe: read(this.program.functions.data + fi)
             this.write_function(func)
             this.writeln("")
             fi += 1
+
+
+    ## ── forward declarations ───────────────────────────────────────
+
+    editable function write_forward_decls() -> void:
+        ## Emit prototypes so functions can be defined in any order.
+        if this.program.functions.len == 0:
+            return
+        var fi: ptr_uint = 0
+        while fi < this.program.functions.len:
+            let func = unsafe: read(this.program.functions.data + fi)
+            this.write_indent()
+            let ret = this.type_to_c(func.return_type)
+            this.write(ret)
+            this.write(" ")
+            this.write(func.name)
+            this.write("(")
+            var pi: ptr_uint = 0
+            while pi < func.params.len:
+                if pi > 0:
+                    this.write(", ")
+                let param = unsafe: read(func.params.data + pi)
+                this.write(this.type_to_c(param.type_id))
+                if func.is_editable and pi == 0:
+                    this.write("*")
+                this.write(" ")
+                this.write(param.name)
+                pi += 1
+            this.writeln(");")
+            fi += 1
+        this.writeln("")
+
+
+    ## ── type → C name ──────────────────────────────────────────────
+
+    function type_to_c(tid: reg.TypeId) -> str:
+        if tid == reg.TypeId<-0:
+            return "void"
+        if this.registry.is_primitive(tid, P.pk_void):
+            return "void"
+        if this.registry.is_primitive(tid, P.pk_bool):
+            return "bool"
+        if this.registry.is_primitive(tid, P.pk_byte):
+            return "int8_t"
+        if this.registry.is_primitive(tid, P.pk_ubyte):
+            return "uint8_t"
+        if this.registry.is_primitive(tid, P.pk_char):
+            return "char"
+        if this.registry.is_primitive(tid, P.pk_short):
+            return "int16_t"
+        if this.registry.is_primitive(tid, P.pk_ushort):
+            return "uint16_t"
+        if this.registry.is_primitive(tid, P.pk_int):
+            return "int"
+        if this.registry.is_primitive(tid, P.pk_uint):
+            return "uint32_t"
+        if this.registry.is_primitive(tid, P.pk_long):
+            return "int64_t"
+        if this.registry.is_primitive(tid, P.pk_ulong):
+            return "uint64_t"
+        if this.registry.is_primitive(tid, P.pk_ptr_int):
+            return "intptr_t"
+        if this.registry.is_primitive(tid, P.pk_ptr_uint):
+            return "uintptr_t"
+        if this.registry.is_primitive(tid, P.pk_float):
+            return "float"
+        if this.registry.is_primitive(tid, P.pk_double):
+            return "double"
+        if this.registry.is_primitive(tid, P.pk_str):
+            return "char*"
+        if this.registry.is_primitive(tid, P.pk_cstr):
+            return "char*"
+
+        ## Check structs / enums via IrProgram.
+        var si: ptr_uint = 0
+        while si < this.program.structs.len:
+            let s = unsafe: read(this.program.structs.data + si)
+            if s.type_id == tid:
+                return s.name
+            si += 1
+
+        var ei: ptr_uint = 0
+        while ei < this.program.enums.len:
+            let e = unsafe: read(this.program.enums.data + ei)
+            if e.type_id == tid:
+                return e.name
+            ei += 1
+
+        return "int"
+
+
+    function zero_init(tid: reg.TypeId) -> str:
+        if this.is_struct_type(tid):
+            return "{0}"
+        if this.registry.is_primitive(tid, P.pk_str):
+            return "\"\""
+        if this.registry.is_primitive(tid, P.pk_cstr):
+            return "0"
+        return "0"
+
+
+    function is_struct_type(tid: reg.TypeId) -> bool:
+        var si: ptr_uint = 0
+        while si < this.program.structs.len:
+            let s = unsafe: read(this.program.structs.data + si)
+            if s.type_id == tid:
+                return true
+            si += 1
+        return false
+
+
+    function is_enum_type(tid: reg.TypeId) -> bool:
+        var ei: ptr_uint = 0
+        while ei < this.program.enums.len:
+            let e = unsafe: read(this.program.enums.data + ei)
+            if e.type_id == tid:
+                return true
+            ei += 1
+        return false
+
+
+    ## ── enum ───────────────────────────────────────────────────────
 
     editable function write_enum(e: ir.IrEnum) -> void:
         this.writeln("typedef enum {")
@@ -59,13 +196,16 @@ extending CWriter:
         this.write(e.name)
         this.writeln(";")
 
+
+    ## ── struct ─────────────────────────────────────────────────────
+
     editable function write_struct(s: ir.IrStruct) -> void:
         this.writeln("typedef struct {")
         var j: ptr_uint = 0
         while j < s.fields.len:
             let field = unsafe: read(s.fields.data + j)
             this.write("    ")
-            this.write(field.type_c)
+            this.write(this.type_to_c(field.type_id))
             this.write(" ")
             this.write(field.name)
             this.writeln(";")
@@ -75,8 +215,10 @@ extending CWriter:
         this.writeln(";")
 
 
+    ## ── function ───────────────────────────────────────────────────
+
     editable function write_function(func: ir.IrFunction) -> void:
-        this.write(func.return_c)
+        this.write(this.type_to_c(func.return_type))
         this.write(" ")
         this.write(func.name)
         this.write("(")
@@ -85,7 +227,7 @@ extending CWriter:
             if i > 0:
                 this.write(", ")
             let param = unsafe: read(func.params.data + i)
-            this.write(param.type_c)
+            this.write(this.type_to_c(param.type_id))
             if func.is_editable and i == 0:
                 this.write("*")
             this.write(" ")
@@ -118,9 +260,9 @@ extending CWriter:
                 this.write_indent()
                 this.write_expr(expr)
                 this.writeln(";")
-            ir.IrStmt.decl(name, type_c, init):
+            ir.IrStmt.decl(name, type_id, init):
                 this.write_indent()
-                this.write(type_c)
+                this.write(this.type_to_c(type_id))
                 this.write(" ")
                 this.write(name)
                 this.write(" = ")
@@ -158,11 +300,11 @@ extending CWriter:
                     this.write_indent()
                     this.writeln("} else {")
                     this.indent_level += 1
-                    var ei: ptr_uint = 0
-                    while ei < else_body.len:
-                        let es = unsafe: read(else_body.data + ei)
+                    var eii: ptr_uint = 0
+                    while eii < else_body.len:
+                        let es = unsafe: read(else_body.data + eii)
                         this.write_stmt(es)
-                        ei += 1
+                        eii += 1
                     this.indent_level -= 1
                 this.write_indent()
                 this.writeln("}")
@@ -195,11 +337,11 @@ extending CWriter:
                 this.write("; _i++) {")
                 this.writeln("")
                 this.indent_level += 1
-                var fi: ptr_uint = 0
-                while fi < body.len:
-                    let fs = unsafe: read(body.data + fi)
+                var fii: ptr_uint = 0
+                while fii < body.len:
+                    let fs = unsafe: read(body.data + fii)
                     this.write_stmt(fs)
-                    fi += 1
+                    fii += 1
                 this.indent_level -= 1
                 this.write_indent()
                 this.writeln("}")
@@ -339,6 +481,11 @@ extending CWriter:
                     this.write_expr(f.value)
                     ai += 1
                 this.write("})")
+            ir.IrExpr.cast_expr(type_c, operand):
+                this.write("(")
+                this.write(type_c)
+                this.write(")")
+                unsafe: this.write_expr(read(operand))
 
 
     ## ── helpers ────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ import compiler.source as source_mod
 external function printf(format: cstr, ...) -> int
 
 function main() -> int:
-    let source_str = "struct Counter:\n    value: int\n\nfunction main() -> int:\n    var c: Counter = Counter(value = 42)\n    return c.value\n"
+    let source_str = "function add(a: int, b: int) -> int:\n    return a + b\n\nfunction main() -> int:\n    return add(2, 3)\n"
     let source = source_mod.from_str(source_str, "<input>")
     var ctx = ctx_mod.create(source)
 
@@ -18,7 +18,7 @@ function main() -> int:
     var tokens = lexer_mod.lex(source_span, ref_of(ctx.interner))
     let tokens_span = tokens.as_span()
 
-    let ast = parser_mod.parse(source_span, tokens_span)
+    let ast = parser_mod.parse(source_span, tokens_span, ptr_of(ctx.interner))
 
     var checker = checker_mod.create(ctx.registry, ref_of(ctx.interner))
     let ok = checker.check(ast)
@@ -26,8 +26,8 @@ function main() -> int:
     if not ok:
         return 1
 
-    let ir = lowerer_mod.lower(ast, ptr_of(ctx.interner))
-    let c_source = cg.write_program(ir)
+    let ir = lowerer_mod.lower(ast, ptr_of(ctx.interner), ctx.registry)
+    let c_source = cg.write_program(ir, ctx.registry)
     printf(c"%s\n", c_source)
 
     return 0

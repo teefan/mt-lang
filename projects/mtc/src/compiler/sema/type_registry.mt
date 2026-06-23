@@ -167,7 +167,7 @@ extending Registry:
             return read(existing)
 
 
-    editable function array(element: TypeId, size: ptr_uint) -> TypeId:
+    public editable function array(element: TypeId, size: ptr_uint) -> TypeId:
         for entry in this.arrays.as_span():
             if entry.element == element and entry.size == size:
                 return entry.id
@@ -221,6 +221,18 @@ extending Registry:
         let id = TypeId<-this.counter
         this.tuples.push(TupleEntry(elements = elements, id = id))
         return id
+
+
+    public function is_primitive(tid: TypeId, kind: P) -> bool:
+        return tid == this.primitive(kind) and tid != TypeId<-0
+
+
+    public function lookup_named(name: ptr_uint) -> TypeId:
+        ## Returns the existing TypeId for name, or 0 if not found.
+        for entry in this.named.as_span():
+            if entry.name == name:
+                return entry.id
+        return TypeId<-0
 
 
     public editable function named_type(name: ptr_uint) -> TypeId:
