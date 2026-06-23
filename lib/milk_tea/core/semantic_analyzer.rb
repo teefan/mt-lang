@@ -13,6 +13,8 @@ require_relative "semantic/analysis_context"
 require_relative "semantic/type_compatibility"
 require_relative "semantic/flow_refinement"
 require_relative "semantic/name_resolution"
+require_relative "semantic/generics"
+require_relative "semantic/foreign_functions"
 require_relative "semantic/module_context"
 
 module MilkTea
