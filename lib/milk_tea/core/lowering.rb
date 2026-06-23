@@ -83,6 +83,9 @@ module MilkTea
   class Lowerer
     include CompatibilityHelpers
 
+    attr_accessor :bypass_sema_type_cache
+    attr_reader :recorded_expr_types
+
     def initialize(program)
       @program = program
       @ctx = ModuleContext.new
@@ -90,9 +93,11 @@ module MilkTea
       @synthetic_proc_counter = 0
       @parallel_for_counter = 0
       @method_definitions = build_method_definitions
+      @bypass_sema_type_cache = false
     end
 
     def lower
+      @recorded_expr_types = {} if @bypass_sema_type_cache
       ir_program, _modules, _synths = lower_and_assemble
       ir_program
     end

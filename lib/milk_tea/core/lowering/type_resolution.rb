@@ -667,7 +667,7 @@ module MilkTea
       end
 
       def infer_expression_type(expression, env:, expected_type: nil)
-        if expected_type.nil? && (id = @ctx.ast.node_ids[expression.object_id]) && (resolved = @ctx.resolved_expr_types[id])
+        if !@bypass_sema_type_cache && expected_type.nil? && (id = @ctx.ast.node_ids[expression.object_id]) && (resolved = @ctx.resolved_expr_types[id])
           return resolved
         end
 
@@ -951,11 +951,15 @@ module MilkTea
 
       def harmonize_binary_integer_literal_types(left_expression, right_expression, left_type, right_type, env:)
         if integer_literal_expression?(left_expression) && right_type.is_a?(Types::Primitive) && right_type.integer?
-          left_type = infer_expression_type(left_expression, env:, expected_type: right_type)
+          if exact_compile_time_numeric_compatibility?(left_type, left_expression, right_type, env:)
+            left_type = infer_expression_type(left_expression, env:, expected_type: right_type)
+          end
         end
 
         if integer_literal_expression?(right_expression) && left_type.is_a?(Types::Primitive) && left_type.integer?
-          right_type = infer_expression_type(right_expression, env:, expected_type: left_type)
+          if exact_compile_time_numeric_compatibility?(right_type, right_expression, left_type, env:)
+            right_type = infer_expression_type(right_expression, env:, expected_type: left_type)
+          end
         end
 
         [left_type, right_type]
@@ -2068,6 +2072,7 @@ module MilkTea
           end
         end
       end
+
 
       def interface_implementation_key(type)
         return type.definition if type.is_a?(Types::StructInstance)
