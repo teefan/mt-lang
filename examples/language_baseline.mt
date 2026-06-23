@@ -329,6 +329,15 @@ function statements_demo() -> int:
         if i == 4:
             break
 
+    # --- match with | for multiple patterns sharing a body
+    match result:
+        0 | 1 | 2:
+            result = 10
+        3 | 4:
+            result = 20
+        _:
+            result = 0
+
     match State.running:
         State.idle:
             result += 0

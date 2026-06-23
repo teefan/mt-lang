@@ -552,6 +552,16 @@ Scrutinee types supported:
 
 `_` is a wildcard arm that matches any value not covered by preceding arms. It maps to a C `default:` case.
 
+Multiple pattern values may share a single arm body using `|`:
+
+```mt
+match kind:
+    EventKind.quit | EventKind.cancel:
+        return 0
+    _:
+        return 1
+```
+
 Rules:
 
 - For enum scrutinee: all members must be covered unless a `_` arm is present.
