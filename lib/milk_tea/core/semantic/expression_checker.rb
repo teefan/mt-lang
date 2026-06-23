@@ -189,6 +189,7 @@ module MilkTea
             infer_await_expression(expression, scopes:)
           when AST::DetachExpr
             @uses_parallel_for = true
+            validate_detach_expression!(expression.body, scopes:)
             check_block(expression.body, scopes:, return_type: @ctx.types.fetch("void"), allow_return: false)
             Types::Handle.new
           when AST::Call
@@ -599,7 +600,13 @@ module MilkTea
 
           result_type = common_numeric_type(left_type, right_type)
           unless result_type
-            raise_sema_error("operator #{expression.operator} requires compatible numeric types, got #{left_type} and #{right_type}")
+            if left_type.respond_to?(:signed_integer?) && right_type.respond_to?(:signed_integer?) &&
+               left_type.integer? && right_type.integer? &&
+               left_type.signed_integer? != right_type.signed_integer?
+              raise_sema_error("operator #{expression.operator} requires compatible numeric types, got #{left_type} and #{right_type} (use an explicit cast to resolve signed/unsigned mismatch)")
+            else
+              raise_sema_error("operator #{expression.operator} requires compatible numeric types, got #{left_type} and #{right_type}")
+            end
           end
 
           result_type
@@ -663,6 +670,33 @@ module MilkTea
         return common_type if common_type
 
         raise_sema_error("if expression branches require compatible types, got #{then_type} and #{else_type}")
+      end
+
+      def validate_detach_expression!(expression, scopes:)
+        case expression
+        when AST::Call, AST::Specialization
+          expression.arguments.each do |arg|
+            validate_detach_argument!(arg.value, scopes:)
+          end
+        else
+          raise_sema_error("detach currently only supports global function calls")
+        end
+      end
+
+      def validate_detach_argument!(expression, scopes:)
+        return true if expression.is_a?(AST::IntegerLiteral) || expression.is_a?(AST::FloatLiteral) ||
+          expression.is_a?(AST::StringLiteral) || expression.is_a?(AST::BooleanLiteral) ||
+          expression.is_a?(AST::NullLiteral) || expression.is_a?(AST::CharLiteral) ||
+          expression.is_a?(AST::FormatString)
+
+        if expression.is_a?(AST::Identifier)
+          binding = lookup_value(expression.name, scopes)
+          return true unless binding && %i[let var param].include?(binding.kind)
+
+          raise_sema_error("detach argument cannot capture local variable #{expression.name}")
+        end
+
+        true
       end
 
       def infer_match_expression(expression, scopes:, expected_type: nil)
