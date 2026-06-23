@@ -231,7 +231,7 @@ module MilkTea
 
       def resolve_layout_type(type_ref)
         super
-      rescue StandardError
+      rescue SemanticError
         return unless type_ref.respond_to?(:name) && type_ref.name.parts.length >= 1
 
         expression = ::MilkTea::AST.build_chain_from_parts(type_ref.name.parts)

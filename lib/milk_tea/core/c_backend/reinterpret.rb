@@ -125,6 +125,8 @@ module MilkTea
 
           def no_op_reinterpret?(target_type, source_type)
             c_type(target_type) == c_type(source_type)
+          rescue StandardError
+            false
           end
 
           def checked_array_index_helper_name(type)
