@@ -40,6 +40,7 @@ public variant Expr:
     unary_op(operator: ops_mod.UnaryOp, operand: ptr[Expr], loc: Span)
     call(callee: ptr[Expr], args: span[ptr[Expr]], loc: Span)
     aggregate(type_name: IdentId, fields: span[TupleField], loc: Span)
+    variant_ctor(type_name: IdentId, arm_name: IdentId, fields: span[TupleField], loc: Span)
     member_access(receiver: ptr[Expr], member: IdentId, loc: Span)
     index_access(receiver: ptr[Expr], index: ptr[Expr], loc: Span)
     specialization(callee: ptr[Expr], args: span[ptr[Type]], loc: Span)
@@ -125,6 +126,7 @@ public variant Decl:
 
 public variant Type:
     named_type(name: IdentId, loc: Span)
+    qualified_type(module_id: IdentId, type_name: IdentId, loc: Span)
     pointer_type(pointee: ptr[Type], is_const: bool, loc: Span)
     ref_type(pointee: ptr[Type], loc: Span)
     span_type(element: ptr[Type], loc: Span)

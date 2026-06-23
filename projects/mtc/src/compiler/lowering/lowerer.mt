@@ -11,6 +11,7 @@ import compiler.lowering.ir as ir
 import compiler.sema.primitive_kind as pk
 import compiler.sema.type_registry as reg
 import std.intern
+import std.map
 import std.mem.arena
 import std.str
 import std.vec
@@ -59,6 +60,11 @@ struct Lowerer:
     id_ptr_of: ast.IdentId
     id_zero: ast.IdentId
 
+    extending_type: ast.IdentId
+    extending_cname: str
+    name_buf: str_buffer[128]
+    var_types: map.Map[ast.IdentId, ast.IdentId]
+
     enum_names: vec.Vec[ast.IdentId]
 
 
@@ -73,6 +79,10 @@ public function lower(
         registry = registry,
         void_tid = registry.primitive(P.pk_void),
         in_editable = false,
+        extending_type = 0,
+        extending_cname = "",
+        name_buf = zero[str_buffer[128]],
+        var_types = map.Map[ast.IdentId, ast.IdentId].with_capacity(32),
         enum_names = vec.Vec[ast.IdentId].with_capacity(8),
         id_void = 0, id_bool = 0, id_byte = 0, id_ubyte = 0,
         id_char = 0, id_short = 0, id_ushort = 0,
@@ -156,17 +166,26 @@ extending Lowerer:
                         pass
                     ast.Decl.var_decl(_, _, _, _, _):
                         pass
-                    ast.Decl.variant_decl(_, _, _, _):
-                        pass
+                    ast.Decl.variant_decl(name, arms, _, _):
+                        let v = this.lower_variant(name, arms)
+                        variants.push(v)
                     ast.Decl.error_decl(_):
                         pass
                     _:
                         pass
             i += 1
+        var span_list = vec.Vec[ir.IrSpanType].create()
+        var span_rev = this.registry.span_rev.as_span()
+        var si: ptr_uint = 0
+        while si < span_rev.len:
+            let entry = unsafe: read(span_rev.data + si)
+            span_list.push(ir.IrSpanType(type_id = entry.id, element_type = entry.element))
+            si += 1
         return ir.IrProgram(
             structs = this.copy_structs(ref_of(structs)),
             enums = this.copy_enums(ref_of(enums)),
             variants = this.copy_variants(ref_of(variants)),
+            spans = this.copy_span_types(ref_of(span_list)),
             functions = this.copy_funcs(ref_of(functions)),
         )
 
@@ -225,21 +244,61 @@ extending Lowerer:
                     return 0
 
 
+    editable function lower_variant(name: ast.IdentId, arms: span[ast.VariantArmDecl]) -> ir.IrVariant:
+        let cname = this.name_str(name)
+        let tid = this.registry.named_type(name)
+        var ir_arms = vec.Vec[ir.IrVariantArm].create()
+        var ai: ptr_uint = 0
+        while ai < arms.len:
+            let arm = unsafe: read(arms.data + ai)
+            var ir_fields = vec.Vec[ir.IrField].create()
+            var fi: ptr_uint = 0
+            while fi < arm.fields.len:
+                let fld = unsafe: read(arm.fields.data + fi)
+                ir_fields.push(ir.IrField(
+                    name = this.name_str(fld.name),
+                    type_id = this.resolve_type_id(fld.type_ref),
+                ))
+                fi += 1
+            ir_arms.push(ir.IrVariantArm(
+                name = this.name_str(arm.name),
+                fields = this.copy_fields(ref_of(ir_fields)),
+            ))
+            ai += 1
+        return ir.IrVariant(
+            name = cname,
+            type_id = tid,
+            arms = this.copy_variant_arms(ref_of(ir_arms)),
+        )
+
+
     editable function lower_extending(
         type_name: ast.IdentId,
         methods: span[ast.ExtendingMethod],
         functions: ref[vec.Vec[ir.IrFunction]],
     ) -> void:
+        let saved_type = this.extending_type
+        let saved_cname = this.extending_cname
+        this.extending_type = type_name
+        this.extending_cname = this.name_str(type_name)
         var mi: ptr_uint = 0
         while mi < methods.len:
             let method = unsafe: read(methods.data + mi)
             let f = this.lower_method(type_name, method)
             functions.push(f)
             mi += 1
+        this.extending_type = saved_type
+        this.extending_cname = saved_cname
 
 
     editable function lower_method(type_name: ast.IdentId, method: ast.ExtendingMethod) -> ir.IrFunction:
-        let cname = this.name_str(method.name)
+        let type_cname = this.name_str(type_name)
+        let method_cname = this.name_str(method.name)
+        this.name_buf.clear()
+        this.name_buf.append(type_cname)
+        this.name_buf.append("_")
+        this.name_buf.append(method_cname)
+        let cname = this.arena_str(this.name_buf.as_str())
         var ir_params = vec.Vec[ir.IrParam].create()
 
         let this_tid = this.registry.named_type(type_name)
@@ -307,6 +366,8 @@ extending Lowerer:
             match read(type_ref):
                 ast.Type.named_type(name, _):
                     return this.resolve_named_type_id(name)
+                ast.Type.qualified_type(_, type_name, _):
+                    return this.resolve_named_type_id(type_name)
                 ast.Type.pointer_type(pointee, is_const, _):
                     let inner = this.resolve_type_id(pointee)
                     return this.registry.pointer(inner, is_const)
@@ -420,12 +481,20 @@ extending Lowerer:
                 ast.Stmt.block(stmts, _):
                     this.lower_block_stmts(stmts, output)
                 ast.Stmt.local_decl(_, name, type_ref, value, else_binding, else_body, _):
-                    let n = this.name_str(name)
+                    let saved = name
+                    let n = this.name_str(saved)
                     let tid = this.resolve_type_id(type_ref)
                     var init = ir.IrExpr.integer(value = 0)
                     if value != zero[ptr[ast.Expr]]:
                         init = this.lower_expr(value)
                     output.push(ir.IrStmt.decl(name = n, type_id = tid, init = init))
+                    if type_ref != zero[ptr[ast.Type]]:
+                        unsafe:
+                            match read(type_ref):
+                                ast.Type.named_type(name, _):
+                                    let _ = this.var_types.set(saved, name)
+                                _:
+                                    pass
                     if else_body != zero[ptr[ast.Stmt]]:
                         let name_ref = this.new_ir_expr(ir.IrExpr.name(name = n))
                         let zero_val = this.new_ir_expr(ir.IrExpr.integer(value = 0))
@@ -536,9 +605,9 @@ extending Lowerer:
                     pass
 
         let iter = this.lower_expr(iterable)
-        output.push(ir.IrStmt.for_stmt(
+        output.push(ir.IrStmt.for_span(
             binding = bname,
-            iterable = iter,
+            span_expr = iter,
             body = body_span,
         ))
 
@@ -555,17 +624,90 @@ extending Lowerer:
         var i: ptr_uint = 0
         while i < arms.len:
             let arm = unsafe: read(arms.data + i)
+            var variant_match = false
+            var vtype: str
+            var varm: str
+            var field_bindings: span[ast.PatternField]
+            field_bindings.len = 0
+            field_bindings.data = zero[ptr[ast.PatternField]]
+
+            unsafe:
+                match read(arm.pattern):
+                    ast.Pattern.variant_arm(type_name, arm_name, _, fields, _):
+                        if not this.is_enum_name(type_name):
+                            variant_match = true
+                            vtype = this.name_str(type_name)
+                            varm = this.name_str(arm_name)
+                            field_bindings = fields
+                    _:
+                        pass
+
             var values = vec.Vec[ir.IrExpr].create()
-            this.lower_match_pattern(arm.pattern, ref_of(values))
+            if variant_match:
+                let scr_copy = this.lower_expr(scrutinee)
+                let scr_ptr = this.new_ir_expr(scr_copy)
+                let tag_access = ir.IrExpr.access(receiver = scr_ptr, member = "tag")
+                let tag_ptr = this.new_ir_expr(tag_access)
+                this.name_buf.clear()
+                this.name_buf.append(vtype)
+                this.name_buf.append("_tag_")
+                this.name_buf.append(varm)
+                let tag_val_name = this.arena_str(this.name_buf.as_str())
+                let tag_val = ir.IrExpr.name(name = tag_val_name)
+                let cond = ir.IrExpr.binary(
+                    op = "==",
+                    left = tag_ptr,
+                    right = this.new_ir_expr(tag_val),
+                )
+                values.push(cond)
+            else:
+                this.lower_match_pattern(arm.pattern, ref_of(values))
+
             while i + 1 < arms.len and this.same_body(arm.body, unsafe: read(arms.data + i + 1).body):
                 i += 1
                 let next = unsafe: read(arms.data + i)
-                this.lower_match_pattern(next.pattern, ref_of(values))
+                if not variant_match:
+                    this.lower_match_pattern(next.pattern, ref_of(values))
+
             var body_ir = vec.Vec[ir.IrStmt].create()
+            if variant_match and field_bindings.len > 0:
+                let scr_name = this.scrutinee_name(scrutinee)
+                if scr_name != "":
+                    var fi: ptr_uint = 0
+                    while fi < field_bindings.len:
+                        let pf = unsafe: read(field_bindings.data + fi)
+                        if pf.name != 0:
+                            let fname = this.name_str(pf.name)
+                            this.name_buf.clear()
+                            this.name_buf.append(scr_name)
+                            this.name_buf.append(".data.")
+                            this.name_buf.append(varm)
+                            this.name_buf.append(".")
+                            this.name_buf.append(fname)
+                            body_ir.push(ir.IrStmt.decl(
+                                name = fname,
+                                type_id = this.registry.primitive(P.pk_int),
+                                init = ir.IrExpr.name(
+                                    name = this.arena_str(this.name_buf.as_str()),
+                                ),
+                            ))
+                        fi += 1
             this.lower_block_into(arm.body, ref_of(body_ir))
+
+            var is_wild = false
+            unsafe:
+                match read(arm.pattern):
+                    ast.Pattern.wildcard(_):
+                        is_wild = true
+                    _:
+                        pass
+
             ir_arms.push(ir.IrMatchArm(
                 values = this.copy_ir_exprs(ref_of(values)),
                 body = this.copy_stmts(ref_of(body_ir)),
+                variant_name = vtype,
+                variant_arm = varm,
+                is_wildcard = is_wild,
             ))
             i += 1
         output.push(ir.IrStmt.match_stmt(
@@ -661,6 +803,16 @@ extending Lowerer:
                     if is_member:
                         let recv = this.lower_member_receiver(callee)
                         let mname = this.callee_name(callee)
+                        let prefix = this.member_call_prefix(callee)
+                        var full_name: str
+                        if prefix != "":
+                            this.name_buf.clear()
+                            this.name_buf.append(prefix)
+                            this.name_buf.append("_")
+                            this.name_buf.append(mname)
+                            full_name = this.arena_str(this.name_buf.as_str())
+                        else:
+                            full_name = mname
                         var combined = vec.Vec[ir.IrExpr].create()
                         combined.push(recv)
                         var ai: ptr_uint = 0
@@ -668,7 +820,7 @@ extending Lowerer:
                             let arg = unsafe: read(args.data + ai)
                             combined.push(this.lower_expr(arg))
                             ai += 1
-                        return ir.IrExpr.call(name = mname, args = this.copy_ir_exprs(ref_of(combined)))
+                        return ir.IrExpr.call(name = full_name, args = this.copy_ir_exprs(ref_of(combined)))
 
                     let cname = this.callee_name(callee)
                     var a = this.lower_args(args)
@@ -685,6 +837,8 @@ extending Lowerer:
                     return ir.IrExpr.null_value
                 ast.Expr.aggregate(type_name, fields, _):
                     return this.lower_aggregate(type_name, fields)
+                ast.Expr.variant_ctor(type_name, arm_name, fields, _):
+                    return this.lower_variant_ctor(type_name, arm_name, fields)
                 ast.Expr.cast_expr(target_type, expr, _):
                     return this.lower_cast(target_type, expr)
                 ast.Expr.specialization(callee, _, _):
@@ -727,6 +881,45 @@ extending Lowerer:
                     return false
 
 
+    function member_call_prefix(callee: ptr[ast.Expr]) -> str:
+        unsafe:
+            match read(callee):
+                ast.Expr.member_access(receiver, _, _):
+                    if this.is_this_expr(receiver):
+                        return this.extending_cname
+                    match read(receiver):
+                        ast.Expr.identifier(name, _):
+                            let tid_ptr = this.var_types.get(name) else:
+                                return ""
+                            let tid = unsafe: read(tid_ptr)
+                            return this.name_str(tid)
+                        _:
+                            return ""
+                _:
+                    return ""
+
+
+    function is_this_expr(expr: ptr[ast.Expr]) -> bool:
+        unsafe:
+            match read(expr):
+                ast.Expr.identifier(name, _):
+                    return this.name_str(name) == "this"
+                _:
+                    return false
+
+
+    editable function arena_str(s: str) -> str:
+        if s.len == 0:
+            return ""
+        let storage = this.arena.alloc[ubyte](s.len) else:
+            fatal(c"lowerer: arena exhausted")
+        var i: ptr_uint = 0
+        while i < s.len:
+            unsafe: read(storage + i) = ubyte<-read(s.data + i)
+            i += 1
+        unsafe:
+            return str(data = ptr[char]<-storage, len = s.len)
+
     editable function lower_member_receiver(expr: ptr[ast.Expr]) -> ir.IrExpr:
         unsafe:
             match read(expr):
@@ -740,16 +933,29 @@ extending Lowerer:
         unsafe:
             match read(expr):
                 ast.Expr.identifier(name, _):
-                    var ei: ptr_uint = 0
-                    while ei < this.enum_names.len:
-                        let ename = this.enum_names.at(ei) else:
-                            return false
-                        if ename == name:
-                            return true
-                        ei += 1
-                    return false
+                    return this.is_enum_name(name)
                 _:
                     return false
+
+
+    function is_enum_name(name: ast.IdentId) -> bool:
+        var ei: ptr_uint = 0
+        while ei < this.enum_names.len:
+            let ename = this.enum_names.at(ei) else:
+                return false
+            if ename == name:
+                return true
+            ei += 1
+        return false
+
+
+    function scrutinee_name(expr: ptr[ast.Expr]) -> str:
+        unsafe:
+            match read(expr):
+                ast.Expr.identifier(name, _):
+                    return this.name_str(name)
+                _:
+                    return ""
 
 
     editable function lower_args(args: span[ptr[ast.Expr]]) -> vec.Vec[ir.IrExpr]:
@@ -804,6 +1010,25 @@ extending Lowerer:
             ))
             i += 1
         return ir.IrExpr.aggregate(name = cname, fields = this.copy_agg_fields(ref_of(ir_fields)))
+
+    editable function lower_variant_ctor(
+        type_name: ast.IdentId,
+        arm_name: ast.IdentId,
+        fields: span[ast.TupleField],
+    ) -> ir.IrExpr:
+        let cname = this.name_str(type_name)
+        let aname = this.name_str(arm_name)
+        var ir_fields = vec.Vec[ir.IrAggregateField].create()
+        var i: ptr_uint = 0
+        while i < fields.len:
+            let fld = unsafe: read(fields.data + i)
+            let val = this.lower_expr(fld.value)
+            ir_fields.push(ir.IrAggregateField(
+                name = this.name_str(fld.name),
+                value = val,
+            ))
+            i += 1
+        return ir.IrExpr.variant_ctor(name = cname, arm = aname, fields = this.copy_agg_fields(ref_of(ir_fields)))
 
 
     ## ── assignment helpers ────────────────────────────────────────────
@@ -933,6 +1158,19 @@ extending Lowerer:
             i += 1
         return span[ir.IrField](data = storage, len = src.len)
 
+    editable function copy_variant_arms(src: ref[vec.Vec[ir.IrVariantArm]]) -> span[ir.IrVariantArm]:
+        if src.len == 0:
+            return span[ir.IrVariantArm](data = zero[ptr[ir.IrVariantArm]], len = 0)
+        let storage = this.arena.alloc[ir.IrVariantArm](src.len) else:
+            fatal(c"lowerer: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"lowerer: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ir.IrVariantArm](data = storage, len = src.len)
+
     editable function copy_structs(src: ref[vec.Vec[ir.IrStruct]]) -> span[ir.IrStruct]:
         if src.len == 0:
             return span[ir.IrStruct](data = zero[ptr[ir.IrStruct]], len = 0)
@@ -1049,6 +1287,19 @@ extending Lowerer:
             unsafe: read(storage + i) = val
             i += 1
         return span[ir.IrVariant](data = storage, len = src.len)
+
+    editable function copy_span_types(src: ref[vec.Vec[ir.IrSpanType]]) -> span[ir.IrSpanType]:
+        if src.len == 0:
+            return span[ir.IrSpanType](data = zero[ptr[ir.IrSpanType]], len = 0)
+        let storage = this.arena.alloc[ir.IrSpanType](src.len) else:
+            fatal(c"lowerer: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"lowerer: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ir.IrSpanType](data = storage, len = src.len)
 
     editable function copy_funcs(src: ref[vec.Vec[ir.IrFunction]]) -> span[ir.IrFunction]:
         if src.len == 0:

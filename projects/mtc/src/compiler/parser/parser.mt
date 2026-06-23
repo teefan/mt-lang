@@ -238,6 +238,19 @@ extending Parser:
             i += 1
         return span[ast.EnumMember](data = storage, len = src.len)
 
+    editable function span_of_variant_arms(src: ref[vec.Vec[ast.VariantArmDecl]]) -> span[ast.VariantArmDecl]:
+        if src.len == 0:
+            return span[ast.VariantArmDecl](data = zero[ptr[ast.VariantArmDecl]], len = 0)
+        let storage = this.arena.alloc[ast.VariantArmDecl](src.len) else:
+            fatal(c"parser: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"parser: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ast.VariantArmDecl](data = storage, len = src.len)
+
     editable function span_of_match_arms(src: ref[vec.Vec[ast.MatchArm]]) -> span[ast.MatchArm]:
         if src.len == 0:
             return span[ast.MatchArm](data = zero[ptr[ast.MatchArm]], len = 0)
@@ -349,6 +362,8 @@ extending Parser:
                 return this.parse_struct_def(vis)
             T.tk_kw_enum:
                 return this.parse_enum_def(vis)
+            T.tk_kw_variant:
+                return this.parse_variant_decl(vis)
             T.tk_kw_extending:
                 return this.parse_extending()
             T.tk_kw_type:
@@ -521,6 +536,63 @@ extending Parser:
             name = name,
             backing = backing,
             members = members_span,
+            visibility = vis,
+            loc = this.make_loc(start_tok.start, end),
+        )
+        return this.new_decl(decl)
+
+
+    ## ── variant definition ────────────────────────────────────────────
+
+    editable function parse_variant_decl(vis: ast.Visibility) -> ptr[ast.Decl]:
+        let start_tok = this.cur.current()
+        this.expect(T.tk_kw_variant)
+        let name_tok = this.cur.current()
+        this.expect(T.tk_identifier)
+        let name = name_tok.ident
+        this.expect(T.tk_colon)
+        this.expect(T.tk_indent)
+        var arms = vec.Vec[ast.VariantArmDecl].create()
+        while true:
+            this.skip_newlines()
+            if this.cur.at_end():
+                break
+            if this.cur.current().kind == T.tk_dedent:
+                break
+            if this.at_indent_end():
+                break
+            let arm_name_tok = this.cur.current()
+            this.expect(T.tk_identifier)
+            var arm_fields = vec.Vec[ast.Field].create()
+            if not this.cur.at_end() and this.cur.current().kind == T.tk_lparen:
+                this.cur.advance()
+                while true:
+                    if this.cur.current().kind == T.tk_rparen:
+                        break
+                    if arm_fields.len > 0:
+                        this.expect(T.tk_comma)
+                    let field_name_tok = this.cur.current()
+                    this.expect(T.tk_identifier)
+                    this.expect(T.tk_colon)
+                    let field_type = this.parse_type()
+                    arm_fields.push(ast.Field(
+                        name = field_name_tok.ident,
+                        type_ref = field_type,
+                        loc = this.make_loc(field_name_tok.start, this.cur_end()),
+                    ))
+                this.expect(T.tk_rparen)
+            arms.push(ast.VariantArmDecl(
+                name = arm_name_tok.ident,
+                fields = this.span_of_fields(ref_of(arm_fields)),
+                loc = this.make_loc(arm_name_tok.start, this.cur_end()),
+            ))
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+            this.cur.advance()
+        let end = this.cur_end()
+        let arms_span = this.span_of_variant_arms(ref_of(arms))
+        let decl = ast.Decl.variant_decl(
+            name = name,
+            arms = arms_span,
             visibility = vis,
             loc = this.make_loc(start_tok.start, end),
         )
@@ -780,6 +852,16 @@ extending Parser:
         let tok = this.cur.current()
         this.expect(T.tk_identifier)
         let loc = this.make_loc(tok.start, tok.end)
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dot:
+            this.cur.advance()
+            let member_tok = this.cur.current()
+            this.expect(T.tk_identifier)
+            let t = ast.Type.qualified_type(
+                module_id = tok.ident,
+                type_name = member_tok.ident,
+                loc = this.make_loc(tok.start, member_tok.end),
+            )
+            return this.new_type(t)
         let t = ast.Type.named_type(name = tok.ident, loc = loc)
         return this.new_type(t)
 
@@ -1144,7 +1226,6 @@ extending Parser:
                         ))
                     else:
                         this.expect(T.tk_identifier)
-                        this.cur.advance()
                         var fvalue = zero[ptr[ast.Expr]]
                         var fguard = false
                         if not this.cur.at_end() and this.cur.current().kind == T.tk_equal:
@@ -1589,10 +1670,34 @@ extending Parser:
         let end = this.cur_end()
 
         if is_aggregate:
-            let type_name = this.callee_ident(callee)
+            var has_member = false
+            var agg_type: ast.IdentId
+            var agg_arm: ast.IdentId
+            unsafe:
+                match read(callee):
+                    ast.Expr.member_access(receiver, member, _):
+                        has_member = true
+                        agg_arm = member
+                        match read(receiver):
+                            ast.Expr.identifier(name, _):
+                                agg_type = name
+                            _:
+                                pass
+                    ast.Expr.identifier(name, _):
+                        agg_type = name
+                    _:
+                        pass
             let fields_span = this.span_of_tuple_fields(ref_of(fields))
             let loc = this.make_loc(start, end)
-            let e = ast.Expr.aggregate(type_name = type_name, fields = fields_span, loc = loc)
+            if has_member:
+                let e = ast.Expr.variant_ctor(
+                    type_name = agg_type,
+                    arm_name = agg_arm,
+                    fields = fields_span,
+                    loc = loc,
+                )
+                return this.new_expr(e)
+            let e = ast.Expr.aggregate(type_name = agg_type, fields = fields_span, loc = loc)
             return this.new_expr(e)
 
         let args_span = this.span_of_exprs(ref_of(args))

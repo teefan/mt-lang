@@ -36,6 +36,9 @@ public struct IrStruct:
 public struct IrMatchArm:
     values: span[IrExpr]
     body: span[IrStmt]
+    is_wildcard: bool
+    variant_name: str
+    variant_arm: str
 
 
 public struct IrEnumMember:
@@ -65,10 +68,16 @@ public struct IrVariant:
     arms: span[IrVariantArm]
 
 
+public struct IrSpanType:
+    type_id: TypeId
+    element_type: TypeId
+
+
 public struct IrProgram:
     structs: span[IrStruct]
     enums: span[IrEnum]
     variants: span[IrVariant]
+    spans: span[IrSpanType]
     functions: span[IrFunction]
 
 
@@ -82,6 +91,7 @@ public variant IrStmt:
     if_stmt(condition: IrExpr, then_body: span[IrStmt], else_body: span[IrStmt])
     while_stmt(condition: IrExpr, body: span[IrStmt])
     for_stmt(binding: str, iterable: IrExpr, body: span[IrStmt])
+    for_span(binding: str, span_expr: IrExpr, body: span[IrStmt])
     for_range(binding: str, start: IrExpr, end: IrExpr, body: span[IrStmt])
     break_stmt
     continue_stmt
@@ -101,4 +111,5 @@ public variant IrExpr:
     deref(operand: ptr[IrExpr])
     address(operand: ptr[IrExpr])
     aggregate(name: str, fields: span[IrAggregateField])
+    variant_ctor(name: str, arm: str, fields: span[IrAggregateField])
     cast_expr(type_c: str, operand: ptr[IrExpr])

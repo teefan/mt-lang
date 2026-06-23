@@ -197,6 +197,8 @@ extending Checker:
             match read(type_ref):
                 ast.Type.named_type(name, _):
                     return this.lookup_typename(name)
+                ast.Type.qualified_type(_, type_name, _):
+                    return this.lookup_typename(type_name)
                 ast.Type.pointer_type(pointee, is_const, _):
                     let inner = this.resolve_type(pointee)
                     return this.registry.pointer(inner, is_const)

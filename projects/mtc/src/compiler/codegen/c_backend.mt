@@ -8,6 +8,7 @@
 import compiler.lowering.ir as ir
 import compiler.sema.primitive_kind as pk
 import compiler.sema.type_registry as reg
+import std.map
 import std.string
 
 type P = pk.PrimitiveKind
@@ -18,6 +19,7 @@ struct CWriter:
     registry: reg.Registry
     program: ir.IrProgram
     type_buf: str_buffer[128]
+    span_names: map.Map[reg.TypeId, str]
 
 
 public function write_program(program: ir.IrProgram, registry: reg.Registry) -> str:
@@ -27,6 +29,7 @@ public function write_program(program: ir.IrProgram, registry: reg.Registry) -> 
         registry = registry,
         program = program,
         type_buf = zero[str_buffer[128]],
+        span_names = map.Map[reg.TypeId, str].with_capacity(16),
     )
     w.write_program_impl()
     return w.buf.as_str()
@@ -45,12 +48,21 @@ extending CWriter:
             this.writeln("")
             ei += 1
 
+        var vi: ptr_uint = 0
+        while vi < this.program.variants.len:
+            let v = unsafe: read(this.program.variants.data + vi)
+            this.write_variant(v)
+            this.writeln("")
+            vi += 1
+
         var si: ptr_uint = 0
         while si < this.program.structs.len:
             let s = unsafe: read(this.program.structs.data + si)
             this.write_struct(s)
             this.writeln("")
             si += 1
+
+        this.write_spans()
 
         this.write_forward_decls()
 
@@ -153,9 +165,17 @@ extending CWriter:
         if null_inner != reg.TypeId<-0:
             return this.type_to_c(null_inner)
 
-        let span_elem = this.registry.span_element(tid)
-        if span_elem != reg.TypeId<-0:
-            return this.type_to_c(span_elem)
+        ## Check spans — named via program.spans
+        var ssi: ptr_uint = 0
+        while ssi < this.program.spans.len:
+            let s = unsafe: read(this.program.spans.data + ssi)
+            if s.type_id == tid:
+                let elem_c = this.type_to_c(s.element_type)
+                this.type_buf.clear()
+                this.type_buf.append(elem_c)
+                this.type_buf.append("_span")
+                return this.type_buf.as_str()
+            ssi += 1
 
         let ref_inner = this.registry.ref_pointee(tid)
         if ref_inner != reg.TypeId<-0:
@@ -176,11 +196,18 @@ extending CWriter:
                 return e.name
             ei += 1
 
+        var vi: ptr_uint = 0
+        while vi < this.program.variants.len:
+            let v = unsafe: read(this.program.variants.data + vi)
+            if v.type_id == tid:
+                return v.name
+            vi += 1
+
         return "int"
 
 
     function zero_init(tid: reg.TypeId) -> str:
-        if this.is_struct_type(tid):
+        if this.is_struct_type(tid) or this.is_variant_type(tid):
             return "{0}"
         if this.registry.is_primitive(tid, P.pk_str):
             return "\"\""
@@ -206,6 +233,16 @@ extending CWriter:
             if e.type_id == tid:
                 return true
             ei += 1
+        return false
+
+
+    function is_variant_type(tid: reg.TypeId) -> bool:
+        var vi: ptr_uint = 0
+        while vi < this.program.variants.len:
+            let v = unsafe: read(this.program.variants.data + vi)
+            if v.type_id == tid:
+                return true
+            vi += 1
         return false
 
 
@@ -243,6 +280,116 @@ extending CWriter:
         this.write("} ")
         this.write(s.name)
         this.writeln(";")
+
+
+    ## ── variant ─────────────────────────────────────────────────────
+
+    editable function write_variant(v: ir.IrVariant) -> void:
+        var has_data = false
+        var ai: ptr_uint = 0
+        while ai < v.arms.len:
+            let arm = unsafe: read(v.arms.data + ai)
+            if arm.fields.len > 0:
+                has_data = true
+            ai += 1
+
+        ai = 0
+        while ai < v.arms.len:
+            let arm = unsafe: read(v.arms.data + ai)
+            if arm.fields.len > 0:
+                this.writeln("typedef struct {")
+                var fi: ptr_uint = 0
+                while fi < arm.fields.len:
+                    let fld = unsafe: read(arm.fields.data + fi)
+                    this.write("    ")
+                    this.write(this.type_to_c(fld.type_id))
+                    this.write(" ")
+                    this.write(fld.name)
+                    this.writeln(";")
+                    fi += 1
+                this.write("} ")
+                this.write_type_buf3(v.name, "_", arm.name)
+                this.writeln(";")
+                this.writeln("")
+            ai += 1
+
+        this.writeln("typedef enum {")
+        ai = 0
+        while ai < v.arms.len:
+            let arm2 = unsafe: read(v.arms.data + ai)
+            this.write("    ")
+            this.write_type_buf3(v.name, "_tag_", arm2.name)
+            this.write(" = ")
+            this.write_int(int<-ai)
+            this.writeln(",")
+            ai += 1
+        this.write("} ")
+        this.write_type_buf2(v.name, "_tag")
+        this.writeln(";")
+        this.writeln("")
+
+        if has_data:
+            this.writeln("typedef union {")
+            ai = 0
+            while ai < v.arms.len:
+                let arm3 = unsafe: read(v.arms.data + ai)
+                if arm3.fields.len > 0:
+                    this.write("    ")
+                    this.write_type_buf3(v.name, "_", arm3.name)
+                    this.write(" ")
+                    this.write(arm3.name)
+                    this.writeln(";")
+                ai += 1
+            this.write("} ")
+            this.write_type_buf2(v.name, "_data")
+            this.writeln(";")
+            this.writeln("")
+
+        this.writeln("typedef struct {")
+        this.write("    ")
+        this.write_type_buf2(v.name, "_tag")
+        this.writeln(" tag;")
+        if has_data:
+            this.write("    ")
+            this.write_type_buf2(v.name, "_data")
+            this.writeln(" data;")
+        this.write("} ")
+        this.write(v.name)
+        this.writeln(";")
+
+
+    editable function write_type_buf2(s1: str, s2: str) -> void:
+        this.type_buf.clear()
+        this.type_buf.append(s1)
+        this.type_buf.append(s2)
+        this.write(this.type_buf.as_str())
+
+
+    editable function write_type_buf3(s1: str, s2: str, s3: str) -> void:
+        this.type_buf.clear()
+        this.type_buf.append(s1)
+        this.type_buf.append(s2)
+        this.type_buf.append(s3)
+        this.write(this.type_buf.as_str())
+
+
+    ## ── spans ───────────────────────────────────────────────────────
+
+    editable function write_spans() -> void:
+        var len = this.program.spans.len
+        if len == 0:
+            return
+        var si: ptr_uint = 0
+        while si < len:
+            let entry = unsafe: read(this.program.spans.data + si)
+            let elem_cname = this.type_to_c(entry.element_type)
+            this.write("typedef struct { ")
+            this.write(elem_cname)
+            this.write("* data; uintptr_t len; } ")
+            this.write(elem_cname)
+            this.writeln("_span;")
+            si += 1
+        this.writeln("")
 
 
     ## ── function ───────────────────────────────────────────────────
@@ -360,6 +507,29 @@ extending CWriter:
                     bi += 1
             ir.IrStmt.match_stmt(scrutinee, arms):
                 this.write_match(scrutinee, arms)
+            ir.IrStmt.for_span(binding, span_expr, body):
+                this.write_indent()
+                this.write("typeof(")
+                this.write_expr(span_expr)
+                this.write(") _mt_span = ")
+                this.write_expr(span_expr)
+                this.writeln(";")
+                this.write_indent()
+                this.writeln("for (uintptr_t _mt_i = 0; _mt_i < _mt_span.len; _mt_i++) {")
+                this.indent_level += 1
+                this.write_indent()
+                this.write("typeof(*_mt_span.data) ")
+                this.write(binding)
+                this.write(" = _mt_span.data[_mt_i];")
+                this.writeln("")
+                var fii: ptr_uint = 0
+                while fii < body.len:
+                    let fs = unsafe: read(body.data + fii)
+                    this.write_stmt(fs)
+                    fii += 1
+                this.indent_level -= 1
+                this.write_indent()
+                this.writeln("}")
             ir.IrStmt.for_stmt(binding, iterable, body):
                 this.write_indent()
                 this.write("for (ptr_uint _i = 0; _i < ")
@@ -367,11 +537,11 @@ extending CWriter:
                 this.write("; _i++) {")
                 this.writeln("")
                 this.indent_level += 1
-                var fii: ptr_uint = 0
-                while fii < body.len:
-                    let fs = unsafe: read(body.data + fii)
-                    this.write_stmt(fs)
-                    fii += 1
+                var fii2: ptr_uint = 0
+                while fii2 < body.len:
+                    let fs2 = unsafe: read(body.data + fii2)
+                    this.write_stmt(fs2)
+                    fii2 += 1
                 this.indent_level -= 1
                 this.write_indent()
                 this.writeln("}")
@@ -413,6 +583,7 @@ extending CWriter:
             let arm = unsafe: read(arms.data + i)
             let is_wildcard = arm.values.len == 0
             let is_last = i + 1 == arms.len
+            let is_variant = arm.variant_name != ""
 
             if is_wildcard:
                 this.write_indent()
@@ -424,15 +595,19 @@ extending CWriter:
                 else:
                     this.write_indent()
                     this.write("} else if (")
-                var vi: ptr_uint = 0
-                while vi < arm.values.len:
-                    if vi > 0:
-                        this.write(" || ")
-                    this.write_expr(scrutinee)
-                    this.write(" == ")
-                    let v = unsafe: read(arm.values.data + vi)
-                    this.write_expr(v)
-                    vi += 1
+                if is_variant and arm.values.len > 0:
+                    let cond = unsafe: read(arm.values.data + 0)
+                    this.write_expr(cond)
+                else:
+                    var vi: ptr_uint = 0
+                    while vi < arm.values.len:
+                        if vi > 0:
+                            this.write(" || ")
+                        this.write_expr(scrutinee)
+                        this.write(" == ")
+                        let v = unsafe: read(arm.values.data + vi)
+                        this.write_expr(v)
+                        vi += 1
                 this.writeln(") {")
 
             this.indent_level += 1
@@ -511,6 +686,27 @@ extending CWriter:
                     this.write_expr(f.value)
                     ai += 1
                 this.write("})")
+            ir.IrExpr.variant_ctor(name, arm, fields):
+                this.write("((")
+                this.write(name)
+                this.write("){ .tag = ")
+                this.write_type_buf3(name, "_tag_", arm)
+                this.write(", .data.")
+                this.write(arm)
+                if fields.len > 0:
+                    this.write(" = {")
+                    var avi: ptr_uint = 0
+                    while avi < fields.len:
+                        if avi > 0:
+                            this.write(", ")
+                        let f2 = unsafe: read(fields.data + avi)
+                        this.write(".")
+                        this.write(f2.name)
+                        this.write(" = ")
+                        this.write_expr(f2.value)
+                        avi += 1
+                    this.write("}")
+                this.write(" })")
             ir.IrExpr.cast_expr(type_c, operand):
                 this.write("(")
                 this.write(type_c)

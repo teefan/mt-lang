@@ -905,6 +905,47 @@ var result = grade(5); result += 7; if result > 5: return result
 
 ## 10. Test Suite
 
+### Safety Rules for Running Self-Hosted `mtc`
+
+The self-hosted compiler is under active development and inherits C memory safety risks from its generated code. Always run it with resource limits:
+
+```sh
+# Run self-hosted mtc with hard limits (recommended wrapper)
+run_mtc() {
+    ulimit -v 524288    # 512 MiB virtual memory
+    ulimit -t 10        # 10 seconds CPU time
+    timeout 10 ./build/bin/linux/debug/mtc "$@"
+}
+export -f run_mtc
+```
+
+**Test runner safety:**
+```sh
+# Safe test runner with per-test limits
+for f in test/fixtures/*.mt; do
+    name="$(basename "$f" .mt)"
+    c_out="$(mktemp /tmp/mtc_XXXXXX.c)"
+    bin_out="$(mktemp /tmp/mtc_XXXXXX)"
+    (
+        ulimit -v 524288
+        ulimit -t 10
+        timeout 10 ./build/bin/linux/debug/mtc build "$f"
+    ) > "$c_out" 2>/dev/null || { echo "FAIL $name"; continue; }
+    gcc "$c_out" -o "$bin_out" -w 2>/dev/null || { echo "FAIL $name"; continue; }
+    actual=$("$bin_out" >/dev/null 2>&1; echo $?)
+    rm -f "$c_out" "$bin_out"
+    echo "OK   $name — exit $actual"
+done
+```
+
+**Rules:**
+- Never run the self-hosted compiler without `ulimit -v` and `timeout` guards
+- Exit code 137 = OOM kill (bug in self-hosted, not the test)
+- Exit code 124 = timeout (likely infinite loop in self-hosted)
+- Exit code 139 = SEGV (null pointer or buffer overflow in generated C)
+- Generated C may contain use-after-free, buffer overflows, or infinite loops
+- Always compile generated C with `-fsanitize=address,undefined` for debugging
+
 ### Fixtures (`projects/mtc/test/fixtures/` — 12 files)
 
 | # | File | Feature | Exit | Self-hosted | Ruby baseline |
