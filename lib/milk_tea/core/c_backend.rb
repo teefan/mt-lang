@@ -13,7 +13,16 @@ require_relative "c_backend/expressions"
 require_relative "c_backend/reinterpret"
 
 module MilkTea
-  class CBackendError < StandardError; end
+  class CBackendError < StandardError
+    attr_reader :line, :column, :path
+
+    def initialize(msg = nil, line: nil, column: nil, path: nil)
+      super(msg)
+      @line = line
+      @column = column
+      @path = path
+    end
+  end
 
   class CBackend
     INDENT = "  "

@@ -767,11 +767,15 @@ module MilkTea
             pointer: false,
             const_value: element,
           )
-          begin
-            body = lower_block(statement.body, env: iter_env, active_defers:, return_type:, loop_flow: nil, allow_return:)
-            lowered << IR::BlockStmt.new(body:) unless body.empty?
+          emit_stmts, other_stmts = statement.body.partition { |s| s.is_a?(AST::EmitStmt) }
+          emit_stmts.each do |emit_stmt|
+            lowered.concat(lower_emit_stmt(emit_stmt, env: iter_env))
           rescue LoweringError
-            # compile-time expression in body cannot be lowered — skip
+            # emit for compile-time-only constructs — skip
+          end
+          unless other_stmts.empty?
+            body = lower_block(other_stmts, env: iter_env, active_defers:, return_type:, loop_flow: nil, allow_return:)
+            lowered << IR::BlockStmt.new(body:) unless body.empty?
           end
         end
 

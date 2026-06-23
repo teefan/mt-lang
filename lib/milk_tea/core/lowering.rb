@@ -46,7 +46,16 @@ require_relative "lowering/artifacts"
 require_relative "lowering/lowering_context"
 
 module MilkTea
-  class LoweringError < StandardError; end
+  class LoweringError < StandardError
+    attr_reader :line, :column, :path
+
+    def initialize(msg = nil, line: nil, column: nil, path: nil)
+      super(msg)
+      @line = line
+      @column = column
+      @path = path
+    end
+  end
 
   class Lowering
     def self.lower(program)

@@ -294,8 +294,8 @@ module MilkTea
       def self.format_strict_root_error(error, path:)
         diagnostic = Diagnostic.new(
           path: path,
-          line: 1,
-          column: 1,
+          line: error.respond_to?(:line) && error.line ? error.line : 1,
+          column: error.respond_to?(:column) && error.column ? error.column : 1,
           code: strict_root_diagnostic_code(error),
           message: "strict current-root check failed: #{error.message}",
           severity: :error,
