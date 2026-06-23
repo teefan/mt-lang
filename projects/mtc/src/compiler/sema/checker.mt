@@ -85,10 +85,41 @@ extending Checker:
             match read(decl):
                 ast.Decl.function_def(_):
                     this.check_function(decl)
+                ast.Decl.struct_decl(name, fields, _, _):
+                    this.check_struct(name, fields)
+                ast.Decl.extending_decl(type_name, methods, _):
+                    this.check_extending(type_name, methods)
                 ast.Decl.import_decl(_):
                     pass
                 _:
                     pass
+
+
+    editable function check_struct(name: ast.IdentId, fields: span[ast.Field]) -> void:
+        let tid = this.registry.named_type(name)
+        this.register_typename(name, tid)
+        var i: ptr_uint = 0
+        while i < fields.len:
+            unsafe:
+                let field = read(fields.data + i)
+                let ft = this.resolve_type(field.type_ref)
+                if ft == TypeId<-0:
+                    let _ = this.add_error("unknown type in struct field")
+            i += 1
+
+
+    editable function check_extending(type_name: ast.IdentId, methods: span[ast.ExtendingMethod]) -> void:
+        let _ = this.lookup_typename(type_name)
+        var mi: ptr_uint = 0
+        while mi < methods.len:
+            unsafe:
+                let method = read(methods.data + mi)
+                var fn_scope = scope_mod.create(null)
+                let scope_ptr = ptr_of(fn_scope)
+                this.bind_params(method.params, scope_ptr)
+                let ret_id = this.resolve_type(method.return_type)
+                this.check_block(method.body, scope_ptr, ret_id)
+            mi += 1
 
 
     editable function check_function(decl: ptr[ast.Decl]) -> void:
@@ -122,6 +153,8 @@ extending Checker:
 
 
     editable function resolve_type(type_ref: ptr[ast.Type]) -> TypeId:
+        if type_ref == zero[ptr[ast.Type]]:
+            return this.void_id
         unsafe:
             match read(type_ref):
                 ast.Type.named_type(name, _):
@@ -174,6 +207,36 @@ extending Checker:
                     if tid == TypeId<-0 and value != zero[ptr[ast.Expr]]:
                         tid = this.check_expr(value, scope)
                     scope_mod.define(scope, name, tid)
+                ast.Stmt.if_stmt(branches, else_body, _):
+                    var bi: ptr_uint = 0
+                    while bi < branches.len:
+                        let br = unsafe: read(branches.data + bi)
+                        let _ = this.check_expr(br.condition, scope)
+                        this.check_block(br.body, scope, expected_ret)
+                        bi += 1
+                    if else_body != zero[ptr[ast.Stmt]]:
+                        this.check_block(else_body, scope, expected_ret)
+                ast.Stmt.while_stmt(condition, body, _):
+                    let _ = this.check_expr(condition, scope)
+                    this.check_block(body, scope, expected_ret)
+                ast.Stmt.unsafe_block(body, _):
+                    this.check_block(body, scope, expected_ret)
+                ast.Stmt.assignment(target, _, value, _):
+                    let _ = this.check_expr(target, scope)
+                    let _ = this.check_expr(value, scope)
+                ast.Stmt.match_stmt(scrutinee, arms, _):
+                    let _ = this.check_expr(scrutinee, scope)
+                    var mi: ptr_uint = 0
+                    while mi < arms.len:
+                        let arm = unsafe: read(arms.data + mi)
+                        this.check_block(arm.body, scope, expected_ret)
+                        mi += 1
+                ast.Stmt.for_stmt(_, iterables, body, _):
+                    var ii: ptr_uint = 0
+                    while ii < iterables.len:
+                        let _ = this.check_expr(unsafe: read(iterables.data + ii), scope)
+                        ii += 1
+                    this.check_block(body, scope, expected_ret)
                 _:
                     pass
 
@@ -186,7 +249,8 @@ extending Checker:
         if expected_ret == this.void_id:
             return
         let actual = this.check_expr(value, scope)
-        if actual != expected_ret:
+        let unknown: TypeId = TypeId<-0
+        if actual != unknown and actual != this.void_id and actual != expected_ret:
             let _ = this.add_error("return type mismatch")
 
 
@@ -216,6 +280,13 @@ extending Checker:
                     return this.check_call(callee, args, scope)
                 ast.Expr.unary_op(_, operand, _):
                     return this.check_expr(operand, scope)
+                ast.Expr.member_access(receiver, _, _):
+                    let _ = this.check_expr(receiver, scope)
+                    return TypeId<-0
+                ast.Expr.null_literal(_):
+                    return TypeId<-0
+                ast.Expr.aggregate(type_name, _, _):
+                    return this.lookup_typename(type_name)
                 _:
                     return TypeId<-0
 

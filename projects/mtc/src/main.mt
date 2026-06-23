@@ -9,7 +9,7 @@ import compiler.source as source_mod
 external function printf(format: cstr, ...) -> int
 
 function main() -> int:
-    let source_str = "function add(a: int, b: int) -> int:\n    return a + b\n"
+    let source_str = "struct Counter:\n    value: int\n\nfunction main() -> int:\n    var c: Counter = Counter(value = 42)\n    return c.value\n"
     let source = source_mod.from_str(source_str, "<input>")
     var ctx = ctx_mod.create(source)
 

@@ -27,15 +27,17 @@ extending Binder:
 
 
     editable function bind_decl(decl: ptr[ast.Decl]) -> void:
-        match read(decl):
-            ast.Decl.function_def(_):
-                this.bind_function(decl)
-            _:
-                pass
+        unsafe:
+            match read(decl):
+                ast.Decl.function_def(_):
+                    this.bind_function(decl)
+                _:
+                    pass
 
 
     editable function bind_function(decl: ptr[ast.Decl]) -> void:
-        match read(decl):
+        unsafe:
+            match read(decl):
             ast.Decl.function_def(
                 name, _tp, _params, _ret, _body,
                 _vis, _async, _konst, _loc,

@@ -511,8 +511,8 @@ function parse(tokens: span[Token], ctx: ref[Context]) -> Result[ptr[AST::Source
 |--------|--------|------|-------|-------------|
 | ✅ | `compiler.parser.operators` | `src/compiler/parser/operators.mt` | 36 | BinaryOp (18) + UnaryOp (3) enums |
 | ✅ | `compiler.parser.token_cursor` | `src/compiler/parser/token_cursor.mt` | 46 | TokenCursor: safe peek/consume over span[Token] |
-| ✅ | `compiler.parser.ast` | `src/compiler/parser/ast.mt` | 230 | AST variant types: 5 top-level variants, 17 helper structs, span-based child lists |
-| ✅ | `compiler.parser.parser` | `src/compiler/parser/parser.mt` | 553 | Recursive descent + precedence climbing with arena allocation (`push[T]`, `finish_span[T]`) |
+| ✅ | `compiler.parser.ast` | `src/compiler/parser/ast.mt` | 247 | AST: 5 top-level variants (Expr 31, Stmt 16, Decl 10, Type 11, Pattern 4), 19 helper structs, span-based child lists |
+| ✅ | `compiler.parser.parser` | `src/compiler/parser/parser.mt` | 1419 | Recursive descent + precedence climbing: functions, structs, enums, extending blocks, if/else, while, for-range, unsafe, match(int/char/\|/wildcard/enum-member), pass, break/continue, assignment(= += -= etc), aggregate(struct literals), integer/char parsing from source bytes |
 
 ### Phase 4: Semantic Analysis 🟡
 
@@ -524,8 +524,8 @@ function parse(tokens: span[Token], ctx: ref[Context]) -> Result[ptr[AST::Source
 | ✅ | `compiler.sema.type_registry` | `src/compiler/sema/type_registry.mt` | 223 | TypeId interning: primitives (array), ptr/ref/span/nullable (hash-map), fn/tuple/array (linear scan), named (scan) |
 | ✅ | `compiler.sema.types` | `src/compiler/sema/types.mt` | 106 | SemType wrapper: is_integer, is_float, is_numeric, is_bool, is_void, is_str, is_cstr predicates |
 | ✅ | `compiler.sema.scope` | `src/compiler/sema/scope.mt` | 59 | Lexical scope: parent chain, bindings Map[IdentId, TypeId], lookup walks parent chain |
-| 🟡 | `compiler.sema.binder` | `src/compiler/sema/binder.mt` | 50 | Name resolution pass (stub — function_def only) |
-| 🟡 | `compiler.sema.checker` | `src/compiler/sema/checker.mt` | 202 | Type checker: function decls, params, return, binary ops, calls, local decls (working for basic subset) |
+| 🟡 | `compiler.sema.binder` | `src/compiler/sema/binder.mt` | 48 | Name resolution pass (stub — function_def only, fixed unsafe errors) |
+| ✅ | `compiler.sema.checker` | `src/compiler/sema/checker.mt` | 310 | Type checker: structs, extending, functions, if/while/unsafe/match, binary ops, calls, local decls, assignment, return, null-type→void |
 | ⬜ | `compiler.sema.generics` | | | Generic type parameter substitution and monomorphization |
 | ⬜ | `compiler.sema.interfaces` | | | Interface conformance checking |
 | ⬜ | `compiler.sema.const_eval` | | | Compile-time expression evaluator |
@@ -534,15 +534,15 @@ function parse(tokens: span[Token], ctx: ref[Context]) -> Result[ptr[AST::Source
 
 | Status | Module | File | Lines | Description |
 |--------|--------|------|-------|-------------|
-| ✅ | `compiler.lowering.ir` | `src/compiler/lowering/ir.mt` | 27 | IR types: Program, Function (params/return/body), Stmt (return/expr/decl), Expr (integer/name/binary/call) |
-| ✅ | `compiler.lowering.lowerer` | `src/compiler/lowering/lowerer.mt` | 284 | AST → IR: walks SourceFile, lowers functions/statements/expressions, binary op → C string, type → C name mapping, arena-backed span copies |
+| ✅ | `compiler.lowering.ir` | `src/compiler/lowering/ir.mt` | 54 | IR types: Program (structs+functions), Function, Struct, Field, MatchArm, Stmt (return/expr/decl/assign/if/while/for/break/continue/match/block), Expr (integer/name/null/binary/call/access) |
+| ✅ | `compiler.lowering.lowerer` | `src/compiler/lowering/lowerer.mt` | 585 | AST → IR: lowers structs, functions, extending methods, if/else, while, match (int/char/enum-member patterns with | merging), assignment, local decls, unsafe, binary ops→C strings, type→C names, null-type→void, arena-backed span copies |
 | ⬜ | `compiler.lowering.async` | | | Async normalization (deferred) |
 
 ### Phase 6: Code Generation ✅
 
 | Status | Module | File | Lines | Description |
 |--------|--------|------|-------|-------------|
-| ✅ | `compiler.codegen.c_backend` | `src/compiler/codegen/c_backend.mt` | 140 | IR → C: emits `#include`, function signatures, statements, expressions. Uses `string.String` as write buffer. |
+| ✅ | `compiler.codegen.c_backend` | `src/compiler/codegen/c_backend.mt` | 204 | IR → C: emits `#include`, struct typedefs, functions, if/else, while, block, expressions. Uses `string.String` as write buffer. |
 | ⬜ | `compiler.codegen.c_formatter` | | | (merged into c_backend — string.String builder pattern) |
 
 ### Phase 7: Integration & Indentation (Completed) ✅
@@ -730,3 +730,188 @@ Useful modules for the self-host compiler. All are in `std/`. No explicit depend
 - Fixed SEGV: parser was calling `arena.release()` before return — all AST pointers became dangling
 - Verified end-to-end: `function add(a: int, b: int) -> int: return a + b` → generates valid C → gcc compiles → runs correctly (add(2,3) == 5)
 - Doc update: added §8 (Coding Rules) and §9 (Standard Library Quick Reference) to this document
+
+### Session 9 (2026-06-23) — Struct + Control Flow Pipeline
+
+**Audit Findings:**
+- Checker passed most decls/stmts/exprs silently (struct, enum, extending, match, if, while, unsafe, etc.)
+- Parser's `parse_declaration` only handled `function` — struct and all other decls became `error_decl`
+- Parser's `parse_statement` only handled `return`, `let`/`var` — if, while, unsafe were parsed as expression stmts (causing garbled output)
+- Parser's `parse_integer` always hardcoded `value = 0` (integer values not parsed from source bytes)
+- `parse_module` broke on DEDENT after first decl — multi-decl modules failed
+- Binder had missing `unsafe:` wrapping causing 2 compile errors
+
+**Fixes & Expansions:**
+- **IR (`ir.mt`)**: Added `IrStruct`, `IrField`, `IrStmt.if_stmt`, `IrStmt.while_stmt`, `IrStmt.block`; `IrProgram` now holds `structs` + `functions`
+- **Parser**: Added `parse_struct_def`, `parse_if_stmt`, `parse_while_stmt`, `parse_unsafe_stmt` parsing with indentation handling; added `read_int()` to parse integer values from source byte spans; added `source: span[ubyte]` field to Parser struct; added `new_pattern()`, `span_of_fields()`, `span_of_branches()` helper methods; fixed DEDENT consumption in `parse_module` and `parse_function_def` for multi-decl support
+- **Checker**: Added `check_struct()` to register struct types; added if/while/unsafe checking in `check_stmt`; made `return` type check tolerant of unknown `TypeId` (avoids false errors on unresolved calls)
+- **TypeRegistry**: Made `named_type` public
+- **Lowerer**: Added `lower_struct()`, `lower_if()`, `lower_while()`, `lower_block_into()`, `lower_block_stmts()`; added `copy_fields()`, `copy_structs()` arena helpers
+- **Codegen**: Added `write_struct()` for C typedef emission; added if/else, while, and block stmt emission with proper C indentation
+
+**Verified End-to-End:**
+```
+struct Vec2: x: float, y: float
+function test(n: int) -> int: if n > 0: return 1 else: return 0
+function main() -> int: return test(5)
+```
+→ Compiles to valid C → gcc compiles → runs with exit code 1 (correct: 5 > 0)
+
+_(All gaps listed below are now resolved — see S10–S14 for extending, match, for, break/continue, struct literals, this receiver, etc.)_
+
+### Session 10 (2026-06-23) — Extending Blocks & Method Parsing
+
+**Pushed extending blocks through full pipeline:**
+- **AST**: Added `MethodKind` enum (`mk_plain`, `mk_editable`, `mk_static`), `ExtendingMethod` struct, `Decl.extending_decl` variant
+- **Parser**: Added `parse_extending` with indented method loop, `parse_extending_method` handling `editable`/`static` modifiers, `span_of_methods` arena helper
+- **Checker**: Added `check_extending` and `check_extending_method`; fixed `resolve_type` to handle null type_ref (→ void_id)
+- **Lowerer**: Added `lower_extending` and `lower_method`; fixed `type_c_name` to return `"void"` for null type refs
+- **Bug fix**: Added `pass` statement parsing to `parse_statement` (was missing, caused crash)
+- **Bug fix**: Null return type causing SEGV in `resolve_type` and `type_c_name` — both now return void when type_ref is null
+
+**Verified end-to-end:**
+```
+struct Counter: value: int
+extending Counter:
+    function read() -> int: return 42
+    editable function bump(): pass
+function fib(n: int) -> int:
+    if n <= 1: return n
+    else: return fib(n-1) + fib(n-2)
+function main() -> int: return fib(6)
+```
+→ C compiles → runs → exit 8 (correct)
+
+_(`this` member access + receiver → S13; method naming deferred)_
+
+
+### Session 11 (2026-06-23) — Assignment + Local Decl + Null + Match
+
+**Priority 1 — Assignment & Compound Assignment:**
+- **Parser**: Added `is_assign_op()` and assignment detection to `parse_expression_stmt` — recognizes `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`
+- **IR**: Added `IrStmt.assign(target, op_kind, value)`
+- **Lowerer**: Added `target_name()`, `assign_op_c()` helpers; `local_decl` now lowered to `IrStmt.decl` (was silently skipped)
+- **Codegen**: Added `assign` emission — `a += 5` → `a += 5;` in C
+
+**Priority 1 — Null Literal:**
+- **IR**: Added `IrExpr.null_value`
+- **Lowerer**: `null_literal` → `null_value`
+- **Codegen**: Emits `0` (C null pointer equivalent)
+- **Checker**: Added `null_literal` type handling
+
+**Priority 2 — Match Statements (Major Feature):**
+- **IR**: Added `IrMatchArm` struct, `IrStmt.match_stmt(scrutinee, arms)`
+- **Parser**: Added `parse_match_stmt`, `parse_match_arms` (multi-value `|` flattening), `parse_match_pattern` (wildcard `_`, int literals, char literals, enum member `Type.member`)
+- **Pattern parsing**: `is_wildcard()` detects `_` via source byte check; `read_char()` parses char literals including escapes (`\n`, `\r`, `\t`, `\0`, `\xNN`); `read_hex_byte()` for hex escapes
+- **Lowerer**: Added `lower_match`, `lower_match_pattern`; `|` multi-value arms merged via `same_body()` pointer comparison — adjacent arms with identical body pointers share one IR arm with combined values
+- **Codegen**: Added `write_match` — emits `if (x == v0 || x == v1) { body } else if (...) { ... } else { ... }` chain with proper indentation
+- **Checker**: Added `match_stmt` checking
+
+**Verified End-to-End:**
+```
+struct Counter + extending + match with | multi-value arms + assignment + if/else
+function grade(5) → match: 0|1|2→1, 3|4→2, 5→3, _→0
+var result = grade(5); result += 7; if result > 5: return result
+```
+→ C compiles → exit 10 ✓
+
+**IR types staged for future:** `for_stmt`, `break_stmt`, `continue_stmt` (codegen stubbed, parser not yet wired)
+
+**Known next gaps:**
+- Variant arm destructuring in match patterns (e.g., `ast.Decl.function_def(name, _, params, ...)`)
+- Variant type emission in C (tag + union) — needed for AST types
+- Enum member value resolution in match (e.g., `TokenKind.tk_kw_if` needs C enum value)
+- `for` loop parsing + lowering
+- `break`/`continue` parsing + lowering
+- `let...else:` guard pattern
+- Struct literal construction (`Type(field = val)`)
+
+### Session 12 (2026-06-23) — Enums + For Loops + Break/Continue
+
+- **Enum declarations**: Added `parse_enum_def`, `IrEnum`+`IrEnumMember`, `lower_enum` with auto-value increment, `write_enum` → `typedef enum {...} Name;`
+- **For range loops**: Added `parse_for_stmt`, `..` range expression in `parse_binary`, `IrStmt.for_range(binding, start, end, body)`, codegen `for (int i = 0; i < N; i++)`
+- **Break/continue**: Added keyword cases in `parse_statement`, IR variants, lowering, codegen
+- Verified: `for i in 0..n: total += i` → `for (int i = 0; i < n; i++)` → exit 10 ✓
+
+### Session 13 (2026-06-23) — `this` Receiver + Builtins
+
+- **`this` receiver in extending**: `IrFunction.is_editable` flag; codegen emits `Counter*` for editable, `Counter` for plain; `IrExpr.ptr_access` for `->` member access; `in_editable` lowering context flag
+- **`read(ptr)` builtin**: `IrExpr.deref` → `(*expr)`; lowerer intercepts callee name `"read"`
+- **`ptr_of(x)` builtin**: `IrExpr.address` → `(&expr)`
+- **Unary `-`**: `parse_prefix` case, `IrExpr.unary`, `unary_op_c` helper
+- **`pass` statement**: Added to `parse_statement` (was missing, caused crash)
+- Verified: `read(ptr_of(x))` → `(*(&x))` → exit 42 ✓
+
+### Session 14 (2026-06-23) — Struct Literals + Void Return + `!=`
+
+- **Struct literal construction**: `Expr.aggregate(type_name, fields)` AST variant; `has_named_arg_ahead()` detects `id = expr` in call args; `IrAggregateField` IR; `lower_aggregate` → `((Type){.field = val})`; `map_type_c` now passes through user-defined types
+- **Void return**: `IrStmt.return_void` variant; lowerer checks `value == zero[ptr[Expr]]`; codegen emits `return;`
+- **`!=` comparison**: Already worked — `op_ne` in `binary_op_c` → `"!="`
+- **`zero[ptr[T]]` builtin**: Lowerer intercepts `specialization` callee `"zero"` → `IrExpr.null_value`
+- Verified: `Counter c = ((Counter){.value = 42}); return c.value` → exit 42 ✓
+
+### Session 15 (2026-06-23) — Ruby Compiler Bug Fix
+
+- **f-string struct return fix**: `mt_format_str_release` was emitted after struct construction, causing use-after-free when struct fields contained format string values. Fixed in `lowering/statement_blocks.rb` (return path + assignment defer path) and `lowering/utils.rb` (`struct_contains_string_field?` + `suppress_format_releases_for_assignment`). Covers direct return, field-assign-return, nested struct, and generic struct patterns.
+- **Verified**: `make_param("Counter")` returns struct with owned string — zero `mt_format_str_release` calls in generated C.
+---
+
+## 10. Remaining Feature Gaps (Priority-Ordered)
+
+This section tracks the features needed to compile real source files, ordered by implementation priority.
+
+### Priority 1 — Immediate (fix silent data corruption)
+
+| Feature | Complexity | Impact |
+|---------|-----------|--------|
+| Lowerer: 21 collapsed Expr variants | Low each | **Critical** — string/bool/float/index produce wrong C |
+| Type mapping: pointer/span types → `"int"` | Medium | **Critical** — all generic types emit wrong C |
+
+### Priority 2 — Missing Decl/Stmt Parsing
+
+| Feature | Complexity | Used in |
+|---------|-----------|---------|
+| `defer` statement | Low | context.mt, lexer.mt |
+| `const` declaration | Medium | Not yet in source files |
+| `type` alias | Low | Not yet in source files |
+| `variant` declaration | High | AST types (self-referential) |
+
+### Priority 3 — Quality of Life
+
+| Feature | Complexity | Used in |
+|---------|-----------|---------|
+| `let...else:` guard parsing | Medium | ~50 map.get/vec.at sites |
+| Method call lowering (receiver passing) | Medium | Every extending method call |
+| Struct zero-init `= {0}` | Low | Every var decl without init |
+| `T<-value` cast (`<-` token) | High | type_registry.mt, binder.mt |
+
+### Priority 4 — Major Architecture
+
+| Feature | Complexity | Notes |
+|---------|-----------|-------|
+| Variant types + match destructuring | Very High | C tag+union; match with field binding |
+| Generic type resolution | Very High | Vec, Map, span, ptr, arena monomorphization |
+| Module loading + file I/O | High | fread+parse multi-file; import resolution |
+
+### ✅ Completed Features (since Phase 7)
+
+| Feature | Session |
+|---------|---------|
+| Struct declarations + C emission | S9 |
+| If/else + while + unsafe blocks | S9 |
+| Integer parsing from source bytes | S9 |
+| Extending blocks + method parsing | S10 |
+| Match statements (int/char/wildcard/\|) | S11 |
+| Assignment + compound assignment | S11 |
+| Local declaration lowering | S11 |
+| Null literal | S11 |
+| Enum declarations + C emission | S12 |
+| For range loops (`for i in 0..N:`) | S12 |
+| Break/continue | S12 |
+| Unary minus operator | S12 |
+| `this` receiver in extending (. and ->) | S13 |
+| `read(ptr)` + `ptr_of(x)` builtins | S13 |
+| Struct literal construction (`Type(field=val)`) | S14 |
+| `return;` for void functions | S14 |
+| `!=` comparison + `zero[ptr[T]]` builtin | S14 |
+| Ruby: f-string struct return fix | S15 |

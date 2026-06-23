@@ -39,6 +39,7 @@ public variant Expr:
     binary_op(operator: ops_mod.BinaryOp, left: ptr[Expr], right: ptr[Expr], loc: Span)
     unary_op(operator: ops_mod.UnaryOp, operand: ptr[Expr], loc: Span)
     call(callee: ptr[Expr], args: span[ptr[Expr]], loc: Span)
+    aggregate(type_name: IdentId, fields: span[TupleField], loc: Span)
     member_access(receiver: ptr[Expr], member: IdentId, loc: Span)
     index_access(receiver: ptr[Expr], index: ptr[Expr], loc: Span)
     specialization(callee: ptr[Expr], args: span[ptr[Type]], loc: Span)
@@ -115,6 +116,7 @@ public variant Decl:
     struct_decl(name: IdentId, fields: span[Field], visibility: Visibility, loc: Span)
     enum_decl(name: IdentId, backing: ptr[Type], members: span[EnumMember], visibility: Visibility, loc: Span)
     variant_decl(name: IdentId, arms: span[VariantArmDecl], visibility: Visibility, loc: Span)
+    extending_decl(type_name: IdentId, methods: span[ExtendingMethod], loc: Span)
     import_decl(path: span[IdentId], alias: IdentId, loc: Span)
     error_decl(loc: Span)
 
@@ -154,6 +156,21 @@ public enum Visibility: int
 public enum DeclKind: int
     dk_let = 0
     dk_var = 1
+
+
+public enum MethodKind: int
+    mk_plain = 0
+    mk_editable = 1
+    mk_static = 2
+
+
+public struct ExtendingMethod:
+    name: IdentId
+    params: span[Param]
+    return_type: ptr[Type]
+    body: ptr[Stmt]
+    method_kind: MethodKind
+    loc: Span
 
 
 public struct Param:

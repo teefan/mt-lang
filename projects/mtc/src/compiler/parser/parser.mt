@@ -17,6 +17,7 @@ type B = ops_mod.BinaryOp
 struct Parser:
     cur: cursor_mod.Cursor
     arena: arena.Arena
+    source: span[ubyte]
 
 
 ## ── entry ───────────────────────────────────────────────────────────
@@ -28,6 +29,7 @@ public function parse(
     var p = Parser(
         cur = cursor_mod.create(tokens),
         arena = arena.create(256 * 1024),
+        source = source,
     )
     let file = p.parse_module()
     return file
@@ -66,6 +68,12 @@ extending Parser:
 
     editable function new_file(value: ast.SourceFile) -> ptr[ast.SourceFile]:
         let p = this.arena.alloc[ast.SourceFile](1) else:
+            fatal(c"parser: arena exhausted")
+        unsafe: read(p) = value
+        return p
+
+    editable function new_pattern(value: ast.Pattern) -> ptr[ast.Pattern]:
+        let p = this.arena.alloc[ast.Pattern](1) else:
             fatal(c"parser: arena exhausted")
         unsafe: read(p) = value
         return p
@@ -122,6 +130,32 @@ extending Parser:
             i += 1
         return span[ptr[ast.Type]](data = storage, len = src.len)
 
+    editable function span_of_fields(src: ref[vec.Vec[ast.Field]]) -> span[ast.Field]:
+        if src.len == 0:
+            return span[ast.Field](data = zero[ptr[ast.Field]], len = 0)
+        let storage = this.arena.alloc[ast.Field](src.len) else:
+            fatal(c"parser: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"parser: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ast.Field](data = storage, len = src.len)
+
+    editable function span_of_methods(src: ref[vec.Vec[ast.ExtendingMethod]]) -> span[ast.ExtendingMethod]:
+        if src.len == 0:
+            return span[ast.ExtendingMethod](data = zero[ptr[ast.ExtendingMethod]], len = 0)
+        let storage = this.arena.alloc[ast.ExtendingMethod](src.len) else:
+            fatal(c"parser: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"parser: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ast.ExtendingMethod](data = storage, len = src.len)
+
     editable function span_of_ident_ids(src: ref[vec.Vec[ast.IdentId]]) -> span[ast.IdentId]:
         if src.len == 0:
             return span[ast.IdentId](data = zero[ptr[ast.IdentId]], len = 0)
@@ -135,6 +169,70 @@ extending Parser:
             i += 1
         return span[ast.IdentId](data = storage, len = src.len)
 
+    editable function span_of_tuple_fields(src: ref[vec.Vec[ast.TupleField]]) -> span[ast.TupleField]:
+        if src.len == 0:
+            return span[ast.TupleField](data = zero[ptr[ast.TupleField]], len = 0)
+        let storage = this.arena.alloc[ast.TupleField](src.len) else:
+            fatal(c"parser: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"parser: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ast.TupleField](data = storage, len = src.len)
+
+    editable function span_of_bindings(src: ref[vec.Vec[ast.ForBinding]]) -> span[ast.ForBinding]:
+        if src.len == 0:
+            return span[ast.ForBinding](data = zero[ptr[ast.ForBinding]], len = 0)
+        let storage = this.arena.alloc[ast.ForBinding](src.len) else:
+            fatal(c"parser: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"parser: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ast.ForBinding](data = storage, len = src.len)
+
+    editable function span_of_enum_members(src: ref[vec.Vec[ast.EnumMember]]) -> span[ast.EnumMember]:
+        if src.len == 0:
+            return span[ast.EnumMember](data = zero[ptr[ast.EnumMember]], len = 0)
+        let storage = this.arena.alloc[ast.EnumMember](src.len) else:
+            fatal(c"parser: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"parser: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ast.EnumMember](data = storage, len = src.len)
+
+    editable function span_of_match_arms(src: ref[vec.Vec[ast.MatchArm]]) -> span[ast.MatchArm]:
+        if src.len == 0:
+            return span[ast.MatchArm](data = zero[ptr[ast.MatchArm]], len = 0)
+        let storage = this.arena.alloc[ast.MatchArm](src.len) else:
+            fatal(c"parser: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"parser: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ast.MatchArm](data = storage, len = src.len)
+
+    editable function span_of_branches(src: ref[vec.Vec[ast.IfBranch]]) -> span[ast.IfBranch]:
+        if src.len == 0:
+            return span[ast.IfBranch](data = zero[ptr[ast.IfBranch]], len = 0)
+        let storage = this.arena.alloc[ast.IfBranch](src.len) else:
+            fatal(c"parser: arena exhausted")
+        var i: ptr_uint = 0
+        while i < src.len:
+            let val = src.at(i) else:
+                fatal(c"parser: vec access out of bounds")
+            unsafe: read(storage + i) = val
+            i += 1
+        return span[ast.IfBranch](data = storage, len = src.len)
 
     ## ── module ──────────────────────────────────────────────────────
 
@@ -147,6 +245,8 @@ extending Parser:
             if this.cur.at_end():
                 break
             if this.at_indent_end():
+                if this.cur.current().kind == T.tk_dedent:
+                    this.cur.advance()
                 break
 
             let tok = this.cur.current()
@@ -196,6 +296,12 @@ extending Parser:
         match tok.kind:
             T.tk_kw_function:
                 return this.parse_function_def()
+            T.tk_kw_struct:
+                return this.parse_struct_def()
+            T.tk_kw_enum:
+                return this.parse_enum_def()
+            T.tk_kw_extending:
+                return this.parse_extending()
             _:
                 this.skip_to_newline()
                 let loc = this.make_loc(tok.start, this.cur_end())
@@ -243,6 +349,9 @@ extending Parser:
         this.expect(T.tk_colon)
         let body = this.parse_statements()
 
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+            this.cur.advance()
+
         let end = this.cur_end()
         let params_span = this.span_of_params(ref_of(params))
         let empty_tparams = span[ast.TypeParam](data = zero[ptr[ast.TypeParam]], len = 0)
@@ -259,6 +368,208 @@ extending Parser:
             loc = this.make_loc(start_tok.start, end),
         )
         return this.new_decl(decl)
+
+
+    ## ── struct definition ────────────────────────────────────────────
+
+    editable function parse_struct_def() -> ptr[ast.Decl]:
+        let start_tok = this.cur.current()
+        this.expect(T.tk_kw_struct)
+
+        let name_tok = this.cur.current()
+        this.expect(T.tk_identifier)
+        let name = name_tok.ident
+
+        this.expect(T.tk_colon)
+        this.expect(T.tk_indent)
+
+        var fields = vec.Vec[ast.Field].create()
+
+        while true:
+            this.skip_newlines()
+            if this.cur.at_end():
+                break
+            if this.cur.current().kind == T.tk_dedent:
+                break
+            if this.at_indent_end():
+                break
+
+            let field_name_tok = this.cur.current()
+            this.expect(T.tk_identifier)
+            this.expect(T.tk_colon)
+            let field_type = this.parse_type()
+            fields.push(ast.Field(
+                name = field_name_tok.ident,
+                type_ref = field_type,
+                loc = this.make_loc(field_name_tok.start, this.cur_end()),
+            ))
+
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+            this.cur.advance()
+
+        let end = this.cur_end()
+        let fields_span = this.span_of_fields(ref_of(fields))
+        let decl = ast.Decl.struct_decl(
+            name = name,
+            fields = fields_span,
+            visibility = ast.Visibility.priv,
+            loc = this.make_loc(start_tok.start, end),
+        )
+        return this.new_decl(decl)
+
+
+    ## ── enum definition ──────────────────────────────────────────────
+
+    editable function parse_enum_def() -> ptr[ast.Decl]:
+        let start_tok = this.cur.current()
+        this.expect(T.tk_kw_enum)
+
+        let name_tok = this.cur.current()
+        this.expect(T.tk_identifier)
+        let name = name_tok.ident
+
+        this.expect(T.tk_colon)
+        let backing = this.parse_type()
+
+        this.expect(T.tk_indent)
+
+        var members = vec.Vec[ast.EnumMember].create()
+
+        while true:
+            this.skip_newlines()
+            if this.cur.at_end():
+                break
+            if this.cur.current().kind == T.tk_dedent:
+                break
+            if this.at_indent_end():
+                break
+
+            let member_name_tok = this.cur.current()
+            this.expect(T.tk_identifier)
+            var val_expr = zero[ptr[ast.Expr]]
+            if this.cur.current().kind == T.tk_equal:
+                this.cur.advance()
+                val_expr = this.parse_expression()
+
+            members.push(ast.EnumMember(
+                name = member_name_tok.ident,
+                value = val_expr,
+                loc = this.make_loc(member_name_tok.start, this.cur_end()),
+            ))
+
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+            this.cur.advance()
+
+        let end = this.cur_end()
+        let members_span = this.span_of_enum_members(ref_of(members))
+        let decl = ast.Decl.enum_decl(
+            name = name,
+            backing = backing,
+            members = members_span,
+            visibility = ast.Visibility.priv,
+            loc = this.make_loc(start_tok.start, end),
+        )
+        return this.new_decl(decl)
+
+
+    ## ── extending ────────────────────────────────────────────────────
+
+    editable function parse_extending() -> ptr[ast.Decl]:
+        let start_tok = this.cur.current()
+        this.expect(T.tk_kw_extending)
+
+        let type_name_tok = this.cur.current()
+        this.expect(T.tk_identifier)
+        let type_name = type_name_tok.ident
+
+        this.expect(T.tk_colon)
+        this.expect(T.tk_indent)
+
+        var methods = vec.Vec[ast.ExtendingMethod].create()
+
+        while true:
+            this.skip_newlines()
+            if this.cur.at_end():
+                break
+            if this.cur.current().kind == T.tk_dedent:
+                break
+            if this.at_indent_end():
+                break
+
+            let method = this.parse_extending_method()
+            methods.push(method)
+
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+            this.cur.advance()
+
+        let end = this.cur_end()
+        let methods_span = this.span_of_methods(ref_of(methods))
+        let decl = ast.Decl.extending_decl(
+            type_name = type_name,
+            methods = methods_span,
+            loc = this.make_loc(start_tok.start, end),
+        )
+        return this.new_decl(decl)
+
+
+    editable function parse_extending_method() -> ast.ExtendingMethod:
+        let start = this.cur.current().start
+        var kind = ast.MethodKind.mk_plain
+
+        if this.cur.current().kind == T.tk_kw_editable:
+            kind = ast.MethodKind.mk_editable
+            this.cur.advance()
+        else if this.cur.current().kind == T.tk_kw_static:
+            kind = ast.MethodKind.mk_static
+            this.cur.advance()
+
+        this.expect(T.tk_kw_function)
+
+        let name_tok = this.cur.current()
+        this.expect(T.tk_identifier)
+        let name = name_tok.ident
+
+        this.expect(T.tk_lparen)
+        var params = vec.Vec[ast.Param].create()
+
+        while true:
+            if this.cur.current().kind == T.tk_rparen:
+                break
+            if params.len > 0:
+                this.expect(T.tk_comma)
+            let param_name = this.cur.current()
+            this.expect(T.tk_identifier)
+            this.expect(T.tk_colon)
+            let param_type = this.parse_type()
+            params.push(ast.Param(
+                name = param_name.ident,
+                type_ref = param_type,
+                loc = this.make_loc(param_name.start, param_name.end),
+            ))
+
+        this.expect(T.tk_rparen)
+
+        var ret_type = zero[ptr[ast.Type]]
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_arrow:
+            this.cur.advance()
+            ret_type = this.parse_type()
+
+        this.expect(T.tk_colon)
+        let body = this.parse_statements()
+
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+            this.cur.advance()
+
+        let end = this.cur_end()
+        let params_span = this.span_of_params(ref_of(params))
+        return ast.ExtendingMethod(
+            name = name,
+            params = params_span,
+            return_type = ret_type,
+            body = body,
+            method_kind = kind,
+            loc = this.make_loc(start, end),
+        )
 
 
     ## ── type ────────────────────────────────────────────────────────
@@ -302,6 +613,29 @@ extending Parser:
                 return this.parse_return_stmt()
             T.tk_kw_let | T.tk_kw_var:
                 return this.parse_local_decl()
+            T.tk_kw_if:
+                return this.parse_if_stmt()
+            T.tk_kw_while:
+                return this.parse_while_stmt()
+            T.tk_kw_unsafe:
+                return this.parse_unsafe_stmt()
+            T.tk_kw_match:
+                return this.parse_match_stmt()
+            T.tk_kw_for:
+                return this.parse_for_stmt()
+            T.tk_kw_break:
+                this.cur.advance()
+                let b_loc = this.make_loc(start, tok.end)
+                return this.new_stmt(ast.Stmt.break_stmt(loc = b_loc))
+            T.tk_kw_continue:
+                this.cur.advance()
+                let c_loc = this.make_loc(start, tok.end)
+                return this.new_stmt(ast.Stmt.continue_stmt(loc = c_loc))
+            T.tk_kw_pass:
+                this.cur.advance()
+                let loc = this.make_loc(start, tok.end)
+                let s = ast.Stmt.pass_stmt(loc = loc)
+                return this.new_stmt(s)
             _:
                 return this.parse_expression_stmt()
 
@@ -319,14 +653,345 @@ extending Parser:
         return this.new_stmt(s)
 
 
+    ## ── if ───────────────────────────────────────────────────────────
+
+    editable function parse_if_stmt() -> ptr[ast.Stmt]:
+        let start_tok = this.cur.current()
+        this.expect(T.tk_kw_if)
+
+        let condition = this.parse_expression()
+        this.expect(T.tk_colon)
+        this.expect(T.tk_indent)
+
+        var then_body = this.parse_statements()
+
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+            this.cur.advance()
+
+        var branches = vec.Vec[ast.IfBranch].create()
+        branches.push(ast.IfBranch(
+            condition = condition,
+            body = then_body,
+            loc = this.make_loc(start_tok.start, this.cur_end()),
+        ))
+
+        var else_body = zero[ptr[ast.Stmt]]
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_kw_else:
+            this.cur.advance()
+            if this.cur.current().kind == T.tk_colon:
+                this.cur.advance()
+                this.expect(T.tk_indent)
+                else_body = this.parse_statements()
+                if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+                    this.cur.advance()
+
+        let end = this.cur_end()
+        let branches_span = this.span_of_branches(ref_of(branches))
+        let s = ast.Stmt.if_stmt(
+            branches = branches_span,
+            else_body = else_body,
+            loc = this.make_loc(start_tok.start, end),
+        )
+        return this.new_stmt(s)
+
+
+    ## ── while ─────────────────────────────────────────────────────────
+
+    editable function parse_while_stmt() -> ptr[ast.Stmt]:
+        let start_tok = this.cur.current()
+        this.expect(T.tk_kw_while)
+
+        let condition = this.parse_expression()
+        this.expect(T.tk_colon)
+        this.expect(T.tk_indent)
+
+        let body = this.parse_statements()
+
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+            this.cur.advance()
+
+        let loc = this.make_loc(start_tok.start, this.cur_end())
+        let s = ast.Stmt.while_stmt(condition = condition, body = body, loc = loc)
+        return this.new_stmt(s)
+
+
+    ## ── for ───────────────────────────────────────────────────────────
+
+    editable function parse_for_stmt() -> ptr[ast.Stmt]:
+        let start_tok = this.cur.current()
+        this.expect(T.tk_kw_for)
+
+        let binding_tok = this.cur.current()
+        this.expect(T.tk_identifier)
+        let binding_name = binding_tok.ident
+
+        this.expect(T.tk_kw_in)
+
+        let iterable = this.parse_expression()
+        this.expect(T.tk_colon)
+        this.expect(T.tk_indent)
+
+        let body = this.parse_statements()
+
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+            this.cur.advance()
+
+        let end = this.cur_end()
+        var bindings = vec.Vec[ast.ForBinding].create()
+        bindings.push(ast.ForBinding(name = binding_name, loc = this.make_loc(binding_tok.start, binding_tok.end)))
+        var iterables = vec.Vec[ptr[ast.Expr]].create()
+        iterables.push(iterable)
+        let s = ast.Stmt.for_stmt(
+            bindings = this.span_of_bindings(ref_of(bindings)),
+            iterables = this.span_of_exprs(ref_of(iterables)),
+            body = body,
+            loc = this.make_loc(start_tok.start, end),
+        )
+        return this.new_stmt(s)
+
+
+    ## ── unsafe ────────────────────────────────────────────────────────
+
+    editable function parse_unsafe_stmt() -> ptr[ast.Stmt]:
+        let start_tok = this.cur.current()
+        this.expect(T.tk_kw_unsafe)
+        this.expect(T.tk_colon)
+
+        var body = zero[ptr[ast.Stmt]]
+        if this.cur.current().kind == T.tk_indent:
+            this.cur.advance()
+            body = this.parse_statements()
+            if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+                this.cur.advance()
+        else:
+            let expr = this.parse_expression()
+            let loc = this.make_loc(start_tok.start, this.cur_end())
+            let es = ast.Stmt.expression(expr = expr, loc = loc)
+            body = this.new_stmt(es)
+
+        let loc = this.make_loc(start_tok.start, this.cur_end())
+        let s = ast.Stmt.unsafe_block(body = body, loc = loc)
+        return this.new_stmt(s)
+
+
+    ## ── match ─────────────────────────────────────────────────────────
+
+    editable function parse_match_stmt() -> ptr[ast.Stmt]:
+        let start_tok = this.cur.current()
+        this.expect(T.tk_kw_match)
+
+        let scrutinee = this.parse_expression()
+        this.expect(T.tk_colon)
+        this.expect(T.tk_indent)
+
+        var arms = vec.Vec[ast.MatchArm].create()
+
+        while true:
+            this.skip_newlines()
+            if this.cur.at_end():
+                break
+            if this.cur.current().kind == T.tk_dedent:
+                break
+            if this.at_indent_end():
+                break
+
+            this.parse_match_arms(ref_of(arms))
+
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+            this.cur.advance()
+
+        let end = this.cur_end()
+        let arms_span = this.span_of_match_arms(ref_of(arms))
+        let s = ast.Stmt.match_stmt(
+            scrutinee = scrutinee,
+            arms = arms_span,
+            loc = this.make_loc(start_tok.start, end),
+        )
+        return this.new_stmt(s)
+
+
+    editable function parse_match_arms(arms: ref[vec.Vec[ast.MatchArm]]) -> void:
+        var patterns = vec.Vec[ptr[ast.Pattern]].create()
+
+        let first = this.parse_match_pattern()
+        patterns.push(first)
+
+        while not this.cur.at_end() and this.cur.current().kind == T.tk_pipe:
+            this.cur.advance()
+            let next = this.parse_match_pattern()
+            patterns.push(next)
+
+        this.expect(T.tk_colon)
+        this.expect(T.tk_indent)
+
+        let body = this.parse_statements()
+
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
+            this.cur.advance()
+
+        var pi: ptr_uint = 0
+        while pi < patterns.len:
+            let pattern = patterns.at(pi) else:
+                fatal(c"parser: vec access out of bounds")
+            let loc = this.make_loc(0, 0)
+            arms.push(ast.MatchArm(pattern = pattern, binding = 0, body = body, loc = loc))
+            pi += 1
+
+
+    editable function parse_match_pattern() -> ptr[ast.Pattern]:
+        let tok = this.cur.current()
+
+        if this.is_wildcard(tok):
+            this.cur.advance()
+            let loc = this.make_loc(tok.start, tok.end)
+            let p = ast.Pattern.wildcard(loc = loc)
+            return this.new_pattern(p)
+
+        if tok.kind == T.tk_integer:
+            let val = this.read_int(tok.start, tok.end)
+            this.cur.advance()
+            let loc = this.make_loc(tok.start, tok.end)
+            let p = ast.Pattern.int_literal(value = val, loc = loc)
+            return this.new_pattern(p)
+
+        if tok.kind == T.tk_char_literal:
+            let val = this.read_char(tok.start, tok.end)
+            this.cur.advance()
+            let loc = this.make_loc(tok.start, tok.end)
+            let p = ast.Pattern.char_literal(value = val, loc = loc)
+            return this.new_pattern(p)
+
+        this.expect(T.tk_identifier)
+        let name = tok.ident
+        var loc = this.make_loc(tok.start, tok.end)
+
+        if this.cur.current().kind == T.tk_dot:
+            this.cur.advance()
+            let member_tok = this.cur.current()
+            this.expect(T.tk_identifier)
+            loc = this.make_loc(tok.start, member_tok.end)
+            let p = ast.Pattern.variant_arm(
+                type_name = name,
+                arm_name = member_tok.ident,
+                binding = 0,
+                fields = span[ast.PatternField](data = zero[ptr[ast.PatternField]], len = 0),
+                loc = loc,
+            )
+            return this.new_pattern(p)
+
+        let p = ast.Pattern.variant_arm(
+            type_name = name,
+            arm_name = 0,
+            binding = 0,
+            fields = span[ast.PatternField](data = zero[ptr[ast.PatternField]], len = 0),
+            loc = loc,
+        )
+        return this.new_pattern(p)
+
+
+    function is_wildcard(tok: token_mod.Token) -> bool:
+        if tok.kind != T.tk_identifier:
+            return false
+        if tok.end <= tok.start:
+            return false
+        if tok.end - tok.start != 1:
+            return false
+        unsafe:
+            let b = read(this.source.data + tok.start)
+            return b == 95
+
+
+    editable function read_char(start: ptr_uint, end: ptr_uint) -> ubyte:
+        var i: ptr_uint = start
+        if i < end:
+            unsafe:
+                let first = read(this.source.data + i)
+                if first == 39:
+                    i += 1
+        if i < end:
+            unsafe:
+                let ch = read(this.source.data + i)
+                if ch == 92:
+                    i += 1
+                    if i < end:
+                        let esc = read(this.source.data + i)
+                        if esc == 110:
+                            return 10
+                        if esc == 114:
+                            return 13
+                        if esc == 116:
+                            return 9
+                        if esc == 48:
+                            return 0
+                        if esc == 120 and i + 2 < end:
+                            return this.read_hex_byte(i + 1)
+                        return esc
+                    return 0
+                return ch
+        return 0
+
+
+    function read_hex_byte(pos: ptr_uint) -> ubyte:
+        var val: int = 0
+        var j: ptr_uint = 0
+        while j < 2:
+            unsafe:
+                let b = read(this.source.data + pos + j)
+                if b >= 48 and b <= 57:
+                    val = val * 16 + int<-b - 48
+                else if b >= 65 and b <= 70:
+                    val = val * 16 + int<-b - 65 + 10
+                else if b >= 97 and b <= 102:
+                    val = val * 16 + int<-b - 97 + 10
+                else:
+                    break
+            j += 1
+        return ubyte<-val
+
+
     ## ── expression statement ────────────────────────────────────────
 
     editable function parse_expression_stmt() -> ptr[ast.Stmt]:
         let start = this.cur.current().start
         let expr = this.parse_expression()
+
+        if this.is_assign_op(this.cur.current().kind):
+            let op = this.cur.current().kind
+            this.cur.advance()
+            let rhs = this.parse_expression()
+            let loc = this.make_loc(start, this.cur_end())
+            let s = ast.Stmt.assignment(target = expr, op = op, value = rhs, loc = loc)
+            return this.new_stmt(s)
+
         let loc = this.make_loc(start, this.cur_end())
         let s = ast.Stmt.expression(expr = expr, loc = loc)
         return this.new_stmt(s)
+
+
+    function is_assign_op(kind: tk.TokenKind) -> bool:
+        if kind == tk.TokenKind.tk_equal:
+            return true
+        if kind == tk.TokenKind.tk_plus_equal:
+            return true
+        if kind == tk.TokenKind.tk_minus_equal:
+            return true
+        if kind == tk.TokenKind.tk_star_equal:
+            return true
+        if kind == tk.TokenKind.tk_slash_equal:
+            return true
+        if kind == tk.TokenKind.tk_percent_equal:
+            return true
+        if kind == tk.TokenKind.tk_amp_equal:
+            return true
+        if kind == tk.TokenKind.tk_pipe_equal:
+            return true
+        if kind == tk.TokenKind.tk_caret_equal:
+            return true
+        if kind == tk.TokenKind.tk_shift_left_equal:
+            return true
+        if kind == tk.TokenKind.tk_shift_right_equal:
+            return true
+        return false
 
 
     ## ── local declaration ───────────────────────────────────────────
@@ -373,6 +1038,14 @@ extending Parser:
     editable function parse_binary(min_prec: int) -> ptr[ast.Expr]:
         var left = this.parse_prefix()
 
+        if not this.cur.at_end() and this.cur.current().kind == T.tk_dot_dot:
+            let dot_start = this.cur.current().start
+            this.cur.advance()
+            let right = this.parse_binary(0)
+            let loc = this.make_loc(dot_start, this.cur_end())
+            let e = ast.Expr.range_expr(start = left, end = right, loc = loc)
+            left = this.new_expr(e)
+
         while true:
             if this.cur.at_end():
                 break
@@ -396,6 +1069,12 @@ extending Parser:
     editable function parse_prefix() -> ptr[ast.Expr]:
         let tok = this.cur.current()
         match tok.kind:
+            T.tk_minus:
+                this.cur.advance()
+                let operand = this.parse_prefix()
+                let loc = this.make_loc(tok.start, this.cur_end())
+                let e = ast.Expr.unary_op(operator = ops_mod.UnaryOp.uop_negate, operand = operand, loc = loc)
+                return this.new_expr(e)
             T.tk_identifier:
                 return this.parse_identifier()
             T.tk_integer:
@@ -416,18 +1095,30 @@ extending Parser:
         let tok = this.cur.current()
         this.cur.advance()
 
-        if this.cur.at_end():
-            let loc = this.make_loc(tok.start, tok.end)
-            let e = ast.Expr.identifier(name = tok.ident, loc = loc)
-            return this.new_expr(e)
+        var base = this.id_to_expr(tok)
 
-        let next = this.cur.current()
-        if next.kind == T.tk_lparen:
-            return this.parse_call(tok)
+        while true:
+            if this.cur.at_end():
+                return base
+            let next = this.cur.current()
+            if next.kind == T.tk_lparen:
+                base = this.parse_call_expr(base, tok)
+            else if next.kind == T.tk_lbracket:
+                base = this.parse_specialization_expr(base)
+            else if next.kind == T.tk_dot:
+                this.cur.advance()
+                let member_tok = this.cur.current()
+                this.expect(T.tk_identifier)
+                let loc = this.make_loc(tok.start, member_tok.end)
+                let e = ast.Expr.member_access(receiver = base, member = member_tok.ident, loc = loc)
+                base = this.new_expr(e)
+            else:
+                break
 
-        if next.kind == T.tk_lbracket:
-            return this.parse_specialization(tok)
+        return base
 
+
+    editable function id_to_expr(tok: token_mod.Token) -> ptr[ast.Expr]:
         let loc = this.make_loc(tok.start, tok.end)
         let e = ast.Expr.identifier(name = tok.ident, loc = loc)
         return this.new_expr(e)
@@ -437,8 +1128,50 @@ extending Parser:
         let tok = this.cur.current()
         this.cur.advance()
         let loc = this.make_loc(tok.start, tok.end)
-        let e = ast.Expr.integer_literal(value = 0, loc = loc)
+        let value = this.read_int(tok.start, tok.end)
+        let e = ast.Expr.integer_literal(value = value, loc = loc)
         return this.new_expr(e)
+
+
+    function read_int(start: ptr_uint, end: ptr_uint) -> int:
+        var val: int = 0
+        var negative = false
+        var i: ptr_uint = start
+        if i < end:
+            unsafe:
+                let first = this.source.data + i
+                if read(first) == 45:
+                    negative = true
+                    i += 1
+        var base: int = 10
+        if i + 1 < end:
+            unsafe:
+                let p = this.source.data + i
+                if read(p) == 48:
+                    let next = read(p + 1)
+                    if next == 120 or next == 88:
+                        base = 16
+                        i += 2
+                    else if next == 98 or next == 66:
+                        base = 8
+                        i += 2
+        while i < end:
+            unsafe:
+                let ch = read(this.source.data + i)
+                var digit: int = 0
+                if ch >= 48 and ch <= 57:
+                    digit = int<-ch - 48
+                else if ch >= 65 and ch <= 70:
+                    digit = int<-ch - 65 + 10
+                else if ch >= 97 and ch <= 102:
+                    digit = int<-ch - 97 + 10
+                else:
+                    break
+                val = val * base + digit
+            i += 1
+        if negative:
+            return 0 - val
+        return val
 
 
     editable function parse_string() -> ptr[ast.Expr]:
@@ -451,34 +1184,83 @@ extending Parser:
 
     ## ── call ────────────────────────────────────────────────────────
 
-    editable function parse_call(callee_tok: token_mod.Token) -> ptr[ast.Expr]:
+    editable function parse_call_expr(callee: ptr[ast.Expr], name_tok: token_mod.Token) -> ptr[ast.Expr]:
         this.expect(T.tk_lparen)
         var args = vec.Vec[ptr[ast.Expr]].create()
-        let start = callee_tok.start
+        var fields = vec.Vec[ast.TupleField].create()
+        var is_aggregate = false
+        let start = name_tok.start
 
         while true:
             if this.cur.current().kind == T.tk_rparen:
                 break
-            if args.len > 0:
-                this.expect(T.tk_comma)
-            let arg = this.parse_expression()
-            args.push(arg)
+            if args.len > 0 or fields.len > 0:
+                if this.cur.current().kind != T.tk_comma:
+                    break
+                this.cur.advance()
+
+            if not is_aggregate and this.has_named_arg_ahead():
+                is_aggregate = true
+
+            if is_aggregate:
+                let fn_tok = this.cur.current()
+                this.expect(T.tk_identifier)
+                this.expect(T.tk_equal)
+                let fv = this.parse_expression()
+                fields.push(ast.TupleField(
+                    name = fn_tok.ident,
+                    value = fv,
+                    loc = this.make_loc(fn_tok.start, this.cur_end()),
+                ))
+            else:
+                let arg = this.parse_expression()
+                args.push(arg)
 
         this.expect(T.tk_rparen)
         let end = this.cur_end()
-        let callee = this.make_identifier(callee_tok)
+
+        if is_aggregate:
+            let type_name = this.callee_ident(callee)
+            let fields_span = this.span_of_tuple_fields(ref_of(fields))
+            let loc = this.make_loc(start, end)
+            let e = ast.Expr.aggregate(type_name = type_name, fields = fields_span, loc = loc)
+            return this.new_expr(e)
+
         let args_span = this.span_of_exprs(ref_of(args))
         let loc = this.make_loc(start, end)
         let e = ast.Expr.call(callee = callee, args = args_span, loc = loc)
         return this.new_expr(e)
 
 
+    function has_named_arg_ahead() -> bool:
+        if this.cur.at_end():
+            return false
+        let tok = this.cur.current()
+        if tok.kind != T.tk_identifier:
+            return false
+        let cur_pos = this.cur.pos
+        let cur_end = this.cur.tokens.len
+        if cur_pos + 1 >= cur_end:
+            return false
+        unsafe:
+            let next_tok = read(this.cur.tokens.data + cur_pos + 1)
+            return next_tok.kind == T.tk_equal
+
+
+    function callee_ident(callee: ptr[ast.Expr]) -> ast.IdentId:
+        unsafe:
+            match read(callee):
+                ast.Expr.identifier(name, _):
+                    return name
+                _:
+                    return 0
+
+
     ## ── specialization ──────────────────────────────────────────────
 
-    editable function parse_specialization(callee_tok: token_mod.Token) -> ptr[ast.Expr]:
+    editable function parse_specialization_expr(callee: ptr[ast.Expr]) -> ptr[ast.Expr]:
         this.expect(T.tk_lbracket)
         var ta_args = vec.Vec[ptr[ast.Type]].create()
-        let start = callee_tok.start
 
         while true:
             if this.cur.current().kind == T.tk_rbracket:
@@ -490,9 +1272,8 @@ extending Parser:
 
         this.expect(T.tk_rbracket)
         let end = this.cur_end()
-        let callee = this.make_identifier(callee_tok)
         let ta_span = this.span_of_types(ref_of(ta_args))
-        let loc = this.make_loc(start, end)
+        let loc = this.make_loc(0, end)
         let e = ast.Expr.specialization(callee = callee, args = ta_span, loc = loc)
         return this.new_expr(e)
 

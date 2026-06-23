@@ -223,7 +223,7 @@ extending Registry:
         return id
 
 
-    editable function named_type(name: ptr_uint) -> TypeId:
+    public editable function named_type(name: ptr_uint) -> TypeId:
         for entry in this.named.as_span():
             if entry.name == name:
                 return entry.id
