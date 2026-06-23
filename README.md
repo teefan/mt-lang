@@ -451,7 +451,7 @@ let label = match code:
 `match` rules:
 
 - Enum and variant matches must be exhaustive unless `_` is present.
-- Integer matches require `_`.
+- Integer matches require `_`. Match arms accept integer literals and char literals (e.g., `'('` against a `ubyte` scrutinee).
 - Variant payload arms may bind with `as name`.
 - Variant payload arms may destructure fields inline with struct patterns: `Variant.arm(field > 0, other)` — comparisons are guards (arm skipped if false), identifiers are bindings (field becomes a local), and `field = value` is an equality guard.
 

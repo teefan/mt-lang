@@ -548,7 +548,7 @@ Scrutinee types supported:
 
 - Enum: arm patterns must be members of that enum.
 - Variant: arm patterns must be arms of that variant; a payload arm may bind its fields with `as name` or destructure them inline with struct patterns.
-- Integer (`byte`, `short`, `int`, `long`, `ubyte`, `ushort`, `uint`, `ulong`, `ptr_int`, `ptr_uint`): arm patterns must be integer literals.
+- Integer (`byte`, `short`, `int`, `long`, `ubyte`, `ushort`, `uint`, `ulong`, `ptr_int`, `ptr_uint`): arm patterns must be integer literals or char literals.
 
 `_` is a wildcard arm that matches any value not covered by preceding arms. It maps to a C `default:` case.
 
@@ -583,6 +583,16 @@ match key_code:
         fire()
     27:
         quit()
+    _:
+        return
+
+match ch:
+    '(':
+        open_paren()
+    ')':
+        close_paren()
+    '+':
+        handle_plus()
     _:
         return
 

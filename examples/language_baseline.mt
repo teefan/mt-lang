@@ -390,6 +390,18 @@ function statements_demo() -> int:
         _:
             result = -1
 
+    # --- char-literal match on ubyte
+    var ch: ubyte = '('
+    match ch:
+        '(':
+            result += 1
+        ')':
+            result += 0
+        '+':
+            result += 0
+        _:
+            result += 0
+
     # --- match expression
     let label = match result:
         0: "zero"
