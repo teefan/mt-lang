@@ -1,4 +1,5 @@
 import std.map
+import std.str
 import std.vec
 
 public type IdentId = ptr_uint
