@@ -768,8 +768,8 @@ module MilkTea
             next
           end
 
-          unless arm.pattern.is_a?(AST::IntegerLiteral)
-            raise_sema_error("match arm for integer scrutinee must be an integer literal or _, got #{arm.pattern.class.name}")
+          unless arm.pattern.is_a?(AST::IntegerLiteral) || arm.pattern.is_a?(AST::CharLiteral)
+            raise_sema_error("match arm for integer scrutinee must be an integer literal, char literal, or _, got #{arm.pattern.class.name}")
           end
 
           value = arm.pattern.value

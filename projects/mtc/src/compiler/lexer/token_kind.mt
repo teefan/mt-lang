@@ -3,7 +3,7 @@
 ## Prefix convention: `tk_` to avoid collisions with C keywords (int, float,
 ## return, if, etc.) and Milk Tea keywords (and, or, not, type, etc.).
 
-enum TokenKind: int
+public enum TokenKind: int
     # ── structural ───────────────────────────────────────────────
     tk_eof = 0
     tk_newline = 1
