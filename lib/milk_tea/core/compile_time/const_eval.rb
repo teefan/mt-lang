@@ -150,12 +150,12 @@ module MilkTea
           left.is_a?(Numeric) && right.is_a?(Numeric) ? left * right : nil
         when "/"
           return unless left.is_a?(Numeric) && right.is_a?(Numeric)
-          return if zero_numeric?(right)
+          raise CompileTime::Error, "division by zero" if zero_numeric?(right)
 
           left / right
         when "%"
           return unless left.is_a?(Integer) && right.is_a?(Integer)
-          return if right.zero?
+          raise CompileTime::Error, "modulo by zero" if right.zero?
 
           left % right
         when "<<"

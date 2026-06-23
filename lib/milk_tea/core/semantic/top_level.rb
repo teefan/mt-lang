@@ -209,6 +209,23 @@ module MilkTea
         value = evaluate_compile_time_const_value(decl.value)
         @evaluating_const_values.pop
 
+        if value.is_a?(Integer)
+          binding_ = @ctx.top_level_values.fetch(name)
+          check_type = binding_.type
+          check_type = check_type.backing_type if check_type.respond_to?(:backing_type)
+
+          if check_type.is_a?(Types::Primitive) && check_type.integer? && (width = check_type.integer_width)
+            max_value = if check_type.signed_integer?
+                          (1 << (width - 1)) - 1
+                        else
+                          (1 << width) - 1
+                        end
+            if value > max_value
+              raise_sema_error("constant #{name} value #{value} does not fit in type #{binding_.type}")
+            end
+          end
+        end
+
         set_const_value(name, value)
         value
       end
@@ -298,6 +315,8 @@ module MilkTea
             evaluate_compile_time_call(call_expression, scopes:)
           end,
         )
+      rescue CompileTime::Error => e
+        raise_sema_error(e.message)
       end
 
       def evaluate_compile_time_call(expression, scopes: nil)
