@@ -584,7 +584,11 @@ module MilkTea
               raise LoweringError, "formatted string temporaries cannot be returned as borrowed text; use std.fmt.format(f\"...\") when ownership must escape"
             end
 
-            cleanup = prepared_cleanups.flat_map(&:itself) + cleanup_statements(local_defers, active_defers)
+            prepared_cleanup_list = prepared_cleanups.flat_map(&:itself)
+            if prepared_cleanup_list.any? && return_type.is_a?(Types::Struct) && struct_contains_string_field?(return_type)
+              prepared_cleanup_list = prepared_cleanup_list.reject { |stmt| stmt.is_a?(IR::ExpressionStmt) && stmt.expression.is_a?(IR::Call) && stmt.expression.callee == "mt_format_str_release" }
+            end
+            cleanup = prepared_cleanup_list + cleanup_statements(local_defers, active_defers)
             needs_proc_retain = value && contains_proc_storage_type?(return_type) && !local_defers.empty? && !expression_contains_proc_expr?(prepared_value)
             if value && (!cleanup.empty? && !cleanup_safe_return_expression?(prepared_value) || needs_proc_retain)
               return_value_name = fresh_c_temp_name(local_env, "return_value")

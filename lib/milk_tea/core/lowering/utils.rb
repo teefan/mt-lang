@@ -94,6 +94,12 @@ module MilkTea
         type == @ctx.types.fetch("str") || type == @ctx.types.fetch("cstr")
       end
 
+      def struct_contains_string_field?(type)
+        return false unless type.is_a?(Types::Struct)
+
+        type.fields.any? { |_name, field_type| cstr_trackable_type?(field_type) || struct_contains_string_field?(field_type) }
+      end
+
       def cstr_list_trackable_type?(type)
         return false unless array_type?(type)
 
