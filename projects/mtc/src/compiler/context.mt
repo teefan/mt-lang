@@ -1,12 +1,16 @@
 import compiler.diagnostics as d
+import compiler.sema.type_registry as reg
 import compiler.source as source_mod
+import std.hash
 import std.intern
 import std.mem.arena
+import std.str
 import std.vec
 
 public struct Context:
     diagnostics: vec.Vec[d.Diagnostic]
     interner: intern.Interner
+    registry: reg.Registry
     arena: arena.Arena
     source: source_mod.SourceFile
 
@@ -15,6 +19,7 @@ public function create(source: source_mod.SourceFile) -> Context:
     return Context(
         diagnostics = vec.Vec[d.Diagnostic].create(),
         interner = intern.create(),
+        registry = reg.create(),
         arena = arena.create(32 * 1024),
         source = source,
     )

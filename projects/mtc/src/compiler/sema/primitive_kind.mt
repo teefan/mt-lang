@@ -6,7 +6,7 @@
 ## Prefix convention: `pk_` to avoid collisions with C keywords (int, float,
 ## void, char, etc.) and type alias names.
 
-enum PrimitiveKind: int
+public enum PrimitiveKind: int
     pk_bool = 0
     pk_byte = 1
     pk_ubyte = 2

@@ -1,7 +1,7 @@
 ## AST — Milk Tea abstract syntax tree variant types.
 ##
 ## All nodes are arena-allocated and referenced via ptr[...].
-## Child lists use vec.Vec[ArenaPtr] for simplicity during development.
+## Child lists use span[...] pointing into arena memory.
 ##
 ## Variant hierarchy:
 ##   Decl   — top-level declarations (function, struct, enum, etc.)
@@ -36,36 +36,17 @@ public variant Expr:
     string_literal(text: str, is_cstr: bool, loc: Span)
     bool_literal(value: bool, loc: Span)
     null_literal(loc: Span)
-    binary_op(
-        operator: ops_mod.BinaryOp,
-        left: ptr[Expr],
-        right: ptr[Expr],
-        loc: Span,
-    )
+    binary_op(operator: ops_mod.BinaryOp, left: ptr[Expr], right: ptr[Expr], loc: Span)
     unary_op(operator: ops_mod.UnaryOp, operand: ptr[Expr], loc: Span)
-    call(callee: ptr[Expr], args: ptr[vec.Vec[ptr[Expr]]], loc: Span)
+    call(callee: ptr[Expr], args: span[ptr[Expr]], loc: Span)
     member_access(receiver: ptr[Expr], member: IdentId, loc: Span)
     index_access(receiver: ptr[Expr], index: ptr[Expr], loc: Span)
-    specialization(callee: ptr[Expr], args: ptr[vec.Vec[ptr[Type]]], loc: Span)
+    specialization(callee: ptr[Expr], args: span[ptr[Type]], loc: Span)
     cast_expr(target_type: ptr[Type], expr: ptr[Expr], loc: Span)
-    if_expr(
-        condition: ptr[Expr],
-        then_branch: ptr[Expr],
-        else_branch: ptr[Expr],
-        loc: Span,
-    )
-    match_expr(
-        scrutinee: ptr[Expr],
-        arms: ptr[vec.Vec[MatchExprArm]],
-        loc: Span,
-    )
-    proc_expr(
-        params: ptr[vec.Vec[Param]],
-        return_type: ptr[Type],
-        body: ptr[Stmt],
-        loc: Span,
-    )
-    tuple_literal(fields: ptr[vec.Vec[TupleField]], loc: Span)
+    if_expr(condition: ptr[Expr], then_branch: ptr[Expr], else_branch: ptr[Expr], loc: Span)
+    match_expr(scrutinee: ptr[Expr], arms: span[MatchExprArm], loc: Span)
+    proc_expr(params: span[Param], return_type: ptr[Type], body: ptr[Stmt], loc: Span)
+    tuple_literal(fields: span[TupleField], loc: Span)
     range_expr(start: ptr[Expr], end: ptr[Expr], loc: Span)
     sizeof_expr(type_ref: ptr[Type], loc: Span)
     alignof_expr(type_ref: ptr[Type], loc: Span)
@@ -94,30 +75,17 @@ public variant Stmt:
         loc: Span,
     )
     assignment(target: ptr[Expr], op: tk.TokenKind, value: ptr[Expr], loc: Span)
-    if_stmt(
-        branches: ptr[vec.Vec[IfBranch]],
-        else_body: ptr[Stmt],
-        loc: Span,
-    )
+    if_stmt(branches: span[IfBranch], else_body: ptr[Stmt], loc: Span)
     while_stmt(condition: ptr[Expr], body: ptr[Stmt], loc: Span)
-    for_stmt(
-        bindings: ptr[vec.Vec[ForBinding]],
-        iterables: ptr[vec.Vec[ptr[Expr]]],
-        body: ptr[Stmt],
-        loc: Span,
-    )
-    match_stmt(
-        scrutinee: ptr[Expr],
-        arms: ptr[vec.Vec[MatchArm]],
-        loc: Span,
-    )
+    for_stmt(bindings: span[ForBinding], iterables: span[ptr[Expr]], body: ptr[Stmt], loc: Span)
+    match_stmt(scrutinee: ptr[Expr], arms: span[MatchArm], loc: Span)
     return_stmt(value: ptr[Expr], loc: Span)
     break_stmt(loc: Span)
     continue_stmt(loc: Span)
     pass_stmt(loc: Span)
     defer_stmt(expr: ptr[Expr], body: ptr[Stmt], loc: Span)
     unsafe_block(body: ptr[Stmt], loc: Span)
-    block(stmts: ptr[vec.Vec[ptr[Stmt]]], loc: Span)
+    block(stmts: span[ptr[Stmt]], loc: Span)
     error_stmt(loc: Span)
 
 
@@ -126,8 +94,8 @@ public variant Stmt:
 public variant Decl:
     function_def(
         name: IdentId,
-        type_params: ptr[vec.Vec[TypeParam]],
-        params: ptr[vec.Vec[Param]],
+        type_params: span[TypeParam],
+        params: span[Param],
         return_type: ptr[Type],
         body: ptr[Stmt],
         visibility: Visibility,
@@ -142,39 +110,12 @@ public variant Decl:
         visibility: Visibility,
         loc: Span,
     )
-    var_decl(
-        name: IdentId,
-        type_ref: ptr[Type],
-        value: ptr[Expr],
-        visibility: Visibility,
-        loc: Span,
-    )
-    type_alias(
-        name: IdentId,
-        target: ptr[Type],
-        visibility: Visibility,
-        loc: Span,
-    )
-    struct_decl(
-        name: IdentId,
-        fields: ptr[vec.Vec[Field]],
-        visibility: Visibility,
-        loc: Span,
-    )
-    enum_decl(
-        name: IdentId,
-        backing: ptr[Type],
-        members: ptr[vec.Vec[EnumMember]],
-        visibility: Visibility,
-        loc: Span,
-    )
-    variant_decl(
-        name: IdentId,
-        arms: ptr[vec.Vec[VariantArmDecl]],
-        visibility: Visibility,
-        loc: Span,
-    )
-    import_decl(path: ptr[vec.Vec[IdentId]], alias: IdentId, loc: Span)
+    var_decl(name: IdentId, type_ref: ptr[Type], value: ptr[Expr], visibility: Visibility, loc: Span)
+    type_alias(name: IdentId, target: ptr[Type], visibility: Visibility, loc: Span)
+    struct_decl(name: IdentId, fields: span[Field], visibility: Visibility, loc: Span)
+    enum_decl(name: IdentId, backing: ptr[Type], members: span[EnumMember], visibility: Visibility, loc: Span)
+    variant_decl(name: IdentId, arms: span[VariantArmDecl], visibility: Visibility, loc: Span)
+    import_decl(path: span[IdentId], alias: IdentId, loc: Span)
     error_decl(loc: Span)
 
 
@@ -186,23 +127,11 @@ public variant Type:
     ref_type(pointee: ptr[Type], loc: Span)
     span_type(element: ptr[Type], loc: Span)
     array_type(element: ptr[Type], size: ptr_uint, loc: Span)
-    fn_type(
-        params: ptr[vec.Vec[Param]],
-        return_type: ptr[Type],
-        loc: Span,
-    )
-    proc_type(
-        params: ptr[vec.Vec[Param]],
-        return_type: ptr[Type],
-        loc: Span,
-    )
+    fn_type(params: span[Param], return_type: ptr[Type], loc: Span)
+    proc_type(params: span[Param], return_type: ptr[Type], loc: Span)
     nullable_type(inner: ptr[Type], loc: Span)
-    tuple_type(elements: ptr[vec.Vec[ptr[Type]]], loc: Span)
-    generic_type(
-        name: IdentId,
-        args: ptr[vec.Vec[ptr[Type]]],
-        loc: Span,
-    )
+    tuple_type(elements: span[ptr[Type]], loc: Span)
+    generic_type(name: IdentId, args: span[ptr[Type]], loc: Span)
     error_type(loc: Span)
 
 
@@ -212,13 +141,7 @@ public variant Pattern:
     wildcard(loc: Span)
     int_literal(value: int, loc: Span)
     char_literal(value: ubyte, loc: Span)
-    variant_arm(
-        type_name: IdentId,
-        arm_name: IdentId,
-        binding: IdentId,
-        fields: ptr[vec.Vec[PatternField]],
-        loc: Span,
-    )
+    variant_arm(type_name: IdentId, arm_name: IdentId, binding: IdentId, fields: span[PatternField], loc: Span)
 
 
 ## ── Helper structs ──────────────────────────────────────────────────
@@ -253,7 +176,7 @@ public struct EnumMember:
 
 public struct VariantArmDecl:
     name: IdentId
-    fields: ptr[vec.Vec[Field]]
+    fields: span[Field]
     loc: Span
 
 

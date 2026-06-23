@@ -6,7 +6,7 @@
 ##
 ## Prefix convention: `gk_` to avoid collisions with C keywords and other enums.
 
-enum GenericTypeKind: int
+public enum GenericTypeKind: int
     gk_ptr = 0
     gk_const_ptr = 1
     gk_ref = 2

@@ -38,13 +38,15 @@ projects/mtc/
       diagnostics.mt              Diagnostic types (Severity, Diagnostic)
       source.mt                   SourceFile (str view + path)
       lexer/
-        token_kind.mt             TokenKind enum
-        token.mt                  Token struct (kind, span, line, col)
+        token_kind.mt             TokenKind enum (122 members)
+        token.mt                  Token struct (kind, span, line, col, ident)
+        cursor.mt                 SourceCursor: byte-at-a-time access (unsafe boundary)
         lexer.mt                  Lexer: source bytes → Vec[Token]
       parser/
-        ast.mt                    AST variant types (Expr, Decl, Stmt, Type, Pattern)
-        parser.mt                 Recursive descent parser
-        precedence.mt             Binary operator precedence table
+        ast.mt                    AST variants: Expr, Decl, Stmt, Type, Pattern (+17 helper structs)
+        token_cursor.mt           TokenCursor: peek/consume over span[Token]
+        operators.mt              BinaryOp + UnaryOp enums
+        parser.mt                 Recursive descent with precedence climbing
       sema/
         types.mt                  Type variant (Primitive, Pointer, Struct, Generic, Function, etc.)
         type_registry.mt          Global type dedup/interning (canonical TypeId integers)
@@ -60,14 +62,15 @@ projects/mtc/
         async.mt                  Async normalization (await hoisting)
       codegen/
         c_backend.mt              C source emission from IR
-        c_formatter.mt            C type/expression formatting helpers
+
+  (files c_formatter.mt and async.mt deferred — string builder is in c_backend, async not started)
 ```
 
 ### Design Principles
 
 1. **String interning** — identifiers become `ptr_uint` after lexing; zero str comparisons in parser/sema/lowering
 2. **TypeId interning** — type objects get canonical integer IDs from registry; zero struct `==` in type checking
-3. **Arena allocation** — one arena per file; all AST/type objects live in it, freed once after C emission
+3. **Arena allocation** — one arena per phase; parser allocates AST nodes via typed `new_*` methods (`new_expr`, `new_decl`, etc.), lowerer allocates IR spans via `copy_*` methods; arena lifetimes match phase duration
 4. **Error accumulation** — diagnostics Vec in Context, not exceptions; recoverable errors append, fatal errors call `fatal()`
 5. **Safe iteration** — prefer `vec.as_span()` + value iteration over raw `Vec.iter()` pointer iteration
 6. **`Result`/`Option` + `?`** — explicit error paths for fallible operations; `let...else:` for guard binding
@@ -411,9 +414,12 @@ All enum members use prefixes to avoid collisions with C keywords (int, float, r
 ### 5.1 Arena Allocation
 
 ```mt
-let arena = arena_mod.create(256 * 1024)     # 256 KiB per file
-let node = arena.alloc_bytes(size_of(Node))?  # returns ptr[ubyte]?
+let arena = arena.create(256 * 1024)                      # 256 KiB per file
+let node = push[T](ref_of(arena), value)                  # allocate + write in one call
+let child_list = finish_span[T](ref_of(arena), ref_of(vec))  # Vec→arena-span for child lists
 ```
+
+`push[T]` calls `arena.alloc[T](1)?` then `unsafe: read(p) = value`. `finish_span[T]` allocates `vec.len` elements in the arena, copies them, and returns `span[T]`. Both fatal on OOM.
 
 ### 5.2 Error Reporting
 
@@ -490,48 +496,164 @@ function parse(tokens: span[Token], ctx: ref[Context]) -> Result[ptr[AST::Source
 | ✅ | `compiler.context` | `projects/mtc/src/compiler/context.mt` | CompilerContext aggregating diags + interner + arena + source |
 | ✅ | `main` | `projects/mtc/src/main.mt` | Entry point stub |
 
-### Phase 2: Lexer 🔜
+### Phase 2: Lexer ✅
 
-| Status | Module | Description |
-|--------|--------|-------------|
-| ⬜ | `compiler.lexer.token` | Token struct (kind: TokenKind, span, line, column, ident: IdentId) |
-| ⬜ | `compiler.lexer.lexer` | Lexer: char-by-char, produces Vec[Token] + trivia |
+| Status | Module | File | Lines | Description |
+|--------|--------|------|-------|-------------|
+| ✅ | `compiler.lexer.token_kind` | `src/compiler/lexer/token_kind.mt` | 158 | TokenKind enum (122 members) |
+| ✅ | `compiler.lexer.cursor` | `src/compiler/lexer/cursor.mt` | 90 | SourceCursor: safe byte-at-a-time access (unsafe boundary) |
+| ✅ | `compiler.lexer.token` | `src/compiler/lexer/token.mt` | 103 | Token struct + char classification helpers (13 functions) |
+| ✅ | `compiler.lexer.lexer` | `src/compiler/lexer/lexer.mt` | 585 | Full lexer: identifiers, numbers, strings, operators, comments, 58 keywords |
 
-### Phase 3: Parser 🔜
+### Phase 3: Parser ✅
 
-| Status | Module | Description |
-|--------|--------|-------------|
-| ⬜ | `compiler.parser.ast` | Variant types: Expr, Decl, Stmt, Type, Pattern |
-| ⬜ | `compiler.parser.precedence` | Binary operator precedence table |
-| ⬜ | `compiler.parser.parser` | Recursive descent parser with error recovery |
+| Status | Module | File | Lines | Description |
+|--------|--------|------|-------|-------------|
+| ✅ | `compiler.parser.operators` | `src/compiler/parser/operators.mt` | 36 | BinaryOp (18) + UnaryOp (3) enums |
+| ✅ | `compiler.parser.token_cursor` | `src/compiler/parser/token_cursor.mt` | 46 | TokenCursor: safe peek/consume over span[Token] |
+| ✅ | `compiler.parser.ast` | `src/compiler/parser/ast.mt` | 230 | AST variant types: 5 top-level variants, 17 helper structs, span-based child lists |
+| ✅ | `compiler.parser.parser` | `src/compiler/parser/parser.mt` | 553 | Recursive descent + precedence climbing with arena allocation (`push[T]`, `finish_span[T]`) |
 
-### Phase 4: Semantic Analysis 🔜
+### Phase 4: Semantic Analysis 🟡
 
-| Status | Module | Description |
-|--------|--------|-------------|
-| ⬜ | `compiler.sema.types` | Type variant hierarchy |
-| ⬜ | `compiler.sema.type_registry` | Global TypeId interning registry |
-| ⬜ | `compiler.sema.scope` | Lexical scope with parent chain, bindings Map |
-| ⬜ | `compiler.sema.binder` | Name resolution pass |
-| ⬜ | `compiler.sema.checker` | Type checker for expressions and statements |
-| ⬜ | `compiler.sema.generics` | Generic type parameter substitution and monomorphization |
-| ⬜ | `compiler.sema.interfaces` | Interface conformance checking |
-| ⬜ | `compiler.sema.const_eval` | Compile-time expression evaluator |
+| Status | Module | File | Lines | Description |
+|--------|--------|------|-------|-------------|
+| ✅ | `compiler.sema.primitive_kind` | `src/compiler/sema/primitive_kind.mt` | 37 | PrimitiveKind enum (25 members) |
+| ✅ | `compiler.sema.generic_kind` | `src/compiler/sema/generic_kind.mt` | 24 | GenericTypeKind enum (14 members) |
+| ✅ | `compiler.sema.builtin_name` | `src/compiler/sema/builtin_name.mt` | 35 | BuiltinName enum (26 members) |
+| ✅ | `compiler.sema.type_registry` | `src/compiler/sema/type_registry.mt` | 223 | TypeId interning: primitives (array), ptr/ref/span/nullable (hash-map), fn/tuple/array (linear scan), named (scan) |
+| ✅ | `compiler.sema.types` | `src/compiler/sema/types.mt` | 106 | SemType wrapper: is_integer, is_float, is_numeric, is_bool, is_void, is_str, is_cstr predicates |
+| ✅ | `compiler.sema.scope` | `src/compiler/sema/scope.mt` | 59 | Lexical scope: parent chain, bindings Map[IdentId, TypeId], lookup walks parent chain |
+| 🟡 | `compiler.sema.binder` | `src/compiler/sema/binder.mt` | 50 | Name resolution pass (stub — function_def only) |
+| 🟡 | `compiler.sema.checker` | `src/compiler/sema/checker.mt` | 202 | Type checker: function decls, params, return, binary ops, calls, local decls (working for basic subset) |
+| ⬜ | `compiler.sema.generics` | | | Generic type parameter substitution and monomorphization |
+| ⬜ | `compiler.sema.interfaces` | | | Interface conformance checking |
+| ⬜ | `compiler.sema.const_eval` | | | Compile-time expression evaluator |
 
-### Phase 5: Lowering 🔜
+### Phase 5: Lowering ✅
 
-| Status | Module | Description |
-|--------|--------|-------------|
-| ⬜ | `compiler.lowering.ir` | IR Program/Function/Expr/Stmt types |
-| ⬜ | `compiler.lowering.lowerer` | AST → IR transformation |
-| ⬜ | `compiler.lowering.async` | Async normalization (await hoisting) |
+| Status | Module | File | Lines | Description |
+|--------|--------|------|-------|-------------|
+| ✅ | `compiler.lowering.ir` | `src/compiler/lowering/ir.mt` | 27 | IR types: Program, Function (params/return/body), Stmt (return/expr/decl), Expr (integer/name/binary/call) |
+| ✅ | `compiler.lowering.lowerer` | `src/compiler/lowering/lowerer.mt` | 284 | AST → IR: walks SourceFile, lowers functions/statements/expressions, binary op → C string, type → C name mapping, arena-backed span copies |
+| ⬜ | `compiler.lowering.async` | | | Async normalization (deferred) |
 
-### Phase 6: Code Generation 🔜
+### Phase 6: Code Generation ✅
 
-| Status | Module | Description |
-|--------|--------|-------------|
-| ⬜ | `compiler.codegen.c_formatter` | CWriter: string builder for C output, identifier sanitization |
-| ⬜ | `compiler.codegen.c_backend` | C source emission from IR |
+| Status | Module | File | Lines | Description |
+|--------|--------|------|-------|-------------|
+| ✅ | `compiler.codegen.c_backend` | `src/compiler/codegen/c_backend.mt` | 140 | IR → C: emits `#include`, function signatures, statements, expressions. Uses `string.String` as write buffer. |
+| ⬜ | `compiler.codegen.c_formatter` | | | (merged into c_backend — string.String builder pattern) |
+
+### Phase 7: Integration & Indentation (Completed) ✅
+
+| Status | What | Detail |
+|--------|------|--------|
+| ✅ | Lexer indentation | `handle_indent()` counts leading spaces, emits `INDENT`/`DEDENT`, `finish()` emits trailing dedents |
+| ✅ | Parser indent handling | `skip_newlines` consumes `INDENT`; `parse_module` checks `at_indent_end`; fixed infinite loop on dedent |
+| ✅ | Arena lifetime fix | Parser no longer calls `arena.release()` — all AST pointers remain valid after parse |
+| ✅ | End-to-end verified | `function add(a: int, b: int) -> int: return a + b` → compiles to C → gcc compiles → runs correctly |
+
+---
+
+## 8. Coding Rules & Discovered Patterns
+
+Rules accumulated across all sessions. These are the **hard constraints** when writing Milk Tea code for this compiler.
+
+### Reserved Names (cannot be used as variables, fields, or function names)
+
+| Name | Category | Why blocked |
+|------|----------|------------|
+| `byte`, `int`, `float`, `void`, `char`, `bool`, `str`, `cstr` | Primitive types | Reserved primitive type names |
+| `span`, `ptr`, `ref`, `type`, `fn`, `proc` | Type constructors | Reserved for type expressions |
+| `return`, `if`, `else`, `for`, `while`, `match`, `when` | Control flow | Keywords |
+| `let`, `var`, `const`, `function`, `editable`, `extending` | Declarations | Keywords |
+| `and`, `or`, `not`, `is`, `as`, `in`, `out`, `inout` | Word operators | Keywords |
+| `emit`, `import`, `public`, `external`, `foreign`, `async` | Module-level | Keywords |
+| `pass`, `break`, `continue`, `defer`, `unsafe`, `null`, `true`, `false` | Statements/literals | Keywords |
+| `struct`, `enum`, `flags`, `union`, `variant`, `interface`, `opaque` | Data declarations | Keywords |
+| `match`, `gather`, `detach`, `parallel`, `inline`, `await`, `dyn` | Advanced keywords | Keywords |
+
+### Naming Conventions
+
+| What | Convention | Example |
+|------|-----------|---------|
+| Enum members | Prefix to avoid keyword collisions | `tk_kw_if`, `pk_int`, `op_add` |
+| AST field for source location | `loc` (NOT `span` — reserved) | `ast.Expr.integer_literal(value: int, loc: Span)` |
+| AST field for type reference | `type_ref` (NOT `type` — reserved) | `ast.Type.named_type(name: IdentId, loc: Span)` |
+| Extending method parameter | `output` (NOT `out` — reserved) | `function lower_stmt(..., output: ref[Vec[IrStmt]])` |
+| Binary op enum member | `op_` prefix | `op_add`, `op_eq`, `op_logic_and` |
+| Byte character variable | `ch` (NOT `byte` — reserved) | `let ch = cursor.current()` |
+
+### Syntax Rules
+
+| Rule | Example |
+|------|---------|
+| No single-line `if cond: stmt` — body must be indented on next line | `if op == B.op_add:\n    return "+"` |
+| No `let x = expr else: return` — `else:` must have indented body on next line | `let tid = scope.lookup(name) else:\n    return TypeId<-0` |
+| `match` on `ubyte` now accepts char-literal arms | `match ch: '(' : ...` |
+| Multi-value match arms use `\|` | `T.tk_kw_let \| T.tk_kw_var: ...` |
+| No `public` on `extending` block methods — use standalone functions | `public function write_program(program: IrProgram) -> str` |
+| `ptr[X].method()` requires `unsafe` | `unsafe: return this.registry.pointer(inner, false)` |
+| `ptr[X]?` (nullable) → `== null` works; `ptr[X]` (non-nullable) → `== null` rejected | Use `ptr[Scope]?` for nullable parent chains |
+| Variant field patterns use positional `_` discard (not `_fieldname`) | `ast.Type.named_type(name, _)` ← discard second field |
+| `zero[ptr[T]]` returns null pointer; `null` for nullable types | `let p = zero[ptr[IrStmt]]` |
+| `var x` is mutable; `let x` is immutable; `ref_of` needs mutable | Use `var` for things you'll call `ref_of` on |
+| `let _ = expr else:` for side-effect guard without binding | `let _ = m.set(key, val)` |
+| `let decl = unsafe: read(data + i)` — no `else:` allowed (not nullable/opt/result) | Just read directly |
+
+### Style Requirements
+
+| Rule | Checked by |
+|------|-----------|
+| Max line length: 120 characters | Linter |
+| Trailing commas in multiline calls: preferred | Linter note |
+| Indentation: spaces only, multiple of 4 | Parser |
+
+---
+
+## 9. Standard Library Quick Reference
+
+Useful modules for the self-host compiler. All are in `std/`. No explicit dependency needed — the Ruby compiler auto-resolves `std.*`.
+
+### Text & Formatting
+
+| Module | Key API | Used in |
+|--------|---------|---------|
+| `std.string` | `String.create()`, `with_capacity(n)`, `from_str(s)`, `len()`, `as_str()`, `append(s)`, `assign(s)` | C backend output buffer |
+| `std.str` | `byte_at(i)`, `equal(rhs)`, `starts_with(prefix)` | Interner string comparison |
+| `std.fmt` | `format(f"...")` → `String`, `append(output, text)` | String building (alternative to `string.String.append`) |
+| `std.ctype` | `is_alpha(c)`, `is_digit(c)`, `is_alnum(c)` | Identifier sanitization for C names |
+
+### Data Structures
+
+| Module | Key API | Used in |
+|--------|---------|---------|
+| `std.map` | `Map[K,V].create()`, `with_capacity(n)`, `get(k)`, `set(k,v)`, `contains(k)` | Keyword lookup, interning, scope bindings |
+| `std.vec` | `Vec[T].create()`, `with_capacity(n)`, `push(v)`, `at(i)` → `Option[T]`, `len()`, `as_span()` → `span[T]`, `release()` | Token lists, AST child lists, diagnostics |
+| `std.hash` | `int.hash`, `uint.hash`, `ptr_uint.hash` (added by us) | Map key hashing for `ptr_uint` keys |
+
+### Memory
+
+| Module | Key API | Used in |
+|--------|---------|---------|
+| `std.mem.arena` | `Arena.create(capacity)`, `alloc[T](n)` → `ptr[T]?`, `release()` | Parser AST allocation, lowerer span allocation |
+| `std.mem.heap` | `alloc_bytes(n)`, `realloc_bytes(p,n)`, `release(p)` | Base allocator behind arena |
+
+### I/O (for reading/writing source files)
+
+| Module | Key API | Used in |
+|--------|---------|---------|
+| `std.fs` | `read_bytes(path)` → `Result[Bytes, Error]` — returns `Bytes.as_span()` → `span[ubyte]` | Reading source files (can use `external function` workaround) |
+| `std.stdio` | `print(msg)`, `print_line(msg)` | Debug output |
+| `std.libc` | `printf(format: cstr, ...)` via `external function` | Works: `external function printf(format: cstr, ...) -> int` in main.mt |
+
+### Prelude (auto-imported)
+
+| Module | Key API |
+|--------|---------|
+| `std.option` | `Option[T].some(value: T)`, `Option[T].none`, `.unwrap()`, `.is_some()`, `.is_none()` |
+| `std.result` | `Result[T,E].success(value: T)`, `Result[T,E].failure(error: E)` |
 
 ---
 
@@ -562,7 +684,49 @@ function parse(tokens: span[Token], ctx: ref[Context]) -> Result[ptr[AST::Source
 - 290 lines total across 5 files, all pass `mtc check` with zero errors/warnings
 - 80% of string atom pain points now eliminated (type names, operators, builtins, token kinds)
 
-### Next Session (Phase 2: Lexer)
-1. Define Token struct with interning support (ident: ptr_uint field)
-2. Implement char-by-byte lexer producing Vec[Token]
-3. Test with sample .mt source files
+### Session 4 (2026-06-23) — Phase 2 Complete (Lexer)
+- Created SourceCursor (`cursor.mt`): single unsafe boundary for byte access, `peek()` returns `Option[ubyte]`
+- Created Token struct (`token.mt`): IdentId-based identifier storage, 13 inline char classification functions
+- Created full lexer (`lexer.mt`): char-by-byte scanning, 58 keyword lookup via interning + `map.Map[IdentId, TokenKind]`, operator/delimiter/string/number lexing
+- Fixed: `byte` and `span` are reserved type names, `peek()` merged into single `Option[ubyte]` API, removed unnecessary `ubyte<-` casts
+- 936 lines total across 3 new files
+
+### Session 5 (2026-06-23) — Phase 3 Complete (Parser)
+- Designed AST variant hierarchy: 5 top-level variants (Expr 30 arms, Stmt 16 arms, Decl 9 arms, Type 11 arms, Pattern 4 arms), 17 helper structs
+- Created TokenCursor (`token_cursor.mt`): safe peek/consume pattern matching SourceCursor
+- Key AST design decisions: `loc` (not `span`) for source locations, `type_ref` (not `type`) for type reference fields, span-based child lists (not `ptr[vec.Vec[...]]`) for arena compatibility
+- Extended MT compiler: char-literal match arm support, `|` multi-value match arm support
+- Parser uses `push[T](arena_ref, value)` for arena allocation + `finish_span[T](arena_ref, vec)` for Vec→span conversion
+- 865 lines across 4 files
+
+### Session 6 (2026-06-23) — Doc Sync
+- Marked Phase 2 and Phase 3 complete in progress tracker
+- Next step: Phase 4.0 — Type Registry (`compiler.sema.type_registry.mt`), addresses pain point 2.2
+
+### Session 7 (2026-06-23) — Phase 4 (Sema) + Phase 5 (Lowering) + Phase 6 (Codegen)
+- Created `sema/type_registry.mt` (223L): TypeId interning with hash-map dedup
+- Created `sema/types.mt` (95L): type classification predicates
+- Created `sema/scope.mt` (58L): lexical scope with nullable parent chain (static functions — workaround for nullable ptr method call lowering bug)
+- Created `sema/checker.mt` (257L): type checker for declarations/expressions/statements
+- Created `lowering/ir.mt` (27L): flat C-oriented IR types
+- Created `lowering/lowerer.mt` (284L): AST→IR with type→C name mapping, arena-backed span copies
+- Created `codegen/c_backend.mt` (140L): IR→C string emission via `string.String` buffer
+- Wired full pipeline in `main.mt`: source string → lex → parse → check → lower → emit C
+- Added `ptr_uint` hash to `std/hash.mt` (needed by registry's `map.Map[ptr_uint, TypeId]`)
+- Added `import std.hash` to `std/map.mt` (build-time monomorphization order fix)
+- Made `public`: PrimitiveKind, BuiltinName, GenericTypeKind enums + Registry accessor functions
+- Renamed: scope methods to static functions (workaround for nullable ptr method call bug)
+- Replaced: generic `push[T]`/`finish_span[T]` with typed `new_*`/`span_of_*` methods (workaround for generic monomorphization bug)
+- Replaced: `array[TypeId, 26]` with `vec.Vec[TypeId]` (workaround for array zero-init C codegen bug)
+- Renamed: `emit` → `write_*` everywhere (emit is a reserved keyword)
+- Renamed: `out` → `output` parameter (out is a reserved keyword)
+- Declared `printf` as `external function` in main.mt to print generated C
+
+### Session 8 (2026-06-23) — Phase 7 (Indentation + End-to-End)
+- Added `handle_indent()` to lexer: counts leading spaces after newlines, emits `INDENT`/`DEDENT` tokens
+- Updated `finish()` to emit trailing dedents before EOF
+- Fixed parser: `skip_newlines` consumes `INDENT`; `parse_module` checks `at_indent_end`
+- Fixed parser infinite loop on dedent: `skip_to_newline` now handles dedent boundary properly
+- Fixed SEGV: parser was calling `arena.release()` before return — all AST pointers became dangling
+- Verified end-to-end: `function add(a: int, b: int) -> int: return a + b` → generates valid C → gcc compiles → runs correctly (add(2,3) == 5)
+- Doc update: added §8 (Coding Rules) and §9 (Standard Library Quick Reference) to this document

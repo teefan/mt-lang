@@ -171,6 +171,7 @@ extending Lexer:
             if token_mod.is_newline(ch):
                 this.cursor.advance()
                 this.push_token(T.tk_newline, start_pos, this.cursor.pos, line, col)
+                this.handle_indent()
                 continue
 
             if token_mod.is_ident_start(ch):
@@ -564,9 +565,66 @@ extending Lexer:
                 return T.tk_identifier
 
 
+    ## ── indentation ───────────────────────────────────────────────
+
+    editable function handle_indent() -> void:
+        # count leading spaces, emit indent/dedent tokens
+        var spaces: ptr_uint = 0
+        let start_pos = this.cursor.pos
+        let line = this.cursor.line
+        let col = this.cursor.col
+
+        # count spaces at the start of the new line
+        while not this.cursor.at_end() and this.cursor.current() == ' ':
+            this.cursor.advance()
+            spaces += 1
+
+        # empty line or comment-only line — skip indentation
+        if this.cursor.at_end() or this.cursor.current() == '#':
+            return
+
+        # skip if continuation pending (previous line ended with binary operator)
+        if this.continuation_pending:
+            this.continuation_pending = false
+            return
+
+        # skip if inside grouping
+        if this.grouping_depth > 0:
+            return
+
+        let new_level = spaces
+        let top = this.indent_level()
+
+        if new_level > top:
+            this.push_token(T.tk_indent, start_pos, this.cursor.pos, line, col)
+            this.indent_stack.push(spaces)
+        else if new_level < top:
+            while this.indent_stack.len > 0 and this.indent_level() > new_level:
+                this.indent_stack.pop()
+                this.push_token(T.tk_dedent, start_pos, this.cursor.pos, line, col)
+
+
+    function indent_level() -> ptr_uint:
+        if this.indent_stack.len == 0:
+            return 0
+        let result = this.indent_stack.get(this.indent_stack.len - 1) else:
+            return 0
+        unsafe:
+            return read(result)
+
+
     ## ── finish ───────────────────────────────────────────────────
 
     editable function finish() -> void:
+        while this.indent_stack.len > 0:
+            this.indent_stack.pop()
+            this.push_token(
+                T.tk_dedent,
+                this.cursor.pos,
+                this.cursor.pos,
+                this.cursor.line,
+                this.cursor.col,
+            )
         this.push_token(
             T.tk_eof,
             this.cursor.pos,

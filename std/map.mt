@@ -1,3 +1,4 @@
+import std.hash
 import std.mem.heap as heap
 
 struct Node[K, V]:

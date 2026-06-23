@@ -6,7 +6,7 @@
 ## Prefix convention: `bi_` to avoid collisions with builtin names that would
 ## parse as regular identifiers.
 
-enum BuiltinName: int
+public enum BuiltinName: int
     bi_fatal = 0
     bi_ref_of = 1
     bi_const_ptr_of = 2

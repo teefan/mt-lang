@@ -222,3 +222,22 @@ public function order_struct[T](a: const_ptr[T], b: const_ptr[T]) -> int:
                 return 1
             i += 1
     return 0
+
+
+# ---------------------------------------------------------------------------
+#  ptr_uint (for map keys)
+# ---------------------------------------------------------------------------
+
+extending ptr_uint:
+    public static function hash(value: const_ptr[ptr_uint]) -> uint:
+        unsafe:
+            let v = read(ptr[ptr_uint]<-value)
+            return uint<-v * 0x01000193
+
+
+    public static function equal(
+        a: const_ptr[ptr_uint],
+        b: const_ptr[ptr_uint],
+    ) -> bool:
+        unsafe:
+            return read(ptr[ptr_uint]<-a) == read(ptr[ptr_uint]<-b)
