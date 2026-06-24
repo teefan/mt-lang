@@ -1,6 +1,9 @@
 # Milk Tea Testing Framework (`std.testing` + `mtc test`)
 
-> Status: **T0–T5 landed.** Remaining roadmap: T6 (migrate `std` tests / dogfood) and T7 (ecosystem).
+> Status: **T0–T6 landed.** Remaining roadmap: T7 (ecosystem). T6 migrated every in-language
+> (no-FFI, deterministic) `std` module onto `mtc test`; the Ruby heredoc harness now covers only
+> runtime/FFI modules (sockets, GPU, threads, compression, process/filesystem/clock I/O, external
+> libs) and the `mtc` self-host units, which await the self-hosted compiler.
 > Implemented today: the `std.testing` core (§5) and `mtc test` with built-in `@[test]` discovery,
 > runner synthesis, a per-binary timeout + memory cap, directory/package discovery, parallel
 > execution, death tests, compile-fail tests, a `--sanitize` mode (ASan/UBSan + LeakSanitizer),
@@ -80,12 +83,25 @@ in-language unit tests, and (c) the status quo (§3) is brittle and anti-dogfood
   which discovers `@[test]` functions, synthesizes a runner, and builds + runs it under a per-binary
   timeout and memory cap (§6, §7).
 
-**Migration in progress (T6).** Representative in-language `std` tests now live under `test/mt/`
-(Option/Result, string, math, ctype, span, bytes, stack, queue) and run via `mtc test`, bridged into the Ruby suite by
-`test/std/in_language_tests_test.rb`. The bulk of `std` is still exercised by `test/std/*_test.rb`
-Minitest wrappers that embed a `.mt` heredoc, compile + run it, and assert on the **exit code**
-(entry point `function main() -> int`). That *C-without-a-framework* harness stays in place until the
-rest of the `std` suite is migrated onto `mtc test` (§13, T6).
+**Migration (T6) landed for the in-language `std` suite.** Every pure, deterministic, no-FFI `std`
+module now has its tests under `test/mt/` as `@[test]` functions run via `mtc test`, CI-enforced by
+`test/std/in_language_tests_test.rb`. This covers the collections (`vec`, `deque`, `set`, `map`,
+`counter`, `multiset`, `ordered_map`/`ordered_set`, `linked_map`/`linked_set`, `priority_queue`,
+`binary_heap`, `stack`, `queue`, `span`, `bytes`), string/encoding helpers (`string`, `cstring`,
+`uri`, `path`, `fmt`, `toml`, `binary`, `ctype`), `math`, `option`/`result`, the `mem` allocators
+(`heap`, `arena`, `pool`, `stack` — including `@[expect_fatal]` contract-abort death tests), the
+AI/utility modules (`fsm`, `goap`, `behavior_tree`, `cli`, `spatial`, `random`, `net.sync`), and the
+`pass` language-feature test. Their Ruby heredoc wrappers have been removed — the in-language tests
+are the single source of truth.
+
+What deliberately stays on the `test/std/*_test.rb` heredoc harness: modules that the in-language
+runner cannot self-containedly exercise — external-library/FFI bindings (`json`, `gzip`, `zstd`,
+`tar`, `sqlite3`, `pcre2`, `curl`, `raylib`, `glfw`/`gl`, `jobs`, `thread`/`thread_sync`), sockets
+and network protocols (`net.*` except `net.sync`, `http`), process/filesystem/terminal/clock I/O
+(`process`, `fs`, `stdio`, `libc`, `terminal`, `time`), and fixture-dependent tests (`asset_pack`,
+which needs pre-built `.mtpack` files on disk). Those wrappers embed a `.mt` heredoc, compile + run
+it, and assert on the **exit code** (plus link flags / pipeline outputs the in-language runner does
+not check). `mtc`'s own internal unit tests in Milk Tea await the self-hosted compiler.
 
 ---
 
@@ -364,10 +380,16 @@ Keep the core minimal; property testing, snapshot/golden, and benchmarks are lat
 - **T5 — Sanitizer mode, `-n` filtering, and machine output. ✅ Landed.** `mtc test --sanitize`
   builds test binaries with ASan/UBSan + LeakSanitizer (§8.1); `-n SUBSTRING` selects tests by name;
   `--format tap`/`--format junit` emits machine-readable results for CI.
-- **T6 — Migration & dogfood. ◑ In progress.** Representative in-language `std` tests
-  (Option/Result, string, math, ctype, span, bytes, stack, queue) landed under `test/mt/`, run by `mtc test`, and CI-enforced via
-  `test/std/in_language_tests_test.rb`. Remaining: migrate the rest of the `std` suite off the Ruby
-  heredoc harness; `mtc` unit tests in Milk Tea await the self-hosted compiler (`selfhost.md`).
+- **T6 — Migration & dogfood. ✅ Landed (in-language `std` suite).** Every pure, deterministic,
+  no-FFI `std` module has been migrated to `@[test]` functions under `test/mt/` (collections,
+  string/encoding helpers, `math`, `option`/`result`, the `mem` allocators with `@[expect_fatal]`
+  contract-abort death tests, the `fsm`/`goap`/`behavior_tree`/`cli`/`spatial`/`random`/`net.sync`
+  utilities, and the `pass` language test), run by `mtc test` and CI-enforced via
+  `test/std/in_language_tests_test.rb`; the corresponding Ruby heredoc wrappers were removed.
+  Intentionally **not** migrated (they cannot be exercised self-containedly in-language and remain
+  on the heredoc harness): external-library/FFI bindings, sockets/network protocols, process/
+  filesystem/terminal/clock I/O, and fixture-dependent tests. `mtc`'s own unit tests in Milk Tea
+  await the self-hosted compiler (`selfhost.md`).
 - **T7 — Ecosystem (later, in `std`).** Property testing, snapshot/golden, benchmarks. Not core.
 
 ---
