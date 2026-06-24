@@ -38,7 +38,7 @@ public function parse(
 ) -> ptr[ast.SourceFile]:
     var p = Parser(
         cur = cursor_mod.create(tokens),
-        arena = arena.create(256 * 1024),
+        arena = arena.create(32 * 1024 * 1024),
         source = source,
         interner = interner,
         id_underscore = 0,
@@ -69,6 +69,19 @@ extending Parser:
             this.id_ref = this.interner.intern("ref")
             this.id_array = this.interner.intern("array")
 
+
+    ## ── list-end helper ──────────────────────────────────────────
+    ##
+    ## Consumes DEDENT that may appear before a closing delimiter
+    ## (rparen or rbracket) in multiline parameter/field lists.
+    ## Used by all comma-separated list parsers.
+
+    editable function consume_list_end(kind: tk.TokenKind) -> void:
+        this.skip_newlines()
+        if this.cur.current().kind == T.tk_dedent:
+            this.cur.advance()
+            this.skip_newlines()
+        this.expect(kind)
 
     ## ── arena helpers ───────────────────────────────────────────────
 
@@ -391,10 +404,19 @@ extending Parser:
         var params = vec.Vec[ast.Param].create()
 
         while true:
+            this.skip_newlines()
             if this.cur.current().kind == T.tk_rparen:
                 break
+            if this.at_indent_end():
+                break
             if params.len > 0:
+                this.skip_newlines()
+                if this.cur.current().kind == T.tk_rparen or this.at_indent_end():
+                    break
                 this.expect(T.tk_comma)
+                this.skip_newlines()
+            if this.at_indent_end():
+                break
 
             let param_name = this.cur.current()
             this.expect(T.tk_identifier)
@@ -406,8 +428,7 @@ extending Parser:
                 loc = this.make_loc(param_name.start, param_name.end),
             ))
 
-        let rparen_tok = this.cur.current()
-        this.expect(T.tk_rparen)
+        this.consume_list_end(T.tk_rparen)
 
         var ret_type = zero[ptr[ast.Type]]
         if not this.cur.at_end() and this.cur.current().kind == T.tk_arrow:
@@ -476,6 +497,7 @@ extending Parser:
 
         if not this.cur.at_end() and this.cur.current().kind == T.tk_dedent:
             this.cur.advance()
+            this.skip_newlines()
 
         let end = this.cur_end()
         let fields_span = this.span_of_fields(ref_of(fields))
@@ -567,10 +589,19 @@ extending Parser:
             if not this.cur.at_end() and this.cur.current().kind == T.tk_lparen:
                 this.cur.advance()
                 while true:
+                    this.skip_newlines()
                     if this.cur.current().kind == T.tk_rparen:
                         break
+                    if this.at_indent_end():
+                        break
                     if arm_fields.len > 0:
+                        this.skip_newlines()
+                        if this.cur.current().kind == T.tk_rparen or this.at_indent_end():
+                            break
                         this.expect(T.tk_comma)
+                        this.skip_newlines()
+                    if this.at_indent_end():
+                        break
                     let field_name_tok = this.cur.current()
                     this.expect(T.tk_identifier)
                     this.expect(T.tk_colon)
@@ -580,7 +611,7 @@ extending Parser:
                         type_ref = field_type,
                         loc = this.make_loc(field_name_tok.start, this.cur_end()),
                     ))
-                this.expect(T.tk_rparen)
+                this.consume_list_end(T.tk_rparen)
             arms.push(ast.VariantArmDecl(
                 name = arm_name_tok.ident,
                 fields = this.span_of_fields(ref_of(arm_fields)),
@@ -681,6 +712,8 @@ extending Parser:
         let start = this.cur.current().start
         var kind = ast.MethodKind.mk_plain
 
+        if this.cur.current().kind == T.tk_kw_public:
+            this.cur.advance()
         if this.cur.current().kind == T.tk_kw_editable:
             kind = ast.MethodKind.mk_editable
             this.cur.advance()
@@ -698,10 +731,19 @@ extending Parser:
         var params = vec.Vec[ast.Param].create()
 
         while true:
+            this.skip_newlines()
             if this.cur.current().kind == T.tk_rparen:
                 break
+            if this.at_indent_end():
+                break
             if params.len > 0:
+                this.skip_newlines()
+                if this.cur.current().kind == T.tk_rparen or this.at_indent_end():
+                    break
                 this.expect(T.tk_comma)
+                this.skip_newlines()
+            if this.at_indent_end():
+                break
             let param_name = this.cur.current()
             this.expect(T.tk_identifier)
             this.expect(T.tk_colon)
@@ -712,7 +754,7 @@ extending Parser:
                 loc = this.make_loc(param_name.start, param_name.end),
             ))
 
-        this.expect(T.tk_rparen)
+        this.consume_list_end(T.tk_rparen)
 
         var ret_type = zero[ptr[ast.Type]]
         if not this.cur.at_end() and this.cur.current().kind == T.tk_arrow:
@@ -1760,14 +1802,23 @@ extending Parser:
         var ta_args = vec.Vec[ptr[ast.Type]].create()
 
         while true:
+            this.skip_newlines()
             if this.cur.current().kind == T.tk_rbracket:
                 break
+            if this.at_indent_end():
+                break
             if ta_args.len > 0:
+                this.skip_newlines()
+                if this.cur.current().kind == T.tk_rbracket or this.at_indent_end():
+                    break
                 this.expect(T.tk_comma)
+                this.skip_newlines()
+            if this.at_indent_end():
+                break
             let arg = this.parse_type()
             ta_args.push(arg)
 
-        this.expect(T.tk_rbracket)
+        this.consume_list_end(T.tk_rbracket)
         let end = this.cur_end()
         let ta_span = this.span_of_types(ref_of(ta_args))
         let loc = this.make_loc(0, end)

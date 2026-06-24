@@ -70,29 +70,98 @@ public function create(
 
 extending Checker:
     public editable function check(file: ptr[ast.SourceFile]) -> bool:
+        ## Pass 1: register all type names so forward references resolve
+        ## (e.g., IrFunction uses span[IrStmt] where IrStmt is defined later).
         unsafe:
             let decls_span = file.decls.as_span()
+            var pi: ptr_uint = 0
+            while pi < decls_span.len:
+                let decl_ptr = read(decls_span.data + pi)
+                this.register_decl_name(decl_ptr)
+                pi += 1
+        ## Pass 2: full type checking with all names available.
+        unsafe:
+            let decls_span2 = file.decls.as_span()
             var i: ptr_uint = 0
-            while i < decls_span.len:
-                let decl_ptr = read(decls_span.data + i)
+            while i < decls_span2.len:
+                let decl_ptr = read(decls_span2.data + i)
                 this.check_decl(decl_ptr)
                 i += 1
         return this.errors.len == 0
 
 
+    public function error_count() -> ptr_uint:
+        return this.errors.len
+
+
+    public function error_texts() -> span[str]:
+        return this.errors.as_span()
+
+
+    public editable function register_types(file: ptr[ast.SourceFile]) -> void:
+        ## Register struct/enum/variant/type_alias names without
+        ## checking bodies. Used to pre-load imports.
+        unsafe:
+            let decls_span = file.decls.as_span()
+            var pi: ptr_uint = 0
+            while pi < decls_span.len:
+                let decl_ptr = read(decls_span.data + pi)
+                this.register_decl_name(decl_ptr)
+                pi += 1
+
+
+    editable function register_decl_name(decl: ptr[ast.Decl]) -> void:
+        unsafe:
+            match read(decl):
+                ast.Decl.struct_decl(name, _, _, _):
+                    let tid = this.registry.named_type(name)
+                    this.register_typename(name, tid)
+                ast.Decl.enum_decl(name, _, _, _, _):
+                    let tid = this.registry.named_type(name)
+                    this.register_typename(name, tid)
+                ast.Decl.variant_decl(name, _, _, _):
+                    let tid = this.registry.named_type(name)
+                    this.register_typename(name, tid)
+                ast.Decl.type_alias(name, target, _, _):
+                    let tid = this.resolve_type(target)
+                    this.register_typename(name, tid)
+                    this.registry.set_alias(name, tid)
+                _:
+                    pass
+
+
     editable function init_builtins(interner_ref: ref[intern.Interner]) -> void:
+        ## Store commonly-used type IDs.
         this.int_id = this.registry.primitive(P.pk_int)
         this.float_id = this.registry.primitive(P.pk_float)
         this.bool_id = this.registry.primitive(P.pk_bool)
         this.void_id = this.registry.primitive(P.pk_void)
         this.str_id = this.registry.primitive(P.pk_str)
+        this.cstr_id = this.registry.primitive(P.pk_cstr)
+        ## Register all primitives so struct fields / function return types resolve.
+        this.register_typename(interner_ref.intern("byte"), this.registry.primitive(P.pk_byte))
+        this.register_typename(interner_ref.intern("short"), this.registry.primitive(P.pk_short))
         this.register_typename(interner_ref.intern("int"), this.int_id)
+        this.register_typename(interner_ref.intern("long"), this.registry.primitive(P.pk_long))
+        this.register_typename(interner_ref.intern("ptr_int"), this.registry.primitive(P.pk_ptr_int))
+        this.register_typename(interner_ref.intern("ubyte"), this.registry.primitive(P.pk_ubyte))
+        this.register_typename(interner_ref.intern("ushort"), this.registry.primitive(P.pk_ushort))
+        this.register_typename(interner_ref.intern("uint"), this.registry.primitive(P.pk_uint))
+        this.register_typename(interner_ref.intern("ulong"), this.registry.primitive(P.pk_ulong))
+        this.register_typename(interner_ref.intern("ptr_uint"), this.registry.primitive(P.pk_ptr_uint))
+        this.register_typename(interner_ref.intern("char"), this.registry.primitive(P.pk_char))
         this.register_typename(interner_ref.intern("float"), this.float_id)
+        this.register_typename(interner_ref.intern("double"), this.registry.primitive(P.pk_double))
         this.register_typename(interner_ref.intern("bool"), this.bool_id)
         this.register_typename(interner_ref.intern("void"), this.void_id)
         this.register_typename(interner_ref.intern("str"), this.str_id)
+        this.register_typename(interner_ref.intern("cstr"), this.cstr_id)
         this.vec_id = interner_ref.intern("Vec")
         this.map_id = interner_ref.intern("Map")
+        ## Pre-register common std-library types whose modules are skipped.
+        this.register_typename(interner_ref.intern("String"), this.registry.named_type(interner_ref.intern("String")))
+        this.register_typename(interner_ref.intern("Interner"), this.registry.named_type(interner_ref.intern("Interner")))
+        this.register_typename(interner_ref.intern("Arena"), this.registry.named_type(interner_ref.intern("Arena")))
 
 
     editable function register_typename(name: IdentId, tid: TypeId) -> void:
@@ -374,7 +443,9 @@ extending Checker:
             let k = this.resolve_type(unsafe: read(args.data + 0))
             let v = this.resolve_type(unsafe: read(args.data + 1))
             return this.registry.map(k, v)
-        return TypeId<-0
+        ## Fallback: create a named entry for unrecognised generics
+        ## (e.g., str_buffer[N], SoA[T, N]).
+        return this.registry.named_type(name)
 
 
     function check_binary(
