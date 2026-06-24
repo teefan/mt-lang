@@ -720,7 +720,7 @@ module MilkTea
       limits = extract_test_limit_flags!
       return 1 unless limits
 
-      @test_timeout_seconds, @test_memory_bytes, @test_jobs, @test_sanitize = limits
+      @test_timeout_seconds, @test_memory_bytes, @test_jobs, @test_sanitize, @test_filter, @test_format = limits
 
       path, options = extract_path_and_options
       return 1 unless path
@@ -729,6 +729,25 @@ module MilkTea
       ensure_current_lockfile!(path) if frozen
       locked = options.delete(:locked)
 
+      return dispatch_test_run(path, options:, locked:) if @test_format == :human
+
+      buffer = StringIO.new
+      real_out = @out
+      real_err = @err
+      @out = buffer
+      @err = buffer
+      begin
+        exit_code = dispatch_test_run(path, options:, locked:)
+      ensure
+        @out = real_out
+        @err = real_err
+      end
+
+      emit_machine_results(parse_test_output(buffer.string), @test_format, real_out)
+      exit_code
+    end
+
+    def dispatch_test_run(path, options:, locked:)
       if File.directory?(path)
         run_test_directory(path, options:, locked:)
       elsif File.file?(path)
@@ -748,6 +767,8 @@ module MilkTea
       memory_bytes = TEST_RUN_MEMORY_LIMIT_BYTES
       jobs = 1
       sanitize = false
+      filter = nil
+      format = :human
       remaining = []
       until @argv.empty?
         arg = @argv.shift
@@ -778,18 +799,114 @@ module MilkTea
           jobs = count
         when "--sanitize"
           sanitize = true
+        when "-n", "--name"
+          value = @argv.shift
+          unless value
+            @err.puts("-n requires a name substring")
+            return nil
+          end
+          filter = value
+        when "--format"
+          value = @argv.shift
+          unless %w[human tap junit].include?(value)
+            @err.puts("--format must be human, tap, or junit")
+            return nil
+          end
+          format = value.to_sym
         else
           remaining << arg
         end
       end
       @argv.replace(remaining)
-      [timeout_seconds, memory_bytes, jobs, sanitize]
+      [timeout_seconds, memory_bytes, jobs, sanitize, filter, format]
+    end
+
+    TestResult = Data.define(:name, :status, :detail)
+
+    def parse_test_output(text)
+      results = []
+      current_file = nil
+      text.each_line do |raw|
+        line = raw.chomp
+        case line
+        when /\A# (.+)\z/
+          current_file = ::Regexp.last_match(1)
+        when /\Aok   - (.+)\z/
+          results << TestResult.new(name: ::Regexp.last_match(1), status: :pass, detail: nil)
+        when /\Askip - (.+?)(?:: (.*))?\z/
+          results << TestResult.new(name: ::Regexp.last_match(1), status: :skip, detail: ::Regexp.last_match(2))
+        when /\AFAIL - (.+?)(?:: (.*))?\z/
+          results << TestResult.new(name: ::Regexp.last_match(1), status: :fail, detail: ::Regexp.last_match(2))
+        when /\AFAILED - (.+?) \(build error\)\z/
+          results << TestResult.new(name: "#{::Regexp.last_match(1)} (build error)", status: :fail, detail: "build error")
+        when /\Atest run (?:timed out|crashed)/, /\ASUMMARY: \w+Sanitizer/
+          results << TestResult.new(name: "#{current_file || 'test'} (#{line})", status: :fail, detail: line)
+        end
+      end
+      results
+    end
+
+    def emit_machine_results(results, format, out)
+      case format
+      when :tap then emit_tap(results, out)
+      when :junit then emit_junit(results, out)
+      end
+    end
+
+    def emit_tap(results, out)
+      out.puts("TAP version 13")
+      out.puts("1..#{results.length}")
+      results.each_with_index do |result, index|
+        number = index + 1
+        case result.status
+        when :pass
+          out.puts("ok #{number} - #{result.name}")
+        when :skip
+          out.puts("ok #{number} - #{result.name} # SKIP#{result.detail ? " #{result.detail}" : ''}")
+        when :fail
+          out.puts("not ok #{number} - #{result.name}")
+          next unless result.detail
+
+          out.puts("  ---")
+          out.puts("  message: #{result.detail}")
+          out.puts("  ...")
+        end
+      end
+    end
+
+    def emit_junit(results, out)
+      failures = results.count { |result| result.status == :fail }
+      skipped = results.count { |result| result.status == :skip }
+      out.puts(%(<?xml version="1.0" encoding="UTF-8"?>))
+      out.puts(%(<testsuites tests="#{results.length}" failures="#{failures}" skipped="#{skipped}">))
+      out.puts(%(  <testsuite name="mtc test" tests="#{results.length}" failures="#{failures}" skipped="#{skipped}">))
+      results.each do |result|
+        name = xml_escape(result.name)
+        case result.status
+        when :pass
+          out.puts(%(    <testcase name="#{name}"/>))
+        when :skip
+          out.puts(%(    <testcase name="#{name}"><skipped/></testcase>))
+        when :fail
+          out.puts(%(    <testcase name="#{name}"><failure message="#{xml_escape(result.detail || 'failed')}"/></testcase>))
+        end
+      end
+      out.puts("  </testsuite>")
+      out.puts("</testsuites>")
+    end
+
+    def xml_escape(value)
+      value.to_s.gsub("&", "&amp;").gsub("<", "&lt;").gsub(">", "&gt;").gsub('"', "&quot;")
     end
 
     def run_test_directory(directory, options:, locked:)
       test_files = discover_test_files(directory)
       if test_files.empty?
-        @out.puts("no @[test] functions or # expect-error: fixtures found under #{directory}")
+        if @test_filter
+          @out.puts("no tests matched -n '#{@test_filter}' under #{directory}")
+        else
+          @out.puts("no @[test] functions or # expect-error: fixtures found under #{directory}")
+        end
         return 0
       end
 
@@ -934,16 +1051,21 @@ module MilkTea
 
     def classify_test_file(file)
       source = File.read(file)
-      return :compile_fail if compile_fail_fixture?(source)
+      if compile_fail_fixture?(source)
+        return nil if @test_filter && !File.basename(file, ".mt").include?(@test_filter)
+
+        return :compile_fail
+      end
 
       ast = begin
         MilkTea::Parser.parse(source, path: file)
       rescue ParseError
         return nil
       end
-      return :test if ast.declarations.any? { |decl| decl.is_a?(AST::FunctionDef) && test_attribute?(decl) }
-
-      nil
+      has_match = ast.declarations.any? do |decl|
+        decl.is_a?(AST::FunctionDef) && test_attribute?(decl) && matches_filter?(decl.name)
+      end
+      has_match ? :test : nil
     end
 
     def compile_fail_fixture?(source)
@@ -952,6 +1074,10 @@ module MilkTea
 
     def test_attribute?(decl)
       decl.attributes.any? { |attribute| attribute.name.parts == ["test"] }
+    end
+
+    def matches_filter?(name)
+      @test_filter.nil? || name.include?(@test_filter)
     end
 
     def run_test_file(path, options:, locked:)
@@ -969,6 +1095,9 @@ module MilkTea
         @out.puts("no @[test] functions found in #{path}")
         return 0
       end
+
+      tests = tests.select { |test| matches_filter?(test.name) }
+      return 0 if tests.empty?
 
       invalid = tests.find { |test| !test.params.empty? }
       if invalid
@@ -1917,7 +2046,7 @@ module MilkTea
 
     COMMAND_HELP = {
       "test"            => <<~HELP,
-        Usage: mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [--locked] [--frozen] [-I PATH]
+        Usage: mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [-n SUBSTRING] [--format human|tap|junit] [--locked] [--frozen] [-I PATH]
 
           Discover and run @[test] functions in a Milk Tea source file or directory.
 
@@ -1939,6 +2068,10 @@ module MilkTea
           requires the compiler to reject it with a diagnostic containing that text.
           --sanitize builds test binaries with AddressSanitizer/UBSan (including leak
           detection); any sanitizer error fails the run.
+          -n SUBSTRING runs only @[test] functions whose name contains SUBSTRING (and, in a
+          directory, compile-fail fixtures whose filename matches).
+          --format tap|junit emits machine-readable results (TAP / JUnit XML) instead of the
+          human summary, for CI.
         HELP
       "debug"           => "Usage: mtc debug PATH [--locked] [--frozen] [-I PATH]\n\n  Print debug information for a source file: tokens, AST, semantic facts,\n  binding resolution, and diagnostics.",
       "parse"           => "Usage: mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Parse one or more source files and print the AST.",
@@ -2165,7 +2298,7 @@ module MilkTea
       io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--clean] [-I PATH]")
       io.puts("       mtc new NAME")
       io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [-n SUBSTRING] [--format human|tap|junit] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc run-module MODULE [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [-- ARGS...]")
       io.puts("       mtc toolchain bootstrap")
       io.puts("       mtc toolchain doctor")

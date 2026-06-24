@@ -1,11 +1,10 @@
 # Milk Tea Testing Framework (`std.testing` + `mtc test`)
 
-> Status: **T0–T5 substantially landed; machine output (TAP/JUnit) + filtering remain.**
+> Status: **T0–T5 landed.** Remaining roadmap: T6 (migrate `std` tests / dogfood) and T7 (ecosystem).
 > Implemented today: the `std.testing` core (§5) and `mtc test` with built-in `@[test]` discovery,
 > runner synthesis, a per-binary timeout + memory cap, directory/package discovery, parallel
-> execution, death tests, compile-fail tests, and a `--sanitize` mode (ASan/UBSan + LeakSanitizer)
-> (§6–§8, §13). Still planned: machine output (TAP/JUnit) and filtering. Companion to
-> `docs/selfhost.md`.
+> execution, death tests, compile-fail tests, a `--sanitize` mode (ASan/UBSan + LeakSanitizer),
+> `-n` name filtering, and TAP/JUnit machine output (§6–§10, §13). Companion to `docs/selfhost.md`.
 >
 > Surface note: the author-facing form is the **`@[test]` attribute**, not a `test "…"` block —
 > Open Question 1 is resolved in favor of a built-in attribute (§5, §6, §14).
@@ -301,9 +300,11 @@ source-location capture. No rewriting magic, fully static.
 - **Exit code (landed):** non-zero if any test fails, the run times out, or the binary crashes.
 - **Sanitize (landed):** `--sanitize` builds with ASan/UBSan + LeakSanitizer; a sanitizer error
   (leak, OOB, UB) fails the run (§8.1).
-- **Planned:** machine output (`--format tap`/`--format junit`), name/tag filtering
-  (`-n <substring>`), an `--isolate` flag, per-file progress, and rendered diffs with source
-  locations.
+- **Filtering (landed):** `-n SUBSTRING` runs only `@[test]` functions (and compile-fail fixtures)
+  whose name/filename contains the substring.
+- **Machine output (landed):** `--format tap` / `--format junit` emits TAP or JUnit XML for CI
+  (the human runner output is captured and transformed into structured results).
+- **Planned:** an `--isolate` flag, per-file progress, and rendered diffs with source locations.
 
 ---
 
@@ -359,9 +360,9 @@ Keep the core minimal; property testing, snapshot/golden, and benchmarks are lat
   checking, originally paired here, is reassigned to T5 as LeakSanitizer — §8.1, Open Question 4.)
 - **T4 — Compile-fail tests. ✅ Landed.** A `# expect-error: <text>` fixture passes iff the compiler
   rejects it with a diagnostic containing `<text>` (syntax-error fixtures included).
-- **T5 — Sanitizer mode (✅ landed) + machine output (planned).** `mtc test --sanitize` builds test
-  binaries with ASan/UBSan + LeakSanitizer (§8.1); any sanitizer error fails the run. Still planned:
-  TAP/JUnit machine output and name/tag filtering.
+- **T5 — Sanitizer mode, `-n` filtering, and machine output. ✅ Landed.** `mtc test --sanitize`
+  builds test binaries with ASan/UBSan + LeakSanitizer (§8.1); `-n SUBSTRING` selects tests by name;
+  `--format tap`/`--format junit` emits machine-readable results for CI.
 - **T6 — Migration & dogfood.** Port representative `std` tests off the Ruby harness; add `mtc`
   unit tests in Milk Tea. *Verify:* migrated suites pass under `mtc test`.
 - **T7 — Ecosystem (later, in `std`).** Property testing, snapshot/golden, benchmarks. Not core.
