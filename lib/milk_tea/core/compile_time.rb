@@ -192,7 +192,7 @@ module MilkTea
       def evaluate_if(statement, scopes:)
         statement.branches.each do |branch|
           condition = evaluate_expression(branch.condition, scopes:)
-          if condition && (condition == true || condition.is_a?(Numeric) && condition != 0)
+          if CompileTime.boolean_value?(condition) && condition
             branch.body.each do |body_stmt|
               case body_stmt
               when AST::ReturnStmt
