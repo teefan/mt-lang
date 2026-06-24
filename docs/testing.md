@@ -1,10 +1,11 @@
 # Milk Tea Testing Framework (`std.testing` + `mtc test`)
 
-> Status: **T0 + T1 landed; remaining phases planned.**
+> Status: **T0–T5 substantially landed; machine output (TAP/JUnit) + filtering remain.**
 > Implemented today: the `std.testing` core (§5) and `mtc test` with built-in `@[test]` discovery,
-> runner synthesis, and a per-binary timeout + memory cap (§6, §7, §13). Still planned: tracking
-> allocator, death/compile-fail tests, sanitizer mode, parallelism, machine output, and
-> directory/package discovery. Companion to `docs/selfhost.md`.
+> runner synthesis, a per-binary timeout + memory cap, directory/package discovery, parallel
+> execution, death tests, compile-fail tests, and a `--sanitize` mode (ASan/UBSan + LeakSanitizer)
+> (§6–§8, §13). Still planned: machine output (TAP/JUnit) and filtering. Companion to
+> `docs/selfhost.md`.
 >
 > Surface note: the author-facing form is the **`@[test]` attribute**, not a `test "…"` block —
 > Open Question 1 is resolved in favor of a built-in attribute (§5, §6, §14).
@@ -34,6 +35,9 @@ this document is both its specification and the plan for the remaining phases.
 - **Not pytest parity.** No `assert`-rewriting magic, no dynamically-injected fixtures, no
   plugin/conftest hooks, no mocking framework. These depend on Python's dynamism + GC and fight a
   static, AOT, no-GC language (§11 explains the idiomatic alternatives).
+- **No co-located tests.** Tests live in **dedicated files** (no `main`); there is no `when TEST`
+  cfg mechanism for mixing tests into production modules (Open Question 3, resolved). This keeps a
+  normal build free of any test code and the discovery model simple.
 - **Not a replacement for the differential oracle.** `mtc test` tests Milk Tea *programs*; the
   self-host differential harness (`selfhost.md` §9) tests *compiler correctness*. Different jobs.
 - **Not a benchmarking suite (v1).** Benchmarks are a later `std` addition, not core.
@@ -145,9 +149,9 @@ Planned additions: a generic `t.expect_equal[T]` (needs an equality/format const
 `expect_not_equal`, `expect_null`/`expect_not_null`, `expect_error`, and source-location capture in
 `Failure`. Teardown uses `defer` (no fixture runtime).
 
-> Not yet implemented: a `when TEST` cfg-style exclusion. For now tests live in **dedicated files**
-> (no `main`); a normal build does not pull them in. Co-locating tests with production code under
-> `when TEST` is a later phase (§13, Open Question 3).
+> By design, tests live in **dedicated files** (no `main`); a normal build does not pull them in.
+> Co-locating tests with production code (a `when TEST` cfg exclusion) is intentionally **not
+> supported** — Open Question 3, resolved (§1, §14).
 
 ---
 
@@ -174,10 +178,12 @@ imported attributes must be written module-qualified (`@[t.test]`).
 3. writes the combined source to a temp runner **beside the source** (preserving module
    resolution), builds it, runs it sandboxed (§7), and deletes the temp files.
 
-**Build model (current slice): one test binary per test file.** A normal build never references
-`@[test]` functions (no `main` → unreferenced → eliminated), so there is no release overhead.
-Directory/package discovery, per-package `tests/` integration suites, and a `when TEST` exclusion
-for co-located tests are planned (§13).
+**Build model: one test binary per test file.** A normal build never references `@[test]` functions
+(no `main` → unreferenced → eliminated), so there is no release overhead. `mtc test DIR` (or a
+package root) recursively discovers every `.mt` file that contains `@[test]` functions, runs each as
+its own binary, and prints an aggregate summary; non-test and unparseable files are skipped. Tests
+live in **dedicated files** (no `main`); co-located tests and a `when TEST` exclusion are
+intentionally not supported (§1, §14).
 
 ---
 
@@ -186,71 +192,65 @@ for co-located tests are planned (§13).
 Because a Milk Tea test compiles to C and runs as a **native binary**, a bug can segfault, call
 `fatal()`, hang, or allocate unboundedly. `mtc test` sandboxes every test-binary run:
 
-- **Address-space cap (landed).** The binary is spawned with `RLIMIT_AS` set (currently 1 GiB) via
-  `Process.spawn(..., rlimit_as:)`, so runaway allocation hits `ENOMEM` (→ allocator `fatal`/abort,
-  contained) instead of exhausting the host.
-- **Wall-clock timeout (landed).** A watchdog (currently 30 s) kills the test's process group
-  (`SIGKILL`) on timeout.
+- **Address-space cap (landed).** The binary is spawned with `RLIMIT_AS` set (1 GiB default,
+  override with `--mem MB`) via `Process.spawn(..., rlimit_as:)`, so runaway allocation hits
+  `ENOMEM` (→ allocator `fatal`/abort, contained) instead of exhausting the host. (Disabled under
+  `--sanitize`, since ASan reserves a very large virtual address space.)
+- **Wall-clock timeout (landed).** A watchdog (30 s default, override with `--timeout SECONDS`)
+  kills the test's process group (`SIGKILL`) on timeout.
 - **Crash/timeout classification (landed).** Timeouts and termination by signal are reported and
   produce a non-zero exit; otherwise the binary's own exit code is propagated.
 
-Planned: a `--sanitize` mode (`-fsanitize=address,undefined`), a cgroup option
-(`systemd-run … -p MemoryMax=`), configurable `--timeout`/`--mem` flags, parallel execution across
-test files, and a per-test `--isolate` fork for death tests (§8.2). These reuse the same primitives
-described in `selfhost.md` §9.
+Planned: a cgroup memory option (`systemd-run … -p MemoryMax=`) and a per-test `--isolate` fork for
+finer containment. These reuse the same primitives described in `selfhost.md` §9.
 
 ---
 
 ## 8. Systems-specific capabilities (the payoff vs pytest)
 
-These are the features that justify a bespoke framework — none exist in minitest/pytest. **All of
-this section is planned (T3/T4); the examples use the landed `@[test]` surface.**
+These are the features that justify a bespoke framework — none exist in minitest/pytest. Death
+tests (§8.2) have landed; the rest are planned.
 
-### 8.1 Leak-checking via a tracking allocator
+### 8.1 Leak checking (LeakSanitizer — landed)
 
-Milk Tea's allocators are explicit (`std.mem.{arena,heap,pool,stack}`). A `t.tracking_allocator()`
-wraps `std.mem.heap`, counts outstanding allocations, and a test fails if any remain:
+The originally-planned *injected* `t.tracking_allocator()` is dropped: `std.mem.heap` is global
+module functions with no `Allocator` interface, so nothing can inject a wrapping allocator (Open
+Question 4, resolved). Because heap allocation funnels through `libc.malloc`/`free`, the right fit is
+**LeakSanitizer**: `mtc test --sanitize` builds each test binary with `-fsanitize=address,undefined`,
+so any leaked allocation is reported at exit (with a stack trace) and fails the run — zero code
+changes, full coverage. The same build also enables AddressSanitizer (memory errors) and UBSan
+(undefined behavior). See §13 (T5).
 
-```mt
-@[test]
-function test_list_alloc_is_balanced() -> t.Check:
-    var ta = t.tracking_allocator()
-    defer t.expect_no_leaks(ref_of(ta))      # fails the test if outstanding != 0
-    var list = List.create(ref_of(ta))
-    list.push(ref_of(ta), 1)
-    list.release(ref_of(ta))
-    return t.ok()
-```
+### 8.2 Death / abort-expectation tests (landed)
 
-**Caveat (honest):** leak-checking requires **allocator injection** — code under test must accept
-the allocator (the Zig pattern). Code that hardcodes `std.mem.heap.*` is only checkable via
-process-level RSS bounds or sanitizer LSan, not the tracking allocator. This is a design pressure
-toward allocator-parameterized APIs in `std` and `mtc`.
-
-### 8.2 Death / abort-expectation tests
-
-Assert that code aborts via `fatal()` (e.g. a safe out-of-bounds index, which the language defines
-as a `fatal` abort). Runs the body in a forked subprocess and asserts the abort:
+A `@[test]` function that also carries `@[expect_fatal]` is a **death test**: it must abort (via
+`fatal()` or a failed safety check — both lower to `abort()`/SIGABRT). `mtc test` runs each death
+test in its **own binary** and passes it iff the binary terminates abnormally; if the test returns
+normally it fails ("expected a fatal abort, but the test returned"). Abort detection happens in the
+runner via the real exit signal — reliable and portable, with no in-binary fork.
 
 ```mt
-# planned: an @[expect_fatal] companion attribute runs the test in a forked
-# subprocess and passes iff the body aborts (e.g. a safe out-of-bounds index).
 @[test] @[expect_fatal]
-function test_oob_index_aborts() -> t.Check:
-    let xs = [1, 2, 3]
-    let ignored = xs[5]      # safe indexing → fatal() out of bounds
-    return t.ok()
+function test_explicit_fatal() -> t.Check:
+    fatal("intentional abort")
+
+@[test] @[expect_fatal]
+function test_unwrap_none_aborts() -> t.Check:
+    let absent: Option[int] = Option[int].none
+    let value = absent.unwrap()      # unwrap on none → fatal abort
+    return t.expect_equal_int(value, 0)
 ```
 
-### 8.3 Compile-fail tests
+### 8.3 Compile-fail tests (landed)
 
-Assert that invalid code is *rejected by the compiler with a specific diagnostic* — on-brand for a
-safety-focused language (Rust `compile_fail`/`trybuild`, Zig `@compileError`). Fixture files carry
-the expectation; `mtc test` runs the compiler and matches the emitted diagnostic:
+A fixture file carrying a `# expect-error: <text>` directive is a **compile-fail test**: `mtc test`
+runs it through the compiler and passes iff it is rejected with a diagnostic containing `<text>`
+(otherwise it fails — either it compiled cleanly, or no diagnostic matched). Detection is by the
+directive, so even syntax-error fixtures (which don't parse) are found.
 
 ```mt
-# tests/compile_fail/assign_immutable.mt
-# expect-error: cannot assign to immutable binding
+# test/examples/compile_fail/assign_immutable.mt
+# expect-error: cannot assign to immutable
 function main() -> int:
     let x = 1
     x = 2
@@ -299,9 +299,11 @@ source-location capture. No rewriting magic, fully static.
 - **Human output (landed):** per-test `ok` / `FAIL - <name>: <message>` / `skip - <name>: <reason>`
   lines and a `passed=N failed=N skipped=N` summary.
 - **Exit code (landed):** non-zero if any test fails, the run times out, or the binary crashes.
+- **Sanitize (landed):** `--sanitize` builds with ASan/UBSan + LeakSanitizer; a sanitizer error
+  (leak, OOB, UB) fails the run (§8.1).
 - **Planned:** machine output (`--format tap`/`--format junit`), name/tag filtering
-  (`-n <substring>`), `--isolate`/`--sanitize`/`--timeout`/`--mem` flags, per-file progress, and
-  rendered diffs with source locations.
+  (`-n <substring>`), an `--isolate` flag, per-file progress, and rendered diffs with source
+  locations.
 
 ---
 
@@ -340,17 +342,26 @@ Keep the core minimal; property testing, snapshot/golden, and benchmarks are lat
   `mtc test PATH` parses + discovers `@[test]` functions, synthesizes a runner, and builds + runs it
   under a per-binary `RLIMIT_AS` cap + wall-clock timeout with crash/timeout classification. Scope
   of this slice: **single file**, parse-based discovery, tooling-synthesized runner.
-- **T2 — Scale-out & richer sandbox.** Directory/package discovery and per-package `tests/`; a
-  `when TEST` exclusion for co-located tests; parallel execution across files; cgroup option and
-  configurable `--timeout`/`--mem`. *Verify:* a hanging/OOM test is contained; a package's tests run
-  in one command.
-- **T3 — Tracking allocator + death tests.** `t.tracking_allocator()` / `expect_no_leaks`;
-  `expect_fatal` via forked subprocess. *Verify:* a deliberate leak fails; an OOB index passes an
-  `expect_fatal` test.
-- **T4 — Compile-fail tests.** `# expect-error:` fixtures matched against compiler diagnostics.
-  *Verify:* negative fixtures pass only when rejected with the expected diagnostic.
-- **T5 — Sanitizer mode + machine output.** `--sanitize` (ASan/UBSan); TAP/JUnit; filtering.
-  *Verify:* sanitizer build catches a planted UB; CI consumes machine output.
+- **T2 — Scale-out & richer sandbox.**
+  - ✅ Landed: **directory/package discovery** — `mtc test DIR` (or a package root) recursively runs
+    every `.mt` file containing `@[test]` functions, each as its own sandboxed binary, with an
+    aggregate `N test file(s), M failed` summary.
+  - ✅ Landed: **per-file build-error isolation** — a file that fails to compile is reported and
+    counted as a failed file; the suite continues.
+  - ✅ Landed: **configurable limits** — `--timeout SECONDS` (default 30) and `--mem MB` (default
+    1024) override the per-binary timeout and address-space cap.
+  - ✅ Landed: **parallel execution** — `--jobs N` builds and runs N test files concurrently via a
+    fork-per-file worker pool (process-isolated; output stays in file order).
+  - Planned: a cgroup memory option. (Co-located tests / a `when TEST` exclusion are out of scope —
+    tests live in dedicated files; see §1.)
+- **T3 — Death tests. ✅ Landed.** `@[test] @[expect_fatal]` functions run in their own binary and
+  pass iff they abort (`fatal()`/safety check → SIGABRT), detected via the real exit signal. (Leak
+  checking, originally paired here, is reassigned to T5 as LeakSanitizer — §8.1, Open Question 4.)
+- **T4 — Compile-fail tests. ✅ Landed.** A `# expect-error: <text>` fixture passes iff the compiler
+  rejects it with a diagnostic containing `<text>` (syntax-error fixtures included).
+- **T5 — Sanitizer mode (✅ landed) + machine output (planned).** `mtc test --sanitize` builds test
+  binaries with ASan/UBSan + LeakSanitizer (§8.1); any sanitizer error fails the run. Still planned:
+  TAP/JUnit machine output and name/tag filtering.
 - **T6 — Migration & dogfood.** Port representative `std` tests off the Ruby harness; add `mtc`
   unit tests in Milk Tea. *Verify:* migrated suites pass under `mtc test`.
 - **T7 — Ecosystem (later, in `std`).** Property testing, snapshot/golden, benchmarks. Not core.
@@ -364,12 +375,13 @@ Keep the core minimal; property testing, snapshot/golden, and benchmarks are lat
 1. Author-facing form — **resolved: a built-in `@[test]` attribute** (not a `test "…"` block, not a
    naming convention). See §6.
 2. Soft vs fail-fast assertions — **resolved: fail-fast** via `?` propagation. See §5.
+3. Co-located tests — **resolved: not supported.** Tests live in dedicated files (no `main`); there
+   is no `when TEST` mechanism, keeping normal builds test-free and discovery simple. See §1, §6.
+4. Tracking-allocator ergonomics — **resolved: dropped.** No injected `tracking_allocator()`
+   (`std.mem.heap` is global, no `Allocator` interface); leak checking uses LeakSanitizer in T5
+   (§8.1).
 
 **Open:**
 
-3. Whether `when TEST` should be implicit around tests or explicit for surrounding helpers — and
-   whether to support co-located tests at all vs dedicated test files.
-4. Tracking-allocator ergonomics for code that does not take an injected allocator (LSan fallback
-   vs requiring injection in `std`).
 5. Death-test granularity: per-test fork cost vs a pooled subprocess worker.
 6. `RLIMIT_AS`/timeout defaults and how to expose them as per-file/per-test configuration.

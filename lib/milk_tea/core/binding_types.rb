@@ -87,7 +87,7 @@ module MilkTea
   end
 
   AttributeBinding = Data.define(:name, :targets, :params, :module_name, :builtin, :ast)
-  BUILTIN_ATTRIBUTE_NAMES = %w[packed align deprecated test].freeze
+  BUILTIN_ATTRIBUTE_NAMES = %w[packed align deprecated test expect_fatal].freeze
 
   module_function
 
@@ -123,6 +123,15 @@ module MilkTea
     when "test"
       AttributeBinding.new(
         name: "test",
+        targets: [:callable].freeze,
+        params: [].freeze,
+        module_name: nil,
+        builtin: true,
+        ast: nil,
+      )
+    when "expect_fatal"
+      AttributeBinding.new(
+        name: "expect_fatal",
         targets: [:callable].freeze,
         params: [].freeze,
         module_name: nil,

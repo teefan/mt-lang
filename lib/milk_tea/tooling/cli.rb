@@ -3,6 +3,7 @@
 require "json"
 require "pp"
 require "socket"
+require "stringio"
 require "tempfile"
 require "timeout"
 require "tmpdir"
@@ -716,14 +717,244 @@ module MilkTea
     end
 
     def test_command
+      limits = extract_test_limit_flags!
+      return 1 unless limits
+
+      @test_timeout_seconds, @test_memory_bytes, @test_jobs, @test_sanitize = limits
+
       path, options = extract_path_and_options
       return 1 unless path
 
-      unless File.file?(path)
-        @err.puts("mtc test currently supports a single .mt file path")
-        return 1
+      frozen = options.delete(:frozen)
+      ensure_current_lockfile!(path) if frozen
+      locked = options.delete(:locked)
+
+      if File.directory?(path)
+        run_test_directory(path, options:, locked:)
+      elsif File.file?(path)
+        if compile_fail_fixture?(File.read(path))
+          run_compile_fail_test(path) ? 0 : 1
+        else
+          run_test_file(path, options:, locked:)
+        end
+      else
+        @err.puts("mtc test: not a file or directory: #{path}")
+        1
+      end
+    end
+
+    def extract_test_limit_flags!
+      timeout_seconds = TEST_RUN_TIMEOUT_SECONDS
+      memory_bytes = TEST_RUN_MEMORY_LIMIT_BYTES
+      jobs = 1
+      sanitize = false
+      remaining = []
+      until @argv.empty?
+        arg = @argv.shift
+        case arg
+        when "--timeout"
+          value = @argv.shift
+          seconds = value && Integer(value, exception: false)
+          unless seconds&.positive?
+            @err.puts("--timeout requires a positive integer (seconds)")
+            return nil
+          end
+          timeout_seconds = seconds
+        when "--mem"
+          value = @argv.shift
+          megabytes = value && Integer(value, exception: false)
+          unless megabytes&.positive?
+            @err.puts("--mem requires a positive integer (megabytes)")
+            return nil
+          end
+          memory_bytes = megabytes * 1024 * 1024
+        when "--jobs"
+          value = @argv.shift
+          count = value && Integer(value, exception: false)
+          unless count&.positive?
+            @err.puts("--jobs requires a positive integer")
+            return nil
+          end
+          jobs = count
+        when "--sanitize"
+          sanitize = true
+        else
+          remaining << arg
+        end
+      end
+      @argv.replace(remaining)
+      [timeout_seconds, memory_bytes, jobs, sanitize]
+    end
+
+    def run_test_directory(directory, options:, locked:)
+      test_files = discover_test_files(directory)
+      if test_files.empty?
+        @out.puts("no @[test] functions or # expect-error: fixtures found under #{directory}")
+        return 0
       end
 
+      jobs = @test_jobs || 1
+      return run_test_files_parallel(test_files, jobs:, options:, locked:) if jobs > 1 && Process.respond_to?(:fork)
+
+      failed = 0
+      test_files.each do |file, kind|
+        @out.puts("# #{file}")
+        @out.flush if @out.respond_to?(:flush)
+        failed += 1 unless run_classified_file(file, kind, options:, locked:).zero?
+      end
+
+      @out.puts("")
+      @out.puts("#{test_files.length} test file(s), #{failed} failed")
+      failed.zero? ? 0 : 1
+    end
+
+    def run_classified_file(file, kind, options:, locked:)
+      if kind == :compile_fail
+        run_compile_fail_test(file) ? 0 : 1
+      else
+        run_test_file_guarded(file, options:, locked:)
+      end
+    end
+
+    def run_compile_fail_test(path)
+      source = File.read(path)
+      expectations = extract_expect_error_directives(source)
+      messages = compile_fail_diagnostics(path)
+
+      if messages.empty?
+        @out.puts("FAIL - #{path} (compile-fail): expected a compile error, but it compiled cleanly")
+        @out.flush if @out.respond_to?(:flush)
+        return false
+      end
+
+      unmatched = expectations.find { |expected| messages.none? { |message| message.include?(expected) } }
+      if unmatched
+        @out.puts("FAIL - #{path} (compile-fail): no diagnostic matched #{unmatched.inspect}")
+        @out.flush if @out.respond_to?(:flush)
+        return false
+      end
+
+      @out.puts("ok   - #{path} (compile-fail)")
+      @out.flush if @out.respond_to?(:flush)
+      true
+    end
+
+    def extract_expect_error_directives(source)
+      source.each_line.filter_map do |line|
+        match = line.match(/^\s*#\s*expect-error:\s*(.+?)\s*$/)
+        match && match[1]
+      end
+    end
+
+    def compile_fail_diagnostics(path)
+      errors, = check_single_reporting_all(path, locked: false)
+      errors
+        .select { |diagnostic| !diagnostic.respond_to?(:severity) || diagnostic.severity == :error }
+        .map { |diagnostic| ErrorFormatter.format(diagnostic, color: false) }
+    rescue StandardError => e
+      raise unless handled_cli_error?(e)
+
+      [ErrorFormatter.format(e, color: false)]
+    end
+
+    def run_test_file_guarded(file, options:, locked:)
+      run_test_file(file, options:, locked:)
+    rescue StandardError => e
+      raise unless handled_cli_error?(e)
+
+      @err.puts("FAILED - #{file} (build error)")
+      @err.puts(ErrorFormatter.format(e, color: @err.respond_to?(:tty?) && @err.tty?))
+      1
+    end
+
+    def run_test_files_parallel(test_files, jobs:, options:, locked:)
+      results = Array.new(test_files.length)
+      result_paths = {}
+      active = {}
+      cursor = 0
+
+      while cursor < test_files.length || !active.empty?
+        while active.size < jobs && cursor < test_files.length
+          index = cursor
+          cursor += 1
+          result_path = File.join(Dir.tmpdir, "mttest_result_#{Process.pid}_#{index}")
+          result_paths[index] = result_path
+          pid = fork do
+            captured = StringIO.new
+            @out = captured
+            @err = captured
+            file, kind = test_files[index]
+            code = run_classified_file(file, kind, options:, locked:)
+            File.binwrite(result_path, [code].pack("N") + captured.string)
+            exit!(0)
+          end
+          active[pid] = index
+        end
+
+        finished_pid, = Process.wait2
+        index = active.delete(finished_pid)
+        next unless index
+
+        path = result_paths[index]
+        data = begin
+          File.binread(path)
+        rescue StandardError
+          (+"").b
+        end
+        File.delete(path) if File.exist?(path)
+        results[index] =
+          if data.bytesize >= 4
+            [data[0, 4].unpack1("N"), data.byteslice(4..).force_encoding(Encoding::UTF_8)]
+          else
+            [1, +""]
+          end
+      end
+
+      failed = 0
+      test_files.each_with_index do |(file, _kind), index|
+        code, output = results[index]
+        @out.puts("# #{file}")
+        @out.write(output.to_s)
+        failed += 1 unless code&.zero?
+      end
+      @out.flush if @out.respond_to?(:flush)
+      @out.puts("")
+      @out.puts("#{test_files.length} test file(s), #{failed} failed")
+      failed.zero? ? 0 : 1
+    end
+
+    def discover_test_files(directory)
+      Dir.glob(File.join(directory, "**", "*.mt")).sort.filter_map do |file|
+        next if File.basename(file).start_with?("__mttest_runner_")
+
+        kind = classify_test_file(file)
+        kind && [file, kind]
+      end
+    end
+
+    def classify_test_file(file)
+      source = File.read(file)
+      return :compile_fail if compile_fail_fixture?(source)
+
+      ast = begin
+        MilkTea::Parser.parse(source, path: file)
+      rescue ParseError
+        return nil
+      end
+      return :test if ast.declarations.any? { |decl| decl.is_a?(AST::FunctionDef) && test_attribute?(decl) }
+
+      nil
+    end
+
+    def compile_fail_fixture?(source)
+      source.match?(/^\s*#\s*expect-error:/)
+    end
+
+    def test_attribute?(decl)
+      decl.attributes.any? { |attribute| attribute.name.parts == ["test"] }
+    end
+
+    def run_test_file(path, options:, locked:)
       source = File.read(path)
       ast = MilkTea::Parser.parse(source, path:)
 
@@ -732,9 +963,7 @@ module MilkTea
         return 1
       end
 
-      tests = ast.declarations.select do |decl|
-        decl.is_a?(AST::FunctionDef) && decl.attributes.any? { |attribute| attribute.name.parts == ["test"] }
-      end
+      tests = ast.declarations.select { |decl| decl.is_a?(AST::FunctionDef) && test_attribute?(decl) }
 
       if tests.empty?
         @out.puts("no @[test] functions found in #{path}")
@@ -749,18 +978,70 @@ module MilkTea
 
       testing_import = ast.imports.find { |import| import.path.parts == %w[std testing] }
       unless testing_import
-        @err.puts("a test file must import std.testing")
+        @err.puts("a test file must import std.testing: #{path}")
         return 1
       end
       testing_alias = testing_import.alias_name || testing_import.path.parts.last
 
-      runner_source = +source
-      runner_source << "\n\n" << test_runner_main(testing_alias, tests.map(&:name))
+      death_tests, normal_tests = tests.partition { |test| expect_fatal_attribute?(test) }
 
-      frozen = options.delete(:frozen)
-      ensure_current_lockfile!(path) if frozen
-      locked = options.delete(:locked)
-      run_synthesized_tests(path, runner_source, options:, locked:)
+      exit_code = 0
+
+      unless normal_tests.empty?
+        runner_source = source.dup
+        runner_source << "\n\n" << test_runner_main(testing_alias, normal_tests.map(&:name))
+        exit_code = run_synthesized_tests(path, runner_source, options:, locked:)
+      end
+
+      death_tests.each do |death_test|
+        exit_code = 1 unless run_death_test(path, source, death_test.name, options:, locked:)
+      end
+
+      exit_code
+    end
+
+    def expect_fatal_attribute?(decl)
+      decl.attributes.any? { |attribute| attribute.name.parts == ["expect_fatal"] }
+    end
+
+    def run_death_test(source_path, source, test_name, options:, locked:)
+      runner_source = source.dup
+      runner_source << "\n\n" << death_test_runner_main(test_name)
+      classification = with_synthesized_binary(source_path, runner_source, options:, locked:) do |binary_path|
+        classify_death_test(binary_path)
+      end
+
+      passed = classification == :aborted
+      line =
+        if passed
+          "ok   - #{test_name} (expect_fatal)"
+        elsif classification == :timed_out
+          "FAIL - #{test_name} (expect_fatal): timed out"
+        else
+          "FAIL - #{test_name} (expect_fatal): expected a fatal abort, but the test returned"
+        end
+      @out.puts(line)
+      @out.flush if @out.respond_to?(:flush)
+      passed
+    end
+
+    def classify_death_test(binary_path)
+      _output, status, timed_out = spawn_sandboxed(binary_path)
+      return :timed_out if timed_out
+      return :returned if status&.exited? && status.exitstatus&.zero?
+
+      :aborted
+    end
+
+    def death_test_runner_main(test_name)
+      [
+        "function main() -> int:",
+        "    match #{test_name}():",
+        "        Result.success:",
+        "            return 0",
+        "        Result.failure:",
+        "            return 0",
+      ].join("\n") + "\n"
     end
 
     def test_runner_main(testing_alias, test_names)
@@ -774,6 +1055,12 @@ module MilkTea
     end
 
     def run_synthesized_tests(source_path, runner_source, options:, locked:)
+      with_synthesized_binary(source_path, runner_source, options:, locked:) do |binary_path|
+        run_test_binary(binary_path)
+      end
+    end
+
+    def with_synthesized_binary(source_path, runner_source, options:, locked:)
       directory = File.dirname(File.expand_path(source_path))
       runner_path = File.join(directory, "__mttest_runner_#{Process.pid}.mt")
       binary_path = File.join(Dir.tmpdir, "mttest_runner_#{Process.pid}")
@@ -786,9 +1073,10 @@ module MilkTea
           module_roots: module_roots_for(source_path, locked:),
           package_graph: package_graph_for(source_path, locked:),
           frontend: @build_frontend,
+          sanitize: @test_sanitize,
           **options.except(:timings, :output_path, :bundle, :archive),
         )
-        run_test_binary(binary_path)
+        yield binary_path
       ensure
         File.delete(runner_path) if File.exist?(runner_path)
         File.delete(binary_path) if File.exist?(binary_path)
@@ -799,14 +1087,35 @@ module MilkTea
     TEST_RUN_MEMORY_LIMIT_BYTES = 1024 * 1024 * 1024
 
     def run_test_binary(binary_path)
+      output, status, timed_out = spawn_sandboxed(binary_path)
+      @out.write(output)
+      @out.flush if @out.respond_to?(:flush)
+
+      if timed_out
+        @err.puts("test run timed out after #{@test_timeout_seconds || TEST_RUN_TIMEOUT_SECONDS}s")
+        return 1
+      end
+      if status&.signaled?
+        @err.puts("test run crashed (signal #{status.termsig})")
+        return 1
+      end
+
+      status&.exitstatus || 1
+    end
+
+    def spawn_sandboxed(binary_path)
+      timeout_seconds = @test_timeout_seconds || TEST_RUN_TIMEOUT_SECONDS
+      memory_bytes = @test_memory_bytes || TEST_RUN_MEMORY_LIMIT_BYTES
       reader, writer = IO.pipe
-      pid = Process.spawn(binary_path, out: writer, err: writer, pgroup: true, rlimit_as: TEST_RUN_MEMORY_LIMIT_BYTES)
+      spawn_options = { out: writer, err: writer, pgroup: true }
+      spawn_options[:rlimit_as] = memory_bytes unless @test_sanitize
+      pid = Process.spawn(binary_path, **spawn_options)
       writer.close
 
       status = nil
       timed_out = false
       begin
-        Timeout.timeout(TEST_RUN_TIMEOUT_SECONDS) { _, status = Process.wait2(pid) }
+        Timeout.timeout(timeout_seconds) { _, status = Process.wait2(pid) }
       rescue Timeout::Error
         timed_out = true
         begin
@@ -819,19 +1128,7 @@ module MilkTea
 
       output = reader.read
       reader.close
-      @out.write(output)
-      @out.flush if @out.respond_to?(:flush)
-
-      if timed_out
-        @err.puts("test run timed out after #{TEST_RUN_TIMEOUT_SECONDS}s")
-        return 1
-      end
-      if status&.signaled?
-        @err.puts("test run crashed (signal #{status.termsig})")
-        return 1
-      end
-
-      status&.exitstatus || 1
+      [output, status, timed_out]
     end
 
     def run_command
@@ -1620,17 +1917,28 @@ module MilkTea
 
     COMMAND_HELP = {
       "test"            => <<~HELP,
-        Usage: mtc test PATH [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]
+        Usage: mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [--locked] [--frozen] [-I PATH]
 
-          Discover and run the @[test] functions in a Milk Tea source file.
+          Discover and run @[test] functions in a Milk Tea source file or directory.
+
+          Given a file, runs its @[test] functions. Given a directory (or a package
+          root), recursively discovers every .mt file that contains @[test] functions,
+          runs each as its own test binary, and prints an aggregate summary.
 
           Functions annotated with @[test] must take no parameters and return
           std.testing.Check. `mtc test` synthesizes a runner that invokes each
-          test through std.testing and reports the results; the file must import
+          test through std.testing and reports the results; a test file must import
           std.testing and must not define `main`.
 
           Each test binary runs under a wall-clock timeout and an address-space
           memory cap so a hanging or runaway test cannot stall or exhaust the host.
+          Override them with --timeout SECONDS (default 30) and --mem MB (default 1024).
+          For a directory, --jobs N builds and runs N files in parallel (default 1; output
+          stays in file order).
+          A file containing `# expect-error: <text>` is a compile-fail fixture: `mtc test`
+          requires the compiler to reject it with a diagnostic containing that text.
+          --sanitize builds test binaries with AddressSanitizer/UBSan (including leak
+          detection); any sanitizer error fails the run.
         HELP
       "debug"           => "Usage: mtc debug PATH [--locked] [--frozen] [-I PATH]\n\n  Print debug information for a source file: tokens, AST, semantic facts,\n  binding resolution, and diagnostics.",
       "parse"           => "Usage: mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Parse one or more source files and print the AST.",
@@ -1857,7 +2165,7 @@ module MilkTea
       io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--clean] [-I PATH]")
       io.puts("       mtc new NAME")
       io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc test PATH [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc run-module MODULE [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [-- ARGS...]")
       io.puts("       mtc toolchain bootstrap")
       io.puts("       mtc toolchain doctor")
