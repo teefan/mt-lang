@@ -80,11 +80,12 @@ in-language unit tests, and (c) the status quo (§3) is brittle and anti-dogfood
   which discovers `@[test]` functions, synthesizes a runner, and builds + runs it under a per-binary
   timeout and memory cap (§6, §7).
 
-**Still tested from Ruby (migration pending):** the `std` library is still exercised by
-`test/std/*_test.rb` Minitest wrappers that embed a `.mt` heredoc, compile + run it, and assert on
-the **exit code** (entry point `function main() -> int`). This *C-without-a-framework* harness
-(external driver, exit-code signaling) stays in place until the `std` suite is migrated onto
-`mtc test` (§13, T6). The in-language path removes the need for it going forward.
+**Migration in progress (T6).** Representative in-language `std` tests now live under `test/mt/`
+(Option/Result, string, math, ctype, span, bytes, stack, queue) and run via `mtc test`, bridged into the Ruby suite by
+`test/std/in_language_tests_test.rb`. The bulk of `std` is still exercised by `test/std/*_test.rb`
+Minitest wrappers that embed a `.mt` heredoc, compile + run it, and assert on the **exit code**
+(entry point `function main() -> int`). That *C-without-a-framework* harness stays in place until the
+rest of the `std` suite is migrated onto `mtc test` (§13, T6).
 
 ---
 
@@ -363,8 +364,10 @@ Keep the core minimal; property testing, snapshot/golden, and benchmarks are lat
 - **T5 — Sanitizer mode, `-n` filtering, and machine output. ✅ Landed.** `mtc test --sanitize`
   builds test binaries with ASan/UBSan + LeakSanitizer (§8.1); `-n SUBSTRING` selects tests by name;
   `--format tap`/`--format junit` emits machine-readable results for CI.
-- **T6 — Migration & dogfood.** Port representative `std` tests off the Ruby harness; add `mtc`
-  unit tests in Milk Tea. *Verify:* migrated suites pass under `mtc test`.
+- **T6 — Migration & dogfood. ◑ In progress.** Representative in-language `std` tests
+  (Option/Result, string, math, ctype, span, bytes, stack, queue) landed under `test/mt/`, run by `mtc test`, and CI-enforced via
+  `test/std/in_language_tests_test.rb`. Remaining: migrate the rest of the `std` suite off the Ruby
+  heredoc harness; `mtc` unit tests in Milk Tea await the self-hosted compiler (`selfhost.md`).
 - **T7 — Ecosystem (later, in `std`).** Property testing, snapshot/golden, benchmarks. Not core.
 
 ---
