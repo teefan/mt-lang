@@ -87,7 +87,7 @@ module MilkTea
   end
 
   AttributeBinding = Data.define(:name, :targets, :params, :module_name, :builtin, :ast)
-  BUILTIN_ATTRIBUTE_NAMES = %w[packed align deprecated].freeze
+  BUILTIN_ATTRIBUTE_NAMES = %w[packed align deprecated test].freeze
 
   module_function
 
@@ -116,6 +116,15 @@ module MilkTea
         name: "deprecated",
         targets: %i[callable struct const enum flags union variant event].freeze,
         params: [Types::Registry.parameter("message", types.fetch("str"))].freeze,
+        module_name: nil,
+        builtin: true,
+        ast: nil,
+      )
+    when "test"
+      AttributeBinding.new(
+        name: "test",
+        targets: [:callable].freeze,
+        params: [].freeze,
         module_name: nil,
         builtin: true,
         ast: nil,

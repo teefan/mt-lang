@@ -4,6 +4,8 @@ require "json"
 require "pp"
 require "socket"
 require "tempfile"
+require "timeout"
+require "tmpdir"
 
 module MilkTea
   class CLI
@@ -57,6 +59,8 @@ module MilkTea
         emit_c_command
       when "build", "-b"
         build_command
+      when "test"
+        test_command
       when "run", "-r"
         run_command
       when "run-module", "-m"
@@ -709,6 +713,125 @@ module MilkTea
       end
       @out.puts("saved C to #{result.c_path}") if result.c_path
       0
+    end
+
+    def test_command
+      path, options = extract_path_and_options
+      return 1 unless path
+
+      unless File.file?(path)
+        @err.puts("mtc test currently supports a single .mt file path")
+        return 1
+      end
+
+      source = File.read(path)
+      ast = MilkTea::Parser.parse(source, path:)
+
+      if ast.declarations.any? { |decl| decl.is_a?(AST::FunctionDef) && decl.name == "main" }
+        @err.puts("a test file must not define 'main': #{path}")
+        return 1
+      end
+
+      tests = ast.declarations.select do |decl|
+        decl.is_a?(AST::FunctionDef) && decl.attributes.any? { |attribute| attribute.name.parts == ["test"] }
+      end
+
+      if tests.empty?
+        @out.puts("no @[test] functions found in #{path}")
+        return 0
+      end
+
+      invalid = tests.find { |test| !test.params.empty? }
+      if invalid
+        @err.puts("@[test] function '#{invalid.name}' must take no parameters")
+        return 1
+      end
+
+      testing_import = ast.imports.find { |import| import.path.parts == %w[std testing] }
+      unless testing_import
+        @err.puts("a test file must import std.testing")
+        return 1
+      end
+      testing_alias = testing_import.alias_name || testing_import.path.parts.last
+
+      runner_source = +source
+      runner_source << "\n\n" << test_runner_main(testing_alias, tests.map(&:name))
+
+      frozen = options.delete(:frozen)
+      ensure_current_lockfile!(path) if frozen
+      locked = options.delete(:locked)
+      run_synthesized_tests(path, runner_source, options:, locked:)
+    end
+
+    def test_runner_main(testing_alias, test_names)
+      lines = ["function main() -> int:"]
+      lines << "    var __mt_test_stats = #{testing_alias}.Stats.create()"
+      test_names.each do |name|
+        lines << "    __mt_test_stats = #{testing_alias}.record(__mt_test_stats, #{name.inspect}, #{name}())"
+      end
+      lines << "    return #{testing_alias}.summarize(__mt_test_stats)"
+      lines.join("\n") + "\n"
+    end
+
+    def run_synthesized_tests(source_path, runner_source, options:, locked:)
+      directory = File.dirname(File.expand_path(source_path))
+      runner_path = File.join(directory, "__mttest_runner_#{Process.pid}.mt")
+      binary_path = File.join(Dir.tmpdir, "mttest_runner_#{Process.pid}")
+
+      File.write(runner_path, runner_source)
+      begin
+        Build.build(
+          runner_path,
+          output_path: binary_path,
+          module_roots: module_roots_for(source_path, locked:),
+          package_graph: package_graph_for(source_path, locked:),
+          frontend: @build_frontend,
+          **options.except(:timings, :output_path, :bundle, :archive),
+        )
+        run_test_binary(binary_path)
+      ensure
+        File.delete(runner_path) if File.exist?(runner_path)
+        File.delete(binary_path) if File.exist?(binary_path)
+      end
+    end
+
+    TEST_RUN_TIMEOUT_SECONDS = 30
+    TEST_RUN_MEMORY_LIMIT_BYTES = 1024 * 1024 * 1024
+
+    def run_test_binary(binary_path)
+      reader, writer = IO.pipe
+      pid = Process.spawn(binary_path, out: writer, err: writer, pgroup: true, rlimit_as: TEST_RUN_MEMORY_LIMIT_BYTES)
+      writer.close
+
+      status = nil
+      timed_out = false
+      begin
+        Timeout.timeout(TEST_RUN_TIMEOUT_SECONDS) { _, status = Process.wait2(pid) }
+      rescue Timeout::Error
+        timed_out = true
+        begin
+          Process.kill("-KILL", Process.getpgid(pid))
+          Process.wait(pid)
+        rescue StandardError
+          nil
+        end
+      end
+
+      output = reader.read
+      reader.close
+      @out.write(output)
+      @out.flush if @out.respond_to?(:flush)
+
+      if timed_out
+        @err.puts("test run timed out after #{TEST_RUN_TIMEOUT_SECONDS}s")
+        return 1
+      end
+      if status&.signaled?
+        @err.puts("test run crashed (signal #{status.termsig})")
+        return 1
+      end
+
+      status&.exitstatus || 1
     end
 
     def run_command
@@ -1492,10 +1615,23 @@ module MilkTea
     end
 
     def command_supports_include_paths?(command)
-      %w[parse lint check lower emit-c build run debug].include?(command)
+      %w[parse lint check lower emit-c build run test debug].include?(command)
     end
 
     COMMAND_HELP = {
+      "test"            => <<~HELP,
+        Usage: mtc test PATH [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]
+
+          Discover and run the @[test] functions in a Milk Tea source file.
+
+          Functions annotated with @[test] must take no parameters and return
+          std.testing.Check. `mtc test` synthesizes a runner that invokes each
+          test through std.testing and reports the results; the file must import
+          std.testing and must not define `main`.
+
+          Each test binary runs under a wall-clock timeout and an address-space
+          memory cap so a hanging or runaway test cannot stall or exhaust the host.
+        HELP
       "debug"           => "Usage: mtc debug PATH [--locked] [--frozen] [-I PATH]\n\n  Print debug information for a source file: tokens, AST, semantic facts,\n  binding resolution, and diagnostics.",
       "parse"           => "Usage: mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Parse one or more source files and print the AST.",
       "format"          => <<~HELP,
@@ -1721,6 +1857,7 @@ module MilkTea
       io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--clean] [-I PATH]")
       io.puts("       mtc new NAME")
       io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc test PATH [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc run-module MODULE [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [-- ARGS...]")
       io.puts("       mtc toolchain bootstrap")
       io.puts("       mtc toolchain doctor")
