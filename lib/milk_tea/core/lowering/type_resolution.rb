@@ -524,7 +524,7 @@ module MilkTea
             return [:struct_with, nil, callee.receiver, resolved_receiver_type]
           end
 
-          if (precomputed = @ctx.resolved_call_kinds[@ctx.ast.node_ids[callee.object_id]])
+          if (precomputed = @ctx.resolved_call_kinds[callee.id])
             case precomputed
             when :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format,
                 :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr
@@ -667,7 +667,7 @@ module MilkTea
       end
 
       def infer_expression_type(expression, env:, expected_type: nil)
-        if !@bypass_sema_type_cache && expected_type.nil? && (id = @ctx.ast.node_ids[expression.object_id]) && (resolved = @ctx.resolved_expr_types[id])
+        if !@bypass_sema_type_cache && expected_type.nil? && (id = expression.id) && (resolved = @ctx.resolved_expr_types[id])
           return resolved
         end
 

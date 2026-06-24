@@ -249,7 +249,7 @@ module MilkTea
             raise_sema_error("unsupported expression #{expression.class.name}")
           end
 
-          @resolved_expr_types[@ctx.ast.node_ids[expression.object_id]] = type
+          @resolved_expr_types[expression.id] = type
           type
         end
       end
@@ -902,7 +902,7 @@ module MilkTea
 
       def infer_call(expression, scopes:, expected_type: nil)
         callable_kind, callable, receiver = resolve_callable(expression.callee, scopes:)
-        @resolved_call_kinds[@ctx.ast.node_ids[expression.callee.object_id]] = callable_kind
+        @resolved_call_kinds[expression.callee.id] = callable_kind
 
         case callable_kind
         when :function

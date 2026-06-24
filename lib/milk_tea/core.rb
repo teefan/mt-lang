@@ -23,3 +23,4 @@ require_relative "core/pretty_printer"
 require_relative "core/lowering"
 # Codegen wrapper deleted; use CBackend.emit directly
 require_relative "core/c_backend"
+require_relative "core/ir_json"

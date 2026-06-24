@@ -592,7 +592,7 @@ module MilkTea
         offset = CompileTime::Layout.offset_of(type, binding.const_value.field_name)
         return unless offset
 
-        @const_values[@ctx.ast.node_ids[expression.object_id]] = offset
+        @const_values[expression.id] = offset
       end
 
       def infer_offsetof_type(type_ref, field_name, scopes: nil)

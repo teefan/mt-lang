@@ -632,13 +632,23 @@ module MilkTea
     end
 
     def emit_c_command
+      resolution = extract_resolution_flags!
+      input_json = extract_flag_value("--input-json")
+
+      if input_json
+        ir = IRJson.deserialize_from_json(File.read(input_json))
+        ir = IRJson::TypeResolver.resolve_program_types(ir)
+        c_source = CBackend.generate_c(ir, emit_line_directives: false)
+        @out.write(c_source)
+        return 0
+      end
+
       unless @argv.any?
         @err.puts("missing source file path")
         print_usage(@err)
         return 1
       end
 
-      resolution = extract_resolution_flags!
       input_paths = @argv.dup
       return 1 unless ensure_known_source_operands!("emit-c", input_paths)
 
@@ -1398,6 +1408,23 @@ module MilkTea
 
       @argv = remaining
       { locked:, frozen:, warnings_as_errors: }
+    end
+
+    def extract_flag_value(flag)
+      remaining = []
+      value = nil
+
+      @argv.each_with_index do |arg, i|
+        if arg == flag
+          value = @argv[i + 1]
+          @argv[i + 1] = nil if value
+        else
+          remaining << arg unless @argv[i - 1] == flag
+        end
+      end
+
+      @argv = remaining.compact
+      value
     end
 
     def ensure_no_extra_arguments!(command)

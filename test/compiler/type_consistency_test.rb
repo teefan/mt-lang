@@ -12,7 +12,7 @@ class TestLowerer < MilkTea::Lowerer
 
   def infer_expression_type(expression, env:, expected_type: nil)
     type = super
-    if (node_id = @ctx.ast.node_ids[expression.object_id])
+    if (node_id = expression.id)
       @recorded_expr_types[node_id] = type
     end
     type

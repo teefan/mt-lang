@@ -320,13 +320,13 @@ module MilkTea
 
         @recovery_errors << e
         recovered_body = synchronize_to_statement_boundary
-        return AST::MatchArm.new(
-          pattern: pattern || recovery_error_expr(e),
+        return [AST::MatchArm.new(
+          pattern: patterns.last || recovery_error_expr(e),
           binding_name:,
           binding_line: binding_token&.line,
           binding_column: binding_token&.column,
           body: recovered_body,
-        ) if recovered_body
+        )] if recovered_body
 
         raise
       end

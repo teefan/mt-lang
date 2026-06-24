@@ -73,7 +73,6 @@ module MilkTea
               directives: ast.respond_to?(:directives) ? (ast.directives || []) : [],
               declarations: ast.respond_to?(:declarations) ? (ast.declarations || []) : [],
               line: ast.respond_to?(:line) ? ast.line : 1,
-              node_ids: ast.respond_to?(:node_ids) ? ast.node_ids : {},
             )
           end
 

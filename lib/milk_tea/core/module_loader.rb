@@ -413,7 +413,6 @@ module MilkTea
         directives: ast.directives,
         declarations: ast.declarations,
         line: ast.line,
-        node_ids: ast.node_ids,
       )
     rescue Errno::ENOENT
       raise ModuleLoadError.new("source file not found", path: path)
