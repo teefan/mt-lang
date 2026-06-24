@@ -70,9 +70,9 @@ module MilkTea
 
     Result = Data.define(:output_path, :c_path, :compiler, :link_flags, :profile, :platform, :bundle_root, :archive_path, :cached)
 
-    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false, kind: :executable)
+    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false, sanitize: false, kind: :executable)
       raw_bindings ||= default_raw_bindings
-      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, frontend:, debug:, profile:, platform:, bundle:, archive:, no_cache:, kind:).build
+      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, frontend:, debug:, profile:, platform:, bundle:, archive:, no_cache:, sanitize:, kind:).build
     end
 
     def self.clean(path, output_path: nil, profile: nil, platform: nil, bundle: false, archive: false)
@@ -129,7 +129,7 @@ module MilkTea
     end
     private_class_method :default_raw_bindings
 
-    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false, kind: :executable)
+    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false, sanitize: false, kind: :executable)
       @kind = case kind
               when :executable, :static, :shared then kind
               else raise BuildError, "unknown build kind #{kind}; expected executable|static|shared"
@@ -169,7 +169,8 @@ module MilkTea
       @package_graph = package_graph
       @module_roots = (module_roots || @package_graph&.source_roots || MilkTea::ModuleRoots.roots_for_path(@source_path)).dup
       @frontend = frontend || RubyFrontend.new
-      @no_cache = no_cache
+      @no_cache = no_cache || sanitize
+      @sanitize = sanitize
       @debug = debug
     rescue PackageManifestError => e
       raise BuildError, e.message if package_manifest_required_for?(path)
@@ -196,7 +197,8 @@ module MilkTea
       @package_graph = package_graph
       @module_roots = module_roots || MilkTea::ModuleRoots.roots_for_path(@source_path)
       @frontend = frontend || RubyFrontend.new
-      @no_cache = no_cache
+      @no_cache = no_cache || sanitize
+      @sanitize = sanitize
       @debug = debug
     end
 
@@ -847,7 +849,7 @@ module MilkTea
       return compile_wasm(c_path, compiler_flags, link_flags) if target_wasm?
 
       profile_flags = profile_compiler_flags
-      command = [@cc, "-std=c11", *profile_flags, *compiler_flags, c_path, "-o", @output_path, *link_flags]
+      command = [@cc, "-std=c11", *sanitize_flags, *profile_flags, *compiler_flags, c_path, "-o", @output_path, *link_flags]
       stdout, stderr, status = Open3.capture3(*command)
       return if status.success?
 
@@ -855,6 +857,10 @@ module MilkTea
       raise BuildError, details.empty? ? "C compiler failed" : "C compiler failed:\n#{details}"
     rescue Errno::ENOENT
       raise BuildError, "C compiler not found: #{@cc}"
+    end
+
+    def sanitize_flags
+      @sanitize ? %w[-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer] : []
     end
 
     def host_platform
