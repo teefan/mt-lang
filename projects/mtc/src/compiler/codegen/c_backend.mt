@@ -48,6 +48,8 @@ extending CWriter:
             this.writeln("")
             ei += 1
 
+        this.write_spans()
+
         var vi: ptr_uint = 0
         while vi < this.program.variants.len:
             let v = unsafe: read(this.program.variants.data + vi)
@@ -61,8 +63,6 @@ extending CWriter:
             this.write_struct(s)
             this.writeln("")
             si += 1
-
-        this.write_spans()
 
         this.write_forward_decls()
 

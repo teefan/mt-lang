@@ -27,12 +27,37 @@ function build_file(path: str) -> int:
     let source = source_mod.from_str("", path)
     var ctx = ctx_mod.create(source)
 
+    var intern_str = ctx.interner.intern("String")
+    var _str_tid = ctx.registry.named_type(intern_str)
+    var intern_interner = ctx.interner.intern("Interner")
+    var _inter_tid = ctx.registry.named_type(intern_interner)
+    var intern_arena = ctx.interner.intern("Arena")
+    var _arena_tid = ctx.registry.named_type(intern_arena)
+
+    var toks = lexer_mod.lex(file_bytes, ref_of(ctx.interner))
+    let toks_span = toks.as_span()
+    let ast = parser_mod.parse(file_bytes, toks_span, ptr_of(ctx.interner))
+
     var all_decls = vec.Vec[ptr[ast.Decl]].create()
+    var loaded_imports = vec.Vec[ast.IdentId].create()
+    var decls_span: span[ptr[ast.Decl]]
+    var imports_span: span[ptr[ast.Decl]]
+    unsafe:
+        decls_span = read(ast).decls.as_span()
+        imports_span = read(ast).imports.as_span()
+    var di: ptr_uint = 0
+    while di < decls_span.len:
+        all_decls.push(unsafe: read(decls_span.data + di))
+        di += 1
+    var ii: ptr_uint = 0
+    while ii < imports_span.len:
+        let imp = unsafe: read(imports_span.data + ii)
+        try_load_import(imp, ref_of(ctx.interner), ref_of(all_decls), ref_of(loaded_imports), 0)
+        ii += 1
+
+    var chk = checker_mod.create(ctx.registry, ref_of(ctx.interner))
     let base_dir = extract_dir(path)
-    flatten_file(file_bytes, base_dir, ref_of(ctx.interner), ref_of(all_decls), 0)
-    if all_decls.len == 0:
-        stdio.print_line("error: no declarations")
-        return 1
+    check_with_imports(ast, base_dir, ptr_of(ctx), ref_of(chk), ref_of(ctx.interner))
 
     var imports = vec.Vec[ptr[ast.Decl]].create()
     var merged = ast.SourceFile(
@@ -41,12 +66,17 @@ function build_file(path: str) -> int:
         decls = all_decls,
     )
 
-    var checker = checker_mod.create(ctx.registry, ref_of(ctx.interner))
-    let ok = checker.check(ptr_of(merged))
+    let ok = chk.check(ptr_of(merged))
     if not ok:
+        var ei: ptr_uint = 0
+        let errs = chk.error_texts()
+        while ei < errs.len:
+            let msg = unsafe: read(errs.data + ei)
+            stdio.print_line(msg)
+            ei += 1
         return 1
 
-    let ir = lowerer_mod.lower(ptr_of(merged), ptr_of(ctx.interner), ctx.registry)
+    let ir = lowerer_mod.lower(ptr_of(merged), ptr_of(ctx.interner), chk.get_registry())
     let c_source = cg.write_program(ir, ctx.registry)
     stdio.print_line(c_source)
     return 0
@@ -54,9 +84,9 @@ function build_file(path: str) -> int:
 
 function flatten_file(
     file_bytes: span[ubyte],
-    base_dir: str,
     interner_ref: ref[intern.Interner],
     all_decls: ref[vec.Vec[ptr[ast.Decl]]],
+    loaded: ref[vec.Vec[ast.IdentId]],
     depth: ptr_uint,
 ) -> void:
     if depth > 16:
@@ -72,7 +102,7 @@ function flatten_file(
     var ii: ptr_uint = 0
     while ii < imports_span.len:
         let imp = unsafe: read(imports_span.data + ii)
-        try_load_import(imp, base_dir, interner_ref, all_decls, depth)
+        try_load_import(imp, interner_ref, all_decls, loaded, depth)
         ii += 1
     var i: ptr_uint = 0
     while i < decls_span.len:
@@ -83,9 +113,9 @@ function flatten_file(
 
 function try_load_import(
     decl: ptr[ast.Decl],
-    base_dir: str,
     interner_ref: ref[intern.Interner],
     all_decls: ref[vec.Vec[ptr[ast.Decl]]],
+    loaded: ref[vec.Vec[ast.IdentId]],
     depth: ptr_uint,
 ) -> void:
     unsafe:
@@ -94,7 +124,7 @@ function try_load_import(
                 if path.len == 0:
                     return
                 var fp: str_buffer[1024]
-                fp.append(base_dir)
+                fp.append("src")
                 var si: ptr_uint = 0
                 while si < path.len:
                     var seg_id: ast.IdentId
@@ -102,18 +132,27 @@ function try_load_import(
                         seg_id = read(path.data + si)
                     let seg_str = interner_ref.lookup(seg_id) else:
                         return
-                    if si > 0:
-                        fp.append("/")
+                    fp.append("/")
                     fp.append(seg_str)
                     si += 1
                 fp.append(".mt")
                 let fp_str = fp.as_str()
+                let path_id = interner_ref.intern(fp_str)
+                var di: ptr_uint = 0
+                while di < loaded.len:
+                    let p = loaded.at(di) else:
+                        break
+                    if p == path_id:
+                        return
+                    di += 1
+                loaded.push(path_id)
                 let fr = fs.read_bytes(fp_str)
                 let fb = fr else:
                     return
                 let fbytes = fb.as_span()
-                let sub_dir = extract_dir(fp_str)
-                flatten_file(fbytes, sub_dir, interner_ref, all_decls, depth + 1)
+                if fbytes.len == ptr_uint<-0:
+                    return
+                flatten_file(fbytes, interner_ref, all_decls, loaded, depth + 1)
             _:
                 return
 

@@ -483,10 +483,12 @@ extending Lowerer:
                 ast.Stmt.local_decl(_, name, type_ref, value, else_binding, else_body, _):
                     let saved = name
                     let n = this.name_str(saved)
-                    let tid = this.resolve_type_id(type_ref)
+                    var tid = this.resolve_type_id(type_ref)
                     var init = ir.IrExpr.integer(value = 0)
                     if value != zero[ptr[ast.Expr]]:
                         init = this.lower_expr(value)
+                        if type_ref == zero[ptr[ast.Type]]:
+                            tid = this.infer_expr_type_id(value)
                     output.push(ir.IrStmt.decl(name = n, type_id = tid, init = init))
                     if type_ref != zero[ptr[ast.Type]]:
                         unsafe:
@@ -1029,6 +1031,50 @@ extending Lowerer:
             ))
             i += 1
         return ir.IrExpr.variant_ctor(name = cname, arm = aname, fields = this.copy_agg_fields(ref_of(ir_fields)))
+
+
+    ## ── type inference for untyped local decls ────────────────────────
+
+    editable function infer_expr_type_id(expr: ptr[ast.Expr]) -> reg.TypeId:
+        unsafe:
+            match read(expr):
+                ast.Expr.integer_literal(_, _):
+                    return this.registry.primitive(P.pk_int)
+                ast.Expr.float_literal(_, _):
+                    return this.registry.primitive(P.pk_float)
+                ast.Expr.string_literal(_, _):
+                    return this.registry.primitive(P.pk_str)
+                ast.Expr.char_literal(_, _):
+                    return this.registry.primitive(P.pk_ubyte)
+                ast.Expr.bool_literal(_, _):
+                    return this.registry.primitive(P.pk_bool)
+                ast.Expr.null_literal(_):
+                    return this.registry.primitive(P.pk_int)
+                ast.Expr.identifier(name, _):
+                    let tid = this.var_types.get(name)
+                    if tid == null:
+                        return this.registry.primitive(P.pk_int)
+                    return this.registry.named_type(unsafe: read(tid))
+                ast.Expr.member_access(receiver, member, _):
+                    let ftid = this.infer_field_type(receiver, member)
+                    return ftid
+                _:
+                    return this.registry.primitive(P.pk_int)
+        return this.registry.primitive(P.pk_int)
+
+
+    editable function infer_field_type(receiver: ptr[ast.Expr], member: ast.IdentId) -> reg.TypeId:
+        unsafe:
+            match read(receiver):
+                ast.Expr.identifier(name, _):
+                    if name == this.extending_type and this.extending_type != 0:
+                        let sid = this.registry.named_type(this.extending_type)
+                        return this.registry.primitive(P.pk_int)
+                ast.Expr.member_access(receiver, member, _):
+                    return this.infer_field_type(receiver, member)
+                _:
+                    pass
+        return this.registry.primitive(P.pk_int)
 
 
     ## ── assignment helpers ────────────────────────────────────────────

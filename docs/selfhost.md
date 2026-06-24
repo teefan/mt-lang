@@ -975,10 +975,20 @@ Baselines use `mtc emit-c` on flat-path copies (`/tmp/fixture_NN_xxx.mt`) for sh
 
 ---
 
-## 11. Remaining Gaps
+## 11. Remaining Gaps (updated S29)
 
 | # | Gap | Complexity | Blocks selfhost? | Status |
 |---|-----|-----------|-------------------|--------|
+| 1 | ~~Check fails across modules~~ | — | — | **Fixed S27–S28**: DEDENT loops eliminated, all primitives registered, std types (String/Interner/Arena) pre-registered, two-pass checker for forward refs, import resolution with interner dedup. 23/23 OK. |
+| 2 | ~~Parser DEDENT crashes (9 modules)~~ | — | — | **Fixed S27**: 6 loop sites + `consume_list_end()` helper architecture. 0/23 crashes. |
+| 3 | ~~Parser module-qualified constructors~~ | — | — | **Fixed S29**: Two-level MemberAccess unwrapping for variant ctors and match patterns. |
+| 4 | ~~Import path resolution~~ | — | — | **Fixed S29**: `try_load_import` now uses `"src"` prefix, dedup via loaded vec. |
+| 5 | ~~Forward declaration ordering~~ | — | — | **Fixed S29**: `write_spans()` moved before struct/enum/variant emission. |
+| 6 | `build` path: C generation for all modules | High | **Yes** | 6/23 OK. Regression: API mismatch (S26) + span/struct ordering (S29 fixed). Remaining: registry sharing, std type emission, qualifed method calls, this scope, generic methods. |
+| 7 | Generic monomorphization (full) | Very High | Partial | Built-in Vec/Map works; full user-defined generics needs type param substitution |
+| 8 | Std type C name resolution | Medium | **Yes** | Vec/Map/String/Interner/Arena not in lowerer's registry → emit as `void` |
+| 9 | Qualified method call lowering | Medium | **Yes** | `string.String.from_str(x)` → wrong C output |
+| 10 | Registry sharing (checker vs lowerer) | Medium | **Yes** | Checker copies registry → changes invisible to lowerer |
 | 1 | ~~Check fails across modules~~ | — | — | **Fixed S27–S28**: DEDENT loops eliminated, all primitives registered, std types (String/Interner/Arena) pre-registered, two-pass checker for forward refs, import resolution with interner dedup, resolve_generic fallback for str_buffer. 23/23 OK. |
 | 2 | ~~Parser DEDENT crashes (9 modules)~~ | — | — | **Fixed S27**: 6 loop sites + `consume_list_end()` helper architecture. 0/23 crashes. |
 | 3 | `build` path: C generation for all modules | Medium | **Next** | `check` passes all modules; `build` path needs per-module flatten+lower+codegen verified |
@@ -1101,7 +1111,72 @@ Baselines use `mtc emit-c` on flat-path copies (`/tmp/fixture_NN_xxx.mt`) for sh
 
 All remaining "check failed" modules are checker type-resolution issues (cross-module types from imports not fully resolved), not parser crashes.
 
-### Session 26 (2026-06-24, earlier) — API Mismatch Discovery
+
+
+### Session 29 (2026-06-24) — Parser Fixes + Build Path Audit
+
+**Parser fixes — 3 bugs resolved:**
+
+1. **Multiline aggregate parsing**: `parse_call_expr` while loop (lines 1709-1741) was missing `skip_newlines()` calls. Multi-line struct literals like `Cursor(data=source, pos=0, ...)` would break out of the loop after the first field, producing incomplete aggregates. Fixed by adding `skip_newlines()` and `consume_list_end()` matching other loop sites.
+
+2. **Module-qualified variant constructors**: Parser only unwrapped one level of `MemberAccess` for `Type.arm(field=val)`. Two-level chains like `ir.IrExpr.aggregate(name=cname, ...)` had `agg_type` never assigned (garbage on stack). Fixed by unwrapping inner `MemberAccess` to extract the correct type name.
+
+3. **Module-qualified match patterns**: `parse_match_pattern` only handled `Type.arm`, not `module.Type.arm`. Patterns like `ir.IrStmt.return_stmt(value):` misparsed arm name as type name. Fixed by checking for second dot and extracting correct type_name/arm_name.
+
+**Build path fixes — 4 issues resolved:**
+
+4. **Import path resolution**: `try_load_import` used `extract_dir(path)` as base, producing paths like `projects/mtc/src/compiler/lexer/compiler/lexer/token_kind.mt`. Fixed to use `"src"` prefix (matching `check_with_imports`), correctly producing `src/compiler/lexer/token_kind.mt`. **CWD-dependent**: must run from `projects/mtc/` directory.
+
+5. **Import dedup**: `try_load_import` had no dedup logic — when both token.mt and lexer.mt import token_kind.mt, the enum declaration was duplicated. Added `loaded` vec tracking interned file paths for dedup.
+
+6. **Forward declaration ordering**: `write_spans()` ran AFTER `write_struct()`/`write_variant()`, so structs using `span[T]` fields saw undefined span typedefs. Moved `write_spans()` before struct/enum/variant emission.
+
+7. **Std type registry registration**: The checker copies the Registry by value — std types (`String`, `Interner`, `Arena`) were registered only in the checker's copy. The lowerer uses the original (unmodified) `ctx.registry`. Added explicit registration in `build_file` (partial fix; see R1 below).
+
+**Current Build Status (from projects/mtc/ CWD, 23/23 check OK):**
+
+| Status | Count | Modules |
+|--------|-------|---------|
+| Check OK | 23/23 | All modules pass type checking |
+| Build OK | 6/23 | token_kind, token, operators, builtin_name, generic_kind, primitive_kind |
+| Build FAIL (gcc) | 14/23 | context, diagnostics, source, c_backend, cursor, lexer, ir, ast, parser, token_cursor, scope, type_registry, types, checker |
+| Build FAIL (crash) | 3/23 | lowerer, binder — SIGABRT during lowering |
+
+**Test suite**: 12/12 fixtures still pass (build + gcc compile + run).
+
+**Remaining Build-Blocking Gaps:**
+
+| # | Gap | Impact | Blocks |
+|---|------|--------|--------|
+| R1 | **Registry sharing**: checker copies registry by value; std types (`String`/`Interner`/`Arena`) and user types are registered only in the checker's copy. Lowerer uses the original `ctx.registry` → `map.Map[...]` and `vec.Vec[...]` fields resolve to `void` in C | High | scope.mt, context.mt, type_registry.mt, checker.mt, c_backend.mt, parser.mt |
+| R2 | **Std type C emission**: Vec, Map, String, Interner, Arena have no C typedefs in generated output. Need either (a) pre-compiled std runtime header, or (b) full project build with transitive dependency C emission | High | All modules using Vec/Map/String |
+| R3 | **Qualified method calls**: `string.String.from_str(path)` parsed correctly but lowered incorrectly — emits `from_str(string.String, path)` (type name as argument) instead of `string_String_from_str(path)` | High | source.mt, diagnostics.mt, context.mt |
+| R4 | **Extending method `this` scope**: `this` in method bodies not accessible in C output — C param names differ from `this` in method body references | High | cursor.mt, token.mt, context.mt |
+| R5 | **Generic type method calls**: `vec.Vec[T].create()` needs proper method lowering with generic instantiation | High | All modules using Vec/Map operations |
+
+### Session 29 Resolution (2026-06-24) — Fixes Applied
+
+**Completed fixes:**
+- **A1. Registry sharing**: Added `Checker.get_registry()` public accessor. `build_file` now passes `chk.get_registry()` to lowerer instead of `ctx.registry`. Eliminates "void field" errors from registry mismatch. (2 sites)
+- **A2. Local decl type inference**: Added `infer_expr_type_id()` and `infer_field_type()` in lowerer. Untyped `let x = expr` in methods no longer emits `void x = ...`. Infers int, float, str, ubyte, bool from literals. Partial fix for member access. (30 lines)
+- **A3. Spans-before-structs ordering**: Moved `write_spans()` before `write_struct()`/`write_variant()`. Eliminates "unknown type name `Foo_span`" errors. (reorder in c_backend.mt)
+- **A4. Single-parse architecture**: `build_file` no longer calls `flatten_file` for main file. Uses first parse's AST directly for both check and lowering. Avoids double-parse AST divergence. (refactor)
+
+**Failed attempts / rolled back:**
+- Forward struct declarations + span_clean_name: caused SIGABRT crashes (dangling IrProgram data). Rolled back.
+- Span name sanitization (char*_span → char_ptr_span): caused "invalid UTF-8" crash. Rolled back.
+
+**Current state** (end of S29):
+- Check: 23/23 OK (changed from `chk.get_registry()` but check path unaffected)
+- Build: 6/23 OK (registry sharing fixed "void field" but `this` param and std types remain)
+- Fixtures: 12/12 PASS
+
+**Next session priority (R4 → R3 → R2+R5):**
+1. Fix `this` param in subsequent extending methods: rename `current`→confirm, investigate lowerer's `lower_extending` methods iteration
+2. Fix qualified method call lowering (e.g., `string.String.from_str(x)` → `string_String_from_str(x)`)
+3. Add std type C emission (Vec, Map, String typedefs needed in generated C)
+
+
 
 The committed `main.mt` called `checker_mod.create(ctx.registry, ...)` passing a `Registry` struct by value where a previous checker version expected `ptr[Context]`. This C-level type mismatch produced undefined behavior that corrupted the heap, causing ALL arena allocations to fail — explaining why even 46-line files exhausted 32+ MiB arenas. Fixed by matching the correct API.
 

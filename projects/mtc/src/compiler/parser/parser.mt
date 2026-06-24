@@ -1267,6 +1267,17 @@ extending Parser:
             this.expect(T.tk_identifier)
             loc = this.make_loc(tok.start, member_tok.end)
 
+            var arm_name = member_tok.ident
+            var type_name = name
+
+            if this.cur.current().kind == T.tk_dot:
+                this.cur.advance()
+                let arm_tok = this.cur.current()
+                this.expect(T.tk_identifier)
+                type_name = member_tok.ident
+                arm_name = arm_tok.ident
+                loc = this.make_loc(tok.start, arm_tok.end)
+
             var fields = vec.Vec[ast.PatternField].create()
             if not this.cur.at_end() and this.cur.current().kind == T.tk_lparen:
                 this.cur.advance()
@@ -1306,8 +1317,8 @@ extending Parser:
                 loc = this.make_loc(tok.start, this.cur_end())
 
             let p = ast.Pattern.variant_arm(
-                type_name = name,
-                arm_name = member_tok.ident,
+                type_name = type_name,
+                arm_name = arm_name,
                 binding = 0,
                 fields = this.span_of_pattern_fields(ref_of(fields)),
                 loc = loc,
@@ -1707,12 +1718,19 @@ extending Parser:
         let start = name_tok.start
 
         while true:
+            this.skip_newlines()
             if this.cur.current().kind == T.tk_rparen:
                 break
+            if this.at_indent_end():
+                break
             if args.len > 0 or fields.len > 0:
-                if this.cur.current().kind != T.tk_comma:
+                this.skip_newlines()
+                if this.cur.current().kind == T.tk_rparen or this.at_indent_end():
                     break
-                this.cur.advance()
+                this.expect(T.tk_comma)
+                this.skip_newlines()
+            if this.at_indent_end():
+                break
 
             if not is_aggregate and this.has_named_arg_ahead():
                 is_aggregate = true
@@ -1731,7 +1749,7 @@ extending Parser:
                 let arg = this.parse_expression()
                 args.push(arg)
 
-        this.expect(T.tk_rparen)
+        this.consume_list_end(T.tk_rparen)
         let end = this.cur_end()
 
         if is_aggregate:
@@ -1743,11 +1761,18 @@ extending Parser:
                     ast.Expr.member_access(receiver, member, _):
                         has_member = true
                         agg_arm = member
-                        match read(receiver):
-                            ast.Expr.identifier(name, _):
-                                agg_type = name
-                            _:
-                                pass
+                        unsafe:
+                            match read(receiver):
+                                ast.Expr.identifier(name, _):
+                                    agg_type = name
+                                ast.Expr.member_access(receiver, member, _):
+                                    match read(receiver):
+                                        ast.Expr.identifier(_, _):
+                                            agg_type = member
+                                        _:
+                                            pass
+                                _:
+                                    pass
                     ast.Expr.identifier(name, _):
                         agg_type = name
                     _:

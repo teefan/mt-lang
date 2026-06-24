@@ -98,6 +98,10 @@ extending Checker:
         return this.errors.as_span()
 
 
+    public function get_registry() -> reg.Registry:
+        return this.registry
+
+
     public editable function register_types(file: ptr[ast.SourceFile]) -> void:
         ## Register struct/enum/variant/type_alias names without
         ## checking bodies. Used to pre-load imports.
