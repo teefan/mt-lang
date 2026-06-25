@@ -88,8 +88,9 @@ module now has its tests under `test/mt/` as `@[test]` functions run via `mtc te
 `test/std/in_language_tests_test.rb`. This covers the collections (`vec`, `deque`, `set`, `map`,
 `counter`, `multiset`, `ordered_map`/`ordered_set`, `linked_map`/`linked_set`, `priority_queue`,
 `binary_heap`, `stack`, `queue`, `span`, `bytes`), string/encoding helpers (`string`, `cstring`,
-`uri`, `path`, `fmt`, `toml`, `binary`, `ctype`), `math`, `option`/`result`, the `mem` allocators
-(`heap`, `arena`, `pool`, `stack` — including `@[expect_fatal]` contract-abort death tests), the
+`uri`, `path`, `fmt`, `toml`, `binary`, `ctype`), `math`, `option`/`result`, `errno`, the `mem`
+allocators (`heap`, `arena`, `pool`, `stack`; with `@[expect_fatal]` contract-abort death tests in
+`heap`/`arena`/`pool`), the
 AI/utility modules (`fsm`, `goap`, `behavior_tree`, `cli`, `spatial`, `random`, `net.sync`), and the
 `pass` language-feature test. Their Ruby heredoc wrappers have been removed — the in-language tests
 are the single source of truth.
@@ -157,13 +158,25 @@ Surface that ships today:
 - `t.expect_true(condition)`, `t.expect_false(condition)`
 - `t.expect_equal_int`, `t.expect_equal_bool`, `t.expect_equal_str` (render "expected X, got Y" via
   `std.fmt`)
+- `t.expect_not_equal_int`, `t.expect_not_equal_bool`, `t.expect_not_equal_str`
 - `t.expect_some[T](option)`, `t.expect_none[T](option)`
+- `t.expect_null[T](pointer)`, `t.expect_not_null[T](pointer)` (over `const_ptr[T]?`)
+- `t.expect_error[T, E](result)` (passes iff the `Result` is a failure)
+- `t.expect_equal[T](actual, expected)` — generic equality for any `T` with a canonical `equal` hook
+  (primitives via `import std.hash`, `str` via `import std.str`, structs/variants that define
+  `equal`); the failure message is value-less, so use the typed `expect_equal_int`/`_bool`/`_str`
+  when you want the values rendered
 - `t.Check`, `t.Failure` (owned message + skip flag), `t.Stats`, `t.record`, `t.summarize` (the
   hand-written-runner API, still usable directly without `mtc test`)
 
-Planned additions: a generic `t.expect_equal[T]` (needs an equality/format constraint),
-`expect_not_equal`, `expect_null`/`expect_not_null`, `expect_error`, and source-location capture in
-`Failure`. Teardown uses `defer` (no fixture runtime).
+Generic equality works because the built-in `equal[T]` lowers to the canonical `T.equal` hook,
+provided by `std.hash` for every primitive/integer width and by `std.str` for `str`; there is no
+nominal `Eq` interface (constraints are enforced structurally at specialization, Zig-style).
+
+Planned additions: source-location capture in `Failure` (needs a compiler builtin). A
+*value-rendering* generic `expect_equal[T]` is **not** blocked by a missing equality constraint
+(that exists); it is blocked by two compiler limitations described in §9. Teardown uses `defer` (no
+fixture runtime).
 
 > By design, tests live in **dedicated files** (no `main`); a normal build does not pull them in.
 > Co-locating tests with production code (a `when TEST` cfg exclusion) is intentionally **not
@@ -304,9 +317,23 @@ function test_square_table() -> t.Check:
 pytest's `assert a == b` value introspection comes from runtime AST rewriting — unavailable (and
 undesirable) in a static language. Milk Tea uses typed helpers instead: the landed
 `expect_equal_int`/`expect_equal_bool`/`expect_equal_str` render `actual`/`expected` into the
-failure message via `std.fmt` (e.g. "expected 5, got 4"). Planned: a generic `expect_equal[T]` that
-formats via a `Format` constraint, struct rendering via `fields_of(T)` reflection, and
-source-location capture. No rewriting magic, fully static.
+failure message via `std.fmt` (e.g. "expected 5, got 4"). The generic `expect_equal[T]` (landed)
+covers any type with a canonical `equal` hook but reports a **value-less** message. Generic
+value-rendering would require one of two things, both currently blocked at the compiler level (not
+by a missing constraint):
+
+- a reflective `{any}`-style formatter in `std.fmt` that walks a struct's fields — blocked because
+  `field.type` is **rejected as a type expression** (usable as a value for `==`/`size_of`/`offset_of`,
+  but `format_value[field.type]` / `const_ptr[field.type]` fail with "unknown type field.type");
+- `f"#{value}"` of a value whose static type is a **type parameter** bound to a custom-format struct
+  — currently **mis-lowers** ("unknown type field.type"), even though the same interpolation works
+  on a concrete struct type.
+
+A related pre-existing bug: `std.hash.equal_struct`/`hash_struct`/`order_struct` (the reflective
+helpers) **fail to lower** for real structs because `size_of(field.type)` is not resolved at
+lowering (sema records the `offset_of` const value but not the `size_of`/`align_of` one). Until
+fixed, struct keys/equality must define `equal`/`hash`/`order` manually. Source-location capture in
+`Failure` is also planned. No rewriting magic, fully static.
 
 ---
 
@@ -382,8 +409,9 @@ Keep the core minimal; property testing, snapshot/golden, and benchmarks are lat
   `--format tap`/`--format junit` emits machine-readable results for CI.
 - **T6 — Migration & dogfood. ✅ Landed (in-language `std` suite).** Every pure, deterministic,
   no-FFI `std` module has been migrated to `@[test]` functions under `test/mt/` (collections,
-  string/encoding helpers, `math`, `option`/`result`, the `mem` allocators with `@[expect_fatal]`
-  contract-abort death tests, the `fsm`/`goap`/`behavior_tree`/`cli`/`spatial`/`random`/`net.sync`
+  string/encoding helpers, `math`, `option`/`result`, `errno`, the `mem` allocators (with
+  `@[expect_fatal]` contract-abort death tests in `heap`/`arena`/`pool`), the
+  `fsm`/`goap`/`behavior_tree`/`cli`/`spatial`/`random`/`net.sync`
   utilities, and the `pass` language test), run by `mtc test` and CI-enforced via
   `test/std/in_language_tests_test.rb`; the corresponding Ruby heredoc wrappers were removed.
   Intentionally **not** migrated (they cannot be exercised self-containedly in-language and remain

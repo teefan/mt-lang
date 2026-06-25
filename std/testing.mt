@@ -20,6 +20,8 @@
 import std.string as string
 import std.fmt as fmt
 import std.stdio as stdio
+import std.hash
+import std.str
 
 # A test outcome: success carries no meaningful value; failure carries a
 # `Failure`. `Result` is used (not a bespoke variant) so `?` propagation works.
@@ -118,6 +120,61 @@ public function expect_equal_bool(actual: bool, expected: bool) -> Check:
     return Result[bool, Failure].failure(error = Failure(message = message, is_skip = false))
 
 
+public function expect_not_equal_int(actual: int, expected: int) -> Check:
+    if actual != expected:
+        return ok()
+
+    var message = string.String.create()
+    message.append("expected not ")
+    fmt.append_int(ref_of(message), expected)
+    message.append(", got ")
+    fmt.append_int(ref_of(message), actual)
+    return Result[bool, Failure].failure(error = Failure(message = message, is_skip = false))
+
+
+public function expect_not_equal_str(actual: str, expected: str) -> Check:
+    var actual_string = string.String.from_str(actual)
+    var expected_string = string.String.from_str(expected)
+    let same = actual_string.equal(expected_string)
+    actual_string.release()
+    expected_string.release()
+    if not same:
+        return ok()
+
+    var message = string.String.create()
+    message.append("expected not [")
+    message.append(expected)
+    message.append("], got [")
+    message.append(actual)
+    message.append("]")
+    return Result[bool, Failure].failure(error = Failure(message = message, is_skip = false))
+
+
+public function expect_not_equal_bool(actual: bool, expected: bool) -> Check:
+    if actual != expected:
+        return ok()
+
+    var message = string.String.create()
+    message.append("expected not ")
+    fmt.append_bool(ref_of(message), expected)
+    message.append(", got ")
+    fmt.append_bool(ref_of(message), actual)
+    return Result[bool, Failure].failure(error = Failure(message = message, is_skip = false))
+
+
+# Generic equality over any type with a canonical `T.equal` hook: primitives
+# (import std.hash), `str` (import std.str), and user structs/variants that
+# define `equal` (or delegate to std.hash.equal_struct). The failure message is
+# value-less because the values cannot be rendered generically — use the typed
+# `expect_equal_int`/`expect_equal_str`/`expect_equal_bool` when you want the
+# actual/expected values shown.
+public function expect_equal[T](actual: T, expected: T) -> Check:
+    if equal[T](actual, expected):
+        return ok()
+
+    return fail("values are not equal")
+
+
 public function expect_some[T](option: Option[T]) -> Check:
     if option.is_some():
         return ok()
@@ -130,6 +187,27 @@ public function expect_none[T](option: Option[T]) -> Check:
         return ok()
 
     return fail("expected Option.none, got Option.some")
+
+
+public function expect_null[T](pointer: const_ptr[T]?) -> Check:
+    if pointer == null:
+        return ok()
+
+    return fail("expected null pointer, got non-null")
+
+
+public function expect_not_null[T](pointer: const_ptr[T]?) -> Check:
+    if pointer != null:
+        return ok()
+
+    return fail("expected non-null pointer, got null")
+
+
+public function expect_error[T, E](result: Result[T, E]) -> Check:
+    if result.is_failure():
+        return ok()
+
+    return fail("expected Result.failure, got Result.success")
 
 
 # ── Runner (hand-written; compiler discovery is a later phase) ─────────────
