@@ -331,11 +331,11 @@ The generic `expect_equal[T]` (landed) compares via the canonical `equal` hook a
 `T` (primitives, `str`, structs of renderable fields). The typed `expect_equal_int`/`_bool`/`_str`
 remain for explicit scalar rendering.
 
-Known issue: a specialized generic instance's C name (`expect_equal[str]`) collides with a
-same-named regular function (`expect_equal_str`) under the current name mangling, so for
-`int`/`str`/`bool` the call routes through the typed helper (e.g. `str` renders
-`expected [tea], got [milk]`); a mangling fix (distinct generic-instance suffix) is pending.
-Source-location capture in `Failure` is also planned. No rewriting magic, fully static.
+Specialized generic function instances use a distinct C-name suffix (a double-underscore before the
+type arguments), so an instance such as `expect_equal[str]` cannot collide with a same-named regular
+function (`expect_equal_str`); every type — including `int`/`str`/`bool` — renders uniformly through
+`format_value`. Source-location capture in `Failure` is also planned. No rewriting magic, fully
+static.
 
 ---
 

@@ -176,8 +176,8 @@ function main() -> int:
 
       assert_match(/static const int32_t std_math_TEN = 10;/, generated)
       refute_match(/static const int32_t std_math_UNUSED = 99;/, generated)
-      assert_match(/static int32_t std_math_clamp_int\(int32_t value, int32_t min_value, int32_t max_value\)/, generated)
-      assert_match(/return std_math_clamp_int\(42, 0, std_math_TEN\);/, generated)
+      assert_match(/static int32_t std_math_clamp__int\(int32_t value, int32_t min_value, int32_t max_value\)/, generated)
+      assert_match(/return std_math_clamp__int\(42, 0, std_math_TEN\);/, generated)
     end
   end
 
@@ -482,7 +482,7 @@ function main() -> int:
     generated = generate_c_from_program_source(source)
 
     assert_match(/demo_side_effectful_receiver_codegen_Box_build_static\(\)/, generated)
-    assert_match(/if \(\(\(void\)demo_side_effectful_receiver_codegen_Box_build_static\(\), demo_side_effectful_receiver_codegen_Box_echo_bool\(true\)\)\) \{/, generated)
+    assert_match(/if \(\(\(void\)demo_side_effectful_receiver_codegen_Box_build_static\(\), demo_side_effectful_receiver_codegen_Box_echo__bool\(true\)\)\) \{/, generated)
   end
 
   def test_generate_c_emits_declaration_for_unused_parameters
@@ -2374,7 +2374,7 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     assert_match(/static int32_t demo_static_interface_codegen_Counter_tag_static\(void\)/, generated)
-    assert_match(/static int32_t demo_static_interface_codegen_tag_of_demo_static_interface_codegen_Counter\(void\)/, generated)
+    assert_match(/static int32_t demo_static_interface_codegen_tag_of__demo_static_interface_codegen_Counter\(void\)/, generated)
     assert_match(/return demo_static_interface_codegen_Counter_tag_static\(\);/, generated)
   end
 
@@ -2441,9 +2441,9 @@ function main() -> bool:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static bool demo_hash_transitive_codegen_inner_demo_hash_transitive_codegen_Key\(demo_hash_transitive_codegen_Key left, demo_hash_transitive_codegen_Key right\)/, generated)
-    assert_match(/static bool demo_hash_transitive_codegen_outer_demo_hash_transitive_codegen_Key\(demo_hash_transitive_codegen_Key left, demo_hash_transitive_codegen_Key right\)/, generated)
-    assert_match(/return demo_hash_transitive_codegen_inner_demo_hash_transitive_codegen_Key\(left, right\);/, generated)
+    assert_match(/static bool demo_hash_transitive_codegen_inner__demo_hash_transitive_codegen_Key\(demo_hash_transitive_codegen_Key left, demo_hash_transitive_codegen_Key right\)/, generated)
+    assert_match(/static bool demo_hash_transitive_codegen_outer__demo_hash_transitive_codegen_Key\(demo_hash_transitive_codegen_Key left, demo_hash_transitive_codegen_Key right\)/, generated)
+    assert_match(/return demo_hash_transitive_codegen_inner__demo_hash_transitive_codegen_Key\(left, right\);/, generated)
     assert_match(/demo_hash_transitive_codegen_Key_hash_static\(&left\)/, generated)
     assert_match(/demo_hash_transitive_codegen_Key_equal_static\(&left, &right\)/, generated)
   end
@@ -2508,7 +2508,7 @@ function main() -> bool:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static bool demo_order_compare_codegen_ordered_before_or_equal_demo_order_compare_codegen_Key\(demo_order_compare_codegen_Key left, demo_order_compare_codegen_Key right\)/, generated)
+    assert_match(/static bool demo_order_compare_codegen_ordered_before_or_equal__demo_order_compare_codegen_Key\(demo_order_compare_codegen_Key left, demo_order_compare_codegen_Key right\)/, generated)
     assert_match(/demo_order_compare_codegen_Key_order_static\(&left, &right\)/, generated)
   end
 

@@ -655,7 +655,7 @@ async function main() -> int:
 
     assert_match(/int32_t main\(int32_t argc, char \*\*argv\)/, generated)
     assert_match(/__mt_async_main_arg_1/, generated)
-    assert_match(/std_async_wait_int\(__mt_async_main_root\)/, generated)
+    assert_match(/std_async_wait__int\(__mt_async_main_root\)/, generated)
     refute_match(/async main runtime loop failed/, generated)
   end
 

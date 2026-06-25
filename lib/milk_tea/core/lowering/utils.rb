@@ -1276,7 +1276,7 @@ module MilkTea
         if receiver_type
           base = "#{c_type_name(receiver_type)}_#{binding.name}"
           base = "#{base}_static" if binding.type.receiver_type.nil?
-          return binding.type_arguments.empty? ? base : "#{base}_#{sanitize_identifier(binding.type_arguments.join('_'))}"
+          return binding.type_arguments.empty? ? base : "#{base}__#{generic_type_argument_suffix(binding.type_arguments)}"
         end
 
         module_function_c_name(module_name, binding.name, type_arguments: binding.type_arguments)
@@ -1303,7 +1303,19 @@ module MilkTea
         base = "#{module_c_prefix(module_name)}_#{name}"
         return base if type_arguments.empty?
 
-        "#{base}_#{sanitize_identifier(type_arguments.join('_'))}"
+        # A double-underscore separates a generic function instance's type
+        # arguments so it cannot collide with a distinct regular function whose
+        # name happens to be `<name>_<typearg>` (e.g. the instance
+        # `expect_equal[str]` vs the function `expect_equal_str`). The method path
+        # in `function_binding_c_name` uses the same scheme for consistency.
+        "#{base}__#{generic_type_argument_suffix(type_arguments)}"
+      end
+
+      # Joins resolved generic type arguments into the instance-name suffix used
+      # by both the free-function (`module_function_c_name`) and method
+      # (`function_binding_c_name`) paths, keeping the scheme consistent.
+      def generic_type_argument_suffix(type_arguments)
+        sanitize_identifier(type_arguments.join('_'))
       end
 
       def module_value_c_name(module_name, name)
