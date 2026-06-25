@@ -98,6 +98,11 @@ module MilkTea
       new(source, path: path, mode: :with_trivia).lex
     end
 
+    def self.lex_to_json(source, path: nil)
+      tokens = lex(source, path: path)
+      Serializer.tokens_to_json(tokens)
+    end
+
     def initialize(source, path: nil, mode: :syntax_only, recovery_errors: nil)
       @source = source.gsub(/\r\n?/, "\n")
       @path = path

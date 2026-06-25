@@ -64,6 +64,11 @@ module MilkTea
       ir_program
     end
 
+    def self.lower_to_json(program)
+      ir_program = lower(program)
+      Serializer.ir_to_json(ir_program)
+    end
+
     def self.lower_incremental(program, cached: nil, cached_synthetics: nil)
       lowerer = Lowerer.new(program)
       lowerer.lower_and_assemble(cached:, cached_synthetics:)
@@ -92,6 +97,7 @@ module MilkTea
       @artifacts = Artifacts.new
       @synthetic_proc_counter = 0
       @parallel_for_counter = 0
+      @async_binding_counter = 0
       @method_definitions = build_method_definitions
       @bypass_sema_type_cache = false
     end
