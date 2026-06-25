@@ -320,18 +320,18 @@ undesirable) in a static language. Milk Tea uses typed helpers instead: the land
 failure message via `std.fmt` (e.g. "expected 5, got 4"). The generic `expect_equal[T]` (landed)
 covers any type with a canonical `equal` hook but reports a **value-less** message.
 
-A reflective `{any}`-style value formatter is now *partially* unblocked: `field.type` is usable in
-type position (language-manual §7.0), so `std.hash`'s `equal_struct`/`hash_struct`/`order_struct`
-dispatch each field through its canonical hook (content-correct, including `str`). A general
-recursive `format_value[T]` — and recursion into nested-struct fields generally — still needs
-**per-element `inline for` checking** in sema: today the body is checked once against the first
-field, so a `format_value[field.type]` recursion for a later, differently-typed field is never
-discovered by sema and surfaces only at build. Until that lands, `expect_equal[T]` stays value-less.
+A reflective `{any}`-style value formatter has landed. `field.type` is usable in type position
+(language-manual §7.0) and the `inline for` body is checked **per element**, so `std.hash`'s
+`equal_struct`/`hash_struct`/`order_struct` dispatch each field through its canonical hook
+(content-correct, including `str` and **nested structs**), and `std.fmt.format_value[T]` recursively
+renders any struct as `{ field = value, ... }`. (This also resolved the earlier bug where those
+reflective helpers failed to lower.)
 
-A related pre-existing bug: `std.hash.equal_struct`/`hash_struct`/`order_struct` (the reflective
-helpers) **fail to lower** for real structs because `size_of(field.type)` is not resolved at
-lowering (sema records the `offset_of` const value but not the `size_of`/`align_of` one). Until
-fixed, struct keys/equality must define `equal`/`hash`/`order` manually. Source-location capture in
+`expect_equal[T]` nonetheless stays **value-less**: rendering its `T` would require dispatching
+scalar-vs-struct on the *bare type parameter* (`format_value[int]` cannot reflect a scalar's
+fields), and `inline if T == int` on a bare type parameter is a separate, still-unresolved
+limitation (distinct from `field.type`). Use the typed `expect_equal_int`/`_bool`/`_str` for
+rendered scalar diagnostics, or `format_value` to render a struct. Source-location capture in
 `Failure` is also planned. No rewriting magic, fully static.
 
 ---

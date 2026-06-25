@@ -1551,7 +1551,7 @@ module MilkTea
               when Types::FieldHandle
                 case member_access_expression.member
                 when "name" then next receiver_value.field_name
-                when "type" then next resolve_type_ref(receiver_value.field_declaration.type)
+                when "type" then next receiver_value.struct_handle.struct_type.field(receiver_value.field_name)
                 end
               when Types::MemberHandle
                 case member_access_expression.member
@@ -2429,9 +2429,9 @@ module MilkTea
                  end
                elsif parts.length == 1 && type_params.key?(parts.first)
                  type_params.fetch(parts.first)
-               elsif parts.length == 1
-                 type = @ctx.types[parts.first]
-                 raise LoweringError, "unknown type #{parts.first}" unless type
+                elsif parts.length == 1
+                  type = @ctx.types[parts.first]
+                  raise LoweringError, "unknown type #{parts.first}" unless type
                  raise LoweringError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
                  type
