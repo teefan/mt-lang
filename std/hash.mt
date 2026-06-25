@@ -173,6 +173,179 @@ extending char:
             return 0
 
 # ---------------------------------------------------------------------------
+#  Remaining integer widths — byte/short/long and unsigned variants, ptr_int.
+#  hash mixes the value's bytes (FNV-1a); equal/order use native operators.
+# ---------------------------------------------------------------------------
+
+function hash_u32(value: uint) -> uint:
+    let fnv: uint = 0x811C9DC5
+    let prime: uint = 0x01000193
+    var h = fnv
+    h = (h ^ (value & uint<-(0xFF))) * prime
+    h = (h ^ ((value >> uint<-(8)) & uint<-(0xFF))) * prime
+    h = (h ^ ((value >> uint<-(16)) & uint<-(0xFF))) * prime
+    h = (h ^ ((value >> uint<-(24)) & uint<-(0xFF))) * prime
+    return h
+
+
+function hash_u64(value: ulong) -> uint:
+    return hash_u32(uint<-((value >> uint<-(32)) ^ value))
+
+
+extending byte:
+    public static function hash(value: const_ptr[byte]) -> uint:
+        unsafe:
+            return hash_u32(uint<-(int<-read(ptr[byte]<-value)))
+
+
+    public static function equal(a: const_ptr[byte], b: const_ptr[byte]) -> bool:
+        unsafe:
+            return read(ptr[byte]<-a) == read(ptr[byte]<-b)
+
+
+    public static function order(a: const_ptr[byte], b: const_ptr[byte]) -> int:
+        unsafe:
+            let av = read(ptr[byte]<-a)
+            let bv = read(ptr[byte]<-b)
+            if av < bv:
+                return -1
+            else if av > bv:
+                return 1
+            return 0
+
+
+extending ubyte:
+    public static function hash(value: const_ptr[ubyte]) -> uint:
+        unsafe:
+            return hash_u32(uint<-read(ptr[ubyte]<-value))
+
+
+    public static function equal(a: const_ptr[ubyte], b: const_ptr[ubyte]) -> bool:
+        unsafe:
+            return read(ptr[ubyte]<-a) == read(ptr[ubyte]<-b)
+
+
+    public static function order(a: const_ptr[ubyte], b: const_ptr[ubyte]) -> int:
+        unsafe:
+            let av = read(ptr[ubyte]<-a)
+            let bv = read(ptr[ubyte]<-b)
+            if av < bv:
+                return -1
+            else if av > bv:
+                return 1
+            return 0
+
+
+extending short:
+    public static function hash(value: const_ptr[short]) -> uint:
+        unsafe:
+            return hash_u32(uint<-(int<-read(ptr[short]<-value)))
+
+
+    public static function equal(a: const_ptr[short], b: const_ptr[short]) -> bool:
+        unsafe:
+            return read(ptr[short]<-a) == read(ptr[short]<-b)
+
+
+    public static function order(a: const_ptr[short], b: const_ptr[short]) -> int:
+        unsafe:
+            let av = read(ptr[short]<-a)
+            let bv = read(ptr[short]<-b)
+            if av < bv:
+                return -1
+            else if av > bv:
+                return 1
+            return 0
+
+
+extending ushort:
+    public static function hash(value: const_ptr[ushort]) -> uint:
+        unsafe:
+            return hash_u32(uint<-read(ptr[ushort]<-value))
+
+
+    public static function equal(a: const_ptr[ushort], b: const_ptr[ushort]) -> bool:
+        unsafe:
+            return read(ptr[ushort]<-a) == read(ptr[ushort]<-b)
+
+
+    public static function order(a: const_ptr[ushort], b: const_ptr[ushort]) -> int:
+        unsafe:
+            let av = read(ptr[ushort]<-a)
+            let bv = read(ptr[ushort]<-b)
+            if av < bv:
+                return -1
+            else if av > bv:
+                return 1
+            return 0
+
+
+extending long:
+    public static function hash(value: const_ptr[long]) -> uint:
+        unsafe:
+            return hash_u64(ulong<-read(ptr[long]<-value))
+
+
+    public static function equal(a: const_ptr[long], b: const_ptr[long]) -> bool:
+        unsafe:
+            return read(ptr[long]<-a) == read(ptr[long]<-b)
+
+
+    public static function order(a: const_ptr[long], b: const_ptr[long]) -> int:
+        unsafe:
+            let av = read(ptr[long]<-a)
+            let bv = read(ptr[long]<-b)
+            if av < bv:
+                return -1
+            else if av > bv:
+                return 1
+            return 0
+
+
+extending ulong:
+    public static function hash(value: const_ptr[ulong]) -> uint:
+        unsafe:
+            return hash_u64(read(ptr[ulong]<-value))
+
+
+    public static function equal(a: const_ptr[ulong], b: const_ptr[ulong]) -> bool:
+        unsafe:
+            return read(ptr[ulong]<-a) == read(ptr[ulong]<-b)
+
+
+    public static function order(a: const_ptr[ulong], b: const_ptr[ulong]) -> int:
+        unsafe:
+            let av = read(ptr[ulong]<-a)
+            let bv = read(ptr[ulong]<-b)
+            if av < bv:
+                return -1
+            else if av > bv:
+                return 1
+            return 0
+
+
+extending ptr_int:
+    public static function hash(value: const_ptr[ptr_int]) -> uint:
+        unsafe:
+            return hash_u64(ulong<-read(ptr[ptr_int]<-value))
+
+
+    public static function equal(a: const_ptr[ptr_int], b: const_ptr[ptr_int]) -> bool:
+        unsafe:
+            return read(ptr[ptr_int]<-a) == read(ptr[ptr_int]<-b)
+
+
+    public static function order(a: const_ptr[ptr_int], b: const_ptr[ptr_int]) -> int:
+        unsafe:
+            let av = read(ptr[ptr_int]<-a)
+            let bv = read(ptr[ptr_int]<-b)
+            if av < bv:
+                return -1
+            else if av > bv:
+                return 1
+            return 0
+
+# ---------------------------------------------------------------------------
 #  Generic struct helpers — per-field reflection-based hash/equal/order.
 # ---------------------------------------------------------------------------
 
