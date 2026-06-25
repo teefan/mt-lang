@@ -1531,7 +1531,9 @@ module MilkTea
             value = resolve_current_module_const_value(identifier_expression.name)
             return value if value
 
-            @ctx.types[identifier_expression.name]
+            # Resolve a bare type-parameter name (e.g. `T`) to its substituted
+            # concrete type so `inline if T == int` folds during lowering too.
+            current_type_params[identifier_expression.name] || @ctx.types[identifier_expression.name]
           end,
           resolve_member_access: lambda do |member_access_expression|
             if (receiver_value = CompileTime.evaluate(
