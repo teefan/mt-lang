@@ -285,7 +285,7 @@ module MilkTea
                 when Types::FieldHandle
                   case member_access_expression.member
                   when "name" then next receiver_value.field_name
-                  when "type" then next resolve_type_ref(receiver_value.field_declaration.type)
+                  when "type" then next receiver_value.struct_handle.struct_type.field(receiver_value.field_name)
                   end
                 when Types::MemberHandle
                   case member_access_expression.member

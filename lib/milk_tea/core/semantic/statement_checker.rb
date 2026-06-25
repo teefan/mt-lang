@@ -9,6 +9,7 @@ module MilkTea
         statements ||= []
         with_return_context(return_type, allow_return:) do
           with_nested_scope(scopes) do |nested_scopes|
+            with_type_resolution_scopes(nested_scopes) do
             statements.each_with_index do |statement, idx|
               begin
                 record_local_completion_snapshot(
@@ -35,6 +36,7 @@ module MilkTea
 
                 raise_sema_error(e.message, statement)
               end
+            end
             end
           end
         end

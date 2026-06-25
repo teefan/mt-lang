@@ -2448,6 +2448,8 @@ module MilkTea
                type = imported_module.types[parts.last]
                raise LoweringError, "unknown type #{type_ref.name}" unless type
                raise LoweringError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+             elsif @type_resolution_env && (field_type = resolve_field_handle_type_ref(parts))
+               type = field_type
              else
                raise LoweringError, "unknown type #{type_ref.name}"
              end
@@ -2489,6 +2491,22 @@ module MilkTea
         end
 
         nil
+      end
+
+      # Resolves a bare dotted reflection type ref `field.type` (where `field` is
+      # a compile-time `field_handle` bound in the active inline-for env) to the
+      # field's concrete type. Mirrors the sema-side `resolve_compile_time_type_ref`.
+      def resolve_field_handle_type_ref(parts)
+        return nil unless parts.length == 2 && parts.last == "type"
+
+        binding = lookup_value(parts.first, @type_resolution_env)
+        handle = binding && binding[:const_value]
+        return nil unless handle.is_a?(Types::FieldHandle)
+
+        # Use the struct's already-resolved field type (module-independent) rather
+        # than re-resolving the field's declared TypeRef, which would look up a
+        # user struct name in this (std) module's scope and fail.
+        handle.struct_handle.struct_type.field(handle.field_name)
       end
 
       def infer_field_handle_member_type(expression)

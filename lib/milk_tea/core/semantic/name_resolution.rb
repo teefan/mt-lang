@@ -341,7 +341,33 @@ module MilkTea
           return type
         end
 
+        if @compile_time_depth&.positive? && (ct_type = resolve_compile_time_type_ref(type_ref))
+          return ct_type
+        end
+
         raise_sema_error("unknown type #{type_ref.name}", type_ref, suggestion: import_suggestion_for_type(type_ref.name))
+      end
+
+      # Resolves a bare dotted reflection type expression such as `field.type`
+      # (where `field` is a compile-time `field_handle` bound in scope) to the
+      # concrete `Types::Base` it denotes. Returns nil when the type_ref is not a
+      # compile-time type expression resolvable in the current scopes. Only the
+      # plain `<local>.member` form is supported (no calls/indexing/type args).
+      def resolve_compile_time_type_ref(type_ref)
+        return nil unless @type_resolution_scopes
+        return nil if type_ref.arguments.any? || type_ref.nullable
+
+        parts = type_ref.name.parts
+        return nil unless parts.length >= 2
+
+        binding = lookup_value(parts.first, @type_resolution_scopes)
+        return nil unless binding && !binding.const_value.nil?
+
+        expression = AST.build_chain_from_parts(parts)
+        return nil unless expression
+
+        value = evaluate_compile_time_const_value(expression, scopes: @type_resolution_scopes)
+        value.is_a?(Types::Base) ? value : nil
       end
 
       def resolve_type_argument(argument, type_params: current_type_params, type_param_constraints: current_type_param_constraints)

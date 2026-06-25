@@ -2,6 +2,8 @@
 ## Import this module to use primitive types as keys in hash-based and
 ## order-based collections (Map, Set, BinaryHeap, OrderedMap, etc.).
 
+import std.str
+
 # ---------------------------------------------------------------------------
 #  int
 # ---------------------------------------------------------------------------
@@ -352,48 +354,42 @@ extending ptr_int:
 const fnv_offset: uint = 0x811C9DC5
 const fnv_prime: uint = 0x01000193
 
+# Each field is hashed/compared/ordered through its own canonical hook
+# (`hash[field.type]` / `equal[field.type]` / `order[field.type]`), so fields
+# with reference semantics (e.g. `str`, nested structs) are handled by content
+# rather than by raw bytes. A type delegates by defining `hash`/`equal`/`order`
+# that call these helpers; nested struct fields must likewise provide the hooks.
+
 public function hash_struct[T](value: const_ptr[T]) -> uint:
     var h = fnv_offset
     inline for field in fields_of(T):
         let offset = offset_of(T, field)
-        let field_size = size_of(field.type)
-        var data_ptr = unsafe: ptr[ubyte]<-value + offset
-        var b: ptr_uint = 0
-        while b < field_size:
-            h = (h ^ uint<-unsafe: read(data_ptr + b)) * fnv_prime
-            b += 1
+        unsafe:
+            let field_ptr = const_ptr[field.type]<-(ptr[ubyte]<-value + offset)
+            h = (h ^ hash[field.type](field_ptr)) * fnv_prime
     return h
 
 
 public function equal_struct[T](a: const_ptr[T], b: const_ptr[T]) -> bool:
     inline for field in fields_of(T):
         let offset = offset_of(T, field)
-        let field_size = size_of(field.type)
-        var pa = unsafe: ptr[ubyte]<-a + offset
-        var pb = unsafe: ptr[ubyte]<-b + offset
-        var i: ptr_uint = 0
-        while i < field_size:
-            if unsafe: read(pa + i) != read(pb + i):
+        unsafe:
+            let pa = const_ptr[field.type]<-(ptr[ubyte]<-a + offset)
+            let pb = const_ptr[field.type]<-(ptr[ubyte]<-b + offset)
+            if not equal[field.type](pa, pb):
                 return false
-            i += 1
     return true
 
 
 public function order_struct[T](a: const_ptr[T], b: const_ptr[T]) -> int:
     inline for field in fields_of(T):
         let offset = offset_of(T, field)
-        let field_size = size_of(field.type)
-        var pa = unsafe: ptr[ubyte]<-a + offset
-        var pb = unsafe: ptr[ubyte]<-b + offset
-        var i: ptr_uint = 0
-        while i < field_size:
-            let va = unsafe: read(pa + i)
-            let vb = unsafe: read(pb + i)
-            if va < vb:
-                return -1
-            else if va > vb:
-                return 1
-            i += 1
+        unsafe:
+            let pa = const_ptr[field.type]<-(ptr[ubyte]<-a + offset)
+            let pb = const_ptr[field.type]<-(ptr[ubyte]<-b + offset)
+            let result = order[field.type](pa, pb)
+            if result != 0:
+                return result
     return 0
 
 

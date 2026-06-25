@@ -318,16 +318,15 @@ pytest's `assert a == b` value introspection comes from runtime AST rewriting �
 undesirable) in a static language. Milk Tea uses typed helpers instead: the landed
 `expect_equal_int`/`expect_equal_bool`/`expect_equal_str` render `actual`/`expected` into the
 failure message via `std.fmt` (e.g. "expected 5, got 4"). The generic `expect_equal[T]` (landed)
-covers any type with a canonical `equal` hook but reports a **value-less** message. Generic
-value-rendering would require one of two things, both currently blocked at the compiler level (not
-by a missing constraint):
+covers any type with a canonical `equal` hook but reports a **value-less** message.
 
-- a reflective `{any}`-style formatter in `std.fmt` that walks a struct's fields — blocked because
-  `field.type` is **rejected as a type expression** (usable as a value for `==`/`size_of`/`offset_of`,
-  but `format_value[field.type]` / `const_ptr[field.type]` fail with "unknown type field.type");
-- `f"#{value}"` of a value whose static type is a **type parameter** bound to a custom-format struct
-  — currently **mis-lowers** ("unknown type field.type"), even though the same interpolation works
-  on a concrete struct type.
+A reflective `{any}`-style value formatter is now *partially* unblocked: `field.type` is usable in
+type position (language-manual §7.0), so `std.hash`'s `equal_struct`/`hash_struct`/`order_struct`
+dispatch each field through its canonical hook (content-correct, including `str`). A general
+recursive `format_value[T]` — and recursion into nested-struct fields generally — still needs
+**per-element `inline for` checking** in sema: today the body is checked once against the first
+field, so a `format_value[field.type]` recursion for a later, differently-typed field is never
+discovered by sema and surfaces only at build. Until that lands, `expect_equal[T]` stays value-less.
 
 A related pre-existing bug: `std.hash.equal_struct`/`hash_struct`/`order_struct` (the reflective
 helpers) **fail to lower** for real structs because `size_of(field.type)` is not resolved at
