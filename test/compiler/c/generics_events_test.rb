@@ -94,10 +94,10 @@ class GenericsEventsTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/demo_generic_methods_codegen_Box_echo_int/, generated)
-    assert_match(/demo_generic_methods_codegen_Box_make_static_int/, generated)
-    assert_match(/int32_t a = demo_generic_methods_codegen_Box_echo_int\(3\);/, generated)
-    assert_match(/demo_generic_methods_codegen_Box_make_static_int\(4\)/, generated)
+    assert_match(/demo_generic_methods_codegen_Box_echo__int/, generated)
+    assert_match(/demo_generic_methods_codegen_Box_make_static__int/, generated)
+    assert_match(/int32_t a = demo_generic_methods_codegen_Box_echo__int\(3\);/, generated)
+    assert_match(/demo_generic_methods_codegen_Box_make_static__int\(4\)/, generated)
   end
 
   def test_generate_c_for_generic_receiver_methods
@@ -127,12 +127,12 @@ class GenericsEventsTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/demo_generic_receiver_methods_codegen_Box_zero_static_int/, generated)
-    assert_match(/demo_generic_receiver_methods_codegen_Box_get_int/, generated)
-    assert_match(/demo_generic_receiver_methods_codegen_Box_echo_int_bool/, generated)
-    assert_match(/demo_generic_receiver_methods_codegen_Box_zero_static_int\(\)/, generated)
-    assert_match(/demo_generic_receiver_methods_codegen_Box_get_int\(box\)/, generated)
-    assert_match(/if \(demo_generic_receiver_methods_codegen_Box_echo_int_bool\(true\)\) \{/, generated)
+    assert_match(/demo_generic_receiver_methods_codegen_Box_zero_static__int/, generated)
+    assert_match(/demo_generic_receiver_methods_codegen_Box_get__int/, generated)
+    assert_match(/demo_generic_receiver_methods_codegen_Box_echo__int_bool/, generated)
+    assert_match(/demo_generic_receiver_methods_codegen_Box_zero_static__int\(\)/, generated)
+    assert_match(/demo_generic_receiver_methods_codegen_Box_get__int\(box\)/, generated)
+    assert_match(/if \(demo_generic_receiver_methods_codegen_Box_echo__int_bool\(true\)\) \{/, generated)
   end
 
   def test_generate_c_for_generic_receiver_static_self_call
@@ -156,10 +156,10 @@ class GenericsEventsTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_create_static_int/, generated)
-    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_with_default_static_int/, generated)
-    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_create_static_int\(\)/, generated)
-    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_with_default_static_int\(\)/, generated)
+    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_create_static__int/, generated)
+    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_with_default_static__int/, generated)
+    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_create_static__int\(\)/, generated)
+    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_with_default_static__int\(\)/, generated)
   end
 
   def test_generate_c_for_default_specialization_with_explicit_associated_overrides
@@ -191,9 +191,9 @@ class GenericsEventsTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/static demo_default_codegen_Player demo_default_codegen_make_default_demo_default_codegen_Player\(void\)/, generated)
+    assert_match(/static demo_default_codegen_Player demo_default_codegen_make_default__demo_default_codegen_Player\(void\)/, generated)
     assert_match(/return demo_default_codegen_Player_default_static\(\);/, generated)
-    assert_match(/static demo_default_codegen_Plain demo_default_codegen_make_default_demo_default_codegen_Plain\(void\)/, generated)
+    assert_match(/static demo_default_codegen_Plain demo_default_codegen_make_default__demo_default_codegen_Plain\(void\)/, generated)
     assert_match(/return demo_default_codegen_Plain_default_static\(\);/, generated)
   end
 
@@ -285,10 +285,10 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static int32_t \*demo_generic_functions_head_int\(demo_generic_functions_Slice_int items\)/, generated)
-    assert_match(/static int32_t demo_generic_functions_min_int\(int32_t a, int32_t b\)/, generated)
-    assert_match(/int32_t smallest = demo_generic_functions_min_int\(9, 4\);/, generated)
-    assert_match(/return \*demo_generic_functions_head_int\(items\) \+ smallest;/, generated)
+    assert_match(/static int32_t \*demo_generic_functions_head__int\(demo_generic_functions_Slice_int items\)/, generated)
+    assert_match(/static int32_t demo_generic_functions_min__int\(int32_t a, int32_t b\)/, generated)
+    assert_match(/int32_t smallest = demo_generic_functions_min__int\(9, 4\);/, generated)
+    assert_match(/return \*demo_generic_functions_head__int\(items\) \+ smallest;/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_interface_constraints
@@ -323,8 +323,8 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static void demo_interface_codegen_damage_one_demo_interface_codegen_NPC\(/, generated)
-    assert_match(/demo_interface_codegen_damage_one_demo_interface_codegen_NPC\(&npc, 2\);/, generated)
+    assert_match(/static void demo_interface_codegen_damage_one__demo_interface_codegen_NPC\(/, generated)
+    assert_match(/demo_interface_codegen_damage_one__demo_interface_codegen_NPC\(&npc, 2\);/, generated)
     refute_match(/Damageable/, generated)
   end
 
@@ -394,7 +394,7 @@ function main() -> bool:
 
     generated = generate_c_from_program_source(source, imported_sources)
 
-    assert_match(/static bool demo_hash_tools_same_key_demo_hash_equal_imported_codegen_main_Key\(demo_hash_equal_imported_codegen_main_Key left, demo_hash_equal_imported_codegen_main_Key right\)/, generated)
+    assert_match(/static bool demo_hash_tools_same_key__demo_hash_equal_imported_codegen_main_Key\(demo_hash_equal_imported_codegen_main_Key left, demo_hash_equal_imported_codegen_main_Key right\)/, generated)
     assert_match(/demo_hash_equal_imported_codegen_main_Key_hash_static\(&left\)/, generated)
     assert_match(/demo_hash_equal_imported_codegen_main_Key_equal_static\(&left, &right\)/, generated)
   end
@@ -438,7 +438,7 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source, imported_sources)
 
-    assert_match(/static int32_t demo_order_tools_compare_demo_order_imported_codegen_main_Key\(demo_order_imported_codegen_main_Key left, demo_order_imported_codegen_main_Key right\)/, generated)
+    assert_match(/static int32_t demo_order_tools_compare__demo_order_imported_codegen_main_Key\(demo_order_imported_codegen_main_Key left, demo_order_imported_codegen_main_Key right\)/, generated)
     assert_match(/demo_order_imported_codegen_main_Key_order_static\(&left, &right\)/, generated)
   end
 
@@ -458,9 +458,9 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static uintptr_t demo_generic_layout_bytes_for_int\(uintptr_t count\)/, generated)
+    assert_match(/static uintptr_t demo_generic_layout_bytes_for__int\(uintptr_t count\)/, generated)
     assert_match(/return count \* sizeof\(int32_t\);/, generated)
-    assert_match(/uintptr_t total = demo_generic_layout_bytes_for_int\(4\);/, generated)
+    assert_match(/uintptr_t total = demo_generic_layout_bytes_for__int\(4\);/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_literal_type_arguments
@@ -479,9 +479,9 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static uintptr_t demo_generic_builder_capacity_of_32\(mt_str_buffer_32 buffer\)/, generated)
+    assert_match(/static uintptr_t demo_generic_builder_capacity_of__32\(mt_str_buffer_32 buffer\)/, generated)
     assert_match(/return 32;/, generated)
-    assert_match(/return \(int32_t\) \(demo_generic_builder_capacity_of_32\(buffer\) \+ demo_generic_builder_capacity_of_32\(buffer\)\);/, generated)
+    assert_match(/return \(int32_t\) \(demo_generic_builder_capacity_of__32\(buffer\) \+ demo_generic_builder_capacity_of__32\(buffer\)\);/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_explicit_literal_type_arguments
@@ -500,9 +500,9 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static uintptr_t demo_generic_builder_explicit_capacity_of_32\(mt_str_buffer_32 buffer\)/, generated)
+    assert_match(/static uintptr_t demo_generic_builder_explicit_capacity_of__32\(mt_str_buffer_32 buffer\)/, generated)
     assert_match(/return 32;/, generated)
-    assert_match(/return \(int32_t\) demo_generic_builder_explicit_capacity_of_32\(buffer\);/, generated)
+    assert_match(/return \(int32_t\) demo_generic_builder_explicit_capacity_of__32\(buffer\);/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_explicit_named_const_type_arguments
@@ -524,9 +524,9 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static uintptr_t demo_generic_builder_named_const_capacity_of_32\(mt_str_buffer_32 buffer\)/, generated)
+    assert_match(/static uintptr_t demo_generic_builder_named_const_capacity_of__32\(mt_str_buffer_32 buffer\)/, generated)
     assert_match(/return 32;/, generated)
-    assert_match(/return \(int32_t\) demo_generic_builder_named_const_capacity_of_32\(buffer\);/, generated)
+    assert_match(/return \(int32_t\) demo_generic_builder_named_const_capacity_of__32\(buffer\);/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_default_calls_and_interface_constraints
@@ -558,7 +558,7 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static int32_t demo_default_call_interface_codegen_make_and_read_demo_default_call_interface_codegen_Counter\(void\)/, generated)
+    assert_match(/static int32_t demo_default_call_interface_codegen_make_and_read__demo_default_call_interface_codegen_Counter\(void\)/, generated)
     assert_match(/demo_default_call_interface_codegen_Counter item = demo_default_call_interface_codegen_Counter_default_static\(\);/, generated)
     assert_match(/return demo_default_call_interface_codegen_Counter_value\(item\);/, generated)
   end
