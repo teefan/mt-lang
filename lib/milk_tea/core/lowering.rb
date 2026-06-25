@@ -69,6 +69,64 @@ module MilkTea
       Serializer.ir_to_json(ir_program)
     end
 
+    def self.lower_from_analysis_json(json_string)
+      analysis = Serializer.analysis_from_json(json_string)
+      lower_from_analysis(analysis)
+    end
+
+    def self.lower_from_analysis_json_with_imports(root_json, imported_jsons = {})
+      root_analysis = Serializer.analysis_from_json(root_json)
+      imported_analyses = imported_jsons.transform_values { |j| Serializer.analysis_from_json(j) }
+      lower_from_analyses(root_analysis, imported_analyses)
+    end
+
+    def self.lower_from_analysis(analysis)
+      lower_from_analyses(analysis, {})
+    end
+
+    def self.lower_from_analyses(root_analysis, imported_analyses)
+      analyses = { root_analysis.module_name.to_s => root_analysis }
+      imported_analyses.each { |k, v| analyses[k] = v }
+      program = ModuleProgramStub.new(root_analysis, analyses)
+      lower(program)
+    end
+
+    ModuleProgramStub = Struct.new(:root_analysis, :analyses_by_mod) do
+      def initialize(root_analysis, analyses_by_mod = {})
+        super(root_analysis, analyses_by_mod)
+      end
+      def module_name = root_analysis.module_name
+      def module_kind = root_analysis.module_kind
+      def directives = root_analysis.directives
+      def imports = root_analysis.imports
+      def types = root_analysis.types
+      def interfaces = root_analysis.interfaces
+      def attributes = root_analysis.attributes
+      def attribute_applications = root_analysis.attribute_applications
+      def values = root_analysis.values
+      def functions = root_analysis.functions
+      def methods = root_analysis.methods
+      def implemented_interfaces = root_analysis.implemented_interfaces
+      def resolved_expr_types = root_analysis.resolved_expr_types
+      def resolved_call_kinds = root_analysis.resolved_call_kinds
+      def const_values = root_analysis.const_values
+      def ast = root_analysis.ast
+      def binding_resolution = root_analysis.binding_resolution
+      def local_completion_frames = root_analysis.local_completion_frames
+      def callable_value_identifier_sites = root_analysis.callable_value_identifier_sites
+      def callable_value_member_access_sites = root_analysis.callable_value_member_access_sites
+      def required_unsafe_lines = root_analysis.required_unsafe_lines
+      def uses_parallel_for = root_analysis.uses_parallel_for
+      def module_name_str = root_analysis.module_name.to_s
+      def root_path = nil
+      def analyses_by_module_name
+        all = { root_analysis.module_name.to_s => root_analysis }
+        analyses_by_mod.each { |k, v| all[k] = v }
+        all
+      end
+      def analyses_by_path = analyses_by_module_name
+    end
+
     def self.lower_incremental(program, cached: nil, cached_synthetics: nil)
       lowerer = Lowerer.new(program)
       lowerer.lower_and_assemble(cached:, cached_synthetics:)

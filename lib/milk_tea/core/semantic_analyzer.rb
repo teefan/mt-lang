@@ -107,6 +107,11 @@ module MilkTea
       Checker.new(ast, imported_modules:, allow_missing_imports:, path:, global_import_index:).check
     end
 
+    def self.check_to_json(ast, imported_modules: {}, allow_missing_imports: false, path: nil, global_import_index: {})
+      analysis = check(ast, imported_modules:, allow_missing_imports:, path:, global_import_index:)
+      Serializer.analysis_to_json(analysis)
+    end
+
     # LSP-oriented entry point: runs all sema phases and collects every error
     # instead of stopping at the first one.  Structural phases collect per-
     # declaration, and function-body phases collect per function/method.

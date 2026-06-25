@@ -641,6 +641,31 @@ module MilkTea
     end
 
     def check_command
+      output_format = :text
+      output_file = nil
+
+      args = @argv.dup
+      @argv = []
+      until args.empty?
+        arg = args.shift
+        case arg
+        when "--json", "--format=json"
+          output_format = :json
+        when "--format"
+          val = args.shift
+          output_format = val == "json" ? :json : :text if val
+        when "--emit-analysis-json"
+          output_file = args.shift
+          output_format = :json
+          unless output_file
+            @err.puts("missing file path for --emit-analysis-json")
+            return 1
+          end
+        else
+          @argv << arg
+        end
+      end
+
       unless @argv.any?
         @err.puts("missing source file path")
         print_usage(@err)
@@ -656,6 +681,25 @@ module MilkTea
 
       ensure_current_lockfiles!(paths) if resolution[:frozen]
 
+      paths.each do |path|
+        loader = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform)
+        program = loader.check_program(path) rescue nil
+
+        if program && output_format == :json
+          analysis = program.root_analysis
+          if analysis
+            json = Serializer.analysis_to_json(analysis)
+            if output_file
+              File.write(output_file, json)
+            else
+              @out.puts(json)
+            end
+            return 0
+          end
+        end
+      end
+
+      # Text mode: original reporting behavior
       all_diagnostics = []
       paths.each do |path|
         diagnostics, module_name = check_single_reporting_all(path, locked: resolution[:locked])
@@ -728,6 +772,8 @@ module MilkTea
     def lower_command
       output_format = :text
       output_file = nil
+      from_analysis_file = nil
+      import_analysis_files = {}
 
       args = @argv.dup
       @argv = []
@@ -746,9 +792,40 @@ module MilkTea
             @err.puts("missing file path for --emit-ir-json")
             return 1
           end
+        when "--from-analysis-json"
+          from_analysis_file = args.shift
+          unless from_analysis_file
+            @err.puts("missing file path for --from-analysis-json")
+            return 1
+          end
+        when "--import"
+          import_spec = args.shift
+          unless import_spec && import_spec.include?("=")
+            @err.puts("usage: --import module_name=analysis.json")
+            return 1
+          end
+          name, file = import_spec.split("=", 2)
+          import_analysis_files[name] = file
         else
           @argv << arg
         end
+      end
+
+      if from_analysis_file
+        root_json = File.read(from_analysis_file)
+        import_jsons = import_analysis_files.transform_values { |f| File.read(f) }
+        ir_program = Lowering.lower_from_analysis_json_with_imports(root_json, import_jsons)
+        if output_format == :json
+          result = Serializer.ir_to_json(ir_program)
+          if output_file
+            File.write(output_file, result)
+          else
+            @out.puts(result)
+          end
+        else
+          @out.write(PrettyPrinter.format_ir(ir_program))
+        end
+        return 0
       end
 
       unless @argv.any?

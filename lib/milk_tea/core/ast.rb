@@ -48,8 +48,8 @@ module MilkTea
     DynType = Data.define(:interface, :nullable, :line, :column, :length) do
       def initialize(interface:, nullable: false, line: nil, column: nil, length: nil) = super
     end
-    SourceFile = Data.define(:module_name, :module_kind, :imports, :directives, :declarations, :line, :node_ids) do
-      def initialize(module_name:, module_kind:, imports:, directives:, declarations:, line: nil, node_ids: {}) = super
+    SourceFile = Data.define(:module_name, :module_kind, :imports, :directives, :declarations, :line, :node_ids, :node_path_ids) do
+      def initialize(module_name:, module_kind:, imports:, directives:, declarations:, line: nil, node_ids: {}, node_path_ids: {}) = super
     end
     Import = Data.define(:path, :alias_name, :line, :column, :length) do
       def initialize(path:, alias_name:, line: nil, column: nil, length: nil) = super
@@ -256,18 +256,21 @@ module MilkTea
     def self.assign_node_ids(source_file)
       next_id = 0
       node_ids = {}
+      path_ids = {}
 
-      visit = ->(node) do
-        return unless node.is_a?(::Data)
+      visit = ->(node, path = "") do
+        return [next_id, path] unless node.is_a?(::Data)
 
         node_ids[node.object_id] = (next_id += 1)
+        current_path = path.empty? ? node.class.name.sub(/\AMilkTea::AST::/, "") : path
+        path_ids[current_path] = node_ids[node.object_id]
 
         if node.respond_to?(:declarations) && node.declarations.is_a?(Array)
-          node.declarations.each { |d| visit.call(d) }
+          node.declarations.each_with_index { |d, i| visit.call(d, "#{current_path}.declarations[#{i}]") }
         end
 
         if node.respond_to?(:body)
-          visit.call(node.body)
+          visit.call(node.body, "#{current_path}.body")
         end
 
         node.class.members.each do |field_name|
@@ -276,17 +279,21 @@ module MilkTea
           value = node.public_send(field_name)
           next unless value
 
+          field_path = "#{current_path}.#{field_name}"
+
           case value
           when ::Data
-            visit.call(value)
+            visit.call(value, field_path)
           when Array
-            value.each { |v| visit.call(v) if v.is_a?(::Data) }
+            value.each_with_index do |v, i|
+              visit.call(v, "#{field_path}[#{i}]") if v.is_a?(::Data)
+            end
           end
         end
       end
 
       visit.call(source_file)
-      source_file.with(node_ids: node_ids.freeze)
+      source_file.with(node_ids: node_ids.freeze, node_path_ids: path_ids.freeze)
     end
 
     def self.build_chain_from_parts(parts)
