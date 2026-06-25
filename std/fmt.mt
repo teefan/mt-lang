@@ -215,3 +215,58 @@ public function to_string_int(value: int) -> string.String:
     var result = string.String.create()
     append_int(ref_of(result), value)
     return result
+
+
+# Reflective debug formatter: renders a struct as `{ field = value, ... }` by
+# dispatching each field on its compile-time `field.type`. Scalar fields render
+# directly; nested struct fields recurse. Field types other than the listed
+# primitives and nested structs are unsupported (they fail at specialization).
+public function format_value[T](output: ref[string.String], value: const_ptr[T]) -> void:
+    output.append("{ ")
+    var first = true
+    inline for field in fields_of(T):
+        if not first:
+            output.append(", ")
+
+        first = false
+        output.append(field.name)
+        output.append(" = ")
+        let offset = offset_of(T, field)
+        unsafe:
+            let field_ptr = const_ptr[field.type]<-(ptr[ubyte]<-value + offset)
+            inline if field.type == int:
+                append_int(output, read(ptr[int]<-field_ptr))
+            else if field.type == uint:
+                append_uint(output, read(ptr[uint]<-field_ptr))
+            else if field.type == long:
+                append_long(output, read(ptr[long]<-field_ptr))
+            else if field.type == ulong:
+                append_ulong(output, read(ptr[ulong]<-field_ptr))
+            else if field.type == ptr_uint:
+                append_ptr_uint(output, read(ptr[ptr_uint]<-field_ptr))
+            else if field.type == ptr_int:
+                append_long(output, long<-read(ptr[ptr_int]<-field_ptr))
+            else if field.type == byte:
+                append_int(output, int<-read(ptr[byte]<-field_ptr))
+            else if field.type == short:
+                append_int(output, int<-read(ptr[short]<-field_ptr))
+            else if field.type == ubyte:
+                append_uint(output, uint<-read(ptr[ubyte]<-field_ptr))
+            else if field.type == ushort:
+                append_uint(output, uint<-read(ptr[ushort]<-field_ptr))
+            else if field.type == char:
+                append_int(output, int<-read(ptr[char]<-field_ptr))
+            else if field.type == bool:
+                append_bool(output, read(ptr[bool]<-field_ptr))
+            else if field.type == float:
+                append_float(output, read(ptr[float]<-field_ptr))
+            else if field.type == double:
+                append_double(output, read(ptr[double]<-field_ptr))
+            else if field.type == str:
+                append_str(output, read(ptr[str]<-field_ptr))
+            else if field.type == cstr:
+                append_cstr(output, read(ptr[cstr]<-field_ptr))
+            else:
+                format_value[field.type](output, field_ptr)
+
+    output.append(" }")

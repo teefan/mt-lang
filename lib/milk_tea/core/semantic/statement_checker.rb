@@ -1138,36 +1138,45 @@ module MilkTea
         raise_sema_error("inline for iterable is empty") if iterable.empty?
 
         loop_var_name = statement.bindings.first.name
-        element = iterable.first
-        element_type = if element.is_a?(Types::FieldHandle)
-                         builtin_field_handle_type
-                       elsif element.is_a?(Types::CallableHandle)
-                         builtin_callable_handle_type
-                       elsif element.is_a?(Types::AttributeHandle)
-                         builtin_attribute_handle_type
-                       elsif element.is_a?(Types::MemberHandle)
-                         builtin_member_handle_type
-                       elsif element.is_a?(Types::StructHandle)
-                         builtin_struct_handle_type
-                       else
-                         @ctx.types.fetch("int")
-                       end
+        ensure_non_reserved_primitive_name!(loop_var_name, kind_label: "for binding", line: statement.bindings.first.line, column: statement.bindings.first.column)
 
-        with_nested_scope(scopes) do |loop_scopes|
-          ensure_non_reserved_primitive_name!(loop_var_name, kind_label: "for binding", line: statement.bindings.first.line, column: statement.bindings.first.column)
-          current_actual_scope(loop_scopes)[loop_var_name] = value_binding(
-            name: loop_var_name,
-            type: element_type,
-            mutable: false,
-            kind: :let,
-            id: @preassigned_local_binding_ids[statement.bindings.first.object_id],
-            const_value: element,
-          )
-          with_loop do
-            with_compile_time do
-              check_block(statement.body, scopes: loop_scopes, return_type:, allow_return:)
+        # The loop is unrolled at compile time, so check the body once per element:
+        # each iteration's element type is validated and any per-element
+        # specialization (e.g. `equal[field.type]` for a struct field, or a
+        # `format_value[field.type]` recursion) is discovered by sema rather than
+        # first appearing during lowering.
+        iterable.each do |element|
+          with_nested_scope(scopes) do |loop_scopes|
+            current_actual_scope(loop_scopes)[loop_var_name] = value_binding(
+              name: loop_var_name,
+              type: inline_for_element_type(element),
+              mutable: false,
+              kind: :let,
+              id: @preassigned_local_binding_ids[statement.bindings.first.object_id],
+              const_value: element,
+            )
+            with_loop do
+              with_compile_time do
+                check_block(statement.body, scopes: loop_scopes, return_type:, allow_return:)
+              end
             end
           end
+        end
+      end
+
+      def inline_for_element_type(element)
+        if element.is_a?(Types::FieldHandle)
+          builtin_field_handle_type
+        elsif element.is_a?(Types::CallableHandle)
+          builtin_callable_handle_type
+        elsif element.is_a?(Types::AttributeHandle)
+          builtin_attribute_handle_type
+        elsif element.is_a?(Types::MemberHandle)
+          builtin_member_handle_type
+        elsif element.is_a?(Types::StructHandle)
+          builtin_struct_handle_type
+        else
+          @ctx.types.fetch("int")
         end
       end
 
