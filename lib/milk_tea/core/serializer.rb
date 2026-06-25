@@ -470,7 +470,7 @@ module MilkTea
             "async" => m.async }
         },
         "module_name" => ib.module_name,
-        "type_arguments" => ib.type_arguments&.map { |a| serialize_ast(a) },
+        "type_arguments" => ib.respond_to?(:type_arguments) ? ib.type_arguments&.map { |a| serialize_ast(a) } : nil,
       }
     end
 
