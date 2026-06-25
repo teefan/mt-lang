@@ -874,6 +874,32 @@ class MilkTeaLinterTest < Minitest::Test
     end
   end
 
+  def test_does_not_report_import_used_only_for_builtin_extension_method
+    Dir.mktmpdir("linter_builtin_extension_import") do |dir|
+      File.write(File.join(dir, "strext.mt"), <<~MT)
+        extending str:
+            public function is_empty_view() -> bool:
+                return this.len == 0
+      MT
+
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        import strext as se
+
+        function check(value: str) -> bool:
+            return value.is_empty_view()
+      MT
+      File.write(path, source)
+
+      ast = MilkTea::Parser.parse(source, path: path)
+      loader = MilkTea::ModuleLoader.new(module_roots: [dir])
+      analysis = MilkTea::SemanticAnalyzer.check(ast, imported_modules: loader.imported_modules_for_ast(ast))
+      warnings = MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis)
+
+      refute warnings.any? { |warning| warning.code == "unused-import" }
+    end
+  end
+
   def test_does_not_report_import_used_only_in_foreign_mapping
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       import std.c.string as c
