@@ -189,7 +189,7 @@ module MilkTea
             infer_await_expression(expression, scopes:)
           when AST::DetachExpr
             @uses_parallel_for = true
-            validate_detach_expression!(expression.body, scopes:)
+            validate_detach_expression!(expression.body.first&.expression || expression.body, scopes:)
             check_block(expression.body, scopes:, return_type: @ctx.types.fetch("void"), allow_return: false)
             Types::Handle.new
           when AST::Call

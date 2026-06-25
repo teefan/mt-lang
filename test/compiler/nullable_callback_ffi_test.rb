@@ -44,8 +44,8 @@ class MilkTeaNullableCallbackFFITest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/struct demo_callbacks_Entry \{\s+void \(\*callback\)\(int32_t arg0\);\s+\};/m, generated)
-    assert_match(/void \(\*local_callback\)\(int32_t arg0\) = NULL;/, generated)
+    assert_match(/struct demo_callbacks_Entry \{\s+void \(\*callback\)\(int32_t value\);\s+\};/m, generated)
+    assert_match(/void \(\*local_callback\)\(int32_t value\) = NULL;/, generated)
     assert_match(/\.callback = NULL/, generated)
     assert_match(/\.callback = demo_callbacks_on_tick/, generated)
     assert_match(/register\(local_callback\);/, generated)
