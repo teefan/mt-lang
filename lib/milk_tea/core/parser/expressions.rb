@@ -533,7 +533,7 @@ module MilkTea
       end
 
       def builtin_specialization_target?(expression)
-        expression.is_a?(AST::Identifier) && %w[array reinterpret span zero ptr const_ptr ref adapt].include?(expression.name)
+        expression.is_a?(AST::Identifier) && %w[array reinterpret span zero ptr const_ptr ref adapt equal hash order].include?(expression.name)
       end
 
       def parse_diagnostic_hint?(error)

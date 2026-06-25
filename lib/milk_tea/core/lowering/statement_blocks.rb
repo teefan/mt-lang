@@ -778,7 +778,20 @@ module MilkTea
             # emit for compile-time-only constructs — skip
           end
           unless other_stmts.empty?
-            body = lower_block(other_stmts, env: iter_env, active_defers:, return_type:, loop_flow: nil, allow_return:)
+            saved_type_env = @type_resolution_env
+            saved_bypass = @bypass_sema_type_cache
+            # Each unrolled iteration may bind the loop var to a different value
+            # (e.g. a field whose `.type` differs per field), so expression types
+            # must be re-inferred per iteration instead of reusing the single
+            # sema-cached type computed for the representative first element.
+            @type_resolution_env = iter_env
+            @bypass_sema_type_cache = true
+            begin
+              body = lower_block(other_stmts, env: iter_env, active_defers:, return_type:, loop_flow: nil, allow_return:)
+            ensure
+              @type_resolution_env = saved_type_env
+              @bypass_sema_type_cache = saved_bypass
+            end
             lowered << IR::BlockStmt.new(body:) unless body.empty?
           end
         end

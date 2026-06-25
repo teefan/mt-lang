@@ -61,6 +61,18 @@ module MilkTea
         @compile_time_depth -= 1
       end
 
+      # Tracks the innermost value scopes during body checking so that
+      # `resolve_type_ref` can resolve a compile-time reflection type expression
+      # (e.g. `field.type` inside an `inline for`) by evaluating it against the
+      # local bindings in scope. Nil outside body checking.
+      def with_type_resolution_scopes(scopes)
+        saved = @type_resolution_scopes
+        @type_resolution_scopes = scopes
+        yield
+      ensure
+        @type_resolution_scopes = saved
+      end
+
       def with_loop_barrier
         previous_loop_depth = @loop_depth
         @loop_depth = 0
