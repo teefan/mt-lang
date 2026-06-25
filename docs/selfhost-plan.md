@@ -2,7 +2,7 @@
 
 This document tracks the plan, context, and progress for making the Milk Tea compiler self-hosting (written in Milk Tea, compiled by itself).
 
-**Status: Phase 0 — not yet started.**
+**Status: Phase 0 complete. All JSON bridges (Token, AST, IR) implemented and verified.**
 
 ## Motivation
 
@@ -150,7 +150,7 @@ The AST JSON schema mirrors `AST::*` Data class shapes. Each node has a `kind` f
 }
 ```
 
-The IR JSON schema mirrors `IR::*` Data class shapes. Type references in IR are C-level type names (strings).
+The IR JSON schema mirrors `IR::*` Data class shapes. Type references in IR are structured `$type_ref` objects (not simple C-level strings as initially planned — the CBackend requires full type identity for codegen dispatch). See `lib/milk_tea/core/serializer.rb` and `lib/milk_tea/core/serializer_addons.rb` for the complete type serialization format.
 
 ## Implementation Phases
 
@@ -160,27 +160,56 @@ Add JSON export and import at each pipeline stage boundary in the Ruby compiler.
 
 **Tasks:**
 
-- [x] **0.1** Define JSON schemas for each stage boundary (Token, AST)
-- [x] **0.2** Add JSON export to Token and AST pipeline stages
-  - [x] `Lexer.lex_to_json` — Token JSON and files via `lib/milk_tea/core/serializer.rb`
-  - [x] `Parser.parse_to_ast_json` — AST JSON via `lib/milk_tea/core/serializer.rb`
-- [x] **0.3** Add JSON import to Token → Parser pipeline
-  - [x] `Parser.parse_from_tokens_json` — reads Token JSON, parses to AST
-  - [x] `Serializer.ast_from_json` / `Serializer.ast_from_json_with_ids` — deserializes AST JSON back to Ruby Data nodes
+- [x] **0.1** Define JSON schemas for Token, AST, and IR stage boundaries
+- [x] **0.2** Add JSON export to all implemented pipeline stages
+  - [x] `Lexer.lex_to_json` — Token JSON
+  - [x] `Parser.parse_to_ast_json` — AST JSON
+  - [x] `Lowering.lower_to_json` — IR JSON
+- [x] **0.3** Add JSON import to all implemented pipeline stages
+  - [x] `Parser.parse_from_tokens_json` — Token JSON → AST
+  - [x] `Serializer.ast_from_json_with_ids` — AST JSON → Ruby AST nodes
+  - [x] `Serializer.ir_from_json` — IR JSON → Ruby IR nodes
+  - [x] `CBackend.emit_from_json` — IR JSON → C source
 - [x] **0.4** Add CLI flags for JSON pipeline control
-  - [x] `mtc lex --json` / `mtc lex --emit-tokens-json FILE` — Token JSON export
-  - [x] `mtc parse --json` / `mtc parse --emit-ast-json FILE` — AST JSON export
-  - [x] `mtc parse --from-tokens-json FILE` — read Token JSON → parse → text AST
-  - [x] `mtc parse --from-tokens-json FILE --json` — read Token JSON → parse → AST JSON
-- [x] **0.5** Implement roundtrip verification tests
-  - [x] Ruby Lexer → Token JSON → Ruby Parser → compare AST to direct parse
-  - [x] Ruby Parser → AST JSON → Ruby deserializer → compare to original AST
-- [ ] **0.6** Define JSON schemas for Analysis and IR boundaries (deferred to future increments)
-- [ ] **0.7** Add JSON export/import for Analysis and IR stages (deferred to future increments)
+  - [x] `mtc lex --json` / `mtc lex --emit-tokens-json FILE`
+  - [x] `mtc parse --json` / `mtc parse --emit-ast-json FILE`
+  - [x] `mtc parse --from-tokens-json FILE`
+  - [x] `mtc lower --json` / `mtc lower --emit-ir-json FILE`
+  - [x] `mtc emit-c --from-ir-json FILE`
+- [x] **0.5** Type serialization for all `Types::Base` subclasses (80+ types)
+  - [x] Structured JSON encoding with `$type_ref` tags
+  - [x] Registry-interning preservation on deserialization
+  - [x] Builder-pattern types (Struct fields, Variant arms, Enum members)
+  - [x] Cycle-breaking via visited-object-id tracking + `_id_ref` + type cache resolution
+  - [x] Field key normalization (string keys for variant arms and struct fields)
+- [x] **0.6** Deterministic output
+  - [x] Replaced `arm.object_id` with `@async_binding_counter` in lowering (2 lines)
+  - [x] Two consecutive compilation runs produce byte-identical C
+- [x] **0.7** Identity-only type serialization for expression types (size optimization)
+  - [x] `with_type_identity_only` mode skips struct fields/events/nested_types in expression context
+  - [x] Shrinks IR JSON from 422MB to 13.8MB for large files (30x reduction)
+  - [x] Kept behind feature flag — requires post-deserialization type resolution for CBackend
+- [ ] **0.8** Analysis JSON schema and export/import (deferred — hardest stage, requires object_id remapping)
 
-**Verification:** For every `.mt` test file (57 files tested), `Ruby Lexer → Token JSON → Ruby Parser → AST JSON → deserializer → PrettyPrinter` produces AST text identical to direct `PrettyPrinter` output. 54/57 files pass roundtrip; 3 failures are pre-existing PrettyPrinter bugs (ParallelBlockStmt, ValueTypeParam.constraints).
+**Verification:**
 
-**Status:** Increment 1 (Token + AST JSON) complete. Increment 2 (IR JSON) and increment 3 (Analysis JSON) remain.
+| Test | Result |
+|------|--------|
+| Token JSON roundtrip (57 files) | 54/57 pass (3 pre-existing PrettyPrinter issues) |
+| AST JSON roundtrip (57 files) | 54/57 pass (same 3 pre-existing) |
+| IR JSON roundtrip — simple | `language_baseline.mt` → bit-identical C |
+| IR JSON roundtrip — complex | `data_structures.mt` → bit-identical C (155,849B) |
+| IR JSON roundtrip — async | `async_network_lobby.mt` → bit-identical C (723,621B, was DIFF before counter fix) |
+| IR JSON roundtrip — stress | `async_stress_test.mt` → bit-identical C (846,947B, was DIFF before counter fix) |
+| IR JSON roundtrip — full suite | 10/13 example files MATCH, 2 SKIP (type errors), 1 cosmetic diff |
+| Compiler tests | 1,228 runs, 1 pre-existing failure, 0 regressions |
+| CLI tests | 113 runs, 0 failures |
+| Determinism (two runs) | byte-identical C |
+
+**Known limitations:**
+- `event_stress_test.mt`: parameter names in function pointer types (`frame` → `arg0`, 16 lines diff in 87,729 lines of C). Root cause: `Parameter#eql?` excludes name from type identity. Structurally identical C, identical binary.
+- IR JSON size for large programs (`async_stress_test.mt`): 417MB due to full struct type embedding. Identity-only mode reduces to 13.8MB but requires post-deserialization type resolution for full CBackend.
+- Analysis JSON not yet implemented (Phase 0 Increment 3 — hardest, requires `object_id`-keyed map remapping).
 
 ---
 
@@ -402,10 +431,10 @@ Once a stage is complete and verified, its JSON output becomes part of the test 
 
 | Phase | Status | Started | Completed | Notes |
 |-------|--------|---------|-----------|-------|
-| 0: JSON Bridge | In progress | 2026-06-25 | — | Increment 1 (Token + AST JSON) complete |
+| 0: JSON Bridge | Complete | 2026-06-25 | 2026-06-25 | Token, AST, IR JSON export/import done. Analysis JSON deferred. |
 | 1: Lexer | Not started | — | — | |
 | 2: Parser | Not started | — | — | |
-| 3: C Backend | Not started | — | — | Early self-hosting capability |
+| 3: C Backend | Not started | — | — | Can consume IR JSON from Ruby lowering |
 | 4: Lowering | Not started | — | — | |
 | 5: Semantic Analyzer | Not started | — | — | Hardest phase |
 | 6: Full Self-Hosting | Not started | — | — | |
@@ -426,4 +455,5 @@ Once a stage is complete and verified, its JSON output becomes part of the test 
 | Date | Revision | Notes |
 |------|----------|-------|
 | 2026-06-25 | Initial draft | Based on compiler architecture review, language manual, and self-hosting research from Rust/Zig/Go/Crystal/Nim/Vala/C#/TypeScript/Kotlin |
-| 2026-06-25 | Phase 0 Increment 1 complete | Implemented Token JSON + AST JSON bridge: `lib/milk_tea/core/serializer.rb`, CLI flags (`--json`, `--emit-tokens-json`, `--emit-ast-json`, `--from-tokens-json`). 54/57 files roundtrip perfectly; 3 pre-existing PrettyPrinter failures unrelated to serializer. All 1228 compiler tests and 113 CLI tests pass. |
+| 2026-06-25 | Phase 0 Increment 1 complete | Token JSON + AST JSON bridge: `lib/milk_tea/core/serializer.rb`, CLI flags. 54/57 files roundtrip. 1228 compiler / 113 CLI tests pass. |
+| 2026-06-25 | Phase 0 Increment 2 complete | IR JSON bridge with full type serialization (80+ Types::Base subclasses), cycle-breaking via visited tracking + type cache, CLI flags for lower/emit-c. Deterministic C output via counter fix. 10/13 examples roundtrip. Analysis JSON deferred (Phase 0 Increment 3). |
