@@ -297,6 +297,12 @@ enum State: ubyte
     idle = 0
     running = 1
 
+# Backing type defaults to int; values auto-increment from 0:
+enum Color:
+    red
+    green
+    blue
+
 flags Mask: uint
     a = 1 << 0
     b = 1 << 1

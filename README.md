@@ -262,6 +262,12 @@ enum State: ubyte
     idle = 0
     running = 1
 
+# Backing type defaults to int; values auto-increment from 0:
+enum Color:
+    red
+    green
+    blue
+
 flags Mask: uint
     a = 1 << 0
     b = 1 << 1
@@ -284,6 +290,7 @@ Rules:
 - No-payload arms are bare member expressions: `Token.eof`.
 - `enum` and `flags` backing types must be integer primitives.
 - `enum` and `flags` members must be compile-time integer constants.
+- `enum` backing types default to `int` when omitted; member values auto-increment from 0 or the previous explicit value.
 - `flags` members may reference earlier members to spell composite aliases such as `read_write = Permission.read | Permission.write`.
 - `align(...)` must be a positive power of two.
 - Compile-time reflection over validated attributes uses `has_attribute`, `attribute_of`, `attribute_arg[T]`, `field_of`, and `callable_of`.

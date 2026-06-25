@@ -1070,13 +1070,25 @@ struct Rectangle:
 </div>
 
   <h3>Enum</h3>
-  <p>Always has an explicit backing type.</p>
+  <p>Backing type defaults to <code>int</code>; values auto-increment from <code>0</code> or the previous explicit value. Both are optional.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-<pre><code>enum State: ubyte
+<pre><code>## Explicit type and values (classic form)
+enum State: ubyte
     idle = 0
     running = 1
-    paused = 2</code></pre>
+
+## Backing type and values both optional
+enum Color:
+    red        ## 0
+    green      ## 1
+    blue       ## 2
+
+## Auto-increment from explicit value
+enum Status:
+    idle = 10   ## 10
+    running     ## 11
+    stopped     ## 12</code></pre>
 </div>
 
   <h3>Flags</h3>

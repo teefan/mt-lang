@@ -462,17 +462,31 @@ module MilkTea
         name_token = consume_name("expected declaration name")
         name = name_token.lexeme
         consume(:colon, "expected ':' after declaration name")
-        backing_type = parse_type_ref
-        consume(:newline, "expected newline before declaration body")
+        backing_type = if check(:newline) || check(:indent)
+                         AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["int"], type_arguments: []), arguments: [], nullable: false, lifetime: nil, line: line, column: name.length + 1)
+                       else
+                         parse_type_ref
+                       end
+        skip_newlines
         consume(:indent, "expected indented declaration body")
 
         members = []
         skip_newlines
+        auto_value = 0
         until check(:dedent) || eof?
           member_token = consume_name("expected member name")
           member_name = member_token.lexeme
-          consume(:equal, "expected '=' after member name")
-          value = parse_expression
+          if match(:equal)
+            value = parse_expression
+            if value.is_a?(AST::IntegerLiteral)
+              auto_value = value.value + 1
+            elsif value.is_a?(AST::UnaryOp) && value.operator == :- && value.operand.is_a?(AST::IntegerLiteral)
+              auto_value = value.operand.value + 1
+            end
+          else
+            value = AST::IntegerLiteral.new(lexeme: auto_value.to_s, value: auto_value)
+            auto_value += 1
+          end
           consume_end_of_statement
           members << AST::EnumMember.new(name: member_name, value:, line: member_token.line, column: member_token.column)
           skip_newlines
