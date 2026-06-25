@@ -96,11 +96,52 @@ module MilkTea
     private
 
     def lex_command
-      path = @argv.shift
+      output_format = :pp
+      output_file = nil
+      path = nil
+
+      args = @argv.dup
+      @argv = []
+      until args.empty?
+        arg = args.shift
+        case arg
+        when "--json", "--format=json"
+          output_format = :json
+        when "--format"
+          val = args.shift
+          output_format = val == "json" ? :json : :pp if val
+        when "--emit-tokens-json"
+          output_file = args.shift
+          output_format = :json
+          unless output_file
+            @err.puts("missing file path for --emit-tokens-json")
+            return 1
+          end
+        else
+          if path.nil?
+            path = arg
+          else
+            @err.puts("unknown option: #{arg}")
+            print_usage(@err)
+            return 1
+          end
+        end
+      end
+
       unless path
         @err.puts("missing source file path")
         print_usage(@err)
         return 1
+      end
+
+      if output_format == :json
+        json = Lexer.lex_to_json(read_source_file(path), path: path)
+        if output_file
+          File.write(output_file, json)
+        else
+          @out.puts(json)
+        end
+        return 0
       end
 
       tokens = Lexer.lex(read_source_file(path), path: path)
@@ -109,6 +150,70 @@ module MilkTea
     end
 
     def parse_command
+      output_format = :text
+      output_file = nil
+      from_tokens_file = nil
+
+      args = @argv.dup
+      @argv = []
+      until args.empty?
+        arg = args.shift
+        case arg
+        when "--json", "--format=json"
+          output_format = :json
+        when "--format"
+          val = args.shift
+          output_format = val == "json" ? :json : :text if val
+        when "--emit-ast-json"
+          output_file = args.shift
+          output_format = :json
+          unless output_file
+            @err.puts("missing file path for --emit-ast-json")
+            return 1
+          end
+        when "--from-tokens-json"
+          from_tokens_file = args.shift
+          unless from_tokens_file
+            @err.puts("missing file path for --from-tokens-json")
+            return 1
+          end
+        else
+          @argv << arg
+        end
+      end
+
+      if from_tokens_file
+        json = File.read(from_tokens_file)
+        ast = Parser.parse_from_tokens_json(json, path: from_tokens_file)
+        if output_format == :json
+          result = MilkTea.ast_to_json(ast)
+          if output_file
+            File.write(output_file, result)
+          else
+            @out.puts(result)
+          end
+        else
+          @out.write(PrettyPrinter.format_ast(ast))
+        end
+        return 0
+      end
+
+      if from_tokens_file
+        json = File.read(from_tokens_file)
+        ast = Parser.parse_from_tokens_json(json, path: from_tokens_file)
+        if output_format == :json
+          result = MilkTea.ast_to_json(ast)
+          if output_file
+            File.write(output_file, result)
+          else
+            @out.puts(result)
+          end
+        else
+          @out.write(PrettyPrinter.format_ast(ast))
+        end
+        return 0
+      end
+
       unless @argv.any?
         @err.puts("missing source file path")
         print_usage(@err)
@@ -127,11 +232,23 @@ module MilkTea
       multiple = paths.length > 1
       paths.each_with_index do |path, index|
         ast = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).load_file(path)
-        if multiple
-          @out.puts("# --- #{path} ---")
+        if output_format == :json
+          result = MilkTea.ast_to_json(ast)
+          if multiple
+            @out.puts("# --- #{path} ---")
+          end
+          if output_file
+            File.write(output_file, result)
+          else
+            @out.puts(result)
+          end
+        else
+          if multiple
+            @out.puts("# --- #{path} ---")
+          end
+          @out.write(PrettyPrinter.format_ast(ast))
+          @out.puts if multiple && index < paths.length - 1
         end
-        @out.write(PrettyPrinter.format_ast(ast))
-        @out.puts if multiple && index < paths.length - 1
       end
       0
     end
@@ -609,6 +726,31 @@ module MilkTea
     end
 
     def lower_command
+      output_format = :text
+      output_file = nil
+
+      args = @argv.dup
+      @argv = []
+      until args.empty?
+        arg = args.shift
+        case arg
+        when "--json", "--format=json"
+          output_format = :json
+        when "--format"
+          val = args.shift
+          output_format = val == "json" ? :json : :text if val
+        when "--emit-ir-json"
+          output_file = args.shift
+          output_format = :json
+          unless output_file
+            @err.puts("missing file path for --emit-ir-json")
+            return 1
+          end
+        else
+          @argv << arg
+        end
+      end
+
       unless @argv.any?
         @err.puts("missing source file path")
         print_usage(@err)
@@ -627,16 +769,64 @@ module MilkTea
       multiple = paths.length > 1
       paths.each_with_index do |path, index|
         program = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).check_program(path)
-        if multiple
-          @out.puts("# --- #{path} ---")
+        if output_format == :json
+          json = Lowering.lower_to_json(program)
+          if multiple
+            @out.puts("# --- #{path} ---")
+          end
+          if output_file
+            File.write(output_file, json)
+          else
+            @out.puts(json)
+          end
+        else
+          if multiple
+            @out.puts("# --- #{path} ---")
+          end
+          @out.write(PrettyPrinter.format_ir(Lowering.lower(program)))
+          @out.puts if multiple && index < paths.length - 1
         end
-        @out.write(PrettyPrinter.format_ir(Lowering.lower(program)))
-        @out.puts if multiple && index < paths.length - 1
       end
       0
     end
 
     def emit_c_command
+      from_ir_file = nil
+      output_file = nil
+
+      args = @argv.dup
+      @argv = []
+      until args.empty?
+        arg = args.shift
+        case arg
+        when "--from-ir-json"
+          from_ir_file = args.shift
+          unless from_ir_file
+            @err.puts("missing file path for --from-ir-json")
+            return 1
+          end
+        when "-o", "--output"
+          output_file = args.shift
+          unless output_file
+            @err.puts("missing output path for -o")
+            return 1
+          end
+        else
+          @argv << arg
+        end
+      end
+
+      if from_ir_file
+        json = File.read(from_ir_file)
+        c_source = CBackend.emit_from_json(json, emit_line_directives: false)
+        if output_file
+          File.write(output_file, c_source)
+        else
+          @out.write(c_source)
+        end
+        return 0
+      end
+
       unless @argv.any?
         @err.puts("missing source file path")
         print_usage(@err)
@@ -2074,7 +2264,8 @@ module MilkTea
           human summary, for CI.
         HELP
       "debug"           => "Usage: mtc debug PATH [--locked] [--frozen] [-I PATH]\n\n  Print debug information for a source file: tokens, AST, semantic facts,\n  binding resolution, and diagnostics.",
-      "parse"           => "Usage: mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Parse one or more source files and print the AST.",
+      "lex"             => "Usage: mtc lex PATH [--json] [--emit-tokens-json FILE]\n\n  Tokenize a source file and print the token stream.\n\n  Options:\n    --json               Output Token JSON to stdout.\n    --emit-tokens-json   Write Token JSON to FILE.\n    --format FORMAT      Output format: pp (default) or json.",
+      "parse"           => "Usage: mtc parse PATH|DIR [PATH|DIR ...] [OPTIONS]\n         mtc parse --from-tokens-json FILE [--json] [--emit-ast-json FILE]\n\n  Parse one or more source files and print the AST.\n\n  Options:\n    --json                Output AST JSON to stdout.\n    --emit-ast-json FILE  Write AST JSON to FILE.\n    --from-tokens-json    Parse from Token JSON (no import resolution).\n    --format FORMAT       Output format: text (default) or json.\n    --locked              Resolve dependencies from package.lock.\n    --frozen              Require a current package.lock.\n    -I, --include-path    Add an extra module root.",
       "format"          => <<~HELP,
         Usage: mtc format PATH|DIR [PATH|DIR ...] [OPTIONS]
 
@@ -2286,8 +2477,9 @@ module MilkTea
     end
 
     def print_usage(io)
-      io.puts("Usage: mtc lex PATH")
-      io.puts("       mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
+      io.puts("Usage: mtc lex PATH [--json] [--emit-tokens-json FILE]")
+      io.puts("       mtc parse PATH|DIR [PATH|DIR ...] [--json] [--emit-ast-json FILE] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc parse --from-tokens-json FILE [--json] [--emit-ast-json FILE]")
       io.puts("       mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|--preserve|--tidy] [--max-line-length N] [--profile]")
       io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--ignore-generated] [--profile] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lint --init")

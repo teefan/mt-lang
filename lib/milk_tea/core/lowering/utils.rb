@@ -922,11 +922,13 @@ module MilkTea
       end
 
       def async_match_binding_field_key(arm)
-        "match_binding_#{arm.object_id}"
+        @async_binding_counter ||= 0
+        @async_binding_counter += 1
+        "match_binding_#{@async_binding_counter}"
       end
 
       def async_match_binding_field_name(arm)
-        "local_match_binding_#{arm.object_id}"
+        "local_match_binding_#{@async_binding_counter}"
       end
 
       def let_else_storage_c_name(statement, env)

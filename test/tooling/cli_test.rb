@@ -3441,7 +3441,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 1, status
     assert_equal "", out.string
     assert_match(/Usage: mtc lex PATH/, err.string)
-    assert_match(/mtc parse PATH\|DIR \[PATH\|DIR \.\.\.\] \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
+    assert_match(/mtc parse PATH\|DIR \[PATH\|DIR \.\.\.\]/, err.string)
     assert_match(/mtc format PATH\|DIR \[PATH\|DIR \.\.\.\] \[--check\|--write\] \[--safe\|--canonical\|--preserve\|--tidy\] \[--max-line-length N\]/, err.string)
     assert_match(/mtc lint PATH\|DIR .*\[-I PATH\]/, err.string)
     assert_match(/mtc check PATH\|DIR \[PATH\|DIR \.\.\.\] \[--locked\] \[--frozen\] \[-Werror\] \[-I PATH\]/, err.string)
