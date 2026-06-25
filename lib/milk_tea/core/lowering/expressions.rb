@@ -1327,18 +1327,29 @@ module MilkTea
         when AST::Specialization
           lower_specialization(expression, env:, type:)
         when AST::ExpressionList
-          ensure_tuple_struct(type)
-          fields = expression.elements.each_with_index.map do |element, index|
-            if element.is_a?(AST::Argument)
-              element_type = type.element_types[index]
-              field_name = element.name
-              IR::AggregateField.new(name: field_name, value: lower_expression(element.value, env:, expected_type: element_type))
-            else
-              element_type = type.element_types[index]
-              IR::AggregateField.new(name: "_#{index}", value: lower_expression(element, env:, expected_type: element_type))
+          if array_type?(type) || array_type?(expected_type)
+            lowered_elements = expression.elements.map do |element|
+              if element.is_a?(AST::Argument)
+                lower_expression(element.value, env:, expected_type: array_element_type(expected_type || type))
+              else
+                lower_expression(element, env:, expected_type: array_element_type(expected_type || type))
+              end
             end
+            IR::ArrayLiteral.new(type: expected_type || type, elements: lowered_elements)
+          else
+            ensure_tuple_struct(type)
+            fields = expression.elements.each_with_index.map do |element, index|
+              if element.is_a?(AST::Argument)
+                element_type = type.element_types[index]
+                field_name = element.name
+                IR::AggregateField.new(name: field_name, value: lower_expression(element.value, env:, expected_type: element_type))
+              else
+                element_type = type.element_types[index]
+                IR::AggregateField.new(name: "_#{index}", value: lower_expression(element, env:, expected_type: element_type))
+              end
+            end
+            IR::AggregateLiteral.new(type:, fields:)
           end
-          IR::AggregateLiteral.new(type:, fields:)
         else
           raise LoweringError, "unsupported expression #{expression.class.name}"
         end
