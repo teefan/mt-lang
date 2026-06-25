@@ -30,7 +30,11 @@ module MilkTea
           if const_value && (decl.value.is_a?(AST::Call) || decl.value.is_a?(AST::Specialization))
             value = lower_const_value_literal(type, const_value)
           elsif const_value && (decl.block_body || decl.value.is_a?(AST::ExpressionList))
-            value = lower_const_value_literal(type, const_value)
+            if const_value.is_a?(Array) && const_value.empty? && decl.value.is_a?(AST::ExpressionList) && !decl.value.elements.empty?
+              value = lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
+            else
+              value = lower_const_value_literal(type, const_value)
+            end
           elsif decl.block_body || decl.value.is_a?(AST::ExpressionList)
             raise LoweringError.new("constant #{decl.name} has no compile-time value", line: decl.line, column: decl.column)
           else
