@@ -163,16 +163,20 @@ public function expect_not_equal_bool(actual: bool, expected: bool) -> Check:
 
 
 # Generic equality over any type with a canonical `T.equal` hook: primitives
-# (import std.hash), `str` (import std.str), and user structs/variants that
-# define `equal` (or delegate to std.hash.equal_struct). The failure message is
-# value-less because the values cannot be rendered generically — use the typed
-# `expect_equal_int`/`expect_equal_str`/`expect_equal_bool` when you want the
-# actual/expected values shown.
+# (import std.hash), `str` (import std.str), and user structs that define `equal`
+# (or delegate to std.hash.equal_struct). On failure the actual/expected values
+# are rendered via `std.fmt.format_value`, so `T` must be a primitive or a struct
+# whose fields are themselves `format_value`-renderable.
 public function expect_equal[T](actual: T, expected: T) -> Check:
     if equal[T](actual, expected):
         return ok()
 
-    return fail("values are not equal")
+    var message = string.String.create()
+    message.append("expected ")
+    fmt.format_value[T](ref_of(message), const_ptr_of(expected))
+    message.append(", got ")
+    fmt.format_value[T](ref_of(message), const_ptr_of(actual))
+    return Result[bool, Failure].failure(error = Failure(message = message, is_skip = false))
 
 
 public function expect_some[T](option: Option[T]) -> Check:

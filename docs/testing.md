@@ -317,22 +317,25 @@ function test_square_table() -> t.Check:
 pytest's `assert a == b` value introspection comes from runtime AST rewriting — unavailable (and
 undesirable) in a static language. Milk Tea uses typed helpers instead: the landed
 `expect_equal_int`/`expect_equal_bool`/`expect_equal_str` render `actual`/`expected` into the
-failure message via `std.fmt` (e.g. "expected 5, got 4"). The generic `expect_equal[T]` (landed)
-covers any type with a canonical `equal` hook but reports a **value-less** message.
+failure message via `std.fmt` (e.g. "expected 5, got 4").
 
 A reflective `{any}`-style value formatter has landed. `field.type` is usable in type position
-(language-manual §7.0) and the `inline for` body is checked **per element**, so `std.hash`'s
-`equal_struct`/`hash_struct`/`order_struct` dispatch each field through its canonical hook
-(content-correct, including `str` and **nested structs**), and `std.fmt.format_value[T]` recursively
-renders any struct as `{ field = value, ... }`. (This also resolved the earlier bug where those
-reflective helpers failed to lower.)
+(language-manual §7.0), the `inline for` body is checked **per element**, and `inline if T == int`
+folds on a bare type parameter — so `std.fmt.format_value[T]` is a **unified** formatter: scalars
+render directly and a struct renders as `{ field = value, ... }`, recursing into each field via
+`field.type`. `std.hash`'s `equal_struct`/`hash_struct`/`order_struct` likewise dispatch each field
+through its canonical hook (content-correct, including `str` and **nested structs**).
 
-`expect_equal[T]` nonetheless stays **value-less**: rendering its `T` would require dispatching
-scalar-vs-struct on the *bare type parameter* (`format_value[int]` cannot reflect a scalar's
-fields), and `inline if T == int` on a bare type parameter is a separate, still-unresolved
-limitation (distinct from `field.type`). Use the typed `expect_equal_int`/`_bool`/`_str` for
-rendered scalar diagnostics, or `format_value` to render a struct. Source-location capture in
-`Failure` is also planned. No rewriting magic, fully static.
+The generic `expect_equal[T]` (landed) compares via the canonical `equal` hook and, on failure,
+**renders** `actual`/`expected` via `format_value`, producing value-ful messages for any renderable
+`T` (primitives, `str`, structs of renderable fields). The typed `expect_equal_int`/`_bool`/`_str`
+remain for explicit scalar rendering.
+
+Known issue: a specialized generic instance's C name (`expect_equal[str]`) collides with a
+same-named regular function (`expect_equal_str`) under the current name mangling, so for
+`int`/`str`/`bool` the call routes through the typed helper (e.g. `str` renders
+`expected [tea], got [milk]`); a mangling fix (distinct generic-instance suffix) is pending.
+Source-location capture in `Failure` is also planned. No rewriting magic, fully static.
 
 ---
 

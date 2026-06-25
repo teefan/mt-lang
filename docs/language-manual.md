@@ -860,6 +860,7 @@ function draw() -> void:
 Rules:
 
 - The condition must be a compile-time constant `bool`.
+- A compile-time **type comparison** is a valid condition: `T == int`, `field.type == float`, etc., where `T` is a generic type parameter (substituted at specialization) and `field.type` is a reflected field type. This enables type-based dispatch in generic bodies (e.g. `std.fmt.format_value[T]`).
 - Only the chosen branch is type-checked and emitted. The dead branch may reference types and symbols that do not exist.
 - `inline if` supports `else` and `else if` branches with the same dead-branch elimination.
 
