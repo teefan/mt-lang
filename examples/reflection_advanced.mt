@@ -7,6 +7,9 @@
 import std.binary as bin
 import std.bytes as bytes
 import std.serialize as ser
+import std.hash
+import std.fmt as fmt
+import std.string as string
 
 # ---------------------------------------------------------------------------
 # 1  Consts
@@ -431,7 +434,68 @@ function test_type_dispatch() -> int:
     return 0
 
 # ---------------------------------------------------------------------------
-# 14  MAIN
+# 14  field.type in type position — per-field hook dispatch + reflective format
+# ---------------------------------------------------------------------------
+
+# Reads each field through its own `field.type` *in type position*
+# (`const_ptr[field.type]`) and dispatches the canonical `equal` hook per field
+# (`equal[field.type]`) — content-correct, unlike the raw byte compare in
+# section 7. `import std.hash` supplies the primitive hooks. This is the same
+# upgrade std.hash.equal_struct / hash_struct / order_struct now use.
+function reflective_equal[T](a: const_ptr[T], b: const_ptr[T]) -> bool:
+    inline for field in fields_of(T):
+        let offset = offset_of(T, field)
+        unsafe:
+            let pa = const_ptr[field.type]<-(ptr[ubyte]<-a + offset)
+            let pb = const_ptr[field.type]<-(ptr[ubyte]<-b + offset)
+            if not equal[field.type](pa, pb):
+                return false
+    return true
+
+
+# `inline if T == int` dispatches on a bare type parameter at compile time.
+function type_code[T]() -> int:
+    inline if T == int:
+        return 1
+    else if T == float:
+        return 2
+    else:
+        return 0
+
+
+function test_reflective_equal() -> int:
+    var a = Vec3(x = 1.0, y = 2.0, z = 3.0)
+    var b = Vec3(x = 1.0, y = 2.0, z = 3.0)
+    var c = Vec3(x = 9.0, y = 2.0, z = 3.0)
+    if not reflective_equal[Vec3](const_ptr_of(a), const_ptr_of(b)):
+        return 901
+    if reflective_equal[Vec3](const_ptr_of(a), const_ptr_of(c)):
+        return 902
+    return 0
+
+
+function test_bare_type_dispatch() -> int:
+    if type_code[int]() != 1:
+        return 903
+    if type_code[float]() != 2:
+        return 904
+    if type_code[bool]() != 0:
+        return 905
+    return 0
+
+
+# std.fmt.format_value[T] reflectively renders a struct as `{ field = value, ... }`.
+function test_format_value() -> int:
+    var s = string.String.create()
+    defer s.release()
+    let v = Vec3(x = 1.0, y = 2.0, z = 3.0)
+    fmt.format_value[Vec3](ref_of(s), const_ptr_of(v))
+    if s.len() == 0z:
+        return 906
+    return 0
+
+# ---------------------------------------------------------------------------
+# 15  MAIN
 # ---------------------------------------------------------------------------
 
 function main() -> int:
@@ -514,6 +578,16 @@ function main() -> int:
         return code
 
     code = test_type_dispatch()
+    if code != 0:
+        return code
+
+    code = test_reflective_equal()
+    if code != 0:
+        return code
+    code = test_bare_type_dispatch()
+    if code != 0:
+        return code
+    code = test_format_value()
     if code != 0:
         return code
 

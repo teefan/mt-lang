@@ -1596,7 +1596,7 @@ unsafe:
 </div>
 
   <h3>inline if</h3>
-  <p>Only the chosen branch is emitted; dead branch may reference nonexistent symbols. Supports <code>else</code> and <code>else if</code> branches with the same dead-branch elimination.</p>
+  <p>Only the chosen branch is emitted; dead branch may reference nonexistent symbols. Supports <code>else</code> and <code>else if</code> branches with the same dead-branch elimination. A compile-time <strong>type comparison</strong> is a valid condition &mdash; <code>T == int</code> (a bare type parameter) or <code>field.type == float</code> (a reflected field type) &mdash; which enables type-based dispatch in generic bodies.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>const DEBUG_RENDER: bool = false
@@ -1772,6 +1772,22 @@ let sized = name[32]</code></pre>
     let sz = size_of(field.type)
     let off = offset_of(Point, field)
     static_assert(sz > 0, "field has non-zero size")</code></pre>
+</div>
+
+  <p>A <code>field_handle</code>'s <code>.type</code> is also usable directly <strong>in type position</strong> inside a compile-time context &mdash; <code>const_ptr[field.type]</code>, <code>equal[field.type](...)</code>, <code>Vec[field.type]</code> &mdash; resolving to the field's concrete type. Because the <code>inline for</code> body is type-checked once per element, per-field dispatch (including recursion into nested-struct field types) is validated at check time. This powers reflective generics such as <code>std.hash</code>'s <code>equal_struct</code> / <code>hash_struct</code> / <code>order_struct</code>, and <code>std.fmt.format_value[T]</code>, which renders any struct as <code>{ field = value, ... }</code>.</p>
+
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## Per-field equality via field.type used in type position (content-correct)
+function field_equal[T](a: const_ptr[T], b: const_ptr[T]) -&gt; bool:
+    inline for field in fields_of(T):
+        let off = offset_of(T, field)
+        unsafe:
+            let pa = const_ptr[field.type]&lt;-(ptr[ubyte]&lt;-a + off)
+            let pb = const_ptr[field.type]&lt;-(ptr[ubyte]&lt;-b + off)
+            if not equal[field.type](pa, pb):
+                return false
+    return true</code></pre>
 </div>
 </section>
 

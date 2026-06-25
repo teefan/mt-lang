@@ -105,7 +105,12 @@ extending bool:
 extending float:
     public static function hash(value: const_ptr[float]) -> uint:
         unsafe:
-            return uint<-reinterpret[uint](read(ptr[float]<-value))
+            let v = read(ptr[float]<-value)
+            # `+0.0` and `-0.0` compare equal but have distinct bit patterns;
+            # collapse both to one hash so hash stays consistent with `equal`.
+            if v == 0.0:
+                return 0
+            return uint<-reinterpret[uint](v)
 
 
     public static function equal(a: const_ptr[float], b: const_ptr[float]) -> bool:
@@ -130,7 +135,12 @@ extending float:
 extending double:
     public static function hash(value: const_ptr[double]) -> uint:
         unsafe:
-            let bits: ulong = reinterpret[ulong](read(ptr[double]<-value))
+            let v = read(ptr[double]<-value)
+            # `+0.0` and `-0.0` compare equal but have distinct bit patterns;
+            # collapse both to one hash so hash stays consistent with `equal`.
+            if v == 0.0:
+                return 0
+            let bits: ulong = reinterpret[ulong](v)
             return uint<-((bits >> uint<-(32)) ^ bits)
 
 
@@ -400,13 +410,20 @@ public function order_struct[T](a: const_ptr[T], b: const_ptr[T]) -> int:
 extending ptr_uint:
     public static function hash(value: const_ptr[ptr_uint]) -> uint:
         unsafe:
-            let v = read(ptr[ptr_uint]<-value)
-            return uint<-v * 0x01000193
+            return hash_u64(ulong<-read(ptr[ptr_uint]<-value))
 
 
-    public static function equal(
-        a: const_ptr[ptr_uint],
-        b: const_ptr[ptr_uint],
-    ) -> bool:
+    public static function equal(a: const_ptr[ptr_uint], b: const_ptr[ptr_uint]) -> bool:
         unsafe:
             return read(ptr[ptr_uint]<-a) == read(ptr[ptr_uint]<-b)
+
+
+    public static function order(a: const_ptr[ptr_uint], b: const_ptr[ptr_uint]) -> int:
+        unsafe:
+            let av = read(ptr[ptr_uint]<-a)
+            let bv = read(ptr[ptr_uint]<-b)
+            if av < bv:
+                return -1
+            else if av > bv:
+                return 1
+            return 0
