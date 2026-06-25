@@ -611,6 +611,7 @@ function draw() -> void:
 ```
 
 - The condition must be a compile-time constant.
+- A compile-time **type comparison** is a valid condition: `T == int`, `field.type == float`, etc., where `T` is a generic type parameter and `field.type` is a reflected field type — enabling type-based dispatch in generic bodies.
 - Only the chosen branch is type-checked and emitted. The dead branch may reference types and symbols that do not exist.
 - `inline if` supports `else` and `else if` branches; the chosen branch follows the same dead-elimination rule.
 
@@ -784,6 +785,8 @@ Compile-time reflection builtins:
 
 Handle types expose: `field_handle` has `.name` and `.type`; `member_handle` has `.name` and optionally `.value`; `attribute_handle` provides access to attribute arguments.
 
+A `field_handle`'s `.type` is usable directly **in type position** within a compile-time context (e.g. inside `inline for field in fields_of(T)`): `const_ptr[field.type]`, `equal[field.type](...)`, `Vec[field.type]`, etc. resolve to the field's concrete type. This powers reflective generics such as `std.hash`'s `equal_struct`/`hash_struct`/`order_struct` (per-field canonical-hook dispatch) and `std.fmt.format_value[T]`, which renders any struct as `{ field = value, ... }`.
+
 ### Standard library
 
 Core modules in `std/`:
@@ -791,7 +794,7 @@ Core modules in `std/`:
 - `std.linear_algebra` — extends native vector/matrix/quaternion types with `dot`, `cross`, `length`, `normalized`, `lerp`, `identity`, `transpose`, `conjugate` (pure Mt, no C dependency beyond `std.math` for `sqrt`)
 - `std.graph.Graph[T]` — adjacency-list graph with `add_node`, `add_edge`, `has_edge`, `remove_edge`, `neighbors`, `bfs`, `dfs`, `toposort`; directed or undirected; `compile()` converts to CSR-based `DenseGraph[T]` for O(degree) neighbor iteration
 - `std.str` — extends `str` with `byte_at`, `equal`, `starts_with`, `ends_with`, `find_substring`, `is_valid_utf8`, `slice`, `to_cstr`, `hash`, `order`
-- `std.hash` — extends primitive types (`int`, `uint`, `bool`, `float`, `double`, `char`) with canonical `hash`/`equal`/`order` hooks; import once to use primitives as Map/Set/BinaryHeap/OrderedMap keys. Also provides generic `hash_struct[T]`, `equal_struct[T]`, `order_struct[T]` using compile-time reflection.
+- `std.hash` — extends the primitive integer types (`byte`/`ubyte`/`short`/`ushort`/`int`/`uint`/`long`/`ulong`/`ptr_int`/`ptr_uint`), `bool`, `float`, `double`, and `char` with canonical `hash`/`equal`/`order` hooks; import once to use primitives as Map/Set/BinaryHeap/OrderedMap keys (`str` keys come from `std.str`). Also provides generic `hash_struct[T]`, `equal_struct[T]`, `order_struct[T]` that dispatch each field through its own canonical hook via `field.type` (content-correct, including `str` and nested-struct fields).
 - `std.cstring` — C string helpers (`cstr_len`, `cstr_as_str`)
 - `std.math` — `sqrt`, `sin`, `cos`, `abs`, `pow`, etc. via C math
 - `std.encoding` — UTF-8 validation (`is_valid_utf8`, `utf8_codepoint_count`, `decode_utf8_codepoint`, `utf8_overlong_check`)
