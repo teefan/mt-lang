@@ -561,6 +561,56 @@ function main() -> int:
     end
   end
 
+  def test_inline_and_parallel_constructs
+    sources = {
+      parallel_for: <<~MT,
+        function f() -> void:
+            parallel for i in 0..10:
+                pass
+      MT
+      inline_for: <<~MT,
+        function f() -> void:
+            inline for _ in array[int, 1](0):
+                pass
+      MT
+      inline_while: <<~MT,
+        const LIMIT: int = 10
+
+        function f() -> void:
+            var n = 0
+            inline while n < LIMIT:
+                n += 1
+      MT
+      inline_if: <<~MT,
+        const FLAG: bool = true
+
+        function f() -> int:
+            inline if FLAG:
+                return 1
+            else:
+                return 0
+      MT
+      inline_match: <<~MT,
+        const KIND: int = 1
+
+        function f() -> int:
+            inline match KIND:
+                1:
+                    return 10
+                _:
+                    return 0
+      MT
+    }
+
+    sources.each do |name, source|
+      ast = MilkTea::Parser.parse(source)
+      formatted = MilkTea::PrettyPrinter.format_ast(ast)
+      re_parse = MilkTea::Parser.parse(formatted)
+      reformatted = MilkTea::PrettyPrinter.format_ast(re_parse)
+      assert_equal formatted, reformatted, "#{name}: not idempotent"
+    end
+  end
+
   private
 
   def with_program(source, relative_path: "program.mt")

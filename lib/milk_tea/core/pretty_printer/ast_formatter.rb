@@ -472,7 +472,8 @@ module MilkTea
         when AST::IfStmt
           emit_if(statement)
         when AST::MatchStmt
-          line("match #{render_expression(statement.expression)}:")
+          prefix = statement.inline ? "inline match" : "match"
+          line("#{prefix} #{render_expression(statement.expression)}:")
           with_indent do
             statement.arms.each do |arm|
               binding = arm.binding_name ? " as #{arm.binding_name}" : ""
@@ -498,12 +499,18 @@ module MilkTea
           emit_declaration(statement.declaration)
           @lines[before] = @lines[before].sub(/\A(\s*)/, "\\1emit ") if @lines[before]
         when AST::ForStmt
-          line("for #{statement.name} in #{render_expression(statement.iterable)}:")
+          prefix = +""
+          prefix << "parallel " if statement.threaded
+          prefix << "inline " if statement.inline
+          bindings = statement.bindings.map(&:name).join(", ")
+          iterables = statement.iterables.map { |iterable| render_expression(iterable) }.join(", ")
+          line("#{prefix}for #{bindings} in #{iterables}:")
           with_indent do
             statement.body.each { |nested| emit_statement(nested) }
           end
         when AST::WhileStmt
-          line("while #{render_expression(statement.condition)}:")
+          prefix = statement.inline ? "inline while" : "while"
+          line("#{prefix} #{render_expression(statement.condition)}:")
           with_indent do
             statement.body.each { |nested| emit_statement(nested) }
           end
@@ -666,7 +673,8 @@ module MilkTea
 
       def emit_if(statement)
         first_branch, *rest = statement.branches
-        line("if #{render_expression(first_branch.condition)}:")
+        prefix = statement.inline ? "inline if" : "if"
+        line("#{prefix} #{render_expression(first_branch.condition)}:")
         with_indent do
           first_branch.body.each { |nested| emit_statement(nested) }
         end
