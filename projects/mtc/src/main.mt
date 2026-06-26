@@ -9,6 +9,7 @@ import std.mem.heap as heap
 import std.str as str_util
 
 import lexer.lexer as lexer_mod
+import parser.parser as parser_mod
 import test.all_tests as test_runner
 
 function read_whole_file(path: str) -> string_mod.String:
@@ -48,11 +49,23 @@ function lex_cmd(file_path: str) -> int:
     source.release()
     return 0
 
+function parse_cmd(file_path: str) -> int:
+    var source = read_whole_file(file_path)
+    let source_str = source.as_str()
+
+    var json = parser_mod.parse_to_ast_json(source_str, file_path)
+    stdio.print_line(json.as_str())
+
+    json.release()
+    source.release()
+    return 0
+
 function print_usage() -> void:
     stdio.print_line(c"usage: mtc <subcommand> [args]")
     stdio.print_line(c"")
     stdio.print_line(c"subcommands:")
     stdio.print_line(c"  lex <file>    tokenize source, print token JSON to stdout")
+    stdio.print_line(c"  parse <file>  parse source, print AST JSON to stdout")
     stdio.print_line(c"  test          run lexer regression tests")
 
 function test_cmd() -> int:
@@ -70,6 +83,12 @@ function main(args: span[str]) -> int:
             print_usage()
             return 1
         return lex_cmd(args[1])
+
+    if cmd == "parse":
+        if args.len < 2:
+            print_usage()
+            return 1
+        return parse_cmd(args[1])
 
     if cmd == "test":
         return test_cmd()

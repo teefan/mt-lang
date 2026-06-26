@@ -67,7 +67,41 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 
 **CLI:** `mtc lex <file>` — outputs token JSON to stdout.
 
-## Stage 2: Parser — NEXT
+## Stage 2: Parser — Skeleton Complete
+
+**Location:** `projects/mtc/src/parser/`
+
+**Verification:** Parse all 13 `examples/*.mt` → produce AST JSON. 12/13 files produce valid JSON (nested_struct_stress_test has a trailing-comma edge case from `extending` blocks).
+
+**Architecture:**
+- `token_stream.mt`: peek/advance/check/match/consume cursor over `Vec[lexer.Token]`
+- `ast_json.mt`: AST JSON emitters with `$mt_type` and `$sym` encoding matching Ruby format
+- `parser.mt`: ~1080-line recursive-descent skeleton parser
+
+**Declaration types handled:** const, var, type alias, function, async function, const function, external function, foreign function, struct (with implements), enum (with backing type), flags, union, variant, opaque (with implements), interface, extending, attribute, static_assert, event, when, public (all forms)
+
+**Body/expression handling:** Currently skips statement bodies and expression content (skeleton only — records structure but not detail)
+
+**Code size:** ~1080 lines parser.mt + 130 lines ast_json.mt + 80 lines token_stream.mt
+
+**Tests:** 20 lexer regression tests still pass. Parser tests not yet added.
+
+**CLI:** `mtc parse <file>` — outputs AST JSON to stdout.
+
+**Key design decisions:**
+- AST JSON built directly into String buffer (no intermediate AST tree — avoids ~60 struct types)
+- Graceful newline skipping (`consume_nl`) instead of fataling on mismatches
+- Depth-tracked bracket/paren skipping in type params, params, return types
+- Attribute applications (`@[...]`) consumed as pre-processing in main loop
+- Comma tracking via `first_decl` + `dangling_comma` boolean pair plus buffer-length emission check
+- `const function` parsed by forwarding to function parser with `is_const=true`
+
+**Known limitations:**
+- `nested_struct_stress_test.mt`: trailing comma from `@[test]` attributes inside extending method bodies confuses comma tracker
+- Expression content not parsed (skipped token-by-token)
+- Statement structure not parsed (skipped via `skip_statement`)
+- Type info, param names, field details not recorded (stub placeholders)
+- No `@[test]` attribute content handling
 
 **Goal:** Consume token JSON (from Stage 1 or Ruby lexer), produce AST JSON consumable by the Ruby semantic analyzer (`check --from-ast-json`).
 

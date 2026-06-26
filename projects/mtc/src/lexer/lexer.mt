@@ -155,6 +155,13 @@ function json_escaped(src: str) -> string_mod.String:
 
 # ── lexer state ───────────────────────────────────────────────────────────
 
+public struct Token:
+    kind: str
+    lexeme: str
+    lit_json: str
+    line: ptr_uint
+    column: ptr_uint
+
 struct LexState:
     src: str
     pos: ptr_uint
@@ -165,6 +172,7 @@ struct LexState:
     cont_pending: bool
     line_off: ptr_uint
     line_num: ptr_uint
+    output_tokens: vec_mod.Vec[Token]
 
 # ── token emission ────────────────────────────────────────────────────────
 
@@ -208,6 +216,15 @@ function emit_tok(
 
     state.buf.push_byte('}')
     state.first_tok = false
+
+    var tok = Token(
+        kind = kind,
+        lexeme = lexeme,
+        lit_json = lit_json,
+        line = line,
+        column = column,
+    )
+    state.output_tokens.push(tok)
 
 # ── indentation ───────────────────────────────────────────────────────────
 
@@ -1070,6 +1087,7 @@ public function lex_to_json(source: str) -> string_mod.String:
         cont_pending = false,
         line_off = 0,
         line_num = 1,
+        output_tokens = vec_mod.Vec[Token].create(),
     )
     state.indent_stack.push(0)
 
@@ -1079,3 +1097,26 @@ public function lex_to_json(source: str) -> string_mod.String:
 
     state.indent_stack.release()
     return state.buf
+
+public function lex_to_tokens(source: str) -> vec_mod.Vec[Token]:
+    var state = LexState(
+        src = source,
+        pos = 0,
+        buf = string_mod.String.create(),
+        first_tok = true,
+        indent_stack = vec_mod.Vec[ptr_uint].create(),
+        group_depth = 0,
+        cont_pending = false,
+        line_off = 0,
+        line_num = 1,
+        output_tokens = vec_mod.Vec[Token].create(),
+    )
+    state.indent_stack.push(0)
+
+    state.buf.push_byte('[')
+    lex_all(ref_of(state))
+    state.buf.push_byte(']')
+
+    state.indent_stack.release()
+    state.buf.release()
+    return state.output_tokens

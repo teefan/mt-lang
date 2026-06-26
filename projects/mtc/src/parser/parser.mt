@@ -1,0 +1,1178 @@
+## Self-hosted Milk Tea parser.
+##
+## Consumes tokens (via TokenStream) and produces AST JSON matching the
+## Ruby mtc format, consumable by comparison with `ruby bin/mtc parse --json`.
+
+import std.vec as vec_mod
+import std.string as string_mod
+import std.str
+
+import lexer.lexer as lexer_mod
+import parser.token_stream as ts
+import parser.ast_json as ast
+
+# ── parser state ──────────────────────────────────────────────────────────
+
+struct Parser:
+    tokens: ts.TokenStream
+    ast_buf: ast.AstBuf
+    need_comma: bool
+
+function ast_open_node(p: ref[Parser], node_type: str) -> void:
+    if p.need_comma:
+        ast.ast_comma(ref_of(p.ast_buf))
+        p.need_comma = false
+    ast.ast_open(ref_of(p.ast_buf), node_type)
+    p.need_comma = true
+
+# ── token helpers ─────────────────────────────────────────────────────────
+
+function peek_kind(p: ref[Parser]) -> str:
+    return p.tokens.peek_kind()
+
+function check(p: ref[Parser], kind: str) -> bool:
+    return p.tokens.check(kind)
+
+function match_kind(p: ref[Parser], kind: str) -> bool:
+    return p.tokens.match_kind(kind)
+
+function advance(p: ref[Parser]) -> void:
+    p.tokens.advance()
+
+function consume(p: ref[Parser], kind: str, msg: str) -> void:
+    p.tokens.consume(kind, msg)
+
+function is_eof(p: ref[Parser]) -> bool:
+    return p.tokens.is_eof()
+
+function skip_newlines(p: ref[Parser]) -> void:
+    p.tokens.skip_newlines()
+
+function peek_lexeme(p: ref[Parser]) -> str:
+    let tok = p.tokens.peek() else:
+        return ""
+
+    return unsafe: read(tok).lexeme
+
+# ── source file ───────────────────────────────────────────────────────────
+
+function parse_source_file(p: ref[Parser], module_name: str) -> string_mod.String:
+    p.ast_buf = ast.AstBuf(buf = string_mod.String.create(), first_field = true)
+
+    ast.ast_open(ref_of(p.ast_buf), "SourceFile")
+    ast.ast_str(ref_of(p.ast_buf), "module_name", module_name)
+
+    var module_kind: str
+    if check(p, "external"):
+        advance(p)
+        skip_newlines(p)
+        module_kind = "raw_module"
+    else:
+        module_kind = "module"
+
+    ast.ast_sym(ref_of(p.ast_buf), "module_kind", module_kind)
+
+    ast.ast_array_start(ref_of(p.ast_buf), "imports")
+    skip_newlines(p)
+    var first_import = true
+    while check(p, "import"):
+        if not first_import:
+            ast.ast_comma(ref_of(p.ast_buf))
+        parse_import(p)
+        skip_newlines(p)
+        first_import = false
+    ast.ast_array_end(ref_of(p.ast_buf))
+
+    ast.ast_array_start(ref_of(p.ast_buf), "directives")
+    ast.ast_array_end(ref_of(p.ast_buf))
+
+    ast.ast_array_start(ref_of(p.ast_buf), "declarations")
+    skip_newlines(p)
+    var first = true
+    var dangling = false
+    var safety: ptr_uint = 0
+    while not is_eof(p):
+        safety += 1
+        if safety > 50000:
+            fatal(c"parse: infinite loop safety limit reached")
+
+        while check(p, "at"):
+            advance(p)
+            if check(p, "lbracket"):
+                advance(p)
+                var bd: ptr_uint = 1
+                while bd > 0 and not is_eof(p):
+                    if check(p, "lbracket"):
+                        bd += 1
+                    else if check(p, "rbracket"):
+                        bd -= 1
+                    advance(p)
+            skip_newlines(p)
+
+        let decl_kind = peek_kind(p)
+        if decl_kind == "eof" or decl_kind == "dedent":
+            break
+
+        if not first and not dangling:
+            ast.ast_comma(ref_of(p.ast_buf))
+            dangling = true
+
+        let blen = p.ast_buf.buf.len
+        parse_declaration_safe(p)
+        let emitted = p.ast_buf.buf.len != blen
+
+        if emitted:
+            first = false
+            dangling = false
+
+        skip_newlines(p)
+    ast.ast_array_end(ref_of(p.ast_buf))
+
+    # Remove trailing comma from last element
+    var buf_len = p.ast_buf.buf.len
+    if buf_len >= 3:
+        unsafe:
+            let data = ptr[char]<-p.ast_buf.buf.data
+            if read(data + buf_len - 2) == ',' and read(data + buf_len - 1) == ']':
+                read(data + buf_len - 2) = ' '
+        p.ast_buf.buf.len = buf_len
+
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_close(ref_of(p.ast_buf))
+
+    return p.ast_buf.buf
+
+# ── imports ───────────────────────────────────────────────────────────────
+
+function is_ident_or_keyword(p: ref[Parser]) -> bool:
+    let k = peek_kind(p)
+    if k == "identifier":
+        return true
+
+    if k == "dot" or k == "as" or k == "newline" or k == "eof":
+        return false
+
+    if k == "colon" or k == "lparen" or k == "lbracket" or k == "comma":
+        return false
+
+    if k == "equal" or k == "arrow" or k == "rparen" or k == "rbracket":
+        return false
+
+    return true
+
+function parse_import(p: ref[Parser]) -> void:
+    advance(p)  # consume "import"
+
+    var parts = vec_mod.Vec[str].create()
+    while is_ident_or_keyword(p):
+        parts.push(peek_lexeme(p))
+        advance(p)
+        if check(p, "dot"):
+            advance(p)
+        else:
+            break
+
+    var alias_name: str
+
+    if check(p, "as"):
+        advance(p)
+        alias_name = peek_lexeme(p)
+        advance(p)
+
+    var import_name = ast.name_json(parts)
+    parts.release()
+
+    ast.ast_open(ref_of(p.ast_buf), "Import")
+    ast.ast_raw(ref_of(p.ast_buf), "path", import_name.as_str())
+    import_name.release()
+
+    if alias_name == "":
+        ast.ast_null(ref_of(p.ast_buf), "alias_name")
+    else:
+        ast.ast_str(ref_of(p.ast_buf), "alias_name", alias_name)
+
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_null(ref_of(p.ast_buf), "length")
+    ast.ast_close(ref_of(p.ast_buf))
+
+# ── declarations ──────────────────────────────────────────────────────────
+
+function parse_declaration_safe(p: ref[Parser]) -> void:
+    let kind = peek_kind(p)
+    let buf_before = p.ast_buf.buf.len
+
+    if kind == "const":
+        parse_const(p)
+    else if kind == "var":
+        parse_var(p)
+    else if kind == "type":
+        parse_type_alias(p)
+    else if kind == "function":
+        parse_function_def(p)
+    else if kind == "async":
+        parse_function_def(p)
+    else if kind == "external":
+        parse_extern_function(p)
+    else if kind == "foreign":
+        parse_foreign_function(p)
+    else if kind == "struct":
+        parse_struct(p)
+    else if kind == "enum":
+        parse_enum_or_flags(p, false)
+    else if kind == "flags":
+        parse_enum_or_flags(p, true)
+    else if kind == "union":
+        parse_union(p)
+    else if kind == "variant":
+        parse_variant(p)
+    else if kind == "opaque":
+        parse_opaque(p)
+    else if kind == "interface":
+        parse_interface(p)
+    else if kind == "extending":
+        parse_extending(p)
+    else if kind == "attribute":
+        parse_attribute(p)
+    else if kind == "static_assert":
+        parse_static_assert(p)
+    else if kind == "event":
+        parse_event(p)
+    else if kind == "public":
+        advance(p)
+        parse_declaration_public(p)
+    else if kind == "when":
+        parse_when_block(p)
+    else if kind == "eof" or kind == "dedent":
+        return
+    else:
+        advance(p)
+
+function parse_when_block(p: ref[Parser]) -> void:
+    advance(p)
+    var safety: ptr_uint = 0
+    while not check(p, "newline") and not is_eof(p):
+        safety += 1
+        if safety > 100:
+            break
+        advance(p)
+    if check(p, "newline"):
+        advance(p)
+    if check(p, "indent"):
+        advance(p)
+        var depth: ptr_uint = 1
+        while depth > 0 and not is_eof(p):
+            if check(p, "indent") or check(p, "when"):
+                depth += 1
+            else if check(p, "dedent"):
+                depth -= 1
+            advance(p)
+    ast.ast_open(ref_of(p.ast_buf), "WhenStmt")
+    ast.ast_null(ref_of(p.ast_buf), "discriminant")
+    ast.ast_array_start(ref_of(p.ast_buf), "branches")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "else_body")
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_null(ref_of(p.ast_buf), "length")
+    ast.ast_close(ref_of(p.ast_buf))
+
+function parse_attribute_application(p: ref[Parser]) -> void:
+    advance(p)
+    if check(p, "lbracket"):
+        advance(p)
+        var bracket_d: ptr_uint = 1
+        while bracket_d > 0 and not is_eof(p):
+            if check(p, "lbracket"):
+                bracket_d += 1
+            else if check(p, "rbracket"):
+                bracket_d -= 1
+            advance(p)
+    skip_newlines(p)
+
+function parse_declaration_public(p: ref[Parser]) -> void:
+    let kind = peek_kind(p)
+
+    if kind == "const":
+        parse_const_with_visibility(p, "public")
+    else if kind == "var":
+        parse_var_with_visibility(p, "public")
+    else if kind == "type":
+        parse_type_alias_with_visibility(p, "public")
+    else if kind == "function" or kind == "async":
+        parse_function_with_visibility(p, "public", false)
+    else if kind == "struct":
+        parse_struct_with_visibility(p, "public")
+    else if kind == "event":
+        parse_event_with_visibility(p, "public")
+    else if kind == "variant":
+        parse_variant_with_visibility(p, "public")
+    else if kind == "enum":
+        parse_enum_with_visibility(p, "public", false)
+    else if kind == "flags":
+        parse_enum_with_visibility(p, "public", true)
+    else if kind == "interface":
+        parse_interface_with_visibility(p, "public")
+    else if kind == "opaque":
+        parse_opaque_with_visibility(p, "public")
+    else if kind == "union":
+        parse_union_with_visibility(p, "public")
+    else:
+        fatal(c"parse: unexpected public declaration")
+
+# ── const ─────────────────────────────────────────────────────────────────
+
+function parse_const(p: ref[Parser]) -> void:
+    parse_const_with_visibility(p, "")
+
+function parse_const_with_visibility(p: ref[Parser], vis: str) -> void:
+    advance(p)
+
+    if check(p, "function"):
+        parse_function_with_visibility(p, vis, true)
+        return
+
+    let cname = peek_lexeme(p)
+    advance(p)
+
+    parse_type_annotation(p)
+
+    var has_block = false
+    if check(p, "arrow"):
+        advance(p)
+        parse_type_ref(p)
+        has_block = true
+
+    if check(p, "equal") and not has_block:
+        advance(p)
+        while not check(p, "newline") and not is_eof(p):
+            advance(p)
+
+    if has_block:
+        if check(p, "colon"):
+            advance(p)
+            consume_nl(p)
+            if check(p, "indent"):
+                advance(p)
+                while not check(p, "dedent") and not is_eof(p):
+                    skip_statement(p)
+                if check(p, "dedent"):
+                    advance(p)
+    else:
+        consume_nl(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "ConstDecl")
+    ast.ast_str(ref_of(p.ast_buf), "name", cname)
+    ast.ast_null(ref_of(p.ast_buf), "type")
+    ast.ast_null(ref_of(p.ast_buf), "value")
+    ast.ast_null(ref_of(p.ast_buf), "block_body")
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", vis)
+    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+# ── var ───────────────────────────────────────────────────────────────────
+
+function parse_var(p: ref[Parser]) -> void:
+    parse_var_with_visibility(p, "")
+
+function parse_var_with_visibility(p: ref[Parser], vis: str) -> void:
+    advance(p)
+    let vname = peek_lexeme(p)
+    advance(p)
+
+    parse_type_annotation(p)
+
+    consume_nl(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "VarDecl")
+    ast.ast_str(ref_of(p.ast_buf), "name", vname)
+    ast.ast_null(ref_of(p.ast_buf), "type")
+    ast.ast_null(ref_of(p.ast_buf), "value")
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", vis)
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+# ── type alias ────────────────────────────────────────────────────────────
+
+function parse_type_alias(p: ref[Parser]) -> void:
+    parse_type_alias_with_visibility(p, "")
+
+function parse_type_alias_with_visibility(p: ref[Parser], vis: str) -> void:
+    advance(p)
+    let tname = peek_lexeme(p)
+    advance(p)
+    consume(p, "equal", "expected = in type alias")
+    parse_type_ref(p)
+
+    consume_nl(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "TypeAliasDecl")
+    ast.ast_str(ref_of(p.ast_buf), "name", tname)
+    ast.ast_null(ref_of(p.ast_buf), "target")
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", vis)
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+# ── function ──────────────────────────────────────────────────────────────
+
+function parse_function_def(p: ref[Parser]) -> void:
+    parse_function_with_visibility(p, "", false)
+
+function parse_function_with_visibility(p: ref[Parser], vis: str, is_const: bool) -> void:
+    var is_async = false
+    if check(p, "async"):
+        advance(p)
+        is_async = true
+
+    consume(p, "function", "expected function")
+
+    let fname = peek_lexeme(p)
+
+    if fname == "":
+        fatal(c"parse: expected function name")
+
+    advance(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "FunctionDef")
+    ast.ast_str(ref_of(p.ast_buf), "name", fname)
+
+    parse_type_params(p)
+    parse_params_ast(p)
+
+    if check(p, "arrow"):
+        advance(p)
+        var paren_d: ptr_uint = 0
+        var bracket_d: ptr_uint = 0
+        while not is_eof(p):
+            if check(p, "lparen"):
+                paren_d += 1
+            else if check(p, "rparen"):
+                if paren_d > 0:
+                    paren_d -= 1
+            else if check(p, "lbracket"):
+                bracket_d += 1
+            else if check(p, "rbracket"):
+                if bracket_d > 0:
+                    bracket_d -= 1
+            else if check(p, "colon") and paren_d == 0 and bracket_d == 0:
+                break
+            else if check(p, "equal") and paren_d == 0 and bracket_d == 0:
+                break
+            else if check(p, "newline") and paren_d == 0 and bracket_d == 0:
+                break
+            advance(p)
+
+    ast.ast_null(ref_of(p.ast_buf), "return_type")
+
+    if check(p, "colon"):
+        advance(p)
+        consume_nl(p)
+        if check(p, "indent"):
+            advance(p)
+            while not check(p, "dedent") and not is_eof(p):
+                skip_statement(p)
+            if check(p, "dedent"):
+                advance(p)
+    else:
+        consume_nl(p)
+
+    ast.ast_array_start(ref_of(p.ast_buf), "body")
+    ast.ast_array_end(ref_of(p.ast_buf))
+
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", vis)
+    ast.ast_bool(ref_of(p.ast_buf), "async", is_async)
+    ast.ast_bool(ref_of(p.ast_buf), "const", is_const)
+    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+# ── extern / foreign / struct / enum / flags ──────────────────────────────
+
+function parse_extern_function(p: ref[Parser]) -> void:
+    advance(p)  # external
+    consume(p, "function", "expected function after external")
+    let fname = peek_lexeme(p)
+    advance(p)
+
+    parse_params_skip(p)
+    if check(p, "arrow"):
+        advance(p)
+        advance(p)
+
+    consume_nl(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "ExternFunctionDecl")
+    ast.ast_str(ref_of(p.ast_buf), "name", fname)
+    ast.ast_array_start(ref_of(p.ast_buf), "type_params")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_array_start(ref_of(p.ast_buf), "params")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "return_type")
+    ast.ast_bool(ref_of(p.ast_buf), "variadic", false)
+    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "mapping")
+    ast.ast_close(ref_of(p.ast_buf))
+
+function parse_foreign_function(p: ref[Parser]) -> void:
+    advance(p)  # foreign
+    consume(p, "function", "expected function after foreign")
+    let fname = peek_lexeme(p)
+    advance(p)
+
+    parse_params_skip(p)
+    if check(p, "arrow"):
+        advance(p)
+        advance(p)
+
+    consume(p, "equal", "expected = in foreign")
+    advance(p)  # mapping name
+    consume_nl(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "ForeignFunctionDecl")
+    ast.ast_str(ref_of(p.ast_buf), "name", fname)
+    ast.ast_array_start(ref_of(p.ast_buf), "type_params")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_array_start(ref_of(p.ast_buf), "params")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "return_type")
+    ast.ast_bool(ref_of(p.ast_buf), "variadic", false)
+    ast.ast_str(ref_of(p.ast_buf), "mapping", fname)
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", "")
+    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_close(ref_of(p.ast_buf))
+
+function parse_struct(p: ref[Parser]) -> void:
+    parse_struct_with_visibility(p, "")
+
+function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
+    advance(p)
+    let sname = peek_lexeme(p)
+    advance(p)
+
+    if check(p, "lbracket"):
+        advance(p)
+        while not check(p, "rbracket") and not is_eof(p):
+            advance(p)
+        advance(p)
+
+    var implements_json = string_mod.String.create()
+    implements_json.push_byte('[')
+    var first_impl = true
+    while check(p, "implements"):
+        if not first_impl:
+            implements_json.push_byte(',')
+        advance(p)
+        var impl_list = vec_mod.Vec[str].create()
+        while is_ident_or_keyword(p):
+            impl_list.push(peek_lexeme(p))
+            advance(p)
+            if check(p, "lbracket"):
+                advance(p)
+                var bracket_d: ptr_uint = 1
+                while bracket_d > 0 and not is_eof(p):
+                    if check(p, "lbracket"):
+                        bracket_d += 1
+                    else if check(p, "rbracket"):
+                        bracket_d -= 1
+                    advance(p)
+            if check(p, "comma"):
+                advance(p)
+            else if check(p, "and"):
+                advance(p)
+            else:
+                break
+        var i: ptr_uint = 0
+        while i < impl_list.len:
+            let ip = impl_list.at(i) else:
+                break
+            if i > 0:
+                implements_json.push_byte(',')
+            var esc = ast.json_escaped_str(ip)
+            implements_json.append(esc.as_str())
+            esc.release()
+            i += 1
+        impl_list.release()
+        first_impl = false
+    implements_json.push_byte(']')
+
+    if check(p, "colon"):
+        advance(p)
+        consume_nl(p)
+        if check(p, "indent"):
+            advance(p)
+            while not check(p, "dedent") and not is_eof(p):
+                skip_statement(p)
+            if check(p, "dedent"):
+                advance(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "StructDecl")
+    ast.ast_str(ref_of(p.ast_buf), "name", sname)
+    ast.ast_array_start(ref_of(p.ast_buf), "type_params")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_raw(ref_of(p.ast_buf), "implements", implements_json.as_str())
+    ast.ast_null(ref_of(p.ast_buf), "c_name")
+    ast.ast_array_start(ref_of(p.ast_buf), "fields")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_array_start(ref_of(p.ast_buf), "events")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_array_start(ref_of(p.ast_buf), "nested_types")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_bool(ref_of(p.ast_buf), "packed", false)
+    ast.ast_null(ref_of(p.ast_buf), "alignment")
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", vis)
+    ast.ast_array_start(ref_of(p.ast_buf), "lifetime_params")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+    implements_json.release()
+
+function parse_enum_or_flags(p: ref[Parser], is_flags: bool) -> void:
+    advance(p)
+    let ename = peek_lexeme(p)
+    advance(p)
+
+    var backing = string_mod.String.create()
+    backing.append("int")
+
+    if check(p, "colon"):
+        advance(p)
+        if check(p, "identifier"):
+            backing.clear()
+            backing.append(peek_lexeme(p))
+            advance(p)
+
+    consume_nl(p)
+    if check(p, "indent"):
+        advance(p)
+        while not check(p, "dedent") and not is_eof(p):
+            skip_statement(p)
+        if check(p, "dedent"):
+            advance(p)
+
+    let decl_type = if is_flags: "FlagsDecl" else: "EnumDecl"
+    ast.ast_open(ref_of(p.ast_buf), decl_type)
+    ast.ast_str(ref_of(p.ast_buf), "name", ename)
+    ast.ast_str(ref_of(p.ast_buf), "backing_type", backing.as_str())
+    ast.ast_array_start(ref_of(p.ast_buf), "members")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", "")
+    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+    backing.release()
+
+function parse_enum_with_visibility(p: ref[Parser], vis: str, is_flags: bool) -> void:
+    advance(p)
+    let ename = peek_lexeme(p)
+    advance(p)
+
+    if check(p, "colon"):
+        advance(p)
+        if check(p, "identifier"):
+            advance(p)
+
+    consume_nl(p)
+    if check(p, "indent"):
+        advance(p)
+        while not check(p, "dedent") and not is_eof(p):
+            skip_statement(p)
+        if check(p, "dedent"):
+            advance(p)
+
+    let decl_type = if is_flags: "FlagsDecl" else: "EnumDecl"
+    ast.ast_open(ref_of(p.ast_buf), decl_type)
+    ast.ast_str(ref_of(p.ast_buf), "name", ename)
+    ast.ast_str(ref_of(p.ast_buf), "backing_type", "int")
+    ast.ast_array_start(ref_of(p.ast_buf), "members")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", vis)
+    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+# ── union / variant / opaque / interface / extending ──────────────────────
+
+function parse_union(p: ref[Parser]) -> void:
+    parse_union_with_visibility(p, "")
+
+function parse_union_with_visibility(p: ref[Parser], vis: str) -> void:
+    advance(p)
+    let uname = peek_lexeme(p)
+    advance(p)
+
+    if check(p, "colon"):
+        advance(p)
+        consume_nl(p)
+        if check(p, "indent"):
+            advance(p)
+            while not check(p, "dedent") and not is_eof(p):
+                skip_statement(p)
+            if check(p, "dedent"):
+                advance(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "UnionDecl")
+    ast.ast_str(ref_of(p.ast_buf), "name", uname)
+    ast.ast_null(ref_of(p.ast_buf), "c_name")
+    ast.ast_array_start(ref_of(p.ast_buf), "fields")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", vis)
+    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+function parse_variant(p: ref[Parser]) -> void:
+    parse_variant_with_visibility(p, "")
+
+function parse_variant_with_visibility(p: ref[Parser], vis: str) -> void:
+    advance(p)
+    let vname = peek_lexeme(p)
+    advance(p)
+
+    if check(p, "lbracket"):
+        advance(p)
+        while not check(p, "rbracket") and not is_eof(p):
+            advance(p)
+        advance(p)
+
+    if check(p, "colon"):
+        advance(p)
+        consume_nl(p)
+        if check(p, "indent"):
+            advance(p)
+            while not check(p, "dedent") and not is_eof(p):
+                skip_statement(p)
+            if check(p, "dedent"):
+                advance(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "VariantDecl")
+    ast.ast_str(ref_of(p.ast_buf), "name", vname)
+    ast.ast_array_start(ref_of(p.ast_buf), "type_params")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_array_start(ref_of(p.ast_buf), "arms")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", vis)
+    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+function parse_opaque(p: ref[Parser]) -> void:
+    parse_opaque_with_visibility(p, "")
+
+function parse_opaque_with_visibility(p: ref[Parser], vis: str) -> void:
+    advance(p)
+    let oname = peek_lexeme(p)
+    advance(p)
+
+    while check(p, "implements"):
+        advance(p)
+        while check(p, "identifier"):
+            advance(p)
+            if check(p, "and"):
+                advance(p)
+            else:
+                break
+
+    consume_nl(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "OpaqueDecl")
+    ast.ast_str(ref_of(p.ast_buf), "name", oname)
+    ast.ast_array_start(ref_of(p.ast_buf), "implements")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "c_name")
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", vis)
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+function parse_interface(p: ref[Parser]) -> void:
+    parse_interface_with_visibility(p, "")
+
+function parse_interface_with_visibility(p: ref[Parser], vis: str) -> void:
+    advance(p)
+    let iname = peek_lexeme(p)
+    advance(p)
+
+    if check(p, "lbracket"):
+        advance(p)
+        while not check(p, "rbracket") and not is_eof(p):
+            advance(p)
+        advance(p)
+
+    if check(p, "colon"):
+        advance(p)
+        consume_nl(p)
+        if check(p, "indent"):
+            advance(p)
+            while not check(p, "dedent") and not is_eof(p):
+                skip_statement(p)
+            if check(p, "dedent"):
+                advance(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "InterfaceDecl")
+    ast.ast_str(ref_of(p.ast_buf), "name", iname)
+    ast.ast_array_start(ref_of(p.ast_buf), "type_params")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_array_start(ref_of(p.ast_buf), "methods")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", vis)
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+function parse_extending(p: ref[Parser]) -> void:
+    advance(p)
+    let tname = peek_lexeme(p)
+    advance(p)
+
+    if check(p, "lbracket"):
+        advance(p)
+        while not check(p, "rbracket") and not is_eof(p):
+            advance(p)
+        advance(p)
+
+    if check(p, "colon"):
+        advance(p)
+        consume_nl(p)
+        if check(p, "indent"):
+            advance(p)
+            while not check(p, "dedent") and not is_eof(p):
+                skip_statement(p)
+            if check(p, "dedent"):
+                advance(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "ExtendingBlock")
+    ast.ast_str(ref_of(p.ast_buf), "type_name", tname)
+    ast.ast_array_start(ref_of(p.ast_buf), "methods")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+# ── attribute / static_assert / event ─────────────────────────────────────
+
+function parse_attribute(p: ref[Parser]) -> void:
+    advance(p)
+
+    if check(p, "lbracket"):
+        advance(p)
+        while not check(p, "rbracket") and not is_eof(p):
+            advance(p)
+        advance(p)
+
+    let aname = peek_lexeme(p)
+    advance(p)
+
+    parse_params_skip(p)
+    consume_nl(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "AttributeDecl")
+    ast.ast_str(ref_of(p.ast_buf), "name", aname)
+    ast.ast_array_start(ref_of(p.ast_buf), "targets")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_array_start(ref_of(p.ast_buf), "params")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", "")
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+function parse_static_assert(p: ref[Parser]) -> void:
+    advance(p)
+    consume(p, "lparen", "expected (")
+    var paren_d: ptr_uint = 1
+    while paren_d > 0 and not is_eof(p):
+        if check(p, "lparen"):
+            paren_d += 1
+        else if check(p, "rparen"):
+            paren_d -= 1
+        advance(p)
+    consume_nl(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "StaticAssert")
+    ast.ast_str(ref_of(p.ast_buf), "condition", "true")
+    ast.ast_str(ref_of(p.ast_buf), "message", "")
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_close(ref_of(p.ast_buf))
+
+function parse_event(p: ref[Parser]) -> void:
+    parse_event_with_visibility(p, "")
+
+function parse_event_with_visibility(p: ref[Parser], vis: str) -> void:
+    advance(p)
+    let evname = peek_lexeme(p)
+    advance(p)
+
+    consume(p, "lbracket", "expected [")
+    advance(p)  # capacity
+    consume(p, "rbracket", "expected ]")
+
+    if check(p, "lparen"):
+        advance(p)
+        advance(p)  # payload type
+        advance(p)  # )
+
+    consume_nl(p)
+
+    ast.ast_open(ref_of(p.ast_buf), "EventDecl")
+    ast.ast_str(ref_of(p.ast_buf), "name", evname)
+    ast.ast_int(ref_of(p.ast_buf), "capacity", 0)
+    ast.ast_null(ref_of(p.ast_buf), "payload_type")
+    ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", vis)
+    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
+    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+# ── helpers ───────────────────────────────────────────────────────────────
+
+function parse_type_params(p: ref[Parser]) -> void:
+    if check(p, "lbracket"):
+        advance(p)
+        var bracket_d: ptr_uint = 1
+        while bracket_d > 0 and not is_eof(p):
+            if check(p, "lbracket"):
+                bracket_d += 1
+            else if check(p, "rbracket"):
+                bracket_d -= 1
+            advance(p)
+
+function parse_params_skip(p: ref[Parser]) -> void:
+    if check(p, "lparen"):
+        advance(p)
+        var paren_d: ptr_uint = 1
+        while paren_d > 0 and not is_eof(p):
+            if check(p, "lparen"):
+                paren_d += 1
+            else if check(p, "rparen"):
+                paren_d -= 1
+            advance(p)
+
+function parse_params_ast(p: ref[Parser]) -> void:
+    ast.ast_array_start(ref_of(p.ast_buf), "params")
+    if check(p, "lparen"):
+        advance(p)
+        var first = true
+        while not is_eof(p) and not check(p, "rparen"):
+            if not first:
+                ast.ast_comma(ref_of(p.ast_buf))
+            first = false
+
+            ast.ast_open(ref_of(p.ast_buf), "Param")
+            let pname = peek_lexeme(p)
+            advance(p)
+            ast.ast_str(ref_of(p.ast_buf), "name", pname)
+            ast.ast_null(ref_of(p.ast_buf), "type")
+            ast.ast_null(ref_of(p.ast_buf), "line")
+            ast.ast_null(ref_of(p.ast_buf), "column")
+            ast.ast_close(ref_of(p.ast_buf))
+
+            if check(p, "colon"):
+                advance(p)
+                if check(p, "identifier"):
+                    advance(p)
+
+            if check(p, "lbracket"):
+                advance(p)
+                var bd: ptr_uint = 1
+                while bd > 0 and not is_eof(p) and not check(p, "comma") and not check(p, "rparen"):
+                    if check(p, "lbracket"):
+                        bd += 1
+                    else if check(p, "rbracket"):
+                        bd -= 1
+                        if bd == 0:
+                            advance(p)
+                            break
+                    advance(p)
+
+            if check(p, "comma"):
+                advance(p)
+
+        if check(p, "rparen"):
+            advance(p)
+    ast.ast_array_end(ref_of(p.ast_buf))
+
+function parse_type_annotation(p: ref[Parser]) -> void:
+    if check(p, "colon"):
+        advance(p)
+        if check(p, "identifier"):
+            advance(p)
+            if check(p, "lbracket"):
+                advance(p)
+                var bracket_d: ptr_uint = 1
+                while bracket_d > 0 and not is_eof(p) and not check(p, "newline") and not check(p, "equal") and not check(p, "comma") and not check(p, "rparen"):
+                    if check(p, "lbracket"):
+                        bracket_d += 1
+                    else if check(p, "rbracket"):
+                        bracket_d -= 1
+                    advance(p)
+                advance(p)
+
+function parse_type_ref(p: ref[Parser]) -> void:
+    if check(p, "identifier"):
+        advance(p)
+        if check(p, "lbracket"):
+            advance(p)
+            var bracket_d: ptr_uint = 1
+            while bracket_d > 0 and not is_eof(p) and not check(p, "newline") and not check(p, "colon") and not check(p, "rparen"):
+                if check(p, "lbracket"):
+                    bracket_d += 1
+                else if check(p, "rbracket"):
+                    bracket_d -= 1
+                advance(p)
+            advance(p)
+
+function skip_statement(p: ref[Parser]) -> void:
+    skip_newlines(p)
+    if is_eof(p) or check(p, "dedent"):
+        return
+
+    if check(p, "indent"):
+        advance(p)
+        while not check(p, "dedent") and not is_eof(p):
+            skip_statement(p)
+        if check(p, "dedent"):
+            advance(p)
+        return
+
+    if check(p, "if") or check(p, "while") or check(p, "for") or check(p, "match"):
+        advance(p)
+        while not is_eof(p) and not check(p, "newline") and not check(p, "colon"):
+            skip_expression(p)
+        if check(p, "colon"):
+            advance(p)
+            if check(p, "newline"):
+                advance(p)
+                if check(p, "indent"):
+                    advance(p)
+                    while not check(p, "dedent") and not is_eof(p):
+                        skip_statement(p)
+                    if check(p, "dedent"):
+                        advance(p)
+            else:
+                while not is_eof(p) and not check(p, "newline") and not check(p, "dedent"):
+                    skip_expression(p)
+                if check(p, "newline"):
+                    advance(p)
+        if check(p, "else"):
+            advance(p)
+            if check(p, "if"):
+                advance(p)
+                while not is_eof(p) and not check(p, "newline") and not check(p, "colon"):
+                    skip_expression(p)
+            if check(p, "colon"):
+                advance(p)
+                if check(p, "newline"):
+                    advance(p)
+                    if check(p, "indent"):
+                        advance(p)
+                        while not check(p, "dedent") and not is_eof(p):
+                            skip_statement(p)
+                        if check(p, "dedent"):
+                            advance(p)
+                else:
+                    while not is_eof(p) and not check(p, "newline") and not check(p, "dedent"):
+                        skip_expression(p)
+                    if check(p, "newline"):
+                        advance(p)
+        return
+
+    if check(p, "return") or check(p, "break") or check(p, "continue") or check(p, "pass"):
+        advance(p)
+        skip_expression_past(p)
+        return
+
+    if check(p, "let") or check(p, "var"):
+        advance(p)
+        skip_expression_past(p)
+        return
+
+    if check(p, "defer"):
+        advance(p)
+        if check(p, "colon"):
+            advance(p)
+            consume_nl(p)
+            if check(p, "indent"):
+                advance(p)
+                while not check(p, "dedent") and not is_eof(p):
+                    skip_statement(p)
+                if check(p, "dedent"):
+                    advance(p)
+        else:
+            skip_expression_past(p)
+        return
+
+    if check(p, "unsafe"):
+        advance(p)
+        skip_expression_past(p)
+        return
+
+    if check(p, "when") or check(p, "inline") or check(p, "parallel") or check(p, "detach") or check(p, "gather") or check(p, "emit") or check(p, "event"):
+        advance(p)
+        skip_expression_past(p)
+        return
+
+    skip_expression_past(p)
+
+function skip_expression_past(p: ref[Parser]) -> void:
+    while not is_eof(p) and not check(p, "newline") and not check(p, "dedent"):
+        skip_expression(p)
+
+    if check(p, "newline"):
+        advance(p)
+
+function skip_expression(p: ref[Parser]) -> void:
+    if is_eof(p):
+        return
+
+    if check(p, "lparen") or check(p, "lbracket"):
+        advance(p)
+        skip_until_close(p)
+
+    advance(p)
+
+function skip_until_close(p: ref[Parser]) -> void:
+    var depth: ptr_uint = 1
+    while depth > 0 and not is_eof(p):
+        if check(p, "lparen") or check(p, "lbracket"):
+            depth += 1
+        else if check(p, "rparen") or check(p, "rbracket"):
+            depth -= 1
+        advance(p)
+
+# ── public entry point ────────────────────────────────────────────────────
+
+public function parse_to_ast_json(source: str, module_name: str) -> string_mod.String:
+    var p = Parser(
+        tokens = ts.TokenStream.from_source(source),
+        ast_buf = ast.AstBuf(buf = string_mod.String.create(), first_field = true),
+    )
+    return parse_source_file(ref_of(p), module_name)
+
+function consume_nl(p: ref[Parser]) -> void:
+    while not is_eof(p) and not check(p, "newline") and not check(p, "dedent"):
+        advance(p)
+    if check(p, "newline"):
+        advance(p)
