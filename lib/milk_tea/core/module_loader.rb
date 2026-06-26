@@ -96,6 +96,7 @@ module MilkTea
       @parse_cache = {}
       @analysis_cache = {}
       @collecting_analysis_cache = {}
+      @collecting_path_errors = {}
       @checking_paths = []
       @platform = self.class.normalize_platform_name(platform)
       @package_graph = package_graph
@@ -311,6 +312,14 @@ module MilkTea
       ImportResolution.new(modules: modules.freeze, errors: errors.freeze)
     end
 
+    # Errors collected per analyzed import path during collecting-mode checks.
+    # Populated by #check_path_collecting_errors; used by the CLI `check` command
+    # to surface errors in a single file's imported modules (otherwise only
+    # reported when that module is checked directly).
+    def collecting_path_errors
+      @collecting_path_errors
+    end
+
     private
 
     def self.raise_platform_conflict!(path, pinned_platform, active_platform, error_class: nil)
@@ -396,6 +405,7 @@ module MilkTea
       analysis = result[:analysis]
       raise(result[:errors].first || ModuleLoadError.new("module analysis unavailable", path: resolved_path)) unless analysis
 
+      @collecting_path_errors[resolved_path] = result[:errors]
       @collecting_analysis_cache[resolved_path] = analysis
       analysis
     ensure

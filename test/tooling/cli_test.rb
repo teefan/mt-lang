@@ -65,6 +65,39 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_check_single_file_reports_errors_in_imported_modules
+    Dir.mktmpdir("milk-tea-cli-check-import-errors") do |dir|
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "demo"
+        version = "0.1.0"
+        source_root = "."
+      TOML
+
+      File.write(File.join(dir, "helper.mt"), <<~MT)
+        public function helper_value() -> int:
+            let bad: int = "not an int"
+            return 0
+      MT
+
+      main_path = File.join(dir, "main.mt")
+      File.write(main_path, <<~MT)
+        import helper
+
+        function main() -> int:
+            return helper.helper_value()
+      MT
+
+      out = StringIO.new
+      err = StringIO.new
+      status = MilkTea::CLI.start(["check", main_path], out:, err:)
+
+      refute_equal 0, status
+      assert_match(/cannot assign str to bad/, err.string)
+      assert_match(/helper\.mt/, err.string)
+    end
+  end
+
   def test_build_command_compiles_direct_source_with_fake_compiler
     Dir.mktmpdir("milk-tea-cli-build-direct") do |dir|
       source_path = write_simple_source(dir)

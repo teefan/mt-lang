@@ -113,7 +113,7 @@ Supported literals:
 - integer: `42`, `0xff`, `0b1010`, with `_` separators. Integer type suffixes: `42u` (`uint`), `0xFFub` (`ubyte`), `100z` (`ptr_uint`), `7i` (`int`), `-1l` (`long`), etc.
 - float: `3.14`, `1.2e-3`, `1.1920929E-7`, `1.0f` (float suffix), `1.0d` (double suffix)
 - character: `'a'`, `'\n'`, `'\t'`, `'\\'`, `'\''`, `'\0'`, `'\x41'`. Type is `ubyte`. Escape sequences: `\n`, `\r`, `\t`, `\\`, `\'`, `\"`, `\0` (null), `\xNN` (hex byte).
-- string: `"hello"` (`str`)
+- string: `"hello"` (`str`). Supported string escapes are `\n`, `\r`, `\t`, `\0` (null), `\"`, `\'`, and `\\`; any other `\x` sequence is taken literally. Hex byte escapes (`\xNN`) are character-literal only, not string-literal.
 - cstring: `c"hello"` (`cstr`)
 - heredoc string: `<<-TAG ... TAG` (`str`)
 - heredoc cstring: `c<<-TAG ... TAG` (`cstr`)

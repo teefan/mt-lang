@@ -57,7 +57,7 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 // Array of tokens produced by the lexer
 [
   {
-    "type": "keyword_function",    // token type symbol
+    "type": "function",            // token type symbol (bare; keywords are not prefixed)
     "lexeme": "function",          // source text
     "literal": null,               // integer/float/string value, or null
     "line": 1,                     // 1-based line number

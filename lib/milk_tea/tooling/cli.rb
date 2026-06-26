@@ -702,13 +702,27 @@ module MilkTea
       # Text mode: original reporting behavior
       all_diagnostics = []
       paths.each do |path|
-        diagnostics, module_name = check_single_reporting_all(path, locked: resolution[:locked])
+        diagnostics, module_name, closure_errors = check_single_reporting_all(path, locked: resolution[:locked])
+        # A single-file check also surfaces errors in its imported modules: those
+        # modules are analyzed, but their errors are otherwise only reported when
+        # the module is checked directly. A multi-file/directory check already
+        # checks each module directly, so it must not re-report them here.
+        closure_errors = [] if paths.length > 1
+        diagnostics = sort_by_location(diagnostics)
 
-        if diagnostics.any?
-          diagnostics = sort_by_location(diagnostics)
+        if diagnostics.any? || closure_errors.any?
           source = read_source_file(path)
-          diagnostics.each_with_index { |d, i| @err.puts(ErrorFormatter.format(d, source:, color: @err.tty?, index: i + 1)) }
+          index = 0
+          diagnostics.each do |d|
+            index += 1
+            @err.puts(ErrorFormatter.format(d, source:, color: @err.tty?, index: index))
+          end
+          closure_errors.each do |d|
+            index += 1
+            @err.puts(ErrorFormatter.format(d, color: @err.tty?, index: index))
+          end
           all_diagnostics.concat(diagnostics)
+          all_diagnostics.concat(closure_errors)
         elsif module_name
           @out.puts("checked #{path} as #{module_name}")
         end
@@ -755,9 +769,10 @@ module MilkTea
         errors.concat(warnings)
       end
 
-      [errors, module_name]
+      closure_errors = loader.collecting_path_errors.values.flatten.compact
+      [errors, module_name, closure_errors]
     rescue ModuleLoadError, PackageLockError, SemanticError => e
-      [[e], nil]
+      [[e], nil, []]
     end
 
     def sort_by_location(errors)

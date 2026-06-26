@@ -457,6 +457,11 @@ module MilkTea
       end
 
       def explicit_cast_suggestion(actual_type, expected_type)
+        if expected_type.is_a?(Types::Span) && array_type?(actual_type) &&
+           array_element_type(actual_type) == expected_type.element_type
+          return "a span is a mutable view; the array must be a mutable addressable value — bind it with `var` (a `let` array does not coerce)"
+        end
+
         if castable_primitive?(actual_type) && castable_primitive?(expected_type)
           return nil if actual_type == expected_type
           "use an explicit cast: `#{expected_type}<-(value)`"
