@@ -19,9 +19,12 @@ module MilkTea
         line("program #{module_name}")
         emit_section("includes", program.includes) { |include_directive| line("include #{include_directive.header}") }
         emit_section("constants", program.constants) { |constant| emit_constant(constant) }
+        emit_section("globals", program.globals) { |global_directive| emit_global(global_directive) }
+        emit_section("opaques", program.opaques) { |opaque_declaration| emit_opaque(opaque_declaration) }
         emit_section("structs", program.structs) { |struct_decl| emit_struct(struct_decl) }
         emit_section("unions", program.unions) { |union_decl| emit_union(union_decl) }
         emit_section("enums", program.enums) { |enum_decl| emit_enum(enum_decl) }
+        emit_section("variants", program.variants) { |variant_declaration| emit_variant(variant_declaration) }
         emit_section("static_asserts", program.static_asserts) { |static_assert| emit_static_assert(static_assert) }
         emit_section("functions", program.functions) { |function| emit_function(function) }
       end
@@ -41,6 +44,28 @@ module MilkTea
 
       def emit_constant(constant)
         line("const #{binding_name(constant.name, constant.linkage_name)}: #{constant.type} = #{render_expression(constant.value)}")
+      end
+
+      def emit_global(global)
+        line("var #{binding_name(global.name, global.linkage_name)}: #{global.type} = #{render_expression(global.value)}")
+      end
+
+      def emit_opaque(opaque_decl)
+        line("opaque #{binding_name(opaque_decl.name, opaque_decl.linkage_name)}")
+      end
+
+      def emit_variant(variant_decl)
+        line("variant #{binding_name(variant_decl.name, variant_decl.linkage_name)}:")
+        with_indent do
+          variant_decl.arms.each do |arm|
+            text = binding_name(arm.name, arm.linkage_name)
+            unless arm.fields.empty?
+              field_texts = arm.fields.map { |f| "#{f.name}: #{f.type}" }
+              text += "(#{field_texts.join(', ')})"
+            end
+            line(text)
+          end
+        end
       end
 
       def emit_struct(struct_decl)
