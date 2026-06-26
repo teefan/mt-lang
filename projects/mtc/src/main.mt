@@ -9,6 +9,7 @@ import std.mem.heap as heap
 import std.str as str_util
 
 import lexer.lexer as lexer_mod
+import test.all_tests as test_runner
 
 function read_whole_file(path: str) -> string_mod.String:
     let file = stdio.file_open(path, "rb") else:
@@ -52,6 +53,10 @@ function print_usage() -> void:
     stdio.print_line(c"")
     stdio.print_line(c"subcommands:")
     stdio.print_line(c"  lex <file>    tokenize source, print token JSON to stdout")
+    stdio.print_line(c"  test          run lexer regression tests")
+
+function test_cmd() -> int:
+    return test_runner.run_all()
 
 function main(args: span[str]) -> int:
     if args.len < 1:
@@ -65,6 +70,9 @@ function main(args: span[str]) -> int:
             print_usage()
             return 1
         return lex_cmd(args[1])
+
+    if cmd == "test":
+        return test_cmd()
 
     if cmd == "--help" or cmd == "-h":
         print_usage()

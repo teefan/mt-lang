@@ -136,7 +136,17 @@ function json_escaped(src: str) -> string_mod.String:
         else if ch == '\t':
             sunk.append("\\t")
         else if ch < 32:
-            sunk.push_byte(ch)
+            sunk.append("\\u00")
+            let hi = ch / 16
+            let lo = ch % 16
+            if hi < 10:
+                sunk.push_byte(ubyte<-(48 + int<-hi))
+            else:
+                sunk.push_byte(ubyte<-(87 + int<-hi))
+            if lo < 10:
+                sunk.push_byte(ubyte<-(48 + int<-lo))
+            else:
+                sunk.push_byte(ubyte<-(87 + int<-lo))
         else:
             sunk.push_byte(ch)
         i += 1
@@ -211,7 +221,7 @@ function handle_indent(state: ref[LexState], indent_spaces: ptr_uint, line_start
 
     let top_opt = state.indent_stack.last() else:
         fatal(c"lexer: indent stack empty")
-    let cur = unsafe: read(top_opt)
+    var cur = unsafe: read(top_opt)
 
     if indent_spaces > cur:
         if indent_spaces != cur + 4:
@@ -223,17 +233,11 @@ function handle_indent(state: ref[LexState], indent_spaces: ptr_uint, line_start
     while indent_spaces < cur:
         if state.indent_stack.len <= 1:
             break
-        let top2 = state.indent_stack.last() else:
-            break
-        let top_val = unsafe: read(top2)
-        if top_val <= indent_spaces:
-            break
         emit_tok(state, "dedent", "", "null", state.line_num, 1, line_start, line_start)
         state.indent_stack.pop()
-        let nt = state.indent_stack.last() else:
+        let new_top = state.indent_stack.last() else:
             break
-        let _nc = unsafe: read(nt)
-        pass
+        cur = unsafe: read(new_top)
 
 # ── number lexing ─────────────────────────────────────────────────────────
 # advances state.pos past the token
@@ -251,6 +255,12 @@ function lex_number(state: ref[LexState], offset: ptr_uint, column: ptr_uint) ->
                 i += 2
                 while i < s.len and (is_hex_digit_ch(s.byte_at(i)) or s.byte_at(i) == '_'):
                     i += 1
+                while i < s.len and (
+                    s.byte_at(i) == 'u' or s.byte_at(i) == 'b'
+                    or s.byte_at(i) == 's' or s.byte_at(i) == 'i'
+                    or s.byte_at(i) == 'l' or s.byte_at(i) == 'z'
+                ):
+                    i += 1
                 let end_off = i
                 let lm = s.slice(offset, end_off - offset)
                 let lit = parse_int(lm)
@@ -264,6 +274,12 @@ function lex_number(state: ref[LexState], offset: ptr_uint, column: ptr_uint) ->
             else if c2 == 'b' or c2 == 'B':
                 i += 2
                 while i < s.len and (is_bin_digit_ch(s.byte_at(i)) or s.byte_at(i) == '_'):
+                    i += 1
+                while i < s.len and (
+                    s.byte_at(i) == 'u' or s.byte_at(i) == 'b'
+                    or s.byte_at(i) == 's' or s.byte_at(i) == 'i'
+                    or s.byte_at(i) == 'l' or s.byte_at(i) == 'z'
+                ):
                     i += 1
                 let end_off = i
                 let lm = s.slice(offset, end_off - offset)
