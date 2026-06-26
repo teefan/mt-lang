@@ -7,6 +7,8 @@ import std.fmt as fmt
 import std.vec as vec_mod
 import std.str
 
+import lexer.lexer as lexer_mod
+
 public struct AstBuf:
     buf: string_mod.String
     first_field: bool
@@ -43,7 +45,7 @@ public function ast_key(buf: ref[AstBuf], key: str) -> void:
 
 public function ast_str(buf: ref[AstBuf], key: str, value: str) -> void:
     ast_key(buf, key)
-    var esc = json_escaped_str(value)
+    var esc = lexer_mod.json_escaped(value)
     buf.buf.append(esc.as_str())
     esc.release()
 
@@ -61,10 +63,6 @@ public function ast_bool(buf: ref[AstBuf], key: str, value: bool) -> void:
 public function ast_int(buf: ref[AstBuf], key: str, value: int) -> void:
     ast_key(buf, key)
     fmt.append_int(ref_of(buf.buf), value)
-
-public function ast_uint(buf: ref[AstBuf], key: str, value: ptr_uint) -> void:
-    ast_key(buf, key)
-    fmt.append_ptr_uint(ref_of(buf.buf), value)
 
 public function ast_sym(buf: ref[AstBuf], key: str, sym_name: str) -> void:
     ast_key(buf, key)
@@ -108,34 +106,10 @@ public function name_json(name_parts: vec_mod.Vec[str]) -> string_mod.String:
             break
         if not first:
             result.push_byte(',')
-        var esc = json_escaped_str(part)
+        var esc = lexer_mod.json_escaped(part)
         result.append(esc.as_str())
         esc.release()
         first = false
         i += 1
     result.append("],\"type_arguments\":[],\"line\":null,\"column\":null}")
     return result
-
-# ── tiny JSON string escape ───────────────────────────────────────────────
-
-public function json_escaped_str(src: str) -> string_mod.String:
-    var buf = string_mod.String.create()
-    buf.push_byte('"')
-    var i: ptr_uint = 0
-    while i < src.len:
-        let ch = src.byte_at(i)
-        if ch == '"':
-            buf.append("\\\"")
-        else if ch == '\\':
-            buf.append("\\\\")
-        else if ch == '\n':
-            buf.append("\\n")
-        else if ch == '\r':
-            buf.append("\\r")
-        else if ch == '\t':
-            buf.append("\\t")
-        else:
-            buf.push_byte(ch)
-        i += 1
-    buf.push_byte('"')
-    return buf

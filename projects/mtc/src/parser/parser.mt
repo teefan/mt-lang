@@ -277,19 +277,6 @@ function parse_when_block(p: ref[Parser]) -> void:
     ast.ast_null(ref_of(p.ast_buf), "length")
     ast.ast_close(ref_of(p.ast_buf))
 
-function parse_attribute_application(p: ref[Parser]) -> void:
-    advance(p)
-    if check(p, "lbracket"):
-        advance(p)
-        var bracket_d: ptr_uint = 1
-        while bracket_d > 0 and not is_eof(p):
-            if check(p, "lbracket"):
-                bracket_d += 1
-            else if check(p, "rbracket"):
-                bracket_d -= 1
-            advance(p)
-    skip_newlines(p)
-
 function parse_declaration_public(p: ref[Parser]) -> void:
     let kind = peek_kind(p)
 
@@ -534,7 +521,8 @@ function parse_foreign_function(p: ref[Parser]) -> void:
         advance(p)
 
     consume(p, "equal", "expected = in foreign")
-    advance(p)  # mapping name
+    let mapping_name = peek_lexeme(p)
+    advance(p)
     consume_nl(p)
 
     ast.ast_open(ref_of(p.ast_buf), "ForeignFunctionDecl")
@@ -545,7 +533,7 @@ function parse_foreign_function(p: ref[Parser]) -> void:
     ast.ast_array_end(ref_of(p.ast_buf))
     ast.ast_null(ref_of(p.ast_buf), "return_type")
     ast.ast_bool(ref_of(p.ast_buf), "variadic", false)
-    ast.ast_str(ref_of(p.ast_buf), "mapping", fname)
+    ast.ast_str(ref_of(p.ast_buf), "mapping", mapping_name)
     ast.ast_sym_nullable(ref_of(p.ast_buf), "visibility", "")
     ast.ast_array_start(ref_of(p.ast_buf), "attributes")
     ast.ast_array_end(ref_of(p.ast_buf))
@@ -598,7 +586,7 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
                 break
             if i > 0:
                 implements_json.push_byte(',')
-            var esc = ast.json_escaped_str(ip)
+            var esc = lexer_mod.json_escaped(ip)
             implements_json.append(esc.as_str())
             esc.release()
             i += 1
@@ -1150,8 +1138,8 @@ function skip_expression(p: ref[Parser]) -> void:
     if check(p, "lparen") or check(p, "lbracket"):
         advance(p)
         skip_until_close(p)
-
-    advance(p)
+    else:
+        advance(p)
 
 function skip_until_close(p: ref[Parser]) -> void:
     var depth: ptr_uint = 1

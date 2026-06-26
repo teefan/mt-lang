@@ -119,39 +119,39 @@ function float_lit_json(lex: str) -> string_mod.String:
 
 # ── JSON string escaping ──────────────────────────────────────────────────
 
-function json_escaped(src: str) -> string_mod.String:
-    var sunk = string_mod.String.create()
-    sunk.push_byte('"')
+public function json_escaped(src: str) -> string_mod.String:
+    var buf = string_mod.String.create()
+    buf.push_byte('"')
     var i: ptr_uint = 0
     while i < src.len:
         let ch = src.byte_at(i)
         if ch == '"':
-            sunk.append("\\\"")
+            buf.append("\\\"")
         else if ch == '\\':
-            sunk.append("\\\\")
+            buf.append("\\\\")
         else if ch == '\n':
-            sunk.append("\\n")
+            buf.append("\\n")
         else if ch == '\r':
-            sunk.append("\\r")
+            buf.append("\\r")
         else if ch == '\t':
-            sunk.append("\\t")
+            buf.append("\\t")
         else if ch < 32:
-            sunk.append("\\u00")
+            buf.append("\\u00")
             let hi = ch / 16
             let lo = ch % 16
             if hi < 10:
-                sunk.push_byte(ubyte<-(48 + int<-hi))
+                buf.push_byte(ubyte<-(48 + int<-hi))
             else:
-                sunk.push_byte(ubyte<-(87 + int<-hi))
+                buf.push_byte(ubyte<-(87 + int<-hi))
             if lo < 10:
-                sunk.push_byte(ubyte<-(48 + int<-lo))
+                buf.push_byte(ubyte<-(48 + int<-lo))
             else:
-                sunk.push_byte(ubyte<-(87 + int<-lo))
+                buf.push_byte(ubyte<-(87 + int<-lo))
         else:
-            sunk.push_byte(ch)
+            buf.push_byte(ch)
         i += 1
-    sunk.push_byte('"')
-    return sunk
+    buf.push_byte('"')
+    return buf
 
 # ── lexer state ───────────────────────────────────────────────────────────
 
@@ -438,9 +438,6 @@ function lex_strlit(state: ref[LexState], offset: ptr_uint, column: ptr_uint, pr
         state.line_num = state.line_num + consumed_lines - 1
         state.line_off = end_off
         state.pos = end_off
-        var after_content = end_off
-        while after_content < s.len and s.byte_at(after_content) != '\n':
-            after_content += 1
     else:
         state.pos = end_off
 
@@ -717,16 +714,15 @@ function lex_fstring(state: ref[LexState], offset: ptr_uint, column: ptr_uint) -
     var first_part = true
 
     var text = string_mod.String.create()
-    let brace_d: ptr_uint = 0
 
     while i < s.len:
         let ch = s.byte_at(i)
 
-        if ch == '"' and brace_d == 0:
+        if ch == '"':
             i += 1
             break
 
-        if ch == '#' and i + 1 < s.len and s.byte_at(i + 1) == '{' and brace_d == 0:
+        if ch == '#' and i + 1 < s.len and s.byte_at(i + 1) == '{':
             if text.len > 0:
                 if not first_part:
                     parts.push_byte(',')
@@ -986,15 +982,21 @@ function lex_line_tokens(state: ref[LexState], content_start: ptr_uint) -> void:
             continue
 
         if try_3char(state, abs_start, col):
-            last_kind = "ellipsis"
+            let lt = state.output_tokens.last() else:
+                fatal(c"lexer: no last token")
+            last_kind = unsafe: read(lt).kind
             continue
 
         if try_2char(state, abs_start, col):
-            last_kind = "symbol"
+            let lt = state.output_tokens.last() else:
+                fatal(c"lexer: no last token")
+            last_kind = unsafe: read(lt).kind
             continue
 
         if try_1char(state, abs_start, col):
-            last_kind = "symbol"
+            let lt = state.output_tokens.last() else:
+                fatal(c"lexer: no last token")
+            last_kind = unsafe: read(lt).kind
             continue
 
         state.pos += 1
@@ -1096,6 +1098,7 @@ public function lex_to_json(source: str) -> string_mod.String:
     state.buf.push_byte(']')
 
     state.indent_stack.release()
+    state.output_tokens.release()
     return state.buf
 
 public function lex_to_tokens(source: str) -> vec_mod.Vec[Token]:

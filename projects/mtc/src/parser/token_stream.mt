@@ -63,9 +63,6 @@ extending TokenStream:
         msg.append(this.peek_kind())
         fatal(msg.as_str())
 
-    public static function from_tokens(tokens: vec_mod.Vec[lexer_mod.Token]) -> TokenStream:
-        return TokenStream(tokens = tokens, pos = 0)
-
     public static function from_source(source: str) -> TokenStream:
         var tokens = lexer_mod.lex_to_tokens(source)
         return TokenStream(tokens = tokens, pos = 0)

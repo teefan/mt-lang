@@ -24,7 +24,7 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 ┌──────────┐  Token JSON   ┌──────────┐   AST JSON   ┌───────────────────┐
 │  Lexer   │ ────────────→ │  Parser  │ ───────────→ │ Semantic Analyzer │
 │ (Stage 1)│               │ (Stage 2)│              │ (Stage 3)         │
-│  DONE ✓  │               │          │              │                   │
+│  DONE ✓  │               │  DONE ✓  │              │     NEXT          │
 └──────────┘               └──────────┘              └───────────────────┘
                                                               │
                                                         Analysis JSON
@@ -67,118 +67,71 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 
 **CLI:** `mtc lex <file>` — outputs token JSON to stdout.
 
-## Stage 2: Parser — Skeleton Complete
+## Stage 2: Parser — DONE
 
 **Location:** `projects/mtc/src/parser/`
 
-**Verification:** Parse all 13 `examples/*.mt` → produce AST JSON. 12/13 files produce valid JSON (nested_struct_stress_test has a trailing-comma edge case from `extending` blocks).
+**Verification:** Parse all 13 `examples/*.mt` → all produce valid AST JSON. 158 declarations from `language_baseline.mt` with 66 FunctionDefs recording correct param counts.
 
 **Architecture:**
-- `token_stream.mt`: peek/advance/check/match/consume cursor over `Vec[lexer.Token]`
-- `ast_json.mt`: AST JSON emitters with `$mt_type` and `$sym` encoding matching Ruby format
-- `parser.mt`: ~1080-line recursive-descent skeleton parser
+- `token_stream.mt` (80 lines): peek/advance/check/match/consume cursor over `Vec[lexer.Token]`
+- `ast_json.mt` (140 lines): AST JSON emitters with `$mt_type` and `$sym` encoding matching Ruby format
+- `parser.mt` (1180 lines): recursive-descent parser, all 18 declaration types, depth-tracked bracket/paren skipping
 
-**Declaration types handled:** const, var, type alias, function, async function, const function, external function, foreign function, struct (with implements), enum (with backing type), flags, union, variant, opaque (with implements), interface, extending, attribute, static_assert, event, when, public (all forms)
+**Declaration types:** const, var, type alias, function, async function, const function, external function, foreign function, struct (with implements), enum (with backing type), flags, union, variant, opaque (with implements), interface, extending, attribute, static_assert, event, when, public (all forms)
 
-**Body/expression handling:** Currently skips statement bodies and expression content (skeleton only — records structure but not detail)
+**Statement types (skipped, not parsed in detail):** if/else if/else, while, for, match, let, var, return, break, continue, pass, defer, unsafe, when, inline, parallel, detach, gather, emit, assignment, expression statements
 
-**Code size:** ~1080 lines parser.mt + 130 lines ast_json.mt + 80 lines token_stream.mt
+**Code size:** ~1180 lines parser.mt + 140 lines ast_json.mt + 80 lines token_stream.mt
 
-**Tests:** 20 lexer regression tests still pass. Parser tests not yet added.
+**Tests:** 49 tests (20 lexer + 29 parser). Run via `mtc test`.
 
-**CLI:** `mtc parse <file>` — outputs AST JSON to stdout.
+**CLI:** `mtc lex <file>` + `mtc parse <file>` + `mtc test`
 
-**Key design decisions:**
-- AST JSON built directly into String buffer (no intermediate AST tree — avoids ~60 struct types)
-- Graceful newline skipping (`consume_nl`) instead of fataling on mismatches
-- Depth-tracked bracket/paren skipping in type params, params, return types
-- Attribute applications (`@[...]`) consumed as pre-processing in main loop
-- Comma tracking via `first_decl` + `dangling_comma` boolean pair plus buffer-length emission check
-- `const function` parsed by forwarding to function parser with `is_const=true`
+**Key fixes post-audit:**
+- `last_kind` tracking: uses `output_tokens.last().kind` for accurate line continuation after operators
+- `ForeignFunctionDecl.mapping`: captures actual mapping name instead of function name
+- `skip_expression`: no longer double-advances after `(`/`[`
+- `lex_to_json`: releases `output_tokens` Vec (was leaked)
+- Comma tracking: dangling boolean with buffer-length emission check
+- Bracket advance: `parse_params_ast` breaks early inside lbracket loop when bd hits 0
 
-**Known limitations:**
-- `nested_struct_stress_test.mt`: trailing comma from `@[test]` attributes inside extending method bodies confuses comma tracker
-- Expression content not parsed (skipped token-by-token)
-- Statement structure not parsed (skipped via `skip_statement`)
-- Type info, param names, field details not recorded (stub placeholders)
-- No `@[test]` attribute content handling
+**Known limitations (intentionally scoped out):**
+- Statement bodies are skipped via `skip_statement`, not parsed into detailed AST nodes
+- Expression trees not built (expressions skipped token-by-token)
+- Type annotations recorded as null, field details not populated
+- `@[test]` attribute content consumed but not recorded in AST
 
-**Goal:** Consume token JSON (from Stage 1 or Ruby lexer), produce AST JSON consumable by the Ruby semantic analyzer (`check --from-ast-json`).
+## Stage 3: Semantic Analyzer — NEXT
+
+**Goal:** Consume AST JSON (from Stage 2 or Ruby parser), produce Analysis JSON consumable by `ruby bin/mtc lower --from-analysis-json`.
 
 **Steps:**
-1. Token stream wrapper (peek, advance, check) out of the token JSON array
-2. Parse source file → imports, directives, declarations
-3. Parse declarations: function, struct, enum, variant, const, var, type alias, etc.
-4. Parse statements: if, match, for, while, let/var, assignment, defer, unsafe, etc.
-5. Parse expressions with correct precedence (14 levels)
-6. Parse types (primitives, generics, function types, nullable, tuples, etc.)
-7. AST JSON output matching `Serializer.ast_to_json`
+1. Parse AST JSON into internal representation (or consume directly from parser)
+2. Build symbol table: register types, functions, constants, variables
+3. Resolve type references: check all TypeRef nodes against known types
+4. Type-check expressions: verify operator compatibility, literal assignment
+5. Check interface conformance: verify `implements` declarations
+6. Lowering prep: produce Analysis JSON matching `Serializer.analysis_to_json`
 
-**Verification:** Parse token JSON → produce AST JSON → feed into `ruby bin/mtc check --from-ast-json` → confirm Analysis JSON matches.
+**Verification:** Produce Analysis JSON → feed into `ruby bin/mtc lower --from-analysis-json` → confirm IR JSON matches.
 
-### Context for resuming
+**Prerequisites:**
+- Read `lib/milk_tea/core/semantic_analyzer.rb` and `lib/milk_tea/core/semantic/` for the analysis architecture
+- Read `lib/milk_tea/core/serializer.rb` `analysis_to_json` for the exact JSON contract
+- The `lower` command has `--from-analysis-json` flag (line 810 of cli.rb)
 
-- The token JSON format is documented in the Ruby `Serializer.tokens_to_json` / `token_to_hash` methods in `lib/milk_tea/core/serializer.rb`.
-- The AST node types are defined in `lib/milk_tea/core/ast.rb`. The AST JSON format is produced by `Serializer.ast_to_json`.
-- The Ruby parser is split across `lib/milk_tea/core/parser/` — `declarations.rb`, `expressions.rb`, `statements.rb`, `type_parsing.rb`, `attributes.rb`, `blocks.rb`, `recovery.rb`.
-- The CLI `parse --from-tokens-json <file>` feeds into `Parser.parse_from_tokens_json`.
-- The same `--json` flag on Ruby `mtc parse` outputs AST JSON.
-- The self-host lexer JSON was verified round-trip with `mtc parse --from-tokens-json`.
-- The AST JSON → check round-trip should work with `mtc check --from-ast-json` (check the CLI for exact flag name).
-
-## Prerequisite reading (for any stage)
-
-To avoid cold-start exploration, load these files in order before implementing:
-
-### 1. Language surface (20 min)
-| File | Why |
-|---|---|
-| `docs/language-manual.md` | §§3–6: every declaration, statement, expression, and type form the parser must handle. Skim §2 (lexical) and §7 (builtins) as reference. |
-| `examples/language_baseline.mt` | 1354-line stress test exercising the complete language. The Stage 2 target: must parse this to AST JSON. |
-
-### 2. JSON contracts (15 min)
-| File | What to look for |
-|---|---|
-| `lib/milk_tea/core/serializer.rb` | `token_to_hash` / `tokens_from_json` (input format for parser). `ast_to_json` / `ast_from_json` (output format the parser must produce). `serialize_literal` / `deserialize_literal` (how literal values round-trip through JSON). |
-| `lib/milk_tea/core/ast.rb` | All `AST::*` Data classes — these map 1:1 to the JSON contract. Every node the parser emits has a class here. |
-| `lib/milk_tea/core/token.rb` | Token structure: `type` (Symbol), `lexeme`, `literal`, `line`, `column`. Parser reads these fields. |
-
-### 3. Ruby parser structure (30 min)
-| File | Focus |
-|---|---|
-| `lib/milk_tea/core/parser.rb` | Class structure, `parse` entry point, `parse_collecting_errors` for recovery mode. The `Parser` mixes in the modules below. |
-| `lib/milk_tea/core/token_stream.rb` | `SyntaxTokenStream` — thin wrapper. Methods: `peek`, `advance`, `check`, `match`, `previous`. The parser's only interface to tokens. Read this first — all parsing helpers depend on it. |
-| `lib/milk_tea/core/parser/blocks.rb` | How the Ruby parser handles indentation: `parse_block` expects INDENT/DEDENT framing around block bodies. Critical for statement parsing. |
-| `lib/milk_tea/core/parser/expressions.rb` | 14-level precedence climbing (`parse_or` → `parse_and` → ... → `parse_primary`). Every expression form lives here: literals, calls, member access, indexing, `if`-expr, `match`-expr, `proc`, etc. |
-| `lib/milk_tea/core/parser/declarations.rb` | Top-level: `function`, `struct`, `enum`, `variant`, `const`, `var`, `type`, `interface`, `extending`, `event`, etc. |
-| `lib/milk_tea/core/parser/statements.rb` | All statement forms: `let`/`var` decls, `if`/`match`/`while`/`for`, `return`, `break`, `continue`, `defer`, `unsafe`, assignment, expression statements, etc. |
-| `lib/milk_tea/core/parser/type_parsing.rb` | Type parsing: primitives, generics (`Foo[T]`), function types (`fn(...) -> R`), nullable (`T?`), tuples, `dyn[...]`, `ref[...]`. |
-| `lib/milk_tea/core/parser/attributes.rb` | `@[name(args)]` attribute parsing. |
-
-### 4. Self-host project conventions (10 min)
-| File | What to note |
-|---|---|
-| `projects/mtc/src/main.mt` | CLI structure. The `lex` subcommand pattern: read args from `main(args: span[str])`, dispatch, call stage function. Extend with `parse` subcommand. |
-| `projects/mtc/src/lexer/lexer.mt` | The output format the parser consumes. Note: `emit_tok` builds token JSON inline — the parser will consume this. |
-| `projects/mtc/src/test/lexer_test.mt` | Test pattern: heredoc for test source, `std.testing` assertions, `public` functions registered in `all_tests.mt`. |
-| `projects/mtc/src/test/all_tests.mt` | Manual test registration. Add parser test entries here. |
-
-### 5. Key stdlib modules (skim, 10 min)
-| Module | What the parser will use |
-|---|---|
-| `std/vec.mt` | `Vec[T]` for dynamic arrays (token stream buffer, child node lists). Methods: `push`, `pop`, `get`, `len`, `at`, `release`. |
-| `std/string.mt` | `String` for building JSON output. Methods: `create`, `append`, `push_byte`, `as_str`, `release`. |
-| `std/str.mt` | `str` methods available when imported: `byte_at`, `slice`, `starts_with`, `ends_with`, `find_substring`, `trim_ascii_whitespace`, `equal`, `compare`. |
-| `std/fmt.mt` | `append_int`, `append_ptr_uint`, `append_bool` — formatting values into JSON. |
-| `std/map.mt` | `Map[K, V]` for operator precedence tables, keyword-to-AST-node dispatch. |
-
-### Pitfalls from Stage 1
+### Pitfalls from Stage 1 + 2
 
 - **`Build.build` always uses `package.toml` entry point.** Tests live in `src/test/` and a custom `test` subcommand runs them manually. Don't rely on `mtc test` for in-project test discovery.
 - **Test functions must be `public`** to be callable from the test runner.
-- **`str` methods from `std.str`** (`.contains_substring`, `.starts_with`, `.trim_ascii_whitespace`, etc.) require `import std.str`.
-- **String lifetimes:** functions that build a local `String` and return `str` create dangling references. Always return `String` and release at the call site.
-- **Use heredocs (`<<-TAG`)** for multi-line test source code — avoids `\n` and `\"` escaping issues.
-- **`ptr[void]<-expr` casts require `unsafe` blocks.**
+- **`str` methods from `std.str`** require `import std.str`.
+- **String lifetimes:** return `String`, not `str`, from functions that build local buffers.
+- **Use heredocs for multi-line test source code.**
 - **`defer` takes a single expression** (no colon) for single-statement cleanup.
+- **`match` is a reserved word** — use as expression only, not function name.
+- **`out` is a keyword** — don't use as variable name.
+- **`ptr[void]<-expr` casts require `unsafe` blocks.**
 - **Sandbox every self-host binary invocation** with `timeout` + `ulimit -v`.
+- **Inline JSON building needs careful comma tracking** — dangling comma flag pattern with buffer-length checks.
+- **Bracket-depth tracking** must increment AFTER consuming `[`/`(`, and decrement AND advance past `]`/`)` in the same conditional block to avoid extra advances.
