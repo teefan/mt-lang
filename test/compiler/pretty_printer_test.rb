@@ -458,6 +458,109 @@ function main() -> int:
     assert_includes output, "default:"
   end
 
+  def test_formats_constructs_repaired_in_completeness_fixes
+    sources = {
+      char_literal: <<~MT,
+        function f() -> int:
+            let a = 'a'
+            let n = '\\n'
+            return 0
+      MT
+      block_bodied_const: <<~MT,
+        const N -> int:
+            var x = 1
+            return x
+      MT
+      tuples: <<~MT,
+        function f() -> int:
+            let a = (1, 2)
+            let b = (x = 1, y = 2)
+            return 0
+      MT
+      value_type_param: <<~MT,
+        function f[N: int]() -> int:
+            return N
+      MT
+      parallel_block: <<~MT,
+        function f() -> int:
+            parallel:
+                a()
+                b()
+            return 0
+      MT
+      when_statement: <<~MT,
+        function f() -> int:
+            when state:
+                State.idle:
+                    return 1
+                else:
+                    return 2
+      MT
+      detach_and_gather: <<~MT,
+        function f() -> int:
+            let h = detach work()
+            gather h
+            return 0
+      MT
+    }
+
+    sources.each do |name, source|
+      ast = MilkTea::Parser.parse(source)
+      formatted = MilkTea::PrettyPrinter.format_ast(ast)
+      reformatted = MilkTea::PrettyPrinter.format_ast(MilkTea::Parser.parse(formatted))
+      assert_equal formatted, reformatted, "#{name}: pretty-printer output is not stable / re-parseable"
+    end
+  end
+
+  def test_completeness_pass_fidelity
+    # Operator precedence must match the parser (regression for a bug that
+    # silently stripped parens and changed program meaning): |/^/& are looser
+    # than ==/!=, which are looser than relational, which are looser than shifts.
+    [
+      "function f(a: int, b: int, c: int) -> int:\n    return (a & b) == c\n",
+      "function f(a: int, b: int, c: int) -> int:\n    return a & b == c\n",
+      "function f(a: int, b: int, c: int) -> int:\n    return a == b << c\n",
+    ].each do |source|
+      assert_equal source, MilkTea::PrettyPrinter.format_ast(MilkTea::Parser.parse(source)), "operator precedence not preserved"
+    end
+
+    # `is` re-sugaring, format-string escaping, destructuring, tuple-type returns,
+    # and multi-line proc bodies must re-parse and be idempotent.
+    [
+      <<~'MT',
+        function f(x: Token) -> bool:
+            return x is Token.eof
+      MT
+      <<~'MT',
+        function f(x: int) -> str:
+            return f"line: #{x}\nend"
+      MT
+      <<~'MT',
+        function f() -> int:
+            let (a, b) = pair
+            return a
+      MT
+      <<~'MT',
+        function pair() -> (int, int):
+            return (1, 2)
+      MT
+      <<~'MT',
+        function f() -> int:
+            let g = proc(x: int) -> int:
+                var y = x
+                while y > 0:
+                    y -= 1
+                return y
+            return 0
+      MT
+    ].each do |source|
+      f1 = MilkTea::PrettyPrinter.format_ast(MilkTea::Parser.parse(source))
+      MilkTea::Parser.parse(f1)
+      f2 = MilkTea::PrettyPrinter.format_ast(MilkTea::Parser.parse(f1))
+      assert_equal f1, f2, "not idempotent: #{source.lines.first.strip}"
+    end
+  end
+
   private
 
   def with_program(source, relative_path: "program.mt")

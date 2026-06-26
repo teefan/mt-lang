@@ -6,6 +6,7 @@ module MilkTea
       IF_EXPRESSION_PRECEDENCE = 5
       POSTFIX_PRECEDENCE = 90
       UNARY_PRECEDENCE = 80
+      IS_PRECEDENCE = 25
 
       def format(node, trivia: [])
         @comment_map = build_comment_map(trivia)
@@ -151,10 +152,7 @@ module MilkTea
 
         case declaration
         when AST::ConstDecl
-          emit_attribute_applications(declaration.attributes)
-          header = "#{visibility_prefix(declaration)}const #{declaration.name}"
-          header += ": #{render_type(declaration.type)}" if declaration.type
-          line("#{header} = #{render_expression(declaration.value)}")
+          emit_const(declaration)
         when AST::VarDecl
           header = "#{visibility_prefix(declaration)}var #{declaration.name}"
           header += ": #{render_type(declaration.type)}" if declaration.type
@@ -188,6 +186,9 @@ module MilkTea
             declaration.fields.each do |field|
               emit_attribute_applications(field.attributes)
               line("#{field.name}: #{render_type(field.type)}")
+            end
+            declaration.nested_types.each do |nested|
+              emit_declaration(nested)
             end
             declaration.events.each do |event|
               line(render_event_declaration(event))
@@ -259,6 +260,8 @@ module MilkTea
           emit_attribute_applications(declaration.attributes)
           header_idx = @lines.length
           line("#{render_function_signature(declaration)} = #{render_expression(declaration.mapping)}")
+        when AST::WhenStmt
+          emit_when(declaration)
         else
           raise ArgumentError, "unsupported AST declaration #{declaration.class.name}"
         end
@@ -338,6 +341,10 @@ module MilkTea
         return "" if type_params.empty?
 
         rendered = type_params.map do |type_param|
+          if type_param.is_a?(AST::ValueTypeParam)
+            next "#{type_param.name}: #{render_type(type_param.type)}"
+          end
+
           next type_param.name if type_param.constraints.empty?
 
           "#{type_param.name} #{render_type_param_constraints(type_param.constraints)}"
@@ -444,8 +451,12 @@ module MilkTea
 
         case statement
         when AST::LocalDecl
-          text = "#{statement.kind} #{statement.name}"
-          text += ": #{render_type(statement.type)}" if statement.type
+          if statement.destructure_bindings
+            text = "#{statement.kind} #{render_destructure_target(statement)}"
+          else
+            text = "#{statement.kind} #{statement.name}"
+            text += ": #{render_type(statement.type)}" if statement.type
+          end
           text += " = #{render_expression(statement.value)}" if statement.value
           if statement.else_body
             else_header = statement.else_binding ? "else as #{statement.else_binding.name}:" : "else:"
@@ -483,8 +494,9 @@ module MilkTea
         when AST::StaticAssert
           line("static_assert(#{render_expression(statement.condition)}, #{render_expression(statement.message)})")
         when AST::EmitStmt
-          line("emit")
-          with_indent { emit_declaration(statement.declaration) }
+          before = @lines.length
+          emit_declaration(statement.declaration)
+          @lines[before] = @lines[before].sub(/\A(\s*)/, "\\1emit ") if @lines[before]
         when AST::ForStmt
           line("for #{statement.name} in #{render_expression(statement.iterable)}:")
           with_indent do
@@ -514,11 +526,88 @@ module MilkTea
           end
         when AST::ExpressionStmt
           line(render_expression(statement.expression))
+        when AST::ParallelBlockStmt
+          line("parallel:")
+          with_indent do
+            statement.bodies.each do |body|
+              body.each { |nested| emit_statement(nested) }
+            end
+          end
+        when AST::GatherStmt
+          line("gather #{statement.handles.map { |handle| render_expression(handle) }.join(', ')}")
+        when AST::WhenStmt
+          emit_when(statement)
+        when AST::ConstDecl
+          emit_const(statement)
         else
           raise ArgumentError, "unsupported AST statement #{statement.class.name}"
         end
 
         attach_inline_comment(stmt_line, header_idx)
+      end
+
+      def emit_when(statement)
+        line("when #{render_expression(statement.discriminant)}:")
+        with_indent do
+          statement.branches.each do |branch|
+            binding = branch.binding_name ? " as #{branch.binding_name}" : ""
+            line("#{render_expression(branch.pattern)}#{binding}:")
+            with_indent do
+              branch.body.each { |nested| emit_block_item(nested) }
+            end
+          end
+          if statement.else_body
+            line("else:")
+            with_indent do
+              statement.else_body.each { |nested| emit_block_item(nested) }
+            end
+          end
+        end
+      end
+
+      # A `when` branch body is statements at function level but declarations at
+      # module level; dispatch on the node kind.
+      def emit_block_item(node)
+        if declaration_node?(node)
+          emit_declaration(node)
+        else
+          emit_statement(node)
+        end
+      end
+
+      def declaration_node?(node)
+        case node
+        when AST::FunctionDef, AST::StructDecl, AST::UnionDecl, AST::EnumDecl,
+             AST::FlagsDecl, AST::VariantDecl, AST::OpaqueDecl, AST::InterfaceDecl,
+             AST::ExtendingBlock, AST::TypeAliasDecl, AST::AttributeDecl, AST::EventDecl,
+             AST::ExternFunctionDecl, AST::ForeignFunctionDecl, AST::VarDecl, AST::MethodDef
+          true
+        else
+          false
+        end
+      end
+
+      def render_destructure_target(statement)
+        names = statement.destructure_bindings.join(", ")
+        type_name = statement.destructure_type_name
+        return "(#{names})" unless type_name
+
+        prefix = type_name.is_a?(Array) ? type_name.join(".") : type_name
+        "#{prefix}(#{names})"
+      end
+
+      def emit_const(declaration)
+        emit_attribute_applications(declaration.attributes)
+        header = "#{visibility_prefix(declaration)}const #{declaration.name}"
+        if declaration.block_body
+          line("#{header} -> #{render_type(declaration.type)}:")
+          with_indent do
+            declaration.block_body.each { |nested| emit_statement(nested) }
+          end
+        else
+          header += ": #{render_type(declaration.type)}" if declaration.type
+          line("#{header} = #{render_expression(declaration.value)}")
+        end
       end
 
       def render_inline_unsafe(statement)
@@ -631,6 +720,9 @@ module MilkTea
           else
             "dyn[#{type.interface.parts.join('.')}]"
           end
+        when AST::TupleType
+          text = "(#{type.element_types.map { |element| render_type(element) }.join(', ')})"
+          type.nullable ? "#{text}?" : text
         else
           type.to_s
         end
@@ -677,19 +769,23 @@ module MilkTea
           right = render_expression(expression.end_expr)
           "#{left}..#{right}"
         when AST::ExpressionList
-          "(#{expression.elements.map { |e| render_expression(e) }.join(', ')})"
+          "(#{expression.elements.map { |element| render_list_element(element) }.join(', ')})"
         when AST::IfExpr
           condition = render_expression(expression.condition, IF_EXPRESSION_PRECEDENCE)
           then_expression = render_expression(expression.then_expression, IF_EXPRESSION_PRECEDENCE)
           else_expression = render_expression(expression.else_expression, IF_EXPRESSION_PRECEDENCE)
           wrap("if #{condition}: #{then_expression} else: #{else_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
         when AST::MatchExpr
+          sugared = render_is_expression(expression, parent_precedence)
+          return sugared if sugared
+
           rendered_expression = render_expression(expression.expression, IF_EXPRESSION_PRECEDENCE)
+          arm_indent = INDENT * (@indent + 1)
           rendered_arms = expression.arms.map do |arm|
             binding = arm.binding_name ? " as #{arm.binding_name}" : ""
             "#{render_expression(arm.pattern)}#{binding}: #{render_expression(arm.value, IF_EXPRESSION_PRECEDENCE)}"
-          end.join("\n#{INDENT}")
-          "match #{rendered_expression}:\n#{INDENT}#{rendered_arms}"
+          end.join("\n#{arm_indent}")
+          "match #{rendered_expression}:\n#{arm_indent}#{rendered_arms}"
         when AST::UnsafeExpr
           inner = render_expression(expression.expression, IF_EXPRESSION_PRECEDENCE)
           wrap("unsafe: #{inner}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
@@ -699,10 +795,12 @@ module MilkTea
             body_expression = render_expression(expression.body.first.value, IF_EXPRESSION_PRECEDENCE)
             wrap("proc(#{params}) -> #{render_type(expression.return_type)}: #{body_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
           else
-            rendered_body = expression.body.map do |statement|
-              render_statement(statement) || raise(ArgumentError, "unsupported proc body statement #{statement.class.name}")
-            end.join("\n#{INDENT}")
-            "proc(#{params}) -> #{render_type(expression.return_type)}:\n#{INDENT}#{rendered_body}"
+            body_lines = capture_lines do
+              with_indent do
+                expression.body.each { |statement| emit_statement(statement) }
+              end
+            end
+            "proc(#{params}) -> #{render_type(expression.return_type)}:\n#{body_lines.join("\n")}"
           end
         when AST::AwaitExpr
           wrap("await #{render_expression(expression.expression, UNARY_PRECEDENCE)}", parent_precedence, UNARY_PRECEDENCE)
@@ -712,7 +810,7 @@ module MilkTea
           "align_of(#{render_type(expression.type)})"
         when AST::OffsetofExpr
           "offset_of(#{render_type(expression.type)}, #{expression.field})"
-        when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral
+        when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::CharLiteral
           expression.lexeme
         when AST::FormatString
           "f\"#{expression.parts.map { |part| render_format_string_part(part) }.join}\""
@@ -720,6 +818,8 @@ module MilkTea
           expression.value ? "true" : "false"
         when AST::NullLiteral
           expression.type ? "null[#{render_type(expression.type)}]" : "null"
+        when AST::DetachExpr
+          wrap("detach #{render_expression(expression.body.first.expression, UNARY_PRECEDENCE)}", parent_precedence, UNARY_PRECEDENCE)
         else
           raise ArgumentError, "unsupported AST expression #{expression.class.name}"
         end
@@ -731,10 +831,16 @@ module MilkTea
         "#{argument.name} = #{render_expression(argument.value)}"
       end
 
+      def render_list_element(element)
+        return render_argument(element) if element.is_a?(AST::Argument)
+
+        render_expression(element)
+      end
+
       def render_format_string_part(part)
         case part
         when AST::FormatTextPart
-          part.value.gsub("\\", "\\\\").gsub('"', '\\"')
+          escape_format_text(part.value)
         when AST::FormatExprPart
           spec = case part.format_spec&.fetch(:kind)
                  when :precision then ":.#{part.format_spec[:value]}"
@@ -746,6 +852,45 @@ module MilkTea
         else
           raise ArgumentError, "unsupported format string part #{part.class.name}"
         end
+      end
+
+      def escape_format_text(value)
+        value.gsub(/[\\"\n\r\t\0]/) do |char|
+          case char
+          when "\\" then "\\\\"
+          when '"' then '\\"'
+          when "\n" then "\\n"
+          when "\r" then "\\r"
+          when "\t" then "\\t"
+          when "\0" then "\\0"
+          end
+        end
+      end
+
+      # `expr is Arm` desugars at parse time to `match expr: Arm: true; _: false`;
+      # re-sugar that exact shape back to `is` so the formatter round-trips (and a
+      # multi-line match does not break when used as a statement condition).
+      def render_is_expression(expression, parent_precedence)
+        arms = expression.arms
+        return nil unless arms.length == 2
+
+        first, second = arms
+        return nil if first.binding_name || second.binding_name
+        return nil unless boolean_literal?(first.value, true) && boolean_literal?(second.value, false)
+        return nil unless wildcard_pattern?(second.pattern)
+        return nil if first.pattern.is_a?(AST::Call) && first.pattern.arguments.any?
+
+        scrutinee = render_expression(expression.expression, IS_PRECEDENCE)
+        arm = render_expression(first.pattern, IS_PRECEDENCE)
+        wrap("#{scrutinee} is #{arm}", parent_precedence, IS_PRECEDENCE)
+      end
+
+      def boolean_literal?(node, value)
+        node.is_a?(AST::BooleanLiteral) && node.value == value
+      end
+
+      def wildcard_pattern?(node)
+        node.is_a?(AST::Identifier) && node.name == "_"
       end
 
       def render_postfix(expression)
