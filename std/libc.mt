@@ -18,6 +18,8 @@ public foreign function parse_ulong_to_end(text: str as cstr, end_ptr: ptr[ptr[c
 public foreign function parse_long_long_to_end(text: str as cstr, end_ptr: ptr[ptr[char]]?, base: int) -> long = c.strtoll
 public foreign function parse_ulong_long_to_end(text: str as cstr, end_ptr: ptr[ptr[char]]?, base: int) -> ulong = c.strtoull
 public foreign function get_environment_variable(name: str as cstr) -> cstr? = c.getenv
+public foreign function set_environment_variable(name: str as cstr, value: str as cstr, overwrite: int) -> int = c.setenv
+public foreign function unset_environment_variable(name: str as cstr) -> int = c.unsetenv
 public foreign function create_temp_file[N](template: str_buffer[N] as ptr[char]) -> int = c.mkstemp
 public foreign function create_temp_file_with_suffix[N](template: str_buffer[N] as ptr[char], suffix_length: int) -> int = c.mkstemps
 public foreign function create_temp_directory[N](template: str_buffer[N] as ptr[char]) -> cstr? = c.mkdtemp
