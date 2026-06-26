@@ -186,7 +186,7 @@ module MilkTea
         json = File.read(from_tokens_file)
         ast = Parser.parse_from_tokens_json(json, path: from_tokens_file)
         if output_format == :json
-          result = MilkTea.ast_to_json(ast)
+          result = Serializer.ast_to_json(ast)
           if output_file
             File.write(output_file, result)
           else
@@ -202,7 +202,7 @@ module MilkTea
         json = File.read(from_tokens_file)
         ast = Parser.parse_from_tokens_json(json, path: from_tokens_file)
         if output_format == :json
-          result = MilkTea.ast_to_json(ast)
+          result = Serializer.ast_to_json(ast)
           if output_file
             File.write(output_file, result)
           else
@@ -233,7 +233,7 @@ module MilkTea
       paths.each_with_index do |path, index|
         ast = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).load_file(path)
         if output_format == :json
-          result = MilkTea.ast_to_json(ast)
+          result = Serializer.ast_to_json(ast)
           if multiple
             @out.puts("# --- #{path} ---")
           end

@@ -38,6 +38,20 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_parse_command_emits_ast_json_for_direct_source
+    Dir.mktmpdir("milk-tea-cli-parse-json") do |dir|
+      path = write_simple_source(dir)
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["parse", path, "--json"], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/"\$mt_type":"AST:SourceFile"/, out.string)
+    end
+  end
+
   def test_check_lower_and_emit_c_commands_for_direct_source
     Dir.mktmpdir("milk-tea-cli-check-lower-emit-direct") do |dir|
       path = write_simple_source(dir)
