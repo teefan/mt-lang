@@ -900,6 +900,41 @@ class MilkTeaLinterTest < Minitest::Test
     end
   end
 
+  def test_does_not_report_import_used_only_for_generic_extension_method
+    Dir.mktmpdir("linter_generic_extension_import") do |dir|
+      File.write(File.join(dir, "box.mt"), <<~MT)
+        public struct Box[T]:
+            value: T
+      MT
+
+      File.write(File.join(dir, "boxext.mt"), <<~MT)
+        import box
+
+        extending box.Box[T]:
+            public function describe() -> int:
+                return 7
+      MT
+
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        import box
+        import boxext as bx
+
+        function main() -> int:
+            let b = box.Box[int](value = 3)
+            return b.describe()
+      MT
+      File.write(path, source)
+
+      ast = MilkTea::Parser.parse(source, path: path)
+      loader = MilkTea::ModuleLoader.new(module_roots: [dir])
+      analysis = MilkTea::SemanticAnalyzer.check(ast, imported_modules: loader.imported_modules_for_ast(ast))
+      warnings = MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis)
+
+      refute warnings.any? { |warning| warning.code == "unused-import" }
+    end
+  end
+
   def test_does_not_report_import_used_only_in_foreign_mapping
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       import std.c.string as c

@@ -598,10 +598,40 @@ module MilkTea
         method_map = module_binding.methods
         return false unless method_map
 
+        return true if method_map_defines_method?(method_map, receiver_type, member_name)
+
+        dispatch_type = lint_method_dispatch_receiver_type(receiver_type)
+        !dispatch_type.nil? && !dispatch_type.equal?(receiver_type) &&
+          method_map_defines_method?(method_map, dispatch_type, member_name)
+      end
+
+      def method_map_defines_method?(method_map, receiver_type, member_name)
         entries = method_map.fetch(receiver_type, nil)
         return false unless entries
 
         entries.key?(member_name) || entries.key?("static:#{member_name}")
+      end
+
+      # Mirrors the semantic analyzer's dispatch-receiver erasure so that
+      # extension methods on generic instances (whose method maps are keyed by a
+      # type-variable form) are matched, not just exact receiver types.
+      def lint_method_dispatch_receiver_type(receiver_type)
+        case receiver_type
+        when Types::GenericInstance
+          Types::Registry.generic_instance(
+            receiver_type.name,
+            receiver_type.arguments.each_with_index.map do |argument, index|
+              argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__lint_receiver_arg#{index}")
+            end,
+          )
+        when Types::StructInstance
+          receiver_type.definition
+        when Types::Nullable
+          base = receiver_type.base
+          base.is_a?(Types::StructInstance) ? Types::Registry.nullable(base.definition) : nil
+        end
+      rescue StandardError
+        nil
       end
 
       def collect_qualified_name_root(name, used)

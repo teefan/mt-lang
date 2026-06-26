@@ -88,7 +88,7 @@ The compile-time evaluation surface is described in [Compile-Time Evaluation](co
 - Newlines inside `()` and `[]` do not terminate statements.
 - A physical line that ends with a binary operator also continues onto the next line.
 - Tabs are illegal in source files; indentation is 4 spaces.
-- Trailing commas are allowed in multiline call arguments and aggregate literals.
+- Trailing commas are allowed in multiline call arguments and aggregate literals. The linter additionally flags a redundant trailing comma in a call-argument list (`trailing-list-comma` hint); aggregate and array literals keep them for diff-friendliness.
 - Comments use `#`.
 - Documentation comments use `##` and are markdown blocks attached to the next declaration when no blank line intervenes.
 - Names are `snake_case` for modules, variables, and functions.
