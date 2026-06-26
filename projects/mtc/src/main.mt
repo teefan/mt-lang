@@ -10,6 +10,7 @@ import std.str as str_util
 
 import lexer.lexer as lexer_mod
 import parser.parser as parser_mod
+import c_backend.c_backend as c_backend_mod
 import test.all_tests as test_runner
 
 function read_whole_file(path: str) -> string_mod.String:
@@ -60,6 +61,17 @@ function parse_cmd(file_path: str) -> int:
     source.release()
     return 0
 
+function emit_c_cmd(file_path: str) -> int:
+    var ir_json = read_whole_file(file_path)
+    let ir_str = ir_json.as_str()
+
+    var c_source = c_backend_mod.emit_c(ir_str)
+    stdio.print_line(c_source.as_str())
+
+    c_source.release()
+    ir_json.release()
+    return 0
+
 function print_usage() -> void:
     stdio.print_line(c"usage: mtc <subcommand> [args]")
     stdio.print_line(c"")
@@ -89,6 +101,12 @@ function main(args: span[str]) -> int:
             print_usage()
             return 1
         return parse_cmd(args[1])
+
+    if cmd == "emit-c":
+        if args.len < 2:
+            print_usage()
+            return 1
+        return emit_c_cmd(args[1])
 
     if cmd == "test":
         return test_cmd()

@@ -33,6 +33,7 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 ┌───────────┐   C source    ┌──────────┐    IR JSON   ┌──────────┐
 │ C Backend │ ←──────────── │ Lowering │ ←─────────── │ (Stage 3 │
 │ (Stage 5) │               │ (Stage 4)│              │  output) │
+│  DONE ✓   │               │  NEXT    │              │          │
 └───────────┘               └──────────┘              └──────────┘
 ```
 
@@ -102,23 +103,50 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 - Type annotations recorded as null, field details not populated
 - `@[test]` attribute content consumed but not recorded in AST
 
-## Stage 3: Semantic Analyzer — NEXT
+## Stage 5: C Backend — DONE
 
-**Goal:** Consume AST JSON (from Stage 2 or Ruby parser), produce Analysis JSON consumable by `ruby bin/mtc lower --from-analysis-json`.
+**Location:** `projects/mtc/src/c_backend/`
+
+**Architecture:**
+- `ir_reader.mt` (220 lines): `IrCursor` — lazy, zero-allocation JSON field reader using borrowed `str` slices
+- `c_backend.mt` (756 lines): recursive C emitter from IR JSON
+
+**Verification:** Self-host `emit-c` produces C source from IR JSON. Verified with `cc -std=c11` → compiles and runs correctly for structs, enums, constants, globals, if/while/for, aggregate literals, function calls.
+
+**IR → C pipeline:**
+1. `emit_c(ir_json)` → walks `IR::Program`
+2. Top-level: `emit_includes`, `emit_constants`, `emit_globals`, `emit_opaques`, `emit_enums`, `emit_structs`, `emit_functions`
+3. Functions: forward declarations + definitions with typed params
+4. Bodies: `emit_body` → statement dispatch (14 types)
+5. Expressions: `emit_expression` → dispatches 24 types to C text
+6. Types: `type_to_c` → `$type_ref` dispatch to `c_struct_type` (Struct/Union) or `c_type_str` (Primitive)
+
+**Code size:** 756 lines c_backend.mt + 220 lines ir_reader.mt
+
+**Cli:** `mtc emit-c <ir_json_file>` — outputs C source to stdout.
+
+**Known limitations:**
+- `struct _int` edge case in `type_to_c` param-type path (primitives occasionally hit `c_struct_type`)
+- No runtime helpers (mt_fatal, mt_str, format, async) — standalone simple programs only
+- No dead code elimination, no topological type sorting
+- Duplicate includes in some edge cases
+
+## Stage 4: Lowering — NEXT
+
+**Goal:** Consume Analysis JSON (from Ruby sema or Stage 3), produce IR JSON consumable by `ruby bin/mtc emit-c --from-ir-json`.
 
 **Steps:**
-1. Parse AST JSON into internal representation (or consume directly from parser)
-2. Build symbol table: register types, functions, constants, variables
-3. Resolve type references: check all TypeRef nodes against known types
-4. Type-check expressions: verify operator compatibility, literal assignment
-5. Check interface conformance: verify `implements` declarations
-6. Lowering prep: produce Analysis JSON matching `Serializer.analysis_to_json`
+1. Parse Analysis JSON into internal representation
+2. Lower types: structs, enums, unions, variants, opaques → IR type declarations
+3. Lower constants, globals → IR values
+4. Lower functions: parse AST bodies → IR statement/expression trees
+5. Produce IR JSON matching `Serializer.ir_to_json`
 
-**Verification:** Produce Analysis JSON → feed into `ruby bin/mtc lower --from-analysis-json` → confirm IR JSON matches.
+**Verification:** Produce IR JSON → feed into `ruby bin/mtc emit-c --from-ir-json` → confirm C output matches Ruby's.
 
 **Prerequisites:**
-- Read `lib/milk_tea/core/semantic_analyzer.rb` and `lib/milk_tea/core/semantic/` for the analysis architecture
-- Read `lib/milk_tea/core/serializer.rb` `analysis_to_json` for the exact JSON contract
+- Read `lib/milk_tea/core/lowering.rb` for the lowering architecture
+- Read `lib/milk_tea/core/serializer.rb` `ir_to_json` for the exact IR JSON contract
 - The `lower` command has `--from-analysis-json` flag (line 810 of cli.rb)
 
 ### Pitfalls from Stage 1 + 2
@@ -136,3 +164,9 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 - **Sandbox Ruby compiler invocations too** in automated test loops. `check --json` on large files with stdlib imports can consume 4GB+ and hang for minutes due to cross-module linter analysis. Use `check` (text mode) for verification; avoid `--json` on `language_baseline.mt`.
 - **Inline JSON building needs careful comma tracking** — dangling comma flag pattern with buffer-length checks.
 - **Bracket-depth tracking** must increment AFTER consuming `[`/`(`, and decrement AND advance past `]`/`)` in the same conditional block to avoid extra advances.
+- **String lifetimes in C backend:** `c_type(str)` returning `str` creates dangling references — always return `String` and release at call site. Major source of "string.as_str text must be valid UTF-8" crashes.
+- **JSON field reading with `$`:** `$mt_type` and `$type_ref` are valid field names in IR JSON. `parse_json_string_slice` handles `$` correctly as a regular byte.
+- **Array element iteration:** use `split_array_elements` with depth tracking instead of naive `{` matching — nested objects in function bodies produce ghost elements.
+- **Function params use `(void)` for empty lists** — track `first_param` flag.
+- **Entry point functions:** no `static` prefix, no extra wrapper generation (the IR already has the wrapper function).
+- **IR type objects may have null `linkage_name`** — generate from `module_name + "_" + name` in `c_struct_type`.
