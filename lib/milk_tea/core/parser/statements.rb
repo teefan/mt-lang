@@ -256,13 +256,28 @@ module MilkTea
         arms = []
         expression = parse_expression
         arms = parse_match_arms(arms)
-        AST::MatchStmt.new(expression:, arms:, line:, column: token.column, length: token.lexeme.length)
+        if arms.first&.is_a?(AST::MatchExprArm)
+          expr = AST::MatchExpr.new(expression:, arms:, line:, column: token.column, length: token.lexeme.length)
+          AST::ExpressionStmt.new(expression: expr, line:)
+        else
+          AST::MatchStmt.new(expression:, arms:, line:, column: token.column, length: token.lexeme.length)
+        end
       rescue ParseError => e
         raise unless @recovery_errors
 
         @recovery_errors << e
         recovered_arms = synchronize_to_match_arm_boundary
-        return AST::MatchStmt.new(expression: expression || recovery_error_expr(e), arms: arms + recovered_arms, line:, column: token.column, length: token.lexeme.length) if recovered_arms
+        target_line = line
+        if recovered_arms
+          stmt =
+            if recovered_arms.first&.is_a?(AST::MatchExprArm)
+              expr = AST::MatchExpr.new(expression: expression || recovery_error_expr(e), arms: arms + recovered_arms, line: target_line, column: token.column, length: token.lexeme.length)
+              AST::ExpressionStmt.new(expression: expr, line: target_line)
+            else
+              AST::MatchStmt.new(expression: expression || recovery_error_expr(e), arms: arms + recovered_arms, line: target_line, column: token.column, length: token.lexeme.length)
+            end
+          return stmt
+        end
 
         recovery_error_stmt(e)
       end
@@ -305,15 +320,31 @@ module MilkTea
                          binding_token = consume_name("expected binding name after 'as'")
                          binding_token.lexeme
                        end
-        body = parse_block
-        patterns.map do |pattern|
-          AST::MatchArm.new(
-            pattern:,
-            binding_name:,
-            binding_line: binding_token&.line,
-            binding_column: binding_token&.column,
-            body:,
-          )
+
+        if match_arm_expr_form?
+          consume(:colon, "expected ':' after match expression arm pattern")
+          value = parse_expression
+          consume_end_of_statement unless block_expression?(value)
+          patterns.map do |pattern|
+            AST::MatchExprArm.new(
+              pattern:,
+              binding_name:,
+              binding_line: binding_token&.line,
+              binding_column: binding_token&.column,
+              value:,
+            )
+          end
+        else
+          body = parse_block
+          patterns.map do |pattern|
+            AST::MatchArm.new(
+              pattern:,
+              binding_name:,
+              binding_line: binding_token&.line,
+              binding_column: binding_token&.column,
+              body:,
+            )
+          end
         end
       rescue ParseError => e
         raise unless @recovery_errors
@@ -329,6 +360,10 @@ module MilkTea
         )] if recovered_body
 
         raise
+      end
+
+      def match_arm_expr_form?
+        check(:colon) && @current + 1 < @tokens.length && @tokens[@current + 1].type != :newline
       end
 
       def parse_unsafe_stmt
