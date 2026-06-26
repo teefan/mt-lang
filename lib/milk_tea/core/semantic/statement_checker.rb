@@ -555,6 +555,8 @@ module MilkTea
           check_variant_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
         elsif integer_type?(scrutinee_type)
           check_integer_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        elsif scrutinee_type.is_a?(Types::StringView)
+          check_string_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
         else
           raise_sema_error("match requires an enum, variant, or integer scrutinee, got #{scrutinee_type}")
         end
@@ -625,6 +627,34 @@ module MilkTea
           end
           value = arm.pattern.value
           raise_sema_error("duplicate match arm value #{value}") if covered_values.key?(value)
+          covered_values[value] = true
+          check_block(arm.body, scopes:, return_type:, allow_return:)
+        end
+      end
+
+      def check_string_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        has_wildcard = statement.arms.any? { |arm| wildcard_pattern?(arm.pattern) }
+        raise_sema_error("match on str requires a wildcard arm (_:)") unless has_wildcard
+
+        covered_values = {}
+        wildcard_seen = false
+        statement.arms.each do |arm|
+          if arm.pattern.is_a?(AST::ErrorExpr)
+            check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
+            next
+          end
+
+          if wildcard_pattern?(arm.pattern)
+            raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
+            wildcard_seen = true
+            check_block(arm.body, scopes:, return_type:, allow_return:)
+            next
+          end
+          unless arm.pattern.is_a?(AST::StringLiteral)
+            raise_sema_error("match arm for str scrutinee must be a string literal or _, got #{arm.pattern.class.name}")
+          end
+          value = arm.pattern.value
+          raise_sema_error("duplicate match arm value \"#{value}\"") if covered_values.key?(value)
           covered_values[value] = true
           check_block(arm.body, scopes:, return_type:, allow_return:)
         end

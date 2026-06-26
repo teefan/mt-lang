@@ -68,6 +68,7 @@ module MilkTea
       @known_import_aliases = {}
       @known_generic_callable_names = {}
       @current_type_param_names = []
+      @in_inline_block_body = false
       seed_known_names
     end
 
@@ -244,6 +245,8 @@ module MilkTea
     end
 
     def consume_end_of_statement
+      return if @in_inline_block_body
+
       consume(:newline, "expected end of statement")
     end
 

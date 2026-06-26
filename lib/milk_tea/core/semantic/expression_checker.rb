@@ -712,6 +712,8 @@ module MilkTea
           infer_variant_match_expression(expression, scrutinee_type, scopes:, expected_type:)
         elsif integer_type?(scrutinee_type)
           infer_integer_match_expression(expression, scrutinee_type, scopes:, expected_type:)
+        elsif scrutinee_type.is_a?(Types::StringView)
+          infer_string_match_expression(expression, scrutinee_type, scopes:, expected_type:)
         else
           raise_sema_error("match requires an enum, variant, or integer scrutinee, got #{scrutinee_type}")
         end
@@ -774,6 +776,41 @@ module MilkTea
 
           value = arm.pattern.value
           raise_sema_error("duplicate match arm value #{value}") if covered_values.key?(value)
+
+          covered_values[value] = true
+          arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+        end
+
+        match_expression_common_type(arm_entries, expected_type)
+      end
+
+      def infer_string_match_expression(expression, scrutinee_type, scopes:, expected_type:)
+        has_wildcard = expression.arms.any? { |arm| wildcard_pattern?(arm.pattern) }
+        raise_sema_error("match on str requires a wildcard arm (_:)") unless has_wildcard
+
+        covered_values = {}
+        wildcard_seen = false
+        arm_entries = []
+
+        expression.arms.each do |arm|
+          if arm.pattern.is_a?(AST::ErrorExpr)
+            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+            next
+          end
+
+          if wildcard_pattern?(arm.pattern)
+            raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
+            wildcard_seen = true
+            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+            next
+          end
+
+          unless arm.pattern.is_a?(AST::StringLiteral)
+            raise_sema_error("match arm for str scrutinee must be a string literal or _, got #{arm.pattern.class.name}")
+          end
+
+          value = arm.pattern.value
+          raise_sema_error("duplicate match arm value \"#{value}\"") if covered_values.key?(value)
 
           covered_values[value] = true
           arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]

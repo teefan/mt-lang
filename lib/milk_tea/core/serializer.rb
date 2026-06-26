@@ -644,5 +644,5 @@ module MilkTea
       def private_method?(t, n) = false
     end
 
-    end
   end
+end

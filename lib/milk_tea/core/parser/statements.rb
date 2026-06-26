@@ -213,7 +213,15 @@ module MilkTea
       def parse_if_branch(token)
         condition = nil
         condition = parse_expression
-        body = parse_block
+        body = if inline_block_body?
+                 consume(:colon, "expected ':' after if condition")
+                 @in_inline_block_body = true
+                 result = [parse_statement]
+                 @in_inline_block_body = false
+                 result
+               else
+                 parse_block
+               end
         AST::IfBranch.new(
           condition:,
           body:,
@@ -238,7 +246,15 @@ module MilkTea
       end
 
       def parse_else_branch_body
-        parse_block
+        if inline_block_body?
+          consume(:colon, "expected ':' before else body")
+          @in_inline_block_body = true
+          result = [parse_statement]
+          @in_inline_block_body = false
+          result
+        else
+          parse_block
+        end
       rescue ParseError => e
         raise unless @recovery_errors
 
@@ -247,6 +263,10 @@ module MilkTea
         raise unless recovered_body
 
         recovered_body
+      end
+
+      def inline_block_body?
+        check(:colon) && @current + 1 < @tokens.length && @tokens[@current + 1].type != :newline
       end
 
       def parse_match_stmt

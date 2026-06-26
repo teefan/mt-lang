@@ -1396,7 +1396,11 @@ let tripler = proc(x: int) -> int: x * 3</code></pre>
 else if wants_menu:
     open_menu()
 else:
-    show_intro()</code></pre>
+    show_intro()
+
+## Inline form: single statement on same line
+if ready: return 1 else: return 0
+if x > 10: return "big" else if x > 5: return "med" else: return "small"</code></pre>
 </div>
 
   <h3>while</h3>
@@ -1490,7 +1494,13 @@ match token:
 <pre><code>let label = match code:
     1: "one"
     2: "two"
-    _: "other"</code></pre>
+    _: "other"
+
+## str match (_ required)
+let cmd_label = match command:
+    "lex": "lexer"
+    "parse": "parser"
+    _: "unknown"</code></pre>
 </div>
 
   <h3>Variant Membership Test (<code>is</code>)</h3>
@@ -2318,7 +2328,7 @@ import std.math  # intentionally available for downstream</code></pre>
     <li><code>break</code> and <code>continue</code> must be inside loops</li>
     <li><code>return</code> not allowed inside <code>defer</code> blocks</li>
     <li><code>?</code> propagation not allowed inside <code>defer</code> blocks</li>
-    <li><code>match</code> on enum/variant must be exhaustive unless <code>_</code> present</li>
+    <li><code>match</code> on enum/variant must be exhaustive unless <code>_</code> present; match on <code>int</code>/<code>str</code> requires <code>_</code></li>
     <li><code>let ... else:</code> else block must terminate control flow</li>
   </ul>
 
