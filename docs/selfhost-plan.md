@@ -133,5 +133,6 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 - **`out` is a keyword** — don't use as variable name.
 - **`ptr[void]<-expr` casts require `unsafe` blocks.**
 - **Sandbox every self-host binary invocation** with `timeout` + `ulimit -v`.
+- **Sandbox Ruby compiler invocations too** in automated test loops. `check --json` on large files with stdlib imports can consume 4GB+ and hang for minutes due to cross-module linter analysis. Use `check` (text mode) for verification; avoid `--json` on `language_baseline.mt`.
 - **Inline JSON building needs careful comma tracking** — dangling comma flag pattern with buffer-length checks.
 - **Bracket-depth tracking** must increment AFTER consuming `[`/`(`, and decrement AND advance past `]`/`)` in the same conditional block to avoid extra advances.
