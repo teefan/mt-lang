@@ -1124,6 +1124,7 @@ module MilkTea
         end
 
         switch_expression = lowered_expression
+        string_if_chain = nil
         cases = if scrutinee_type.is_a?(Types::Variant)
                   kind_type = @ctx.types.fetch("int")
                   switch_expression = IR::Member.new(receiver: lowered_expression, member: "kind", type: kind_type)
@@ -1151,6 +1152,27 @@ module MilkTea
                       IR::SwitchCase.new(value: IR::Name.new(name: enum_member_c_name(scrutinee_type, "kind_#{arm_name}"), type: kind_type, pointer: false), body: body)
                     end
                   end
+                elsif scrutinee_type.is_a?(Types::StringView)
+                  bool_type = @ctx.types.fetch("bool")
+                  wildcard = expression.arms.find { |arm| wildcard_arm_pattern?(arm.pattern) }
+                  non_wildcard = expression.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
+                  else_body = if wildcard
+                                arm_env = duplicate_env(env)
+                                value_setup, prepared_value = prepare_expression_for_inline_lowering(wildcard.value, env: arm_env, expected_type: result_type)
+                                value_setup + [IR::Assignment.new(target: result_ref, operator: "=", value: lower_contextual_expression(prepared_value, env: arm_env, expected_type: result_type))]
+                              else
+                                []
+                              end
+                  non_wildcard.reverse_each do |arm|
+                    arm_env = duplicate_env(env)
+                    value_setup, prepared_value = prepare_expression_for_inline_lowering(arm.value, env: arm_env, expected_type: result_type)
+                    then_body = value_setup + [IR::Assignment.new(target: result_ref, operator: "=", value: lower_contextual_expression(prepared_value, env: arm_env, expected_type: result_type))]
+                    lit = lower_expression(arm.pattern, env: arm_env, expected_type: scrutinee_type)
+                    cond = IR::Binary.new(operator: "==", left: lowered_expression, right: lit, type: bool_type)
+                    else_body = [IR::IfStmt.new(condition: cond, then_body:, else_body:)]
+                  end
+                  string_if_chain = else_body
+                  nil
                 else
                   expression.arms.map do |arm|
                     arm_env = duplicate_env(env)
@@ -1164,7 +1186,11 @@ module MilkTea
                   end
                 end
 
-        [setup + [IR::SwitchStmt.new(expression: switch_expression, cases: cases, exhaustive: true)], AST::Identifier.new(name: result_name)]
+        if string_if_chain
+          [setup + string_if_chain, AST::Identifier.new(name: result_name)]
+        else
+          [setup + [IR::SwitchStmt.new(expression: switch_expression, cases: cases, exhaustive: true)], AST::Identifier.new(name: result_name)]
+        end
       end
 
       def materialize_prepared_expression(setup, value, env:, type:, prefix:)

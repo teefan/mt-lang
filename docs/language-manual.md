@@ -548,6 +548,15 @@ Condition must be `bool`.
 
 `pass` is an explicit no-op statement for intentionally empty block bodies.
 
+`if` supports an inline single-statement form where the body and `else` branch appear on the same line:
+
+```mt
+if ready: return 1 else: return 0
+if x > 10: return "big" else if x > 5: return "med" else: return "small"
+```
+
+The inline form supports all statement kinds in the body (`return`, `let`, `var`, `defer`, assignment, expression statement, etc.). Blocks and inline form may be mixed: any branch may use either form independently.
+
 ### 4.2 Match
 
 Scrutinee types supported:
@@ -555,6 +564,7 @@ Scrutinee types supported:
 - Enum: arm patterns must be members of that enum.
 - Variant: arm patterns must be arms of that variant; a payload arm may bind its fields with `as name` or destructure them inline with struct patterns.
 - Integer (`byte`, `short`, `int`, `long`, `ubyte`, `ushort`, `uint`, `ulong`, `ptr_int`, `ptr_uint`): arm patterns must be integer literals or char literals.
+- `str`: arm patterns must be string literals (e.g., `"lex": ...`). Matches via full content comparison using the `equal` builtin.
 
 `_` is a wildcard arm that matches any value not covered by preceding arms. It maps to a C `default:` case.
 
@@ -573,8 +583,9 @@ Rules:
 - For enum scrutinee: all members must be covered unless a `_` arm is present.
 - For variant scrutinee: all arms must be covered unless a `_` arm is present; `as name` binds the payload struct for arms that have fields.
 - For integer scrutinee: a `_` arm is required (integers are unbounded).
+- For `str` scrutinee: a `_` arm is required (strings are unbounded). Arm patterns must be string literals. Matches via full content comparison.
 - Duplicate arm values (or duplicate `_`) are rejected.
-- Match must be exhaustive (enum/variant without `_`) or include `_` (integer or partial enum/variant).
+- Match must be exhaustive (enum/variant without `_`) or include `_` (integer, str, or partial enum/variant).
 
 `match` may also be used as an expression. Each arm provides a `:` value instead of an indented body, and all arm values must have compatible types:
 
@@ -1446,7 +1457,7 @@ The compiler intentionally rejects the following patterns. These are design cons
 
 - `break` and `continue` must be inside loops
 - `return` is not allowed inside `defer` blocks
-- `match` on enum/variant must be exhaustive unless `_` is present; `match` on integer requires `_`
+- `match` on enum/variant must be exhaustive unless `_` is present; `match` on integer or `str` requires `_`
 - `let ... else:` and `var ... else:` require `T?`, `Option[T]`, or `Result[T, E]`; the `else` block must terminate control flow
 - `?` propagation is only allowed inside function and proc bodies, not in `defer` blocks
 - `await` is only allowed inside async functions

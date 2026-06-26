@@ -439,12 +439,14 @@ Rules:
 - Conditions must be `bool`.
 - There is no truthy or falsy coercion from integers or pointers.
 - `pass` is an explicit no-op statement for intentionally empty block bodies.
+- `if` supports an inline single-statement form: `if cond: stmt else: stmt`. The body is a single statement on the same line instead of an indented block.
 
 `match` supports the following scrutinee types:
 
 - enum scrutinees
 - variant scrutinees
 - integer scrutinees
+- `str` scrutinees
 
 `match` may also be used as an expression, producing a value from the matched arm:
 
@@ -458,7 +460,7 @@ let label = match code:
 `match` rules:
 
 - Enum and variant matches must be exhaustive unless `_` is present.
-- Integer matches require `_`. Match arms accept integer literals and char literals (e.g., `'('` against a `ubyte` scrutinee).
+- Integer and `str` matches require `_`. Integer match arms accept integer literals and char literals; `str` match arms accept string literals.
 - Multiple pattern values may share the same arm body using `|`: `kind` matches `kind_a | kind_b`.
 - Variant payload arms may bind with `as name`.
 - Variant payload arms may destructure fields inline with struct patterns: `Variant.arm(field > 0, other)` — comparisons are guards (arm skipped if false), identifiers are bindings (field becomes a local), and `field = value` is an equality guard.
@@ -1046,7 +1048,7 @@ Current compiler rejects:
 
 - `break` and `continue` must be inside loops
 - `return` is not allowed inside `defer` blocks
-- `match` on `enum`/`variant` must be exhaustive unless `_` is present; `match` on integer requires `_`
+- `match` on `enum`/`variant` must be exhaustive unless `_` is present; `match` on integer or `str` requires `_`
 - `let ... else:` and `var ... else:` require `T?`, `Option[T]`, or `Result[T, E]`; the `else` block must terminate control flow
 - `?` propagation is only allowed inside function and proc bodies, not in `defer` blocks
 - `await` is only allowed inside async functions

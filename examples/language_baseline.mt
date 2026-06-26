@@ -308,6 +308,9 @@ function statements_demo() -> int:
     else:
         result = 3
 
+    # --- inline if (single-statement body)
+    if result > 0: result = 100 else: result = -1
+
     var count: int = 3
     while count > 0:
         count -= 1
@@ -441,6 +444,26 @@ function statements_demo() -> int:
         0: "zero"
         _: "other"
     let _label = label
+
+    # --- match on str (expression form)
+    let str_label = match result:
+        0: "zero"
+        1: "one"
+        _: "other"
+    let _str_label = str_label
+
+    # --- match on str (statement form)
+    var str_result: int = 0
+    match str_label:
+        "zero":
+            str_result = 0
+        "one":
+            str_result = 1
+        "other":
+            str_result = 2
+        _:
+            str_result = -1
+    result += str_result
 
     # --- is keyword: variant arm membership test
     let tk3 = TokenKind.eof
