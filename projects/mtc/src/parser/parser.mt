@@ -2591,7 +2591,7 @@ function is_known_generic(p: ref[Parser], name: str) -> bool:
 function is_builtin_spec(name: str) -> bool:
     if name == "array" or name == "reinterpret" or name == "span" or name == "zero":
         return true
-    if name == "ptr" or name == "const_ptr" or name == "ref" or name == "adapt":
+    if name == "ref" or name == "adapt":
         return true
     if name == "equal" or name == "hash" or name == "order" or name == "default":
         return true
@@ -3103,6 +3103,7 @@ function parse_local_decl(p: ref[Parser], kind: str) -> string_mod.String:
     advance(p)
     var is_destructure = false
     var dest_bindings = string_mod.String.create()
+    var dest_struct_name = string_mod.String.create()
 
     if check(p, "lparen"):
         advance(p)
@@ -3126,10 +3127,38 @@ function parse_local_decl(p: ref[Parser], kind: str) -> string_mod.String:
         consume(p, "rparen", "expected ) after destructure pattern")
         dest_bindings.push_byte(']')
         is_destructure = true
-    else if peek_kind2(p) == "lparen" or peek_kind2(p) == "dot":
+    else if peek_kind2(p) == "lparen":
+        let sname = peek_lexeme(p)
+        advance(p)
+        advance(p)
+        dest_bindings.push_byte('[')
+        var db_first = true
+        while not check(p, "rparen") and not is_eof(p):
+            let bname = peek_lexeme(p)
+            advance(p)
+            if not db_first:
+                dest_bindings.push_byte(',')
+            db_first = false
+            var be = lexer_mod.json_escaped(bname)
+            dest_bindings.append(be.as_str())
+            be.release()
+            if check(p, "colon"):
+                advance(p)
+                while not is_eof(p) and not check(p, "comma") and not check(p, "rparen"):
+                    advance(p)
+            if check(p, "comma"):
+                advance(p)
+        consume(p, "rparen", "expected ) after destructure pattern")
+        dest_bindings.push_byte(']')
+        is_destructure = true
+        dest_struct_name.release()
+        dest_struct_name = string_mod.String.create()
+        dest_struct_name.append(sname)
+    else if peek_kind2(p) == "dot":
         p.stmt_failed = true
         skip_to_stmt_end(p)
         dest_bindings.release()
+        dest_struct_name.release()
         return simple_stmt_json("PassStmt")
     else:
         dest_bindings.append("null")
@@ -3206,7 +3235,15 @@ function parse_local_decl(p: ref[Parser], kind: str) -> string_mod.String:
     r.append(",\"line\":null,\"column\":null,\"recovered_else\":false,\"destructure_bindings\":")
     r.append(dest_bindings.as_str())
     dest_bindings.release()
-    r.append(",\"destructure_type_name\":null}")
+    r.append(",\"destructure_type_name\":")
+    if dest_struct_name.len > 0:
+        var dse = lexer_mod.json_escaped(dest_struct_name.as_str())
+        r.append(dse.as_str())
+        dse.release()
+    else:
+        r.append("null")
+    dest_struct_name.release()
+    r.push_byte('}')
     return r
 
 function parse_assign_or_expr_stmt(p: ref[Parser]) -> string_mod.String:
@@ -4055,6 +4092,15 @@ function skip_statement(p: ref[Parser]) -> void:
     if check(p, "when") or check(p, "inline") or check(p, "parallel") or check(p, "detach") or check(p, "gather") or check(p, "emit") or check(p, "event"):
         advance(p)
         skip_expression_past(p)
+        if check(p, "indent"):
+            advance(p)
+            var bd: ptr_uint = 1
+            while bd > 0 and not is_eof(p):
+                if check(p, "indent"):
+                    bd += 1
+                else if check(p, "dedent"):
+                    bd -= 1
+                advance(p)
         return
 
     skip_expression_past(p)
