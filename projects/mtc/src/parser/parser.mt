@@ -311,6 +311,8 @@ function parse_declaration_public(p: ref[Parser]) -> void:
         parse_opaque_with_visibility(p, "public")
     else if kind == "union":
         parse_union_with_visibility(p, "public")
+    else if kind == "foreign":
+        parse_foreign_function_with_visibility(p, "public")
     else:
         fatal(c"parse: unexpected public declaration")
 
@@ -578,6 +580,9 @@ function parse_extern_function(p: ref[Parser]) -> void:
     ast.ast_close(ref_of(p.ast_buf))
 
 function parse_foreign_function(p: ref[Parser]) -> void:
+    parse_foreign_function_with_visibility(p, "")
+
+function parse_foreign_function_with_visibility(p: ref[Parser], vis: str) -> void:
     advance(p)  # foreign
     consume(p, "function", "expected function after foreign")
     let fname = peek_lexeme(p)
@@ -602,7 +607,7 @@ function parse_foreign_function(p: ref[Parser]) -> void:
     ast.ast_null(ref_of(p.ast_buf), "return_type")
     ast.ast_bool(ref_of(p.ast_buf), "variadic", false)
     ast.ast_str(ref_of(p.ast_buf), "mapping", mapping_name)
-    ast.ast_visibility(ref_of(p.ast_buf), "visibility", "")
+    ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_array_start(ref_of(p.ast_buf), "attributes")
     ast.ast_array_end(ref_of(p.ast_buf))
     ast.ast_null(ref_of(p.ast_buf), "line")
@@ -1215,20 +1220,11 @@ function parse_interface_with_visibility(p: ref[Parser], vis: str) -> void:
 
 function parse_extending(p: ref[Parser]) -> void:
     advance(p)
-    let tname = peek_lexeme(p)
-    advance(p)
-
-    if check(p, "lbracket"):
-        advance(p)
-        while not check(p, "rbracket") and not is_eof(p):
-            advance(p)
-        if check(p, "rbracket"):
-            advance(p)
+    var type_name = parse_type(p)
 
     ast.ast_open(ref_of(p.ast_buf), "ExtendingBlock")
-    var tn = backing_type_json(tname)
-    ast.ast_raw(ref_of(p.ast_buf), "type_name", tn.as_str())
-    tn.release()
+    ast.ast_raw(ref_of(p.ast_buf), "type_name", type_name.as_str())
+    type_name.release()
     parse_method_block(p, false)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
