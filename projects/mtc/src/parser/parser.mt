@@ -710,11 +710,7 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
     let sname = peek_lexeme(p)
     advance(p)
 
-    if check(p, "lbracket"):
-        advance(p)
-        while not check(p, "rbracket") and not is_eof(p):
-            advance(p)
-        advance(p)
+    var struct_tp = parse_type_params_json(p)
 
     var implements_json = string_mod.String.create()
     implements_json.push_byte('[')
@@ -772,8 +768,8 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
 
     ast.ast_open(ref_of(p.ast_buf), "StructDecl")
     ast.ast_str(ref_of(p.ast_buf), "name", sname)
-    ast.ast_array_start(ref_of(p.ast_buf), "type_params")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_raw(ref_of(p.ast_buf), "type_params", struct_tp.as_str())
+    struct_tp.release()
     ast.ast_raw(ref_of(p.ast_buf), "implements", implements_json.as_str())
     ast.ast_null(ref_of(p.ast_buf), "c_name")
     ast.ast_raw(ref_of(p.ast_buf), "fields", fields_json.as_str())
@@ -1205,11 +1201,7 @@ function parse_interface_with_visibility(p: ref[Parser], vis: str) -> void:
     let iname = peek_lexeme(p)
     advance(p)
 
-    if check(p, "lbracket"):
-        advance(p)
-        while not check(p, "rbracket") and not is_eof(p):
-            advance(p)
-        advance(p)
+    var iface_tp = parse_type_params_json(p)
 
     if check(p, "colon"):
         advance(p)
@@ -1223,8 +1215,8 @@ function parse_interface_with_visibility(p: ref[Parser], vis: str) -> void:
 
     ast.ast_open(ref_of(p.ast_buf), "InterfaceDecl")
     ast.ast_str(ref_of(p.ast_buf), "name", iname)
-    ast.ast_array_start(ref_of(p.ast_buf), "type_params")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_raw(ref_of(p.ast_buf), "type_params", iface_tp.as_str())
+    iface_tp.release()
     ast.ast_array_start(ref_of(p.ast_buf), "methods")
     ast.ast_array_end(ref_of(p.ast_buf))
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
