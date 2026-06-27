@@ -81,6 +81,16 @@ function build_fstring_from_lexeme(lexeme: str) -> string_mod.String:
 
     if n >= 2 and lexeme.byte_at(0) == 'f' and lexeme.byte_at(1) == '"':
         start = 2
+    else if n >= 4 and lexeme.byte_at(0) == 'f' and lexeme.byte_at(1) == '<' and lexeme.byte_at(2) == '<' and lexeme.byte_at(3) == '-':
+        start = 4
+        while start < n and lexeme.byte_at(start) != '\n':
+            start += 1
+        if start < n:
+            start += 1
+        while end > 0 and lexeme.byte_at(end - 1) == '\n':
+            end -= 1
+        while end > start and lexeme.byte_at(end - 1) != '\n':
+            end -= 1
     if end > start and lexeme.byte_at(end - 1) == '"':
         end -= 1
 
