@@ -2301,6 +2301,10 @@ function parse_primary_expr(p: ref[Parser]) -> string_mod.String:
         let lm = peek_lexeme(p)
         advance(p)
         return build_fstring_from_lexeme(lm)
+    if k == "fields_of" or k == "field_of" or k == "attribute_of" or k == "attributes_of" or k == "callable_of" or k == "members_of":
+        var r = ident_json(peek_lexeme(p))
+        advance(p)
+        return r
     if k != "identifier":
         p.stmt_failed = true
     var r = ident_json(peek_lexeme(p))
