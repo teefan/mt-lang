@@ -65,6 +65,107 @@ function peek_lexeme(p: ref[Parser]) -> str:
 
     return unsafe: read(tok).lexeme
 
+function peek_lit_json(p: ref[Parser]) -> str:
+    let tok = p.tokens.peek() else:
+        return ""
+
+    return unsafe: read(tok).lit_json.as_str()
+
+function build_fstring_from_lexeme(lexeme: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:FormatString\",\"parts\":[")
+    var first = true
+    var n = lexeme.len
+    var start: ptr_uint = 0
+    var end = n
+
+    if n >= 2 and lexeme.byte_at(0) == 'f' and lexeme.byte_at(1) == '"':
+        start = 2
+    if end > start and lexeme.byte_at(end - 1) == '"':
+        end -= 1
+
+    var i = start
+
+    while i < end:
+        let ch = lexeme.byte_at(i)
+
+        if ch == '#' and i + 1 < end and lexeme.byte_at(i + 1) == '{':
+            i += 2
+            var expr = string_mod.String.create()
+            var fmt_spec = string_mod.String.create()
+            var brace_depth: ptr_uint = 1
+            var in_fmt = false
+            var expr_done = false
+            while i < end and brace_depth > 0:
+                let ec = lexeme.byte_at(i)
+                if ec == ':' and not in_fmt and brace_depth == 1 and not expr_done:
+                    in_fmt = true
+                    i += 1
+                else if ec == '{':
+                    brace_depth += 1
+                    if in_fmt:
+                        fmt_spec.push_byte(ec)
+                    else:
+                        expr.push_byte(ec)
+                    i += 1
+                else if ec == '}':
+                    brace_depth -= 1
+                    if brace_depth > 0:
+                        if in_fmt:
+                            fmt_spec.push_byte(ec)
+                        else:
+                            expr.push_byte(ec)
+                    else:
+                        expr_done = true
+                    i += 1
+                else if in_fmt:
+                    fmt_spec.push_byte(ec)
+                    i += 1
+                else:
+                    expr.push_byte(ec)
+                    i += 1
+
+            if expr.len > 0:
+                if not first:
+                    r.push_byte(',')
+                first = false
+                var expr_ast = parse_standalone_expr(expr.as_str())
+                r.append("{\"$mt_type\":\"AST:FormatExprPart\",\"expression\":")
+                r.append(expr_ast.as_str())
+                expr_ast.release()
+                r.append(",\"format_spec\":")
+                if fmt_spec.len > 0:
+                    var fse = lexer_mod.json_escaped(fmt_spec.as_str())
+                    r.append(fse.as_str())
+                    fse.release()
+                else:
+                    r.append("null")
+                r.push_byte('}')
+            expr.release()
+            fmt_spec.release()
+        else:
+            var txt = string_mod.String.create()
+            while i < end:
+                let tc = lexeme.byte_at(i)
+                if tc == '#' and i + 1 < end and lexeme.byte_at(i + 1) == '{':
+                    break
+                txt.push_byte(tc)
+                i += 1
+
+            if txt.len > 0:
+                if not first:
+                    r.push_byte(',')
+                first = false
+                r.append("{\"$mt_type\":\"AST:FormatTextPart\",\"value\":")
+                var ve = lexer_mod.json_escaped(txt.as_str())
+                r.append(ve.as_str())
+                ve.release()
+                r.push_byte('}')
+            txt.release()
+
+    r.append("],\"line\":null,\"column\":null}")
+    return r
+
 # ── source file ───────────────────────────────────────────────────────────
 
 function parse_source_file(p: ref[Parser], module_name: str) -> string_mod.String:
@@ -140,8 +241,10 @@ function parse_source_file(p: ref[Parser], module_name: str) -> string_mod.Strin
                                 if check(p, "integer"):
                                     let ilex = peek_lexeme(p)
                                     var il = int_lit_json(ilex)
+                                    p.pending_attrs.append("{\"$mt_type\":\"AST:Argument\",\"name\":null,\"value\":")
                                     p.pending_attrs.append(il.as_str())
                                     il.release()
+                                    p.pending_attrs.push_byte('}')
                                     advance(p)
                                     if alx == "align" or alx == "alignment":
                                         let al = lexer_mod.parse_int(ilex)
@@ -2194,6 +2297,10 @@ function parse_primary_expr(p: ref[Parser]) -> string_mod.String:
         return null_lit_json()
     if k == "lparen":
         return parse_paren_or_tuple(p)
+    if k == "fstring":
+        let lm = peek_lexeme(p)
+        advance(p)
+        return build_fstring_from_lexeme(lm)
     if k != "identifier":
         p.stmt_failed = true
     var r = ident_json(peek_lexeme(p))
@@ -3604,6 +3711,25 @@ function skip_until_close(p: ref[Parser]) -> void:
         else if check(p, "rparen") or check(p, "rbracket"):
             depth -= 1
         advance(p)
+
+# ── standalone expression parser (used by f-string embedded expressions) ──
+
+public function parse_standalone_expr(source: str) -> string_mod.String:
+    var p = Parser(
+        tokens = ts.TokenStream.from_source(source),
+        ast_buf = ast.AstBuf(buf = string_mod.String.create(), first_field = true),
+        known_generics = vec_mod.Vec[str].create(),
+        pending_packed = false,
+        pending_alignment = 0,
+        has_pending_alignment = false,
+        pending_attrs = string_mod.String.create(),
+    )
+    collect_known_generics(ref_of(p))
+    skip_newlines(ref_of(p))
+    var result = parse_expr(ref_of(p))
+    p.ast_buf.buf.release()
+    p.pending_attrs.release()
+    return result
 
 # ── public entry point ────────────────────────────────────────────────────
 
