@@ -1662,25 +1662,63 @@ function parse_one_method(p: ref[Parser], is_interface: bool) -> void:
 function parse_attribute(p: ref[Parser]) -> void:
     advance(p)
 
+    var targets = string_mod.String.create()
+    targets.push_byte('[')
+    var tfirst = true
     if check(p, "lbracket"):
         advance(p)
         while not check(p, "rbracket") and not is_eof(p):
+            let tname = peek_lexeme(p)
             advance(p)
-        advance(p)
+            if not tfirst:
+                targets.push_byte(',')
+            tfirst = false
+            var te = lexer_mod.json_escaped(tname)
+            targets.append(te.as_str())
+            te.release()
+            if check(p, "comma"):
+                advance(p)
+        consume(p, "rbracket", "expected ] after attribute targets")
+    targets.push_byte(']')
 
     let aname = peek_lexeme(p)
     advance(p)
 
-    parse_params_skip(p)
+    var params = string_mod.String.create()
+    params.push_byte('[')
+    var pfirst = true
+    if check(p, "lparen"):
+        advance(p)
+        while not check(p, "rparen") and not is_eof(p):
+            let pname = peek_lexeme(p)
+            advance(p)
+            consume(p, "colon", "expected : in attribute param")
+            var ptype = parse_type(p)
+            if not pfirst:
+                params.push_byte(',')
+            pfirst = false
+            params.append("{\"$mt_type\":\"AST:Param\",\"name\":")
+            var pe = lexer_mod.json_escaped(pname)
+            params.append(pe.as_str())
+            pe.release()
+            params.append(",\"type\":")
+            params.append(ptype.as_str())
+            ptype.release()
+            params.append(",\"line\":null,\"column\":null}")
+            if check(p, "comma"):
+                advance(p)
+        consume(p, "rparen", "expected ) after attribute params")
+    params.push_byte(']')
+
     consume_nl(p)
 
     ast.ast_open(ref_of(p.ast_buf), "AttributeDecl")
     ast.ast_str(ref_of(p.ast_buf), "name", aname)
-    ast.ast_array_start(ref_of(p.ast_buf), "targets")
-    ast.ast_array_end(ref_of(p.ast_buf))
-    ast.ast_array_start(ref_of(p.ast_buf), "params")
-    ast.ast_array_end(ref_of(p.ast_buf))
-    ast.ast_visibility(ref_of(p.ast_buf), "visibility", "")
+    ast.ast_raw(ref_of(p.ast_buf), "targets", targets.as_str())
+    targets.release()
+    ast.ast_raw(ref_of(p.ast_buf), "params", params.as_str())
+    params.release()
+    emit_attrs(p)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
     ast.ast_close(ref_of(p.ast_buf))
@@ -3354,7 +3392,42 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
         return simple_stmt_json("PassStmt")
     if k == "when":
         return parse_when_stmt(p)
-    if k == "parallel" or k == "gather" or k == "emit" or k == "static_assert":
+    if k == "parallel":
+        advance(p)
+        var bodies = string_mod.String.create()
+        bodies.push_byte('[')
+        var bfirst = true
+        if check(p, "colon"):
+            advance(p)
+            consume_nl(p)
+            if check(p, "indent"):
+                advance(p)
+                skip_newlines(p)
+                while not check(p, "dedent") and not is_eof(p):
+                    if not bfirst:
+                        bodies.push_byte(',')
+                    bfirst = false
+                    var body = string_mod.String.create()
+                    body.push_byte('[')
+                    var stmt = parse_statement(p)
+                    body.append(stmt.as_str())
+                    stmt.release()
+                    body.push_byte(']')
+                    bodies.append(body.as_str())
+                    body.release()
+                    skip_newlines(p)
+                if check(p, "dedent"):
+                    advance(p)
+        else:
+            consume_nl(p)
+        bodies.push_byte(']')
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:ParallelBlockStmt\",\"bodies\":")
+        r.append(bodies.as_str())
+        bodies.release()
+        r.append(",\"line\":null,\"column\":null}")
+        return r
+    if k == "gather" or k == "emit" or k == "static_assert":
         p.stmt_failed = true
         skip_statement(p)
         return simple_stmt_json("PassStmt")
