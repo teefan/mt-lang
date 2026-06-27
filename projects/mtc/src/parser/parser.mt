@@ -948,6 +948,70 @@ function parse_union_with_visibility(p: ref[Parser], vis: str) -> void:
 function parse_variant(p: ref[Parser]) -> void:
     parse_variant_with_visibility(p, "")
 
+function parse_variant_arms_json(p: ref[Parser]) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.push_byte('[')
+    var first = true
+    var failed = false
+    skip_newlines(p)
+    var safety: ptr_uint = 0
+    while not check(p, "dedent") and not is_eof(p):
+        safety += 1
+        if safety > 100000:
+            failed = true
+            break
+        let aname = peek_lexeme(p)
+        advance(p)
+        if not first:
+            r.push_byte(',')
+        first = false
+        r.append("{\"$mt_type\":\"AST:VariantArm\",\"name\":")
+        var ane = lexer_mod.json_escaped(aname)
+        r.append(ane.as_str())
+        ane.release()
+        r.append(",\"fields\":[")
+        if check(p, "lparen"):
+            advance(p)
+            var ffirst = true
+            var fsafety: ptr_uint = 0
+            while not check(p, "rparen") and not is_eof(p):
+                fsafety += 1
+                if fsafety > 100000:
+                    failed = true
+                    break
+                let fname = peek_lexeme(p)
+                advance(p)
+                consume(p, "colon", "expected : in variant field")
+                var ft = parse_type(p)
+                if not ffirst:
+                    r.push_byte(',')
+                ffirst = false
+                r.append("{\"$mt_type\":\"AST:Field\",\"name\":")
+                var fne = lexer_mod.json_escaped(fname)
+                r.append(fne.as_str())
+                fne.release()
+                r.append(",\"type\":")
+                r.append(ft.as_str())
+                ft.release()
+                r.append(",\"attributes\":[],\"line\":null,\"column\":null}")
+                if check(p, "comma"):
+                    advance(p)
+            consume(p, "rparen", "expected ) after variant fields")
+        r.append("]}")
+        if check(p, "newline"):
+            advance(p)
+        else if not check(p, "dedent") and not is_eof(p):
+            failed = true
+            skip_to_stmt_end(p)
+        skip_newlines(p)
+    r.push_byte(']')
+    if failed or p.stmt_failed:
+        r.release()
+        var empty = string_mod.String.create()
+        empty.append("[]")
+        return empty
+    return r
+
 function parse_variant_with_visibility(p: ref[Parser], vis: str) -> void:
     advance(p)
     let vname = peek_lexeme(p)
@@ -959,13 +1023,36 @@ function parse_variant_with_visibility(p: ref[Parser], vis: str) -> void:
             advance(p)
         advance(p)
 
+    var arms_json = string_mod.String.create()
+    arms_json.append("[]")
     if check(p, "colon"):
         advance(p)
         consume_nl(p)
         if check(p, "indent"):
             advance(p)
-            while not check(p, "dedent") and not is_eof(p):
-                skip_statement(p)
+            let body_start = p.tokens.pos
+            var bdepth: ptr_uint = 1
+            while not is_eof(p):
+                if check(p, "indent"):
+                    bdepth += 1
+                    advance(p)
+                else if check(p, "dedent"):
+                    bdepth -= 1
+                    if bdepth == 0:
+                        break
+                    advance(p)
+                else:
+                    advance(p)
+            let body_end = p.tokens.pos
+            p.tokens.pos = body_start
+            p.stmt_failed = false
+            arms_json.release()
+            arms_json = parse_variant_arms_json(p)
+            if p.tokens.pos != body_end:
+                arms_json.release()
+                arms_json = string_mod.String.create()
+                arms_json.append("[]")
+            p.tokens.pos = body_end
             if check(p, "dedent"):
                 advance(p)
 
@@ -973,8 +1060,8 @@ function parse_variant_with_visibility(p: ref[Parser], vis: str) -> void:
     ast.ast_str(ref_of(p.ast_buf), "name", vname)
     ast.ast_array_start(ref_of(p.ast_buf), "type_params")
     ast.ast_array_end(ref_of(p.ast_buf))
-    ast.ast_array_start(ref_of(p.ast_buf), "arms")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_raw(ref_of(p.ast_buf), "arms", arms_json.as_str())
+    arms_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_array_start(ref_of(p.ast_buf), "attributes")
     ast.ast_array_end(ref_of(p.ast_buf))
