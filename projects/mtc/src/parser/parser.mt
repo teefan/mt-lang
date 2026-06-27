@@ -2698,12 +2698,43 @@ function parse_return_stmt(p: ref[Parser]) -> string_mod.String:
 
 function parse_local_decl(p: ref[Parser], kind: str) -> string_mod.String:
     advance(p)
-    if check(p, "lparen") or peek_kind2(p) == "lparen" or peek_kind2(p) == "dot":
+    var is_destructure = false
+    var dest_bindings = string_mod.String.create()
+
+    if check(p, "lparen"):
+        advance(p)
+        dest_bindings.push_byte('[')
+        var db_first = true
+        while not check(p, "rparen") and not is_eof(p):
+            let bname = peek_lexeme(p)
+            advance(p)
+            if not db_first:
+                dest_bindings.push_byte(',')
+            db_first = false
+            var be = lexer_mod.json_escaped(bname)
+            dest_bindings.append(be.as_str())
+            be.release()
+            if check(p, "colon"):
+                advance(p)
+                while not is_eof(p) and not check(p, "comma") and not check(p, "rparen"):
+                    advance(p)
+            if check(p, "comma"):
+                advance(p)
+        consume(p, "rparen", "expected ) after destructure pattern")
+        dest_bindings.push_byte(']')
+        is_destructure = true
+    else if peek_kind2(p) == "lparen" or peek_kind2(p) == "dot":
         p.stmt_failed = true
         skip_to_stmt_end(p)
+        dest_bindings.release()
         return simple_stmt_json("PassStmt")
-    let nm = peek_lexeme(p)
-    advance(p)
+    else:
+        dest_bindings.append("null")
+
+    var nm = string_mod.String.create()
+    if not is_destructure:
+        nm.append(peek_lexeme(p))
+        advance(p)
     var ty = string_mod.String.create()
     if check(p, "colon"):
         advance(p)
@@ -2738,9 +2769,13 @@ function parse_local_decl(p: ref[Parser], kind: str) -> string_mod.String:
     r.append("{\"$mt_type\":\"AST:LocalDecl\",\"kind\":{\"$sym\":\"")
     r.append(kind)
     r.append("\"},\"name\":")
-    var ne = lexer_mod.json_escaped(nm)
-    r.append(ne.as_str())
-    ne.release()
+    if is_destructure:
+        r.append("null")
+    else:
+        var ne = lexer_mod.json_escaped(nm.as_str())
+        r.append(ne.as_str())
+        ne.release()
+    nm.release()
     r.append(",\"type\":")
     if ty.len == 0:
         r.append("null")
@@ -2765,7 +2800,10 @@ function parse_local_decl(p: ref[Parser], kind: str) -> string_mod.String:
     else:
         r.append("null")
     else_body.release()
-    r.append(",\"line\":null,\"column\":null,\"recovered_else\":false,\"destructure_bindings\":null,\"destructure_type_name\":null}")
+    r.append(",\"line\":null,\"column\":null,\"recovered_else\":false,\"destructure_bindings\":")
+    r.append(dest_bindings.as_str())
+    dest_bindings.release()
+    r.append(",\"destructure_type_name\":null}")
     return r
 
 function parse_assign_or_expr_stmt(p: ref[Parser]) -> string_mod.String:
@@ -2868,7 +2906,7 @@ function parse_while_stmt(p: ref[Parser], is_inline: bool) -> string_mod.String:
     r.append(",\"line\":null,\"column\":null,\"length\":null}")
     return r
 
-function parse_for_stmt(p: ref[Parser], is_inline: bool) -> string_mod.String:
+function parse_for_stmt(p: ref[Parser], is_inline: bool, is_threaded: bool) -> string_mod.String:
     advance(p)
     var bindings = string_mod.String.create()
     bindings.push_byte('[')
@@ -2918,7 +2956,12 @@ function parse_for_stmt(p: ref[Parser], is_inline: bool) -> string_mod.String:
         r.append("true")
     else:
         r.append("false")
-    r.append(",\"threaded\":false,\"line\":null,\"column\":null}")
+    r.append(",\"threaded\":")
+    if is_threaded:
+        r.append("true")
+    else:
+        r.append("false")
+    r.append(",\"line\":null,\"column\":null}")
     return r
 
 function parse_defer_stmt(p: ref[Parser]) -> string_mod.String:
@@ -3174,7 +3217,10 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
     if k == "while":
         return parse_while_stmt(p, false)
     if k == "for":
-        return parse_for_stmt(p, false)
+        return parse_for_stmt(p, false, false)
+    if k == "parallel" and peek_kind2(p) == "for":
+        advance(p)
+        return parse_for_stmt(p, false, true)
     if k == "defer":
         return parse_defer_stmt(p)
     if k == "unsafe":
@@ -3185,7 +3231,7 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
         advance(p)
         let ik = peek_kind(p)
         if ik == "for":
-            return parse_for_stmt(p, true)
+            return parse_for_stmt(p, true, false)
         if ik == "while":
             return parse_while_stmt(p, true)
         if ik == "match":
