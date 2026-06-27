@@ -332,8 +332,11 @@ function parse_const_with_visibility(p: ref[Parser], vis: str) -> void:
         const_type = parse_type(p)
         has_block = true
 
+    var const_value = string_mod.String.create()
     if check(p, "equal") and not has_block:
         advance(p)
+        const_value.release()
+        const_value = parse_simple_value(p)
         while not check(p, "newline") and not is_eof(p):
             advance(p)
 
@@ -357,7 +360,11 @@ function parse_const_with_visibility(p: ref[Parser], vis: str) -> void:
     else:
         ast.ast_raw(ref_of(p.ast_buf), "type", const_type.as_str())
     const_type.release()
-    ast.ast_null(ref_of(p.ast_buf), "value")
+    if const_value.len == 0:
+        ast.ast_null(ref_of(p.ast_buf), "value")
+    else:
+        ast.ast_raw(ref_of(p.ast_buf), "value", const_value.as_str())
+    const_value.release()
     ast.ast_null(ref_of(p.ast_buf), "block_body")
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_array_start(ref_of(p.ast_buf), "attributes")
@@ -378,6 +385,12 @@ function parse_var_with_visibility(p: ref[Parser], vis: str) -> void:
 
     var var_type = parse_type_annotation_capture(p)
 
+    var var_value = string_mod.String.create()
+    if check(p, "equal"):
+        advance(p)
+        var_value.release()
+        var_value = parse_simple_value(p)
+
     consume_nl(p)
 
     ast.ast_open(ref_of(p.ast_buf), "VarDecl")
@@ -387,7 +400,11 @@ function parse_var_with_visibility(p: ref[Parser], vis: str) -> void:
     else:
         ast.ast_raw(ref_of(p.ast_buf), "type", var_type.as_str())
     var_type.release()
-    ast.ast_null(ref_of(p.ast_buf), "value")
+    if var_value.len == 0:
+        ast.ast_null(ref_of(p.ast_buf), "value")
+    else:
+        ast.ast_raw(ref_of(p.ast_buf), "value", var_value.as_str())
+    var_value.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
@@ -1020,6 +1037,50 @@ function float_lit_json(lexeme: str) -> string_mod.String:
     fv.release()
     r.push_byte('}')
     return r
+
+function peek_kind2(p: ref[Parser]) -> str:
+    let tok = p.tokens.tokens.get(p.tokens.pos + 1) else:
+        return "eof"
+    return unsafe: read(tok).kind
+
+function bool_lit_json(val: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:BooleanLiteral\",\"value\":")
+    r.append(val)
+    r.push_byte('}')
+    return r
+
+function null_lit_json() -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:NullLiteral\",\"type\":null,\"line\":null,\"column\":null}")
+    return r
+
+# Parses a const/var initializer only when it is a single standalone literal
+# (integer/float/bool/null) terminating the line; returns empty otherwise so the
+# caller leaves the value null until the full expression parser lands.
+function parse_simple_value(p: ref[Parser]) -> string_mod.String:
+    let k = peek_kind(p)
+    let nxt = peek_kind2(p)
+    if not (nxt == "newline" or nxt == "dedent" or nxt == "eof"):
+        return string_mod.String.create()
+    if k == "integer":
+        var r = int_lit_json(peek_lexeme(p))
+        advance(p)
+        return r
+    if k == "float":
+        var r = float_lit_json(peek_lexeme(p))
+        advance(p)
+        return r
+    if k == "true":
+        advance(p)
+        return bool_lit_json("true")
+    if k == "false":
+        advance(p)
+        return bool_lit_json("false")
+    if k == "null":
+        advance(p)
+        return null_lit_json()
+    return string_mod.String.create()
 
 function parse_type(p: ref[Parser]) -> string_mod.String:
     if check(p, "fn"):
