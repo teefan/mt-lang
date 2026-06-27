@@ -26,14 +26,14 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 │ (Stage 1)│               │ (Stage 2)│              │ (Stage 3)         │
 │  DONE ✓  │               │  DONE ✓  │              │     NEXT          │
 └──────────┘               └──────────┘              └───────────────────┘
-                                                              │
-                                                        Analysis JSON
-                                                              │
-                                                              ▼
+                                                               │
+                                                         Analysis JSON
+                                                               │
+                                                               ▼
 ┌───────────┐   C source    ┌──────────┐    IR JSON   ┌──────────┐
 │ C Backend │ ←──────────── │ Lowering │ ←─────────── │ (Stage 3 │
 │ (Stage 5) │               │ (Stage 4)│              │  output) │
-│  DONE ✓   │               │  NEXT    │              │          │
+│  partial  │               │  NEXT    │              │          │
 └───────────┘               └──────────┘              └──────────┘
 ```
 
@@ -49,87 +49,140 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 
 5. **Bootstrap is always O(1).** A system C compiler + committed bootstrap C files is the only requirement to build the compiler from scratch. No chain of historical compiler versions.
 
-## Stage 1: Lexer — DONE
+---
+
+## Stage 1: Lexer — DONE ✓
 
 **Location:** `projects/mtc/src/lexer/`
 
-**Verification:** Lex all 13 `examples/*.mt` files → pipe token JSON into `ruby bin/mtc parse --from-tokens-json` → all parse OK (25,181 total tokens).
+**Verification:** Full structural parity (token JSON) against Ruby across the **entire 476-file corpus** (examples, stdlib, tests), **positions included.** 0 diff tokens on any file. Verified via the differential parity harness (`projects/mtc/tools/parity.rb`), which classifies any divergence as accuracy/shape/position.
 
 **Features implemented:**
 - All literal types: integers (dec/hex/bin with `_` and type suffixes), floats (scientific, f/d suffix), strings, cstrings, char literals (with `\xNN`), heredocs (`<<-`, `c<<-`, `f<<-`), format strings with interpolation and format specs
 - Indentation-based blocks (INDENT/DEDENT), line continuation after operators, grouping depth suppression
 - All operators (1-char, 2-char, 3-char), all 54 keywords
-- Adjacent string concatenation, comments (`#`), doc comments (`##`)
+- Adjacent string concatenation, comments (`#`)
 - Token JSON output with `type`, `lexeme`, `literal`, `line`, `column`, `start_offset`, `end_offset`
 
-**Code size:** ~1070 lines in `lexer.mt` + 66 lines `keywords.mt`.
+**Key fixes applied during parity drive:**
+- Integer literal overflow: `parse_int` now returns `ulong` (was 32-bit `int`)
+- Heredoc trailing-newline: literal ends with `\n`, lexeme stops at terminator text
+- f-string heredoc interpolation: `f<<-` now parses `#{...}` parts
+- f-string text escape decoding: `\n`/`\r`/`\t` decoded like regular strings
+- Multiline-string line-number off-by-one: `lex_strlit` now sets `line_off` to the last physical line's start
+- f-string expr column: recorded at expr start, not after `}`
+- EOF trailing dedent line number: emitted at `line_num - 1` (matching Ruby's `@line_count`)
+- Adjacent-string indent guard: continuation lines must be strictly more indented than the opening line
+- All fixes verified by the differential parity harness
 
-**Tests:** 20 regression tests in `src/test/lexer_test.mt`, run via `mtc test`.
+**Code size:** ~1300 lines in `lexer.mt` + 66 lines `keywords.mt`.
+
+**Tests:** 20 regression tests + 29 parser tests in `src/test/`, run via `mtc test` (49/49 pass).
 
 **CLI:** `mtc lex <file>` — outputs token JSON to stdout.
 
-## Stage 2: Parser — DONE
+**Architecture note — `Token.lit_json` ownership:** `Token.lit_json` is now an **owned `String`** (was a bare `str` slice that dangled in the token-vector path used by `lex_to_tokens`). This was necessary so the parser can safely read integer/float/string/char literal values from tokens. The per-parse leak is bounded (one-shot tool); listed as a future cleanup item.
+
+---
+
+## Stage 2: Parser — DONE ✓ (substantially)
 
 **Location:** `projects/mtc/src/parser/`
 
-**Verification:** Parse all 13 `examples/*.mt` → all produce valid AST JSON. 158 declarations from `language_baseline.mt` with 66 FunctionDefs recording correct param counts.
+**Verification:** Differential parity harness (`projects/mtc/tools/parity.rb`) comparing self-host `mtc parse` AST JSON against `ruby bin/mtc parse --emit-ast-json` on the examples corpus with `--ignore-positions` (Milestone A). **5 of 13 examples fully pass (0 diffs); total diffs ~130 (accuracy ~107, shape ~23).** Parser is **crash-safe by construction across all 411 corpus files** (examples + stdlib + tests) — verified via sandboxed binary across the full corpus.
 
 **Architecture:**
-- `token_stream.mt` (80 lines): peek/advance/check/match/consume cursor over `Vec[lexer.Token]`
-- `ast_json.mt` (140 lines): AST JSON emitters with `$mt_type` and `$sym` encoding matching Ruby format
-- `parser.mt` (1180 lines): recursive-descent parser, all 18 declaration types, depth-tracked bracket/paren skipping
+- `token_stream.mt` (68 lines): peek/advance/check/match/consume cursor over `Vec[lexer.Token]`
+- `ast_json.mt` (115 lines): AST JSON emitters with `$mt_type` and `$sym` encoding matching Ruby format
+- `parser.mt` (~3200 lines, up from 1180): **fully recursive-descent parser** including declarations, type expressions, expressions, and statements
 
-**Declaration types:** const, var, type alias, function, async function, const function, external function, foreign function, struct (with implements), enum (with backing type), flags, union, variant, opaque (with implements), interface, extending, attribute, static_assert, event, when, public (all forms)
+### What is implemented and contract-conformant
 
-**Statement types (skipped, not parsed in detail):** if/else if/else, while, for, match, let, var, return, break, continue, pass, defer, unsafe, when, inline, parallel, detach, gather, emit, assignment, expression statements
+**Declarations — fully populated:**
+- All declaration types: const, var, type alias, function, async function, const function, external, foreign, struct (with implements + fields), union (with fields), enum (with backing + members w/ auto-increment), flags, variant (with arms), opaque, interface, extending, attribute, static_assert, event, when, public
+- **Types** (`TypeRef`, `QualifiedName`, `TypeArgument`, `FunctionType`, `ProcType`, `DynType`, `TupleType`): production `parse_type` with generics, nullable, lifetime (`@a`), `fn`/`proc`/`dyn`/tuple forms, int/float type-args
+- **Const/var values**: literal values (int/float/bool/null/string/char/cstring), and **full expression values** via `parse_expr`
+- **Visibility**: always emits `private`/`public` symbol (contract requirement)
+- **Type parameters**: `TypeParam`/`ValueTypeParam` with `implements` constraints for functions, structs, and interfaces
+- **Struct/union/variant fields, enum/flags members**: parsed with auto-increment (matching Ruby's `parse_enum_decl`)
+- **Static_assert**: parses the actual condition + message expressions
+- **Implements clause**: emits `QualifiedName` nodes (not strings), with type-arguments for generic interfaces
+- **Extending type_name, event capacity/payload**: emits `TypeRef` / captures capacity
 
-**Code size:** ~1180 lines parser.mt + 140 lines ast_json.mt + 80 lines token_stream.mt
+**Expression parser — full precedence ladder:**
+- Precedence-climbing binary operators (or → and → pipe → caret → amp → equality → comparison → shift → additive → multiplicative)
+- Unary operators (`not`, `-`, `+`, `~`), `await`
+- Postfix: member access (`.`), index (`[expr]`), call (`(args)` with named args), `?` propagation
+- Primary: all literals (int/float/string/cstring/char/bool/null), identifiers, paren/tuple → `ExpressionList`, `size_of`/`align_of`/`offset_of`, typed null (`null[T]`)
+- **Prefix casts** (`int<-expr`, `char<-expr`, etc.) — detected via type-like name + `<` `-` adjacency and emitted as `PrefixCast`
+- **Specialization** (`Option[int]`, `array[int,4]`, `damage_one[NPC]`): accurate classification via a token pre-pass that collects known-generic-callable names (`function NAME[`), plus builtin-list and receiver-name/content-type checks. Emits `Specialization{callee, arguments}` with `TypeArgument` nodes.
+- **Match expressions** (both statement and value positions): patterns with `|` alternatives, `as` bindings, block-form arms → `MatchArm`, expr-form arms → `MatchExprArm`, `MatchStmt` / `MatchExpr` / `ExpressionStmt`
+- **Proc expressions** (`proc(params) -> ret: body`): inline body → `[ReturnStmt]`, block body → statement list, `ProcExpr`
+- **Format strings** (f-strings): **not yet implemented** — they hit the primary fallback and set `stmt_failed` (discard the containing body)
 
-**Tests:** 49 tests (20 lexer + 29 parser). Run via `mtc test`.
+**Statement parser — leaf + control-flow, crash-safe by construction:**
+- **Crash-safe foundation**: non-aborting `consume` (sets `stmt_failed` instead of `fatal`), **cursor save/restore** around each function body (find matching dedent up front, parse, snap cursor to end regardless, discard JSON on failure), and always-advance primaries (no hangs)
+- **Ledger statements**: `pass`, `break`, `continue`, `return [expr]`
+- **Locals**: `let`/`var` (name + type + value + `else:` / `else as name:` guard blocks)
+- **Assignment / expression-stmt**: full assignment operators (`+=`, `*=`, etc.) with the `end_or_fail` guard
+- **Control flow**: `if`/`else if`/`else` (block + inline branches), `while`, `for` (bindings + iterables), `defer` (block + inline), `unsafe` (block + inline), **inline** `for`/`while`/`match`/`if` (with `inline:true`)
+- **Match** / **when** statements — dispatched to the respective parsers
+- **Conservative-by-design**: bodies containing not-yet-handled forms (f-strings, `parallel`, `gather`, destructure locals, `emit`) are **safely discarded** to `[]` via `stmt_failed` — never introduces new wrong-node diffs
 
-**CLI:** `mtc lex <file>` + `mtc parse <file>` + `mtc test`
+### Strategy for the remaining work
 
-**Key fixes post-audit:**
-- `last_kind` tracking: uses `output_tokens.last().kind` for accurate line continuation after operators
-- `ForeignFunctionDecl.mapping`: captures actual mapping name instead of function name
-- `skip_expression`: no longer double-advances after `(`/`[`
-- `lex_to_json`: releases `output_tokens` Vec (was leaked)
-- Comma tracking: dangling boolean with buffer-length emission check
-- Bracket advance: `parse_params_ast` breaks early inside lbracket loop when bd hits 0
+The path to full parser parity is now purely **declaration-structure features and the last few expression/statement forms**:
 
-**Known limitations (intentionally scoped out):**
-- Statement bodies are skipped via `skip_statement`, not parsed into detailed AST nodes
-- Expression trees not built (expressions skipped token-by-token)
-- Type annotations recorded as null, field details not populated
-- `@[test]` attribute content consumed but not recorded in AST
+| Feature | Est. diffs | Notes |
+|---|---|---|
+| Extending/interface methods | 21 | `MethodDef`/`InterfaceMethodDecl` inside `extending`/`interface` bodies — reuses type-param + param + return-type parsers + `parse_stmt_block_body` for bodies |
+| Struct body enhancement | 32 | Enhance `parse_fields_json` to also capture nested declarations, events, and field-attribute-decorated fields — one body-parser enhancement clears fields (11) + nested_types (10) + attributes (11) |
+| F-strings in bodies | ~3 | `FormatString` from fstring token parts with embedded-expression re-parsing |
+| Parallel-for / gather / destructure | ~5 | `ForStmt{threaded:true}`, `GatherStmt`, destructure pattern in `let` |
+| Lifetime params + misc | ~8 | `struct Buffer[@a]`, decl-level `when`, `packed`/`alignment` from struct attributes |
+| Positions (Milestone B) | — | Turn on `line`/`column`/`length` on every AST node |
 
-## Stage 5: C Backend — DONE
+### New pitfalls from Stage 2
 
-**Location:** `projects/mtc/src/c_backend/`
+- **`inline` is a Milk Tea keyword** — cannot be used as a parameter name. Use `is_inline` instead.
+- **`consume()` fatally aborts.** The body-parse path must use non-aborting `consume` (sets `stmt_failed` instead). The global `consume` wrapper in `parser.mt` was changed to be non-aborting for the body path.
+- **Cursor save/restore is critical for crash-safety.** Before parsing any block body, find the matching dedent (the body end), record it, then parse. After parsing, snap `p.tokens.pos` to the recorded end regardless of success/failure. This bounds any desync to the body and guarantees the declaration parse is never corrupted.
+- **Heuristic specialization classification measures net-negative.** The specialization decision (`IndexAccess` vs `Specialization`) was attempted twice with heuristics (capitalization + builtin-list); both times measured net-negative because partial-correctness backfires — a kept-but-imperfect body explodes into many leaf diffs. The accurate approach uses **known-name tracking** via a token pre-pass that collects generic-callable names, plus builtin-list + capitalization + **content-type check** (bracket content is a type → specialization regardless of receiver name). This combined approach is accurate and net-positive.
+- **Block-consuming value expressions need special handling at statement-end.** When a `let`/`return` value is a block-form proc or match expression, the expression's block already consumed its trailing dedent — the cursor lands at the *next* statement, not at a newline. The `end_or_fail` guard would falsely flag this as a desync. The fix: `block_expr_done` flag set by block-form value expressions, checked+consumed by `end_or_fail`, so the statement-end logic skips the end-of-statement check when the block already ended it.
+- **Member-name tracking for specialization.** Specialization can occur on qualified names (`module.Type[args]`), not just bare identifiers. The parser tracks the *last member name* in `recv_ident` (updated on `.member`, cleared on `[`/`(`/`?`) so that `member[Type]` is correctly classified.
 
-**Architecture:**
-- `ir_reader.mt` (220 lines): `IrCursor` — lazy, zero-allocation JSON field reader using borrowed `str` slices
-- `c_backend.mt` (756 lines): recursive C emitter from IR JSON
+### Code size (parser.mt)
 
-**Verification:** Self-host `emit-c` produces C source from IR JSON. Verified with `cc -std=c11` → compiles and runs correctly for structs, enums, constants, globals, if/while/for, aggregate literals, function calls.
+~3200 lines (up from the original 1180-line skeleton), covering all declaration types, a full expression parser, a crash-safe statement parser, and the known-name tracking infrastructure.
 
-**IR → C pipeline:**
-1. `emit_c(ir_json)` → walks `IR::Program`
-2. Top-level: `emit_includes`, `emit_constants`, `emit_globals`, `emit_opaques`, `emit_enums`, `emit_structs`, `emit_functions`
-3. Functions: forward declarations + definitions with typed params
-4. Bodies: `emit_body` → statement dispatch (14 types)
-5. Expressions: `emit_expression` → dispatches 24 types to C text
-6. Types: `type_to_c` → `$type_ref` dispatch to `c_struct_type` (Struct/Union) or `c_type_str` (Primitive)
+### Tests
 
-**Code size:** 756 lines c_backend.mt + 220 lines ir_reader.mt
+49 tests (20 lexer + 29 parser). Run via `mtc test`. All pass (49/49).
 
-**Cli:** `mtc emit-c <ir_json_file>` — outputs C source to stdout.
+### CLI
 
-**Known limitations:**
-- `struct _int` edge case in `type_to_c` param-type path (primitives occasionally hit `c_struct_type`)
-- No runtime helpers (mt_fatal, mt_str, format, async) — standalone simple programs only
-- No dead code elimination, no topological type sorting
-- Duplicate includes in some edge cases
+`mtc lex <file>` + `mtc parse <file>` + `mtc test`.
+
+---
+
+## Differential parity harness
+
+**Location:** `projects/mtc/tools/parity.rb`
+
+A Ruby script that serves as the CI-gradable oracle for contract-conformance. For each stage (`lex`/`parse`) and each corpus file:
+1. Runs the self-host binary (sandboxed: `timeout` + `ulimit -v`) and the authoritative Ruby CLI.
+2. `JSON.parse` both outputs and performs a recursive structural diff.
+3. Classifies each divergence as **ACCURACY** (objectively wrong about the source), **SHAPE** (valid-but-different representation / field presence), or **POSITION** (`line`/`column`/`*_offset`/`*_length` and any key ending in `_line`/`_column`/`_offset`).
+4. Aggregates pass/fail/bucket counts; exits nonzero on any non-position diff (Milestone A; `--ignore-positions` toggles).
+
+**Usage:**
+```
+ruby projects/mtc/tools/parity.rb <lex|parse|both> [FILES...] [--ignore-positions] [--build] [--first N]
+```
+
+This harness was used to drive the lexer to 100% parity and the parser through all the progress documented above.
+
+---
 
 ## Stage 4: Lowering — NEXT
 
@@ -149,24 +202,52 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 - Read `lib/milk_tea/core/serializer.rb` `ir_to_json` for the exact IR JSON contract
 - The `lower` command has `--from-analysis-json` flag (line 810 of cli.rb)
 
-### Pitfalls from Stage 1 + 2
+---
 
-- **`Build.build` always uses `package.toml` entry point.** Tests live in `src/test/` and a custom `test` subcommand runs them manually. Don't rely on `mtc test` for in-project test discovery.
-- **Test functions must be `public`** to be callable from the test runner.
-- **`str` methods from `std.str`** require `import std.str`.
-- **String lifetimes:** return `String`, not `str`, from functions that build local buffers.
-- **Use heredocs for multi-line test source code.**
-- **`defer` takes a single expression** (no colon) for single-statement cleanup.
-- **`match` is a reserved word** — use as expression only, not function name.
-- **`out` is a keyword** — don't use as variable name.
-- **`ptr[void]<-expr` casts require `unsafe` blocks.**
-- **Sandbox every self-host binary invocation** with `timeout` + `ulimit -v`.
-- **Sandbox Ruby compiler invocations too** in automated test loops. `check --json` on large files with stdlib imports can consume 4GB+ and hang for minutes due to cross-module linter analysis. Use `check` (text mode) for verification; avoid `--json` on `language_baseline.mt`.
-- **Inline JSON building needs careful comma tracking** — dangling comma flag pattern with buffer-length checks.
-- **Bracket-depth tracking** must increment AFTER consuming `[`/`(`, and decrement AND advance past `]`/`)` in the same conditional block to avoid extra advances.
-- **String lifetimes in C backend:** `c_type(str)` returning `str` creates dangling references — always return `String` and release at call site. Major source of "string.as_str text must be valid UTF-8" crashes.
-- **JSON field reading with `$`:** `$mt_type` and `$type_ref` are valid field names in IR JSON. `parse_json_string_slice` handles `$` correctly as a regular byte.
-- **Array element iteration:** use `split_array_elements` with depth tracking instead of naive `{` matching — nested objects in function bodies produce ghost elements.
-- **Function params use `(void)` for empty lists** — track `first_param` flag.
-- **Entry point functions:** no `static` prefix, no extra wrapper generation (the IR already has the wrapper function).
-- **IR type objects may have null `linkage_name`** — generate from `module_name + "_" + name` in `c_struct_type`.
+## Stage 5: C Backend — partial (prototype)
+
+**Location:** `projects/mtc/src/c_backend/`
+
+**Architecture:**
+- `ir_reader.mt` (220 lines): `IrCursor` — lazy, zero-allocation JSON field reader using borrowed `str` slices
+- `c_backend.mt` (756 lines): recursive C emitter from IR JSON
+
+**Verification:** Self-host `emit-c` produces C source from IR JSON. Verified with `cc -std=c11` → compiles and runs correctly for structs, enums, constants, globals, if/while/for, aggregate literals, function calls (simple standalone programs only).
+
+**Architecture review (June 2026):** The implementation handles a working subset but has several correctness gaps relative to the Ruby contract:
+
+- **Member access never emits `->`.** `IR:Member` always emits `.`; Ruby chooses `->` for pointer receivers (`pointer_member_receiver?`). Any pointer-receiver member access generates wrong C.
+- **Pointer params/locals drop the `*`.** The param emitter and `type_to_c` ignore the IR `Param.pointer` field.
+- **Indirect calls dump raw JSON.** `Call.callee` may be an expression node; the emitter only handles string callees. Object callees (function pointers, method dispatch) emit raw `{…}` JSON.
+- **Struct field types bypass type dispatch.** `emit_structs` uses `c_type(field_str("name"))` instead of `type_to_c`, so struct/union/pointer-typed fields get no `struct`/`*` prefix. Same shortcut in `Cast`/`Sizeof`/`Alignof`/`Offsetof`.
+- **Type coverage is thin.** `type_to_c` only dispatches on `Struct`/`Union`; everything else falls to `c_type_str(name)` which only handles a fixed list of primitives. Pointer, Span, Enum, Flags, Opaque, StringView, Variant, Function/Proc/Tuple/Dyn refs are not handled.
+- **Variants unimplemented.** `emit_variants` is a `pass` stub; `VariantLiteral` emits `{0}`.
+- **`field_str` doesn't unescape JSON** — string-literal values with escapes/embedded quotes produce malformed C.
+- **O(n²) performance.** Every `field_*` rescans the object from offset 1; arrays re-split on each pass. Acceptable for small inputs; a bottleneck for self-hosting a large compiler IR.
+
+These are confirmed against the Ruby `c_backend/expressions.rb`, `ir.rb`, and `serializer.rb`. The C backend is correctly labeled "partial" — it handles a narrow subset faithfully enough for simple programs, but is not a faithful port of the Ruby C backend.
+
+---
+
+## Pitfalls (cross-cutting)
+
+### General
+
+- **Sandbox every self-host binary invocation** with `timeout` + `ulimit -v`. Per-invocation, never loop over many inputs without a timeout.
+- **Run `mtc test` after every commit** that changes the parser or lexer. The parity harness is the primary oracle, but the internal 49 tests are the regression gate. They can silently break when AST enrichment changes node counts (e.g., the `parse_and_get_decls` skeleton-era heuristic broke when types/values populated the AST).
+
+### JSON contracts, Milk Tea, and parser design
+
+- String lifetimes: return `String`, not `str`, from functions that build local buffers. "string.as_str text must be valid UTF-8" crashes come from dangling `str` slices.
+- `Token.lit_json` owned-String fix: see Lexer architecture note above.
+- `inline` is a reserved keyword — use `is_inline` as a parameter name.
+- `match` is a reserved word — use as expression only, not function name.
+- `out` is a keyword — don't use as variable name.
+- Bracket-depth tracking: increment AFTER consuming `[`/`(`, decrement AND advance past `]`/`)` in the same conditional block.
+
+### C backend specific
+
+- `c_type(str)` returning `str` creates dangling references — always return `String` and release at call site.
+- JSON field reading with `$`: `$mt_type` and `$type_ref` are valid field names in IR JSON.
+- Array element iteration: use `split_array_elements` with depth tracking for nested objects.
+- IR type objects may have null `linkage_name` — generate from `module_name + "_" + name`.
