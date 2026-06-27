@@ -739,6 +739,67 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
     ast.ast_close(ref_of(p.ast_buf))
     implements_json.release()
 
+function parse_enum_members_json(p: ref[Parser]) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.push_byte('[')
+    var first = true
+    var failed = false
+    var auto_value: ulong = 0
+    skip_newlines(p)
+    var safety: ptr_uint = 0
+    while not check(p, "dedent") and not is_eof(p):
+        safety += 1
+        if safety > 100000:
+            failed = true
+            break
+        let mname = peek_lexeme(p)
+        advance(p)
+        if not first:
+            r.push_byte(',')
+        first = false
+        r.append("{\"$mt_type\":\"AST:EnumMember\",\"name\":")
+        var ne = lexer_mod.json_escaped(mname)
+        r.append(ne.as_str())
+        ne.release()
+        r.append(",\"value\":")
+        if check(p, "equal"):
+            advance(p)
+            if check(p, "integer") and (peek_kind2(p) == "newline" or peek_kind2(p) == "dedent" or peek_kind2(p) == "eof"):
+                let lex = peek_lexeme(p)
+                var il = int_lit_json(lex)
+                r.append(il.as_str())
+                il.release()
+                auto_value = lexer_mod.parse_int(lex) + 1
+                advance(p)
+            else:
+                var v = parse_expr(p)
+                r.append(v.as_str())
+                v.release()
+        else:
+            var vbuf = string_mod.String.create()
+            fmt.append_ulong(ref_of(vbuf), auto_value)
+            r.append("{\"$mt_type\":\"AST:IntegerLiteral\",\"lexeme\":\"")
+            r.append(vbuf.as_str())
+            r.append("\",\"value\":")
+            r.append(vbuf.as_str())
+            r.push_byte('}')
+            vbuf.release()
+            auto_value += 1
+        r.append(",\"line\":null,\"column\":null}")
+        if check(p, "newline"):
+            advance(p)
+        else if not check(p, "dedent") and not is_eof(p):
+            failed = true
+            skip_to_stmt_end(p)
+        skip_newlines(p)
+    r.push_byte(']')
+    if failed or p.stmt_failed:
+        r.release()
+        var empty = string_mod.String.create()
+        empty.append("[]")
+        return empty
+    return r
+
 function parse_enum_or_flags(p: ref[Parser], is_flags: bool) -> void:
     advance(p)
     let ename = peek_lexeme(p)
@@ -755,10 +816,33 @@ function parse_enum_or_flags(p: ref[Parser], is_flags: bool) -> void:
             advance(p)
 
     consume_nl(p)
+    var members_json = string_mod.String.create()
+    members_json.append("[]")
     if check(p, "indent"):
         advance(p)
-        while not check(p, "dedent") and not is_eof(p):
-            skip_statement(p)
+        let body_start = p.tokens.pos
+        var bdepth: ptr_uint = 1
+        while not is_eof(p):
+            if check(p, "indent"):
+                bdepth += 1
+                advance(p)
+            else if check(p, "dedent"):
+                bdepth -= 1
+                if bdepth == 0:
+                    break
+                advance(p)
+            else:
+                advance(p)
+        let body_end = p.tokens.pos
+        p.tokens.pos = body_start
+        p.stmt_failed = false
+        members_json.release()
+        members_json = parse_enum_members_json(p)
+        if p.tokens.pos != body_end:
+            members_json.release()
+            members_json = string_mod.String.create()
+            members_json.append("[]")
+        p.tokens.pos = body_end
         if check(p, "dedent"):
             advance(p)
 
@@ -766,8 +850,8 @@ function parse_enum_or_flags(p: ref[Parser], is_flags: bool) -> void:
     ast.ast_open(ref_of(p.ast_buf), decl_type)
     ast.ast_str(ref_of(p.ast_buf), "name", ename)
     ast.ast_str(ref_of(p.ast_buf), "backing_type", backing.as_str())
-    ast.ast_array_start(ref_of(p.ast_buf), "members")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_raw(ref_of(p.ast_buf), "members", members_json.as_str())
+    members_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", "")
     ast.ast_array_start(ref_of(p.ast_buf), "attributes")
     ast.ast_array_end(ref_of(p.ast_buf))
