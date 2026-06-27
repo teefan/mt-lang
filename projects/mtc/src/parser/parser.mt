@@ -664,17 +664,14 @@ function parse_fields_json(p: ref[Parser]) -> string_mod.String:
     var r = string_mod.String.create()
     r.push_byte('[')
     var first = true
-    var complex = false
     skip_newlines(p)
     var safety: ptr_uint = 0
     while not check(p, "dedent") and not is_eof(p):
         safety += 1
         if safety > 100000:
-            complex = true
             break
         let k = peek_kind(p)
-        if k == "struct" or k == "enum" or k == "union" or k == "variant" or k == "flags" or k == "opaque" or k == "event" or k == "at":
-            complex = true
+        if k == "struct" or k == "enum" or k == "union" or k == "variant" or k == "flags" or k == "opaque" or k == "event" or k == "at" or k == "indent":
             skip_statement(p)
         else:
             let fname = peek_lexeme(p)
@@ -696,15 +693,9 @@ function parse_fields_json(p: ref[Parser]) -> string_mod.String:
                 if check(p, "newline"):
                     advance(p)
             else:
-                complex = true
                 skip_to_stmt_end(p)
         skip_newlines(p)
     r.push_byte(']')
-    if complex:
-        r.release()
-        var empty = string_mod.String.create()
-        empty.append("[]")
-        return empty
     return r
 
 function parse_struct(p: ref[Parser]) -> void:
@@ -739,14 +730,19 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
                 break
     implements_json.push_byte(']')
 
+    var body_start: ptr_uint = 0
+    var body_end: ptr_uint = 0
+    var has_body = false
     var fields_json = string_mod.String.create()
     fields_json.append("[]")
+
     if check(p, "colon"):
         advance(p)
         consume_nl(p)
         if check(p, "indent"):
             advance(p)
-            let body_start = p.tokens.pos
+            has_body = true
+            body_start = p.tokens.pos
             var bdepth: ptr_uint = 1
             while not is_eof(p):
                 if check(p, "indent"):
@@ -759,17 +755,7 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
                     advance(p)
                 else:
                     advance(p)
-            let body_end = p.tokens.pos
-            p.tokens.pos = body_start
-            fields_json.release()
-            fields_json = parse_fields_json(p)
-            if p.tokens.pos != body_end:
-                fields_json.release()
-                fields_json = string_mod.String.create()
-                fields_json.append("[]")
-            p.tokens.pos = body_end
-            if check(p, "dedent"):
-                advance(p)
+            body_end = p.tokens.pos
 
     ast.ast_open(ref_of(p.ast_buf), "StructDecl")
     ast.ast_str(ref_of(p.ast_buf), "name", sname)
@@ -777,12 +763,84 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
     struct_tp.release()
     ast.ast_raw(ref_of(p.ast_buf), "implements", implements_json.as_str())
     ast.ast_null(ref_of(p.ast_buf), "c_name")
+
+    if has_body:
+        p.tokens.pos = body_start
+        fields_json.release()
+        fields_json = parse_fields_json(p)
+
     ast.ast_raw(ref_of(p.ast_buf), "fields", fields_json.as_str())
     fields_json.release()
-    ast.ast_array_start(ref_of(p.ast_buf), "events")
-    ast.ast_array_end(ref_of(p.ast_buf))
-    ast.ast_array_start(ref_of(p.ast_buf), "nested_types")
-    ast.ast_array_end(ref_of(p.ast_buf))
+
+    if has_body:
+        p.tokens.pos = body_start
+        ast.ast_array_start(ref_of(p.ast_buf), "events")
+        var efirst = true
+        while p.tokens.pos < body_end and not is_eof(p):
+            skip_newlines(p)
+            if p.tokens.pos >= body_end:
+                break
+            if check(p, "event"):
+                if not efirst:
+                    ast.ast_comma(ref_of(p.ast_buf))
+                efirst = false
+                parse_event(p)
+            else:
+                skip_statement(p)
+        ast.ast_array_end(ref_of(p.ast_buf))
+
+        p.tokens.pos = body_start
+        ast.ast_array_start(ref_of(p.ast_buf), "nested_types")
+        var nfirst = true
+        while p.tokens.pos < body_end and not is_eof(p):
+            skip_newlines(p)
+            if p.tokens.pos >= body_end:
+                break
+            let k = peek_kind(p)
+            if k == "struct":
+                if not nfirst:
+                    ast.ast_comma(ref_of(p.ast_buf))
+                nfirst = false
+                parse_struct_with_visibility(p, "")
+            else if k == "enum":
+                if not nfirst:
+                    ast.ast_comma(ref_of(p.ast_buf))
+                nfirst = false
+                parse_enum_with_visibility(p, "", false)
+            else if k == "flags":
+                if not nfirst:
+                    ast.ast_comma(ref_of(p.ast_buf))
+                nfirst = false
+                parse_enum_with_visibility(p, "", true)
+            else if k == "union":
+                if not nfirst:
+                    ast.ast_comma(ref_of(p.ast_buf))
+                nfirst = false
+                parse_union_with_visibility(p, "")
+            else if k == "variant":
+                if not nfirst:
+                    ast.ast_comma(ref_of(p.ast_buf))
+                nfirst = false
+                parse_variant_with_visibility(p, "")
+            else if k == "opaque":
+                if not nfirst:
+                    ast.ast_comma(ref_of(p.ast_buf))
+                nfirst = false
+                parse_opaque_with_visibility(p, "")
+            else:
+                skip_statement(p)
+        ast.ast_array_end(ref_of(p.ast_buf))
+
+        p.tokens.pos = body_end
+    else:
+        ast.ast_array_start(ref_of(p.ast_buf), "events")
+        ast.ast_array_end(ref_of(p.ast_buf))
+        ast.ast_array_start(ref_of(p.ast_buf), "nested_types")
+        ast.ast_array_end(ref_of(p.ast_buf))
+
+    if check(p, "dedent"):
+        advance(p)
+
     ast.ast_array_start(ref_of(p.ast_buf), "attributes")
     ast.ast_array_end(ref_of(p.ast_buf))
     ast.ast_bool(ref_of(p.ast_buf), "packed", false)
