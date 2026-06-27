@@ -71,6 +71,24 @@ function peek_lit_json(p: ref[Parser]) -> str:
 
     return unsafe: read(tok).lit_json.as_str()
 
+function format_spec_json(fmts: str) -> str:
+    var n = fmts.len
+    if n == 0:
+        return "null"
+    if n == 1:
+        let c = fmts.byte_at(0)
+        if c == 'b':
+            return "{\"kind\":{\"$sym\":\"bin\"},\"uppercase\":false}"
+        if c == 'x':
+            return "{\"kind\":{\"$sym\":\"hex\"},\"uppercase\":false}"
+        if c == 'X':
+            return "{\"kind\":{\"$sym\":\"hex\"},\"uppercase\":true}"
+        if c == 'o':
+            return "{\"kind\":{\"$sym\":\"oct\"},\"uppercase\":false}"
+        if c == 'O':
+            return "{\"kind\":{\"$sym\":\"oct\"},\"uppercase\":true}"
+    return "null"
+
 function build_fstring_from_lexeme(lexeme: str) -> string_mod.String:
     var r = string_mod.String.create()
     r.append("{\"$mt_type\":\"AST:FormatString\",\"parts\":[")
@@ -162,9 +180,7 @@ function build_fstring_from_lexeme(lexeme: str) -> string_mod.String:
                 expr_ast.release()
                 r.append(",\"format_spec\":")
                 if fmt_spec.len > 0:
-                    var fse = lexer_mod.json_escaped(fmt_spec.as_str())
-                    r.append(fse.as_str())
-                    fse.release()
+                    r.append(format_spec_json(fmt_spec.as_str()))
                 else:
                     r.append("null")
                 r.push_byte('}')
@@ -2608,6 +2624,8 @@ function is_cast_type(name: str) -> bool:
         return true
     if name == "ivec2" or name == "ivec3" or name == "ivec4" or name == "mat3" or name == "mat4":
         return true
+    if name == "ptr" or name == "const_ptr" or name == "span" or name == "array" or name == "string":
+        return true
     return false
 
 function parse_proc_expr(p: ref[Parser]) -> string_mod.String:
@@ -2881,7 +2899,9 @@ function end_or_fail(p: ref[Parser]) -> void:
         return
     if check(p, "newline"):
         advance(p)
-    else if not check(p, "dedent") and not is_eof(p):
+    else if check(p, "else") or check(p, "dedent") or is_eof(p):
+        return
+    else:
         p.stmt_failed = true
         skip_to_stmt_end(p)
 
@@ -3533,7 +3553,33 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
         bodies.release()
         r.append(",\"line\":null,\"column\":null}")
         return r
-    if k == "gather" or k == "emit" or k == "static_assert":
+    if k == "gather":
+        advance(p)
+        var handles = string_mod.String.create()
+        handles.push_byte('[')
+        var hfirst = true
+        while not check(p, "newline") and not check(p, "dedent") and not is_eof(p):
+            let hn = peek_lexeme(p)
+            advance(p)
+            if not hfirst:
+                handles.push_byte(',')
+            hfirst = false
+            handles.append("{\"$mt_type\":\"AST:Identifier\",\"name\":")
+            var he = lexer_mod.json_escaped(hn)
+            handles.append(he.as_str())
+            he.release()
+            handles.append(",\"line\":null,\"column\":null}")
+            if check(p, "comma"):
+                advance(p)
+        handles.push_byte(']')
+        end_or_fail(p)
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:GatherStmt\",\"handles\":")
+        r.append(handles.as_str())
+        handles.release()
+        r.append(",\"line\":null,\"column\":null}")
+        return r
+    if k == "emit" or k == "static_assert":
         skip_statement(p)
         return simple_stmt_json("PassStmt")
     return parse_assign_or_expr_stmt(p)
