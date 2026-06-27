@@ -582,6 +582,53 @@ function parse_foreign_function(p: ref[Parser]) -> void:
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_close(ref_of(p.ast_buf))
 
+function parse_impl_qualname_json(p: ref[Parser]) -> string_mod.String:
+    var parts = vec_mod.Vec[str].create()
+    parts.push(peek_lexeme(p))
+    advance(p)
+    while check(p, "dot"):
+        advance(p)
+        parts.push(peek_lexeme(p))
+        advance(p)
+    var targs = string_mod.String.create()
+    targs.push_byte('[')
+    if check(p, "lbracket"):
+        advance(p)
+        var tfirst = true
+        var tsafety: ptr_uint = 0
+        while not check(p, "rbracket") and not is_eof(p):
+            tsafety += 1
+            if tsafety > 10000:
+                break
+            if not tfirst:
+                targs.push_byte(',')
+            tfirst = false
+            var t = parse_type(p)
+            targs.append(t.as_str())
+            t.release()
+            if check(p, "comma"):
+                advance(p)
+        consume(p, "rbracket", "expected ] after interface type args")
+    targs.push_byte(']')
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:QualifiedName\",\"parts\":[")
+    var i: ptr_uint = 0
+    while i < parts.len:
+        let pp = parts.at(i) else:
+            break
+        if i > 0:
+            r.push_byte(',')
+        var e = lexer_mod.json_escaped(pp)
+        r.append(e.as_str())
+        e.release()
+        i += 1
+    r.append("],\"type_arguments\":")
+    r.append(targs.as_str())
+    targs.release()
+    r.append(",\"line\":null,\"column\":null}")
+    parts.release()
+    return r
+
 function parse_fields_json(p: ref[Parser]) -> string_mod.String:
     var r = string_mod.String.create()
     r.push_byte('[')
@@ -646,41 +693,23 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
     var implements_json = string_mod.String.create()
     implements_json.push_byte('[')
     var first_impl = true
-    while check(p, "implements"):
-        if not first_impl:
-            implements_json.push_byte(',')
+    if check(p, "implements"):
         advance(p)
-        var impl_list = vec_mod.Vec[str].create()
-        while is_ident_or_keyword(p):
-            impl_list.push(peek_lexeme(p))
-            advance(p)
-            if check(p, "lbracket"):
-                advance(p)
-                var bracket_d: ptr_uint = 1
-                while bracket_d > 0 and not is_eof(p):
-                    if check(p, "lbracket"):
-                        bracket_d += 1
-                    else if check(p, "rbracket"):
-                        bracket_d -= 1
-                    advance(p)
+        var isafety: ptr_uint = 0
+        while true:
+            isafety += 1
+            if isafety > 10000:
+                break
+            if not first_impl:
+                implements_json.push_byte(',')
+            first_impl = false
+            var qn = parse_impl_qualname_json(p)
+            implements_json.append(qn.as_str())
+            qn.release()
             if check(p, "comma"):
-                advance(p)
-            else if check(p, "and"):
                 advance(p)
             else:
                 break
-        var i: ptr_uint = 0
-        while i < impl_list.len:
-            let ip = impl_list.at(i) else:
-                break
-            if i > 0:
-                implements_json.push_byte(',')
-            var esc = lexer_mod.json_escaped(ip)
-            implements_json.append(esc.as_str())
-            esc.release()
-            i += 1
-        impl_list.release()
-        first_impl = false
     implements_json.push_byte(']')
 
     var fields_json = string_mod.String.create()
