@@ -1237,18 +1237,17 @@ function parse_attribute(p: ref[Parser]) -> void:
 function parse_static_assert(p: ref[Parser]) -> void:
     advance(p)
     consume(p, "lparen", "expected (")
-    var paren_d: ptr_uint = 1
-    while paren_d > 0 and not is_eof(p):
-        if check(p, "lparen"):
-            paren_d += 1
-        else if check(p, "rparen"):
-            paren_d -= 1
-        advance(p)
+    var cond = parse_expr(p)
+    consume(p, "comma", "expected , in static_assert")
+    var msg = parse_expr(p)
+    consume(p, "rparen", "expected ) after static_assert")
     consume_nl(p)
 
     ast.ast_open(ref_of(p.ast_buf), "StaticAssert")
-    ast.ast_str(ref_of(p.ast_buf), "condition", "true")
-    ast.ast_str(ref_of(p.ast_buf), "message", "")
+    ast.ast_raw(ref_of(p.ast_buf), "condition", cond.as_str())
+    cond.release()
+    ast.ast_raw(ref_of(p.ast_buf), "message", msg.as_str())
+    msg.release()
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_close(ref_of(p.ast_buf))
 
