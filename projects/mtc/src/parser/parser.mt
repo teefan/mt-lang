@@ -2283,7 +2283,7 @@ function op_prec(k: str) -> int:
         return 5
     if k == "amp":
         return 6
-    if k == "equal_equal" or k == "bang_equal":
+    if k == "equal_equal" or k == "bang_equal" or k == "is":
         return 7
     if k == "less" or k == "less_equal" or k == "greater" or k == "greater_equal":
         return 8
