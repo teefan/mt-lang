@@ -1350,18 +1350,76 @@ function parse_event_with_visibility(p: ref[Parser], vis: str) -> void:
 
 # ── helpers ───────────────────────────────────────────────────────────────
 
-function parse_type_params(p: ref[Parser]) -> void:
+function parse_type_params_json(p: ref[Parser]) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.push_byte('[')
     if check(p, "lbracket"):
         advance(p)
-        var bracket_d: ptr_uint = 1
-        while bracket_d > 0 and not is_eof(p):
-            if check(p, "lbracket"):
-                bracket_d += 1
-            else if check(p, "rbracket"):
-                bracket_d -= 1
+        var first = true
+        var safety: ptr_uint = 0
+        while not check(p, "rbracket") and not is_eof(p):
+            safety += 1
+            if safety > 10000:
+                break
+            if check(p, "at"):
+                advance(p)
+                advance(p)
+                if check(p, "comma"):
+                    advance(p)
+                continue
+            let pname = peek_lexeme(p)
             advance(p)
-    ast.ast_array_start(ref_of(p.ast_buf), "type_params")
-    ast.ast_array_end(ref_of(p.ast_buf))
+            if not first:
+                r.push_byte(',')
+            first = false
+            if check(p, "colon"):
+                advance(p)
+                var vt = parse_type(p)
+                r.append("{\"$mt_type\":\"AST:ValueTypeParam\",\"name\":")
+                var ne = lexer_mod.json_escaped(pname)
+                r.append(ne.as_str())
+                ne.release()
+                r.append(",\"type\":")
+                r.append(vt.as_str())
+                vt.release()
+                r.append(",\"line\":null,\"column\":null,\"length\":null}")
+            else:
+                r.append("{\"$mt_type\":\"AST:TypeParam\",\"name\":")
+                var ne = lexer_mod.json_escaped(pname)
+                r.append(ne.as_str())
+                ne.release()
+                r.append(",\"constraints\":[")
+                if check(p, "implements"):
+                    advance(p)
+                    var cfirst = true
+                    var csafety: ptr_uint = 0
+                    while true:
+                        csafety += 1
+                        if csafety > 1000:
+                            break
+                        if not cfirst:
+                            r.push_byte(',')
+                        cfirst = false
+                        r.append("{\"$mt_type\":\"AST:TypeParamConstraint\",\"kind\":{\"$sym\":\"interface\"},\"interface_ref\":")
+                        var iq = parse_impl_qualname_json(p)
+                        r.append(iq.as_str())
+                        iq.release()
+                        r.push_byte('}')
+                        if check(p, "and"):
+                            advance(p)
+                        else:
+                            break
+                r.append("],\"line\":null,\"column\":null,\"length\":null}")
+            if check(p, "comma"):
+                advance(p)
+        consume(p, "rbracket", "expected ] after type params")
+    r.push_byte(']')
+    return r
+
+function parse_type_params(p: ref[Parser]) -> void:
+    var tj = parse_type_params_json(p)
+    ast.ast_raw(ref_of(p.ast_buf), "type_params", tj.as_str())
+    tj.release()
 
 function parse_params_skip(p: ref[Parser]) -> void:
     if check(p, "lparen"):
