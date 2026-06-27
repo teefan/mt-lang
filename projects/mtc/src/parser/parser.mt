@@ -2390,6 +2390,15 @@ function parse_primary_expr(p: ref[Parser]) -> string_mod.String:
         return null_lit_json()
     if k == "lparen":
         return parse_paren_or_tuple(p)
+    if k == "detach":
+        advance(p)
+        var det_expr = parse_expr(p)
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:DetachExpr\",\"body\":[{\"$mt_type\":\"AST:ExpressionStmt\",\"expression\":")
+        r.append(det_expr.as_str())
+        det_expr.release()
+        r.append(",\"line\":null}]}")
+        return r
     if k == "unsafe":
         advance(p)
         consume(p, "colon", "expected : after unsafe")
@@ -3525,7 +3534,6 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
         r.append(",\"line\":null,\"column\":null}")
         return r
     if k == "gather" or k == "emit" or k == "static_assert":
-        p.stmt_failed = true
         skip_statement(p)
         return simple_stmt_json("PassStmt")
     return parse_assign_or_expr_stmt(p)
