@@ -86,20 +86,24 @@ def run_selfhost(stage, file)
   end
 end
 
+def position_key?(key)
+  POSITION_KEYS.include?(key) || key.to_s =~ /_(line|column|offset)\z/
+end
+
 def classify(key, sv, rv)
-  return :position if POSITION_KEYS.include?(key)
+  return :position if position_key?(key)
   return :shape if sv.nil? || rv.nil? || sv.class != rv.class
 
   :accuracy
 end
 
 def deep_diff(s, r, path, key, acc, opts)
-  return if opts[:ignore_positions] && POSITION_KEYS.include?(key)
+  return if opts[:ignore_positions] && position_key?(key)
 
   if s.is_a?(Hash) && r.is_a?(Hash)
     (s.keys | r.keys).each do |k|
       next if path.empty? && k == "module_name" # harness/contract artifact, tracked separately
-      next if opts[:ignore_positions] && POSITION_KEYS.include?(k)
+      next if opts[:ignore_positions] && position_key?(k)
 
       if !s.key?(k) || !r.key?(k)
         acc << { path: "#{path}.#{k}", kind: :shape, self: s.fetch(k, :__missing__), ruby: r.fetch(k, :__missing__) }
