@@ -1228,7 +1228,9 @@ function parse_extending(p: ref[Parser]) -> void:
                 advance(p)
 
     ast.ast_open(ref_of(p.ast_buf), "ExtendingBlock")
-    ast.ast_str(ref_of(p.ast_buf), "type_name", tname)
+    var tn = backing_type_json(tname)
+    ast.ast_raw(ref_of(p.ast_buf), "type_name", tn.as_str())
+    tn.release()
     ast.ast_array_start(ref_of(p.ast_buf), "methods")
     ast.ast_array_end(ref_of(p.ast_buf))
     ast.ast_null(ref_of(p.ast_buf), "line")
@@ -1289,20 +1291,30 @@ function parse_event_with_visibility(p: ref[Parser], vis: str) -> void:
     advance(p)
 
     consume(p, "lbracket", "expected [")
-    advance(p)  # capacity
+    let cap_lex = peek_lexeme(p)
+    advance(p)
     consume(p, "rbracket", "expected ]")
 
+    var payload = string_mod.String.create()
+    var has_payload = false
     if check(p, "lparen"):
         advance(p)
-        advance(p)  # payload type
-        advance(p)  # )
+        payload.release()
+        payload = parse_type(p)
+        has_payload = true
+        consume(p, "rparen", "expected ) after event payload")
 
     consume_nl(p)
 
+    let cap = int<-lexer_mod.parse_int(cap_lex)
     ast.ast_open(ref_of(p.ast_buf), "EventDecl")
     ast.ast_str(ref_of(p.ast_buf), "name", evname)
-    ast.ast_int(ref_of(p.ast_buf), "capacity", 0)
-    ast.ast_null(ref_of(p.ast_buf), "payload_type")
+    ast.ast_int(ref_of(p.ast_buf), "capacity", cap)
+    if has_payload:
+        ast.ast_raw(ref_of(p.ast_buf), "payload_type", payload.as_str())
+    else:
+        ast.ast_null(ref_of(p.ast_buf), "payload_type")
+    payload.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_array_start(ref_of(p.ast_buf), "attributes")
     ast.ast_array_end(ref_of(p.ast_buf))
