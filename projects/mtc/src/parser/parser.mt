@@ -20,6 +20,7 @@ struct Parser:
     need_comma: bool
     stmt_failed: bool
     known_generics: vec_mod.Vec[str]
+    block_expr_done: bool
 
 function ast_open_node(p: ref[Parser], node_type: str) -> void:
     if p.need_comma:
@@ -1948,6 +1949,63 @@ function is_cast_type(name: str) -> bool:
         return true
     return false
 
+function parse_proc_expr(p: ref[Parser]) -> string_mod.String:
+    advance(p)
+    consume(p, "lparen", "expected ( after proc")
+    var params = string_mod.String.create()
+    params.push_byte('[')
+    var pfirst = true
+    var psafety: ptr_uint = 0
+    while not check(p, "rparen") and not is_eof(p):
+        psafety += 1
+        if psafety > 10000:
+            break
+        if not pfirst:
+            params.push_byte(',')
+        pfirst = false
+        let pname = peek_lexeme(p)
+        advance(p)
+        consume(p, "colon", "expected : in proc param")
+        var pt = parse_type(p)
+        params.append("{\"$mt_type\":\"AST:Param\",\"name\":")
+        var pe = lexer_mod.json_escaped(pname)
+        params.append(pe.as_str())
+        pe.release()
+        params.append(",\"type\":")
+        params.append(pt.as_str())
+        pt.release()
+        params.append(",\"line\":null,\"column\":null}")
+        if check(p, "comma"):
+            advance(p)
+    params.push_byte(']')
+    consume(p, "rparen", "expected ) after proc params")
+    consume(p, "arrow", "expected -> in proc")
+    var rtype = parse_type(p)
+    var body = string_mod.String.create()
+    if check(p, "colon") and peek_kind2(p) == "newline":
+        body.release()
+        body = parse_block(p)
+        p.block_expr_done = true
+    else:
+        consume(p, "colon", "expected : before proc body")
+        var e = parse_expr(p)
+        body.append("[{\"$mt_type\":\"AST:ReturnStmt\",\"value\":")
+        body.append(e.as_str())
+        e.release()
+        body.append(",\"line\":null,\"column\":null,\"length\":null}]")
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:ProcExpr\",\"params\":")
+    r.append(params.as_str())
+    params.release()
+    r.append(",\"return_type\":")
+    r.append(rtype.as_str())
+    rtype.release()
+    r.append(",\"body\":")
+    r.append(body.as_str())
+    body.release()
+    r.push_byte('}')
+    return r
+
 function parse_unary_expr(p: ref[Parser]) -> string_mod.String:
     if check(p, "identifier") and is_cast_type(peek_lexeme(p)) and peek_kind2(p) == "less" and peek_kind3(p) == "minus":
         let tname = peek_lexeme(p)
@@ -2039,9 +2097,7 @@ function parse_expr(p: ref[Parser]) -> string_mod.String:
     if check(p, "match"):
         return parse_match(p, true)
     if check(p, "proc"):
-        skip_proc(p)
-        p.stmt_failed = true
-        return placeholder_expr()
+        return parse_proc_expr(p)
     if check(p, "unsafe"):
         advance(p)
         consume(p, "colon", "expected : after unsafe")
@@ -2127,6 +2183,9 @@ function is_assign_op(k: str) -> bool:
     return false
 
 function end_or_fail(p: ref[Parser]) -> void:
+    if p.block_expr_done:
+        p.block_expr_done = false
+        return
     if check(p, "newline"):
         advance(p)
     else if not check(p, "dedent") and not is_eof(p):
@@ -2553,6 +2612,7 @@ function parse_match(p: ref[Parser], as_value: bool) -> string_mod.String:
         arms.release()
         me.append(",\"line\":null,\"column\":null,\"length\":null}")
         if as_value:
+            p.block_expr_done = true
             return me
         var stmt = string_mod.String.create()
         stmt.append("{\"$mt_type\":\"AST:ExpressionStmt\",\"expression\":")
