@@ -91,7 +91,7 @@ function parse_int_body(text: str, base_val: ulong) -> ulong:
         i += 1
     return result
 
-function parse_int(lex: str) -> ulong:
+public function parse_int(lex: str) -> ulong:
     let body = strip_int_suffix(lex)
     if body.starts_with("0x") or body.starts_with("0X"):
         return parse_int_body(body.slice(2, body.len - 2), 16ul)
@@ -101,7 +101,7 @@ function parse_int(lex: str) -> ulong:
 
 # ── float literal to JSON number ──────────────────────────────────────────
 
-function float_lit_json(lex: str) -> string_mod.String:
+public function float_lit_json(lex: str) -> string_mod.String:
     var result = string_mod.String.create()
     var i: ptr_uint = 0
     while i < lex.len:

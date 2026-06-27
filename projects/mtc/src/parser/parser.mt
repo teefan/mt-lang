@@ -6,6 +6,7 @@
 import std.vec as vec_mod
 import std.string as string_mod
 import std.str
+import std.fmt as fmt
 
 import lexer.lexer as lexer_mod
 import parser.token_stream as ts
@@ -322,12 +323,13 @@ function parse_const_with_visibility(p: ref[Parser], vis: str) -> void:
     let cname = peek_lexeme(p)
     advance(p)
 
-    parse_type_annotation(p)
+    var const_type = parse_type_annotation_capture(p)
 
     var has_block = false
     if check(p, "arrow"):
         advance(p)
-        parse_type_ref(p)
+        const_type.release()
+        const_type = parse_type(p)
         has_block = true
 
     if check(p, "equal") and not has_block:
@@ -350,7 +352,11 @@ function parse_const_with_visibility(p: ref[Parser], vis: str) -> void:
 
     ast.ast_open(ref_of(p.ast_buf), "ConstDecl")
     ast.ast_str(ref_of(p.ast_buf), "name", cname)
-    ast.ast_null(ref_of(p.ast_buf), "type")
+    if const_type.len == 0:
+        ast.ast_null(ref_of(p.ast_buf), "type")
+    else:
+        ast.ast_raw(ref_of(p.ast_buf), "type", const_type.as_str())
+    const_type.release()
     ast.ast_null(ref_of(p.ast_buf), "value")
     ast.ast_null(ref_of(p.ast_buf), "block_body")
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
@@ -370,13 +376,17 @@ function parse_var_with_visibility(p: ref[Parser], vis: str) -> void:
     let vname = peek_lexeme(p)
     advance(p)
 
-    parse_type_annotation(p)
+    var var_type = parse_type_annotation_capture(p)
 
     consume_nl(p)
 
     ast.ast_open(ref_of(p.ast_buf), "VarDecl")
     ast.ast_str(ref_of(p.ast_buf), "name", vname)
-    ast.ast_null(ref_of(p.ast_buf), "type")
+    if var_type.len == 0:
+        ast.ast_null(ref_of(p.ast_buf), "type")
+    else:
+        ast.ast_raw(ref_of(p.ast_buf), "type", var_type.as_str())
+    var_type.release()
     ast.ast_null(ref_of(p.ast_buf), "value")
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_null(ref_of(p.ast_buf), "line")
@@ -393,13 +403,14 @@ function parse_type_alias_with_visibility(p: ref[Parser], vis: str) -> void:
     let tname = peek_lexeme(p)
     advance(p)
     consume(p, "equal", "expected = in type alias")
-    parse_type_ref(p)
+    var alias_target = parse_type(p)
 
     consume_nl(p)
 
     ast.ast_open(ref_of(p.ast_buf), "TypeAliasDecl")
     ast.ast_str(ref_of(p.ast_buf), "name", tname)
-    ast.ast_null(ref_of(p.ast_buf), "target")
+    ast.ast_raw(ref_of(p.ast_buf), "target", alias_target.as_str())
+    alias_target.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
@@ -431,30 +442,17 @@ function parse_function_with_visibility(p: ref[Parser], vis: str, is_const: bool
     parse_type_params(p)
     parse_params_ast(p)
 
+    var ret_type = string_mod.String.create()
     if check(p, "arrow"):
         advance(p)
-        var paren_d: ptr_uint = 0
-        var bracket_d: ptr_uint = 0
-        while not is_eof(p):
-            if check(p, "lparen"):
-                paren_d += 1
-            else if check(p, "rparen"):
-                if paren_d > 0:
-                    paren_d -= 1
-            else if check(p, "lbracket"):
-                bracket_d += 1
-            else if check(p, "rbracket"):
-                if bracket_d > 0:
-                    bracket_d -= 1
-            else if check(p, "colon") and paren_d == 0 and bracket_d == 0:
-                break
-            else if check(p, "equal") and paren_d == 0 and bracket_d == 0:
-                break
-            else if check(p, "newline") and paren_d == 0 and bracket_d == 0:
-                break
-            advance(p)
+        ret_type.release()
+        ret_type = parse_type(p)
 
-    ast.ast_null(ref_of(p.ast_buf), "return_type")
+    if ret_type.len == 0:
+        ast.ast_null(ref_of(p.ast_buf), "return_type")
+    else:
+        ast.ast_raw(ref_of(p.ast_buf), "return_type", ret_type.as_str())
+    ret_type.release()
 
     if check(p, "colon"):
         advance(p)
@@ -946,6 +944,8 @@ function parse_type_params(p: ref[Parser]) -> void:
             else if check(p, "rbracket"):
                 bracket_d -= 1
             advance(p)
+    ast.ast_array_start(ref_of(p.ast_buf), "type_params")
+    ast.ast_array_end(ref_of(p.ast_buf))
 
 function parse_params_skip(p: ref[Parser]) -> void:
     if check(p, "lparen"):
@@ -968,32 +968,24 @@ function parse_params_ast(p: ref[Parser]) -> void:
                 ast.ast_comma(ref_of(p.ast_buf))
             first = false
 
-            ast.ast_open(ref_of(p.ast_buf), "Param")
             let pname = peek_lexeme(p)
             advance(p)
+            var ptype = string_mod.String.create()
+            if check(p, "colon"):
+                advance(p)
+                ptype.release()
+                ptype = parse_type(p)
+
+            ast.ast_open(ref_of(p.ast_buf), "Param")
             ast.ast_str(ref_of(p.ast_buf), "name", pname)
-            ast.ast_null(ref_of(p.ast_buf), "type")
+            if ptype.len == 0:
+                ast.ast_null(ref_of(p.ast_buf), "type")
+            else:
+                ast.ast_raw(ref_of(p.ast_buf), "type", ptype.as_str())
+            ptype.release()
             ast.ast_null(ref_of(p.ast_buf), "line")
             ast.ast_null(ref_of(p.ast_buf), "column")
             ast.ast_close(ref_of(p.ast_buf))
-
-            if check(p, "colon"):
-                advance(p)
-                if check(p, "identifier"):
-                    advance(p)
-
-            if check(p, "lbracket"):
-                advance(p)
-                var bd: ptr_uint = 1
-                while bd > 0 and not is_eof(p) and not check(p, "comma") and not check(p, "rparen"):
-                    if check(p, "lbracket"):
-                        bd += 1
-                    else if check(p, "rbracket"):
-                        bd -= 1
-                        if bd == 0:
-                            advance(p)
-                            break
-                    advance(p)
 
             if check(p, "comma"):
                 advance(p)
@@ -1001,6 +993,241 @@ function parse_params_ast(p: ref[Parser]) -> void:
         if check(p, "rparen"):
             advance(p)
     ast.ast_array_end(ref_of(p.ast_buf))
+
+# ── type expression parser ────────────────────────────────────────────────
+
+function int_lit_json(lexeme: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:IntegerLiteral\",\"lexeme\":")
+    var e = lexer_mod.json_escaped(lexeme)
+    r.append(e.as_str())
+    e.release()
+    r.append(",\"value\":")
+    let v = lexer_mod.parse_int(lexeme)
+    fmt.append_ulong(ref_of(r), v)
+    r.push_byte('}')
+    return r
+
+function float_lit_json(lexeme: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:FloatLiteral\",\"lexeme\":")
+    var e = lexer_mod.json_escaped(lexeme)
+    r.append(e.as_str())
+    e.release()
+    r.append(",\"value\":")
+    var fv = lexer_mod.float_lit_json(lexeme)
+    r.append(fv.as_str())
+    fv.release()
+    r.push_byte('}')
+    return r
+
+function parse_type(p: ref[Parser]) -> string_mod.String:
+    if check(p, "fn"):
+        return parse_callable_type(p, "FunctionType")
+    if check(p, "proc"):
+        return parse_callable_type(p, "ProcType")
+    if check(p, "dyn"):
+        return parse_dyn_type(p)
+    if check(p, "lparen"):
+        return parse_tuple_type(p)
+
+    if check(p, "at"):
+        advance(p)
+        let lt = peek_lexeme(p)
+        advance(p)
+        var atname = string_mod.String.create()
+        atname.push_byte('@')
+        atname.append(lt)
+        var nameparts = vec_mod.Vec[str].create()
+        nameparts.push(atname.as_str())
+        var nm = ast.name_json(nameparts)
+        nameparts.release()
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:TypeRef\",\"name\":")
+        r.append(nm.as_str())
+        nm.release()
+        r.append(",\"arguments\":[],\"nullable\":false,\"lifetime\":null,\"line\":null,\"column\":null,\"length\":null}")
+        atname.release()
+        return r
+
+    var parts = vec_mod.Vec[str].create()
+    parts.push(peek_lexeme(p))
+    advance(p)
+    while check(p, "dot"):
+        advance(p)
+        parts.push(peek_lexeme(p))
+        advance(p)
+
+    let first_part = parts.at(0) else:
+        fatal(c"parse: empty type name")
+    let is_ref = parts.len == 1 and first_part == "ref"
+
+    var args = string_mod.String.create()
+    args.push_byte('[')
+    var first_arg = true
+    var lifetime = string_mod.String.create()
+    if check(p, "lbracket"):
+        advance(p)
+        if is_ref and check(p, "at"):
+            advance(p)
+            lifetime.push_byte('@')
+            lifetime.append(peek_lexeme(p))
+            advance(p)
+            consume(p, "comma", "expected , after lifetime")
+        while not check(p, "rbracket") and not is_eof(p):
+            if not first_arg:
+                args.push_byte(',')
+            first_arg = false
+            args.append("{\"$mt_type\":\"AST:TypeArgument\",\"value\":")
+            if check(p, "integer"):
+                var il = int_lit_json(peek_lexeme(p))
+                args.append(il.as_str())
+                il.release()
+                advance(p)
+            else if check(p, "float"):
+                var fl = float_lit_json(peek_lexeme(p))
+                args.append(fl.as_str())
+                fl.release()
+                advance(p)
+            else:
+                var nested = parse_type(p)
+                args.append(nested.as_str())
+                nested.release()
+            args.push_byte('}')
+            if check(p, "comma"):
+                advance(p)
+        consume(p, "rbracket", "expected ] after type arguments")
+    args.push_byte(']')
+
+    let nullable = match_kind(p, "question")
+
+    var nm = ast.name_json(parts)
+    parts.release()
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:TypeRef\",\"name\":")
+    r.append(nm.as_str())
+    nm.release()
+    r.append(",\"arguments\":")
+    r.append(args.as_str())
+    args.release()
+    r.append(",\"nullable\":")
+    if nullable:
+        r.append("true")
+    else:
+        r.append("false")
+    r.append(",\"lifetime\":")
+    if lifetime.len == 0:
+        r.append("null")
+    else:
+        var le = lexer_mod.json_escaped(lifetime.as_str())
+        r.append(le.as_str())
+        le.release()
+    lifetime.release()
+    r.append(",\"line\":null,\"column\":null,\"length\":null}")
+    return r
+
+function parse_callable_type(p: ref[Parser], mt: str) -> string_mod.String:
+    advance(p)
+    consume(p, "lparen", "expected ( after fn/proc")
+    var params = string_mod.String.create()
+    params.push_byte('[')
+    var first = true
+    while not check(p, "rparen") and not is_eof(p):
+        if not first:
+            params.push_byte(',')
+        first = false
+        let pname = peek_lexeme(p)
+        advance(p)
+        consume(p, "colon", "expected : in callable param")
+        var ptype = parse_type(p)
+        params.append("{\"$mt_type\":\"AST:Param\",\"name\":")
+        var pe = lexer_mod.json_escaped(pname)
+        params.append(pe.as_str())
+        pe.release()
+        params.append(",\"type\":")
+        params.append(ptype.as_str())
+        ptype.release()
+        params.append(",\"line\":null,\"column\":null}")
+        if check(p, "comma"):
+            advance(p)
+    params.push_byte(']')
+    consume(p, "rparen", "expected ) after callable params")
+    consume(p, "arrow", "expected -> in callable type")
+    var rtype = parse_type(p)
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:")
+    r.append(mt)
+    r.append("\",\"params\":")
+    r.append(params.as_str())
+    params.release()
+    r.append(",\"return_type\":")
+    r.append(rtype.as_str())
+    rtype.release()
+    r.push_byte('}')
+    return r
+
+function parse_dyn_type(p: ref[Parser]) -> string_mod.String:
+    advance(p)
+    consume(p, "lbracket", "expected [ after dyn")
+    var parts = vec_mod.Vec[str].create()
+    parts.push(peek_lexeme(p))
+    advance(p)
+    while check(p, "dot"):
+        advance(p)
+        parts.push(peek_lexeme(p))
+        advance(p)
+    consume(p, "rbracket", "expected ] after dyn interface")
+    let nullable = match_kind(p, "question")
+    var nm = ast.name_json(parts)
+    parts.release()
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:DynType\",\"interface\":")
+    r.append(nm.as_str())
+    nm.release()
+    r.append(",\"nullable\":")
+    if nullable:
+        r.append("true")
+    else:
+        r.append("false")
+    r.append(",\"line\":null,\"column\":null,\"length\":null}")
+    return r
+
+function parse_tuple_type(p: ref[Parser]) -> string_mod.String:
+    advance(p)
+    var first_t = parse_type(p)
+    if check(p, "comma"):
+        var elems = string_mod.String.create()
+        elems.push_byte('[')
+        elems.append(first_t.as_str())
+        first_t.release()
+        while check(p, "comma"):
+            advance(p)
+            elems.push_byte(',')
+            var nt = parse_type(p)
+            elems.append(nt.as_str())
+            nt.release()
+        elems.push_byte(']')
+        consume(p, "rparen", "expected ) after tuple type")
+        let nullable = match_kind(p, "question")
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:TupleType\",\"element_types\":")
+        r.append(elems.as_str())
+        elems.release()
+        r.append(",\"nullable\":")
+        if nullable:
+            r.append("true")
+        else:
+            r.append("false")
+        r.push_byte('}')
+        return r
+    consume(p, "rparen", "expected ) after type")
+    return first_t
+
+function parse_type_annotation_capture(p: ref[Parser]) -> string_mod.String:
+    if check(p, "colon"):
+        advance(p)
+        return parse_type(p)
+    return string_mod.String.create()
 
 function parse_type_annotation(p: ref[Parser]) -> void:
     if check(p, "colon"):
