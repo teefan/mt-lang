@@ -344,14 +344,37 @@ function parse_const_with_visibility(p: ref[Parser], vis: str) -> void:
         while not check(p, "newline") and not is_eof(p):
             advance(p)
 
+    var block_body_json = string_mod.String.create()
+    block_body_json.append("null")
     if has_block:
         if check(p, "colon"):
             advance(p)
             consume_nl(p)
             if check(p, "indent"):
                 advance(p)
-                while not check(p, "dedent") and not is_eof(p):
-                    skip_statement(p)
+                let body_start = p.tokens.pos
+                var bdepth: ptr_uint = 1
+                while not is_eof(p):
+                    if check(p, "indent"):
+                        bdepth += 1
+                        advance(p)
+                    else if check(p, "dedent"):
+                        bdepth -= 1
+                        if bdepth == 0:
+                            break
+                        advance(p)
+                    else:
+                        advance(p)
+                let body_end = p.tokens.pos
+                p.tokens.pos = body_start
+                p.stmt_failed = false
+                var parsed = parse_stmt_block_body(p)
+                if not p.stmt_failed and p.tokens.pos == body_end:
+                    block_body_json.release()
+                    block_body_json = parsed
+                else:
+                    parsed.release()
+                p.tokens.pos = body_end
                 if check(p, "dedent"):
                     advance(p)
     else:
@@ -369,7 +392,8 @@ function parse_const_with_visibility(p: ref[Parser], vis: str) -> void:
     else:
         ast.ast_raw(ref_of(p.ast_buf), "value", const_value.as_str())
     const_value.release()
-    ast.ast_null(ref_of(p.ast_buf), "block_body")
+    ast.ast_raw(ref_of(p.ast_buf), "block_body", block_body_json.as_str())
+    block_body_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_array_start(ref_of(p.ast_buf), "attributes")
     ast.ast_array_end(ref_of(p.ast_buf))
