@@ -178,6 +178,11 @@ function build_fstring_from_lexeme(lexeme: str) -> string_mod.String:
                     break
                 txt.push_byte(tc)
                 i += 1
+                if tc == '\n' and heredoc_margin > 0:
+                    var si: ptr_uint = 0
+                    while i < end and si < heredoc_margin and lexeme.byte_at(i) == ' ':
+                        i += 1
+                        si += 1
 
             if txt.len > 0:
                 if not first:
