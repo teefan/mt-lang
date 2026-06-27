@@ -19,6 +19,7 @@ struct Parser:
     ast_buf: ast.AstBuf
     need_comma: bool
     stmt_failed: bool
+    known_generics: vec_mod.Vec[str]
 
 function ast_open_node(p: ref[Parser], node_type: str) -> void:
     if p.need_comma:
@@ -1440,6 +1441,11 @@ function peek_kind2(p: ref[Parser]) -> str:
         return "eof"
     return unsafe: read(tok).kind
 
+function peek_kind3(p: ref[Parser]) -> str:
+    let tok = p.tokens.tokens.get(p.tokens.pos + 2) else:
+        return "eof"
+    return unsafe: read(tok).kind
+
 function bool_lit_json(val: str) -> string_mod.String:
     var r = string_mod.String.create()
     r.append("{\"$mt_type\":\"AST:BooleanLiteral\",\"value\":")
@@ -1755,7 +1761,104 @@ function parse_primary_expr(p: ref[Parser]) -> string_mod.String:
     advance(p)
     return r
 
+function collect_known_generics(p: ref[Parser]) -> void:
+    let n = p.tokens.tokens.len
+    if n < 3:
+        return
+    var i: ptr_uint = 0
+    while i + 2 < n:
+        let t0 = p.tokens.tokens.get(i) else:
+            break
+        let k0 = unsafe: read(t0).kind
+        if k0 == "function":
+            let t1 = p.tokens.tokens.get(i + 1) else:
+                break
+            let t2 = p.tokens.tokens.get(i + 2) else:
+                break
+            let k1 = unsafe: read(t1).kind
+            let k2 = unsafe: read(t2).kind
+            if k1 == "identifier" and k2 == "lbracket":
+                p.known_generics.push(unsafe: read(t1).lexeme)
+        i += 1
+
+function is_known_generic(p: ref[Parser], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < p.known_generics.len:
+        let item = p.known_generics.at(i) else:
+            break
+        if item == name:
+            return true
+        i += 1
+    return false
+
+function is_builtin_spec(name: str) -> bool:
+    if name == "array" or name == "reinterpret" or name == "span" or name == "zero":
+        return true
+    if name == "ptr" or name == "const_ptr" or name == "ref" or name == "adapt":
+        return true
+    if name == "equal" or name == "hash" or name == "order" or name == "default":
+        return true
+    return false
+
+function is_capitalized(name: str) -> bool:
+    if name.len == 0:
+        return false
+    let c = name.byte_at(0)
+    return c >= 'A' and c <= 'Z'
+
+function is_spec_target(p: ref[Parser], name: str) -> bool:
+    if is_builtin_spec(name):
+        return true
+    if is_capitalized(name):
+        return true
+    return is_known_generic(p, name)
+
+function make_specialization(callee: str, args: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:Specialization\",\"callee\":")
+    r.append(callee)
+    r.append(",\"arguments\":")
+    r.append(args)
+    r.push_byte('}')
+    return r
+
+function parse_spec_args_json(p: ref[Parser]) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.push_byte('[')
+    var first = true
+    var safety: ptr_uint = 0
+    while not check(p, "rbracket") and not is_eof(p):
+        safety += 1
+        if safety > 10000:
+            break
+        if not first:
+            r.push_byte(',')
+        first = false
+        r.append("{\"$mt_type\":\"AST:TypeArgument\",\"value\":")
+        if check(p, "integer"):
+            var il = int_lit_json(peek_lexeme(p))
+            r.append(il.as_str())
+            il.release()
+            advance(p)
+        else if check(p, "float"):
+            var fl = float_lit_json(peek_lexeme(p))
+            r.append(fl.as_str())
+            fl.release()
+            advance(p)
+        else:
+            var t = parse_type(p)
+            r.append(t.as_str())
+            t.release()
+        r.push_byte('}')
+        if check(p, "comma"):
+            advance(p)
+    r.push_byte(']')
+    return r
+
 function parse_postfix_expr(p: ref[Parser]) -> string_mod.String:
+    var recv_ident: str = ""
+    if check(p, "identifier"):
+        recv_ident = peek_lexeme(p)
     var expr = parse_primary_expr(p)
     while true:
         if check(p, "dot"):
@@ -1765,15 +1868,35 @@ function parse_postfix_expr(p: ref[Parser]) -> string_mod.String:
             var ne = make_member(expr.as_str(), member)
             expr.release()
             expr = ne
+            recv_ident = member
         else if check(p, "lbracket"):
-            p.stmt_failed = true
             advance(p)
-            var idx = parse_expr(p)
-            consume(p, "rbracket", "expected ] after index")
-            var ne = make_index(expr.as_str(), idx.as_str())
-            expr.release()
-            idx.release()
-            expr = ne
+            if recv_ident != "" and is_spec_target(p, recv_ident):
+                var args = parse_spec_args_json(p)
+                consume(p, "rbracket", "expected ] after specialization")
+                var ne = make_specialization(expr.as_str(), args.as_str())
+                expr.release()
+                args.release()
+                expr = ne
+            else:
+                var idx = parse_expr(p)
+                if check(p, "rbracket"):
+                    advance(p)
+                    var ne = make_index(expr.as_str(), idx.as_str())
+                    expr.release()
+                    idx.release()
+                    expr = ne
+                else:
+                    p.stmt_failed = true
+                    idx.release()
+                    var bd: ptr_uint = 1
+                    while bd > 0 and not is_eof(p):
+                        if check(p, "lbracket"):
+                            bd += 1
+                        else if check(p, "rbracket"):
+                            bd -= 1
+                        advance(p)
+            recv_ident = ""
         else if check(p, "lparen"):
             advance(p)
             var args = parse_call_args(p)
@@ -1781,16 +1904,51 @@ function parse_postfix_expr(p: ref[Parser]) -> string_mod.String:
             expr.release()
             args.release()
             expr = ne
+            recv_ident = ""
         else if check(p, "question"):
             advance(p)
             var ne = make_unaryop("?", expr.as_str())
             expr.release()
             expr = ne
+            recv_ident = ""
         else:
             break
     return expr
 
+function is_cast_type(name: str) -> bool:
+    if is_capitalized(name):
+        return true
+    if name == "int" or name == "uint" or name == "float" or name == "double":
+        return true
+    if name == "char" or name == "bool" or name == "byte" or name == "ubyte":
+        return true
+    if name == "short" or name == "ushort" or name == "long" or name == "ulong":
+        return true
+    if name == "usize" or name == "isize" or name == "ptr_uint":
+        return true
+    if name == "vec2" or name == "vec3" or name == "vec4" or name == "quat":
+        return true
+    if name == "ivec2" or name == "ivec3" or name == "ivec4" or name == "mat3" or name == "mat4":
+        return true
+    return false
+
 function parse_unary_expr(p: ref[Parser]) -> string_mod.String:
+    if check(p, "identifier") and is_cast_type(peek_lexeme(p)) and peek_kind2(p) == "less" and peek_kind3(p) == "minus":
+        let tname = peek_lexeme(p)
+        advance(p)
+        advance(p)
+        advance(p)
+        var operand = parse_unary_expr(p)
+        var tt = backing_type_json(tname)
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:PrefixCast\",\"target_type\":")
+        r.append(tt.as_str())
+        tt.release()
+        r.append(",\"expression\":")
+        r.append(operand.as_str())
+        operand.release()
+        r.push_byte('}')
+        return r
     if check(p, "await"):
         advance(p)
         var e = parse_unary_expr(p)
@@ -2673,7 +2831,9 @@ public function parse_to_ast_json(source: str, module_name: str) -> string_mod.S
     var p = Parser(
         tokens = ts.TokenStream.from_source(source),
         ast_buf = ast.AstBuf(buf = string_mod.String.create(), first_field = true),
+        known_generics = vec_mod.Vec[str].create(),
     )
+    collect_known_generics(ref_of(p))
     return parse_source_file(ref_of(p), module_name)
 
 function consume_nl(p: ref[Parser]) -> void:
