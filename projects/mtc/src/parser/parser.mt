@@ -1925,7 +1925,17 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
         advance(p)
         end_or_fail(p)
         return simple_stmt_json("ContinueStmt")
-    if k == "if" or k == "while" or k == "for" or k == "defer" or k == "unsafe" or k == "match" or k == "when" or k == "inline" or k == "parallel" or k == "gather" or k == "emit" or k == "static_assert":
+    if k == "if":
+        return parse_if_stmt(p)
+    if k == "while":
+        return parse_while_stmt(p)
+    if k == "for":
+        return parse_for_stmt(p)
+    if k == "defer":
+        return parse_defer_stmt(p)
+    if k == "unsafe":
+        return parse_unsafe_block_stmt(p)
+    if k == "match" or k == "when" or k == "inline" or k == "parallel" or k == "gather" or k == "emit" or k == "static_assert":
         p.stmt_failed = true
         skip_statement(p)
         return simple_stmt_json("PassStmt")
