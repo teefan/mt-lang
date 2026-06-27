@@ -158,7 +158,7 @@ public function json_escaped(src: str) -> string_mod.String:
 public struct Token:
     kind: str
     lexeme: str
-    lit_json: str
+    lit_json: string_mod.String
     line: ptr_uint
     column: ptr_uint
 
@@ -218,10 +218,12 @@ function emit_tok(
     state.buf.push_byte('}')
     state.first_tok = false
 
+    var lj = string_mod.String.create()
+    lj.append(lit_json)
     var tok = Token(
         kind = kind,
         lexeme = lexeme,
-        lit_json = lit_json,
+        lit_json = lj,
         line = line,
         column = column,
     )

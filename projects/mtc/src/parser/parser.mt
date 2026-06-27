@@ -336,7 +336,7 @@ function parse_const_with_visibility(p: ref[Parser], vis: str) -> void:
     if check(p, "equal") and not has_block:
         advance(p)
         const_value.release()
-        const_value = parse_simple_value(p)
+        const_value = parse_expr(p)
         while not check(p, "newline") and not is_eof(p):
             advance(p)
 
@@ -389,7 +389,7 @@ function parse_var_with_visibility(p: ref[Parser], vis: str) -> void:
     if check(p, "equal"):
         advance(p)
         var_value.release()
-        var_value = parse_simple_value(p)
+        var_value = parse_expr(p)
 
     consume_nl(p)
 
@@ -1081,6 +1081,400 @@ function parse_simple_value(p: ref[Parser]) -> string_mod.String:
         advance(p)
         return null_lit_json()
     return string_mod.String.create()
+
+# ── expression parser ─────────────────────────────────────────────────────
+
+function peek_lit(p: ref[Parser]) -> str:
+    let tok = p.tokens.peek() else:
+        return "null"
+    return unsafe: read(tok).lit_json.as_str()
+
+function make_binop(op: str, left: str, right: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:BinaryOp\",\"operator\":")
+    var oe = lexer_mod.json_escaped(op)
+    r.append(oe.as_str())
+    oe.release()
+    r.append(",\"left\":")
+    r.append(left)
+    r.append(",\"right\":")
+    r.append(right)
+    r.push_byte('}')
+    return r
+
+function make_unaryop(op: str, operand: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:UnaryOp\",\"operator\":")
+    var oe = lexer_mod.json_escaped(op)
+    r.append(oe.as_str())
+    oe.release()
+    r.append(",\"operand\":")
+    r.append(operand)
+    r.push_byte('}')
+    return r
+
+function ident_json(name: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:Identifier\",\"name\":")
+    var ne = lexer_mod.json_escaped(name)
+    r.append(ne.as_str())
+    ne.release()
+    r.append(",\"line\":null,\"column\":null}")
+    return r
+
+function make_member(receiver: str, member: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:MemberAccess\",\"receiver\":")
+    r.append(receiver)
+    r.append(",\"member\":")
+    var me = lexer_mod.json_escaped(member)
+    r.append(me.as_str())
+    me.release()
+    r.append(",\"line\":null,\"column\":null}")
+    return r
+
+function make_index(receiver: str, index: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:IndexAccess\",\"receiver\":")
+    r.append(receiver)
+    r.append(",\"index\":")
+    r.append(index)
+    r.push_byte('}')
+    return r
+
+function make_call(callee: str, args: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:Call\",\"callee\":")
+    r.append(callee)
+    r.append(",\"arguments\":")
+    r.append(args)
+    r.push_byte('}')
+    return r
+
+function str_lit_json(p: ref[Parser], is_c: bool) -> string_mod.String:
+    let lexeme = peek_lexeme(p)
+    let val = peek_lit(p)
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:StringLiteral\",\"lexeme\":")
+    var le = lexer_mod.json_escaped(lexeme)
+    r.append(le.as_str())
+    le.release()
+    r.append(",\"value\":")
+    r.append(val)
+    r.append(",\"cstring\":")
+    if is_c:
+        r.append("true")
+    else:
+        r.append("false")
+    r.push_byte('}')
+    advance(p)
+    return r
+
+function char_lit_json(p: ref[Parser]) -> string_mod.String:
+    let lexeme = peek_lexeme(p)
+    let val = peek_lit(p)
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:CharLiteral\",\"lexeme\":")
+    var le = lexer_mod.json_escaped(lexeme)
+    r.append(le.as_str())
+    le.release()
+    r.append(",\"value\":")
+    r.append(val)
+    r.append(",\"line\":null,\"column\":null}")
+    advance(p)
+    return r
+
+function op_prec(k: str) -> int:
+    if k == "or":
+        return 1
+    if k == "and":
+        return 2
+    if k == "pipe":
+        return 4
+    if k == "caret":
+        return 5
+    if k == "amp":
+        return 6
+    if k == "equal_equal" or k == "bang_equal":
+        return 7
+    if k == "less" or k == "less_equal" or k == "greater" or k == "greater_equal":
+        return 8
+    if k == "shift_left" or k == "shift_right":
+        return 9
+    if k == "plus" or k == "minus":
+        return 10
+    if k == "star" or k == "slash" or k == "percent":
+        return 11
+    return -1
+
+function parse_call_args(p: ref[Parser]) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.push_byte('[')
+    var first = true
+    while not check(p, "rparen") and not is_eof(p):
+        if not first:
+            r.push_byte(',')
+        first = false
+        var argname: str = ""
+        if check(p, "identifier") and peek_kind2(p) == "equal":
+            argname = peek_lexeme(p)
+            advance(p)
+            advance(p)
+        r.append("{\"$mt_type\":\"AST:Argument\",\"name\":")
+        if argname == "":
+            r.append("null")
+        else:
+            var ae = lexer_mod.json_escaped(argname)
+            r.append(ae.as_str())
+            ae.release()
+        r.append(",\"value\":")
+        var v = parse_expr(p)
+        r.append(v.as_str())
+        v.release()
+        r.push_byte('}')
+        if check(p, "comma"):
+            advance(p)
+    consume(p, "rparen", "expected ) after call arguments")
+    r.push_byte(']')
+    return r
+
+function parse_paren_elem(p: ref[Parser]) -> string_mod.String:
+    if check(p, "identifier") and peek_kind2(p) == "equal":
+        let nm = peek_lexeme(p)
+        advance(p)
+        advance(p)
+        var v = parse_expr(p)
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:Argument\",\"name\":")
+        var ne = lexer_mod.json_escaped(nm)
+        r.append(ne.as_str())
+        ne.release()
+        r.append(",\"value\":")
+        r.append(v.as_str())
+        v.release()
+        r.push_byte('}')
+        return r
+    return parse_expr(p)
+
+function parse_paren_or_tuple(p: ref[Parser]) -> string_mod.String:
+    advance(p)
+    var first = parse_paren_elem(p)
+    if check(p, "comma"):
+        var elems = string_mod.String.create()
+        elems.push_byte('[')
+        elems.append(first.as_str())
+        first.release()
+        while check(p, "comma"):
+            advance(p)
+            if check(p, "rparen"):
+                break
+            elems.push_byte(',')
+            var e = parse_paren_elem(p)
+            elems.append(e.as_str())
+            e.release()
+        elems.push_byte(']')
+        consume(p, "rparen", "expected ) after tuple elements")
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:ExpressionList\",\"elements\":")
+        r.append(elems.as_str())
+        elems.release()
+        r.append(",\"line\":null,\"column\":null}")
+        return r
+    consume(p, "rparen", "expected ) after expression")
+    return first
+
+function parse_primary_expr(p: ref[Parser]) -> string_mod.String:
+    let k = peek_kind(p)
+    if k == "size_of" or k == "align_of":
+        let mt = if k == "size_of": "SizeofExpr" else: "AlignofExpr"
+        advance(p)
+        consume(p, "lparen", "expected ( after size_of/align_of")
+        var t = parse_type(p)
+        consume(p, "rparen", "expected ) after type")
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:")
+        r.append(mt)
+        r.append("\",\"type\":")
+        r.append(t.as_str())
+        t.release()
+        r.push_byte('}')
+        return r
+    if k == "offset_of":
+        advance(p)
+        consume(p, "lparen", "expected ( after offset_of")
+        var t = parse_type(p)
+        consume(p, "comma", "expected , in offset_of")
+        let field = peek_lexeme(p)
+        advance(p)
+        consume(p, "rparen", "expected ) after offset_of")
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:OffsetofExpr\",\"type\":")
+        r.append(t.as_str())
+        t.release()
+        r.append(",\"field\":")
+        var fe = lexer_mod.json_escaped(field)
+        r.append(fe.as_str())
+        fe.release()
+        r.push_byte('}')
+        return r
+    if k == "integer":
+        var r = int_lit_json(peek_lexeme(p))
+        advance(p)
+        return r
+    if k == "float":
+        var r = float_lit_json(peek_lexeme(p))
+        advance(p)
+        return r
+    if k == "char_literal":
+        return char_lit_json(p)
+    if k == "string":
+        return str_lit_json(p, false)
+    if k == "cstring":
+        return str_lit_json(p, true)
+    if k == "true":
+        advance(p)
+        return bool_lit_json("true")
+    if k == "false":
+        advance(p)
+        return bool_lit_json("false")
+    if k == "null":
+        advance(p)
+        if check(p, "lbracket"):
+            advance(p)
+            var t = parse_type(p)
+            consume(p, "rbracket", "expected ] after typed null")
+            var r = string_mod.String.create()
+            r.append("{\"$mt_type\":\"AST:NullLiteral\",\"type\":")
+            r.append(t.as_str())
+            t.release()
+            r.append(",\"line\":null,\"column\":null}")
+            return r
+        return null_lit_json()
+    if k == "lparen":
+        return parse_paren_or_tuple(p)
+    var r = ident_json(peek_lexeme(p))
+    advance(p)
+    return r
+
+function parse_postfix_expr(p: ref[Parser]) -> string_mod.String:
+    var expr = parse_primary_expr(p)
+    while true:
+        if check(p, "dot"):
+            advance(p)
+            let member = peek_lexeme(p)
+            advance(p)
+            var ne = make_member(expr.as_str(), member)
+            expr.release()
+            expr = ne
+        else if check(p, "lbracket"):
+            advance(p)
+            var idx = parse_expr(p)
+            consume(p, "rbracket", "expected ] after index")
+            var ne = make_index(expr.as_str(), idx.as_str())
+            expr.release()
+            idx.release()
+            expr = ne
+        else if check(p, "lparen"):
+            advance(p)
+            var args = parse_call_args(p)
+            var ne = make_call(expr.as_str(), args.as_str())
+            expr.release()
+            args.release()
+            expr = ne
+        else if check(p, "question"):
+            advance(p)
+            var ne = make_unaryop("?", expr.as_str())
+            expr.release()
+            expr = ne
+        else:
+            break
+    return expr
+
+function parse_unary_expr(p: ref[Parser]) -> string_mod.String:
+    if check(p, "await"):
+        advance(p)
+        var e = parse_unary_expr(p)
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:AwaitExpr\",\"expression\":")
+        r.append(e.as_str())
+        e.release()
+        r.push_byte('}')
+        return r
+    if check(p, "not") or check(p, "minus") or check(p, "plus") or check(p, "tilde"):
+        let op = peek_lexeme(p)
+        advance(p)
+        var operand = parse_unary_expr(p)
+        var r = make_unaryop(op, operand.as_str())
+        operand.release()
+        return r
+    return parse_postfix_expr(p)
+
+function parse_binary(p: ref[Parser], min_prec: int) -> string_mod.String:
+    var left = parse_unary_expr(p)
+    while true:
+        let prec = op_prec(peek_kind(p))
+        if prec < min_prec:
+            break
+        let op = peek_lexeme(p)
+        advance(p)
+        var right = parse_binary(p, prec + 1)
+        var nl = make_binop(op, left.as_str(), right.as_str())
+        left.release()
+        right.release()
+        left = nl
+    return left
+
+function parse_range_expr(p: ref[Parser]) -> string_mod.String:
+    var left = parse_binary(p, 1)
+    if check(p, "dot_dot"):
+        advance(p)
+        var right = parse_binary(p, 1)
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:RangeExpr\",\"start_expr\":")
+        r.append(left.as_str())
+        left.release()
+        r.append(",\"end_expr\":")
+        r.append(right.as_str())
+        right.release()
+        r.append(",\"line\":null,\"column\":null}")
+        return r
+    return left
+
+function parse_if_expr(p: ref[Parser]) -> string_mod.String:
+    advance(p)
+    var cond = parse_binary(p, 1)
+    consume(p, "colon", "expected : in if expression")
+    var then_e = parse_expr(p)
+    consume(p, "else", "expected else in if expression")
+    consume(p, "colon", "expected : after else")
+    var else_e = parse_expr(p)
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:IfExpr\",\"condition\":")
+    r.append(cond.as_str())
+    cond.release()
+    r.append(",\"then_expression\":")
+    r.append(then_e.as_str())
+    then_e.release()
+    r.append(",\"else_expression\":")
+    r.append(else_e.as_str())
+    else_e.release()
+    r.push_byte('}')
+    return r
+
+function parse_expr(p: ref[Parser]) -> string_mod.String:
+    if check(p, "unsafe"):
+        advance(p)
+        consume(p, "colon", "expected : after unsafe")
+        var e = parse_expr(p)
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:UnsafeExpr\",\"expression\":")
+        r.append(e.as_str())
+        e.release()
+        r.append(",\"line\":null,\"column\":null,\"length\":null}")
+        return r
+    if check(p, "if"):
+        return parse_if_expr(p)
+    return parse_range_expr(p)
 
 function parse_type(p: ref[Parser]) -> string_mod.String:
     if check(p, "fn"):
