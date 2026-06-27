@@ -1203,22 +1203,11 @@ function parse_interface_with_visibility(p: ref[Parser], vis: str) -> void:
 
     var iface_tp = parse_type_params_json(p)
 
-    if check(p, "colon"):
-        advance(p)
-        consume_nl(p)
-        if check(p, "indent"):
-            advance(p)
-            while not check(p, "dedent") and not is_eof(p):
-                skip_statement(p)
-            if check(p, "dedent"):
-                advance(p)
-
     ast.ast_open(ref_of(p.ast_buf), "InterfaceDecl")
     ast.ast_str(ref_of(p.ast_buf), "name", iname)
     ast.ast_raw(ref_of(p.ast_buf), "type_params", iface_tp.as_str())
     iface_tp.release()
-    ast.ast_array_start(ref_of(p.ast_buf), "methods")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    parse_method_block(p, true)
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
@@ -1233,23 +1222,160 @@ function parse_extending(p: ref[Parser]) -> void:
         advance(p)
         while not check(p, "rbracket") and not is_eof(p):
             advance(p)
-        advance(p)
-
-    if check(p, "colon"):
-        advance(p)
-        consume_nl(p)
-        if check(p, "indent"):
+        if check(p, "rbracket"):
             advance(p)
-            while not check(p, "dedent") and not is_eof(p):
-                skip_statement(p)
-            if check(p, "dedent"):
-                advance(p)
 
     ast.ast_open(ref_of(p.ast_buf), "ExtendingBlock")
     var tn = backing_type_json(tname)
     ast.ast_raw(ref_of(p.ast_buf), "type_name", tn.as_str())
     tn.release()
+    parse_method_block(p, false)
+    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_close(ref_of(p.ast_buf))
+
+# Parses the indented method block of an interface/extending declaration and
+# emits the "methods" array directly into p.ast_buf. Crash-safe: the block's
+# matching dedent is found up front and the cursor is snapped to it regardless
+# of how individual methods parse, so the outer declaration parse is never
+# corrupted. Each method node is emitted with no early return between
+# ast_open/ast_close, so the JSON is always well-formed.
+function parse_method_block(p: ref[Parser], is_interface: bool) -> void:
     ast.ast_array_start(ref_of(p.ast_buf), "methods")
+    if check(p, "colon"):
+        advance(p)
+        consume_nl(p)
+        if check(p, "indent"):
+            advance(p)
+            let body_start = p.tokens.pos
+            var bdepth: ptr_uint = 1
+            while not is_eof(p):
+                if check(p, "indent"):
+                    bdepth += 1
+                    advance(p)
+                else if check(p, "dedent"):
+                    bdepth -= 1
+                    if bdepth == 0:
+                        break
+                    advance(p)
+                else:
+                    advance(p)
+            let body_end = p.tokens.pos
+            p.tokens.pos = body_start
+            var first = true
+            while p.tokens.pos < body_end and not is_eof(p):
+                if check(p, "newline"):
+                    advance(p)
+                else:
+                    let k = peek_kind(p)
+                    if k != "public" and k != "async" and k != "editable" and k != "static" and k != "function":
+                        break
+                    if not first:
+                        ast.ast_comma(ref_of(p.ast_buf))
+                    first = false
+                    parse_one_method(p, is_interface)
+            p.tokens.pos = body_end
+            if check(p, "dedent"):
+                advance(p)
+    else:
+        consume_nl(p)
+    ast.ast_array_end(ref_of(p.ast_buf))
+
+# Parses a single interface/extending method and emits one node.
+# Interface methods -> InterfaceMethodDecl (no type_params, no body, no visibility).
+# Extending methods -> MethodDef (with type_params, body, visibility).
+function parse_one_method(p: ref[Parser], is_interface: bool) -> void:
+    var vis = ""
+    if check(p, "public"):
+        advance(p)
+        vis = "public"
+
+    var is_async = false
+    if check(p, "async"):
+        advance(p)
+        is_async = true
+
+    var kind = "plain"
+    if check(p, "editable"):
+        advance(p)
+        kind = "editable"
+    else if check(p, "static"):
+        advance(p)
+        kind = "static"
+
+    if check(p, "function"):
+        advance(p)
+
+    let mname = peek_lexeme(p)
+    advance(p)
+
+    if is_interface:
+        ast.ast_open(ref_of(p.ast_buf), "InterfaceMethodDecl")
+    else:
+        ast.ast_open(ref_of(p.ast_buf), "MethodDef")
+    ast.ast_str(ref_of(p.ast_buf), "name", mname)
+
+    if not is_interface:
+        parse_type_params(p)
+
+    parse_params_ast(p)
+
+    var ret_type = string_mod.String.create()
+    if check(p, "arrow"):
+        advance(p)
+        ret_type.release()
+        ret_type = parse_type(p)
+    if ret_type.len == 0:
+        ast.ast_null(ref_of(p.ast_buf), "return_type")
+    else:
+        ast.ast_raw(ref_of(p.ast_buf), "return_type", ret_type.as_str())
+    ret_type.release()
+
+    if not is_interface:
+        var body_json = string_mod.String.create()
+        body_json.append("[]")
+        if check(p, "colon"):
+            advance(p)
+            consume_nl(p)
+            if check(p, "indent"):
+                advance(p)
+                let body_start = p.tokens.pos
+                var bdepth: ptr_uint = 1
+                while not is_eof(p):
+                    if check(p, "indent"):
+                        bdepth += 1
+                        advance(p)
+                    else if check(p, "dedent"):
+                        bdepth -= 1
+                        if bdepth == 0:
+                            break
+                        advance(p)
+                    else:
+                        advance(p)
+                let body_end = p.tokens.pos
+                p.tokens.pos = body_start
+                p.stmt_failed = false
+                body_json.release()
+                body_json = parse_stmt_block_body(p)
+                if p.stmt_failed or p.tokens.pos != body_end:
+                    body_json.release()
+                    body_json = string_mod.String.create()
+                    body_json.append("[]")
+                p.tokens.pos = body_end
+                if check(p, "dedent"):
+                    advance(p)
+        else:
+            consume_nl(p)
+        ast.ast_raw(ref_of(p.ast_buf), "body", body_json.as_str())
+        body_json.release()
+
+    ast.ast_sym(ref_of(p.ast_buf), "kind", kind)
+    ast.ast_bool(ref_of(p.ast_buf), "async", is_async)
+
+    if not is_interface:
+        ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
+
+    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
     ast.ast_array_end(ref_of(p.ast_buf))
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")

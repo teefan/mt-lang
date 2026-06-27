@@ -36,6 +36,20 @@ function parse_ok(source: str) -> bool:
     json.release()
     return result
 
+function count_method_defs(source: str) -> int:
+    var json = parser_mod.parse_to_ast_json(source, "test")
+    let output = json.as_str()
+    var n = count_substring(output, "\"$mt_type\":\"AST:MethodDef\"")
+    json.release()
+    return int<-n
+
+function count_interface_methods(source: str) -> int:
+    var json = parser_mod.parse_to_ast_json(source, "test")
+    let output = json.as_str()
+    var n = count_substring(output, "\"$mt_type\":\"AST:InterfaceMethodDecl\"")
+    json.release()
+    return int<-n
+
 # ── basic declarations ────────────────────────────────────────────────────
 
 @[test]
@@ -149,6 +163,7 @@ interface Damageable:
     function is_alive() -> bool
 SRC
     t.expect(parse_ok(source), "interface parsing")?
+    t.expect(count_interface_methods(source) == 2, "interface has 2 methods")?
 
     return t.ok()
 
@@ -163,6 +178,7 @@ extending NPC:
         return true
 SRC
     t.expect(parse_ok(source), "extending parsing")?
+    t.expect(count_method_defs(source) == 1, "extending has 1 method")?
 
     return t.ok()
 

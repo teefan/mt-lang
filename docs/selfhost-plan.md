@@ -24,18 +24,53 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 ┌──────────┐  Token JSON   ┌──────────┐   AST JSON   ┌───────────────────┐
 │  Lexer   │ ────────────→ │  Parser  │ ───────────→ │ Semantic Analyzer │
 │ (Stage 1)│               │ (Stage 2)│              │ (Stage 3)         │
-│  DONE ✓  │               │  DONE ✓  │              │     NEXT          │
-└──────────┘               └──────────┘              └───────────────────┘
-                                                               │
-                                                         Analysis JSON
-                                                               │
-                                                               ▼
+│  DONE ✓  │               │ IN PROG  │              │     later         │
+└──────────┘               └────┬─────┘              └───────────────────┘
+                                │   ◀── NEXT PHASE: finish to 100%
+                          (AST JSON: emit-only,                  │
+                           no re-inject path)              Analysis JSON
+                                                                 │
+                                                                 ▼
 ┌───────────┐   C source    ┌──────────┐    IR JSON   ┌──────────┐
 │ C Backend │ ←──────────── │ Lowering │ ←─────────── │ (Stage 3 │
 │ (Stage 5) │               │ (Stage 4)│              │  output) │
-│  partial  │               │  NEXT    │              │          │
+│  partial  │               │ blocked* │              │          │
 └───────────┘               └──────────┘              └──────────┘
 ```
+
+\* Stage 4's verification oracle is broken in the reference compiler: Ruby's own
+`lower --from-analysis-json` is unfaithful (loses module context — e.g. emits
+`unknown identifier stdio` — and exits nonzero on some files) versus `lower`
+from source. That reference path must be repaired before any self-host lowering
+port has a trustworthy oracle. See "Verifiable boundaries" below.
+
+### Verifiable boundaries (the real constraint on stage order)
+
+Only three JSON hand-off points are actually wired into the Ruby CLI, and they
+determine which stages can be verified end-to-end:
+
+| Boundary | Re-inject flag | Oracle quality |
+|---|---|---|
+| Token JSON | `--from-tokens-json` | clean ✓ (Lexer done) |
+| AST JSON | **none** (`--emit-ast-json` only) | structural AST diff only — fast, reliable |
+| Analysis JSON | `--from-analysis-json` | **broken in Ruby itself** (see \* above) |
+| IR JSON | `--from-ir-json` | clean |
+
+Consequences:
+- **There is no `--from-ast-json`.** The self-host parser's output can never be
+  fed into Ruby's sema; its only verification is structural AST-JSON diffing
+  (exactly what the parity harness does). That is a valid, reliable oracle.
+- **Stage 4's oracle is broken** (see \*), so Stage 4 is *blocked* on first
+  repairing Ruby's analysis-JSON re-injection faithfulness.
+- **Size asymmetry:** sema is ≈13k+ lines (name_resolution 1454,
+  expression_checker 1681, statement_checker 1261, …); lowering's transform is
+  only 372 lines, but it sits behind a heavy Analysis-JSON reader (a 367-LOC
+  source produces a ~242 KB Analysis JSON — ~660 B/line).
+
+**Next phase = finish the Parser to true 100% parity** (it has a clean, reliable
+oracle and bounded remaining work), *not* Stage 4. Re-evaluate Stage 3 vs Stage 4
+afterward, and fix Ruby's `--from-analysis-json` faithfulness as a prerequisite
+to Stage 4.
 
 ### Key design rules
 
@@ -85,11 +120,11 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 
 ---
 
-## Stage 2: Parser — DONE ✓ (substantially)
+## Stage 2: Parser — IN PROGRESS (next phase: finish to 100%)
 
 **Location:** `projects/mtc/src/parser/`
 
-**Verification:** Differential parity harness (`projects/mtc/tools/parity.rb`) comparing self-host `mtc parse` AST JSON against `ruby bin/mtc parse --emit-ast-json` on the examples corpus with `--ignore-positions` (Milestone A). **5 of 13 examples fully pass (0 diffs); total diffs ~130 (accuracy ~107, shape ~23).** Parser is **crash-safe by construction across all 411 corpus files** (examples + stdlib + tests) — verified via sandboxed binary across the full corpus.
+**Verification:** Differential parity harness (`projects/mtc/tools/parity.rb`) comparing self-host `mtc parse` AST JSON against `ruby bin/mtc parse --emit-ast-json` on the examples corpus with `--ignore-positions` (Milestone A). **5 of 13 examples fully pass (0 diffs); total diffs 110 (accuracy 87, shape 23).** Parser is **crash-safe by construction** for the statement/expression/method paths across the corpus — verified via the sandboxed binary. (Two pre-existing declaration-parser fatals remain: `extending bin.Writer:` / `extending ptr[Wave]:` — see pitfalls.)
 
 **Architecture:**
 - `token_stream.mt` (68 lines): peek/advance/check/match/consume cursor over `Vec[lexer.Token]`
@@ -108,6 +143,7 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 - **Static_assert**: parses the actual condition + message expressions
 - **Implements clause**: emits `QualifiedName` nodes (not strings), with type-arguments for generic interfaces
 - **Extending type_name, event capacity/payload**: emits `TypeRef` / captures capacity
+- **Extending/interface method bodies**: `parse_method_block` parses the indented method list and emits `MethodDef` (extending: type_params + params + return_type + crash-safe body + kind/visibility) or `InterfaceMethodDecl` (interface: params + return_type + kind, no body/visibility). Method `kind` (`plain`/`editable`/`static`) and `async` are parsed from the head. Crash-safe: the block's matching dedent is found up front and the cursor is snapped to it regardless, and each node is emitted with no early return so the JSON is always well-formed.
 
 **Expression parser — full precedence ladder:**
 - Precedence-climbing binary operators (or → and → pipe → caret → amp → equality → comparison → shift → additive → multiplicative)
@@ -135,7 +171,8 @@ The path to full parser parity is now purely **declaration-structure features an
 
 | Feature | Est. diffs | Notes |
 |---|---|---|
-| Extending/interface methods | 21 | `MethodDef`/`InterfaceMethodDecl` inside `extending`/`interface` bodies — reuses type-param + param + return-type parsers + `parse_stmt_block_body` for bodies |
+| ~~Extending/interface methods~~ | ~~21~~ | **DONE** — `MethodDef`/`InterfaceMethodDecl` parsed inside `extending`/`interface` bodies (`parse_method_block` / `parse_one_method`); reuses the type-param + param + return-type parsers and the crash-safe body path. Dropped examples accuracy 107 → 87. |
+| Qualified / `ptr[…]` extending receiver | crashes + ~few | `extending bin.Writer:` / `extending ptr[Wave]:` — `parse_extending` captures only the bare first name and leaves the cursor mid-`.`/`[`, causing a downstream `unexpected public declaration` fatal. Fix by parsing the receiver as a real `TypeRef` (also clears the `type_name.arguments[len]` diff on `extending Indexed[T]`). Good next slice. |
 | Struct body enhancement | 32 | Enhance `parse_fields_json` to also capture nested declarations, events, and field-attribute-decorated fields — one body-parser enhancement clears fields (11) + nested_types (10) + attributes (11) |
 | F-strings in bodies | ~3 | `FormatString` from fstring token parts with embedded-expression re-parsing |
 | Parallel-for / gather / destructure | ~5 | `ForStmt{threaded:true}`, `GatherStmt`, destructure pattern in `let` |
@@ -150,6 +187,7 @@ The path to full parser parity is now purely **declaration-structure features an
 - **Heuristic specialization classification measures net-negative.** The specialization decision (`IndexAccess` vs `Specialization`) was attempted twice with heuristics (capitalization + builtin-list); both times measured net-negative because partial-correctness backfires — a kept-but-imperfect body explodes into many leaf diffs. The accurate approach uses **known-name tracking** via a token pre-pass that collects generic-callable names, plus builtin-list + capitalization + **content-type check** (bracket content is a type → specialization regardless of receiver name). This combined approach is accurate and net-positive.
 - **Block-consuming value expressions need special handling at statement-end.** When a `let`/`return` value is a block-form proc or match expression, the expression's block already consumed its trailing dedent — the cursor lands at the *next* statement, not at a newline. The `end_or_fail` guard would falsely flag this as a desync. The fix: `block_expr_done` flag set by block-form value expressions, checked+consumed by `end_or_fail`, so the statement-end logic skips the end-of-statement check when the block already ended it.
 - **Member-name tracking for specialization.** Specialization can occur on qualified names (`module.Type[args]`), not just bare identifiers. The parser tracks the *last member name* in `recv_ident` (updated on `.member`, cleared on `[`/`(`/`?`) so that `member[Type]` is correctly classified.
+- **Qualified / pointer extending receivers crash the declaration parser (pre-existing).** `parse_extending` captures only the bare first name (`peek_lexeme`), so `extending bin.Writer:` and `extending ptr[Wave]:` leave the cursor at `.`/`[`; the leftover tokens are then mis-dispatched at the top level and trip `fatal("unexpected public declaration")`. Confirmed present before the method work (`std/serialize.mt`, `std/raylib.mt`). The fix is to parse the receiver as a real `TypeRef` (see remaining-work table); it also clears the `type_name.arguments[len]` diff on generic receivers like `extending Indexed[T]`.
 
 ### Code size (parser.mt)
 
@@ -184,9 +222,11 @@ This harness was used to drive the lexer to 100% parity and the parser through a
 
 ---
 
-## Stage 4: Lowering — NEXT
+## Stage 4: Lowering — BLOCKED (oracle repair required first)
 
 **Goal:** Consume Analysis JSON (from Ruby sema or Stage 3), produce IR JSON consumable by `ruby bin/mtc emit-c --from-ir-json`.
+
+**Blocker (must fix first):** Ruby's own `lower --from-analysis-json` is *unfaithful* — it loses module/import context across the JSON boundary (e.g. emits `unknown identifier stdio`) and exits nonzero on some files, whereas `lower` from source succeeds. Until the reference `--from-analysis-json` path equals `lower` from source, a self-host lowering port has **no trustworthy oracle**. Repair this in Ruby (`cli.rb` `lower` + whatever rehydrates Analysis JSON) before starting the port.
 
 **Steps:**
 1. Parse Analysis JSON into internal representation
@@ -195,12 +235,14 @@ This harness was used to drive the lexer to 100% parity and the parser through a
 4. Lower functions: parse AST bodies → IR statement/expression trees
 5. Produce IR JSON matching `Serializer.ir_to_json`
 
-**Verification:** Produce IR JSON → feed into `ruby bin/mtc emit-c --from-ir-json` → confirm C output matches Ruby's.
+**Verification:** Produce IR JSON → feed into `ruby bin/mtc emit-c --from-ir-json` → confirm C output matches Ruby's. (Requires the blocker above to be fixed.)
 
 **Prerequisites:**
-- Read `lib/milk_tea/core/lowering.rb` for the lowering architecture
+- **Fix the `--from-analysis-json` faithfulness blocker above.**
+- Read `lib/milk_tea/core/lowering.rb` (372 lines) for the lowering architecture
 - Read `lib/milk_tea/core/serializer.rb` `ir_to_json` for the exact IR JSON contract
-- The `lower` command has `--from-analysis-json` flag (line 810 of cli.rb)
+- The `lower` command has `--from-analysis-json` flag (line 810 of cli.rb); `check --emit-analysis-json` (cli.rb:657) produces the input
+- Budget for the heavy Analysis-JSON reader, not the 372-line transform (a 367-LOC source → ~242 KB Analysis JSON)
 
 ---
 
