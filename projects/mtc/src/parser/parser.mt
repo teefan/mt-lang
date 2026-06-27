@@ -78,6 +78,7 @@ function build_fstring_from_lexeme(lexeme: str) -> string_mod.String:
     var n = lexeme.len
     var start: ptr_uint = 0
     var end = n
+    var heredoc_margin: ptr_uint = 0
 
     if n >= 2 and lexeme.byte_at(0) == 'f' and lexeme.byte_at(1) == '"':
         start = 2
@@ -91,6 +92,22 @@ function build_fstring_from_lexeme(lexeme: str) -> string_mod.String:
             end -= 1
         while end > start and lexeme.byte_at(end - 1) != '\n':
             end -= 1
+        var min_indent: ptr_uint = 999
+        var i2 = start
+        while i2 < end:
+            var line_indent: ptr_uint = 0
+            while i2 < end and lexeme.byte_at(i2) == ' ':
+                line_indent += 1
+                i2 += 1
+            if i2 < end and lexeme.byte_at(i2) != '\n' and line_indent < min_indent:
+                min_indent = line_indent
+            while i2 < end and lexeme.byte_at(i2) != '\n':
+                i2 += 1
+            if i2 < end:
+                i2 += 1
+        if min_indent > 0 and min_indent < 999:
+            start += min_indent
+            heredoc_margin = min_indent
     if end > start and lexeme.byte_at(end - 1) == '"':
         end -= 1
 
@@ -172,6 +189,12 @@ function build_fstring_from_lexeme(lexeme: str) -> string_mod.String:
                 ve.release()
                 r.push_byte('}')
             txt.release()
+
+            if heredoc_margin > 0:
+                var skip: ptr_uint = 0
+                while i < end and skip < heredoc_margin and lexeme.byte_at(i) == ' ':
+                    i += 1
+                    skip += 1
 
     r.append("],\"line\":null,\"column\":null}")
     return r
@@ -260,8 +283,24 @@ function parse_source_file(p: ref[Parser], module_name: str) -> string_mod.Strin
                                         let al = lexer_mod.parse_int(ilex)
                                         p.pending_alignment = ptr_uint<-al
                                         p.has_pending_alignment = true
-                                else:
-                                    advance(p)
+                                else if check(p, "string"):
+                                    var sl = str_lit_json(p, false)
+                                    p.pending_attrs.append("{\"$mt_type\":\"AST:Argument\",\"name\":null,\"value\":")
+                                    p.pending_attrs.append(sl.as_str())
+                                    sl.release()
+                                    p.pending_attrs.push_byte('}')
+                                else if check(p, "cstring"):
+                                    var sl = str_lit_json(p, true)
+                                    p.pending_attrs.append("{\"$mt_type\":\"AST:Argument\",\"name\":null,\"value\":")
+                                    p.pending_attrs.append(sl.as_str())
+                                    sl.release()
+                                    p.pending_attrs.push_byte('}')
+                                else if check(p, "char"):
+                                    var cl = char_lit_json(p)
+                                    p.pending_attrs.append("{\"$mt_type\":\"AST:Argument\",\"name\":null,\"value\":")
+                                    p.pending_attrs.append(cl.as_str())
+                                    cl.release()
+                                    p.pending_attrs.push_byte('}')
                                 if check(p, "comma"):
                                     advance(p)
                             if check(p, "rparen"):
@@ -1683,9 +1722,10 @@ function parse_attribute(p: ref[Parser]) -> void:
             if not tfirst:
                 targets.push_byte(',')
             tfirst = false
-            var te = lexer_mod.json_escaped(tname)
-            targets.append(te.as_str())
-            te.release()
+            targets.append("{\"$sym\":\"")
+            targets.append(tname)
+            targets.push_byte('"')
+            targets.push_byte('}')
             if check(p, "comma"):
                 advance(p)
         consume(p, "rbracket", "expected ] after attribute targets")
@@ -1728,7 +1768,7 @@ function parse_attribute(p: ref[Parser]) -> void:
     targets.release()
     ast.ast_raw(ref_of(p.ast_buf), "params", params.as_str())
     params.release()
-    emit_attrs(p)
+    ast.ast_visibility(ref_of(p.ast_buf), "visibility", "")
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
     ast.ast_close(ref_of(p.ast_buf))
@@ -2345,6 +2385,16 @@ function parse_primary_expr(p: ref[Parser]) -> string_mod.String:
         return null_lit_json()
     if k == "lparen":
         return parse_paren_or_tuple(p)
+    if k == "unsafe":
+        advance(p)
+        consume(p, "colon", "expected : after unsafe")
+        var inner = parse_expr(p)
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:UnsafeExpr\",\"expression\":")
+        r.append(inner.as_str())
+        inner.release()
+        r.append(",\"line\":null,\"column\":null,\"length\":null}")
+        return r
     if k == "fstring":
         let lm = peek_lexeme(p)
         advance(p)
@@ -2603,23 +2653,55 @@ function parse_proc_expr(p: ref[Parser]) -> string_mod.String:
     r.push_byte('}')
     return r
 
+function find_cast_arrow(p: ref[Parser], start: ptr_uint) -> ptr_uint:
+    var i = start
+    if i < p.tokens.tokens.len:
+        let t1 = p.tokens.tokens.get(i) else:
+            return 0
+        if unsafe: read(t1).kind == "less":
+            let t2 = p.tokens.tokens.get(i + 1) else:
+                return 0
+            return if unsafe: read(t2).kind == "minus": i else: 0
+        if unsafe: read(t1).kind == "lbracket":
+            var bd: ptr_uint = 1
+            i += 1
+            while i < p.tokens.tokens.len and bd > 0:
+                let bt = p.tokens.tokens.get(i) else:
+                    return 0
+                let bk = unsafe: read(bt).kind
+                if bk == "lbracket":
+                    bd += 1
+                else if bk == "rbracket":
+                    bd -= 1
+                i += 1
+            if i < p.tokens.tokens.len and i + 1 < p.tokens.tokens.len:
+                let tl = p.tokens.tokens.get(i) else:
+                    return 0
+                let tm = p.tokens.tokens.get(i + 1) else:
+                    return 0
+                return if unsafe: read(tl).kind == "less" and unsafe: read(tm).kind == "minus": i else: 0
+    return 0
+
 function parse_unary_expr(p: ref[Parser]) -> string_mod.String:
-    if check(p, "identifier") and is_cast_type(peek_lexeme(p)) and peek_kind2(p) == "less" and peek_kind3(p) == "minus":
-        let tname = peek_lexeme(p)
-        advance(p)
-        advance(p)
-        advance(p)
-        var operand = parse_unary_expr(p)
-        var tt = backing_type_json(tname)
-        var r = string_mod.String.create()
-        r.append("{\"$mt_type\":\"AST:PrefixCast\",\"target_type\":")
-        r.append(tt.as_str())
-        tt.release()
-        r.append(",\"expression\":")
-        r.append(operand.as_str())
-        operand.release()
-        r.push_byte('}')
-        return r
+    if check(p, "identifier") and is_cast_type(peek_lexeme(p)):
+        var is_simple = peek_kind2(p) == "less" and peek_kind3(p) == "minus"
+        var arrow: ptr_uint = 0
+        if not is_simple:
+            arrow = find_cast_arrow(p, p.tokens.pos + 1)
+        if is_simple or arrow > 0:
+            var target_type = parse_type(p)
+            consume(p, "less", "expected < in cast")
+            consume(p, "minus", "expected - in cast")
+            var operand = parse_unary_expr(p)
+            var r = string_mod.String.create()
+            r.append("{\"$mt_type\":\"AST:PrefixCast\",\"target_type\":")
+            r.append(target_type.as_str())
+            target_type.release()
+            r.append(",\"expression\":")
+            r.append(operand.as_str())
+            operand.release()
+            r.push_byte('}')
+            return r
     if check(p, "await"):
         advance(p)
         var e = parse_unary_expr(p)
