@@ -2145,7 +2145,7 @@ function parse_if_expr(p: ref[Parser]) -> string_mod.String:
 
 function parse_expr(p: ref[Parser]) -> string_mod.String:
     if check(p, "match"):
-        return parse_match(p, true)
+        return parse_match(p, true, false)
     if check(p, "proc"):
         return parse_proc_expr(p)
     if check(p, "unsafe"):
@@ -2421,7 +2421,7 @@ function parse_if_branch(p: ref[Parser]) -> string_mod.String:
     r.append(",\"line\":null,\"column\":null,\"length\":null}")
     return r
 
-function parse_if_stmt(p: ref[Parser]) -> string_mod.String:
+function parse_if_stmt(p: ref[Parser], is_inline: bool) -> string_mod.String:
     advance(p)
     var branches = string_mod.String.create()
     branches.push_byte('[')
@@ -2453,10 +2453,15 @@ function parse_if_stmt(p: ref[Parser]) -> string_mod.String:
     else:
         r.append("null")
     else_body.release()
-    r.append(",\"inline\":false,\"line\":null,\"else_line\":null,\"else_column\":null}")
+    r.append(",\"inline\":")
+    if is_inline:
+        r.append("true")
+    else:
+        r.append("false")
+    r.append(",\"line\":null,\"else_line\":null,\"else_column\":null}")
     return r
 
-function parse_while_stmt(p: ref[Parser]) -> string_mod.String:
+function parse_while_stmt(p: ref[Parser], is_inline: bool) -> string_mod.String:
     advance(p)
     var cond = parse_expr(p)
     var body = parse_block(p)
@@ -2467,10 +2472,15 @@ function parse_while_stmt(p: ref[Parser]) -> string_mod.String:
     r.append(",\"body\":")
     r.append(body.as_str())
     body.release()
-    r.append(",\"inline\":false,\"line\":null,\"column\":null,\"length\":null}")
+    r.append(",\"inline\":")
+    if is_inline:
+        r.append("true")
+    else:
+        r.append("false")
+    r.append(",\"line\":null,\"column\":null,\"length\":null}")
     return r
 
-function parse_for_stmt(p: ref[Parser]) -> string_mod.String:
+function parse_for_stmt(p: ref[Parser], is_inline: bool) -> string_mod.String:
     advance(p)
     var bindings = string_mod.String.create()
     bindings.push_byte('[')
@@ -2515,7 +2525,12 @@ function parse_for_stmt(p: ref[Parser]) -> string_mod.String:
     r.append(",\"body\":")
     r.append(body.as_str())
     body.release()
-    r.append(",\"inline\":false,\"threaded\":false,\"line\":null,\"column\":null}")
+    r.append(",\"inline\":")
+    if is_inline:
+        r.append("true")
+    else:
+        r.append("false")
+    r.append(",\"threaded\":false,\"line\":null,\"column\":null}")
     return r
 
 function parse_defer_stmt(p: ref[Parser]) -> string_mod.String:
@@ -2556,7 +2571,7 @@ function parse_unsafe_block_stmt(p: ref[Parser]) -> string_mod.String:
     r.append(",\"line\":null,\"column\":null,\"length\":null}")
     return r
 
-function parse_match(p: ref[Parser], as_value: bool) -> string_mod.String:
+function parse_match(p: ref[Parser], as_value: bool, is_inline: bool) -> string_mod.String:
     advance(p)
     var subject = parse_expr(p)
     var arms = string_mod.String.create()
@@ -2677,7 +2692,73 @@ function parse_match(p: ref[Parser], as_value: bool) -> string_mod.String:
     r.append(",\"arms\":")
     r.append(arms.as_str())
     arms.release()
-    r.append(",\"inline\":false,\"line\":null,\"column\":null,\"length\":null}")
+    r.append(",\"inline\":")
+    if is_inline:
+        r.append("true")
+    else:
+        r.append("false")
+    r.append(",\"line\":null,\"column\":null,\"length\":null}")
+    return r
+
+function parse_when_stmt(p: ref[Parser]) -> string_mod.String:
+    advance(p)
+    var disc = parse_expr(p)
+    var arms = string_mod.String.create()
+    arms.push_byte('[')
+    if check(p, "colon"):
+        advance(p)
+        consume(p, "newline", "expected newline after when")
+        consume(p, "indent", "expected indented block")
+        var afirst = true
+        skip_newlines(p)
+        var safety: ptr_uint = 0
+        while not check(p, "dedent") and not is_eof(p):
+            safety += 1
+            if safety > 100000:
+                break
+            var pattern = parse_expr(p)
+            var binding = string_mod.String.create()
+            binding.append("null")
+            if check(p, "as"):
+                advance(p)
+                let bn = peek_lexeme(p)
+                advance(p)
+                binding.release()
+                binding = lexer_mod.json_escaped(bn)
+            var body = parse_block(p)
+            if not afirst:
+                arms.push_byte(',')
+            afirst = false
+            arms.append("{\"$mt_type\":\"AST:WhenBranch\",\"pattern\":")
+            arms.append(pattern.as_str())
+            pattern.release()
+            arms.append(",\"binding_name\":")
+            arms.append(binding.as_str())
+            binding.release()
+            arms.append(",\"binding_line\":null,\"binding_column\":null,\"body\":")
+            arms.append(body.as_str())
+            body.release()
+            arms.push_byte('}')
+            skip_newlines(p)
+        consume(p, "dedent", "expected end of when block")
+    arms.push_byte(']')
+    var else_body = string_mod.String.create()
+    else_body.append("null")
+    if check(p, "else"):
+        advance(p)
+        else_body.release()
+        else_body = parse_block_or_inline(p)
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:WhenStmt\",\"discriminant\":")
+    r.append(disc.as_str())
+    disc.release()
+    r.append(",\"branches\":")
+    r.append(arms.as_str())
+    arms.release()
+    r.append(",\"else_body\":")
+    r.append(else_body.as_str())
+    else_body.release()
+    r.append(",\"line\":null,\"column\":null,\"length\":null}")
     return r
 
 function parse_statement(p: ref[Parser]) -> string_mod.String:
@@ -2701,18 +2782,34 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
         end_or_fail(p)
         return simple_stmt_json("ContinueStmt")
     if k == "if":
-        return parse_if_stmt(p)
+        return parse_if_stmt(p, false)
     if k == "while":
-        return parse_while_stmt(p)
+        return parse_while_stmt(p, false)
     if k == "for":
-        return parse_for_stmt(p)
+        return parse_for_stmt(p, false)
     if k == "defer":
         return parse_defer_stmt(p)
     if k == "unsafe":
         return parse_unsafe_block_stmt(p)
     if k == "match":
-        return parse_match(p, false)
-    if k == "when" or k == "inline" or k == "parallel" or k == "gather" or k == "emit" or k == "static_assert":
+        return parse_match(p, false, false)
+    if k == "inline":
+        advance(p)
+        let ik = peek_kind(p)
+        if ik == "for":
+            return parse_for_stmt(p, true)
+        if ik == "while":
+            return parse_while_stmt(p, true)
+        if ik == "match":
+            return parse_match(p, false, true)
+        if ik == "if":
+            return parse_if_stmt(p, true)
+        p.stmt_failed = true
+        skip_statement(p)
+        return simple_stmt_json("PassStmt")
+    if k == "when":
+        return parse_when_stmt(p)
+    if k == "parallel" or k == "gather" or k == "emit" or k == "static_assert":
         p.stmt_failed = true
         skip_statement(p)
         return simple_stmt_json("PassStmt")
