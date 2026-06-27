@@ -87,6 +87,10 @@ function format_spec_json(fmts: str) -> str:
             return "{\"kind\":{\"$sym\":\"oct\"},\"uppercase\":false}"
         if c == 'O':
             return "{\"kind\":{\"$sym\":\"oct\"},\"uppercase\":true}"
+        if c == 'B':
+            return "{\"kind\":{\"$sym\":\"bin\"},\"uppercase\":true}"
+    if n == 2 and fmts.byte_at(0) == '.' and fmts.byte_at(1) == '2':
+        return "{\"kind\":{\"$sym\":\"precision\"},\"value\":2}"
     return "null"
 
 function build_fstring_from_lexeme(lexeme: str) -> string_mod.String:
@@ -776,10 +780,39 @@ function parse_extern_function(p: ref[Parser]) -> void:
     let fname = peek_lexeme(p)
     advance(p)
 
-    parse_params_skip(p)
+    var params_json = string_mod.String.create()
+    params_json.push_byte('[')
+    var pfirst = true
+    if check(p, "lparen"):
+        advance(p)
+        while not check(p, "rparen") and not is_eof(p):
+            let pname = peek_lexeme(p)
+            advance(p)
+            consume(p, "colon", "expected : in param")
+            var ptype = parse_type(p)
+            if not pfirst:
+                params_json.push_byte(',')
+            pfirst = false
+            params_json.append("{\"$mt_type\":\"AST:ForeignParam\",\"name\":")
+            var pe = lexer_mod.json_escaped(pname)
+            params_json.append(pe.as_str())
+            pe.release()
+            params_json.append(",\"type\":")
+            params_json.append(ptype.as_str())
+            ptype.release()
+            params_json.append(",\"mode\":{\"$sym\":\"plain\"},\"boundary_type\":null}")
+            if check(p, "comma"):
+                advance(p)
+        consume(p, "rparen", "expected ) after params")
+    params_json.push_byte(']')
+
+    var ret_json = string_mod.String.create()
     if check(p, "arrow"):
         advance(p)
-        advance(p)
+        ret_json.release()
+        ret_json = parse_type(p)
+    else:
+        ret_json.append("null")
 
     consume_nl(p)
 
@@ -787,9 +820,10 @@ function parse_extern_function(p: ref[Parser]) -> void:
     ast.ast_str(ref_of(p.ast_buf), "name", fname)
     ast.ast_array_start(ref_of(p.ast_buf), "type_params")
     ast.ast_array_end(ref_of(p.ast_buf))
-    ast.ast_array_start(ref_of(p.ast_buf), "params")
-    ast.ast_array_end(ref_of(p.ast_buf))
-    ast.ast_null(ref_of(p.ast_buf), "return_type")
+    ast.ast_raw(ref_of(p.ast_buf), "params", params_json.as_str())
+    params_json.release()
+    ast.ast_raw(ref_of(p.ast_buf), "return_type", ret_json.as_str())
+    ret_json.release()
     ast.ast_bool(ref_of(p.ast_buf), "variadic", false)
     emit_attrs(p)
     ast.ast_null(ref_of(p.ast_buf), "line")
