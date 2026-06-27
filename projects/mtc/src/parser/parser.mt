@@ -817,21 +817,43 @@ function parse_union_with_visibility(p: ref[Parser], vis: str) -> void:
     let uname = peek_lexeme(p)
     advance(p)
 
+    var fields_json = string_mod.String.create()
+    fields_json.append("[]")
     if check(p, "colon"):
         advance(p)
         consume_nl(p)
         if check(p, "indent"):
             advance(p)
-            while not check(p, "dedent") and not is_eof(p):
-                skip_statement(p)
+            let body_start = p.tokens.pos
+            var bdepth: ptr_uint = 1
+            while not is_eof(p):
+                if check(p, "indent"):
+                    bdepth += 1
+                    advance(p)
+                else if check(p, "dedent"):
+                    bdepth -= 1
+                    if bdepth == 0:
+                        break
+                    advance(p)
+                else:
+                    advance(p)
+            let body_end = p.tokens.pos
+            p.tokens.pos = body_start
+            fields_json.release()
+            fields_json = parse_fields_json(p)
+            if p.tokens.pos != body_end:
+                fields_json.release()
+                fields_json = string_mod.String.create()
+                fields_json.append("[]")
+            p.tokens.pos = body_end
             if check(p, "dedent"):
                 advance(p)
 
     ast.ast_open(ref_of(p.ast_buf), "UnionDecl")
     ast.ast_str(ref_of(p.ast_buf), "name", uname)
     ast.ast_null(ref_of(p.ast_buf), "c_name")
-    ast.ast_array_start(ref_of(p.ast_buf), "fields")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_raw(ref_of(p.ast_buf), "fields", fields_json.as_str())
+    fields_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_array_start(ref_of(p.ast_buf), "attributes")
     ast.ast_array_end(ref_of(p.ast_buf))
