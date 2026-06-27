@@ -914,6 +914,8 @@ function parse_fields_json(p: ref[Parser]) -> string_mod.String:
     var r = string_mod.String.create()
     r.push_byte('[')
     var first = true
+    var field_attrs = string_mod.String.create()
+    field_attrs.append("[]")
     skip_newlines(p)
     var safety: ptr_uint = 0
     while not check(p, "dedent") and not is_eof(p):
@@ -921,8 +923,75 @@ function parse_fields_json(p: ref[Parser]) -> string_mod.String:
         if safety > 100000:
             break
         let k = peek_kind(p)
-        if k == "struct" or k == "enum" or k == "union" or k == "variant" or k == "flags" or k == "opaque" or k == "event" or k == "at" or k == "indent":
+        if k == "struct" or k == "enum" or k == "union" or k == "variant" or k == "flags" or k == "opaque" or k == "event" or k == "indent":
             skip_statement(p)
+        else if k == "at":
+            advance(p)
+            var saved_attrs = string_mod.String.create()
+            saved_attrs.push_byte('[')
+            var attrs_first = true
+            if check(p, "lbracket"):
+                advance(p)
+                while not check(p, "rbracket") and not is_eof(p):
+                    if check(p, "identifier"):
+                        let alx = peek_lexeme(p)
+                        if not attrs_first:
+                            saved_attrs.push_byte(',')
+                        attrs_first = false
+                        saved_attrs.append("{\"$mt_type\":\"AST:AttributeApplication\",\"name\":")
+                        var aname = qname_single_json(alx)
+                        saved_attrs.append(aname.as_str())
+                        aname.release()
+                        saved_attrs.append(",\"arguments\":[")
+                        advance(p)
+                        var arg_first = true
+                        if check(p, "lparen"):
+                            advance(p)
+                            while not check(p, "rparen") and not is_eof(p):
+                                if not arg_first:
+                                    saved_attrs.push_byte(',')
+                                arg_first = false
+                                if check(p, "integer"):
+                                    let ilex = peek_lexeme(p)
+                                    var il = int_lit_json(ilex)
+                                    saved_attrs.append("{\"$mt_type\":\"AST:Argument\",\"name\":null,\"value\":")
+                                    saved_attrs.append(il.as_str())
+                                    il.release()
+                                    saved_attrs.push_byte('}')
+                                    advance(p)
+                                else if check(p, "string"):
+                                    var sl = str_lit_json(p, false)
+                                    saved_attrs.append("{\"$mt_type\":\"AST:Argument\",\"name\":null,\"value\":")
+                                    saved_attrs.append(sl.as_str())
+                                    sl.release()
+                                    saved_attrs.push_byte('}')
+                                else if check(p, "cstring"):
+                                    var sl = str_lit_json(p, true)
+                                    saved_attrs.append("{\"$mt_type\":\"AST:Argument\",\"name\":null,\"value\":")
+                                    saved_attrs.append(sl.as_str())
+                                    sl.release()
+                                    saved_attrs.push_byte('}')
+                                else:
+                                    advance(p)
+                                if check(p, "comma"):
+                                    advance(p)
+                            if check(p, "rparen"):
+                                advance(p)
+                        saved_attrs.append("],\"line\":null,\"column\":null}")
+                        if check(p, "comma"):
+                            advance(p)
+                    else:
+                        advance(p)
+                if check(p, "rbracket"):
+                    advance(p)
+            saved_attrs.push_byte(']')
+            skip_newlines(p)
+            let next_k = peek_kind(p)
+            if next_k == "struct" or next_k == "enum" or next_k == "union" or next_k == "variant" or next_k == "flags" or next_k == "opaque" or next_k == "event":
+                saved_attrs.release()
+            else:
+                field_attrs.release()
+                field_attrs = saved_attrs
         else:
             let fname = peek_lexeme(p)
             advance(p)
@@ -939,7 +1008,12 @@ function parse_fields_json(p: ref[Parser]) -> string_mod.String:
                 r.append(",\"type\":")
                 r.append(ft.as_str())
                 ft.release()
-                r.append(",\"attributes\":[],\"line\":null,\"column\":null}")
+                r.append(",\"attributes\":")
+                r.append(field_attrs.as_str())
+                r.append(",\"line\":null,\"column\":null}")
+                field_attrs.release()
+                field_attrs = string_mod.String.create()
+                field_attrs.append("[]")
                 if check(p, "newline"):
                     advance(p)
             else:
@@ -2221,6 +2295,17 @@ function make_member(receiver: str, member: str) -> string_mod.String:
     r.append(",\"line\":null,\"column\":null}")
     return r
 
+function make_is_expr(left: str, pattern: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:MatchExpr\",\"expression\":")
+    r.append(left)
+    r.append(",\"arms\":[{\"$mt_type\":\"AST:MatchExprArm\",\"pattern\":")
+    r.append(pattern)
+    r.append(",\"binding_name\":null,\"binding_line\":null,\"binding_column\":null,\"value\":{\"$mt_type\":\"AST:BooleanLiteral\",\"value\":true}}")
+    r.append(",{\"$mt_type\":\"AST:MatchExprArm\",\"pattern\":{\"$mt_type\":\"AST:Identifier\",\"name\":\"_\",\"line\":null,\"column\":null},\"binding_name\":null,\"binding_line\":null,\"binding_column\":null,\"value\":{\"$mt_type\":\"AST:BooleanLiteral\",\"value\":false}}")
+    r.append("],\"line\":null,\"column\":null,\"length\":null}")
+    return r
+
 function make_index(receiver: str, index: str) -> string_mod.String:
     var r = string_mod.String.create()
     r.append("{\"$mt_type\":\"AST:IndexAccess\",\"receiver\":")
@@ -2792,13 +2877,21 @@ function parse_binary(p: ref[Parser], min_prec: int) -> string_mod.String:
         let prec = op_prec(peek_kind(p))
         if prec < min_prec:
             break
-        let op = peek_lexeme(p)
-        advance(p)
-        var right = parse_binary(p, prec + 1)
-        var nl = make_binop(op, left.as_str(), right.as_str())
-        left.release()
-        right.release()
-        left = nl
+        if peek_kind(p) == "is":
+            advance(p)
+            var pattern = parse_unary_expr(p)
+            var nl = make_is_expr(left.as_str(), pattern.as_str())
+            left.release()
+            pattern.release()
+            left = nl
+        else:
+            let op = peek_lexeme(p)
+            advance(p)
+            var right = parse_binary(p, prec + 1)
+            var nl = make_binop(op, left.as_str(), right.as_str())
+            left.release()
+            right.release()
+            left = nl
     return left
 
 function parse_range_expr(p: ref[Parser]) -> string_mod.String:
