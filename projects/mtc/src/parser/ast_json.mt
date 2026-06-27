@@ -70,14 +70,12 @@ public function ast_sym(buf: ref[AstBuf], key: str, sym_name: str) -> void:
     buf.buf.append(sym_name)
     buf.buf.append("\"}")
 
-public function ast_sym_nullable(buf: ref[AstBuf], key: str, sym_val: str) -> void:
+public function ast_visibility(buf: ref[AstBuf], key: str, vis: str) -> void:
     ast_key(buf, key)
-    if sym_val == "" or sym_val == "null":
-        buf.buf.append("null")
+    if vis == "public":
+        buf.buf.append("{\"$sym\":\"public\"}")
     else:
-        buf.buf.append("{\"$sym\":\"")
-        buf.buf.append(sym_val)
-        buf.buf.append("\"}")
+        buf.buf.append("{\"$sym\":\"private\"}")
 
 # ── array framing ─────────────────────────────────────────────────────────
 
