@@ -706,7 +706,9 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
     let sname = peek_lexeme(p)
     advance(p)
 
-    var struct_tp = parse_type_params_json(p)
+    var lifetime_json = string_mod.String.create()
+    var struct_tp = string_mod.String.create()
+    parse_struct_params(p, ref_of(struct_tp), ref_of(lifetime_json))
 
     var implements_json = string_mod.String.create()
     implements_json.push_byte('[')
@@ -846,8 +848,8 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
     ast.ast_bool(ref_of(p.ast_buf), "packed", false)
     ast.ast_null(ref_of(p.ast_buf), "alignment")
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
-    ast.ast_array_start(ref_of(p.ast_buf), "lifetime_params")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_raw(ref_of(p.ast_buf), "lifetime_params", lifetime_json.as_str())
+    lifetime_json.release()
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
     ast.ast_close(ref_of(p.ast_buf))
@@ -1587,6 +1589,81 @@ function parse_type_params_json(p: ref[Parser]) -> string_mod.String:
         consume(p, "rbracket", "expected ] after type params")
     r.push_byte(']')
     return r
+
+function parse_struct_params(p: ref[Parser], tp_json: ref[string_mod.String], lp_json: ref[string_mod.String]) -> void:
+    tp_json.push_byte('[')
+    lp_json.push_byte('[')
+    var lp_first = true
+    if check(p, "lbracket"):
+        advance(p)
+        var first = true
+        var safety: ptr_uint = 0
+        while not check(p, "rbracket") and not is_eof(p):
+            safety += 1
+            if safety > 10000:
+                break
+            if check(p, "at"):
+                advance(p)
+                let lname = peek_lexeme(p)
+                advance(p)
+                if not lp_first:
+                    lp_json.push_byte(',')
+                lp_first = false
+                lp_json.push_byte('"')
+                lp_json.push_byte('@')
+                lp_json.append(lname)
+                lp_json.push_byte('"')
+                if check(p, "comma"):
+                    advance(p)
+                while not is_eof(p) and not check(p, "rbracket") and not check(p, "comma"):
+                    advance(p)
+                continue
+            let pname = peek_lexeme(p)
+            advance(p)
+            if not first:
+                tp_json.push_byte(',')
+            first = false
+            if check(p, "colon"):
+                advance(p)
+                var vt = parse_type(p)
+                tp_json.append("{\"$mt_type\":\"AST:ValueTypeParam\",\"name\":")
+                var ne = lexer_mod.json_escaped(pname)
+                tp_json.append(ne.as_str())
+                ne.release()
+                tp_json.append(",\"type\":")
+                tp_json.append(vt.as_str())
+                vt.release()
+                tp_json.append(",\"line\":null,\"column\":null,\"length\":null}")
+            else:
+                tp_json.append("{\"$mt_type\":\"AST:TypeParam\",\"name\":")
+                var ne = lexer_mod.json_escaped(pname)
+                tp_json.append(ne.as_str())
+                ne.release()
+                tp_json.append(",\"constraints\":[")
+                if check(p, "implements"):
+                    advance(p)
+                    var cfirst = true
+                    var csafety: ptr_uint = 0
+                    while true:
+                        csafety += 1
+                        if csafety > 1000:
+                            break
+                        if not cfirst:
+                            tp_json.push_byte(',')
+                        cfirst = false
+                        var qn = parse_impl_qualname_json(p)
+                        tp_json.append(qn.as_str())
+                        qn.release()
+                        if check(p, "comma"):
+                            advance(p)
+                        else:
+                            break
+                tp_json.append("],\"line\":null,\"column\":null,\"length\":null}")
+            if check(p, "comma"):
+                advance(p)
+        consume(p, "rbracket", "expected ] after struct params")
+    tp_json.push_byte(']')
+    lp_json.push_byte(']')
 
 function parse_type_params(p: ref[Parser]) -> void:
     var tj = parse_type_params_json(p)
