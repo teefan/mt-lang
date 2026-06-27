@@ -18,6 +18,7 @@ struct Parser:
     tokens: ts.TokenStream
     ast_buf: ast.AstBuf
     need_comma: bool
+    stmt_failed: bool
 
 function ast_open_node(p: ref[Parser], node_type: str) -> void:
     if p.need_comma:
@@ -41,7 +42,10 @@ function advance(p: ref[Parser]) -> void:
     p.tokens.advance()
 
 function consume(p: ref[Parser], kind: str, msg: str) -> void:
-    p.tokens.consume(kind, msg)
+    if check(p, kind):
+        advance(p)
+    else:
+        p.stmt_failed = true
 
 function is_eof(p: ref[Parser]) -> bool:
     return p.tokens.is_eof()
@@ -471,20 +475,43 @@ function parse_function_with_visibility(p: ref[Parser], vis: str, is_const: bool
         ast.ast_raw(ref_of(p.ast_buf), "return_type", ret_type.as_str())
     ret_type.release()
 
+    var body_json = string_mod.String.create()
+    body_json.append("[]")
     if check(p, "colon"):
         advance(p)
         consume_nl(p)
         if check(p, "indent"):
             advance(p)
-            while not check(p, "dedent") and not is_eof(p):
-                skip_statement(p)
+            let body_start = p.tokens.pos
+            var bdepth: ptr_uint = 1
+            while not is_eof(p):
+                if check(p, "indent"):
+                    bdepth += 1
+                    advance(p)
+                else if check(p, "dedent"):
+                    bdepth -= 1
+                    if bdepth == 0:
+                        break
+                    advance(p)
+                else:
+                    advance(p)
+            let body_end = p.tokens.pos
+            p.tokens.pos = body_start
+            p.stmt_failed = false
+            body_json.release()
+            body_json = parse_stmt_block_body(p)
+            if p.stmt_failed or p.tokens.pos != body_end:
+                body_json.release()
+                body_json = string_mod.String.create()
+                body_json.append("[]")
+            p.tokens.pos = body_end
             if check(p, "dedent"):
                 advance(p)
     else:
         consume_nl(p)
 
-    ast.ast_array_start(ref_of(p.ast_buf), "body")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_raw(ref_of(p.ast_buf), "body", body_json.as_str())
+    body_json.release()
 
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_bool(ref_of(p.ast_buf), "async", is_async)
@@ -1352,6 +1379,8 @@ function parse_primary_expr(p: ref[Parser]) -> string_mod.String:
         return null_lit_json()
     if k == "lparen":
         return parse_paren_or_tuple(p)
+    if k != "identifier":
+        p.stmt_failed = true
     var r = ident_json(peek_lexeme(p))
     advance(p)
     return r
@@ -1367,6 +1396,7 @@ function parse_postfix_expr(p: ref[Parser]) -> string_mod.String:
             expr.release()
             expr = ne
         else if check(p, "lbracket"):
+            p.stmt_failed = true
             advance(p)
             var idx = parse_expr(p)
             consume(p, "rbracket", "expected ] after index")
@@ -1462,6 +1492,14 @@ function parse_if_expr(p: ref[Parser]) -> string_mod.String:
     return r
 
 function parse_expr(p: ref[Parser]) -> string_mod.String:
+    if check(p, "match"):
+        skip_match(p)
+        p.stmt_failed = true
+        return placeholder_expr()
+    if check(p, "proc"):
+        skip_proc(p)
+        p.stmt_failed = true
+        return placeholder_expr()
     if check(p, "unsafe"):
         advance(p)
         consume(p, "colon", "expected : after unsafe")
@@ -1475,6 +1513,423 @@ function parse_expr(p: ref[Parser]) -> string_mod.String:
     if check(p, "if"):
         return parse_if_expr(p)
     return parse_range_expr(p)
+
+# ── statement parser ──────────────────────────────────────────────────────
+
+function placeholder_expr() -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:NullLiteral\",\"type\":null,\"line\":null,\"column\":null}")
+    return r
+
+function skip_to_stmt_end(p: ref[Parser]) -> void:
+    while not is_eof(p) and not check(p, "newline") and not check(p, "dedent"):
+        advance(p)
+    if check(p, "newline"):
+        advance(p)
+
+function skip_indented_block(p: ref[Parser]) -> void:
+    if check(p, "indent"):
+        advance(p)
+        var depth: ptr_uint = 1
+        while depth > 0 and not is_eof(p):
+            if check(p, "indent"):
+                depth += 1
+            else if check(p, "dedent"):
+                depth -= 1
+            advance(p)
+
+function skip_match(p: ref[Parser]) -> void:
+    advance(p)
+    while not is_eof(p) and not check(p, "colon") and not check(p, "newline"):
+        skip_expression(p)
+    if check(p, "colon"):
+        advance(p)
+        if check(p, "newline"):
+            advance(p)
+            skip_indented_block(p)
+        else:
+            while not is_eof(p) and not check(p, "newline"):
+                advance(p)
+
+function skip_proc(p: ref[Parser]) -> void:
+    advance(p)
+    if check(p, "lparen"):
+        advance(p)
+        var pd: ptr_uint = 1
+        while pd > 0 and not is_eof(p):
+            if check(p, "lparen"):
+                pd += 1
+            else if check(p, "rparen"):
+                pd -= 1
+            advance(p)
+    while not is_eof(p) and not check(p, "colon") and not check(p, "newline"):
+        advance(p)
+    if check(p, "colon"):
+        advance(p)
+        if check(p, "newline"):
+            advance(p)
+            skip_indented_block(p)
+        else:
+            while not is_eof(p) and not check(p, "newline"):
+                advance(p)
+
+function is_assign_op(k: str) -> bool:
+    if k == "equal":
+        return true
+    if k == "plus_equal" or k == "minus_equal" or k == "star_equal" or k == "slash_equal":
+        return true
+    if k == "percent_equal" or k == "amp_equal" or k == "pipe_equal" or k == "caret_equal":
+        return true
+    if k == "shift_left_equal" or k == "shift_right_equal":
+        return true
+    return false
+
+function end_or_fail(p: ref[Parser]) -> void:
+    if check(p, "newline"):
+        advance(p)
+    else if not check(p, "dedent") and not is_eof(p):
+        p.stmt_failed = true
+        skip_to_stmt_end(p)
+
+function parse_stmt_block_body(p: ref[Parser]) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.push_byte('[')
+    skip_newlines(p)
+    var first = true
+    var safety: ptr_uint = 0
+    while not check(p, "dedent") and not is_eof(p):
+        safety += 1
+        if safety > 200000:
+            p.stmt_failed = true
+            break
+        if not first:
+            r.push_byte(',')
+        first = false
+        var stmt = parse_statement(p)
+        r.append(stmt.as_str())
+        stmt.release()
+        skip_newlines(p)
+    r.push_byte(']')
+    return r
+
+function parse_block(p: ref[Parser]) -> string_mod.String:
+    consume(p, "colon", "expected : before block")
+    consume(p, "newline", "expected newline before block")
+    consume(p, "indent", "expected indented block")
+    var body = parse_stmt_block_body(p)
+    consume(p, "dedent", "expected end of block")
+    return body
+
+function inline_block_body(p: ref[Parser]) -> bool:
+    return check(p, "colon") and not (peek_kind2(p) == "newline")
+
+function parse_block_or_inline(p: ref[Parser]) -> string_mod.String:
+    if inline_block_body(p):
+        consume(p, "colon", "expected : before inline body")
+        var r = string_mod.String.create()
+        r.push_byte('[')
+        var stmt = parse_statement(p)
+        r.append(stmt.as_str())
+        stmt.release()
+        r.push_byte(']')
+        return r
+    return parse_block(p)
+
+function simple_stmt_json(mt: str) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:")
+    r.append(mt)
+    r.append("\",\"line\":null,\"column\":null,\"length\":null}")
+    return r
+
+function parse_return_stmt(p: ref[Parser]) -> string_mod.String:
+    advance(p)
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:ReturnStmt\",\"value\":")
+    if check(p, "newline") or check(p, "dedent") or is_eof(p):
+        r.append("null")
+        end_or_fail(p)
+    else:
+        var v = parse_expr(p)
+        r.append(v.as_str())
+        v.release()
+        end_or_fail(p)
+    r.append(",\"line\":null,\"column\":null,\"length\":null}")
+    return r
+
+function parse_local_decl(p: ref[Parser], kind: str) -> string_mod.String:
+    advance(p)
+    if check(p, "lparen") or peek_kind2(p) == "lparen" or peek_kind2(p) == "dot":
+        p.stmt_failed = true
+        skip_to_stmt_end(p)
+        return simple_stmt_json("PassStmt")
+    let nm = peek_lexeme(p)
+    advance(p)
+    var ty = string_mod.String.create()
+    if check(p, "colon"):
+        advance(p)
+        ty.release()
+        ty = parse_type(p)
+    var val = string_mod.String.create()
+    var has_val = false
+    var else_body = string_mod.String.create()
+    var has_else = false
+    var else_binding = string_mod.String.create()
+    if check(p, "equal"):
+        advance(p)
+        val.release()
+        val = parse_expr(p)
+        has_val = true
+        if check(p, "else"):
+            advance(p)
+            if check(p, "as"):
+                advance(p)
+                let bn = peek_lexeme(p)
+                advance(p)
+                else_binding.release()
+                else_binding = ident_json(bn)
+            else_body.release()
+            else_body = parse_block(p)
+            has_else = true
+        else:
+            end_or_fail(p)
+    else:
+        end_or_fail(p)
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:LocalDecl\",\"kind\":{\"$sym\":\"")
+    r.append(kind)
+    r.append("\"},\"name\":")
+    var ne = lexer_mod.json_escaped(nm)
+    r.append(ne.as_str())
+    ne.release()
+    r.append(",\"type\":")
+    if ty.len == 0:
+        r.append("null")
+    else:
+        r.append(ty.as_str())
+    ty.release()
+    r.append(",\"value\":")
+    if has_val:
+        r.append(val.as_str())
+    else:
+        r.append("null")
+    val.release()
+    r.append(",\"else_binding\":")
+    if has_else and else_binding.len > 0:
+        r.append(else_binding.as_str())
+    else:
+        r.append("null")
+    else_binding.release()
+    r.append(",\"else_body\":")
+    if has_else:
+        r.append(else_body.as_str())
+    else:
+        r.append("null")
+    else_body.release()
+    r.append(",\"line\":null,\"column\":null,\"recovered_else\":false,\"destructure_bindings\":null,\"destructure_type_name\":null}")
+    return r
+
+function parse_assign_or_expr_stmt(p: ref[Parser]) -> string_mod.String:
+    var expr = parse_expr(p)
+    if is_assign_op(peek_kind(p)):
+        let op = peek_lexeme(p)
+        advance(p)
+        var val = parse_expr(p)
+        end_or_fail(p)
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:Assignment\",\"target\":")
+        r.append(expr.as_str())
+        expr.release()
+        r.append(",\"operator\":")
+        var oe = lexer_mod.json_escaped(op)
+        r.append(oe.as_str())
+        oe.release()
+        r.append(",\"value\":")
+        r.append(val.as_str())
+        val.release()
+        r.append(",\"line\":null,\"column\":null}")
+        return r
+    end_or_fail(p)
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:ExpressionStmt\",\"expression\":")
+    r.append(expr.as_str())
+    expr.release()
+    r.append(",\"line\":null}")
+    return r
+
+function parse_if_branch(p: ref[Parser]) -> string_mod.String:
+    var cond = parse_binary(p, 1)
+    var body = parse_block_or_inline(p)
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:IfBranch\",\"condition\":")
+    r.append(cond.as_str())
+    cond.release()
+    r.append(",\"body\":")
+    r.append(body.as_str())
+    body.release()
+    r.append(",\"line\":null,\"column\":null,\"length\":null}")
+    return r
+
+function parse_if_stmt(p: ref[Parser]) -> string_mod.String:
+    advance(p)
+    var branches = string_mod.String.create()
+    branches.push_byte('[')
+    var b0 = parse_if_branch(p)
+    branches.append(b0.as_str())
+    b0.release()
+    while check(p, "else") and peek_kind2(p) == "if":
+        advance(p)
+        advance(p)
+        branches.push_byte(',')
+        var bn = parse_if_branch(p)
+        branches.append(bn.as_str())
+        bn.release()
+    branches.push_byte(']')
+    var has_else = false
+    var else_body = string_mod.String.create()
+    if check(p, "else"):
+        advance(p)
+        else_body.release()
+        else_body = parse_block_or_inline(p)
+        has_else = true
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:IfStmt\",\"branches\":")
+    r.append(branches.as_str())
+    branches.release()
+    r.append(",\"else_body\":")
+    if has_else:
+        r.append(else_body.as_str())
+    else:
+        r.append("null")
+    else_body.release()
+    r.append(",\"inline\":false,\"line\":null,\"else_line\":null,\"else_column\":null}")
+    return r
+
+function parse_while_stmt(p: ref[Parser]) -> string_mod.String:
+    advance(p)
+    var cond = parse_expr(p)
+    var body = parse_block(p)
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:WhileStmt\",\"condition\":")
+    r.append(cond.as_str())
+    cond.release()
+    r.append(",\"body\":")
+    r.append(body.as_str())
+    body.release()
+    r.append(",\"inline\":false,\"line\":null,\"column\":null,\"length\":null}")
+    return r
+
+function parse_for_stmt(p: ref[Parser]) -> string_mod.String:
+    advance(p)
+    var bindings = string_mod.String.create()
+    bindings.push_byte('[')
+    var bfirst = true
+    while true:
+        if not bfirst:
+            bindings.push_byte(',')
+        bfirst = false
+        let bn = peek_lexeme(p)
+        advance(p)
+        bindings.append("{\"$mt_type\":\"AST:ForBinding\",\"name\":")
+        var be = lexer_mod.json_escaped(bn)
+        bindings.append(be.as_str())
+        be.release()
+        bindings.append(",\"line\":null,\"column\":null}")
+        if check(p, "comma"):
+            advance(p)
+        else:
+            break
+    bindings.push_byte(']')
+    consume(p, "in", "expected in in for loop")
+    var iterables = string_mod.String.create()
+    iterables.push_byte('[')
+    var it0 = parse_expr(p)
+    iterables.append(it0.as_str())
+    it0.release()
+    while check(p, "comma"):
+        advance(p)
+        iterables.push_byte(',')
+        var itn = parse_expr(p)
+        iterables.append(itn.as_str())
+        itn.release()
+    iterables.push_byte(']')
+    var body = parse_block(p)
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:ForStmt\",\"bindings\":")
+    r.append(bindings.as_str())
+    bindings.release()
+    r.append(",\"iterables\":")
+    r.append(iterables.as_str())
+    iterables.release()
+    r.append(",\"body\":")
+    r.append(body.as_str())
+    body.release()
+    r.append(",\"inline\":false,\"threaded\":false,\"line\":null,\"column\":null}")
+    return r
+
+function parse_defer_stmt(p: ref[Parser]) -> string_mod.String:
+    advance(p)
+    var r = string_mod.String.create()
+    if check(p, "colon"):
+        var body = parse_block(p)
+        r.append("{\"$mt_type\":\"AST:DeferStmt\",\"expression\":null,\"body\":")
+        r.append(body.as_str())
+        body.release()
+        r.append(",\"line\":null,\"column\":null,\"length\":null}")
+        return r
+    var e = parse_expr(p)
+    end_or_fail(p)
+    r.append("{\"$mt_type\":\"AST:DeferStmt\",\"expression\":")
+    r.append(e.as_str())
+    e.release()
+    r.append(",\"body\":null,\"line\":null,\"column\":null,\"length\":null}")
+    return r
+
+function parse_unsafe_block_stmt(p: ref[Parser]) -> string_mod.String:
+    advance(p)
+    var body = string_mod.String.create()
+    if check(p, "colon") and peek_kind2(p) == "newline":
+        body.release()
+        body = parse_block(p)
+    else:
+        consume(p, "colon", "expected : after unsafe")
+        body.push_byte('[')
+        var stmt = parse_statement(p)
+        body.append(stmt.as_str())
+        stmt.release()
+        body.push_byte(']')
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:UnsafeStmt\",\"body\":")
+    r.append(body.as_str())
+    body.release()
+    r.append(",\"line\":null,\"column\":null,\"length\":null}")
+    return r
+
+function parse_statement(p: ref[Parser]) -> string_mod.String:
+    let k = peek_kind(p)
+    if k == "let":
+        return parse_local_decl(p, "let")
+    if k == "var":
+        return parse_local_decl(p, "var")
+    if k == "return":
+        return parse_return_stmt(p)
+    if k == "pass":
+        advance(p)
+        end_or_fail(p)
+        return simple_stmt_json("PassStmt")
+    if k == "break":
+        advance(p)
+        end_or_fail(p)
+        return simple_stmt_json("BreakStmt")
+    if k == "continue":
+        advance(p)
+        end_or_fail(p)
+        return simple_stmt_json("ContinueStmt")
+    if k == "if" or k == "while" or k == "for" or k == "defer" or k == "unsafe" or k == "match" or k == "when" or k == "inline" or k == "parallel" or k == "gather" or k == "emit" or k == "static_assert":
+        p.stmt_failed = true
+        skip_statement(p)
+        return simple_stmt_json("PassStmt")
+    return parse_assign_or_expr_stmt(p)
 
 function parse_type(p: ref[Parser]) -> string_mod.String:
     if check(p, "fn"):

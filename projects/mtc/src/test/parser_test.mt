@@ -13,9 +13,10 @@ import parser.parser as parser_mod
 function parse_and_get_decls(source: str) -> int:
     var json = parser_mod.parse_to_ast_json(source, "test")
     let output = json.as_str()
-    var total = count_substring(output, "\"$mt_type\":\"AST:")
+    var consts = count_substring(output, "\"$mt_type\":\"AST:ConstDecl\"")
+    var funcs = count_substring(output, "\"$mt_type\":\"AST:FunctionDef\"")
     json.release()
-    return int<-(total - 1)
+    return int<-(consts + funcs)
 
 function count_substring(haystack: str, needle: str) -> ptr_uint:
     var count: ptr_uint = 0
