@@ -1806,6 +1806,17 @@ function is_capitalized(name: str) -> bool:
     let c = name.byte_at(0)
     return c >= 'A' and c <= 'Z'
 
+function is_primitive_type(name: str) -> bool:
+    if name == "int" or name == "uint" or name == "float" or name == "double":
+        return true
+    if name == "char" or name == "bool" or name == "byte" or name == "ubyte":
+        return true
+    if name == "short" or name == "ushort" or name == "long" or name == "ulong":
+        return true
+    if name == "usize" or name == "isize" or name == "ptr_uint" or name == "str" or name == "cstr":
+        return true
+    return false
+
 function is_spec_target(p: ref[Parser], name: str) -> bool:
     if is_builtin_spec(name):
         return true
@@ -1871,7 +1882,12 @@ function parse_postfix_expr(p: ref[Parser]) -> string_mod.String:
             recv_ident = member
         else if check(p, "lbracket"):
             advance(p)
-            if recv_ident != "" and is_spec_target(p, recv_ident):
+            var is_spec = recv_ident != "" and is_spec_target(p, recv_ident)
+            if not is_spec and check(p, "identifier"):
+                let cl = peek_lexeme(p)
+                if is_capitalized(cl) or is_primitive_type(cl):
+                    is_spec = true
+            if is_spec:
                 var args = parse_spec_args_json(p)
                 consume(p, "rbracket", "expected ] after specialization")
                 var ne = make_specialization(expr.as_str(), args.as_str())
@@ -2021,9 +2037,7 @@ function parse_if_expr(p: ref[Parser]) -> string_mod.String:
 
 function parse_expr(p: ref[Parser]) -> string_mod.String:
     if check(p, "match"):
-        skip_match(p)
-        p.stmt_failed = true
-        return placeholder_expr()
+        return parse_match(p, true)
     if check(p, "proc"):
         skip_proc(p)
         p.stmt_failed = true
@@ -2433,6 +2447,129 @@ function parse_unsafe_block_stmt(p: ref[Parser]) -> string_mod.String:
     r.append(",\"line\":null,\"column\":null,\"length\":null}")
     return r
 
+function parse_match(p: ref[Parser], as_value: bool) -> string_mod.String:
+    advance(p)
+    var subject = parse_expr(p)
+    var arms = string_mod.String.create()
+    arms.push_byte('[')
+    var arm_first = true
+    var expr_form = as_value
+    var form_decided = as_value
+
+    if not check(p, "colon"):
+        subject.release()
+        arms.release()
+        p.stmt_failed = true
+        skip_to_stmt_end(p)
+        if as_value:
+            return placeholder_expr()
+        return simple_stmt_json("PassStmt")
+    advance(p)
+    if check(p, "newline"):
+        advance(p)
+    if check(p, "indent"):
+        advance(p)
+    skip_newlines(p)
+    var safety: ptr_uint = 0
+    while not check(p, "dedent") and not is_eof(p):
+        safety += 1
+        if safety > 100000:
+            p.stmt_failed = true
+            break
+        var pat_buf = string_mod.String.create()
+        if check(p, "else"):
+            advance(p)
+            var pid = ident_json("_")
+            pat_buf.append(pid.as_str())
+            pid.release()
+        else:
+            var p0 = parse_binary(p, 5)
+            pat_buf.append(p0.as_str())
+            p0.release()
+            while check(p, "pipe"):
+                advance(p)
+                pat_buf.push_byte(0x1E)
+                var pn = parse_binary(p, 5)
+                pat_buf.append(pn.as_str())
+                pn.release()
+        var binding_json = string_mod.String.create()
+        binding_json.append("null")
+        if check(p, "as"):
+            advance(p)
+            let bn = peek_lexeme(p)
+            advance(p)
+            binding_json.release()
+            binding_json = lexer_mod.json_escaped(bn)
+        if not form_decided:
+            expr_form = check(p, "colon") and peek_kind2(p) != "newline"
+            form_decided = true
+        var payload = string_mod.String.create()
+        if expr_form:
+            consume(p, "colon", "expected : in match arm")
+            payload.release()
+            payload = parse_expr(p)
+            end_or_fail(p)
+        else:
+            payload.release()
+            payload = parse_block(p)
+        let arm_mt = if expr_form: "MatchExprArm" else: "MatchArm"
+        let payload_key = if expr_form: "value" else: "body"
+        let ps = pat_buf.as_str()
+        var seg_start: ptr_uint = 0
+        var j: ptr_uint = 0
+        while j <= ps.len:
+            if j == ps.len or ps.byte_at(j) == 0x1E:
+                let seg = ps.slice(seg_start, j - seg_start)
+                if not arm_first:
+                    arms.push_byte(',')
+                arm_first = false
+                arms.append("{\"$mt_type\":\"AST:")
+                arms.append(arm_mt)
+                arms.append("\",\"pattern\":")
+                arms.append(seg)
+                arms.append(",\"binding_name\":")
+                arms.append(binding_json.as_str())
+                arms.append(",\"binding_line\":null,\"binding_column\":null,\"")
+                arms.append(payload_key)
+                arms.append("\":")
+                arms.append(payload.as_str())
+                arms.push_byte('}')
+                seg_start = j + 1
+            j += 1
+        pat_buf.release()
+        binding_json.release()
+        payload.release()
+        skip_newlines(p)
+    if check(p, "dedent"):
+        advance(p)
+    arms.push_byte(']')
+    if expr_form:
+        var me = string_mod.String.create()
+        me.append("{\"$mt_type\":\"AST:MatchExpr\",\"expression\":")
+        me.append(subject.as_str())
+        subject.release()
+        me.append(",\"arms\":")
+        me.append(arms.as_str())
+        arms.release()
+        me.append(",\"line\":null,\"column\":null,\"length\":null}")
+        if as_value:
+            return me
+        var stmt = string_mod.String.create()
+        stmt.append("{\"$mt_type\":\"AST:ExpressionStmt\",\"expression\":")
+        stmt.append(me.as_str())
+        me.release()
+        stmt.append(",\"line\":null}")
+        return stmt
+    var r = string_mod.String.create()
+    r.append("{\"$mt_type\":\"AST:MatchStmt\",\"expression\":")
+    r.append(subject.as_str())
+    subject.release()
+    r.append(",\"arms\":")
+    r.append(arms.as_str())
+    arms.release()
+    r.append(",\"inline\":false,\"line\":null,\"column\":null,\"length\":null}")
+    return r
+
 function parse_statement(p: ref[Parser]) -> string_mod.String:
     let k = peek_kind(p)
     if k == "let":
@@ -2463,7 +2600,9 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
         return parse_defer_stmt(p)
     if k == "unsafe":
         return parse_unsafe_block_stmt(p)
-    if k == "match" or k == "when" or k == "inline" or k == "parallel" or k == "gather" or k == "emit" or k == "static_assert":
+    if k == "match":
+        return parse_match(p, false)
+    if k == "when" or k == "inline" or k == "parallel" or k == "gather" or k == "emit" or k == "static_assert":
         p.stmt_failed = true
         skip_statement(p)
         return simple_stmt_json("PassStmt")
