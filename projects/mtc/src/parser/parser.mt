@@ -24,6 +24,7 @@ struct Parser:
     pending_packed: bool
     pending_alignment: ptr_uint
     has_pending_alignment: bool
+    pending_attrs: string_mod.String
 
 function ast_open_node(p: ref[Parser], node_type: str) -> void:
     if p.need_comma:
@@ -108,6 +109,9 @@ function parse_source_file(p: ref[Parser], module_name: str) -> string_mod.Strin
 
         p.pending_packed = false
         p.has_pending_alignment = false
+        p.pending_attrs.clear()
+        p.pending_attrs.push_byte('[')
+        var attrs_first = true
         while check(p, "at"):
             advance(p)
             if check(p, "lbracket"):
@@ -115,27 +119,49 @@ function parse_source_file(p: ref[Parser], module_name: str) -> string_mod.Strin
                 while not check(p, "rbracket") and not is_eof(p):
                     if check(p, "identifier"):
                         let alx = peek_lexeme(p)
+                        if not attrs_first:
+                            p.pending_attrs.push_byte(',')
+                        attrs_first = false
+                        p.pending_attrs.append("{\"$mt_type\":\"AST:AttributeApplication\",\"name\":")
+                        var aname = qname_single_json(alx)
+                        p.pending_attrs.append(aname.as_str())
+                        aname.release()
+                        p.pending_attrs.append(",\"arguments\":[")
+                        advance(p)
                         if alx == "packed":
                             p.pending_packed = true
+                        var arg_first = true
+                        if check(p, "lparen"):
                             advance(p)
-                        else if alx == "align" or alx == "alignment":
-                            advance(p)
-                            if check(p, "lparen"):
-                                advance(p)
+                            while not check(p, "rparen") and not is_eof(p):
+                                if not arg_first:
+                                    p.pending_attrs.push_byte(',')
+                                arg_first = false
                                 if check(p, "integer"):
-                                    let al = lexer_mod.parse_int(peek_lexeme(p))
-                                    p.pending_alignment = ptr_uint<-al
-                                    p.has_pending_alignment = true
+                                    let ilex = peek_lexeme(p)
+                                    var il = int_lit_json(ilex)
+                                    p.pending_attrs.append(il.as_str())
+                                    il.release()
                                     advance(p)
-                                if check(p, "rparen"):
+                                    if alx == "align" or alx == "alignment":
+                                        let al = lexer_mod.parse_int(ilex)
+                                        p.pending_alignment = ptr_uint<-al
+                                        p.has_pending_alignment = true
+                                else:
                                     advance(p)
-                        else:
+                                if check(p, "comma"):
+                                    advance(p)
+                            if check(p, "rparen"):
+                                advance(p)
+                        p.pending_attrs.append("],\"line\":null,\"column\":null}")
+                        if check(p, "comma"):
                             advance(p)
                     else:
                         advance(p)
                 if check(p, "rbracket"):
                     advance(p)
             skip_newlines(p)
+        p.pending_attrs.push_byte(']')
 
         let decl_kind = peek_kind(p)
         if decl_kind == "eof" or decl_kind == "dedent":
@@ -420,8 +446,7 @@ function parse_const_with_visibility(p: ref[Parser], vis: str) -> void:
     ast.ast_raw(ref_of(p.ast_buf), "block_body", block_body_json.as_str())
     block_body_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
-    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    emit_attrs(p)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
     ast.ast_close(ref_of(p.ast_buf))
@@ -565,8 +590,7 @@ function parse_function_with_visibility(p: ref[Parser], vis: str, is_const: bool
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_bool(ref_of(p.ast_buf), "async", is_async)
     ast.ast_bool(ref_of(p.ast_buf), "const", is_const)
-    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    emit_attrs(p)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
     ast.ast_close(ref_of(p.ast_buf))
@@ -594,8 +618,7 @@ function parse_extern_function(p: ref[Parser]) -> void:
     ast.ast_array_end(ref_of(p.ast_buf))
     ast.ast_null(ref_of(p.ast_buf), "return_type")
     ast.ast_bool(ref_of(p.ast_buf), "variadic", false)
-    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    emit_attrs(p)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "mapping")
     ast.ast_close(ref_of(p.ast_buf))
@@ -629,8 +652,7 @@ function parse_foreign_function_with_visibility(p: ref[Parser], vis: str) -> voi
     ast.ast_bool(ref_of(p.ast_buf), "variadic", false)
     ast.ast_str(ref_of(p.ast_buf), "mapping", mapping_name)
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
-    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    emit_attrs(p)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_close(ref_of(p.ast_buf))
 
@@ -796,6 +818,12 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
     fields_json.release()
 
     if has_body:
+        var saved_packed = p.pending_packed
+        var saved_has_align = p.has_pending_alignment
+        var saved_align = p.pending_alignment
+        var saved_attrs = string_mod.String.create()
+        saved_attrs.append(p.pending_attrs.as_str())
+
         p.tokens.pos = body_start
         ast.ast_array_start(ref_of(p.ast_buf), "events")
         var efirst = true
@@ -825,6 +853,61 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
             skip_newlines(p)
             if p.tokens.pos >= body_end:
                 break
+            p.pending_packed = false
+            p.has_pending_alignment = false
+            p.pending_attrs.clear()
+            p.pending_attrs.push_byte('[')
+            var attrs_first = true
+            while check(p, "at"):
+                advance(p)
+                if check(p, "lbracket"):
+                    advance(p)
+                    while not check(p, "rbracket") and not is_eof(p):
+                        if check(p, "identifier"):
+                            let alx = peek_lexeme(p)
+                            if not attrs_first:
+                                p.pending_attrs.push_byte(',')
+                            attrs_first = false
+                            p.pending_attrs.append("{\"$mt_type\":\"AST:AttributeApplication\",\"name\":")
+                            var aname = qname_single_json(alx)
+                            p.pending_attrs.append(aname.as_str())
+                            aname.release()
+                            p.pending_attrs.append(",\"arguments\":[")
+                            advance(p)
+                            if alx == "packed":
+                                p.pending_packed = true
+                            var arg_first = true
+                            if check(p, "lparen"):
+                                advance(p)
+                                while not check(p, "rparen") and not is_eof(p):
+                                    if not arg_first:
+                                        p.pending_attrs.push_byte(',')
+                                    arg_first = false
+                                    if check(p, "integer"):
+                                        let ilex = peek_lexeme(p)
+                                        var il = int_lit_json(ilex)
+                                        p.pending_attrs.append(il.as_str())
+                                        il.release()
+                                        advance(p)
+                                        if alx == "align" or alx == "alignment":
+                                            let al = lexer_mod.parse_int(ilex)
+                                            p.pending_alignment = ptr_uint<-al
+                                            p.has_pending_alignment = true
+                                    else:
+                                        advance(p)
+                                    if check(p, "comma"):
+                                        advance(p)
+                                if check(p, "rparen"):
+                                    advance(p)
+                            p.pending_attrs.append("],\"line\":null,\"column\":null}")
+                            if check(p, "comma"):
+                                advance(p)
+                        else:
+                            advance(p)
+                    if check(p, "rbracket"):
+                        advance(p)
+                skip_newlines(p)
+            p.pending_attrs.push_byte(']')
             let k = peek_kind(p)
             if k == "struct":
                 if not nfirst:
@@ -856,37 +939,15 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
                     ast.ast_comma(ref_of(p.ast_buf))
                 nfirst = false
                 parse_opaque_with_visibility(p, "")
-            else if k == "at":
-                advance(p)
-                if check(p, "lbracket"):
-                    advance(p)
-                    while not check(p, "rbracket") and not is_eof(p):
-                        if check(p, "identifier"):
-                            let alx = peek_lexeme(p)
-                            if alx == "packed":
-                                p.pending_packed = true
-                                advance(p)
-                            else if alx == "align" or alx == "alignment":
-                                advance(p)
-                                if check(p, "lparen"):
-                                    advance(p)
-                                    if check(p, "integer"):
-                                        let al = lexer_mod.parse_int(peek_lexeme(p))
-                                        p.pending_alignment = ptr_uint<-al
-                                        p.has_pending_alignment = true
-                                        advance(p)
-                                    if check(p, "rparen"):
-                                        advance(p)
-                            else:
-                                advance(p)
-                        else:
-                            advance(p)
-                    if check(p, "rbracket"):
-                        advance(p)
-                skip_newlines(p)
             else:
                 skip_statement(p)
         ast.ast_array_end(ref_of(p.ast_buf))
+
+        p.pending_packed = saved_packed
+        p.has_pending_alignment = saved_has_align
+        p.pending_alignment = saved_align
+        p.pending_attrs.release()
+        p.pending_attrs = saved_attrs
 
         p.tokens.pos = body_end
     else:
@@ -898,8 +959,7 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
     if check(p, "dedent"):
         advance(p)
 
-    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    emit_attrs(p)
     ast.ast_bool(ref_of(p.ast_buf), "packed", p.pending_packed)
     p.pending_packed = false
     if p.has_pending_alignment:
@@ -1045,8 +1105,7 @@ function parse_enum_or_flags(p: ref[Parser], is_flags: bool) -> void:
     ast.ast_raw(ref_of(p.ast_buf), "members", members_json.as_str())
     members_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", "")
-    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    emit_attrs(p)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
     ast.ast_close(ref_of(p.ast_buf))
@@ -1106,8 +1165,7 @@ function parse_enum_with_visibility(p: ref[Parser], vis: str, is_flags: bool) ->
     ast.ast_raw(ref_of(p.ast_buf), "members", members_json.as_str())
     members_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
-    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    emit_attrs(p)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
     ast.ast_close(ref_of(p.ast_buf))
@@ -1161,8 +1219,7 @@ function parse_union_with_visibility(p: ref[Parser], vis: str) -> void:
     ast.ast_raw(ref_of(p.ast_buf), "fields", fields_json.as_str())
     fields_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
-    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    emit_attrs(p)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
     ast.ast_close(ref_of(p.ast_buf))
@@ -1285,8 +1342,7 @@ function parse_variant_with_visibility(p: ref[Parser], vis: str) -> void:
     ast.ast_raw(ref_of(p.ast_buf), "arms", arms_json.as_str())
     arms_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
-    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    emit_attrs(p)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
     ast.ast_close(ref_of(p.ast_buf))
@@ -1493,8 +1549,7 @@ function parse_one_method(p: ref[Parser], is_interface: bool) -> void:
     if not is_interface:
         ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
 
-    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    emit_attrs(p)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
     ast.ast_close(ref_of(p.ast_buf))
@@ -1578,11 +1633,18 @@ function parse_event_with_visibility(p: ref[Parser], vis: str) -> void:
         ast.ast_null(ref_of(p.ast_buf), "payload_type")
     payload.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
-    ast.ast_array_start(ref_of(p.ast_buf), "attributes")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    emit_attrs(p)
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
     ast.ast_close(ref_of(p.ast_buf))
+
+function emit_attrs(p: ref[Parser]) -> void:
+    if p.pending_attrs.len > 0:
+        ast.ast_raw(ref_of(p.ast_buf), "attributes", p.pending_attrs.as_str())
+        p.pending_attrs.clear()
+    else:
+        ast.ast_array_start(ref_of(p.ast_buf), "attributes")
+        ast.ast_array_end(ref_of(p.ast_buf))
 
 # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -1884,6 +1946,13 @@ function make_unaryop(op: str, operand: str) -> string_mod.String:
     r.append(",\"operand\":")
     r.append(operand)
     r.push_byte('}')
+    return r
+
+function qname_single_json(name: str) -> string_mod.String:
+    var parts = vec_mod.Vec[str].create()
+    parts.push(name)
+    var r = ast.name_json(parts)
+    parts.release()
     return r
 
 function ident_json(name: str) -> string_mod.String:
@@ -3500,6 +3569,7 @@ public function parse_to_ast_json(source: str, module_name: str) -> string_mod.S
         pending_packed = false,
         pending_alignment = 0,
         has_pending_alignment = false,
+        pending_attrs = string_mod.String.create(),
     )
     collect_known_generics(ref_of(p))
     return parse_source_file(ref_of(p), module_name)

@@ -124,7 +124,7 @@ to Stage 4.
 
 **Location:** `projects/mtc/src/parser/`
 
-**Verification:** Differential parity harness (`projects/mtc/tools/parity.rb`) comparing self-host `mtc parse` AST JSON against `ruby bin/mtc parse --emit-ast-json` on the examples corpus with `--ignore-positions` (Milestone A). **5 of 13 examples fully pass (0 diffs); total diffs 110 (accuracy 87, shape 23).** Parser is **crash-safe by construction** for the statement/expression/method paths across the corpus — verified via the sandboxed binary. (Two pre-existing declaration-parser fatals remain: `extending bin.Writer:` / `extending ptr[Wave]:` — see pitfalls.)
+**Verification:** Differential parity harness (`projects/mtc/tools/parity.rb`) comparing self-host `mtc parse` AST JSON against `ruby bin/mtc parse --emit-ast-json` on the examples corpus with `--ignore-positions` (Milestone A). **6 of 13 examples fully pass (0 diffs); total diffs 72 (accuracy 57, shape 15).** Parser is **crash-safe by construction** for the statement/expression/method paths across the corpus — verified via the sandboxed binary.
 
 **Architecture:**
 - `token_stream.mt` (68 lines): peek/advance/check/match/consume cursor over `Vec[lexer.Token]`
@@ -167,17 +167,18 @@ to Stage 4.
 
 ### Strategy for the remaining work
 
-The path to full parser parity is now purely **declaration-structure features and the last few expression/statement forms**:
+Status: **6/13 pass, accuracy=57, shape=15, 0 errors** (Commit `7f3e7ed0`).
 
 | Feature | Est. diffs | Notes |
 |---|---|---|
-| ~~Extending/interface methods~~ | ~~21~~ | **DONE** — `MethodDef`/`InterfaceMethodDecl` parsed inside `extending`/`interface` bodies (`parse_method_block` / `parse_one_method`); reuses the type-param + param + return-type parsers and the crash-safe body path. Dropped examples accuracy 107 → 87. |
-| Qualified / `ptr[…]` extending receiver | crashes + ~few | `extending bin.Writer:` / `extending ptr[Wave]:` — `parse_extending` captures only the bare first name and leaves the cursor mid-`.`/`[`, causing a downstream `unexpected public declaration` fatal. Fix by parsing the receiver as a real `TypeRef` (also clears the `type_name.arguments[len]` diff on `extending Indexed[T]`). Good next slice. |
-| Struct body enhancement | 32 | Enhance `parse_fields_json` to also capture nested declarations, events, and field-attribute-decorated fields — one body-parser enhancement clears fields (11) + nested_types (10) + attributes (11) |
-| F-strings in bodies | ~3 | `FormatString` from fstring token parts with embedded-expression re-parsing |
-| Parallel-for / gather / destructure | ~5 | `ForStmt{threaded:true}`, `GatherStmt`, destructure pattern in `let` |
-| Lifetime params + misc | ~8 | `struct Buffer[@a]`, decl-level `when`, `packed`/`alignment` from struct attributes |
-| Positions (Milestone B) | — | Turn on `line`/`column`/`length` on every AST node |
+| ~~Extending/interface methods~~ | ~~21~~ | **DONE** — `parse_method_block` / `parse_one_method`. Dropped accuracy 107 → 87. |
+| ~~Qualified / `ptr[…]` extending receiver + `public foreign`~~ | ~~2 crashes~~ | **DONE** — `parse_type(p)` for receiver type_name; `parse_foreign_function_with_visibility`. Dropped accuracy 87 → 80, shape 23 → 14. |
+| ~~Struct body (fields, nested_types, events)~~ | ~~32~~ | **DONE** — `parse_fields_json` no longer bails out; multi-pass body emits nested type decls + events. `parse_struct_params` splits lifetime params from type params. Dropped accuracy 80 → 57. |
+| F-strings in bodies | ~5 | `FormatString` from fstring token parts with embedded-expression re-parsing. Cause of several `.body[len]` discards. |
+| Parallel / gather / destructure | ~5 | `ForStmt{threaded:true}`, `GatherStmt`, destructure `let (a, b) = …`. Also trigger `.body[len]` discards. |
+| Attribute parsing (`@[…]` decorators) | ~6 | Populates declaration-level `attributes` arrays; struct-level `@[packed]`/`@[alignment(N)]` → `packed`/`alignment` fields. |
+| Event payload details | ~2 | EventDecl payload types differ (content accuracy). |
+| Positions (Milestone B) | — | Turn on `line`/`column`/`length` on every AST node. |
 
 ### New pitfalls from Stage 2
 
@@ -187,11 +188,10 @@ The path to full parser parity is now purely **declaration-structure features an
 - **Heuristic specialization classification measures net-negative.** The specialization decision (`IndexAccess` vs `Specialization`) was attempted twice with heuristics (capitalization + builtin-list); both times measured net-negative because partial-correctness backfires — a kept-but-imperfect body explodes into many leaf diffs. The accurate approach uses **known-name tracking** via a token pre-pass that collects generic-callable names, plus builtin-list + capitalization + **content-type check** (bracket content is a type → specialization regardless of receiver name). This combined approach is accurate and net-positive.
 - **Block-consuming value expressions need special handling at statement-end.** When a `let`/`return` value is a block-form proc or match expression, the expression's block already consumed its trailing dedent — the cursor lands at the *next* statement, not at a newline. The `end_or_fail` guard would falsely flag this as a desync. The fix: `block_expr_done` flag set by block-form value expressions, checked+consumed by `end_or_fail`, so the statement-end logic skips the end-of-statement check when the block already ended it.
 - **Member-name tracking for specialization.** Specialization can occur on qualified names (`module.Type[args]`), not just bare identifiers. The parser tracks the *last member name* in `recv_ident` (updated on `.member`, cleared on `[`/`(`/`?`) so that `member[Type]` is correctly classified.
-- **Qualified / pointer extending receivers crash the declaration parser (pre-existing).** `parse_extending` captures only the bare first name (`peek_lexeme`), so `extending bin.Writer:` and `extending ptr[Wave]:` leave the cursor at `.`/`[`; the leftover tokens are then mis-dispatched at the top level and trip `fatal("unexpected public declaration")`. Confirmed present before the method work (`std/serialize.mt`, `std/raylib.mt`). The fix is to parse the receiver as a real `TypeRef` (see remaining-work table); it also clears the `type_name.arguments[len]` diff on generic receivers like `extending Indexed[T]`.
 
 ### Code size (parser.mt)
 
-~3200 lines (up from the original 1180-line skeleton), covering all declaration types, a full expression parser, a crash-safe statement parser, and the known-name tracking infrastructure.
+~3370 lines (up from the original 1180-line skeleton), covering all declaration types, a full expression parser, a crash-safe statement parser, struct body parsing with nested types and events, extending/interface methods, and the known-name tracking infrastructure.
 
 ### Tests
 
