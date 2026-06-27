@@ -21,6 +21,9 @@ struct Parser:
     stmt_failed: bool
     known_generics: vec_mod.Vec[str]
     block_expr_done: bool
+    pending_packed: bool
+    pending_alignment: ptr_uint
+    has_pending_alignment: bool
 
 function ast_open_node(p: ref[Parser], node_type: str) -> void:
     if p.need_comma:
@@ -103,16 +106,34 @@ function parse_source_file(p: ref[Parser], module_name: str) -> string_mod.Strin
         if safety > 50000:
             fatal(c"parse: infinite loop safety limit reached")
 
+        p.pending_packed = false
+        p.has_pending_alignment = false
         while check(p, "at"):
             advance(p)
             if check(p, "lbracket"):
                 advance(p)
-                var bd: ptr_uint = 1
-                while bd > 0 and not is_eof(p):
-                    if check(p, "lbracket"):
-                        bd += 1
-                    else if check(p, "rbracket"):
-                        bd -= 1
+                while not check(p, "rbracket") and not is_eof(p):
+                    if check(p, "identifier"):
+                        let alx = peek_lexeme(p)
+                        if alx == "packed":
+                            p.pending_packed = true
+                            advance(p)
+                        else if alx == "align" or alx == "alignment":
+                            advance(p)
+                            if check(p, "lparen"):
+                                advance(p)
+                                if check(p, "integer"):
+                                    let al = lexer_mod.parse_int(peek_lexeme(p))
+                                    p.pending_alignment = ptr_uint<-al
+                                    p.has_pending_alignment = true
+                                    advance(p)
+                                if check(p, "rparen"):
+                                    advance(p)
+                        else:
+                            advance(p)
+                    else:
+                        advance(p)
+                if check(p, "rbracket"):
                     advance(p)
             skip_newlines(p)
 
@@ -829,6 +850,34 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
                     ast.ast_comma(ref_of(p.ast_buf))
                 nfirst = false
                 parse_opaque_with_visibility(p, "")
+            else if k == "at":
+                advance(p)
+                if check(p, "lbracket"):
+                    advance(p)
+                    while not check(p, "rbracket") and not is_eof(p):
+                        if check(p, "identifier"):
+                            let alx = peek_lexeme(p)
+                            if alx == "packed":
+                                p.pending_packed = true
+                                advance(p)
+                            else if alx == "align" or alx == "alignment":
+                                advance(p)
+                                if check(p, "lparen"):
+                                    advance(p)
+                                    if check(p, "integer"):
+                                        let al = lexer_mod.parse_int(peek_lexeme(p))
+                                        p.pending_alignment = ptr_uint<-al
+                                        p.has_pending_alignment = true
+                                        advance(p)
+                                    if check(p, "rparen"):
+                                        advance(p)
+                            else:
+                                advance(p)
+                        else:
+                            advance(p)
+                    if check(p, "rbracket"):
+                        advance(p)
+                skip_newlines(p)
             else:
                 skip_statement(p)
         ast.ast_array_end(ref_of(p.ast_buf))
@@ -845,8 +894,15 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
 
     ast.ast_array_start(ref_of(p.ast_buf), "attributes")
     ast.ast_array_end(ref_of(p.ast_buf))
-    ast.ast_bool(ref_of(p.ast_buf), "packed", false)
-    ast.ast_null(ref_of(p.ast_buf), "alignment")
+    ast.ast_bool(ref_of(p.ast_buf), "packed", p.pending_packed)
+    p.pending_packed = false
+    if p.has_pending_alignment:
+        let al = p.pending_alignment
+        ast.ast_key(ref_of(p.ast_buf), "alignment")
+        fmt.append_ptr_uint(ref_of(p.ast_buf.buf), al)
+        p.has_pending_alignment = false
+    else:
+        ast.ast_null(ref_of(p.ast_buf), "alignment")
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_raw(ref_of(p.ast_buf), "lifetime_params", lifetime_json.as_str())
     lifetime_json.release()
@@ -3435,6 +3491,9 @@ public function parse_to_ast_json(source: str, module_name: str) -> string_mod.S
         tokens = ts.TokenStream.from_source(source),
         ast_buf = ast.AstBuf(buf = string_mod.String.create(), first_field = true),
         known_generics = vec_mod.Vec[str].create(),
+        pending_packed = false,
+        pending_alignment = 0,
+        has_pending_alignment = false,
     )
     collect_known_generics(ref_of(p))
     return parse_source_file(ref_of(p), module_name)
