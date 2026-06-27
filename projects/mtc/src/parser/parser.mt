@@ -3562,7 +3562,7 @@ function parse_when_stmt(p: ref[Parser]) -> string_mod.String:
             if not afirst:
                 arms.push_byte(',')
             afirst = false
-            arms.append("{\"$mt_type\":\"AST:WhenBranch\",\"pattern\":")
+            arms.append("{\"$mt_type\":\"AST:MatchArm\",\"pattern\":")
             arms.append(pattern.as_str())
             pattern.release()
             arms.append(",\"binding_name\":")
@@ -3706,7 +3706,24 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
         handles.release()
         r.append(",\"line\":null,\"column\":null}")
         return r
-    if k == "emit" or k == "static_assert":
+    if k == "static_assert":
+        advance(p)
+        consume(p, "lparen", "expected (")
+        var cond = parse_expr(p)
+        consume(p, "comma", "expected , in static_assert")
+        var msg = parse_expr(p)
+        consume(p, "rparen", "expected ) after static_assert")
+        end_or_fail(p)
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:StaticAssert\",\"condition\":")
+        r.append(cond.as_str())
+        cond.release()
+        r.append(",\"message\":")
+        r.append(msg.as_str())
+        msg.release()
+        r.append(",\"line\":null}")
+        return r
+    if k == "emit":
         skip_statement(p)
         return simple_stmt_json("PassStmt")
     return parse_assign_or_expr_stmt(p)
