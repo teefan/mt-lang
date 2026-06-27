@@ -582,6 +582,53 @@ function parse_foreign_function(p: ref[Parser]) -> void:
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_close(ref_of(p.ast_buf))
 
+function parse_fields_json(p: ref[Parser]) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.push_byte('[')
+    var first = true
+    var complex = false
+    skip_newlines(p)
+    var safety: ptr_uint = 0
+    while not check(p, "dedent") and not is_eof(p):
+        safety += 1
+        if safety > 100000:
+            complex = true
+            break
+        let k = peek_kind(p)
+        if k == "struct" or k == "enum" or k == "union" or k == "variant" or k == "flags" or k == "opaque" or k == "event" or k == "at":
+            complex = true
+            skip_statement(p)
+        else:
+            let fname = peek_lexeme(p)
+            advance(p)
+            if check(p, "colon"):
+                advance(p)
+                var ft = parse_type(p)
+                if not first:
+                    r.push_byte(',')
+                first = false
+                r.append("{\"$mt_type\":\"AST:Field\",\"name\":")
+                var ne = lexer_mod.json_escaped(fname)
+                r.append(ne.as_str())
+                ne.release()
+                r.append(",\"type\":")
+                r.append(ft.as_str())
+                ft.release()
+                r.append(",\"attributes\":[],\"line\":null,\"column\":null}")
+                if check(p, "newline"):
+                    advance(p)
+            else:
+                complex = true
+                skip_to_stmt_end(p)
+        skip_newlines(p)
+    r.push_byte(']')
+    if complex:
+        r.release()
+        var empty = string_mod.String.create()
+        empty.append("[]")
+        return empty
+    return r
+
 function parse_struct(p: ref[Parser]) -> void:
     parse_struct_with_visibility(p, "")
 
@@ -636,13 +683,35 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
         first_impl = false
     implements_json.push_byte(']')
 
+    var fields_json = string_mod.String.create()
+    fields_json.append("[]")
     if check(p, "colon"):
         advance(p)
         consume_nl(p)
         if check(p, "indent"):
             advance(p)
-            while not check(p, "dedent") and not is_eof(p):
-                skip_statement(p)
+            let body_start = p.tokens.pos
+            var bdepth: ptr_uint = 1
+            while not is_eof(p):
+                if check(p, "indent"):
+                    bdepth += 1
+                    advance(p)
+                else if check(p, "dedent"):
+                    bdepth -= 1
+                    if bdepth == 0:
+                        break
+                    advance(p)
+                else:
+                    advance(p)
+            let body_end = p.tokens.pos
+            p.tokens.pos = body_start
+            fields_json.release()
+            fields_json = parse_fields_json(p)
+            if p.tokens.pos != body_end:
+                fields_json.release()
+                fields_json = string_mod.String.create()
+                fields_json.append("[]")
+            p.tokens.pos = body_end
             if check(p, "dedent"):
                 advance(p)
 
@@ -652,8 +721,8 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
     ast.ast_array_end(ref_of(p.ast_buf))
     ast.ast_raw(ref_of(p.ast_buf), "implements", implements_json.as_str())
     ast.ast_null(ref_of(p.ast_buf), "c_name")
-    ast.ast_array_start(ref_of(p.ast_buf), "fields")
-    ast.ast_array_end(ref_of(p.ast_buf))
+    ast.ast_raw(ref_of(p.ast_buf), "fields", fields_json.as_str())
+    fields_json.release()
     ast.ast_array_start(ref_of(p.ast_buf), "events")
     ast.ast_array_end(ref_of(p.ast_buf))
     ast.ast_array_start(ref_of(p.ast_buf), "nested_types")
