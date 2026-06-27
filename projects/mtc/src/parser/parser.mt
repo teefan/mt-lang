@@ -808,6 +808,12 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
                     ast.ast_comma(ref_of(p.ast_buf))
                 efirst = false
                 parse_event(p)
+            else if check(p, "public") and peek_kind2(p) == "event":
+                advance(p)
+                if not efirst:
+                    ast.ast_comma(ref_of(p.ast_buf))
+                efirst = false
+                parse_event_with_visibility(p, "public")
             else:
                 skip_statement(p)
         ast.ast_array_end(ref_of(p.ast_buf))
