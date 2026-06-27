@@ -481,28 +481,55 @@ function parse_declaration_safe(p: ref[Parser]) -> void:
 
 function parse_when_block(p: ref[Parser]) -> void:
     advance(p)
-    var safety: ptr_uint = 0
-    while not check(p, "newline") and not is_eof(p):
-        safety += 1
-        if safety > 100:
-            break
+    var disc_expr = parse_expr(p)
+    var arms = string_mod.String.create()
+    arms.push_byte('[')
+    var afirst = true
+    if check(p, "colon"):
         advance(p)
-    if check(p, "newline"):
+        consume(p, "newline", "expected newline after when")
+        consume(p, "indent", "expected indented block")
+        skip_newlines(p)
+        while not check(p, "dedent") and not is_eof(p):
+            var pattern = parse_expr(p)
+            var binding = string_mod.String.create()
+            binding.append("null")
+            if check(p, "as"):
+                advance(p)
+                let bn = peek_lexeme(p)
+                advance(p)
+                binding.release()
+                binding = lexer_mod.json_escaped(bn)
+            var body = parse_decl_block_body(p)
+            if not afirst:
+                arms.push_byte(',')
+            afirst = false
+            arms.append("{\"$mt_type\":\"AST:WhenBranch\",\"pattern\":")
+            arms.append(pattern.as_str())
+            pattern.release()
+            arms.append(",\"binding_name\":")
+            arms.append(binding.as_str())
+            binding.release()
+            arms.append(",\"binding_line\":null,\"binding_column\":null,\"body\":")
+            arms.append(body.as_str())
+            body.release()
+            arms.push_byte('}')
+            skip_newlines(p)
+        consume(p, "dedent", "expected end of when block")
+    arms.push_byte(']')
+    var else_body = string_mod.String.create()
+    else_body.append("null")
+    if check(p, "else"):
         advance(p)
-    if check(p, "indent"):
-        advance(p)
-        var depth: ptr_uint = 1
-        while depth > 0 and not is_eof(p):
-            if check(p, "indent") or check(p, "when"):
-                depth += 1
-            else if check(p, "dedent"):
-                depth -= 1
-            advance(p)
+        else_body.release()
+        else_body = parse_block_or_inline(p)
     ast.ast_open(ref_of(p.ast_buf), "WhenStmt")
-    ast.ast_null(ref_of(p.ast_buf), "discriminant")
-    ast.ast_array_start(ref_of(p.ast_buf), "branches")
-    ast.ast_array_end(ref_of(p.ast_buf))
-    ast.ast_null(ref_of(p.ast_buf), "else_body")
+    ast.ast_raw(ref_of(p.ast_buf), "discriminant", disc_expr.as_str())
+    disc_expr.release()
+    ast.ast_raw(ref_of(p.ast_buf), "branches", arms.as_str())
+    arms.release()
+    ast.ast_raw(ref_of(p.ast_buf), "else_body", else_body.as_str())
+    else_body.release()
     ast.ast_null(ref_of(p.ast_buf), "line")
     ast.ast_null(ref_of(p.ast_buf), "column")
     ast.ast_null(ref_of(p.ast_buf), "length")
@@ -3050,6 +3077,34 @@ function parse_stmt_block_body(p: ref[Parser]) -> string_mod.String:
         var stmt = parse_statement(p)
         r.append(stmt.as_str())
         stmt.release()
+        skip_newlines(p)
+    r.push_byte(']')
+    return r
+
+function parse_decl_block_body(p: ref[Parser]) -> string_mod.String:
+    var r = string_mod.String.create()
+    r.push_byte('[')
+    skip_newlines(p)
+    var first = true
+    var safety: ptr_uint = 0
+    while not check(p, "dedent") and not is_eof(p):
+        safety += 1
+        if safety > 200000:
+            break
+        var saved_buf = string_mod.String.create()
+        saved_buf.append(p.ast_buf.buf.as_str())
+        var saved_first = p.ast_buf.first_field
+        p.ast_buf.buf.clear()
+        p.ast_buf.first_field = true
+        parse_declaration_safe(p)
+        if p.ast_buf.buf.len > 0:
+            if not first:
+                r.push_byte(',')
+            first = false
+            r.append(p.ast_buf.buf.as_str())
+        p.ast_buf.buf.release()
+        p.ast_buf.buf = saved_buf
+        p.ast_buf.first_field = saved_first
         skip_newlines(p)
     r.push_byte(']')
     return r
