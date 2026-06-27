@@ -2683,7 +2683,8 @@ function parse_postfix_expr(p: ref[Parser]) -> string_mod.String:
             if not is_spec and check(p, "identifier"):
                 let cl = peek_lexeme(p)
                 if is_capitalized(cl) or is_primitive_type(cl):
-                    is_spec = true
+                    if recv_ident != "ptr" and recv_ident != "const_ptr":
+                        is_spec = true
             if is_spec:
                 var args = parse_spec_args_json(p)
                 consume(p, "rbracket", "expected ] after specialization")
