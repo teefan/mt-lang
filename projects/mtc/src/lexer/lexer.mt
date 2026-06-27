@@ -70,34 +70,34 @@ function strip_int_suffix(lex: str) -> str:
 
 # ── integer parsing ───────────────────────────────────────────────────────
 
-function parse_int_body(text: str, base_val: int) -> int:
-    var result: int = 0
+function parse_int_body(text: str, base_val: ulong) -> ulong:
+    var result: ulong = 0
     var i: ptr_uint = 0
     while i < text.len:
         let ch = text.byte_at(i)
         if ch == '_':
             i += 1
             continue
-        var dv: int
+        var dv: ulong
         if ch >= '0' and ch <= '9':
-            dv = int<-ch - 48
+            dv = ulong<-(int<-ch - 48)
         else if ch >= 'a' and ch <= 'f':
-            dv = int<-ch - 87
+            dv = ulong<-(int<-ch - 87)
         else if ch >= 'A' and ch <= 'F':
-            dv = int<-ch - 55
+            dv = ulong<-(int<-ch - 55)
         else:
             dv = 0
         result = result * base_val + dv
         i += 1
     return result
 
-function parse_int(lex: str) -> int:
+function parse_int(lex: str) -> ulong:
     let body = strip_int_suffix(lex)
     if body.starts_with("0x") or body.starts_with("0X"):
-        return parse_int_body(body.slice(2, body.len - 2), 16)
+        return parse_int_body(body.slice(2, body.len - 2), 16ul)
     else if body.starts_with("0b") or body.starts_with("0B"):
-        return parse_int_body(body.slice(2, body.len - 2), 2)
-    return parse_int_body(body, 10)
+        return parse_int_body(body.slice(2, body.len - 2), 2ul)
+    return parse_int_body(body, 10ul)
 
 # ── float literal to JSON number ──────────────────────────────────────────
 
@@ -170,6 +170,7 @@ struct LexState:
     indent_stack: vec_mod.Vec[ptr_uint]
     group_depth: ptr_uint
     cont_pending: bool
+    line_done: bool
     line_off: ptr_uint
     line_num: ptr_uint
     output_tokens: vec_mod.Vec[Token]
@@ -282,7 +283,7 @@ function lex_number(state: ref[LexState], offset: ptr_uint, column: ptr_uint) ->
                 let lm = s.slice(offset, end_off - offset)
                 let lit = parse_int(lm)
                 var ls = string_mod.String.create()
-                fmt.append_int(ref_of(ls), lit)
+                fmt.append_ulong(ref_of(ls), lit)
                 emit_tok(state, "integer", lm, ls.as_str(), state.line_num, column, offset, end_off)
                 ls.release()
                 state.pos = end_off
@@ -302,7 +303,7 @@ function lex_number(state: ref[LexState], offset: ptr_uint, column: ptr_uint) ->
                 let lm = s.slice(offset, end_off - offset)
                 let lit = parse_int(lm)
                 var ls = string_mod.String.create()
-                fmt.append_int(ref_of(ls), lit)
+                fmt.append_ulong(ref_of(ls), lit)
                 emit_tok(state, "integer", lm, ls.as_str(), state.line_num, column, offset, end_off)
                 ls.release()
                 state.pos = end_off
@@ -354,7 +355,7 @@ function lex_number(state: ref[LexState], offset: ptr_uint, column: ptr_uint) ->
     let lm = s.slice(offset, end_off - offset)
     let lit = parse_int(lm)
     var ls = string_mod.String.create()
-    fmt.append_int(ref_of(ls), lit)
+    fmt.append_ulong(ref_of(ls), lit)
     emit_tok(state, "integer", lm, ls.as_str(), state.line_num, column, offset, end_off)
     ls.release()
     state.pos = end_off
@@ -373,6 +374,12 @@ function lex_strlit(state: ref[LexState], offset: ptr_uint, column: ptr_uint, pr
     i += 1
 
     var consumed_lines: ptr_uint = 1
+    var last_line_start: ptr_uint = state.line_off
+    var line_indent: ptr_uint = 0
+    var li_scan = state.line_off
+    while li_scan < s.len and s.byte_at(li_scan) == ' ':
+        line_indent += 1
+        li_scan += 1
 
     while true:
         while i < s.len:
@@ -415,11 +422,13 @@ function lex_strlit(state: ref[LexState], offset: ptr_uint, column: ptr_uint, pr
             var peek = i
             if peek < s.len and s.byte_at(peek) == '\n':
                 peek += 1
+                let line_start_after_nl = peek
                 var indent_cnt: ptr_uint = 0
                 while peek < s.len and s.byte_at(peek) == ' ':
                     indent_cnt += 1
                     peek += 1
-                if peek < s.len and s.byte_at(peek) == '"':
+                if indent_cnt > line_indent and peek < s.len and s.byte_at(peek) == '"':
+                    last_line_start = line_start_after_nl
                     i = peek + 1
                     consumed_lines += 1
                     continue
@@ -436,7 +445,7 @@ function lex_strlit(state: ref[LexState], offset: ptr_uint, column: ptr_uint, pr
 
     if consumed_lines > 1:
         state.line_num = state.line_num + consumed_lines - 1
-        state.line_off = end_off
+        state.line_off = last_line_start
         state.pos = end_off
     else:
         state.pos = end_off
@@ -735,6 +744,7 @@ function lex_fstring(state: ref[LexState], offset: ptr_uint, column: ptr_uint) -
                 first_part = false
 
             i += 2
+            let expr_col_start = ptr_uint<-(i - state.line_off + 1)
             var expr = string_mod.String.create()
             var inner: ptr_uint = 1
             var fmt_spec = string_mod.String.create()
@@ -749,7 +759,7 @@ function lex_fstring(state: ref[LexState], offset: ptr_uint, column: ptr_uint) -
                     inner -= 1
                     if inner > 0:
                         expr.push_byte(ec)
-                        i += 1
+                    i += 1
                 else if ec == ':' and inner == 1:
                     i += 1
                     while i < s.len and s.byte_at(i) != '}':
@@ -775,7 +785,7 @@ function lex_fstring(state: ref[LexState], offset: ptr_uint, column: ptr_uint) -
             se.release()
 
             let expr_line = state.line_num
-            let expr_col = ptr_uint<-(i - state.line_off + 1)
+            let expr_col = expr_col_start
             parts.append(",\"line\":")
             fmt.append_ptr_uint(ref_of(parts), expr_line)
             parts.append(",\"column\":")
@@ -793,6 +803,30 @@ function lex_fstring(state: ref[LexState], offset: ptr_uint, column: ptr_uint) -
             expr.release()
             fmt_spec.release()
             first_part = false
+            continue
+
+        if ch == '\\':
+            i += 1
+            if i >= s.len:
+                fatal(c"lexer: eof in fstring escape")
+            let esc = s.byte_at(i)
+            i += 1
+            if esc == 'n':
+                text.push_byte('\n')
+            else if esc == 'r':
+                text.push_byte('\r')
+            else if esc == 't':
+                text.push_byte('\t')
+            else if esc == '0':
+                text.push_byte(0)
+            else if esc == '"':
+                text.push_byte('"')
+            else if esc == '\'':
+                text.push_byte('\'')
+            else if esc == '\\':
+                text.push_byte('\\')
+            else:
+                text.push_byte(esc)
             continue
 
         text.push_byte(ch)
@@ -816,6 +850,128 @@ function lex_fstring(state: ref[LexState], offset: ptr_uint, column: ptr_uint) -
     text.release()
     state.pos = end_off
 
+# ── heredoc f-string interpolation ────────────────────────────────────────
+# Parses #{...} parts from a dedented heredoc content buffer.
+
+function heredoc_fstring_parts(content: str, start_line: ptr_uint, base_col: ptr_uint) -> string_mod.String:
+    var parts = string_mod.String.create()
+    parts.push_byte('[')
+    var first_part = true
+    var text = string_mod.String.create()
+
+    var line = start_line
+    var col = base_col
+
+    var i: ptr_uint = 0
+    while i < content.len:
+        let ch = content.byte_at(i)
+
+        if ch == '#' and i + 1 < content.len and content.byte_at(i + 1) == '{':
+            if text.len > 0:
+                if not first_part:
+                    parts.push_byte(',')
+                parts.append("{\"kind\":\"text\",\"value\":")
+                var te = json_escaped(text.as_str())
+                parts.append(te.as_str())
+                te.release()
+                parts.push_byte('}')
+                text.clear()
+                first_part = false
+
+            let expr_line = line
+            let expr_col = col + 2
+            i += 2
+            col += 2
+
+            var expr = string_mod.String.create()
+            var fmt_spec = string_mod.String.create()
+            var inner: ptr_uint = 1
+            var in_spec = false
+
+            while i < content.len and inner > 0:
+                let ec = content.byte_at(i)
+                if ec == '\n':
+                    if in_spec:
+                        fmt_spec.push_byte(ec)
+                    else:
+                        expr.push_byte(ec)
+                    line += 1
+                    col = base_col
+                    i += 1
+                else if ec == '{':
+                    inner += 1
+                    if in_spec:
+                        fmt_spec.push_byte(ec)
+                    else:
+                        expr.push_byte(ec)
+                    col += 1
+                    i += 1
+                else if ec == '}':
+                    inner -= 1
+                    if inner > 0:
+                        if in_spec:
+                            fmt_spec.push_byte(ec)
+                        else:
+                            expr.push_byte(ec)
+                    col += 1
+                    i += 1
+                else if ec == ':' and inner == 1 and not in_spec:
+                    in_spec = true
+                    col += 1
+                    i += 1
+                else:
+                    if in_spec:
+                        fmt_spec.push_byte(ec)
+                    else:
+                        expr.push_byte(ec)
+                    col += 1
+                    i += 1
+
+            if not first_part:
+                parts.push_byte(',')
+            parts.append("{\"kind\":\"expr\",\"source\":")
+            var se = json_escaped(expr.as_str())
+            parts.append(se.as_str())
+            se.release()
+            parts.append(",\"line\":")
+            fmt.append_ptr_uint(ref_of(parts), expr_line)
+            parts.append(",\"column\":")
+            fmt.append_ptr_uint(ref_of(parts), expr_col)
+            if fmt_spec.len > 0:
+                parts.append(",\"format_spec\":")
+                var fe = json_escaped(fmt_spec.as_str())
+                parts.append(fe.as_str())
+                fe.release()
+            else:
+                parts.append(",\"format_spec\":null")
+            parts.push_byte('}')
+
+            expr.release()
+            fmt_spec.release()
+            first_part = false
+            continue
+
+        if ch == '\n':
+            line += 1
+            col = base_col
+        else:
+            col += 1
+        text.push_byte(ch)
+        i += 1
+
+    if text.len > 0 or first_part:
+        if not first_part:
+            parts.push_byte(',')
+        parts.append("{\"kind\":\"text\",\"value\":")
+        var te = json_escaped(text.as_str())
+        parts.append(te.as_str())
+        te.release()
+        parts.push_byte('}')
+
+    parts.push_byte(']')
+    text.release()
+    return parts
+
 # ── heredoc lexing ────────────────────────────────────────────────────────
 # advances state.pos, line_num, line_off
 
@@ -835,22 +991,33 @@ function lex_heredoc(state: ref[LexState], offset: ptr_uint, column: ptr_uint, i
     if i < s.len:
         i += 1
 
+    var cur_line = state.line_num + 1
     var content_lines = vec_mod.Vec[str].create()
+    var term_end: ptr_uint = i
+    var term_line_start: ptr_uint = i
+    var term_line_no: ptr_uint = cur_line
+    var term_has_nl = false
     while i < s.len:
         let ls = i
         while i < s.len and s.byte_at(i) != '\n':
             i += 1
         let raw = s.slice(ls, i - ls)
+        let raw_has_nl = i < s.len
         let trimmed = raw.trim_ascii_whitespace()
         if trimmed.equal(tag):
-            if i < s.len:
+            term_end = i
+            term_line_start = ls
+            term_line_no = cur_line
+            term_has_nl = raw_has_nl
+            if raw_has_nl:
                 i += 1
             break
         content_lines.push(raw)
-        if i < s.len:
+        if raw_has_nl:
             i += 1
+        cur_line += 1
 
-    var dedent: ptr_uint = heap_mod.ptr_uint_max
+    var margin: ptr_uint = heap_mod.ptr_uint_max
     var ci: ptr_uint = 0
     while ci < content_lines.len:
         let item = content_lines.at(ci) else:
@@ -864,9 +1031,11 @@ function lex_heredoc(state: ref[LexState], offset: ptr_uint, column: ptr_uint, i
         while sj < item.len and item.byte_at(sj) == ' ':
             sc += 1
             sj += 1
-        if sc < dedent:
-            dedent = sc
+        if sc < margin:
+            margin = sc
         ci += 1
+    if margin == heap_mod.ptr_uint_max:
+        margin = 0
 
     var content = string_mod.String.create()
     ci = 0
@@ -875,43 +1044,37 @@ function lex_heredoc(state: ref[LexState], offset: ptr_uint, column: ptr_uint, i
             break
         let trimmed2 = item2.trim_ascii_whitespace()
         if trimmed2.len == 0:
-            ci += 1
-            if ci < content_lines.len:
-                content.push_byte('\n')
-            continue
-        if dedent > 0 and item2.len >= dedent:
-            content.append(item2.slice(dedent, item2.len - dedent))
-        else:
-            content.append(item2)
-        ci += 1
-        if ci < content_lines.len:
             content.push_byte('\n')
+        else:
+            content.append(item2.slice(margin, item2.len - margin))
+            content.push_byte('\n')
+        ci += 1
 
-    let end_off = i
-    let lm = s.slice(offset, end_off - offset)
+    let lm = s.slice(offset, term_end - offset)
 
     if is_f:
-        var fparts = string_mod.String.create()
-        fparts.append("[{\"kind\":\"text\",\"value\":")
-        var te = json_escaped(content.as_str())
-        fparts.append(te.as_str())
-        te.release()
-        fparts.append("}]")
-        emit_tok(state, "fstring", lm, fparts.as_str(), state.line_num, column, offset, end_off)
+        var fparts = heredoc_fstring_parts(content.as_str(), state.line_num + 1, margin + 1)
+        emit_tok(state, "fstring", lm, fparts.as_str(), state.line_num, column, offset, term_end)
         fparts.release()
     else:
         let kind = if is_c: "cstring" else: "string"
         var lit = json_escaped(content.as_str())
-        emit_tok(state, kind, lm, lit.as_str(), state.line_num, column, offset, end_off)
+        emit_tok(state, kind, lm, lit.as_str(), state.line_num, column, offset, term_end)
         lit.release()
 
-    let skipped = content_lines.len + 1
+    if state.group_depth == 0:
+        let nl_end = if term_has_nl: term_end + 1 else: term_end
+        let nl_col = ptr_uint<-(term_end - term_line_start + 1)
+        emit_tok(state, "newline", "\n", "null", term_line_no, nl_col, term_end, nl_end)
+
     content_lines.release()
     content.release()
 
-    state.pos = end_off
-    state.line_num = state.line_num + skipped
-    state.line_off = end_off
+    state.pos = i
+    state.line_num = term_line_no + 1
+    state.line_off = i
+    state.cont_pending = false
+    state.line_done = true
 
 # ── line-level tokenization ───────────────────────────────────────────────
 
@@ -932,7 +1095,9 @@ function lex_line_tokens(state: ref[LexState], content_start: ptr_uint) -> void:
             continue
 
         if ch == '#':
-            return
+            while state.pos < state.src.len and state.src.byte_at(state.pos) != '\n':
+                state.pos += 1
+            break
 
         if ch == '\t':
             fatal(c"lexer: tabs are not allowed in source")
@@ -1054,24 +1219,26 @@ function lex_all(state: ref[LexState]) -> void:
         state.pos = line_start + ci
         lex_line_tokens(state, line_start + ci)
 
-        let emit_nl = not state.cont_pending and state.group_depth == 0
+        if state.line_done:
+            state.line_done = false
+            continue
 
-        let nl_end = if has_nl: nl_pos + 1 else: nl_pos
-        let nl_col = ptr_uint<-(content.len + 1)
+        let real_nl = state.pos
+        let real_has_nl = real_nl < s.len and s.byte_at(real_nl) == '\n'
+        let emit_nl = not state.cont_pending and state.group_depth == 0
+        let nl_end = if real_has_nl: real_nl + 1 else: real_nl
+        let nl_col = ptr_uint<-(real_nl - state.line_off + 1)
 
         if emit_nl:
-            emit_tok(state, "newline", "\n", "null", state.line_num, nl_col, nl_pos, nl_end)
+            emit_tok(state, "newline", "\n", "null", state.line_num, nl_col, real_nl, nl_end)
 
-        if state.pos <= nl_pos:
-            state.pos = nl_pos
-            if has_nl:
-                state.pos += 1
-
+        state.pos = nl_end
         state.line_num += 1
         state.line_off = state.pos
 
+    let dedent_line = state.line_num - 1
     while state.indent_stack.len > 1:
-        emit_tok(state, "dedent", "", "null", state.line_num, 1, state.pos, state.pos)
+        emit_tok(state, "dedent", "", "null", dedent_line, 1, state.pos, state.pos)
         state.indent_stack.pop()
 
     emit_tok(state, "eof", "", "null", state.line_num, 1, state.pos, state.pos)
@@ -1087,6 +1254,7 @@ public function lex_to_json(source: str) -> string_mod.String:
         indent_stack = vec_mod.Vec[ptr_uint].create(),
         group_depth = 0,
         cont_pending = false,
+        line_done = false,
         line_off = 0,
         line_num = 1,
         output_tokens = vec_mod.Vec[Token].create(),
@@ -1110,6 +1278,7 @@ public function lex_to_tokens(source: str) -> vec_mod.Vec[Token]:
         indent_stack = vec_mod.Vec[ptr_uint].create(),
         group_depth = 0,
         cont_pending = false,
+        line_done = false,
         line_off = 0,
         line_num = 1,
         output_tokens = vec_mod.Vec[Token].create(),
