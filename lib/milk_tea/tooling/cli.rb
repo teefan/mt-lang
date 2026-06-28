@@ -688,11 +688,17 @@ module MilkTea
         if program && output_format == :json
           analysis = program.root_analysis
           if analysis
-            json = Serializer.analysis_to_json(analysis)
             if output_file
-              File.write(output_file, json)
+              bundle = {
+                "$mt_analysis_bundle" => true,
+                "root" => Serializer.analysis_to_json(analysis),
+                "imported" => program.analyses_by_module_name
+                  .reject { |name, a| name == analysis.module_name.to_s }
+                  .transform_values { |a| Serializer.analysis_to_json(a) }
+              }
+              File.write(output_file, JSON.pretty_generate(bundle))
             else
-              @out.puts(json)
+              @out.puts(Serializer.analysis_to_json(analysis))
             end
             return 0
           end
@@ -827,8 +833,21 @@ module MilkTea
       end
 
       if from_analysis_file
-        root_json = File.read(from_analysis_file)
-        import_jsons = import_analysis_files.transform_values { |f| File.read(f) }
+        raw = File.read(from_analysis_file)
+        begin
+          parsed = JSON.parse(raw)
+          if parsed.is_a?(Hash) && parsed["$mt_analysis_bundle"]
+            root_json = parsed["root"]
+            import_jsons = parsed.fetch("imported", {})
+            import_jsons.merge!(import_analysis_files.transform_values { |f| File.read(f) })
+          else
+            root_json = raw
+            import_jsons = import_analysis_files.transform_values { |f| File.read(f) }
+          end
+        rescue JSON::ParserError
+          root_json = raw
+          import_jsons = import_analysis_files.transform_values { |f| File.read(f) }
+        end
         ir_program = Lowering.lower_from_analysis_json_with_imports(root_json, import_jsons)
         if output_format == :json
           result = Serializer.ir_to_json(ir_program)
