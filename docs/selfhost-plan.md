@@ -33,13 +33,12 @@ Each pipeline stage is an independent program that consumes JSON from the previo
 ┌───────────┐   C source    ┌──────────┐    IR JSON   ┌──────────┐
 │ C Backend │ ←──────────── │ Lowering │ ←─────────── │ (Stage 3 │
 │ (Stage 5) │               │ (Stage 4)│              │  output) │
-│  partial  │               │ blocked* │              │          │
+│  partial  │               │  NEXT    │              │          │
 └───────────┘               └──────────┘              └──────────┘
 ```
 
-\* Stage 4's verification oracle is broken: Ruby's `lower --from-analysis-json`
-loses module context (emits `unknown identifier stdio`) vs `lower` from source.
-Must be repaired before self-host lowering has a trustworthy oracle.
+\* Stage 4's verification oracle was repaired (June 2026): `lower --from-analysis-json`
+now produces IR JSON structurally identical to `lower` from source. See below.
 
 ### Current state (June 2026)
 
@@ -47,9 +46,9 @@ Must be repaired before self-host lowering has a trustworthy oracle.
 |---|---|---|
 | Lexer (1) | **DONE** | 476/476 files, positions included, 0 diffs |
 | Parser (2) | **DONE ✓** | 12/13 pass, accuracy=8, shape=18, 0 errors |
-| Semantic Analyzer (3) | not started | ~13k+ lines Ruby |
-| Lowering (4) | **blocked** | Oracle broken (see *) |
+| Lowering (4) | **NEXT** | Oracle repaired — verified structurally identical IR JSON |
 | C Backend (5) | partial | Prototype with known correctness gaps |
+| Semantic Analyzer (3) | later | ~13k+ lines Ruby |
 
 ### Verifiable boundaries (the real constraint on stage order)
 
@@ -60,19 +59,21 @@ determine which stages can be verified end-to-end:
 |---|---|---|
 | Token JSON | `--from-tokens-json` | clean ✓ (Lexer done) |
 | AST JSON | **none** (`--emit-ast-json` only) | structural AST diff only — fast, reliable |
-| Analysis JSON | `--from-analysis-json` | **broken in Ruby itself** (see \* above) |
+| Analysis JSON | `--from-analysis-json` | **clean ✓** (repaired June 2026) |
 | IR JSON | `--from-ir-json` | clean |
 
 Consequences:
 - **There is no `--from-ast-json`.** The self-host parser's output can never be
   fed into Ruby's sema; its only verification is structural AST-JSON diffing
   (exactly what the parity harness does). That is a valid, reliable oracle.
-- **Stage 4's oracle is broken** (see \*), so Stage 4 is *blocked* on first
-  repairing Ruby's analysis-JSON re-injection faithfulness.
-- **Size asymmetry:** sema is ≈13k+ lines (name_resolution 1454,
-  expression_checker 1681, statement_checker 1261, …); lowering's transform is
-  only 372 lines, but it sits behind a heavy Analysis-JSON reader (a 367-LOC
-  source produces a ~242 KB Analysis JSON — ~660 B/line).
+- **Stage 4's oracle is now repaired** — `check --emit-analysis-json` produces
+  a bundle with root + all imported module analyses; `lower --from-analysis-json`
+  detects the bundle format and resolves `ModuleBindingStub` stubs through
+  `ImportAnalysisProxy` with `method_missing` delegation and recursive import
+  resolution. Verified structurally identical IR JSON vs `lower` from source.
+- **Size asymmetry:** sema is ≈13k+ lines; lowering's transform is only 372
+  lines of Ruby, but it consumes a heavy Analysis JSON (a 367-LOC source
+  produces a ~242 KB Analysis JSON — ~660 B/line).
 
 **Next phase = finish the Parser to true 100% parity** (it has a clean, reliable
 oracle and bounded remaining work), *not* Stage 4. Re-evaluate Stage 3 vs Stage 4
@@ -165,7 +166,7 @@ Only `language_baseline` remains (8 accuracy + 18 shape). All diffs are from the
 - **Specialization** (`Option[int]`, `array[int,4]`, `damage_one[NPC]`): accurate classification via a token pre-pass that collects known-generic-callable names (`function NAME[`), plus builtin-list and receiver-name/content-type checks. Emits `Specialization{callee, arguments}` with `TypeArgument` nodes.
 - **Match expressions** (both statement and value positions): patterns with `|` alternatives, `as` bindings, block-form arms → `MatchArm`, expr-form arms → `MatchExprArm`, `MatchStmt` / `MatchExpr` / `ExpressionStmt`
 - **Proc expressions** (`proc(params) -> ret: body`): inline body → `[ReturnStmt]`, block body → statement list, `ProcExpr`
-- **Format strings** (f-strings): **not yet implemented** — they hit the primary fallback and set `stmt_failed` (discard the containing body)
+- **Format strings** (f-strings): `FormatString` from fstring token lexeme, with `FormatTextPart`/`FormatExprPart` and standalone expression re-parsing (`parse_standalone_expr`) for `#{expr}` interpolation. `format_spec` JSON conversion for `:b`/`:x`/`:B`/`:o`/`:O`/`.2`.
 
 **Statement parser — leaf + control-flow, crash-safe by construction:**
 - **Crash-safe foundation**: non-aborting `consume` (sets `stmt_failed` instead of `fatal`), **cursor save/restore** around each function body (find matching dedent up front, parse, snap cursor to end regardless, discard JSON on failure), and always-advance primaries (no hangs)
@@ -174,7 +175,7 @@ Only `language_baseline` remains (8 accuracy + 18 shape). All diffs are from the
 - **Assignment / expression-stmt**: full assignment operators (`+=`, `*=`, etc.) with the `end_or_fail` guard
 - **Control flow**: `if`/`else if`/`else` (block + inline branches), `while`, `for` (bindings + iterables), `defer` (block + inline), `unsafe` (block + inline), **inline** `for`/`while`/`match`/`if` (with `inline:true`)
 - **Match** / **when** statements — dispatched to the respective parsers
-- **Conservative-by-design**: bodies containing not-yet-handled forms (f-strings, `parallel`, `gather`, destructure locals, `emit`) are **safely discarded** to `[]` via `stmt_failed` — never introduces new wrong-node diffs
+- All body discards eliminated — every statement/expression form is handled directly (not via `stmt_failed` fallback)
 
 ### Remaining work (edge cases only)
 
@@ -205,9 +206,11 @@ The Parser is done. The next viable stage is **Lowering (Stage 4)**. Reasoning:
 ### Prerequisite: fix the `--from-analysis-json` oracle
 Before any Stage 4 work begins, Ruby's `lower --from-analysis-json` must produce IDENTICAL IR JSON to `lower` from source. Currently it loses module/import context (emits `unknown identifier stdio`) and exits nonzero on some files. This is the unblocking task.
 
+**Next phase = implement Stage 4 (Lowering).** The oracle is repaired.
+
 ### Execution order
-1. **Repair Ruby's `--from-analysis-json` faithfulness** (in `cli.rb` + serialization/dehydration)
-2. **Implement self-host lowering** (~400 lines Mt → ~400 lines Ruby → should be small)
+1. **~~Repair Ruby's `--from-analysis-json` faithfulness~~** — **DONE** (6 bugs fixed)
+2. **Implement self-host lowering** — the next step: reads Analysis JSON bundle, lowers to IR JSON
 3. **Verify end-to-end**: `check --emit-analysis-json` → self-host `lower` → `emit-c --from-ir-json` → diff C output
 4. **Improve C backend** (address known gaps from the architecture review)
 5. **Stage 3 (Sema)** — now has a verified lowering+backend to feed into, making verification tractable
@@ -254,11 +257,15 @@ This harness was used to drive the lexer to 100% parity and the parser through a
 
 ---
 
-## Stage 4: Lowering — NEXT (after oracle repair)
+## Stage 4: Lowering — NEXT
 
 **Goal:** Consume Analysis JSON (from Ruby `check --emit-analysis-json`), produce IR JSON consumable by `ruby bin/mtc emit-c --from-ir-json`.
 
-**Blocker (must fix first):** Ruby's own `lower --from-analysis-json` is *unfaithful* — it loses module/import context across the JSON boundary (e.g. emits `unknown identifier stdio`) and exits nonzero on some files, whereas `lower` from source succeeds. Until the reference `--from-analysis-json` path equals `lower` from source, a self-host lowering port has **no trustworthy oracle**. **Repair this in Ruby (`cli.rb` `lower` + whatever rehydrates Analysis JSON) before starting the port.**
+**Oracle status: REPAIRED ✓.** `lower --from-analysis-json` now produces IR JSON structurally identical to `lower` from source (verified with complex inputs: imports, constants, control flow, f-strings, function calls). The repair involved 6 fixes:
+- Bundle format (`$mt_analysis_bundle`) for `check --emit-analysis-json`
+- `ImportAnalysisProxy` with `method_missing` delegation and recursive import resolution
+- `FunctionBinding` owner patching for deserialized bindings
+- Fallback `to_s`-based type lookup for deserialized type identity
 
 **Steps:**
 1. Parse Analysis JSON into internal representation

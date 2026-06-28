@@ -11,6 +11,7 @@ import std.str as str_util
 import lexer.lexer as lexer_mod
 import parser.parser as parser_mod
 import c_backend.c_backend as c_backend_mod
+import lowering.lowering as lower_mod
 import test.all_tests as test_runner
 
 function read_whole_file(path: str) -> string_mod.String:
@@ -72,6 +73,17 @@ function emit_c_cmd(file_path: str) -> int:
     ir_json.release()
     return 0
 
+function lower_cmd(file_path: str) -> int:
+    var analysis_json = read_whole_file(file_path)
+    let analysis_str = analysis_json.as_str()
+
+    var ir_json = lower_mod.lower_analysis_to_ir(analysis_str)
+    stdio.print_line(ir_json.as_str())
+
+    ir_json.release()
+    analysis_json.release()
+    return 0
+
 function print_usage() -> void:
     stdio.print_line(c"usage: mtc <subcommand> [args]")
     stdio.print_line(c"")
@@ -107,6 +119,12 @@ function main(args: span[str]) -> int:
             print_usage()
             return 1
         return emit_c_cmd(args[1])
+
+    if cmd == "lower":
+        if args.len < 2:
+            print_usage()
+            return 1
+        return lower_cmd(args[1])
 
     if cmd == "test":
         return test_cmd()
