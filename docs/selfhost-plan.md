@@ -19,49 +19,77 @@ Source .mt files  ──>  Lexer  ──>  Parser  ──>  Name Resolver
                                                     │
                     ┌───────────────────────────────┘
                     ▼
-              Type Checker  ──>  Monomorphizer + Const Eval
-                                       │
-                                       ▼
-                                   Lowering  ──>  CIR  ──>  C Codegen
+             Semantic Analysis  ──>  Lowering (two-pass)  ──>  C Codegen
+             (type-check, const                               (feature detect,
+              eval, mono, CFG)                                 DCE, emit C)
 ```
 
-### Pass Order (Module-at-a-Time)
+### Pass Order
 
-The compiler loads modules eagerly in topological order (leaves to root, resolved from `package.lock`). Each pass completes fully across all modules before the next begins.
+The compiler loads modules eagerly in topological order (leaves to root, resolved from `package.lock`). Passes 1–4 are per-module. Passes 5–9 operate across the full module set.
 
-1. **Load source files** — resolve module graph, platform-specific variants, open and read all `.mt` files
-2. **Lex** — produce token streams with indentation tokens (INDENT, DEDENT, NEWLINE)
-3. **Parse** — produce per-module ASTs (arena-allocated `variant` nodes)
-4. **Resolve names** — build per-module symbol tables; resolve all identifiers to declarations; verify visibility (`public`/private); produce ResolvedAST
-5. **Collect declarations** — register all top-level type, function, and constant declarations across modules
-6. **Type-check** — check all declarations eagerly; infer `let`/`var` types; verify interface conformance; check generic bodies against constraints (no instantiation yet); produce TypedAST
-7. **Monomorphize and const-eval** — from the entry point, discover all reachable generic instantiations; evaluate `const` bodies, `const function`, `inline for`/`while`/`if`/`match`, `when` branches, and `emit` directives; discovered instantiations feed back into monomorphization; produce MonomorphizedAST
-8. **Lower to CIR** — desugar all high-level constructs into a C-like IR; evaluate CFG analyses (definite assignment, reachability, termination); produce CIR
-9. **Emit C** — pretty-print CIR to `.c` files; run the external C compiler (`cc`, `emcc`, etc.)
+1. **Load source files** — resolve module graph from `package.lock`; resolve platform-specific variants (prefer `name.<platform>.mt`, fall back to `name.mt`); read all `.mt` files into the `SourceManager`.
 
-Module-at-a-time ordering means: after the initial symbol-table gathering pass (step 4), each module's type-checking (step 6) and lowering (step 8) can proceed independently. Monomorphization and const-eval (step 7) is naturally cross-module since generic instantiations cross module boundaries.
+2. **Lex** — produce token streams with indentation tokens (INDENT, DEDENT, NEWLINE) per module. Handle line continuation after binary operators. Reject tabs, enforce 4-space multiple indentation.
+
+3. **Parse** — produce per-module ASTs (arena-allocated `variant` nodes). Recursive-descent parser with best-effort error recovery (synchronize to next top-level keyword or DEDENT). Desugar `is`→`match`, `elif`→nested `if`.
+
+4. **Resolve names** — build per-module `Scope` trees (module → function → block); resolve all identifiers to declarations; verify `public`/`private` visibility; resolve cross-module references through the global symbol table index.
+
+5. **Semantic Analysis** — the largest phase. Const evaluation, type checking, CFG analysis, and monomorphization are interleaved (const eval is a capability of the type checker, not a separate phase). Sub-phases:
+
+   a. **Install built-in types** — register all primitives, type constructors (`ptr`, `span`, `array`, `str_buffer`, `Task`, `SoA`, `dyn`, `atomic`), and built-in attributes (`@[packed]`, `@[align]`, `@[deprecated]`).
+   b. **Install prelude** — auto-import `Option[T]`, `Result[T, E]`.
+   c. **Declare named types** — forward-declare all struct/union/variant/enum/flags/opaque names with type parameters.
+   d. **Resolve type aliases and constraints** — resolve `type Foo = Bar` aliases; validate `T implements I` constraints on generic declarations.
+   e. **Resolve aggregate fields** — resolve field types of structs/unions; compute layouts (`size_of`, `align_of`, `offset_of`) for concrete types.
+   f. **Resolve enum/flags members** — compute member values (auto-increment or explicit).
+   g. **Resolve variant arms** — resolve arm payload types.
+   h. **Collect emit declarations** — walk const function bodies, collect `emit` stmt declarations into the global declaration set.
+   i. **Declare top-level values** — register const/var/event with types.
+   j. **Check attribute applications** — validate `@[attr]` on declarations.
+   k. **Evaluate top-level const initializers** — const-eval `const X = expr` and `const X -> T: ... block`; resolve const dependency chains; detect cycles.
+   l. **Evaluate static_assert** — evaluate `static_assert(cond, msg)` conditions.
+   m. **Check function bodies and monomorphize** — for each function, type-check body statements/expressions. During body checking, const-eval `const function` calls, `when` branches, `inline for/while/if/match`, and `emit` directives. For generic functions, discover instantiation sites, monomorphize, and iterate to a fixed point. Perform CFG analyses (definite assignment, reachability, termination) on each function body. Detect nullability flow for nullable-local narrowing.
+
+   After this phase, all types are resolved, all const values are known, all generic instantiations are discovered, and all semantic errors are reported.
+
+6. **Lower to CIR (Pass 1 — types and globals)** — lower all type declarations (struct, union, enum, flags, variant, opaque) to CIR type definitions. Lower constants and globals. Compute per-module CIR fragments for types.
+
+7. **Lower to CIR (Pass 2 — function bodies)** — lower all function bodies. For generic functions, lower each instantiation. This pass iterates to a fixed point: lowering a function body may discover new generic instantiations or `emit`-generated declarations that need their own lowering. Desugar constructs: `match`→switch/if-chain, `defer`→cleanup labels, `unsafe`→strip marker, `proc`→env struct + function, `variant` constructor→discriminant+payload, `f"..."`→append calls, `expr?`→early return, bounds checks→`fatal()`, etc.
+
+8. **Assemble modules** — merge all per-module CIR fragments into a single `CIR::Program`. Generate cross-module synthetics (event init functions, async runtime integration). Resolve type references across module boundaries.
+
+9. **Emit C** — three sub-phases:
+   a. **Feature detection** — walk the assembled CIR to determine which runtime helpers, includes, and compiler flags are needed.
+   b. **Dead code elimination** — reachability analysis from entry points; prune unreferenced types and functions.
+   c. **Code generation** — emit C source text: includes, feature macros, runtime helpers, type definitions (topological order), forward declarations, constants, static asserts, function definitions. Invoke the external C compiler.
 
 ### Pipeline Diagram
 
 ```
-┌─────────────┐     ┌───────────┐     ┌───────────┐     ┌─────────────┐
-│ Source .mt  │────>│ Lexer     │────>│ Parser    │────>│ Resolver    │
-│ files       │     │ TokenStrm │     │ AST       │     │ SymbolTable │
-└─────────────┘     └───────────┘     └───────────┘     └─────────────┘
-                                                                │
-        ┌───────────────────────────────────────────────────────┘
-        ▼
-┌──────────────────┐     ┌───────────────────┐     ┌─────────────────┐
-│  Type Checker    │────>│  Monomorphizer    │────>│  Lowering       │
-│  TypedAST        │     │  + ConstEval      │     │  (desugar)      │
-│  TypeRegistry    │     │  MonomorphizedAST │     │  CFG analyses   │
-└──────────────────┘     └───────────────────┘     └─────────────────┘
-                                                           │
-                                                           ▼
-                                                   ┌─────────────────┐
-                                                   │  C Codegen      │──> .c files
-                                                   │  emit C source  │
-                                                   └─────────────────┘
+┌─────────────┐   ┌───────────┐   ┌───────────┐   ┌─────────────┐
+│ Source .mt  │──>│  Lexer    │──>│  Parser   │──>│  Resolver   │
+│ files       │   │ TokenStrm │   │ AST       │   │ SymbolTable │
+└─────────────┘   └───────────┘   └───────────┘   └─────────────┘
+                                                            │
+       ┌────────────────────────────────────────────────────┘
+       ▼
+┌──────────────────────────────────────────────────────────────┐
+│                   Semantic Analysis                          │
+│  install builtins → declare types → resolve fields/arms      │
+│  → declare values → check attributes → eval const/assert     │
+│  → check functions → const-eval inline/when/emit             │
+│  → monomorphize (fixed-point) + CFG analyses                 │
+└──────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────┐   ┌───────────────────┐   ┌─────────────────┐
+│  Lowering        │   │  Assemble         │   │  C Codegen      │
+│  Pass 1: types   │   │  merge CIR frags  │   │  feature detect │
+│  Pass 2: bodies  │──>│  cross-module     │──>│  DCE            │──> .c files
+│  (fixed-point)   │   │  synthetics       │   │  emit C         │
+└──────────────────┘   └───────────────────┘   └─────────────────┘
 ```
 
 ---
@@ -276,18 +304,37 @@ variant AstNode:
 
 ### TypeRegistry
 
-A global, append-only table of unique types. Types are identified by index handle. The registry supports lookups by structure (e.g., `ptr[int]` always maps to the same handle).
+A global, append-only table of unique types. Types are identified by index handle. The registry supports lookups by structure (e.g., `ptr[int]` always maps to the same handle). Structural dedup uses hash keys like `("ptr", pointee_handle)`, `("nullable", inner_handle)`, etc.
 
 ```mt
 struct TypeRegistry:
     types: vec.Vec[TypeEntry]
-    # hash maps for structural dedup: ptr_map, array_map, etc.
+    primitives: map.Map[str, TypeHandle]             # "int" → handle
+    structural_cache: map.Map[TypeKey, TypeHandle]   # dedup by structure
+
+variant TypeKey:
+    ptr_key(pointee: TypeHandle)
+    const_ptr_key(pointee: TypeHandle)
+    ref_key(pointee: TypeHandle, lifetime: ...)
+    span_key(element: TypeHandle)
+    array_key(element: TypeHandle, size: ptr_uint)
+    nullable_key(inner: TypeHandle)
+    fn_key(params: vec.Vec[TypeHandle], return_type: TypeHandle)
+    proc_key(params: vec.Vec[TypeHandle], return_type: TypeHandle)
+    tuple_key(elements: vec.Vec[TypeHandle])
+    dyn_key(interface: SymbolHandle)
+    soa_key(struct_type: TypeHandle, count: ptr_uint)
+    str_buffer_key(capacity: ptr_uint)
+    task_key(result: TypeHandle)
+    atomic_key(inner: TypeHandle)
+    type_var_key(name: str)                          # generic type parameter
+    lifetime_var_key(name: str)                      # lifetime parameter (@a)
 
 variant TypeEntry:
     primitive(kind: PrimitiveKind)
     pointer(pointee: TypeHandle)
     const_pointer(pointee: TypeHandle)
-    reference(pointee: TypeHandle, lifetime: ...)
+    reference(pointee: TypeHandle, lifetime: LifetimeHandle)
     span(element: TypeHandle)
     array(element: TypeHandle, size: ptr_uint)
     nullable(inner: TypeHandle)
@@ -299,10 +346,27 @@ variant TypeEntry:
     str_buffer(capacity: ptr_uint)
     task(result: TypeHandle)
     atomic(inner: TypeHandle)
-    named(name: str, type_params: vec.Vec[...], resolved: TypeHandle)  # after resolution
-    opaque(name: str)
+    named(name: str, type_args: vec.Vec[TypeArg])   # unresolved named type
+    struct(module_id: uint, name: str, type_params: vec.Vec[TypeParamHandle], fields: ..., is_packed: bool, alignment: ptr_uint, is_external: bool, linkage_name: str)
+    generic_struct_def(module_id: uint, name: str, type_params: vec.Vec[TypeParamHandle])  # template
+    struct_instance(def: TypeHandle, type_args: vec.Vec[TypeHandle])                       # instantiated
+    union(module_id: uint, name: str, fields: ..., is_external: bool, linkage_name: str)
+    variant(module_id: uint, name: str, type_params: vec.Vec[TypeParamHandle], arms: ...)
+    generic_variant_def(module_id: uint, name: str, type_params: vec.Vec[TypeParamHandle])
+    variant_instance(def: TypeHandle, type_args: vec.Vec[TypeHandle])
+    variant_arm_payload(variant: TypeHandle, arm_index: uint)    # synthetic struct for `as name`
+    enum(module_id: uint, name: str, backing_type: TypeHandle, members: ..., is_external: bool, linkage_name: str)
+    flags(module_id: uint, name: str, backing_type: TypeHandle, members: ..., is_external: bool, linkage_name: str)
+    opaque(module_id: uint, name: str, is_external: bool, linkage_name: str)
+    interface(module_id: uint, name: str, type_params: vec.Vec[TypeParamHandle], methods: ...)
+    type_var(name: str, constraints: vec.Vec[TypeHandle])       # generic type parameter T
+    value_type_param(name: str)                                   # generic value param N: int
+    error_sentinel                                               # marker for type-check failures
+    null_literal(target: TypeHandle?)                            # null literal type for inference
     void
 ```
+
+Layout information (size, alignment) is stored in a side table `map.Map[TypeHandle, TypeLayout]` computed during declaration resolution. Concrete types (primitives, struct instances, arrays) have known layouts. Type variables and generic definitions have no layout until instantiation.
 
 ### SymbolTable
 
@@ -513,106 +577,153 @@ struct DiagEngine:
 
 **Porting note**: The Ruby compiler splits this across `core/semantic_analyzer.rb` and the `semantic/` subdirectory. The self-host can use a single `TypeChecker` module with sub-passes for statements, expressions, and declarations.
 
-### Phase 7: Monomorphization and Compile-Time Evaluation
+### Phase 6: Lowering to CIR — Pass 1 (Types and Globals)
 
-This is the most complex phase. The monomorphizer and const evaluator are intertwined.
+Lower all type declarations and top-level values to CIR. No function bodies yet — this ensures all types exist before body lowering.
 
-**Monomorphization:**
-- Start from the program entry point (`main` or `async main`)
-- For each call to a generic function with concrete type arguments, create a monomorphized copy
-- For each use of a generic struct/variant with concrete type arguments, create a monomorphized copy
-- Each new instantiation may discover more generic calls (recursive discovery)
-- Compute concrete layouts (`size_of`, `align_of`, `offset_of`) for instantiated types
+- Lower struct/union/enum/flags/variant/opaque declarations to CIR type definitions
+- Compute concrete layouts for monomorphized types
+- Lower constants and global variables with their evaluated initializers
+- Lower static_assert conditions (already evaluated in sema)
+- Produce per-module CIR fragments containing type definitions
 
-**Const evaluation:**
-- An interpreter running on the TypedAST. It evaluates:
-  - `const` block bodies (`const X -> T: ...`)
-  - `const function` bodies called from const contexts
-  - `inline for` / `inline while` / `inline match` / `inline if` — unroll/expand based on compile-time-known values
-  - `when` discriminants and branch selection
-  - `emit` directives — the emitted code is parsed and inserted into the output module
-  - Built-in reflection calls: `size_of`, `align_of`, `offset_of`, `fields_of`, `members_of`, `attributes_of`, `has_attribute`, `attribute_of`, `attribute_arg[T]`, `field_of`, `callable_of`
-  - `static_assert` evaluation
+### Phase 7: Lowering to CIR — Pass 2 (Function Bodies)
 
-**Const evaluator design:**
-- A stack-based bytecode interpreter or a recursive AST walker
-- Must handle: arithmetic, comparisons, control flow (if/else, while, for), local `var` and `let`, function calls (including recursion within `const function`), array indexing, struct field access
-- Must track a maximum iteration bound for `while` and `inline while` to prevent infinite loops at compile time
+Lower all function bodies to CIR. This pass iterates to a fixed point because lowering a function body may discover new generic instantiations or `emit`-generated declarations that need lowering.
 
-**Ordering:** The monomorphizer + const-eval loop runs:
-1. Evaluate module-level `const` declarations (these may reference each other within a module)
-2. Evaluate `when` blocks at module level — determine which branch is active
-3. Discover entry-point reachable generic instantiations
-4. For each instantiation: const-eval any `inline` constructs in the body, potentially discovering more instantiations
-5. Repeat until no new instantiations are discovered
+For each function (including monomorphized generic instances):
+- Lower the body statements and expressions
+- Desugar constructs per the table below
+- For `emit` directives: the emitted declaration was already collected in sema (phase 5h) and added to the global declaration set; lower it here
 
-**Porting note**: The Ruby compiler implements this in `core/compile_time.rb` and `core/compile_time/const_eval.rb`. The const evaluator in particular is a self-contained interpreter that walks the IR (not AST) — the self-host may want to adopt a similar approach, evaluating on a simplified IR to reduce complexity.
+Fixed-point loop:
+1. For each unlowered function, lower its body
+2. If lowering discovers new generic instantiations, add them to the queue
+3. If lowering expands `emit` declarations that need lowering, add them to the queue
+4. Repeat until queue is empty (bounded at ~1000 iterations to detect bugs)
 
-### Phase 8: Lowering to CIR
-
-Structural desugaring — no type analysis, just AST → CIR transformation:
+**Desugaring table:**
 
 | Source construct | CIR lowering |
 |---|---|
 | `if`/`else` | `cir_if` (if/else chain) |
 | `while` loop | `cir_while` |
 | `for x in 0..N` | `cir_for` with counter variable |
-| `for x in array` | `cir_for` over index + bound check |
-| `for x in span` | `cir_for` over index + bound check |
+| `for x in array/span` | `cir_for` over index + bounds-checked access |
+| `for x in iterable` | iterator protocol: `iter()` → `next()` loop |
 | `match` on enum | `cir_switch` with enum member cases |
-| `match` on variant | `cir_switch` on discriminant + payload casts |
-| `match` on integer | `cir_switch` with integer cases |
-| `match` on str | `cir_if` chain with `str.equal()` |
-| `defer` (single stmt) | inline at scope exit point + `cir_defer_cleanup` label |
-| `defer` (block) | same, with block expansion |
-| `unsafe` block | strip marker — contents lowered normally |
-| `parallel for` | call into libuv thread dispatch + barrier |
+| `match` on variant | `cir_switch` on discriminant tag + payload struct field access |
+| `match` on integer | `cir_switch` with integer literal cases |
+| `match` on str | `cir_if` chain with `str.equal()` comparisons |
+| `defer` statement | scope-exit label + cleanup code at all exit points (return, break, continue) |
+| `unsafe` block | strip unsafe marker — contents lowered normally |
+| `parallel for` | libuv work dispatch + barrier |
 | `parallel:` block | libuv fork-join |
 | `detach`/`gather` | libuv thread spawn + join |
-| `async function` | state machine struct + step function (see below) |
-| `await` | state machine suspension point |
-| `proc` closure | environment struct + function pointer pair |
-| `extending` method call | plain namespaced function call |
-| `variant` arm constructor | discriminant assignment + payload field init |
-| `str_buffer[N]` | fixed array + length field |
-| `array` bounds check | inject `fatal()` on out-of-bounds |
+| `async function` | state machine struct + step function (see async lowering below) |
+| `await` | state machine suspension point (state transition + return) |
+| `proc` closure | environment struct holding captured locals + function pointer pair |
+| `extending` method call | plain namespaced function call (`Module_Type_method(args)`) |
+| `variant` arm constructor | tag assignment + payload field initialization |
+| `str_buffer[N]` | fixed array `char buf[N+1]` + length field |
+| `array` bounds check | inject `fatal()` on out-of-bounds for safe indexing |
 | `span` bounds check | inject `fatal()` on out-of-bounds |
-| `f"..."` | expand to `std.fmt.append_int`/`append_str`/etc. calls |
-| `expr?` | generate `if` check + early return |
-| `v.with(x = 10)` | copy + field assignment |
-| `is` variant test | discriminant comparison |
-| `read(r)` | `(*ptr)` dereference |
-| `ptr_of(x)` | `&x` |
-| `null` | `NULL` or `{0}` |
+| `f"..."` | expand to `fmt.append_int`/`append_str`/`append_bool` etc. calls |
+| `expr?` propagation | generate `if (is_error) return error;` early return |
+| `v.with(x = 10)` | copy struct + field assignment |
+| `is` variant test | discriminant tag comparison |
+| `read(r)` | `(*ptr)` C dereference |
+| `ptr_of(x)` / `ref_of(x)` | `&x` address-of |
+| `null` | `NULL` or `{0}` depending on context |
 | `Event.subscribe` | event slot management calls |
-| `Event.emit` | slot iteration + callback dispatch |
+| `Event.emit` | active slot iteration + callback dispatch |
+| `static_assert` | `_Static_assert(cond, msg)` in C11 |
 
-**CFG analyses during lowering:**
-- Definite assignment: verify all variables assigned before use
-- Reachability: detect unreachable code (warnings)
-- Termination analysis for `let ... else:` and `return` coverage
-- These cross-reference the CFG to ensure control-flow validity before C emission
-
-**Async lowering:**
+**Async lowering**:
 Each `async function` becomes:
-1. A state machine struct holding all locals that live across `await` points
-2. A `step` function implementing the state machine — each `await` becomes a state transition + return
-3. The compiler-generated `mt_async_*` entry function that creates the state machine and pushes it to the runtime
+1. A state machine struct holding all locals that live across `await` points (identified by liveness analysis)
+2. A state enum with one variant per `await` point (plus entry/exit)
+3. A `step` function implementing a `switch(state)` dispatch — each `await` becomes a case label that returns to the scheduler
+4. A compiler-generated entry function that allocates the state machine and pushes it to the async runtime
 
-**Porting note**: The Ruby compiler's lowering is in `core/lowering.rb` and the `lowering/` subdirectory. The async lowering in particular (`lowering/async_normalization.rb`, `lowering/async_lowering.rb`, `lowering/async_analysis.rb`) is well-structured and should be ported closely. The CIR phase is shared between the lowering and the C backend in the Ruby compiler (`lowering/` handles AST→IR, `c_backend/` handles IR→C text). The self-host splits this into Lowering (AST→CIR) and Codegen (CIR→C text).
+**Proc closure lowering**:
+1. Walk the proc body, collect all referenced locals from enclosing scopes (capture analysis)
+2. Create an environment struct with fields for each captured local
+3. Rewrite captured local references in the proc body to `env->field`
+4. Generate a C function with the env struct as first parameter
+5. At the call site (capture point): allocate env struct, copy captured values, pass as first arg
+6. For captured `proc` values: reference-count (retain on capture, release on env free)
+
+### Phase 8: Assemble Modules
+
+Merge all per-module CIR fragments into a single `CIR::Program`.
+
+- Merge type definitions (deduplicate by linkage name)
+- Merge function definitions
+- Generate cross-module synthetics:
+  - Event initialization functions (one per event declaration)
+  - Cross-module event dispatch routing
+  - Async runtime bootstrap integration
+- Resolve type references across module boundaries (convert module-qualified references to flat C names)
+- The assembled `CIR::Program` is the complete input to code generation
 
 ### Phase 9: C Code Generation
 
-- Walk the CIR, emit C text to `.c` files
-- Emit: includes, forward declarations, type definitions (struct/enum/union), function implementations
-- Aggregate types sorted topologically (dependencies first)
-- Generate `__attribute__((packed))` and `__attribute__((aligned(N)))` for layout-annotated types
-- Generate async state machine structs and step functions
-- Generate event tables and emit/slot management functions
-- Generate `static_assert` as `_Static_assert` in C11
-- Invoke external C compiler: `cc` (native) or `emcc` (wasm) with platform-appropriate flags
+Three sub-phases executed sequentially on the assembled CIR:
 
-**Porting note**: The Ruby C backend is in `core/c_backend.rb` and `c_backend/`. The self-host C codegen mirrors this but operates on CIR nodes rather than the Ruby compiler's IR (`core/ir.rb`).
+**9a. Feature Detection**
+
+Walk the CIR program once to determine what to emit. Collect flags:
+
+| Feature flag | Triggers |
+|---|---|
+| `uses_string_view` | Any `str` value in expressions → emit `mt_str` type, string helpers |
+| `uses_fatal_helper` | Any `fatal()` call or bounds check → emit `mt_fatal()` |
+| `uses_format_string` | Any `f"..."` or format builder call → emit `mt_format_*` helpers |
+| `uses_async_function` | Any `async function` → emit task struct, async memory helpers |
+| `uses_parallel_for` | Any `parallel for` → link libuv, emit work dispatch helper |
+| `uses_parallel_block` | Any `parallel:` → link libuv, emit spawn-all helper |
+| `uses_detach` | Any `detach` → link libuv, emit detach helpers |
+| `uses_variant` | Any variant type → emit variant equality helpers per type |
+| `uses_proc` | Any proc expression → emit proc env alloc/free helpers |
+| `uses_event` | Any event declaration → emit event slot table + emit helpers |
+| `uses_text_buffer` | Any `str_buffer[N]` → emit text buffer helpers |
+| `uses_checked_index` | Any safe array/span indexing → emit bounds-check helpers |
+| `uses_vector_math` | Any vec/mat/quat → emit vector math type definitions |
+| `uses_entrypoint_argv` | `main()` with params → emit argv processing helpers |
+| `uses_mtpack` | Asset pack usage → link mtpack reader |
+
+**9b. Dead Code Elimination**
+
+Reachability analysis from entry points:
+- Entry points: `main()`, `async main()`, event init functions
+- Worklist algorithm: start from entry functions, mark reachable, follow type references
+- For each reachable function: mark its return type, parameter types, local types, called functions, referenced struct/union/enum/variant types
+- For each reachable type: mark all field types, recursively
+- Only emit types and functions marked as reachable
+
+**9c. Code Generation**
+
+Emit C source text in order:
+1. Feature macros (`#define _GNU_SOURCE`, `#define _DEFAULT_SOURCE`, etc.)
+2. `#include` directives (deduplicated, auto-added for detected features)
+3. String type definition (`mt_str`) if string views are used
+4. Vector/matrix/quaternion math type definitions if used
+5. Runtime helpers (fatal, format engines, string equality, bounds checks, text buffer, async memory, parallel for, spawn-all, detach, entrypoint argv, variant equality)
+6. Forward declarations of all aggregate types (opaque struct, then struct, union, variant)
+7. Enum definitions
+8. Span type definitions (generated per element type)
+9. SoA type definitions (generated per element type)
+10. Aggregate type definitions (struct, union, variant) in topological order — a struct's fields must be defined before the struct itself
+11. Function forward declarations
+12. Constants and global variables
+13. `_Static_assert` declarations
+14. String literal constants (deduplicated)
+15. Function definitions
+
+After emission, invoke the external C compiler (`cc` for native, `emcc` for wasm) with platform-appropriate flags.
+
+**Porting note**: The Ruby C backend is in `core/c_backend.rb` and `c_backend/`. Feature detection maps to `feature_detection.rb`. Dead code elimination maps to `dead_code_elimination.rb`. Runtime helpers map to `runtime_helpers.rb`. The emission order and type sorting map to `c_backend.rb` and `aggregate_sort.rb`.
 
 ---
 
@@ -622,101 +733,114 @@ All self-host compiler source lives under `projects/mtc/`, following the standar
 
 ```
 projects/mtc/
-  package.toml                          # package.name = "mtc", kind = "application"
+  package.toml
   src/
-    main.mt                             # CLI entrypoint (parse args, dispatch to build/check/run/lint/deps)
+    main.mt                             # CLI entrypoint (parse args, dispatch)
     # ---------------------------------------------------------------------------
     # Infrastructure
     # ---------------------------------------------------------------------------
     context/
       source_manager.mt                 # SourceManager, SourceLocation, SourceFile
-      diagnostic.mt                     # Diag, DiagEngine, formatting with source context
-      arena.mt                          # Compiler arena wrapper (just uses std.mem.arena)
+      diagnostic.mt                     # Diag, DiagEngine, source context formatting
+      arena.mt                          # Compiler arena wrapper (re-exports std.mem.arena)
+      interner.mt                       # StringInterner for symbol names
+      node_id.mt                        # NodeId generation for TypedAST side tables
     # ---------------------------------------------------------------------------
     # Lexer
     # ---------------------------------------------------------------------------
     lexer/
-      token.mt                          # TokenKind, Token, keyword lookup
+      token.mt                          # TokenKind, Token, keyword lookup table
       lexer.mt                          # Indentation-aware lexer
-      token_stream.mt                   # TokenStream with peek/advance/rewind
+      token_stream.mt                   # TokenStream (peek/advance/check/match interface)
     # ---------------------------------------------------------------------------
     # Parser
     # ---------------------------------------------------------------------------
     parser/
-      ast.mt                            # AST node variants (AstNode, supporting structs)
-      parser.mt                         # Top-level parser, file-level declarations
+      ast.mt                            # All AST node variants (every node has SourceLocation)
+      parser.mt                         # Top-level parser driver
       parser/
         expressions.mt                  # Expression parsing
         statements.mt                   # Statement parsing
         declarations.mt                 # Declaration parsing (struct, enum, function, etc.)
-        type_parsing.mt                 # Type expression parsing (ptr[T], array[T,N], fn(...)->R, etc.)
-        blocks.mt                       # Indentation block handling
+        type_parsing.mt                 # Type expression parsing
+        blocks.mt                       # Indentation block protocol
         attributes.mt                   # @[attr(args)] parsing
+        recovery.mt                     # Error recovery (synchronize to boundaries)
     # ---------------------------------------------------------------------------
     # Name Resolution
     # ---------------------------------------------------------------------------
     resolve/
-      scope.mt                          # Scope, Symbol, SymbolTable
-      resolver.mt                       # Name resolution pass (AST → ResolvedAST)
+      scope.mt                          # Scope, ScopeTree
+      symbol.mt                         # Symbol, SymbolKind, SymbolTable (global index)
+      resolver.mt                       # Name resolution pass
     # ---------------------------------------------------------------------------
-    # Type System
+    # Semantic Analysis (phases 5a–5m; const eval + mono are interleaved here)
     # ---------------------------------------------------------------------------
     typeck/
-      types.mt                          # TypeEntry, TypeRegistry, TypeHandle, primitive kinds
-      typeck.mt                         # Main type checker driver
+      types.mt                          # TypeEntry, TypeRegistry, TypeHandle, TypeLayout
+      primitives.mt                     # PrimitiveKind enum, built-in type definitions
+      builtins.mt                       # Install built-in types + attributes
+      prelude.mt                        # Auto-import Option[T], Result[T, E]
+      const_eval.mt                     # Const evaluator (tree-walking interpreter)
+      mono.mt                           # Generic instantiation discovery + fixed-point loop
+      typeck.mt                         # Main semantic analysis driver (orchestrates sub-phases)
       typeck/
-        exprs.mt                        # Expression type checking
-        stmts.mt                        # Statement type checking
-        decls.mt                        # Declaration type checking
-        generics.mt                     # Generic constraint checking
-        compat.mt                       # Type compatibility, coercions
+        decls.mt                        # Declaration type-checking + forward-declare pass
+        exprs.mt                        # Expression type-checking + type inference
+        stmts.mt                        # Statement type-checking
+        compat.mt                       # Type compatibility and coercions
+        generics.mt                     # Constraint checking (T implements I)
         interface_check.mt              # Interface conformance verification
-        flow.mt                         # Nullability flow refinement
-        def_assign.mt                   # Definite assignment analysis
+        flow.mt                         # Nullability flow refinement for locals
+        def_assign.mt                   # Definite assignment analysis (CFG-based)
+        cf_analysis.mt                  # Reachability, termination, conditional return analysis
     # ---------------------------------------------------------------------------
-    # Monomorphization and Compile-Time Evaluation
-    # ---------------------------------------------------------------------------
-    mono/
-      monomorphize.mt                   # Generic instantiation discovery + expansion
-    eval/
-      interp.mt                         # Const evaluator interpreter
-    # ---------------------------------------------------------------------------
-    # Lowering to CIR
+    # Lowering to CIR (phases 6–8)
     # ---------------------------------------------------------------------------
     lower/
-      cir.mt                            # CIR node variants
-      lower.mt                          # Main lowering pass (TypedAST → CIR)
+      cir.mt                            # CIR node variants (Program, StructDecl, Function, etc.)
+      type_resolver.mt                  # Re-resolve TypeRef → TypeHandle during lowering
+      lower.mt                          # Lowering orchestrator
+      assemble.mt                       # Cross-module assembly + synthetic generation
       lower/
-        functions.mt                    # Function lowering
+        declarations.mt                 # Type/const/global lowering (Pass 1)
+        functions.mt                    # Function body lowering (Pass 2)
         statements.mt                   # Statement desugaring
         expressions.mt                  # Expression lowering
-        declarations.mt                 # Type declaration lowering
-        async.mt                        # Async function state machine lowering
-        events.mt                       # Event slot management lowering
-        proc_closures.mt                # Proc capture and closure lowering
-        bounds.mt                       # Bounds check injection
-        fmt_strings.mt                  # Format string expansion
-        str_buffer.mt                   # str_buffer[N] lowering
-        cf_analysis.mt                  # CFG-based analyses (def assign, reach, term)
+        match.mt                        # Match → switch/if-chain
+        defer_cleanup.mt                # Defer → scope-exit labels
+        async.mt                        # Async function → state machine (+ analysis/normalization)
+        events.mt                       # Event declaration → slot table lowering
+        proc_closures.mt                # Proc → env struct + function pointer
+        bounds.mt                       # Array/span bounds check injection
+        fmt_strings.mt                  # Format string → append calls expansion
+        str_buffer.mt                   # str_buffer[N] → fixed array + length field
+        foreign.mt                      # Foreign function boundary lowering
+        variant_constr.mt               # Variant constructor → discriminant + payload
     # ---------------------------------------------------------------------------
-    # C Code Generation
+    # C Code Generation (phase 9)
     # ---------------------------------------------------------------------------
     codegen/
-      emit.mt                           # CIR → C text emission
+      feature_detect.mt                 # Pre-scan CIR for used features (helper flags, includes)
+      dce.mt                            # Dead code elimination (reachability from entry points)
+      emit.mt                           # C codegen driver (orchestrates emission order)
       emit/
-        types.mt                        # Type definition emission (struct, enum, union)
-        functions.mt                    # Function emission
-        statements.mt                   # Statement emission
-        expressions.mt                  # Expression emission
-        async_runtime.mt                # Async runtime integration (state machine, bootstrapping)
-        events_runtime.mt               # Event runtime (slot tables, emit/dispatch)
-        runtime.mt                      # Runtime helpers (fatal, bounds-check abort, nullptr guards)
+        types.mt                        # Type definition emission (struct, enum, union, variant)
+        forward_decls.mt                # Forward declaration emission (topological sort)
+        functions.mt                    # Function definition emission
+        statements.mt                   # Statement → C emission
+        expressions.mt                  # Expression → C emission
+        runtime.mt                      # Runtime helpers (fatal, format, bounds-check, string eq)
+        async_runtime.mt                # Async runtime (state machine struct, bootstrap)
+        events_runtime.mt               # Event runtime (slot arrays, emit dispatch)
+        variant_equality.mt             # Variant equality helper generation
+        aggregate_sort.mt               # Topological sort of aggregate types for emission
     # ---------------------------------------------------------------------------
     # Module Graph and Dependency Management
     # ---------------------------------------------------------------------------
     module/
-      graph.mt                          # Dependency graph, topological ordering
-      loader.mt                         # File/path resolution, platform variants, root resolution
+      graph.mt                          # Dependency graph, topological ordering, cycle detection
+      loader.mt                         # File path resolution, platform variants, package roots
     # ---------------------------------------------------------------------------
     # CLI
     # ---------------------------------------------------------------------------
@@ -725,14 +849,8 @@ projects/mtc/
       run.mt                            # run command
       check.mt                          # check command (lex+parse+typeck only, no C output)
       lint.mt                           # lint command
-      deps.mt                           # deps subcommands (tree, lock, add, remove, update, fetch, publish)
+      deps.mt                           # deps subcommands
       options.mt                        # Shared CLI option parsing
-    # ---------------------------------------------------------------------------
-    # Utils (project-local helpers shared across phases)
-    # ---------------------------------------------------------------------------
-    utils/
-      interner.mt                       # String interner (shared across phases for symbol names)
-      node_id.mt                        # NodeId generation for TypedAST side tables
 ```
 
 ---
@@ -792,6 +910,178 @@ For each Ruby compiler module, port the logic (not the Ruby-isms) to Milk Tea:
 - No cross-compilation host detection beyond what the Ruby CLI already supports
 - No self-hosted bindgen (retain Ruby bindgen for v1)
 - No `--bundle` or `--archive` packaging (these are Ruby CLI features, not compiler features)
+- No `std.fmt.format_value[T]` specialization for all types (port primitives first, extend incrementally)
+- No full `--keep-c` path management beyond a single output directory
+
+---
+
+## Implementation Order
+
+Modules are listed in dependency order. Each number is a module that can be implemented and tested once its dependencies exist. The goal at each step is a compilable, testable increment.
+
+### Stage 1: Skeleton — compile a trivial `.mt` file to C
+
+| # | Module | Dependencies | Tests |
+|---|--------|-------------|-------|
+| 1 | `context/arena.mt` | `std.mem.arena` | None (thin wrapper) |
+| 2 | `context/source_manager.mt` | arena | Can load and store source files |
+| 3 | `context/diagnostic.mt` | source_manager | Can format errors with source context |
+| 4 | `context/interner.mt` | `std.str`, `std.map` | String dedup works |
+| 5 | `lexer/token.mt` | interner | TokenKind + keyword lookup correct |
+| 6 | `lexer/lexer.mt` | token, diagnostic | INDENT/DEDENT/NEWLINE generation |
+| 7 | `lexer/token_stream.mt` | token | peek/advance/check/match |
+| 8 | `parser/ast.mt` | token | All AST variants defined |
+| 9 | `parser/parser/blocks.mt` | token_stream, ast | Block protocol (colon+indent) |
+| 10 | `parser/parser/expressions.mt` (minimal) | ast, token_stream, blocks | Literals, identifiers, basic operators |
+| 11 | `parser/parser/statements.mt` (minimal) | ast, token_stream | `if`, `while`, `return`, `let`/`var` |
+| 12 | `parser/parser/declarations.mt` (minimal) | ast, token_stream | `function`, `struct`, `const`, `var` |
+| 13 | `parser/parser/type_parsing.mt` (minimal) | ast, token_stream | Named types, `ptr[T]` |
+| 14 | `parser/parser.mt` | all parser/* | Top-level parse_file → AST |
+| 15 | `parser/parser/recovery.mt` | parser | Error recovery (synchronize to boundaries) |
+| 16 | `typeck/types.mt` | `std.map` | TypeRegistry, TypeHandle, primitive layout |
+| 17 | `typeck/primitives.mt` | types | PrimitiveKind enum, type definitions |
+| 18 | `typeck/builtins.mt` | types, primitives | Install ptr, span, array, str_buffer, etc. |
+| 19 | `typeck/prelude.mt` | builtins | Auto-import Option, Result |
+| 20 | `resolve/scope.mt` | `std.map`, interner | Scope, ScopeTree |
+| 21 | `resolve/symbol.mt` | scope | Symbol, SymbolKind, global SymbolTable |
+| 22 | `resolve/resolver.mt` | symbol, ast | Name resolution (AST → identifiers bound to Symbols) |
+| 23 | `typeck/typeck/compat.mt` | types | Type compatibility, coercion rules |
+| 24 | `typeck/const_eval.mt` | types, symbol | Const evaluator (literals, identifiers, arithmetic) |
+| 25 | `typeck/typeck/decls.mt` | types, symbol, compat | Forward-declare types, resolve fields |
+| 26 | `typeck/typeck/stmts.mt` | types, symbol, compat | Statement type-checking |
+| 27 | `typeck/typeck/exprs.mt` | types, symbol, compat, const_eval | Expression type-checking + inference |
+| 28 | `typeck/typeck/generics.mt` | types, symbol, compat | Constraint T implements I checking |
+| 29 | `typeck/typeck/def_assign.mt` | types | Definite assignment analysis |
+| 30 | `typeck/typeck/cf_analysis.mt` | types | Reachability, termination |
+| 31 | `typeck/typeck.mt` | all typeck/* | Semantic analysis orchestrator |
+| 32 | `lower/cir.mt` | types | All CIR node variants |
+| 33 | `lower/type_resolver.mt` | types | TypeRef → TypeHandle (for lowerer) |
+| 34 | `lower/lower/declarations.mt` | cir, type_resolver | Struct/const/global → CIR |
+| 35 | `lower/lower/statements.mt` | cir, type_resolver | Statement desugaring |
+| 36 | `lower/lower/expressions.mt` | cir, type_resolver | Expression → CIR |
+| 37 | `lower/lower/functions.mt` | cir, type_resolver, statements, expressions | Function body lowering |
+| 38 | `lower/lower.mt` | all lower/* | Lowering orchestrator (two-pass) |
+| 39 | `codegen/feature_detect.mt` | cir | Feature flag detection |
+| 40 | `codegen/dce.mt` | cir | Dead code elimination |
+| 41 | `codegen/emit/runtime.mt` | cir | Runtime helpers (fatal, string eq, bounds check) |
+| 42 | `codegen/emit/aggregate_sort.mt` | cir | Topological sort of types |
+| 43 | `codegen/emit/forward_decls.mt` | cir | Forward declaration emission |
+| 44 | `codegen/emit/types.mt` | cir | Type definition emission |
+| 45 | `codegen/emit/statements.mt` | cir | Statement → C text |
+| 46 | `codegen/emit/expressions.mt` | cir | Expression → C text |
+| 47 | `codegen/emit/functions.mt` | cir, statements, expressions | Function → C text |
+| 48 | `codegen/emit.mt` | all codegen/* | C codegen driver |
+| 49 | `module/loader.mt` | `std.fs` | File resolution, platform variants |
+| 50 | `module/graph.mt` | loader | Dependency graph, topo-sort |
+| 51 | `cli/options.mt` | std | CLI option parsing |
+| 52 | `cli/build.mt` | all compiler modules, options | Build command |
+| 53 | `cli/run.mt` | build, options | Run command |
+| 54 | `cli/check.mt` | lexer, parser, typeck, options | Check command (no C output) |
+| 55 | `main.mt` | cli/* | CLI entry point |
+
+At this point, the compiler can compile and run simple programs (structs, functions, basic control flow).
+
+### Stage 2: Full declaration and statement surface
+
+| # | Module | Adds |
+|---|--------|------|
+| 56 | `parser/parser/declarations.mt` (full) | enum, flags, union, variant, opaque, interface, extending, event, attribute, foreign, external, static_assert, emit, when, const function, async |
+| 57 | `parser/parser/statements.mt` (full) | match, when, inline for/while/if/match, parallel for, parallel:, detach/gather, defer, unsafe, break/continue, pass |
+| 58 | `parser/parser/expressions.mt` (full) | match-expr, if-expr, proc, tuple, variant literal, cast, reinterpret, ?, is, with, format string, specialization |
+| 59 | `parser/parser/type_parsing.mt` (full) | fn/proc types, tuple types, dyn[T], SoA[T,N], atomic[T], nullable, const_ptr, ref, span |
+| 60 | `parser/parser/attributes.mt` | @[attr(args)] parsing on declarations |
+| 61 | `typeck/typeck/interface_check.mt` | Interface conformance verification |
+| 62 | `typeck/typeck/flow.mt` | Nullability flow refinement |
+| 63 | `typeck/mono.mt` | Generic instantiation discovery + expansion loop |
+| 64 | `lower/lower/match.mt` | Match → switch/if-chain |
+| 65 | `lower/lower/defer_cleanup.mt` | Defer → scope-exit labels |
+| 66 | `lower/lower/events.mt` | Event declaration → slot table |
+| 67 | `lower/lower/proc_closures.mt` | Proc → env struct + function |
+| 68 | `lower/lower/bounds.mt` | Bounds check injection |
+| 69 | `lower/lower/fmt_strings.mt` | Format string → append calls |
+| 70 | `lower/lower/str_buffer.mt` | str_buffer → array + length |
+| 71 | `lower/lower/foreign.mt` | Foreign function boundary lowering |
+| 72 | `lower/lower/variant_constr.mt` | Variant constructor lowering |
+| 73 | `lower/assemble.mt` | Cross-module assembly + synthetics |
+| 74 | `codegen/emit/variant_equality.mt` | Variant equality helpers per type |
+
+### Stage 3: Advanced features
+
+| # | Module | Adds |
+|---|--------|------|
+| 75 | `lower/lower/async.mt` | Async function → state machine (with liveness analysis + normalization) |
+| 76 | `codegen/emit/async_runtime.mt` | Async runtime: state machine allocation, scheduler |
+| 77 | `codegen/emit/events_runtime.mt` | Event runtime: slot tables, emit dispatch |
+| 78 | `cli/lint.mt` | Lint command |
+| 79 | `cli/deps.mt` | Deps subcommands |
+
+### Stage 4: Self-hosting
+
+Compile `projects/mtc/` with the self-host binary. Fix any bugs exposed by the full language surface being compiled through itself. Iterate until the self-compiled binary passes all tests.
+
+---
+
+## Risk Areas
+
+### Generic Instantiation Fixed-Point Loop
+
+Monomorphization discovers instantiations transitively: calling `foo[int]` inside the body of `bar[T]` when `T = str` discovers `foo[str]`. The loop must detect completion correctly and must not loop infinitely.
+
+**Mitigation**: Cap iterations (1000). Track a `changed` flag per iteration. Log which instantiations are discovered per round during debug builds. The Ruby compiler uses `@lowered_linkages` cache and a simple worklist.
+
+### Const Dependency Cycles
+
+`const A: int = B + 1; const B: int = A - 1` must be detected and rejected.
+
+**Mitigation**: Maintain an `@evaluating_const_values` set (by symbol name). Before evaluating a const, check membership — if present, report a cycle error. The Ruby compiler uses a Set of names plus a Set of `object_id`s.
+
+### Arena Lifetime Management
+
+Cross-module references (one module's Symbol pointing to another module's type) must not become dangling when module arenas are freed.
+
+**Mitigation**: The global `SymbolTable` and `TypeRegistry` live in their own arenas (not per-module). Module arenas hold only per-module data (AST nodes, local scopes). Cross-module references go through the global tables by handle (integer index), not by pointer.
+
+### String Interning
+
+Symbol names (function names, field names, type names) appear repeatedly. Without interning, string allocation and comparison dominates compile time.
+
+**Mitigation**: A `StringInterner` — a hash set mapping `str` → interned pointer. All symbols store interned strings. The interner and symbol table share the same long-lived arena. The Ruby compiler gets this "for free" from Ruby's string intern pool.
+
+### Error Recovery During Parsing
+
+Without synchronization, one parse error cascades into hundreds of bogus errors.
+
+**Mitigation**: On parse error, report the error, then skip tokens until a synchronizing token: top-level keyword at indent 0 for top-level recovery, statement keyword at current indent for statement recovery, or DEDENT/EOF. This is ~100 lines of code and dramatically improves error quality.
+
+### Proc Closure Capture Analysis
+
+Analyzing which locals are captured by a `proc` expression, creating the environment struct, and rewriting references is subtle. Nested procs and captured proc values add complexity.
+
+**Mitigation**: Port the Ruby algorithm directly from `lowering/proc.rb`:
+1. Walk proc body, collect all referenced locals from enclosing scopes
+2. Create env struct with fields for each captured local
+3. Rewrite captured references to `env->field`
+4. At the capture point, populate env struct
+5. For captured proc values: reference-count (retain/release)
+6. Write focused unit tests for each edge case (scalar capture, array capture, proc capture, nested proc)
+
+### Type Layout Computation
+
+Computing `size_of`, `align_of`, `offset_of` for structs with nested types, packed attributes, and alignment overrides requires careful implementation. Self-referential types (via pointers) and variant layout (tagged union) add complexity.
+
+**Mitigation**: Port `core/types/layout.rb` directly. The algorithm is well-defined: iterate fields in declaration order, align each field, sum sizes, pad to max alignment. Variant layout: tag (int, 4 bytes) + union of arm payloads (max arm size). Recursive types: pointer fields store `ptr[T]` which has fixed pointer size, not the struct size — no infinite recursion.
+
+### Async Liveness Analysis
+
+Determining which local variables are live across `await` points requires a dataflow analysis over the function body.
+
+**Mitigation**: Port `lowering/async_analysis.rb`. The analysis marks each local as "live across await" if it is written before and read after any await point. The state machine struct only needs to save live-across-await locals; other locals stay on the C stack.
+
+### Cross-Module Type Visibility
+
+When module A's struct references module B's type in a field, and module B's struct references module A's type, there's a circular dependency that requires forward declarations in C.
+
+**Mitigation**: The `aggregate_sort.mt` module handles this by emitting opaque struct forward declarations first, then full definitions in topological order. Self-referential structs (via pointers) are always possible since pointer size is known. For value-type cycles, emit an error during sema (circular type dependency).
 
 ---
 
@@ -816,11 +1106,18 @@ For porting reference, the key Ruby compiler modules and their paths:
 | `core/types/predicates.rb` | Type kind predicates | `typeck/types.mt` |
 | `core/semantic_analyzer.rb` | Type checker driver | `typeck/typeck.mt` |
 | `semantic/*.rb` | Statement/expression/decl checking | `typeck/typeck/*.mt` |
-| `core/cfg.rb` + `cfg/*.rb` | Control flow graph analyses | `lower/cf_analysis.mt` |
-| `core/compile_time.rb` + `compile_time/*.rb` | Const evaluation | `eval/interp.mt` |
+| `core/cfg.rb` + `cfg/*.rb` | Control flow graph analyses | `typeck/typeck/def_assign.mt`, `typeck/typeck/cf_analysis.mt` |
+| `core/compile_time.rb` + `compile_time/*.rb` | Const evaluation | `typeck/const_eval.mt` |
 | `core/lowering.rb` + `lowering/*.rb` | AST→IR lowering | `lower/lower.mt` + `lower/*.mt` |
 | `core/ir.rb` | IR node definitions | `lower/cir.mt` |
 | `core/c_backend.rb` + `c_backend/*.rb` | C code generation | `codegen/emit.mt` + `codegen/emit/*.mt` |
+| (various) | Feature detection | `codegen/feature_detect.mt` |
+| (various) | Dead code elimination | `codegen/dce.mt` |
+| (various) | Runtime helpers | `codegen/emit/runtime.mt` + `async_runtime.mt` + `events_runtime.mt` |
+| (various) | Type emission order | `codegen/emit/aggregate_sort.mt` |
+| (various) | String interning | `context/interner.mt` |
+| `core/prelude_installer.rb` | Prelude installation | `typeck/prelude.mt` |
+| `core/binding_types.rb` | Foreign function boundary types | `lower/lower/foreign.mt` |
 
 ---
 
