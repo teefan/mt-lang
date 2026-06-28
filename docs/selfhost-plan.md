@@ -45,7 +45,7 @@ now produces IR JSON structurally identical to `lower` from source. See below.
 | Stage | Status | Verification |
 |---|---|---|
 | Lexer (1) | **DONE** | 476/476 files, positions included, 0 diffs |
-| Parser (2) | **DONE ✓** | 12/13 pass, accuracy=8, shape=18, 0 errors |
+| Parser (2) | **DONE ✓** | 13/13 pass, accuracy=0, shape=0 (~40% positions done) |
 | Lowering (4) | **NEXT** | Oracle repaired — verified structurally identical IR JSON |
 | C Backend (5) | partial | Prototype with known correctness gaps |
 | Semantic Analyzer (3) | later | ~13k+ lines Ruby |
@@ -132,9 +132,9 @@ to Stage 4.
 
 **Location:** `projects/mtc/src/parser/`
 
-**Verification:** Differential parity harness (`projects/mtc/tools/parity.rb`). **12 of 13 examples fully pass (0 diffs); total diffs 26 (accuracy 8, shape 18).** 0 errors, crash-safe by construction, all body discards eliminated. **49/49 internal tests pass.**
+**Verification:** Differential parity harness (`projects/mtc/tools/parity.rb`). **13 of 13 examples fully pass (0 diffs) with --ignore-positions.** Positions are partially implemented (~40% done, 11497 remaining diffs, all null vs real values). 0 errors, crash-safe by construction. **49/49 internal tests pass.**
 
-Only `language_baseline` remains (8 accuracy + 18 shape). All diffs are from the declaration-level `when` block (`parse_when_block`): when arms contain module-level declarations (const, function) that require declaration-parsing within arms — an architectural edge case, not a missing statement/expression form. The parser handles every individual statement, expression, and declaration type correctly.
+All structural diffs eliminated. The remaining work is Milestone B: completing positions on the remaining ~10 inline JSON builder sites and sub-node type fields (TypeRef, params, etc.).
 
 **Code size:** ~4270 lines (parser.mt), up from 1180.
 
@@ -181,10 +181,10 @@ Only `language_baseline` remains (8 accuracy + 18 shape). All diffs are from the
 
 | Feature | Diffs | Notes |
 |---|---|---|
-| Declaration-level `when` block | 26 | `parse_when_block` needs proper arm parsing with declaration content (const/func in arms). Requires `parse_decl_block_body` to emit into detached buffer. |
-| Milestone B: positions | — | `line`/`column`/`length` on every AST node |
+| Milestone B: positions | 11497 | ~40% done. All declaration-level positions done. Remaining: ~10 inline JSON builder sites and TypeRef sub-nodes. |
+| Milestone B: positions (inline) | — | Remaining sites in: parse_type, parse_type_params_json, parse_struct_params, parse_return_stmt, parse_if_branch, parse_while_stmt, parse_defer_stmt, parse_unsafe_block_stmt, parse_when_stmt, parse_proc_expr, parse_dyn_type, parse_callable_type |
 
-All other features from the original remaining-work table are **DONE**: extending/interface methods, qualified receivers, struct body, lifetime params, packed/alignment, f-strings with FormatString, `parallel for`, destructure locals, `gather`, `detach`, `unsafe:` expression, `is` expression, field-level attributes, `static_assert` statement, emit block skip, prefix cast with type args, `*_of` keywords.
+All other features from the original remaining-work table are **DONE**: declaration-level `when` block, extending/interface methods, qualified receivers, struct body, lifetime params, packed/alignment, f-strings with FormatString, `parallel for`, destructure locals, `gather`, `detach`, `unsafe:` expression, `is` expression, field-level attributes, `static_assert` statement, emit block parsing (EmitStmt), prefix cast with type args, `*_of` keywords.
 
 ---
 
