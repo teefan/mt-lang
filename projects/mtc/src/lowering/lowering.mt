@@ -27,12 +27,44 @@ function lower_function_from_analysis(buf: ref[string_mod.String], analysis: str
     buf.append("\",\"linkage_name\":\"")
     buf.append(linkage.as_str())
     linkage.release()
-    buf.append("\",\"params\":[],\"return_type\":{\"$type_ref\":\"Primitive\",\"name\":\"int\"}")
 
-    buf.append(",\"body\":[")
     let func_obj = json_get_obj(analysis, "functions")
     let func_binding = json_get_obj(func_obj, name)
     let ast_json = json_get_obj(func_binding, "ast")
+
+    buf.append("\",\"params\":[")
+    let params_json = json_get_obj(ast_json, "params")
+    if params_json.len > 0:
+        var ppos: ptr_uint = 1
+        var pfirst = true
+        while ppos < params_json.len:
+            if params_json.byte_at(ppos) == '{':
+                let pobj = read_balanced(params_json, ppos)
+                if pobj.len > 0:
+                    ppos = ppos + pobj.len
+                    if not pfirst:
+                        buf.push_byte(',')
+                    pfirst = false
+                    let pn = json_get_str(pobj, "name")
+                    buf.append("{\"$mt_type\":\"IR:Param\",\"name\":\"")
+                    buf.append(pn)
+                    buf.append("\",\"linkage_name\":\"")
+                    buf.append(pn)
+                    buf.append("\",\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"int\"},\"pointer\":false,\"line\":null}")
+                else:
+                    ppos += 1
+            else:
+                ppos += 1
+    buf.append("]")
+
+    let ret_json = json_get_obj(ast_json, "return_type")
+    buf.append(",\"return_type\":")
+    if ret_json.len > 0:
+        lower_type_json(buf, ret_json)
+    else:
+        buf.append("{\"$type_ref\":\"Primitive\",\"name\":\"void\"}")
+
+    buf.append(",\"body\":[")
     let body_json = json_get_obj(ast_json, "body")
     lower_body_json(buf, body_json)
     buf.append("],\"entry_point\":false,\"method_receiver_param\":false}")
@@ -95,30 +127,68 @@ function lower_stmt_json(buf: ref[string_mod.String], stmt: str) -> void:
     else if mt == "AST:WhileStmt":
         lower_while_json(buf, stmt)
     else if mt == "AST:ForStmt":
-        buf.append("{\"$mt_type\":\"IR:PassStmt\",\"line\":null}")
+        lower_for_json(buf, stmt)
+    else if mt == "AST:DeferStmt":
+        buf.append("{\"$mt_type\":\"IR:DeferStmt\",\"body\":[")
+        lower_body_json(buf, json_get_obj(stmt, "body"))
+        buf.append("],\"line\":null,\"source_path\":null}")
+    else if mt == "AST:UnsafeStmt":
+        buf.append("{\"$mt_type\":\"IR:UnsafeStmt\",\"body\":[")
+        lower_body_json(buf, json_get_obj(stmt, "body"))
+        buf.append("],\"line\":null,\"source_path\":null}")
     else:
         buf.append("{\"$mt_type\":\"IR:PassStmt\",\"line\":null}")
 
 function lower_if_json(buf: ref[string_mod.String], stmt: str) -> void:
     buf.append("{\"$mt_type\":\"IR:IfStmt\",\"condition\":")
-    lower_expr_json(buf, json_get_obj(stmt, "\"condition\":"))
+    lower_expr_json(buf, json_get_obj(stmt, "condition"))
     buf.append(",\"then_branch\":[")
-    let branches = json_get_obj(stmt, "\"branches\":")
+    let branches = json_get_obj(stmt, "branches")
     var arm = branch_arm(branches, 0)
-    lower_body_json(buf, json_get_obj(arm, "\"body\":"))
+    lower_body_json(buf, json_get_obj(arm, "body"))
     buf.append("]")
     var else_arm = branch_arm(branches, 1)
     if else_arm.len > 0:
         buf.append(",\"else_branch\":[")
-        lower_body_json(buf, json_get_obj(else_arm, "\"body\":"))
+        lower_body_json(buf, json_get_obj(else_arm, "body"))
         buf.append("]")
     buf.append(",\"line\":null,\"source_path\":null}")
 
 function lower_while_json(buf: ref[string_mod.String], stmt: str) -> void:
     buf.append("{\"$mt_type\":\"IR:WhileStmt\",\"condition\":")
-    lower_expr_json(buf, json_get_obj(stmt, "\"condition\":"))
+    lower_expr_json(buf, json_get_obj(stmt, "condition"))
     buf.append(",\"body\":[")
-    lower_body_json(buf, json_get_obj(stmt, "\"body\":"))
+    lower_body_json(buf, json_get_obj(stmt, "body"))
+    buf.append("],\"line\":null,\"source_path\":null}")
+
+function lower_for_json(buf: ref[string_mod.String], stmt: str) -> void:
+    buf.append("{\"$mt_type\":\"IR:ForStmt\",\"bindings\":[")
+    let bindings = json_get_obj(stmt, "bindings")
+    if bindings.len > 0:
+        var bpos: ptr_uint = 1
+        var bfirst = true
+        while bpos < bindings.len:
+            if bindings.byte_at(bpos) == '{':
+                let bobj = read_balanced(bindings, bpos)
+                if bobj.len > 0:
+                    bpos = bpos + bobj.len
+                    if not bfirst:
+                        buf.push_byte(',')
+                    bfirst = false
+                    buf.append("{\"$mt_type\":\"IR:LocalDecl\",\"name\":\"")
+                    let bn = json_get_str(bobj, "name")
+                    buf.append(bn)
+                    buf.append("\",\"linkage_name\":\"")
+                    buf.append(bn)
+                    buf.append("\",\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"int\"},\"value\":null,\"line\":null,\"source_path\":null}")
+                else:
+                    bpos += 1
+            else:
+                bpos += 1
+    buf.append("],\"iterable\":")
+    lower_expr_json(buf, json_get_obj(stmt, "iterable"))
+    buf.append(",\"body\":[")
+    lower_body_json(buf, json_get_obj(stmt, "body"))
     buf.append("],\"line\":null,\"source_path\":null}")
 
 function branch_arm(json: str, index: ptr_uint) -> str:
@@ -136,9 +206,9 @@ function branch_arm(json: str, index: ptr_uint) -> str:
     return ""
 
 function lower_expr_json(buf: ref[string_mod.String], expr: str) -> void:
-    let mt = json_get_str(expr, "\"$mt_type\":")
+    let mt = json_get_str(expr, "$mt_type")
     if mt == "AST:IntegerLiteral":
-        let v = json_get_str(expr, "value")
+        let v = json_read_value(expr, "value")
         buf.append("{\"$mt_type\":\"IR:IntegerLiteral\",\"value\":")
         buf.append(v)
         buf.append(",\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"int\"}}")
@@ -148,33 +218,107 @@ function lower_expr_json(buf: ref[string_mod.String], expr: str) -> void:
         buf.append(nm)
         buf.append("\",\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"int\"},\"pointer\":false}")
     else if mt == "AST:BinaryOp":
-        let op = json_get_str(expr, "\"operator\":")
+        let op = json_get_str(expr, "operator")
         buf.append("{\"$mt_type\":\"IR:Binary\",\"operator\":\"")
         buf.append(op)
         buf.append("\",\"left\":")
-        lower_expr_json(buf, json_get_obj(expr, "\"left\":"))
+        lower_expr_json(buf, json_get_obj(expr, "left"))
         buf.append(",\"right\":")
-        lower_expr_json(buf, json_get_obj(expr, "\"right\":"))
+        lower_expr_json(buf, json_get_obj(expr, "right"))
         buf.append(",\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"int\"}}")
     else if mt == "AST:UnaryOp":
-        let op = json_get_str(expr, "\"operator\":")
+        let op = json_get_str(expr, "operator")
         buf.append("{\"$mt_type\":\"IR:Unary\",\"operator\":\"")
         buf.append(op)
         buf.append("\",\"operand\":")
-        lower_expr_json(buf, json_get_obj(expr, "\"operand\":"))
+        lower_expr_json(buf, json_get_obj(expr, "operand"))
         buf.append(",\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"int\"}}")
     else if mt == "AST:FloatLiteral":
-        let v = json_get_str(expr, "value")
+        let v = json_read_value(expr, "value")
         buf.append("{\"$mt_type\":\"IR:FloatLiteral\",\"value\":")
         buf.append(v)
         buf.append(",\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"float\"}}")
     else if mt == "AST:BooleanLiteral":
-        let v = json_get_str(expr, "value")
+        let v = json_read_value(expr, "value")
         buf.append("{\"$mt_type\":\"IR:BooleanLiteral\",\"value\":")
         buf.append(v)
         buf.append(",\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"bool\"}}")
+    else if mt == "AST:Call":
+        buf.append("{\"$mt_type\":\"IR:Call\",\"callee\":")
+        lower_expr_json(buf, json_get_obj(expr, "callee"))
+        buf.append(",\"arguments\":[")
+        let args_json = json_get_obj(expr, "arguments")
+        if args_json.len > 0:
+            var apos: ptr_uint = 1
+            var afirst = true
+            while apos < args_json.len:
+                if args_json.byte_at(apos) == '{':
+                    let aobj = read_balanced(args_json, apos)
+                    if aobj.len > 0:
+                        apos = apos + aobj.len
+                        if not afirst:
+                            buf.push_byte(',')
+                        afirst = false
+                        let arg_val = json_get_obj(aobj, "value")
+                        if arg_val.len > 0:
+                            lower_expr_json(buf, arg_val)
+                        else:
+                            buf.append("{\"$mt_type\":\"IR:IntegerLiteral\",\"value\":0,\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"int\"}}")
+                    else:
+                        apos += 1
+                else:
+                    apos += 1
+        buf.append("],\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"int\"}}")
+    else if mt == "AST:MemberAccess":
+        buf.append("{\"$mt_type\":\"IR:Member\",\"receiver\":")
+        lower_expr_json(buf, json_get_obj(expr, "receiver"))
+        let mn = json_get_str(expr, "member")
+        buf.append(",\"member\":\"")
+        buf.append(mn)
+        buf.append("\",\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"int\"}}")
+    else if mt == "AST:StringLiteral":
+        let v = json_read_value(expr, "value")
+        buf.append("{\"$mt_type\":\"IR:StringLiteral\",\"value\":\"")
+        buf.append(v)
+        buf.append("\",\"type\":{\"$type_ref\":\"Pointer\",\"name\":\"char\"}}")
+    else if mt == "AST:NullLiteral":
+        buf.append("{\"$mt_type\":\"IR:NullptrLiteral\",\"type\":{\"$type_ref\":\"Pointer\",\"name\":\"void\"}}")
+    else if mt == "AST:CharLiteral":
+        let v = json_get_str(expr, "value")
+        buf.append("{\"$mt_type\":\"IR:CharLiteral\",\"value\":")
+        buf.append(v)
+        buf.append(",\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"char\"}}")
+    else if mt == "AST:IndexAccess":
+        buf.append("{\"$mt_type\":\"IR:Index\",\"receiver\":")
+        lower_expr_json(buf, json_get_obj(expr, "receiver"))
+        buf.append(",\"index\":")
+        lower_expr_json(buf, json_get_obj(expr, "index"))
+        buf.append(",\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"int\"}}")
     else:
         buf.append("{\"$mt_type\":\"IR:IntegerLiteral\",\"value\":0,\"type\":{\"$type_ref\":\"Primitive\",\"name\":\"int\"}}")
+
+function lower_type_json(buf: ref[string_mod.String], type_obj: str) -> void:
+    let name_obj = json_get_obj(type_obj, "name")
+    let parts = json_get_obj(name_obj, "parts")
+    var tn = "void"
+    if parts.len > 0:
+        var ppos: ptr_uint = 1
+        var part_str = string_mod.String.create()
+        var pfirst = true
+        while ppos < parts.len:
+            if parts.byte_at(ppos) == '"':
+                let p = read_quoted(parts, ppos + 1)
+                if not pfirst:
+                    part_str.push_byte('.')
+                pfirst = false
+                part_str.append(p)
+                ppos = ppos + p.len + 2
+            else:
+                ppos += 1
+        tn = part_str.as_str()
+    buf.append("{\"$type_ref\":\"Primitive\",\"name\":\"")
+    buf.append(tn)
+    buf.append("\"}")
 
 # ── JSON parsing helpers ──────────────────────────────────────────────────
 
@@ -269,11 +413,7 @@ function json_get_str(obj: str, key: str) -> str:
                 if pos < obj.len and obj.byte_at(pos) == '"':
                     return read_quoted(obj, pos + 1)
                 return ""
-            if pos < obj.len and obj.byte_at(pos) == '"':
-                pos = pos + read_quoted(obj, pos + 1).len + 2
-            else if pos < obj.len and (obj.byte_at(pos) == '{' or obj.byte_at(pos) == '['):
-                let nobj = read_balanced(obj, pos)
-                pos = pos + nobj.len
+            pos = skip_json_value(obj, pos)
         else:
             pos += 1
     return ""
@@ -294,11 +434,57 @@ function json_get_obj(obj: str, key: str) -> str:
                 if pos < obj.len and (obj.byte_at(pos) == '{' or obj.byte_at(pos) == '['):
                     return read_balanced(obj, pos)
                 return ""
-            if pos < obj.len and obj.byte_at(pos) == '"':
-                pos = pos + read_quoted(obj, pos + 1).len + 2
-            else if pos < obj.len and (obj.byte_at(pos) == '{' or obj.byte_at(pos) == '['):
-                let nobj = read_balanced(obj, pos)
-                pos = pos + nobj.len
+            pos = skip_json_value(obj, pos)
+        else:
+            pos += 1
+    return ""
+
+function skip_json_value(obj: str, pos: ptr_uint) -> ptr_uint:
+    var i = pos
+    if i < obj.len and obj.byte_at(i) == '"':
+        let val = read_quoted(obj, i + 1)
+        return i + val.len + 2
+    if i < obj.len and (obj.byte_at(i) == '{' or obj.byte_at(i) == '['):
+        return i + read_balanced(obj, i).len
+    if i < obj.len and obj.byte_at(i) == 't':
+        return i + 4
+    if i < obj.len and obj.byte_at(i) == 'f':
+        return i + 5
+    if i < obj.len and obj.byte_at(i) == 'n':
+        return i + 4
+    while i < obj.len:
+        let ch = obj.byte_at(i)
+        if not (is_digit(ch) or ch == '-' or ch == '.' or ch == 'e' or ch == 'E' or ch == '+'):
+            return i
+        i += 1
+    return i
+
+function is_digit(ch: ubyte) -> bool:
+    return ch >= '0' and ch <= '9'
+
+function json_read_value(obj: str, key: str) -> str:
+    var pos: ptr_uint = 1
+    while pos < obj.len:
+        if obj.byte_at(pos) == '"':
+            let k = read_quoted(obj, pos + 1)
+            pos = pos + k.len + 2
+            while pos < obj.len and obj.byte_at(pos) != ':':
+                pos += 1
+            if pos < obj.len:
+                pos += 1
+            while pos < obj.len and (obj.byte_at(pos) == ' ' or obj.byte_at(pos) == '\n'):
+                pos += 1
+            if k == key:
+                if pos < obj.len and obj.byte_at(pos) == '"':
+                    return read_quoted(obj, pos + 1)
+                let start = pos
+                while pos < obj.len:
+                    let ch = obj.byte_at(pos)
+                    if ch == ',' or ch == '}' or ch == ']' or ch == ' ' or ch == '\n':
+                        break
+                    pos += 1
+                return obj.slice(start, pos - start)
+            pos = skip_json_value(obj, pos)
         else:
             pos += 1
     return ""
