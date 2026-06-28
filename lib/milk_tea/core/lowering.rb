@@ -87,8 +87,47 @@ module MilkTea
     def self.lower_from_analyses(root_analysis, imported_analyses)
       analyses = { root_analysis.module_name.to_s => root_analysis }
       imported_analyses.each { |k, v| analyses[k] = v }
+
+      resolved_imports = root_analysis.imports.transform_values do |import_binding|
+        mod_name = import_binding.name.to_s
+        resolved = analyses[mod_name]
+        next import_binding unless resolved
+        ImportAnalysisProxy.new(resolved)
+      end
+      if root_analysis.respond_to?(:with)
+        root_analysis = root_analysis.with(imports: resolved_imports)
+        analyses[root_analysis.module_name.to_s] = root_analysis
+      end
+
       program = ModuleProgramStub.new(root_analysis, analyses)
       lower(program)
+    end
+
+    ImportAnalysisProxy = Struct.new(:analysis) do
+      def name = analysis.module_name.to_s
+      def types = analysis.types
+      def functions = analysis.functions
+      def values = analysis.values
+      def methods = analysis.methods
+      def interfaces = analysis.interfaces
+      def attributes = analysis.attributes
+      def attribute_applications = analysis.attribute_applications
+      def implemented_interfaces = analysis.implemented_interfaces
+      def imports = analysis.imports
+      def directives = analysis.directives
+      def module_kind = analysis.module_kind
+      def module_name = analysis.module_name
+      def private_types = analysis.respond_to?(:private_types) ? analysis.private_types : {}
+      def private_interfaces = analysis.respond_to?(:private_interfaces) ? analysis.private_interfaces : {}
+      def private_attributes = analysis.respond_to?(:private_attributes) ? analysis.private_attributes : {}
+      def private_values = analysis.respond_to?(:private_values) ? analysis.private_values : {}
+      def private_functions = analysis.respond_to?(:private_functions) ? analysis.private_functions : {}
+      def private_methods = analysis.respond_to?(:private_methods) ? analysis.private_methods : {}
+      def private_implemented_interfaces = analysis.respond_to?(:private_implemented_interfaces) ? analysis.private_implemented_interfaces : {}
+      def private_type?(n) = analysis.respond_to?(:private_type?) ? analysis.private_type?(n) : false
+      def private_interface?(n) = analysis.respond_to?(:private_interface?) ? analysis.private_interface?(n) : false
+      def private_value?(n) = analysis.respond_to?(:private_value?) ? analysis.private_value?(n) : false
+      def private_function?(n) = analysis.respond_to?(:private_function?) ? analysis.private_function?(n) : false
     end
 
     ModuleProgramStub = Struct.new(:root_analysis, :analyses_by_mod) do
@@ -98,7 +137,12 @@ module MilkTea
       def module_name = root_analysis.module_name
       def module_kind = root_analysis.module_kind
       def directives = root_analysis.directives
-      def imports = root_analysis.imports
+      def imports
+        root_analysis.imports.transform_values do |import_binding|
+          mod_name = import_binding.name.to_s
+          analyses_by_mod[mod_name] || import_binding
+        end
+      end
       def types = root_analysis.types
       def interfaces = root_analysis.interfaces
       def attributes = root_analysis.attributes
