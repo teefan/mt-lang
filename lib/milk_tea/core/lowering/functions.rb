@@ -42,8 +42,14 @@ module MilkTea
               end
             when AST::ExtendingBlock
               receiver_type = resolve_extending_receiver_type(@ctx.analysis, decl.type_name)
+              methods_hash = @ctx.methods[receiver_type]
+              unless methods_hash
+                methods_hash = @ctx.methods.find { |k, _| k.to_s == receiver_type.to_s }&.last
+              end
+              next unless methods_hash
               decl.methods.each do |method|
-                binding = @ctx.methods.fetch(receiver_type).fetch(method.kind == :static ? "static:#{method.name}" : method.name)
+                binding = methods_hash[method.kind == :static ? "static:#{method.name}" : method.name]
+                next unless binding
                 if binding.type_params.any?
                   binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
                     linkage_name = function_binding_c_name(instance, module_name: @ctx.module_name, receiver_type:)
