@@ -71,6 +71,21 @@ function peek_lit_json(p: ref[Parser]) -> str:
 
     return unsafe: read(tok).lit_json.as_str()
 
+function current_line(p: ref[Parser]) -> ptr_uint:
+    let tok = p.tokens.peek() else:
+        return 0
+    return unsafe: read(tok).line
+
+function current_column(p: ref[Parser]) -> ptr_uint:
+    let tok = p.tokens.peek() else:
+        return 0
+    return unsafe: read(tok).column
+
+function current_length(p: ref[Parser]) -> ptr_uint:
+    let tok = p.tokens.peek() else:
+        return 0
+    return unsafe: read(tok).lexeme.len
+
 function format_spec_json(fmts: str) -> str:
     var n = fmts.len
     if n == 0:
@@ -392,6 +407,8 @@ function is_ident_or_keyword(p: ref[Parser]) -> bool:
     return true
 
 function parse_import(p: ref[Parser]) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)  # consume "import"
 
     var parts = vec_mod.Vec[str].create()
@@ -422,8 +439,8 @@ function parse_import(p: ref[Parser]) -> void:
     else:
         ast.ast_str(ref_of(p.ast_buf), "alias_name", alias_name)
 
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_null(ref_of(p.ast_buf), "length")
     ast.ast_close(ref_of(p.ast_buf))
 
@@ -480,6 +497,8 @@ function parse_declaration_safe(p: ref[Parser]) -> void:
         advance(p)
 
 function parse_when_block(p: ref[Parser]) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
     var disc_expr = parse_expr(p)
     var arms = string_mod.String.create()
@@ -500,7 +519,11 @@ function parse_when_block(p: ref[Parser]) -> void:
                 advance(p)
                 binding.release()
                 binding = lexer_mod.json_escaped(bn)
+            consume(p, "colon", "expected : after when arm pattern")
+            consume(p, "newline", "expected newline after when arm")
+            consume(p, "indent", "expected indented block after when arm")
             var body = parse_decl_block_body(p)
+            consume(p, "dedent", "expected end of when arm")
             if not afirst:
                 arms.push_byte(',')
             afirst = false
@@ -530,8 +553,8 @@ function parse_when_block(p: ref[Parser]) -> void:
     arms.release()
     ast.ast_raw(ref_of(p.ast_buf), "else_body", else_body.as_str())
     else_body.release()
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_null(ref_of(p.ast_buf), "length")
     ast.ast_close(ref_of(p.ast_buf))
 
@@ -573,6 +596,8 @@ function parse_const(p: ref[Parser]) -> void:
     parse_const_with_visibility(p, "")
 
 function parse_const_with_visibility(p: ref[Parser], vis: str) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
 
     if check(p, "function"):
@@ -651,16 +676,16 @@ function parse_const_with_visibility(p: ref[Parser], vis: str) -> void:
     block_body_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     emit_attrs(p)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
-
-# ── var ───────────────────────────────────────────────────────────────────
 
 function parse_var(p: ref[Parser]) -> void:
     parse_var_with_visibility(p, "")
 
 function parse_var_with_visibility(p: ref[Parser], vis: str) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
     let vname = peek_lexeme(p)
     advance(p)
@@ -688,8 +713,8 @@ function parse_var_with_visibility(p: ref[Parser], vis: str) -> void:
         ast.ast_raw(ref_of(p.ast_buf), "value", var_value.as_str())
     var_value.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
 
 # ── type alias ────────────────────────────────────────────────────────────
@@ -698,6 +723,8 @@ function parse_type_alias(p: ref[Parser]) -> void:
     parse_type_alias_with_visibility(p, "")
 
 function parse_type_alias_with_visibility(p: ref[Parser], vis: str) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
     let tname = peek_lexeme(p)
     advance(p)
@@ -711,8 +738,8 @@ function parse_type_alias_with_visibility(p: ref[Parser], vis: str) -> void:
     ast.ast_raw(ref_of(p.ast_buf), "target", alias_target.as_str())
     alias_target.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
 
 # ── function ──────────────────────────────────────────────────────────────
@@ -721,6 +748,8 @@ function parse_function_def(p: ref[Parser]) -> void:
     parse_function_with_visibility(p, "", false)
 
 function parse_function_with_visibility(p: ref[Parser], vis: str, is_const: bool) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     var is_async = false
     if check(p, "async"):
         advance(p)
@@ -795,13 +824,14 @@ function parse_function_with_visibility(p: ref[Parser], vis: str, is_const: bool
     ast.ast_bool(ref_of(p.ast_buf), "async", is_async)
     ast.ast_bool(ref_of(p.ast_buf), "const", is_const)
     emit_attrs(p)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
 
 # ── extern / foreign / struct / enum / flags ──────────────────────────────
 
 function parse_extern_function(p: ref[Parser]) -> void:
+    let decl_line = current_line(p)
     advance(p)  # external
     consume(p, "function", "expected function after external")
     let fname = peek_lexeme(p)
@@ -853,7 +883,7 @@ function parse_extern_function(p: ref[Parser]) -> void:
     ret_json.release()
     ast.ast_bool(ref_of(p.ast_buf), "variadic", false)
     emit_attrs(p)
-    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
     ast.ast_null(ref_of(p.ast_buf), "mapping")
     ast.ast_close(ref_of(p.ast_buf))
 
@@ -861,6 +891,7 @@ function parse_foreign_function(p: ref[Parser]) -> void:
     parse_foreign_function_with_visibility(p, "")
 
 function parse_foreign_function_with_visibility(p: ref[Parser], vis: str) -> void:
+    let decl_line = current_line(p)
     advance(p)  # foreign
     consume(p, "function", "expected function after foreign")
     let fname = peek_lexeme(p)
@@ -887,7 +918,7 @@ function parse_foreign_function_with_visibility(p: ref[Parser], vis: str) -> voi
     ast.ast_str(ref_of(p.ast_buf), "mapping", mapping_name)
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     emit_attrs(p)
-    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
     ast.ast_close(ref_of(p.ast_buf))
 
 function parse_impl_qualname_json(p: ref[Parser]) -> string_mod.String:
@@ -1053,6 +1084,8 @@ function parse_struct(p: ref[Parser]) -> void:
     parse_struct_with_visibility(p, "")
 
 function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
     let sname = peek_lexeme(p)
     advance(p)
@@ -1280,12 +1313,12 @@ function parse_struct_with_visibility(p: ref[Parser], vis: str) -> void:
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     ast.ast_raw(ref_of(p.ast_buf), "lifetime_params", lifetime_json.as_str())
     lifetime_json.release()
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
     implements_json.release()
 
-function backing_type_json(name: str) -> string_mod.String:
+function backing_type_json(name: str, line: ptr_uint, col: ptr_uint) -> string_mod.String:
     var parts = vec_mod.Vec[str].create()
     parts.push(name)
     var nm = ast.name_json(parts)
@@ -1294,7 +1327,11 @@ function backing_type_json(name: str) -> string_mod.String:
     r.append("{\"$mt_type\":\"AST:TypeRef\",\"name\":")
     r.append(nm.as_str())
     nm.release()
-    r.append(",\"arguments\":[],\"nullable\":false,\"lifetime\":null,\"line\":null,\"column\":null,\"length\":null}")
+    r.append(",\"arguments\":[],\"nullable\":false,\"lifetime\":null,\"line\":")
+    fmt.append_ptr_uint(ref_of(r), line)
+    r.append(",\"column\":")
+    fmt.append_ptr_uint(ref_of(r), col)
+    r.append(",\"length\":null}")
     return r
 
 function parse_enum_members_json(p: ref[Parser]) -> string_mod.String:
@@ -1359,6 +1396,8 @@ function parse_enum_members_json(p: ref[Parser]) -> string_mod.String:
     return r
 
 function parse_enum_or_flags(p: ref[Parser], is_flags: bool) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
     let ename = peek_lexeme(p)
     advance(p)
@@ -1407,19 +1446,21 @@ function parse_enum_or_flags(p: ref[Parser], is_flags: bool) -> void:
     let decl_type = if is_flags: "FlagsDecl" else: "EnumDecl"
     ast.ast_open(ref_of(p.ast_buf), decl_type)
     ast.ast_str(ref_of(p.ast_buf), "name", ename)
-    var bt = backing_type_json(backing.as_str())
+    var bt = backing_type_json(backing.as_str(), decl_line, decl_col)
     ast.ast_raw(ref_of(p.ast_buf), "backing_type", bt.as_str())
     bt.release()
     ast.ast_raw(ref_of(p.ast_buf), "members", members_json.as_str())
     members_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", "")
     emit_attrs(p)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
     backing.release()
 
 function parse_enum_with_visibility(p: ref[Parser], vis: str, is_flags: bool) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
     let ename = peek_lexeme(p)
     advance(p)
@@ -1467,15 +1508,15 @@ function parse_enum_with_visibility(p: ref[Parser], vis: str, is_flags: bool) ->
     let decl_type = if is_flags: "FlagsDecl" else: "EnumDecl"
     ast.ast_open(ref_of(p.ast_buf), decl_type)
     ast.ast_str(ref_of(p.ast_buf), "name", ename)
-    var bt = backing_type_json(backing.as_str())
+    var bt = backing_type_json(backing.as_str(), decl_line, decl_col)
     ast.ast_raw(ref_of(p.ast_buf), "backing_type", bt.as_str())
     bt.release()
     ast.ast_raw(ref_of(p.ast_buf), "members", members_json.as_str())
     members_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     emit_attrs(p)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
     backing.release()
 
@@ -1485,6 +1526,8 @@ function parse_union(p: ref[Parser]) -> void:
     parse_union_with_visibility(p, "")
 
 function parse_union_with_visibility(p: ref[Parser], vis: str) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
     let uname = peek_lexeme(p)
     advance(p)
@@ -1528,8 +1571,8 @@ function parse_union_with_visibility(p: ref[Parser], vis: str) -> void:
     fields_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     emit_attrs(p)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
 
 function parse_variant(p: ref[Parser]) -> void:
@@ -1600,6 +1643,8 @@ function parse_variant_arms_json(p: ref[Parser]) -> string_mod.String:
     return r
 
 function parse_variant_with_visibility(p: ref[Parser], vis: str) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
     let vname = peek_lexeme(p)
     advance(p)
@@ -1651,14 +1696,16 @@ function parse_variant_with_visibility(p: ref[Parser], vis: str) -> void:
     arms_json.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     emit_attrs(p)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
 
 function parse_opaque(p: ref[Parser]) -> void:
     parse_opaque_with_visibility(p, "")
 
 function parse_opaque_with_visibility(p: ref[Parser], vis: str) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
     let oname = peek_lexeme(p)
     advance(p)
@@ -1680,14 +1727,16 @@ function parse_opaque_with_visibility(p: ref[Parser], vis: str) -> void:
     ast.ast_array_end(ref_of(p.ast_buf))
     ast.ast_null(ref_of(p.ast_buf), "c_name")
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
 
 function parse_interface(p: ref[Parser]) -> void:
     parse_interface_with_visibility(p, "")
 
 function parse_interface_with_visibility(p: ref[Parser], vis: str) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
     let iname = peek_lexeme(p)
     advance(p)
@@ -1700,11 +1749,13 @@ function parse_interface_with_visibility(p: ref[Parser], vis: str) -> void:
     iface_tp.release()
     parse_method_block(p, true)
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
 
 function parse_extending(p: ref[Parser]) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
     var type_name = parse_type(p)
 
@@ -1712,8 +1763,8 @@ function parse_extending(p: ref[Parser]) -> void:
     ast.ast_raw(ref_of(p.ast_buf), "type_name", type_name.as_str())
     type_name.release()
     parse_method_block(p, false)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
 
 # Parses the indented method block of an interface/extending declaration and
@@ -1767,6 +1818,8 @@ function parse_method_block(p: ref[Parser], is_interface: bool) -> void:
 # Interface methods -> InterfaceMethodDecl (no type_params, no body, no visibility).
 # Extending methods -> MethodDef (with type_params, body, visibility).
 function parse_one_method(p: ref[Parser], is_interface: bool) -> void:
+    let meth_line = current_line(p)
+    let meth_col = current_column(p)
     var vis = ""
     if check(p, "public"):
         advance(p)
@@ -1858,13 +1911,15 @@ function parse_one_method(p: ref[Parser], is_interface: bool) -> void:
         ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
 
     emit_attrs(p)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", meth_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", meth_col)
     ast.ast_close(ref_of(p.ast_buf))
 
 # ── attribute / static_assert / event ─────────────────────────────────────
 
 function parse_attribute(p: ref[Parser]) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
 
     var targets = string_mod.String.create()
@@ -1925,11 +1980,12 @@ function parse_attribute(p: ref[Parser]) -> void:
     ast.ast_raw(ref_of(p.ast_buf), "params", params.as_str())
     params.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", "")
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
 
 function parse_static_assert(p: ref[Parser]) -> void:
+    let decl_line = current_line(p)
     advance(p)
     consume(p, "lparen", "expected (")
     var cond = parse_expr(p)
@@ -1943,13 +1999,15 @@ function parse_static_assert(p: ref[Parser]) -> void:
     cond.release()
     ast.ast_raw(ref_of(p.ast_buf), "message", msg.as_str())
     msg.release()
-    ast.ast_null(ref_of(p.ast_buf), "line")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
     ast.ast_close(ref_of(p.ast_buf))
 
 function parse_event(p: ref[Parser]) -> void:
     parse_event_with_visibility(p, "")
 
 function parse_event_with_visibility(p: ref[Parser], vis: str) -> void:
+    let decl_line = current_line(p)
+    let decl_col = current_column(p)
     advance(p)
     let evname = peek_lexeme(p)
     advance(p)
@@ -1981,8 +2039,8 @@ function parse_event_with_visibility(p: ref[Parser], vis: str) -> void:
     payload.release()
     ast.ast_visibility(ref_of(p.ast_buf), "visibility", vis)
     emit_attrs(p)
-    ast.ast_null(ref_of(p.ast_buf), "line")
-    ast.ast_null(ref_of(p.ast_buf), "column")
+    ast.ast_ptruint(ref_of(p.ast_buf), "line", decl_line)
+    ast.ast_ptruint(ref_of(p.ast_buf), "column", decl_col)
     ast.ast_close(ref_of(p.ast_buf))
 
 function emit_attrs(p: ref[Parser]) -> void:
@@ -2162,6 +2220,8 @@ function parse_params_ast(p: ref[Parser]) -> void:
                 ast.ast_comma(ref_of(p.ast_buf))
             first = false
 
+            let pline = current_line(p)
+            let pcol = current_column(p)
             let pname = peek_lexeme(p)
             advance(p)
             var ptype = string_mod.String.create()
@@ -2177,8 +2237,8 @@ function parse_params_ast(p: ref[Parser]) -> void:
             else:
                 ast.ast_raw(ref_of(p.ast_buf), "type", ptype.as_str())
             ptype.release()
-            ast.ast_null(ref_of(p.ast_buf), "line")
-            ast.ast_null(ref_of(p.ast_buf), "column")
+            ast.ast_ptruint(ref_of(p.ast_buf), "line", pline)
+            ast.ast_ptruint(ref_of(p.ast_buf), "column", pcol)
             ast.ast_close(ref_of(p.ast_buf))
 
             if check(p, "comma"):
@@ -2232,9 +2292,13 @@ function bool_lit_json(val: str) -> string_mod.String:
     r.push_byte('}')
     return r
 
-function null_lit_json() -> string_mod.String:
+function null_lit_json(line: ptr_uint, col: ptr_uint) -> string_mod.String:
     var r = string_mod.String.create()
-    r.append("{\"$mt_type\":\"AST:NullLiteral\",\"type\":null,\"line\":null,\"column\":null}")
+    r.append("{\"$mt_type\":\"AST:NullLiteral\",\"type\":null,\"line\":")
+    fmt.append_ptr_uint(ref_of(r), line)
+    r.append(",\"column\":")
+    fmt.append_ptr_uint(ref_of(r), col)
+    r.push_byte('}')
     return r
 
 # Parses a const/var initializer only when it is a single standalone literal
@@ -2260,8 +2324,10 @@ function parse_simple_value(p: ref[Parser]) -> string_mod.String:
         advance(p)
         return bool_lit_json("false")
     if k == "null":
+        let null_line = current_line(p)
+        let null_col = current_column(p)
         advance(p)
-        return null_lit_json()
+        return null_lit_json(null_line, null_col)
     return string_mod.String.create()
 
 # ── expression parser ─────────────────────────────────────────────────────
@@ -2302,16 +2368,20 @@ function qname_single_json(name: str) -> string_mod.String:
     parts.release()
     return r
 
-function ident_json(name: str) -> string_mod.String:
+function ident_json(name: str, line: ptr_uint, col: ptr_uint) -> string_mod.String:
     var r = string_mod.String.create()
     r.append("{\"$mt_type\":\"AST:Identifier\",\"name\":")
     var ne = lexer_mod.json_escaped(name)
     r.append(ne.as_str())
     ne.release()
-    r.append(",\"line\":null,\"column\":null}")
+    r.append(",\"line\":")
+    fmt.append_ptr_uint(ref_of(r), line)
+    r.append(",\"column\":")
+    fmt.append_ptr_uint(ref_of(r), col)
+    r.push_byte('}')
     return r
 
-function make_member(receiver: str, member: str) -> string_mod.String:
+function make_member(receiver: str, member: str, line: ptr_uint, col: ptr_uint) -> string_mod.String:
     var r = string_mod.String.create()
     r.append("{\"$mt_type\":\"AST:MemberAccess\",\"receiver\":")
     r.append(receiver)
@@ -2319,10 +2389,14 @@ function make_member(receiver: str, member: str) -> string_mod.String:
     var me = lexer_mod.json_escaped(member)
     r.append(me.as_str())
     me.release()
-    r.append(",\"line\":null,\"column\":null}")
+    r.append(",\"line\":")
+    fmt.append_ptr_uint(ref_of(r), line)
+    r.append(",\"column\":")
+    fmt.append_ptr_uint(ref_of(r), col)
+    r.push_byte('}')
     return r
 
-function make_is_expr(left: str, pattern: str) -> string_mod.String:
+function make_is_expr(left: str, pattern: str, line: ptr_uint, col: ptr_uint) -> string_mod.String:
     var r = string_mod.String.create()
     r.append("{\"$mt_type\":\"AST:MatchExpr\",\"expression\":")
     r.append(left)
@@ -2330,7 +2404,11 @@ function make_is_expr(left: str, pattern: str) -> string_mod.String:
     r.append(pattern)
     r.append(",\"binding_name\":null,\"binding_line\":null,\"binding_column\":null,\"value\":{\"$mt_type\":\"AST:BooleanLiteral\",\"value\":true}}")
     r.append(",{\"$mt_type\":\"AST:MatchExprArm\",\"pattern\":{\"$mt_type\":\"AST:Identifier\",\"name\":\"_\",\"line\":null,\"column\":null},\"binding_name\":null,\"binding_line\":null,\"binding_column\":null,\"value\":{\"$mt_type\":\"AST:BooleanLiteral\",\"value\":false}}")
-    r.append("],\"line\":null,\"column\":null,\"length\":null}")
+    r.append("],\"line\":")
+    fmt.append_ptr_uint(ref_of(r), line)
+    r.append(",\"column\":")
+    fmt.append_ptr_uint(ref_of(r), col)
+    r.append(",\"length\":null}")
     return r
 
 function make_index(receiver: str, index: str) -> string_mod.String:
@@ -2538,6 +2616,8 @@ function parse_primary_expr(p: ref[Parser]) -> string_mod.String:
         advance(p)
         return bool_lit_json("false")
     if k == "null":
+        let null_line = current_line(p)
+        let null_col = current_column(p)
         advance(p)
         if check(p, "lbracket"):
             advance(p)
@@ -2547,21 +2627,31 @@ function parse_primary_expr(p: ref[Parser]) -> string_mod.String:
             r.append("{\"$mt_type\":\"AST:NullLiteral\",\"type\":")
             r.append(t.as_str())
             t.release()
-            r.append(",\"line\":null,\"column\":null}")
+            r.append(",\"line\":")
+            fmt.append_ptr_uint(ref_of(r), null_line)
+            r.append(",\"column\":")
+            fmt.append_ptr_uint(ref_of(r), null_col)
+            r.push_byte('}')
             return r
-        return null_lit_json()
+        return null_lit_json(null_line, null_col)
     if k == "lparen":
         return parse_paren_or_tuple(p)
     if k == "detach":
+        let det_line = current_line(p)
+        let det_col = current_column(p)
         advance(p)
         var det_expr = parse_expr(p)
         var r = string_mod.String.create()
         r.append("{\"$mt_type\":\"AST:DetachExpr\",\"body\":[{\"$mt_type\":\"AST:ExpressionStmt\",\"expression\":")
         r.append(det_expr.as_str())
         det_expr.release()
-        r.append(",\"line\":null}]}")
+        r.append(",\"line\":")
+        fmt.append_ptr_uint(ref_of(r), det_line)
+        r.append("}]}")
         return r
     if k == "unsafe":
+        let unsafe_prim_line = current_line(p)
+        let unsafe_prim_col = current_column(p)
         advance(p)
         consume(p, "colon", "expected : after unsafe")
         var inner = parse_expr(p)
@@ -2569,19 +2659,27 @@ function parse_primary_expr(p: ref[Parser]) -> string_mod.String:
         r.append("{\"$mt_type\":\"AST:UnsafeExpr\",\"expression\":")
         r.append(inner.as_str())
         inner.release()
-        r.append(",\"line\":null,\"column\":null,\"length\":null}")
+        r.append(",\"line\":")
+        fmt.append_ptr_uint(ref_of(r), unsafe_prim_line)
+        r.append(",\"column\":")
+        fmt.append_ptr_uint(ref_of(r), unsafe_prim_col)
+        r.append(",\"length\":null}")
         return r
     if k == "fstring":
         let lm = peek_lexeme(p)
         advance(p)
         return build_fstring_from_lexeme(lm)
     if k == "fields_of" or k == "field_of" or k == "attribute_of" or k == "attributes_of" or k == "callable_of" or k == "members_of":
-        var r = ident_json(peek_lexeme(p))
+        let id_line = current_line(p)
+        let id_col = current_column(p)
+        var r = ident_json(peek_lexeme(p), id_line, id_col)
         advance(p)
         return r
     if k != "identifier":
         p.stmt_failed = true
-    var r = ident_json(peek_lexeme(p))
+    let id2_line = current_line(p)
+    let id2_col = current_column(p)
+    var r = ident_json(peek_lexeme(p), id2_line, id2_col)
     advance(p)
     return r
 
@@ -2697,10 +2795,12 @@ function parse_postfix_expr(p: ref[Parser]) -> string_mod.String:
     var expr = parse_primary_expr(p)
     while true:
         if check(p, "dot"):
+            let dot_line = current_line(p)
+            let dot_col = current_column(p)
             advance(p)
             let member = peek_lexeme(p)
             advance(p)
-            var ne = make_member(expr.as_str(), member)
+            var ne = make_member(expr.as_str(), member, dot_line, dot_col)
             expr.release()
             expr = ne
             recv_ident = member
@@ -2906,9 +3006,11 @@ function parse_binary(p: ref[Parser], min_prec: int) -> string_mod.String:
         if prec < min_prec:
             break
         if peek_kind(p) == "is":
+            let is_line = current_line(p)
+            let is_col = current_column(p)
             advance(p)
             var pattern = parse_unary_expr(p)
-            var nl = make_is_expr(left.as_str(), pattern.as_str())
+            var nl = make_is_expr(left.as_str(), pattern.as_str(), is_line, is_col)
             left.release()
             pattern.release()
             left = nl
@@ -2925,6 +3027,8 @@ function parse_binary(p: ref[Parser], min_prec: int) -> string_mod.String:
 function parse_range_expr(p: ref[Parser]) -> string_mod.String:
     var left = parse_binary(p, 1)
     if check(p, "dot_dot"):
+        let rng_line = current_line(p)
+        let rng_col = current_column(p)
         advance(p)
         var right = parse_binary(p, 1)
         var r = string_mod.String.create()
@@ -2934,7 +3038,11 @@ function parse_range_expr(p: ref[Parser]) -> string_mod.String:
         r.append(",\"end_expr\":")
         r.append(right.as_str())
         right.release()
-        r.append(",\"line\":null,\"column\":null}")
+        r.append(",\"line\":")
+        fmt.append_ptr_uint(ref_of(r), rng_line)
+        r.append(",\"column\":")
+        fmt.append_ptr_uint(ref_of(r), rng_col)
+        r.push_byte('}')
         return r
     return left
 
@@ -2965,6 +3073,8 @@ function parse_expr(p: ref[Parser]) -> string_mod.String:
     if check(p, "proc"):
         return parse_proc_expr(p)
     if check(p, "unsafe"):
+        let unsafe_ex_line = current_line(p)
+        let unsafe_ex_col = current_column(p)
         advance(p)
         consume(p, "colon", "expected : after unsafe")
         var e = parse_expr(p)
@@ -2972,7 +3082,11 @@ function parse_expr(p: ref[Parser]) -> string_mod.String:
         r.append("{\"$mt_type\":\"AST:UnsafeExpr\",\"expression\":")
         r.append(e.as_str())
         e.release()
-        r.append(",\"line\":null,\"column\":null,\"length\":null}")
+        r.append(",\"line\":")
+        fmt.append_ptr_uint(ref_of(r), unsafe_ex_line)
+        r.append(",\"column\":")
+        fmt.append_ptr_uint(ref_of(r), unsafe_ex_col)
+        r.append(",\"length\":null}")
         return r
     if check(p, "if"):
         return parse_if_expr(p)
@@ -2980,9 +3094,13 @@ function parse_expr(p: ref[Parser]) -> string_mod.String:
 
 # ── statement parser ──────────────────────────────────────────────────────
 
-function placeholder_expr() -> string_mod.String:
+function placeholder_expr(line: ptr_uint, col: ptr_uint) -> string_mod.String:
     var r = string_mod.String.create()
-    r.append("{\"$mt_type\":\"AST:NullLiteral\",\"type\":null,\"line\":null,\"column\":null}")
+    r.append("{\"$mt_type\":\"AST:NullLiteral\",\"type\":null,\"line\":")
+    fmt.append_ptr_uint(ref_of(r), line)
+    r.append(",\"column\":")
+    fmt.append_ptr_uint(ref_of(r), col)
+    r.push_byte('}')
     return r
 
 function skip_to_stmt_end(p: ref[Parser]) -> void:
@@ -3109,6 +3227,20 @@ function parse_decl_block_body(p: ref[Parser]) -> string_mod.String:
     r.push_byte(']')
     return r
 
+function parse_single_decl_to_json(p: ref[Parser]) -> string_mod.String:
+    var saved_buf = string_mod.String.create()
+    saved_buf.append(p.ast_buf.buf.as_str())
+    var saved_first = p.ast_buf.first_field
+    p.ast_buf.buf.clear()
+    p.ast_buf.first_field = true
+    parse_declaration_safe(p)
+    var result = string_mod.String.create()
+    result.append(p.ast_buf.buf.as_str())
+    p.ast_buf.buf.release()
+    p.ast_buf.buf = saved_buf
+    p.ast_buf.first_field = saved_first
+    return result
+
 function parse_block(p: ref[Parser]) -> string_mod.String:
     consume(p, "colon", "expected : before block")
     consume(p, "newline", "expected newline before block")
@@ -3132,11 +3264,15 @@ function parse_block_or_inline(p: ref[Parser]) -> string_mod.String:
         return r
     return parse_block(p)
 
-function simple_stmt_json(mt: str) -> string_mod.String:
+function simple_stmt_json(mt: str, line: ptr_uint, col: ptr_uint) -> string_mod.String:
     var r = string_mod.String.create()
     r.append("{\"$mt_type\":\"AST:")
     r.append(mt)
-    r.append("\",\"line\":null,\"column\":null,\"length\":null}")
+    r.append("\",\"line\":")
+    fmt.append_ptr_uint(ref_of(r), line)
+    r.append(",\"column\":")
+    fmt.append_ptr_uint(ref_of(r), col)
+    r.append(",\"length\":null}")
     return r
 
 function parse_return_stmt(p: ref[Parser]) -> string_mod.String:
@@ -3155,6 +3291,8 @@ function parse_return_stmt(p: ref[Parser]) -> string_mod.String:
     return r
 
 function parse_local_decl(p: ref[Parser], kind: str) -> string_mod.String:
+    let loc_line = current_line(p)
+    let loc_col = current_column(p)
     advance(p)
     var is_destructure = false
     var dest_bindings = string_mod.String.create()
@@ -3214,7 +3352,7 @@ function parse_local_decl(p: ref[Parser], kind: str) -> string_mod.String:
         skip_to_stmt_end(p)
         dest_bindings.release()
         dest_struct_name.release()
-        return simple_stmt_json("PassStmt")
+        return simple_stmt_json("PassStmt", loc_line, loc_col)
     else:
         dest_bindings.append("null")
 
@@ -3242,9 +3380,11 @@ function parse_local_decl(p: ref[Parser], kind: str) -> string_mod.String:
             if check(p, "as"):
                 advance(p)
                 let bn = peek_lexeme(p)
+                let bn_line = current_line(p)
+                let bn_col = current_column(p)
                 advance(p)
                 else_binding.release()
-                else_binding = ident_json(bn)
+                else_binding = ident_json(bn, bn_line, bn_col)
             else_body.release()
             else_body = parse_block(p)
             has_else = true
@@ -3498,6 +3638,8 @@ function parse_unsafe_block_stmt(p: ref[Parser]) -> string_mod.String:
     return r
 
 function parse_match(p: ref[Parser], as_value: bool, is_inline: bool) -> string_mod.String:
+    let match_line = current_line(p)
+    let match_col = current_column(p)
     advance(p)
     var subject = parse_expr(p)
     var arms = string_mod.String.create()
@@ -3512,8 +3654,8 @@ function parse_match(p: ref[Parser], as_value: bool, is_inline: bool) -> string_
         p.stmt_failed = true
         skip_to_stmt_end(p)
         if as_value:
-            return placeholder_expr()
-        return simple_stmt_json("PassStmt")
+            return placeholder_expr(match_line, match_col)
+        return simple_stmt_json("PassStmt", match_line, match_col)
     advance(p)
     if check(p, "newline"):
         advance(p)
@@ -3528,8 +3670,10 @@ function parse_match(p: ref[Parser], as_value: bool, is_inline: bool) -> string_
             break
         var pat_buf = string_mod.String.create()
         if check(p, "else"):
+            let else_line = current_line(p)
+            let else_col = current_column(p)
             advance(p)
-            var pid = ident_json("_")
+            var pid = ident_json("_", else_line, else_col)
             pat_buf.append(pid.as_str())
             pid.release()
         else:
@@ -3601,7 +3745,11 @@ function parse_match(p: ref[Parser], as_value: bool, is_inline: bool) -> string_
         me.append(",\"arms\":")
         me.append(arms.as_str())
         arms.release()
-        me.append(",\"line\":null,\"column\":null,\"length\":null}")
+        me.append(",\"line\":")
+        fmt.append_ptr_uint(ref_of(me), match_line)
+        me.append(",\"column\":")
+        fmt.append_ptr_uint(ref_of(me), match_col)
+        me.append(",\"length\":null}")
         if as_value:
             p.block_expr_done = true
             return me
@@ -3609,7 +3757,9 @@ function parse_match(p: ref[Parser], as_value: bool, is_inline: bool) -> string_
         stmt.append("{\"$mt_type\":\"AST:ExpressionStmt\",\"expression\":")
         stmt.append(me.as_str())
         me.release()
-        stmt.append(",\"line\":null}")
+        stmt.append(",\"line\":")
+        fmt.append_ptr_uint(ref_of(stmt), match_line)
+        stmt.push_byte('}')
         return stmt
     var r = string_mod.String.create()
     r.append("{\"$mt_type\":\"AST:MatchStmt\",\"expression\":")
@@ -3623,7 +3773,11 @@ function parse_match(p: ref[Parser], as_value: bool, is_inline: bool) -> string_
         r.append("true")
     else:
         r.append("false")
-    r.append(",\"line\":null,\"column\":null,\"length\":null}")
+    r.append(",\"line\":")
+    fmt.append_ptr_uint(ref_of(r), match_line)
+    r.append(",\"column\":")
+    fmt.append_ptr_uint(ref_of(r), match_col)
+    r.append(",\"length\":null}")
     return r
 
 function parse_when_stmt(p: ref[Parser]) -> string_mod.String:
@@ -3696,17 +3850,23 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
     if k == "return":
         return parse_return_stmt(p)
     if k == "pass":
+        let pass_line = current_line(p)
+        let pass_col = current_column(p)
         advance(p)
         end_or_fail(p)
-        return simple_stmt_json("PassStmt")
+        return simple_stmt_json("PassStmt", pass_line, pass_col)
     if k == "break":
+        let break_line = current_line(p)
+        let break_col = current_column(p)
         advance(p)
         end_or_fail(p)
-        return simple_stmt_json("BreakStmt")
+        return simple_stmt_json("BreakStmt", break_line, break_col)
     if k == "continue":
+        let cont_line = current_line(p)
+        let cont_col = current_column(p)
         advance(p)
         end_or_fail(p)
-        return simple_stmt_json("ContinueStmt")
+        return simple_stmt_json("ContinueStmt", cont_line, cont_col)
     if k == "if":
         return parse_if_stmt(p, false)
     if k == "while":
@@ -3723,6 +3883,8 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
     if k == "match":
         return parse_match(p, false, false)
     if k == "inline":
+        let inline_line = current_line(p)
+        let inline_col = current_column(p)
         advance(p)
         let ik = peek_kind(p)
         if ik == "for":
@@ -3735,10 +3897,12 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
             return parse_if_stmt(p, true)
         p.stmt_failed = true
         skip_statement(p)
-        return simple_stmt_json("PassStmt")
+        return simple_stmt_json("PassStmt", inline_line, inline_col)
     if k == "when":
         return parse_when_stmt(p)
     if k == "parallel":
+        let par_line = current_line(p)
+        let par_col = current_column(p)
         advance(p)
         var bodies = string_mod.String.create()
         bodies.push_byte('[')
@@ -3771,15 +3935,23 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
         r.append("{\"$mt_type\":\"AST:ParallelBlockStmt\",\"bodies\":")
         r.append(bodies.as_str())
         bodies.release()
-        r.append(",\"line\":null,\"column\":null}")
+        r.append(",\"line\":")
+        fmt.append_ptr_uint(ref_of(r), par_line)
+        r.append(",\"column\":")
+        fmt.append_ptr_uint(ref_of(r), par_col)
+        r.push_byte('}')
         return r
     if k == "gather":
+        let gather_line = current_line(p)
+        let gather_col = current_column(p)
         advance(p)
         var handles = string_mod.String.create()
         handles.push_byte('[')
         var hfirst = true
         while not check(p, "newline") and not check(p, "dedent") and not is_eof(p):
             let hn = peek_lexeme(p)
+            let hn_line = current_line(p)
+            let hn_col = current_column(p)
             advance(p)
             if not hfirst:
                 handles.push_byte(',')
@@ -3788,7 +3960,11 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
             var he = lexer_mod.json_escaped(hn)
             handles.append(he.as_str())
             he.release()
-            handles.append(",\"line\":null,\"column\":null}")
+            handles.append(",\"line\":")
+            fmt.append_ptr_uint(ref_of(handles), hn_line)
+            handles.append(",\"column\":")
+            fmt.append_ptr_uint(ref_of(handles), hn_col)
+            handles.push_byte('}')
             if check(p, "comma"):
                 advance(p)
         handles.push_byte(']')
@@ -3797,9 +3973,15 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
         r.append("{\"$mt_type\":\"AST:GatherStmt\",\"handles\":")
         r.append(handles.as_str())
         handles.release()
-        r.append(",\"line\":null,\"column\":null}")
+        r.append(",\"line\":")
+        fmt.append_ptr_uint(ref_of(r), gather_line)
+        r.append(",\"column\":")
+        fmt.append_ptr_uint(ref_of(r), gather_col)
+        r.push_byte('}')
         return r
     if k == "static_assert":
+        let sa_line = current_line(p)
+        let sa_col = current_column(p)
         advance(p)
         consume(p, "lparen", "expected (")
         var cond = parse_expr(p)
@@ -3814,14 +3996,30 @@ function parse_statement(p: ref[Parser]) -> string_mod.String:
         r.append(",\"message\":")
         r.append(msg.as_str())
         msg.release()
-        r.append(",\"line\":null}")
+        r.append(",\"line\":")
+        fmt.append_ptr_uint(ref_of(r), sa_line)
+        r.push_byte('}')
         return r
     if k == "emit":
-        skip_statement(p)
-        return simple_stmt_json("PassStmt")
+        let emit_line = current_line(p)
+        let emit_col = current_column(p)
+        advance(p)
+        var decl = parse_single_decl_to_json(p)
+        var r = string_mod.String.create()
+        r.append("{\"$mt_type\":\"AST:EmitStmt\",\"declaration\":")
+        r.append(decl.as_str())
+        decl.release()
+        r.append(",\"line\":")
+        fmt.append_ptr_uint(ref_of(r), emit_line)
+        r.append(",\"column\":")
+        fmt.append_ptr_uint(ref_of(r), emit_col)
+        r.append(",\"length\":null}")
+        return r
     return parse_assign_or_expr_stmt(p)
 
 function parse_type(p: ref[Parser]) -> string_mod.String:
+    let type_line = current_line(p)
+    let type_col = current_column(p)
     if check(p, "fn"):
         return parse_callable_type(p, "FunctionType")
     if check(p, "proc"):

@@ -49,6 +49,10 @@ public function ast_str(buf: ref[AstBuf], key: str, value: str) -> void:
     buf.buf.append(esc.as_str())
     esc.release()
 
+public function ast_ptruint(buf: ref[AstBuf], key: str, value: ptr_uint) -> void:
+    ast_key(buf, key)
+    fmt.append_ptr_uint(ref_of(buf.buf), value)
+
 public function ast_null(buf: ref[AstBuf], key: str) -> void:
     ast_key(buf, key)
     buf.buf.append("null")
