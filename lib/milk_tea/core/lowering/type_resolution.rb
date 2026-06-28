@@ -444,6 +444,9 @@ module MilkTea
 
             if imported_module.functions.key?(callee.member)
               binding = specialize_function_binding(imported_module.functions.fetch(callee.member), arguments, env)
+              unless binding.owner
+                binding = binding.with(owner: imported_module.respond_to?(:analysis) ? imported_module.analysis : imported_module)
+              end
               return [:function, function_binding_c_name(binding, module_name: imported_module.name), nil, binding.type, binding] unless binding.external
 
               return [:function, external_function_c_name(binding), nil, binding.type, binding]

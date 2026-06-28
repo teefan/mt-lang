@@ -88,22 +88,23 @@ module MilkTea
       analyses = { root_analysis.module_name.to_s => root_analysis }
       imported_analyses.each { |k, v| analyses[k] = v }
 
+      proxy_analyses = analyses.transform_values { |a| ImportAnalysisProxy.new(a, analyses) }
+      proxy_analyses.each { |k, v| analyses[k] = v }
+
       resolved_imports = root_analysis.imports.transform_values do |import_binding|
         mod_name = import_binding.name.to_s
-        resolved = analyses[mod_name]
-        next import_binding unless resolved
-        ImportAnalysisProxy.new(resolved)
+        proxy_analyses[mod_name] || import_binding
       end
       if root_analysis.respond_to?(:with)
         root_analysis = root_analysis.with(imports: resolved_imports)
-        analyses[root_analysis.module_name.to_s] = root_analysis
+        proxy_analyses[root_analysis.module_name.to_s] = root_analysis
       end
 
-      program = ModuleProgramStub.new(root_analysis, analyses)
+      program = ModuleProgramStub.new(root_analysis, proxy_analyses)
       lower(program)
     end
 
-    ImportAnalysisProxy = Struct.new(:analysis) do
+    ImportAnalysisProxy = Struct.new(:analysis, :all_analyses) do
       def name = analysis.module_name.to_s
       def types = analysis.types
       def functions = analysis.functions
@@ -113,7 +114,12 @@ module MilkTea
       def attributes = analysis.attributes
       def attribute_applications = analysis.attribute_applications
       def implemented_interfaces = analysis.implemented_interfaces
-      def imports = analysis.imports
+      def imports
+        analysis.imports.transform_values do |import_binding|
+          mod_name = import_binding.name.to_s
+          all_analyses[mod_name] ? ImportAnalysisProxy.new(all_analyses[mod_name], all_analyses) : import_binding
+        end
+      end
       def directives = analysis.directives
       def module_kind = analysis.module_kind
       def module_name = analysis.module_name
@@ -128,6 +134,18 @@ module MilkTea
       def private_interface?(n) = analysis.respond_to?(:private_interface?) ? analysis.private_interface?(n) : false
       def private_value?(n) = analysis.respond_to?(:private_value?) ? analysis.private_value?(n) : false
       def private_function?(n) = analysis.respond_to?(:private_function?) ? analysis.private_function?(n) : false
+
+      def method_missing(method, *args, &block)
+        if analysis.respond_to?(method)
+          analysis.public_send(method, *args, &block)
+        else
+          super
+        end
+      end
+
+      def respond_to_missing?(method, include_private = false)
+        analysis.respond_to?(method) || super
+      end
     end
 
     ModuleProgramStub = Struct.new(:root_analysis, :analyses_by_mod) do
