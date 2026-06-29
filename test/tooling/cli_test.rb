@@ -4416,6 +4416,39 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_check_from_ast_json_reports_clean_module
+    Dir.mktmpdir("milk-tea-cli-check-ast-ok") do |dir|
+      path = File.join(dir, "ok.mt")
+      File.write(path, "function main() -> int:\n    return 0\n")
+      ast_json = File.join(dir, "ast.json")
+      assert_equal 0, MilkTea::CLI.start(["parse", path, "--emit-ast-json", ast_json], out: StringIO.new, err: StringIO.new)
+
+      out = StringIO.new
+      err = StringIO.new
+      status = MilkTea::CLI.start(["check", "--from-ast-json", ast_json], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/checked .* \(from AST JSON\)/, out.string)
+    end
+  end
+
+  def test_check_from_ast_json_reports_type_errors
+    Dir.mktmpdir("milk-tea-cli-check-ast-err") do |dir|
+      path = File.join(dir, "bad.mt")
+      File.write(path, "function main() -> int:\n    return \"not an int\"\n")
+      ast_json = File.join(dir, "ast.json")
+      assert_equal 0, MilkTea::CLI.start(["parse", path, "--emit-ast-json", ast_json], out: StringIO.new, err: StringIO.new)
+
+      out = StringIO.new
+      err = StringIO.new
+      status = MilkTea::CLI.start(["check", "--from-ast-json", ast_json], out:, err:)
+
+      assert_equal 1, status
+      refute_empty err.string
+    end
+  end
+
   def test_frozen_check_and_lint_report_missing_lockfiles
     dummy_path = File.join(Dir.tmpdir, "virtual-cli-source.mt")
 
