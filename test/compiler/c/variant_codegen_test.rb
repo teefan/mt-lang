@@ -50,7 +50,7 @@ class VariantCodegenTest < Minitest::Test
     assert_match(/demo_selfref_Node \*right;/, generated, "right field must be a pointer to Node")
   end
 
-  def test_variant_constructor_uses_address_of_for_self_ref_fields
+  def test_variant_constructor_heap_copies_self_ref_fields
     source = <<~MT
       # module demo.varlit
 
@@ -70,8 +70,18 @@ class VariantCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/\.left = &left/, generated, "branch constructor must use address-of for left field")
-    assert_match(/\.right = &right/, generated, "branch constructor must use address-of for right field")
+    assert_match(
+      /\.left = \(\(demo_varlit_Node\*\)memcpy\(malloc\(sizeof\(demo_varlit_Node\)\), &\(left\), sizeof\(demo_varlit_Node\)\)\)/,
+      generated,
+      "branch constructor must heap-copy the left field to avoid a dangling stack pointer"
+    )
+    assert_match(
+      /\.right = \(\(demo_varlit_Node\*\)memcpy\(malloc\(sizeof\(demo_varlit_Node\)\), &\(right\), sizeof\(demo_varlit_Node\)\)\)/,
+      generated,
+      "branch constructor must heap-copy the right field to avoid a dangling stack pointer"
+    )
+    refute_match(/\.left = &left\b/, generated,
+                "branch constructor must not return the address of a stack local")
   end
 
   def test_value_receiver_method_call_from_editable_context

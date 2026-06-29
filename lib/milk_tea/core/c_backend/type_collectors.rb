@@ -1422,6 +1422,86 @@ module MilkTea
             dyn_types
           end
 
+          def collect_nullable_opt_decls
+            collect_nullable_opt_types.map do |type|
+              IR::StructDecl.new(
+                name: type.to_s,
+                linkage_name: nullable_opt_type_name(type),
+                fields: [
+                  IR::Field.new(name: "has_value", type: Types::Registry.primitive("bool")),
+                  IR::Field.new(name: "value", type: type.base),
+                ],
+                packed: false,
+                alignment: nil,
+              )
+            end
+          end
+
+          def collect_nullable_opt_types
+            opt_types = []
+            seen = {}
+
+            collect_type = lambda do |type|
+              return unless type
+
+              case type
+              when Types::Nullable
+                unless c_backend_pointer_like_type?(type.base)
+                  name = nullable_opt_type_name(type)
+                  unless seen[name]
+                    seen[name] = true
+                    opt_types << type
+                  end
+                end
+                collect_type.call(type.base)
+              when Types::GenericInstance
+                type.arguments.each { |arg| collect_type.call(arg) unless arg.is_a?(Types::LiteralTypeArg) }
+              when Types::Span
+                collect_type.call(type.element_type)
+              when Types::Task
+                collect_type.call(type.result_type)
+              when Types::Function, Types::Proc
+                type.params.each { |p| collect_type.call(p.type) }
+                collect_type.call(type.return_type)
+              when Types::StructInstance, Types::VariantInstance
+                type.arguments.each { |arg| collect_type.call(arg) }
+              end
+            end
+
+            collect_in_stmt = lambda do |stmt|
+              case stmt
+              when IR::LocalDecl
+                collect_type.call(stmt.type)
+              when IR::BlockStmt
+                stmt.body.each { |s| collect_in_stmt.call(s) }
+              when IR::IfStmt
+                stmt.then_body.each { |s| collect_in_stmt.call(s) }
+                stmt.else_body&.each { |s| collect_in_stmt.call(s) }
+              when IR::WhileStmt
+                stmt.body.each { |s| collect_in_stmt.call(s) }
+              when IR::ForStmt
+                stmt.body.each { |s| collect_in_stmt.call(s) }
+              when IR::SwitchStmt
+                stmt.cases.each { |c| c.body.each { |s| collect_in_stmt.call(s) } }
+              end
+            end
+
+            emitted_aggregate_structs.each { |decl| decl.fields.each { |f| collect_type.call(f.type) } }
+            emitted_aggregate_unions.each { |decl| decl.fields.each { |f| collect_type.call(f.type) } }
+            emitted_aggregate_variants.each do |decl|
+              decl.arms.each { |arm| arm.fields.each { |f| collect_type.call(f.type) } }
+            end
+            emitted_constants.each { |c| collect_type.call(c.type) }
+            emitted_globals.each { |g| collect_type.call(g.type) }
+            emitted_functions.each do |f|
+              collect_type.call(f.return_type)
+              f.params.each { |p| collect_type.call(p.type) }
+              f.body.each { |s| collect_in_stmt.call(s) }
+            end
+
+            opt_types
+          end
+
           def collect_str_literals
             literals = {}
             emitted_functions.each do |func|

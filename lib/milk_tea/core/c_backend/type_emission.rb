@@ -85,6 +85,11 @@ module MilkTea
             when Types::Nullable
               return c_type(type.base, pointer:) if type.base.is_a?(Types::Function)
 
+              unless c_backend_pointer_like_type?(type.base)
+                base = nullable_opt_type_name(type)
+                return pointer ? "#{base}*" : base
+              end
+
               base = c_type(type.base)
               base.end_with?("*") ? base : "#{base}*"
             when Types::StringView
@@ -186,6 +191,10 @@ module MilkTea
 
           def dyn_type_name(type)
             "mt_dyn_#{sanitize_identifier(type.interface_binding.name)}"
+          end
+
+          def nullable_opt_type_name(type)
+            "mt_opt_#{sanitize_identifier(c_type(type.base))}"
           end
 
           def named_type_c_name(type)

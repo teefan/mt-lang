@@ -44,6 +44,7 @@ module MilkTea
             when IR::Binary
               return emit_str_equality_expression(expression) if str_equality_expression?(expression)
               return emit_variant_equality_expression(expression) if variant_equality_expression?(expression)
+              return emit_nullable_null_comparison(expression) if nullable_null_comparison?(expression)
 
               emit_binary_expression(expression)
             when IR::Conditional
@@ -69,7 +70,7 @@ module MilkTea
             when IR::BooleanLiteral
               expression.value ? "true" : "false"
             when IR::NullLiteral
-              "NULL"
+              nullable_value_type?(expression.type) ? emit_zero_expression(expression.type) : "NULL"
             when IR::ZeroInit
               emit_zero_expression(expression.type)
             when IR::AddressOf
@@ -177,6 +178,23 @@ module MilkTea
           def variant_equality_helper_name(type)
             variant = type.is_a?(Types::VariantArmPayload) ? type.variant_type : type
             "mt_variant_eq_#{named_type_c_name(variant)}"
+          end
+
+          def nullable_value_type?(type)
+            type.is_a?(Types::Nullable) && !c_backend_pointer_like_type?(type.base)
+          end
+
+          def nullable_null_comparison?(expression)
+            return false unless ["==", "!="].include?(expression.operator)
+
+            (nullable_value_type?(expression.left.type) && expression.right.is_a?(IR::NullLiteral)) ||
+              (nullable_value_type?(expression.right.type) && expression.left.is_a?(IR::NullLiteral))
+          end
+
+          def emit_nullable_null_comparison(expression)
+            operand = expression.left.is_a?(IR::NullLiteral) ? expression.right : expression.left
+            access = "#{wrap_member_receiver(operand)}.has_value"
+            expression.operator == "==" ? "!#{access}" : access
           end
 
           def emit_initializer(expression)
@@ -343,7 +361,8 @@ module MilkTea
           def emit_zero_initializer(type)
             return "{ 0 }" if type.is_a?(Types::StringView)
             return "{ 0 }" if array_type?(type)
-            return "NULL" if type.is_a?(Types::Nullable)
+            return "NULL" if type.is_a?(Types::Nullable) && c_backend_pointer_like_type?(type.base)
+            return "{ 0 }" if type.is_a?(Types::Nullable)
             return "NULL" if raw_pointer_type?(type) || ref_type?(type)
             return "NULL" if type.is_a?(Types::Opaque) && !type.external
             return "false" if type.is_a?(Types::Primitive) && type.boolean?
@@ -356,7 +375,9 @@ module MilkTea
 
           def emit_zero_expression(type)
             return "(#{c_type(type)}) #{emit_zero_initializer(type)}" if type.is_a?(Types::StringView)
-            return emit_zero_initializer(type) if type.is_a?(Types::Primitive) || type.is_a?(Types::Nullable)
+            return "NULL" if type.is_a?(Types::Nullable) && c_backend_pointer_like_type?(type.base)
+            return "(#{c_type(type)}){ 0 }" if type.is_a?(Types::Nullable)
+            return emit_zero_initializer(type) if type.is_a?(Types::Primitive)
             return emit_zero_initializer(type) if type.is_a?(Types::EnumBase)
 
             "(#{c_declaration(type, '')}) #{emit_zero_initializer(type)}"
@@ -364,6 +385,10 @@ module MilkTea
 
           def aggregate_field_type(type, field_name)
             return proc_field_types(type).fetch(field_name) if type.is_a?(Types::Proc)
+            if type.is_a?(Types::Nullable)
+              return Types::Registry.primitive("bool") if field_name == "has_value"
+              return type.base if field_name == "value"
+            end
             return type.field(field_name) if type.respond_to?(:field)
 
             raise CBackendError, "unsupported aggregate field lookup for #{type}"
@@ -371,8 +396,8 @@ module MilkTea
 
           def emit_aggregate_field_initializer(type, field)
             field_type = aggregate_field_type(type, field.name)
-            if field_type.is_a?(Types::Nullable) && !field.value.type.is_a?(Types::Nullable) && !c_backend_pointer_like_type?(field_type.base) && !field.value.is_a?(IR::AddressOf)
-              "&#{emit_initializer(field.value)}"
+            if field_type.is_a?(Types::Nullable) && !field.value.type.is_a?(Types::Nullable) && !c_backend_pointer_like_type?(field_type.base)
+              emit_nullable_some_initializer(field_type, field.value)
             elsif void_storage_field?(field_type)
               emit_void_field_initializer(field.value)
             else
@@ -380,11 +405,15 @@ module MilkTea
             end
           end
 
+          def emit_nullable_some_initializer(nullable_type, value)
+            "(#{c_type(nullable_type)}){ .has_value = true, .value = #{emit_initializer(value)} }"
+          end
+
           def emit_variant_field_initializer(type, arm_name, field)
             field_type = type.arm(arm_name).fetch(field.name)
-            if field_type.is_a?(Types::Nullable) && !field.value.type.is_a?(Types::Nullable) && !c_backend_pointer_like_type?(field_type.base) && !field.value.is_a?(IR::AddressOf)
-              "&#{emit_initializer(field.value)}"
-            elsif field.value.is_a?(IR::AddressOf)
+            if field_type.is_a?(Types::Nullable) && !field.value.type.is_a?(Types::Nullable) && !c_backend_pointer_like_type?(field_type.base)
+              emit_nullable_some_initializer(field_type, field.value)
+            elsif field.value.is_a?(IR::AddressOf) && !field_type.is_a?(Types::Nullable)
               c_type_name = named_type_c_name(field_type)
               inner = field.value.expression
               "((#{c_type_name}*)memcpy(malloc(sizeof(#{c_type_name})), &(#{emit_expression(inner)}), sizeof(#{c_type_name})))"

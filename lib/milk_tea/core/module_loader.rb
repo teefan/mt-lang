@@ -134,6 +134,7 @@ module MilkTea
     end
 
     def check_program(path)
+      Types::Registry.reset!
       requested_path = File.expand_path(path)
       previous_platform = @platform
       @platform ||= self.class.platform_suffix_for_path(requested_path)

@@ -10,6 +10,22 @@ module MilkTea
       end
     end
 
+    def foreign_boundary_nullable_pointer_like_base?(base)
+      return true if base.is_a?(Types::Function) || base.is_a?(Types::Proc)
+      return true if opaque_type?(base)
+      return true if base == @ctx.types.fetch("cstr")
+
+      pointer_type?(base) || const_pointer_type?(base) || ref_type?(base)
+    end
+
+    def reject_foreign_nullable_value_type!(type, function_name:, parameter_name:)
+      return unless type.is_a?(Types::Nullable)
+      return if foreign_boundary_nullable_pointer_like_base?(type.base)
+
+      location = parameter_name ? "parameter #{parameter_name}" : "return type"
+      raise_sema_error("#{location} of foreign/external function #{function_name} cannot use nullable value type #{type}; nullable at an FFI boundary is only supported for pointer-like types (use ptr[...]? or pass an explicit struct)")
+    end
+
     def foreign_cstr_boundary_parameter?(parameter)
       parameter.boundary_type == @ctx.types.fetch("cstr") && parameter.type == @ctx.types.fetch("str")
     end

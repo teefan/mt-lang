@@ -90,6 +90,7 @@ module MilkTea
             ensure_non_reserved_primitive_name!(param.name, kind_label: "parameter", line: param.respond_to?(:line) ? param.line : decl.line, column: param.respond_to?(:column) ? param.column : nil)
             type = resolve_type_ref(param.type, type_params:, type_param_constraints:)
             validate_parameter_ref_type!(type, function_name: decl.name, parameter_name: param.name, external:)
+            reject_foreign_nullable_value_type!(type, function_name: decl.name, parameter_name: param.name) if foreign || external
             validate_parameter_proc_type!(type, function_name: decl.name, parameter_name: param.name, external:, foreign:)
             raise_sema_error("parameter #{param.name} of #{decl.name} must pass event storage through ref[...] or pointers, got #{type}") if noncopyable_event_storage_type?(type)
 
@@ -156,6 +157,7 @@ module MilkTea
 
         body_return_type = decl.return_type ? resolve_type_ref(decl.return_type, type_params:, type_param_constraints:) : @ctx.types.fetch("void")
         validate_return_ref_type!(body_return_type, function_name: decl.name)
+        reject_foreign_nullable_value_type!(body_return_type, function_name: decl.name, parameter_name: nil) if foreign || external
         validate_return_proc_type!(body_return_type, function_name: decl.name)
         raise_sema_error("function #{decl.name} cannot return event storage type #{body_return_type}") if noncopyable_event_storage_type?(body_return_type)
         if decl.name == "main" && async_function && body_return_type != @ctx.types.fetch("int") && body_return_type != @ctx.types.fetch("void")

@@ -184,9 +184,8 @@ module MilkTea
 
           def nullable_pointer_like_ir_type?(type)
             return false unless type.is_a?(Types::Nullable)
-            return true if raw_pointer_type?(type.base) || ref_type?(type.base)
 
-            !type.base.is_a?(Types::Primitive)
+            c_backend_pointer_like_type?(type.base)
           end
 
           def wrap_pointer_member_receiver(expression)
