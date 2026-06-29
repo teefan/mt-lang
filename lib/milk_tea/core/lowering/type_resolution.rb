@@ -711,10 +711,9 @@ module MilkTea
         when AST::Identifier
           binding = lookup_value(expression.name, env)
           return binding[:type] if binding
-          return function_type_for_name(expression.name) if @ctx.functions.key?(expression.name)
-          return @ctx.types[expression.name] if @ctx.types.key?(expression.name)
+           return function_type_for_name(expression.name) if @ctx.functions.key?(expression.name)
 
-          raise LoweringError.new("unknown identifier #{expression.name}", line: expression.line, column: expression.column)
+           raise LoweringError.new("unknown identifier #{expression.name}", line: expression.line, column: expression.column)
         when AST::MemberAccess
           if (type_expr = resolve_type_expression(expression.receiver))
             member_type = resolve_type_member(type_expr, expression.member)
