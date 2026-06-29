@@ -486,6 +486,7 @@ Rules:
 - cannot take `ref` parameters
 - cannot take `proc` parameters
 - cannot take or return arrays
+- cannot use a non-pointer value nullable (such as `int?`) as a parameter or return type; only pointer-like `T?` may cross the boundary
 
 ### 3.9 Foreign functions
 
@@ -514,6 +515,7 @@ Rules:
 - Legacy imported-call syntax such as `load_file_data(path, out size)` or `set_shader_value(shader, loc, in value, kind)` is rejected semantically.
 - consuming foreign calls must appear as top-level expression statements.
 - foreign functions with consuming params must return `void`.
+- a non-pointer value nullable (such as `int?`) cannot be a parameter or return type; only pointer-like `T?` may cross the boundary.
 
 ## 4. Statements
 
@@ -980,10 +982,12 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 
 ### 6.3 Nullability
 
-- nullable form: `T?` for pointer-like/null-capable types
-- `null` and typed `null[...]` supported
-- typed null target must be pointer-like
+- nullable form: `T?`, valid for any type
+- for pointer-like bases (`ptr[T]`, `const_ptr[T]`, `cstr`, `fn(...)`, `proc(...)`, opaque), `T?` is a nullable pointer with `null` as the absent value
+- for non-pointer value bases (`int`, `bool`, `float`, structs, ...), `T?` is stored inline by value as a tagged optional (a presence flag plus the value); it copies by value with no hidden heap allocation or pointer aliasing
+- `null` expresses absence in any nullable context; the explicit typed `null[...]` form's target must be pointer-like
 - in nullable pointer-like contexts, use `null` instead of `zero[ptr[T]]`
+- at an FFI boundary (`external` / `foreign function` parameters and returns), only pointer-like `T?` is allowed; a non-pointer value nullable such as `int?` is rejected — use `ptr[T]?` or pass an explicit struct
 
 ### 6.4 Generics
 

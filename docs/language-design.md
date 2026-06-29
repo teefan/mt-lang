@@ -605,16 +605,18 @@ Notes:
 
 ### Nullability
 
-Milk Tea keeps nullability explicit.
+Milk Tea keeps nullability explicit. `T?` is valid for any type.
 
 ```mt
 let window: ptr[Window]? = null
 let name: cstr? = null
+let port: int? = null
 ```
 
-Only nullable pointer-like types may hold `null`.
-When contextual typing already determines the nullable pointer-like type, prefer bare `null` over a typed form such as `null[ptr[Window]]`. Use a typed `null[...]` only when the surrounding context does not provide the target nullable pointer-like type.
+For pointer-like bases (`ptr[T]`, `const_ptr[T]`, `cstr`, `fn(...)`, `proc(...)`, opaque), `T?` is a nullable pointer and `null` reuses the null pointer as the absent value. For non-pointer value bases (`int`, `bool`, `float`, structs), `T?` is stored inline by value as a tagged optional — a presence flag plus the value. It copies by value with no hidden heap allocation, boxing, or pointer aliasing, which keeps value-type optionals consistent with the rest of the value-semantics model.
+`null` expresses absence in any nullable context. When contextual typing already determines the nullable pointer-like type, prefer bare `null` over a typed form such as `null[ptr[Window]]`; use a typed `null[...]` (whose target must be pointer-like) only when the surrounding context does not provide the target type.
 Do not use `zero[ptr[T]]` as a replacement for `null`; `null` expresses absence, while `zero[T]` is the generic value-initialization surface. When the expected type is already a nullable pointer-like type, the compiler rejects `zero[ptr[T]]` and requires `null`.
+At an FFI boundary, only pointer-like `T?` is allowed: `external` and `foreign function` parameters and returns reject a non-pointer value nullable such as `int?` so the C ABI stays unambiguous — use `ptr[T]?` or an explicit struct instead.
 
 ### User-defined types
 

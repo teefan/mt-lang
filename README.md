@@ -731,10 +731,13 @@ When a `span[T]` is expected, an addressable `array[T, N]` value may be passed d
 
 Nullability:
 
-- Nullable form is `T?` for pointer-like types.
-- Use `null` for absence.
+- Nullable form is `T?` and is valid for any type.
+- For pointer-like bases (`ptr[T]`, `const_ptr[T]`, `cstr`, `fn(...)`, `proc(...)`, opaque), `T?` is a nullable pointer and `null` is the absent value.
+- For non-pointer value bases (`int`, `bool`, `float`, structs, ...), `T?` is stored inline by value as a tagged optional (a presence flag plus the value). It copies by value with no hidden heap allocation or pointer aliasing.
+- Use `null` for absence in any nullable context.
 - In nullable pointer-like contexts, prefer `null` over `zero[ptr[T]]`.
 - `ref[T]` is non-null and cannot be nullable.
+- At an FFI boundary (`external` / `foreign function` parameters and returns), only pointer-like `T?` is allowed. A non-pointer value nullable such as `int?` is rejected — use `ptr[T]?` or pass an explicit struct.
 
 Generics:
 
@@ -985,6 +988,7 @@ Current compiler rejects:
 - `foreign function` cannot be async and cannot take `proc(...)` parameters
 - a `foreign function` with `consuming` parameter(s) must return `void`
 - `consuming` foreign calls must appear as top-level expression statements
+- `external function` and `foreign function` cannot use a non-pointer value nullable (such as `int?`) as a parameter or return type; only pointer-like `T?` may cross an FFI boundary
 - `main` cannot be generic
 - `async main` pre-lift return type must be `int` or `void`
 - a function's return type cannot be `ref[T]` or a non-owning struct (contains `ref` via auto-generated lifetime)
