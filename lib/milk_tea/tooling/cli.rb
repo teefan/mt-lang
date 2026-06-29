@@ -198,22 +198,6 @@ module MilkTea
         return 0
       end
 
-      if from_tokens_file
-        json = File.read(from_tokens_file)
-        ast = Parser.parse_from_tokens_json(json, path: from_tokens_file)
-        if output_format == :json
-          result = Serializer.ast_to_json(ast)
-          if output_file
-            File.write(output_file, result)
-          else
-            @out.puts(result)
-          end
-        else
-          @out.write(PrettyPrinter.format_ast(ast))
-        end
-        return 0
-      end
-
       unless @argv.any?
         @err.puts("missing source file path")
         print_usage(@err)
@@ -2319,16 +2303,6 @@ module MilkTea
       @argv = remaining
     end
 
-    def find_default_docs_root
-      source_root = File.expand_path("../../../docs/reference", __dir__)
-      return source_root if File.directory?(source_root)
-
-      cwd_root = File.join(Dir.pwd, "docs/reference")
-      return cwd_root if File.directory?(cwd_root)
-
-      nil
-    end
-
     def open_browser(url)
       command = host_platform == :windows ? ["cmd", "/c", "start", "", url] : ["xdg-open", url]
       pid = Process.spawn(*command, out: File::NULL, err: File::NULL)
@@ -2615,7 +2589,7 @@ module MilkTea
       io.puts("       mtc deps fetch [PATH_OR_PACKAGE]")
       io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--nullable-report PATH] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
       io.puts("       mtc cache purge|status")
-      io.puts("       mtc docs [--open] [--port PORT] [--root PATH]")
+      io.puts("       mtc docs [--open] [--port PORT]")
       io.puts("       mtc snapshot INPUT.mt [--theme PATH] [-o OUTPUT]")
     end
   end
