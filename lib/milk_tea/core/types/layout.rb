@@ -45,7 +45,14 @@ module MilkTea
       when Types::EnumBase
         size_and_alignment(type.backing_type, stack)
       when Types::Nullable, Types::Function
-        [POINTER_SIZE, POINTER_SIZE]
+        if type.is_a?(Types::Function) || layout_pointer_like_nullable_base?(type.base)
+          [POINTER_SIZE, POINTER_SIZE]
+        else
+          with_stack(type, stack) do
+            layout = struct_layout(nullable_opt_layout_fields(type.base), packed: false, alignment: nil, stack:)
+            [layout[:size], layout[:alignment]]
+          end
+        end
       when Types::StringView, Types::Span, Types::Task, Types::Struct, Types::StructInstance
         with_stack(type, stack) do
           layout = struct_layout(ordered_fields(type), packed: packed_layout?(type), alignment: explicit_alignment(type), stack:)
@@ -200,6 +207,20 @@ module MilkTea
         "data" => Types::Registry.generic_instance("array", [Types::Registry.primitive("char"), Types::LiteralTypeArg.new(storage_capacity)]),
         "len" => Types::Registry.primitive("ptr_uint"),
         "dirty" => Types::Registry.primitive("bool"),
+      }
+    end
+
+    def layout_pointer_like_nullable_base?(base)
+      return true if base.is_a?(Types::Function) || base.is_a?(Types::Proc) || base.is_a?(Types::Opaque)
+      return true if base.is_a?(Types::Primitive) && base.name == "cstr"
+
+      base.is_a?(Types::GenericInstance) && %w[ptr const_ptr ref].include?(base.name)
+    end
+
+    def nullable_opt_layout_fields(base)
+      {
+        "has_value" => Types::Registry.primitive("bool"),
+        "value" => base,
       }
     end
 

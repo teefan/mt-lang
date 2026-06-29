@@ -53,6 +53,34 @@ class MilkTeaNullableCallbackFFITest < Minitest::Test
     assert_match(/register\(live_entry\.callback\);/, generated)
   end
 
+  def test_non_pointer_nullable_rejected_at_ffi_boundary
+    source = <<~MT
+      # module demo.ffireject
+
+      external function take_opt(x: int?) -> void
+
+      function main() -> int:
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) { check_program_source(source) }
+    assert_match(/nullable at an FFI boundary/, error.message)
+  end
+
+  def test_pointer_nullable_allowed_at_ffi_boundary
+    source = <<~MT
+      # module demo.ffiok
+
+      external function take_ptr(x: ptr[int]?) -> void
+
+      function main() -> int:
+          return 0
+    MT
+
+    program = check_program_source(source)
+    assert_equal true, program.root_analysis.functions.key?("main")
+  end
+
   private
 
   def root_source

@@ -1036,7 +1036,7 @@ module MilkTea
           name = IR::Name.new(name: binding[:linkage_name], type: storage_type, pointer: binding[:pointer])
           return name if pointer_like_type?(storage_type.base)
           return name if expected_type == storage_type
-          return IR::Unary.new(operator: "*", operand: name, type: visible_type)
+          return IR::Member.new(receiver: name, member: "value", type: visible_type)
         end
 
         if result_let_else_type?(storage_type) && let_else_success_type(storage_type) == visible_type
@@ -1436,24 +1436,18 @@ module MilkTea
         return lowered_value unless field_type.is_a?(Types::Nullable)
         return lowered_value if pointer_like_type?(field_type.base)
         return lowered_value if lowered_value.type.is_a?(Types::Nullable)
-        return lowered_value if lowered_value.is_a?(IR::AddressOf)
-        return lowered_value if addressable_ir_expression?(lowered_value)
 
-        temp_name = fresh_c_temp_name(env, "nullable_agg")
-        (env[:nullable_agg_setup] ||= []) << IR::LocalDecl.new(
-          name: temp_name,
-          linkage_name: temp_name,
-          type: field_type.base,
-          value: lowered_value,
-        )
-        IR::AddressOf.new(
-          expression: IR::Name.new(name: temp_name, type: field_type.base, pointer: false),
-          type: field_type.base,
-        )
+        nullable_some_literal(field_type, lowered_value)
       end
 
-      def addressable_ir_expression?(expression)
-        expression.is_a?(IR::Name) || expression.is_a?(IR::Member) || expression.is_a?(IR::Index)
+      def nullable_some_literal(nullable_type, value)
+        IR::AggregateLiteral.new(
+          type: nullable_type,
+          fields: [
+            IR::AggregateField.new(name: "has_value", value: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool"))),
+            IR::AggregateField.new(name: "value", value:),
+          ],
+        )
       end
 
       def pointer_like_type?(type)

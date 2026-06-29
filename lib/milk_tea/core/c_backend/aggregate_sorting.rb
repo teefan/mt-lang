@@ -69,7 +69,11 @@ module MilkTea
           def aggregate_type_dependencies(type)
             case type
             when Types::Nullable
-              aggregate_type_dependencies(type.base)
+              if c_backend_pointer_like_type?(type.base)
+                aggregate_type_dependencies(type.base)
+              else
+                [nullable_opt_type_name(type)]
+              end
             when Types::Task
               [task_type_name(type)]
             when Types::Proc

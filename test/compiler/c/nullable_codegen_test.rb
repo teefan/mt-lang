@@ -5,7 +5,7 @@ require_relative "helpers"
 class NullableCodegenTest < Minitest::Test
   include CodegenTestHelpers
 
-  # --- existing: local variable nullable assignment (block.rb fix) ---
+  # --- local variable nullable assignment (inline-tagged representation) ---
 
   def test_assign_string_to_nullable_variable
     source = <<~MT
@@ -24,8 +24,10 @@ class NullableCodegenTest < Minitest::Test
     MT
 
     generated = generate_c_from_program_source(source)
-    assert_match(/nullable_assign/, generated,
-                "nullable assignment must use temp variable + address-of")
+    assert_match(/result = \(mt_opt_\w+\)\{ \.has_value = true, \.value = /, generated,
+                "nullable assignment must construct a tagged optional value")
+    refute_match(/nullable_assign|nullable_loc/, generated,
+                "tagged nullable must not use the pointer-to-temp machinery")
   end
 
   def test_assign_integer_to_nullable_variable
@@ -43,8 +45,10 @@ class NullableCodegenTest < Minitest::Test
     MT
 
     generated = generate_c_from_program_source(source)
-    assert_match(/nullable_assign/, generated,
-                "nullable int assignment must use temp variable")
+    assert_match(/x = \(mt_opt_int32_t\)\{ \.has_value = true, \.value = 42 \}/, generated,
+                "nullable int assignment must construct a tagged optional")
+    refute_match(/nullable_assign/, generated,
+                "tagged nullable must not use a pointer-to-temp")
   end
 
   def test_assign_struct_to_nullable_variable
@@ -69,11 +73,13 @@ class NullableCodegenTest < Minitest::Test
     MT
 
     generated = generate_c_from_program_source(source)
-    assert_match(/nullable_assign/, generated,
-                "nullable struct assignment must use temp variable")
+    assert_match(/result = \(mt_opt_demo_nullstruct_Point\)\{ \.has_value = true, \.value = demo_nullstruct_make_point\(3, 4\) \}/, generated,
+                "nullable struct assignment must construct a tagged optional by value")
+    refute_match(/nullable_assign/, generated,
+                "tagged nullable must not use a pointer-to-temp")
   end
 
-  # --- new: variant constructor nullable field (expressions.rb fix) ---
+  # --- nullable struct/variant field construction (inline-tagged) ---
 
   def test_non_nullable_local_to_nullable_variant_field
     source = <<~MT
@@ -92,8 +98,10 @@ class NullableCodegenTest < Minitest::Test
     MT
 
     generated = generate_c_from_program_source(source)
-    assert_match(/\.body = &raw\b/, generated,
-                "non-nullable local passed to nullable struct field must use address-of")
+    assert_match(/\.body = \{ \.has_value = true, \.value = raw \}/, generated,
+                "non-nullable local passed to nullable struct field must wrap as a tagged optional")
+    refute_match(/\.body = &raw\b/, generated,
+                "tagged nullable field must NOT take the address of a stack local")
   end
 
   def test_already_nullable_local_to_nullable_variant_field
@@ -118,10 +126,10 @@ class NullableCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
     assert_match(/\.inner = opt\b/, generated,
-                "already-nullable local should pass directly (no extra &)")
+                "already-nullable local should pass the tagged optional directly (by value)")
   end
 
-  # --- let-else nullable unwrapping (lower_bound_identifier deref fix) ---
+  # --- let-else nullable unwrapping (tagged .value projection) ---
 
   def test_let_else_nullable_struct_passed_to_function
     source = <<~MT
@@ -144,8 +152,10 @@ class NullableCodegenTest < Minitest::Test
     MT
 
     generated = generate_c_from_program_source(source)
-    assert_match(/Block __mt_n/, generated, "let-else nullable struct must create value-typed temp")
-    assert_match(/\*y/, generated, "let-else nullable struct reference must dereference *y")
+    assert_match(/process_block\(y\.value\)/, generated,
+                "let-else nullable struct unwrap must read the tagged .value field")
+    refute_match(/\*y\b/, generated,
+                "tagged nullable unwrap must NOT dereference a pointer")
   end
 
   def test_let_else_nullable_int_passed_to_function
@@ -166,13 +176,13 @@ class NullableCodegenTest < Minitest::Test
     MT
 
     generated = generate_c_from_program_source(source)
-    assert_match(/process_int\(\*val_i\)/, generated,
-                "let-else nullable int reference must dereference *val_i in call")
-    refute_match(/process_int\(val_i\);/, generated,
-                "let-else nullable int reference must NOT pass pointer directly")
+    assert_match(/process_int\(val_i\.value\)/, generated,
+                "let-else nullable int unwrap must read the tagged .value field")
+    refute_match(/process_int\(\*val_i\)/, generated,
+                "tagged nullable unwrap must NOT dereference a pointer")
   end
 
-  # --- nullable rvalue wrapping (Bug 10: wrap_nullable_field_value) ---
+  # --- nullable rvalue wrapping (tagged construction, no temp) ---
 
   def test_nullable_struct_field_with_rvalue_initializer
     source = <<~MT
@@ -193,10 +203,12 @@ class NullableCodegenTest < Minitest::Test
     MT
 
     generated = generate_c_from_program_source(source)
-    assert_match(/__mt_nullable_agg/, generated,
-                "nullable struct field with rvalue must use temp variable")
+    assert_match(/\.port = \{ \.has_value = true, \.value = demo_rvalue_make_port\(\) \}/, generated,
+                "nullable struct field with rvalue must construct a tagged optional inline")
+    refute_match(/__mt_nullable_agg/, generated,
+                "tagged nullable must not use a pointer-to-temp")
     refute_match(/&make_port\(\)/, generated,
-                   "nullable struct field must NOT emit &func_call()")
+                "nullable struct field must NOT emit &func_call()")
   end
 
   def test_nullable_variant_field_with_rvalue_initializer
@@ -222,7 +234,41 @@ class NullableCodegenTest < Minitest::Test
     MT
 
     generated = generate_c_from_program_source(source)
-    assert_match(/__mt_nullable_agg/, generated,
-                "nullable field with rvalue in struct literal must use temp")
+    assert_match(/\.val = \{ \.has_value = true, \.value = demo_rvalue2_make_val\(\) \}/, generated,
+                "nullable field with rvalue in struct literal must construct a tagged optional inline")
+    refute_match(/__mt_nullable_agg/, generated,
+                "tagged nullable must not use a pointer-to-temp")
+  end
+
+  # --- regression: nullable value field returned by value must not dangle ---
+
+  def test_nullable_value_field_returned_by_value_is_not_dangling
+    source = <<~MT
+      # module demo.nodangle
+
+      struct Box:
+          value: int?
+
+      function make() -> Box:
+          let local = 7
+          return Box(value = local)
+
+      function main() -> int:
+          let b = make()
+          let v = b.value
+          if v != null:
+              return v
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+    assert_match(/struct demo_nodangle_Box \{\s+mt_opt_int32_t value;\s+\}/m, generated,
+                "nullable value field must be stored inline as a tagged optional, not a pointer")
+    assert_match(/\.value = \{ \.has_value = true, \.value = local \}/, generated,
+                "constructing the field must copy the value into the tagged optional")
+    refute_match(/&local\b/, generated,
+                "must NOT take the address of a stack local that escapes the function")
+    refute_match(/nullable_loc|nullable_agg/, generated,
+                "tagged nullable construction must not allocate a pointer-to-temp")
   end
 end

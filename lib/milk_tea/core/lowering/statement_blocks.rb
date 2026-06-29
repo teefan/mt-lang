@@ -93,15 +93,11 @@ module MilkTea
                 expected_type: storage_type,
                 contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
               )
-              nullable_setup = local_env.delete(:nullable_agg_setup) || []
-              lowered.concat(nullable_setup)
             else
               value = IR::ZeroInit.new(type: storage_type)
             end
             if value && storage_type.is_a?(Types::Nullable) && !value.type.is_a?(Types::Nullable) && !pointer_like_type?(storage_type.base)
-              temp_name = fresh_c_temp_name(local_env, "nullable_loc")
-              lowered << IR::LocalDecl.new(name: temp_name, linkage_name: temp_name, type: storage_type.base, value:)
-              value = IR::AddressOf.new(expression: IR::Name.new(name: temp_name, type: storage_type.base, pointer: false), type: storage_type.base)
+              value = nullable_some_literal(storage_type, value)
             end
             if bind_let_else_local?(statement)
               current_actual_scope(local_env[:scopes])[statement.name] = local_binding(
@@ -211,9 +207,7 @@ module MilkTea
                       end
             end
             if target.type.is_a?(Types::Nullable) && value && !value.type.is_a?(Types::Nullable) && !pointer_like_type?(target.type.base)
-              temp_name = fresh_c_temp_name(local_env, "nullable_assign")
-              lowered << IR::LocalDecl.new(name: temp_name, linkage_name: temp_name, type: target.type.base, value:)
-              value = IR::AddressOf.new(expression: IR::Name.new(name: temp_name, type: target.type.base, pointer: false), type: target.type.base)
+              value = nullable_some_literal(target.type, value)
             end
             update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
             local_defers.concat(suppress_format_releases_for_assignment(prepared_cleanups, target.type))
@@ -642,8 +636,6 @@ module MilkTea
               expected_type: return_type,
               contextual_int_to_float: contextual_int_to_float_target?(return_type),
             ) : nil
-            nullable_setup = local_env.delete(:nullable_agg_setup) || []
-            lowered.concat(nullable_setup)
             if prepared_cleanups.any? && cstr_trackable_type?(return_type)
               raise LoweringError, "formatted string temporaries cannot be returned as borrowed text; use std.fmt.format(f\"...\") when ownership must escape"
             end
