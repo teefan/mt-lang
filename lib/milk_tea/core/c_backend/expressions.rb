@@ -384,6 +384,10 @@ module MilkTea
             field_type = type.arm(arm_name).fetch(field.name)
             if field_type.is_a?(Types::Nullable) && !field.value.type.is_a?(Types::Nullable) && !c_backend_pointer_like_type?(field_type.base) && !field.value.is_a?(IR::AddressOf)
               "&#{emit_initializer(field.value)}"
+            elsif field.value.is_a?(IR::AddressOf)
+              c_type_name = named_type_c_name(field_type)
+              inner = field.value.expression
+              "((#{c_type_name}*)memcpy(malloc(sizeof(#{c_type_name})), &(#{emit_expression(inner)}), sizeof(#{c_type_name})))"
             elsif void_storage_field?(field_type)
               emit_void_field_initializer(field.value)
             else
