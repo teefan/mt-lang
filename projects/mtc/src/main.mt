@@ -2,7 +2,7 @@ import std.stdio as stdio
 
 import context.diagnostic
 import context.source_manager
-import lexer.lexer
+import lexer
 import lexer.token
 
 function main() -> int:
