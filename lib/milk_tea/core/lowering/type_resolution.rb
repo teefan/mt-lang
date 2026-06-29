@@ -712,6 +712,7 @@ module MilkTea
           binding = lookup_value(expression.name, env)
           return binding[:type] if binding
           return function_type_for_name(expression.name) if @ctx.functions.key?(expression.name)
+          return @ctx.types[expression.name] if @ctx.types.key?(expression.name)
 
           raise LoweringError.new("unknown identifier #{expression.name}", line: expression.line, column: expression.column)
         when AST::MemberAccess
