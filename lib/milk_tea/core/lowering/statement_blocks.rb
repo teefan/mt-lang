@@ -241,6 +241,34 @@ module MilkTea
             false_refinements = {}
             branch_entries = []
 
+            # When inside inline for, try to const-evaluate conditions
+            unless statement.branches.empty?
+              ct_cond = compile_time_const_value(statement.branches.first.condition, env: local_env)
+              if ct_cond == true
+                lowered.concat(lower_block(
+                  statement.branches.first.body,
+                  env: local_env,
+                  active_defers: active_defers + local_defers,
+                  return_type:,
+                  loop_flow: nested_loop_flow(loop_flow, local_defers),
+                  allow_return:,
+                ))
+                next
+              elsif ct_cond == false
+                if statement.else_body
+                  lowered.concat(lower_block(
+                    statement.else_body,
+                    env: local_env,
+                    active_defers: active_defers + local_defers,
+                    return_type:,
+                    loop_flow: nested_loop_flow(loop_flow, local_defers),
+                    allow_return:,
+                  ))
+                end
+                next
+              end
+            end
+
             statement.branches.each do |branch|
               branch_env = env_with_refinements(local_env, false_refinements)
               condition_setup, prepared_condition, condition_cleanups = prepare_expression_with_cleanups(
