@@ -753,6 +753,7 @@ module MilkTea
     def check_command
       output_format = :text
       output_file = nil
+      from_ast_file = nil
 
       args = @argv.dup
       @argv = []
@@ -771,9 +772,20 @@ module MilkTea
             @err.puts("missing file path for --emit-analysis-json")
             return 1
           end
+        when "--from-ast-json"
+          from_ast_file = args.shift
+          unless from_ast_file
+            @err.puts("missing file path for --from-ast-json")
+            return 1
+          end
         else
           @argv << arg
         end
+      end
+
+      if from_ast_file
+        resolution = extract_resolution_flags!
+        return check_from_ast_json(from_ast_file, output_format:, output_file:, locked: resolution[:locked])
       end
 
       unless @argv.any?
@@ -859,6 +871,44 @@ module MilkTea
       @err.puts("#{info_count} note(s)") if info_count > 0 && error_count == 0
       final_error_count = error_count + (resolution[:warnings_as_errors] ? warning_count : 0)
       final_error_count > 0 ? 1 : 0
+    end
+
+    def check_from_ast_json(file, output_format:, output_file:, locked:)
+      ast = Serializer.ast_from_json_with_ids(File.read(file))
+      loader = make_module_loader(nil, locked:, platform: ModuleLoader.default_host_platform)
+      imported = loader.imported_modules_for_ast(ast, importer_path: nil)
+      result = SemanticAnalyzer.check_collecting_errors(ast, imported_modules: imported, path: file)
+      analysis = result[:analysis]
+      errors = result[:errors] || []
+
+      if output_format == :json
+        if errors.any? || analysis.nil?
+          errors.each_with_index { |e, i| @err.puts(ErrorFormatter.format(e, color: error_color?(@err), index: i + 1)) }
+          return 1
+        end
+
+        if output_file
+          imported_analyses = loader.checked_analyses_by_module_name
+            .reject { |name, _| name == analysis.module_name.to_s }
+          bundle = {
+            "$mt_analysis_bundle" => true,
+            "root" => Serializer.analysis_to_json(analysis),
+            "imported" => imported_analyses.transform_values { |a| Serializer.analysis_to_json(a) },
+          }
+          File.write(output_file, JSON.pretty_generate(bundle))
+        else
+          @out.puts(Serializer.analysis_to_json(analysis))
+        end
+        return 0
+      end
+
+      if errors.empty?
+        info("checked #{ast.module_name} (from AST JSON)")
+        return 0
+      end
+
+      errors.each_with_index { |e, i| @err.puts(ErrorFormatter.format(e, color: error_color?(@err), index: i + 1)) }
+      1
     end
 
     def check_single_reporting_all(path, locked: false)
@@ -2565,7 +2615,23 @@ module MilkTea
             --frozen                Require a current package.lock before semantic dependency resolution.
             -I, --include-path PATH Add an extra module root for semantic resolution.
         HELP
-      "check"           => "Usage: mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror]\n\n  Run semantic analysis on one or more source files and report errors.",
+      "check"           => <<~HELP,
+        Usage: mtc check PATH|DIR [PATH|DIR ...] [--json] [--emit-analysis-json FILE] [--locked] [--frozen] [-Werror] [-I PATH]
+               mtc check --from-ast-json FILE [--emit-analysis-json FILE] [-I PATH]
+
+          Run semantic analysis on one or more source files and report errors.
+
+          Options:
+            --json                      Emit the root module's Analysis as JSON to stdout.
+            --emit-analysis-json FILE   Write the Analysis bundle (root + imported modules) to FILE;
+                                        consumable by `mtc lower --from-analysis-json`.
+            --from-ast-json FILE        Analyze a parsed AST (from `mtc parse --emit-ast-json`) instead
+                                        of source; imports are resolved from the module roots (-I), and
+                                        the root module's Analysis is emitted.
+            -Werror                     Treat warnings as errors.
+            --locked / --frozen         Dependency resolution mode.
+            -I, --include-path PATH     Add an extra module root.
+        HELP
       "lower"           => "Usage: mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Lower one or more source files to IR and print it.",
       "emit-c"          => "Usage: mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Compile one or more source files to C and print the output.",
       "build"           => <<~HELP,
@@ -2755,7 +2821,8 @@ module MilkTea
       io.puts("       mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|--preserve|--tidy] [--max-line-length N] [--timings]")
       io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--format text|json] [--ignore-generated] [--timings] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lint --init")
-      io.puts("       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH]")
+      io.puts("       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH] [--json] [--emit-analysis-json FILE]")
+      io.puts("       mtc check --from-ast-json FILE [--emit-analysis-json FILE] [-I PATH]")
       io.puts("       mtc debug PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")

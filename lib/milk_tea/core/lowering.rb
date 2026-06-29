@@ -255,7 +255,7 @@ module MilkTea
         cached_ir.functions.each { |f| @artifacts.lowered_function_linkage_names[f.linkage_name] = true }
       end
 
-      @program.analyses_by_path.each_pair do |path, analysis|
+      ordered_analysis_pairs.each do |path, analysis|
         next if analysis.module_kind == :raw_module
         next if modules.key?(analysis.module_name)
 
@@ -295,7 +295,7 @@ module MilkTea
       while pending
         pending = false
 
-        @program.analyses_by_path.each_pair do |path, analysis|
+        ordered_analysis_pairs.each do |path, analysis|
           next if analysis.module_kind == :raw_module
 
           prepare_analysis(analysis, source_path: path)
@@ -356,17 +356,18 @@ module MilkTea
 
       includes = collect_includes
 
-      all_constants = modules.values.flat_map(&:constants)
+      ordered = ordered_module_fragments(modules)
+      all_constants = ordered.flat_map(&:constants)
       all_constants.concat(@artifacts.synthetic_constants)
-      all_globals = modules.values.flat_map(&:globals)
-      all_opaques = modules.values.flat_map(&:opaques)
-      all_structs = modules.values.flat_map(&:structs)
-      all_unions = modules.values.flat_map(&:unions)
-      all_enums = modules.values.flat_map(&:enums)
-      all_variants = modules.values.flat_map(&:variants)
-      all_static_asserts = modules.values.flat_map(&:static_asserts)
+      all_globals = ordered.flat_map(&:globals)
+      all_opaques = ordered.flat_map(&:opaques)
+      all_structs = ordered.flat_map(&:structs)
+      all_unions = ordered.flat_map(&:unions)
+      all_enums = ordered.flat_map(&:enums)
+      all_variants = ordered.flat_map(&:variants)
+      all_static_asserts = ordered.flat_map(&:static_asserts)
       all_static_asserts.concat(@artifacts.external_layout_assertions)
-      all_functions = modules.values.flat_map(&:functions)
+      all_functions = ordered.flat_map(&:functions)
 
       all_opaques.concat(lower_imported_external_opaques)
       all_structs.concat(@artifacts.synthetic_structs.uniq { |s| s.linkage_name })
@@ -402,7 +403,7 @@ module MilkTea
     end
 
     def regenerate_cross_module_synthetics
-      @program.analyses_by_path.each_pair do |path, analysis|
+      ordered_analysis_pairs.each do |path, analysis|
         next if analysis.module_kind == :raw_module
 
         prepare_analysis(analysis, source_path: path)
@@ -411,6 +412,70 @@ module MilkTea
           ensure_event_runtime(event_type) if event_type.is_a?(Types::Event)
         end
       end
+    end
+
+    # Canonical, deterministic iteration order over the program's analyses so
+    # that lowering — and therefore the emitted C — is byte-identical regardless
+    # of how the analyses were assembled (live ModuleLoader vs. JSON-reconstructed
+    # bundle). Modules are emitted in dependency-first topological order, with
+    # lexicographic module-name order as a stable tiebreaker for independent
+    # modules and as a cycle-breaking fallback.
+    def ordered_analysis_pairs
+      @ordered_analysis_pairs ||= compute_ordered_analysis_pairs
+    end
+
+    def compute_ordered_analysis_pairs
+      pairs = @program.analyses_by_path.to_a
+      by_name = {}
+      pairs.each do |path, analysis|
+        name = analysis.module_name.to_s
+        by_name[name] ||= [path, analysis]
+      end
+
+      present = by_name.keys.to_set
+      deps_of = Hash.new { |hash, key| hash[key] = [] }
+      pairs.each do |_path, analysis|
+        name = analysis.module_name.to_s
+        imported_module_names(analysis).each do |dep|
+          deps_of[name] << dep if present.include?(dep) && dep != name
+        end
+      end
+      deps_of.each_value(&:uniq!)
+
+      canonical_module_names(by_name.keys, deps_of).map { |name| by_name[name] }
+    end
+
+    def imported_module_names(analysis)
+      imports = analysis.respond_to?(:imports) ? analysis.imports : nil
+      return [] unless imports.respond_to?(:values)
+
+      imports.values.filter_map do |binding|
+        binding.name.to_s if binding.respond_to?(:name) && binding.name
+      end
+    end
+
+    def canonical_module_names(names, deps_of)
+      visited = {}
+      on_stack = {}
+      order = []
+      visit = nil
+      visit = lambda do |name|
+        return if visited[name] || on_stack[name]
+
+        on_stack[name] = true
+        (deps_of[name] || []).sort.each { |dep| visit.call(dep) }
+        on_stack.delete(name)
+        visited[name] = true
+        order << name
+      end
+      names.sort.each { |name| visit.call(name) }
+      order
+    end
+
+    def ordered_module_fragments(modules)
+      ordered = ordered_analysis_pairs.filter_map { |_path, analysis| modules[analysis.module_name] }
+      ordered.concat(modules.values - ordered)
+      ordered
     end
 
     private

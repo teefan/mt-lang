@@ -159,6 +159,17 @@ module MilkTea
       @platform = previous_platform
     end
 
+    # Module-name-keyed view of every analysis checked so far. Useful after
+    # resolving a root AST's imports (e.g. via imported_modules_for_ast) to
+    # assemble a full root+imported analysis bundle.
+    def checked_analyses_by_module_name
+      @analysis_cache.each_value.each_with_object({}) do |analysis, modules|
+        next unless analysis&.module_name
+
+        modules[analysis.module_name.to_s] = analysis
+      end
+    end
+
     def check_program_parallel(root_path)
       # Phase 1: Parse all transitive modules (sequential)
       parse_all(root_path)

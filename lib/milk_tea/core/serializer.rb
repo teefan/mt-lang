@@ -302,7 +302,7 @@ module MilkTea
     # Identity-only mode: for expression types, skip fields/arms/events/nested_types
     def self.ast_from_json_with_ids(json_string)
       ast = ast_from_json(json_string)
-      AST.assign_node_ids(ast) if ast
+      ast = AST.assign_node_ids(ast) if ast
       ast
     end
 
