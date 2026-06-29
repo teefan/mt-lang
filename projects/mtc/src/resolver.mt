@@ -1,5 +1,5 @@
 import std.vec as vec
-import parser.ast as ast
+import ast
 import resolver.symbol as sym
 
 public struct ResolvedModule:

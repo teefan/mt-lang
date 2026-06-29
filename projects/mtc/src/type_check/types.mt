@@ -53,15 +53,15 @@ public enum TypeEntryKind: ubyte
     pointer        = 1
     const_pointer  = 2
     reference      = 3
-    span_kind      = 4
-    array_fixed    = 5
+    span_type       = 4
+    array_type      = 5
     nullable       = 6
-    fn_ptr         = 7
+    fn_ptr_type     = 7
     proc_type      = 8
     tuple_type     = 9
     dyn_type       = 10
     soa_type       = 11
-    str_buf        = 12
+    str_buffer_type = 12
     task_type      = 13
     atomic_type    = 14
     named          = 15
@@ -73,7 +73,7 @@ public enum TypeEntryKind: ubyte
     enum_def       = 21
     flags_def      = 22
     opaque_def     = 23
-    iface          = 24
+    interface       = 24
     type_var       = 25
     value_param    = 26
     error          = 27
@@ -218,11 +218,11 @@ extending TypeRegistry:
         var i: ptr_uint = 0
         while i < this.entries.len():
             let e = this.entry(uint<-(i))
-            if e.kind == TypeEntryKind.span_kind and e.element_handle == element:
+            if e.kind == TypeEntryKind.span_type and e.element_handle == element:
                 return uint<-(i)
             i += 1
         var entry = TypeEntry(
-            kind = TypeEntryKind.span_kind,
+            kind = TypeEntryKind.span_type,
             name = "",
             pointee_handle = 0,
             element_handle = element,
@@ -244,12 +244,12 @@ extending TypeRegistry:
         var i: ptr_uint = 0
         while i < this.entries.len():
             let e = this.entry(uint<-(i))
-            if e.kind == TypeEntryKind.array_fixed and e.element_handle == element and e.array_size == size:
+            if e.kind == TypeEntryKind.array_type and e.element_handle == element and e.array_size == size:
                 return uint<-(i)
             i += 1
         let elem_layout = this.layout(element)
         var entry = TypeEntry(
-            kind = TypeEntryKind.array_fixed,
+            kind = TypeEntryKind.array_type,
             name = "",
             pointee_handle = 0,
             element_handle = element,

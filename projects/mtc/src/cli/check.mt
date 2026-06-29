@@ -1,11 +1,10 @@
 import std.stdio as stdio
-import std.vec as vec
 
 import context.source_manager
 import lexer
 import parser
 import resolver
-import typeck
+import type_check
 
 import cli.options
 import cli.io
@@ -37,7 +36,7 @@ public function run_check(opts: ref[options.CliOptions]) -> int:
     var resolver_inst = resolver.Resolver.create(uint<-(file_id))
     var resolved = resolver_inst.resolve(ast_mod)
 
-    var checker = typeck.Checker.create()
+    var checker = type_check.Checker.create()
     let ok = checker.check_module(resolved)
     let _ok = ok
 

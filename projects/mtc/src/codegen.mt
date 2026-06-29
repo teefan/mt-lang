@@ -1,6 +1,6 @@
 import std.string as string
-import lower.cir
-import typeck.types as types
+import cir
+import type_check.types as types
 
 public struct Emitter:
     output: string.String
@@ -88,23 +88,23 @@ extending Emitter:
                             fatal(c"emitter.emit_stmt missing expr at index")
                         this.emit_expr(read(ep), fun)
                 this.output.append(";\n")
-        else if stmt.kind == cir.CirStmtKind.assign:
+        else if stmt.kind == cir.CirStmtKind.assign_stmt:
             if stmt.children.len() >= 2:
                 let tgt_ptr = stmt.children.get(ptr_uint<-(0)) else:
-                    fatal(c"emitter.emit_stmt missing assign target")
+                    fatal(c"emitter.emit_stmt missing assign_stmt target")
                 let val_ptr = stmt.children.get(ptr_uint<-(1)) else:
-                    fatal(c"emitter.emit_stmt missing assign value")
+                    fatal(c"emitter.emit_stmt missing assign_stmt value")
                 this.emit_indent()
                 unsafe:
                     let tgt_idx = read(tgt_ptr)
                     let tgt_ep = fun.exprs.get(ptr_uint<-(tgt_idx)) else:
-                        fatal(c"emitter.emit_stmt missing assign target expr")
+                        fatal(c"emitter.emit_stmt missing assign_stmt target expr")
                     this.emit_expr(read(tgt_ep), fun)
                 this.output.append(" = ")
                 unsafe:
                     let val_idx = read(val_ptr)
                     let val_ep = fun.exprs.get(ptr_uint<-(val_idx)) else:
-                        fatal(c"emitter.emit_stmt missing assign value expr")
+                        fatal(c"emitter.emit_stmt missing assign_stmt value expr")
                     this.emit_expr(read(val_ep), fun)
                 this.output.append(";\n")
         else if stmt.kind == cir.CirStmtKind.if_stmt:
@@ -131,7 +131,7 @@ extending Emitter:
                         fatal(c"emitter.emit_stmt missing expr at index")
                     this.emit_expr(read(ep), fun)
             this.output.append(") {\n")
-        else if stmt.kind == cir.CirStmtKind.for_range:
+        else if stmt.kind == cir.CirStmtKind.for_stmt:
             if stmt.children.len() >= 2:
                 let start_ptr = stmt.children.get(ptr_uint<-(0)) else:
                     fatal(c"emitter.emit_stmt missing for start")

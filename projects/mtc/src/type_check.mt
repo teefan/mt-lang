@@ -1,10 +1,9 @@
 import std.vec as vec
-import lexer.token as tok
-import parser.ast as ast
+import ast
 import resolver
 import resolver.symbol as sym
-import typeck.compat
-import typeck.types
+import type_check.compat
+import type_check.types
 
 public struct Checker:
     compat: compat.TypeChecker

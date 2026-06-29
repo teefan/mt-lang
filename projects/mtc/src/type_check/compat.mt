@@ -1,4 +1,4 @@
-import typeck.types as types
+import type_check.types as types
 
 public struct TypeChecker:
     registry: types.TypeRegistry
@@ -63,11 +63,11 @@ extending TypeChecker:
 
     public function is_array(handle: types.TypeHandle) -> bool:
         let e = this.registry.entry(uint<-(handle))
-        return e.kind == types.TypeEntryKind.array_fixed
+        return e.kind == types.TypeEntryKind.array_type
 
     public function is_span(handle: types.TypeHandle) -> bool:
         let e = this.registry.entry(uint<-(handle))
-        return e.kind == types.TypeEntryKind.span_kind
+        return e.kind == types.TypeEntryKind.span_type
 
     public function is_str(handle: types.TypeHandle) -> bool:
         return handle == types.TYPE_HANDLE_STR

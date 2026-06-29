@@ -739,6 +739,11 @@ projects/mtc/
   src/
     main.mt                             # CLI entrypoint (parse args, dispatch)
     # ---------------------------------------------------------------------------
+    # Shared Data Types (consumed by multiple phases)
+    # ---------------------------------------------------------------------------
+    ast.mt                              # All AST node variants (every node has SourceLocation)
+    cir.mt                              # CIR node types (non-recursive, flat)
+    # ---------------------------------------------------------------------------
     # Infrastructure
     # ---------------------------------------------------------------------------
     context/
@@ -759,7 +764,6 @@ projects/mtc/
     # ---------------------------------------------------------------------------
     parser.mt                           # Top-level recursive-descent parser *
     parser/
-      ast.mt                            # All AST node variants (every node has SourceLocation)
       blocks.mt                         # Indentation block protocol
       expressions.mt *                  # Expression parsing
       statements.mt *                   # Statement parsing
@@ -777,8 +781,8 @@ projects/mtc/
     # ---------------------------------------------------------------------------
     # Semantic Analysis (phases 5a–5m; const eval + mono are interleaved here)
     # ---------------------------------------------------------------------------
-    typeck.mt                           # Main semantic analysis driver *
-    typeck/
+    type_check.mt                       # Main semantic analysis driver *
+    type_check/
       types.mt                          # TypeEntry, TypeRegistry, TypeHandle, TypeLayout
       compat.mt                         # Type compatibility and coercions
       primitives.mt *                   # PrimitiveKind enum, built-in type definitions
@@ -799,7 +803,6 @@ projects/mtc/
     # ---------------------------------------------------------------------------
     lower.mt                            # Lowering orchestrator (AST → CIR) *
     lower/
-      cir.mt                            # CIR node types (non-recursive, flat)
       type_resolver.mt *                # Re-resolve TypeRef → TypeHandle during lowering
       assemble.mt *                     # Cross-module assembly + synthetic generation
       declarations.mt *                 # Type/const/global lowering (Pass 1)
@@ -819,8 +822,8 @@ projects/mtc/
     # ---------------------------------------------------------------------------
     # C Code Generation (phase 9)
     # ---------------------------------------------------------------------------
+    codegen.mt                          # C codegen driver (CIR → C text) *
     codegen/
-      emit.mt                           # C codegen driver (CIR → C text) *
       feature_detect.mt *               # Pre-scan CIR for used features
       dce.mt *                          # Dead code elimination
       types.mt *                        # Type definition emission

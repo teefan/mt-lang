@@ -2,7 +2,7 @@ import std.vec as vec
 
 import lexer
 import lexer.token as tok
-import parser.ast as ast
+import ast
 import parser.blocks as blocks
 
 public struct Parser:

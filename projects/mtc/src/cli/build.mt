@@ -4,8 +4,8 @@ import context.source_manager
 import lexer
 import parser
 import lower
-import lower.cir
-import codegen.emit
+import cir
+import codegen
 
 import cli.options
 import cli.io
@@ -34,7 +34,7 @@ public function run_build(opts: ref[options.CliOptions]) -> int:
     var lowerer = lower.Lowerer.create()
     lowerer.lower_module(ast_mod, ref_of(program))
 
-    var emitter = emit.Emitter.create()
+    var emitter = codegen.Emitter.create()
     let c_output = emitter.emit_c(ref_of(program))
     program.release()
 

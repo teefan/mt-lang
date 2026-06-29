@@ -1,7 +1,7 @@
 import std.vec as vec
-import parser.ast as ast
-import typeck.types as types
-import lower.cir
+import ast
+import type_check.types as types
+import cir
 
 public struct Lowerer:
     current: cir.CirFunction
@@ -151,7 +151,7 @@ extending Lowerer:
                 children.push(target_idx)
                 children.push(value_idx)
                 this.current.stmts.push(cir.CirStmt(
-                    kind = cir.CirStmtKind.assign,
+                    kind = cir.CirStmtKind.assign_stmt,
                     cond = "",
                     init = "",
                     increment = "",
@@ -239,7 +239,7 @@ extending Lowerer:
                 children.push(start_idx)
                 children.push(end_idx)
                 this.current.stmts.push(cir.CirStmt(
-                    kind = cir.CirStmtKind.for_range,
+                    kind = cir.CirStmtKind.for_stmt,
                     cond = binding,
                     init = "",
                     increment = "",

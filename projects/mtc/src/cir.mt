@@ -1,5 +1,5 @@
 import std.vec as vec
-import typeck.types as types
+import type_check.types as types
 
 public struct CirField:
     name: str
@@ -21,14 +21,14 @@ public struct CirDecl:
 
 public enum CirStmtKind: ubyte
     block        = 0
-    if_stmt      = 1
-    while_stmt   = 2
-    for_range    = 3
-    return_stmt  = 4
-    assign       = 5
-    call         = 6
-    expr_stmt    = 7
-    break_stmt   = 8
+    if_stmt       = 1
+    while_stmt    = 2
+    for_stmt      = 3
+    return_stmt   = 4
+    assign_stmt   = 5
+    call          = 6
+    expr_stmt     = 7
+    break_stmt    = 8
     continue_stmt = 9
     label         = 10
     goto_label    = 11
