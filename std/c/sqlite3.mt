@@ -544,7 +544,7 @@ struct sqlite3_rtree_query_info:
     rScore: double
     apSqlParam: ptr[ptr[sqlite3_value]]
 
-const SQLITE_VERSION_NUMBER: int = 3053001
+const SQLITE_VERSION_NUMBER: int = 3053002
 const SQLITE_OK: int = 0
 const SQLITE_ERROR: int = 1
 const SQLITE_INTERNAL: int = 2
