@@ -2,11 +2,13 @@
 # Tests: Variant arm destructuring with guards (hp > 0), equality patterns
 # (status = idle), _ discard, as name binding with guards, transparent
 # struct destructure through single struct-field arms.
+struct Pos:
+    x: int
+    y: int
+
 variant Entity:
     player(hp: int, position: int)
-    positioned(loc: struct pos):
-        x: int
-        y: int
+    positioned(loc: Pos)
     empty
 
 function match_guards(entity: Entity) -> int:
@@ -28,7 +30,7 @@ function main() -> int:
     let dead = Entity.player(hp = 0, position = 5)
     let r2 = match_guards(dead)
 
-    let pos = Entity.positioned(loc = struct pos(x = 3, y = 4))
+    let pos = Entity.positioned(loc = Pos(x = 3, y = 4))
     let r3 = match_guards(pos)
 
     let _r1 = r1
