@@ -746,7 +746,7 @@ function main() -&gt; int:
     let scale = make_scaler(2.5)
     let scaled = scale(10.0)
 
-    ## Nullability: T? for pointer-like types
+    ## Nullability: T? for any type (pointer-like shown here)
     var maybe_target: ptr[Entity]? = null
     if maybe_target == null:
         io.print_line("no target")
@@ -1266,13 +1266,15 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)</code></pre>
   </div>
 
   <h3>Nullability</h3>
-  <p>Only nullable pointer-like types may hold <code>null</code>. Use <code>null</code> to express absence; use <code>zero[T]</code> for generic value-initialization. <code>zero[ptr[T]]</code> is rejected when the expected type is already a nullable pointer-like type — write <code>null</code> instead.</p>
+  <p><code>T?</code> is valid for <strong>any type</strong>. For pointer-like bases (<code>ptr[T]</code>, <code>const_ptr[T]</code>, <code>cstr</code>, <code>fn(...)</code>, <code>proc(...)</code>, opaque), <code>T?</code> is a nullable pointer and <code>null</code> reuses the null pointer as the absent value. For non-pointer value bases (<code>int</code>, <code>bool</code>, <code>float</code>, structs), <code>T?</code> is stored inline by value as a tagged optional (a presence flag plus the value); it copies by value with no hidden heap allocation or pointer aliasing. Use <code>null</code> to express absence; use <code>zero[T]</code> for generic value-initialization. <code>zero[ptr[T]]</code> is rejected when the expected type is already a nullable pointer-like type — write <code>null</code> instead.</p>
+  <p>At an FFI boundary, only pointer-like <code>T?</code> is allowed: <code>external</code> / <code>foreign function</code> parameters and returns reject a non-pointer value nullable such as <code>int?</code> — use <code>ptr[T]?</code> or pass an explicit struct.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>let window: ptr[Window]? = null
 let name: cstr? = null
+let port: int? = null        ## value-type optional, stored inline
 
-## Typed null for ambiguous contexts
+## Typed null for ambiguous contexts (target must be pointer-like)
 let handle = null[ptr[char]]</code></pre>
 </div>
 
@@ -2313,6 +2315,7 @@ import std.math  # intentionally available for downstream</code></pre>
     <li><code>foreign function</code> cannot be async, cannot take <code>proc(...)</code></li>
     <li>Functions cannot return <code>ref[T]</code> or non-owning structs</li>
     <li>A consuming foreign function must return <code>void</code></li>
+    <li><code>external</code> / <code>foreign function</code> cannot use a non-pointer value nullable (e.g. <code>int?</code>) as a parameter or return type; only pointer-like <code>T?</code> may cross an FFI boundary</li>
   </ul>
 
   <h3>Storage Restrictions</h3>
