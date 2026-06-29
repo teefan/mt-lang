@@ -388,6 +388,7 @@ module MilkTea
 
                           field_type = pattern_fields[field_name]
                           field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
+                          field_expr = dereference_if_self_ref(field_expr, field_type, scrutinee_type)
                           rhs_expr = lower_expression(arg.value.right, env: arm_local_env, expected_type: field_type)
                           guard_condition = IR::Binary.new(operator: arg.value.operator, left: field_expr, right: rhs_expr, type: @ctx.types.fetch("bool"))
                           arm_body_ir << IR::IfStmt.new(condition: guard_condition, then_body: [], else_body: [IR::GotoStmt.new(label: goto_label)])
@@ -400,6 +401,7 @@ module MilkTea
 
                           field_type = pattern_fields[field_name]
                           field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
+                          field_expr = dereference_if_self_ref(field_expr, field_type, scrutinee_type)
                           value_expr = lower_expression(arg.value, env: arm_local_env, expected_type: field_type)
                           eq_check = IR::Binary.new(operator: "!=", left: field_expr, right: value_expr, type: @ctx.types.fetch("bool"))
                           arm_body_ir << IR::IfStmt.new(condition: eq_check, then_body: [IR::GotoStmt.new(label: goto_label)], else_body: [])
@@ -418,6 +420,7 @@ module MilkTea
                         field_type = pattern_fields[field_name]
                         binding_c = c_local_name(field_name)
                         field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
+                        field_expr = dereference_if_self_ref(field_expr, field_type, scrutinee_type)
                         arm_body_ir << IR::LocalDecl.new(name: binding_c, linkage_name: binding_c, type: field_type, value: field_expr)
                         arm_local_env[:scopes].last[field_name] = local_binding(type: field_type, linkage_name: binding_c, mutable: false, pointer: false)
                       end
@@ -977,5 +980,19 @@ module MilkTea
         @artifacts.emitted_declarations << constant
         []
       end
+
+    def variant_self_referencing_field?(field_type, scrutinee_type)
+      return false unless field_type.is_a?(Types::Variant) || field_type.is_a?(Types::VariantInstance)
+      return false unless scrutinee_type.is_a?(Types::Variant) || scrutinee_type.is_a?(Types::VariantInstance)
+      field_type == scrutinee_type
+    end
+
+    def dereference_if_self_ref(field_expr, field_type, scrutinee_type)
+      if variant_self_referencing_field?(field_type, scrutinee_type)
+        IR::Unary.new(operator: "*", operand: field_expr, type: field_type)
+      else
+        field_expr
+      end
+    end
   end
 end
