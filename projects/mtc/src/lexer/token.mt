@@ -113,6 +113,7 @@ public enum KeywordKind: ubyte
     kw_dyn              = 66
     kw_proc             = 67
     kw_fn               = 68
+    kw_const_ptr        = 69
 
 public struct Token:
     kind: TokenKind

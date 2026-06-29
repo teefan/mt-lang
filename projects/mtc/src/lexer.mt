@@ -35,19 +35,15 @@ extending Lexer:
                 let col = this.offset - this.line_start
                 if col == 0:
                     let indent = this.read_indent()
-                    if indent > 0:
-                        this.emit_indents(indent, ref_of(tokens))
-                        if this.offset >= this.source.len:
-                            break
-                    else:
-                        if this.offset >= this.source.len:
-                            break
+                    this.emit_indents(indent, ref_of(tokens))
+                    if this.offset >= this.source.len:
+                        break
 
             this.lex_token(ref_of(tokens))
 
         while this.indent_stack.len() > 1:
             let _level = this.indent_stack.pop()
-            tokens.push(this.make_newline_token(this.offset))
+            tokens.push(this.make_token(tok.TokenKind.dedent, this.offset, this.offset, ""))
 
         tokens.push(this.make_token(tok.TokenKind.eof, this.offset, this.offset, ""))
         return tokens
@@ -111,16 +107,13 @@ extending Lexer:
             return 0
 
         if this.source.byte_at(idx) == '\n':
-            this.offset = idx + 1
-            this.line_start = this.offset
-            return 0
+            return this.current_indent()
 
         if this.source.byte_at(idx) == '\r':
             this.offset = idx + 1
             if this.offset < this.source.len and this.source.byte_at(this.offset) == '\n':
                 this.offset += 1
-            this.line_start = this.offset
-            return 0
+            return this.current_indent()
 
         if this.source.byte_at(idx) == '#':
             return col
@@ -242,17 +235,21 @@ extending Lexer:
         else:
             this.lex_while_digit_or('_')
 
+        var is_float: bool = false
+
         if this.current() == '.' and this.peek(1) >= '0' and this.peek(1) <= '9':
+            is_float = true
             this.advance_byte()
             this.lex_while_digit_or('_')
-            this.lex_float_suffix(tokens, start)
-            return
 
         if this.current() == 'e' or this.current() == 'E':
+            is_float = true
             this.advance_byte()
             if this.current() == '+' or this.current() == '-':
                 this.advance_byte()
             this.lex_while_digit_or('_')
+
+        if is_float:
             this.lex_float_suffix(tokens, start)
             return
 
@@ -266,7 +263,17 @@ extending Lexer:
 
     editable function lex_integer_suffix(tokens: ref[vec.Vec[tok.Token]], start: ptr_uint) -> void:
         let ch = this.current()
-        if ch == 'u' or ch == 'i' or ch == 'z' or ch == 'l' or ch == 'b':
+        if ch == 'u':
+            this.advance_byte()
+            let ch2 = this.current()
+            if ch2 == 'l' or ch2 == 'b' or ch2 == 's':
+                this.advance_byte()
+        else if ch == 'l':
+            this.advance_byte()
+            let ch2 = this.current()
+            if ch2 == 'l':
+                this.advance_byte()
+        else if ch == 'i' or ch == 'z' or ch == 's' or ch == 'b':
             this.advance_byte()
         let end = this.offset
         tokens.push(this.make_token(tok.TokenKind.integer_literal, start, end, this.source.slice(start, end - start)))
@@ -387,6 +394,8 @@ extending Lexer:
 
         if ch == ']':
             this.advance_byte()
+            if this.grouping_depth > 0:
+                this.grouping_depth -= 1
             tokens.push(this.make_token(tok.TokenKind.bracket_close, start, this.offset, "]"))
             return
 
@@ -578,7 +587,6 @@ extending Lexer:
             return
 
         this.advance_byte()
-        tokens.push(this.make_token(tok.TokenKind.error, start, this.offset, ""))
 
 public function lookup_keyword(text: str) -> Option[tok.KeywordKind]:
     match text:
@@ -718,5 +726,7 @@ public function lookup_keyword(text: str) -> Option[tok.KeywordKind]:
             return Option[tok.KeywordKind].some(value = tok.KeywordKind.kw_proc)
         "fn":
             return Option[tok.KeywordKind].some(value = tok.KeywordKind.kw_fn)
+        "const_ptr":
+            return Option[tok.KeywordKind].some(value = tok.KeywordKind.kw_const_ptr)
         _:
             return Option[tok.KeywordKind].none

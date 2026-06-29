@@ -1,32 +1,31 @@
 import std.stdio as stdio
+import std.vec as vec
 
-import context.diagnostic
-import context.source_manager
-import lexer
-import lexer.token
+import cli.options
+import cli.check
+import cli.build
 
-function main() -> int:
-    var mgr = source_manager.SourceManager.create()
-    defer mgr.release()
-
-    var diag = diagnostic.DiagEngine.create()
-    defer diag.release()
-
-    let file_id = mgr.add_file("test.mt", "function main() -> int:\n    return 0\n", "test")
-
-    var lexer_state = lexer.Lexer.create(mgr.file(file_id).content, uint<-(file_id))
-    var tokens = lexer_state.lex()
-
-    if tokens.len() > 0:
-        stdio.print_format("lexed %d tokens\n", tokens.len())
-        let first = tokens.get(0) else:
-            fatal(c"missing first token")
+function main(args: span[str]) -> int:
+    var argv = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < args.len:
         unsafe:
-            let tk = read(first)
-            if tk.kind != token.TokenKind.keyword:
-                stdio.print_format("expected keyword token\n")
-                return 1
+            argv.push(read(args.data + i))
+        i += 1
 
-    tokens.release()
-    var _lexer = lexer_state
-    return 0
+    var opts = options.CliOptions.parse(argv)
+
+    if opts.command == options.Command.cmd_check:
+        return check.run_check(ref_of(opts))
+    else if opts.command == options.Command.cmd_build:
+        return build.run_build(ref_of(opts))
+    else if opts.command == options.Command.cmd_help:
+        stdio.print_format("usage: mtc check <path>\n")
+        stdio.print_format("       mtc build <path> [-o output]\n")
+        return 0
+
+    if opts.command == options.Command.cmd_unknown and opts.source_path != "":
+        return check.run_check(ref_of(opts))
+
+    stdio.print_format("usage: mtc check <path>\n")
+    return 1

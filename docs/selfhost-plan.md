@@ -729,7 +729,9 @@ After emission, invoke the external C compiler (`cc` for native, `emcc` for wasm
 
 ## File Layout
 
-All self-host compiler source lives under `projects/mtc/`, following the standard Milk Tea package convention:
+All self-host compiler source lives under `projects/mtc/`, following the standard Milk Tea package convention.
+Main module files sit at `src/<name>.mt`, with supporting submodules inside `src/<name>/<sub>.mt`.
+Sub-modules that haven't been split out yet are marked with `*`.
 
 ```
 projects/mtc/
@@ -748,109 +750,106 @@ projects/mtc/
     # ---------------------------------------------------------------------------
     # Lexer
     # ---------------------------------------------------------------------------
+    lexer.mt                            # Indentation-aware lexer
     lexer/
       token.mt                          # TokenKind, Token, keyword lookup table
-      lexer.mt                          # Indentation-aware lexer
       token_stream.mt                   # TokenStream (peek/advance/check/match interface)
     # ---------------------------------------------------------------------------
     # Parser
     # ---------------------------------------------------------------------------
+    parser.mt                           # Top-level recursive-descent parser *
     parser/
       ast.mt                            # All AST node variants (every node has SourceLocation)
-      parser.mt                         # Top-level parser driver
-      parser/
-        expressions.mt                  # Expression parsing
-        statements.mt                   # Statement parsing
-        declarations.mt                 # Declaration parsing (struct, enum, function, etc.)
-        type_parsing.mt                 # Type expression parsing
-        blocks.mt                       # Indentation block protocol
-        attributes.mt                   # @[attr(args)] parsing
-        recovery.mt                     # Error recovery (synchronize to boundaries)
+      blocks.mt                         # Indentation block protocol
+      expressions.mt *                  # Expression parsing
+      statements.mt *                   # Statement parsing
+      declarations.mt *                 # Declaration parsing (struct, enum, function, etc.)
+      type_parsing.mt *                 # Type expression parsing
+      attributes.mt *                   # @[attr(args)] parsing
+      recovery.mt *                     # Error recovery (synchronize to boundaries)
     # ---------------------------------------------------------------------------
     # Name Resolution
     # ---------------------------------------------------------------------------
-    resolve/
-      scope.mt                          # Scope, ScopeTree
-      symbol.mt                         # Symbol, SymbolKind, SymbolTable (global index)
-      resolver.mt                       # Name resolution pass
+    resolver.mt                         # Name resolution pass (two-pass)
+    resolver/
+      symbol.mt                         # SymbolTable, Scope, Symbol, SymbolKind
+      scope.mt *                        # ScopeTree (merged into symbol.mt)
     # ---------------------------------------------------------------------------
     # Semantic Analysis (phases 5a–5m; const eval + mono are interleaved here)
     # ---------------------------------------------------------------------------
+    typeck.mt                           # Main semantic analysis driver *
     typeck/
       types.mt                          # TypeEntry, TypeRegistry, TypeHandle, TypeLayout
-      primitives.mt                     # PrimitiveKind enum, built-in type definitions
-      builtins.mt                       # Install built-in types + attributes
-      prelude.mt                        # Auto-import Option[T], Result[T, E]
-      const_eval.mt                     # Const evaluator (tree-walking interpreter)
-      mono.mt                           # Generic instantiation discovery + fixed-point loop
-      typeck.mt                         # Main semantic analysis driver (orchestrates sub-phases)
-      typeck/
-        decls.mt                        # Declaration type-checking + forward-declare pass
-        exprs.mt                        # Expression type-checking + type inference
-        stmts.mt                        # Statement type-checking
-        compat.mt                       # Type compatibility and coercions
-        generics.mt                     # Constraint checking (T implements I)
-        interface_check.mt              # Interface conformance verification
-        flow.mt                         # Nullability flow refinement for locals
-        def_assign.mt                   # Definite assignment analysis (CFG-based)
-        cf_analysis.mt                  # Reachability, termination, conditional return analysis
+      compat.mt                         # Type compatibility and coercions
+      primitives.mt *                   # PrimitiveKind enum, built-in type definitions
+      builtins.mt *                     # Install built-in types + attributes
+      prelude.mt *                      # Auto-import Option[T], Result[T, E]
+      const_eval.mt *                   # Const evaluator (tree-walking interpreter)
+      mono.mt *                         # Generic instantiation discovery + fixed-point loop
+      decls.mt *                        # Declaration type-checking + forward-declare pass
+      exprs.mt *                        # Expression type-checking + type inference
+      stmts.mt *                        # Statement type-checking
+      generics.mt *                     # Constraint checking (T implements I)
+      interface_check.mt *              # Interface conformance verification
+      flow.mt *                         # Nullability flow refinement for locals
+      def_assign.mt *                   # Definite assignment analysis (CFG-based)
+      cf_analysis.mt *                  # Reachability, termination, conditional return analysis
     # ---------------------------------------------------------------------------
     # Lowering to CIR (phases 6–8)
     # ---------------------------------------------------------------------------
+    lower.mt                            # Lowering orchestrator (AST → CIR) *
     lower/
-      cir.mt                            # CIR node variants (Program, StructDecl, Function, etc.)
-      type_resolver.mt                  # Re-resolve TypeRef → TypeHandle during lowering
-      lower.mt                          # Lowering orchestrator
-      assemble.mt                       # Cross-module assembly + synthetic generation
-      lower/
-        declarations.mt                 # Type/const/global lowering (Pass 1)
-        functions.mt                    # Function body lowering (Pass 2)
-        statements.mt                   # Statement desugaring
-        expressions.mt                  # Expression lowering
-        match.mt                        # Match → switch/if-chain
-        defer_cleanup.mt                # Defer → scope-exit labels
-        async.mt                        # Async function → state machine (+ analysis/normalization)
-        events.mt                       # Event declaration → slot table lowering
-        proc_closures.mt                # Proc → env struct + function pointer
-        bounds.mt                       # Array/span bounds check injection
-        fmt_strings.mt                  # Format string → append calls expansion
-        str_buffer.mt                   # str_buffer[N] → fixed array + length field
-        foreign.mt                      # Foreign function boundary lowering
-        variant_constr.mt               # Variant constructor → discriminant + payload
+      cir.mt                            # CIR node types (non-recursive, flat)
+      type_resolver.mt *                # Re-resolve TypeRef → TypeHandle during lowering
+      assemble.mt *                     # Cross-module assembly + synthetic generation
+      declarations.mt *                 # Type/const/global lowering (Pass 1)
+      functions.mt *                    # Function body lowering (Pass 2)
+      statements.mt *                   # Statement desugaring
+      expressions.mt *                  # Expression lowering
+      match.mt *                        # Match → switch/if-chain
+      defer_cleanup.mt *                # Defer → scope-exit labels
+      async.mt *                        # Async function → state machine
+      events.mt *                       # Event declaration → slot table lowering
+      proc_closures.mt *                # Proc → env struct + function pointer
+      bounds.mt *                       # Array/span bounds check injection
+      fmt_strings.mt *                  # Format string → append calls expansion
+      str_buffer.mt *                   # str_buffer[N] → fixed array + length field
+      foreign.mt *                      # Foreign function boundary lowering
+      variant_constr.mt *               # Variant constructor → discriminant + payload
     # ---------------------------------------------------------------------------
     # C Code Generation (phase 9)
     # ---------------------------------------------------------------------------
     codegen/
-      feature_detect.mt                 # Pre-scan CIR for used features (helper flags, includes)
-      dce.mt                            # Dead code elimination (reachability from entry points)
-      emit.mt                           # C codegen driver (orchestrates emission order)
-      emit/
-        types.mt                        # Type definition emission (struct, enum, union, variant)
-        forward_decls.mt                # Forward declaration emission (topological sort)
-        functions.mt                    # Function definition emission
-        statements.mt                   # Statement → C emission
-        expressions.mt                  # Expression → C emission
-        runtime.mt                      # Runtime helpers (fatal, format, bounds-check, string eq)
-        async_runtime.mt                # Async runtime (state machine struct, bootstrap)
-        events_runtime.mt               # Event runtime (slot arrays, emit dispatch)
-        variant_equality.mt             # Variant equality helper generation
-        aggregate_sort.mt               # Topological sort of aggregate types for emission
+      emit.mt                           # C codegen driver (CIR → C text) *
+      feature_detect.mt *               # Pre-scan CIR for used features
+      dce.mt *                          # Dead code elimination
+      types.mt *                        # Type definition emission
+      forward_decls.mt *                # Forward declaration emission (topological sort)
+      functions.mt *                    # Function definition emission
+      statements.mt *                   # Statement → C emission
+      expressions.mt *                  # Expression → C emission
+      runtime.mt *                      # Runtime helpers
+      async_runtime.mt *                # Async runtime bootstrap
+      events_runtime.mt *               # Event runtime (slot arrays, emit dispatch)
+      variant_equality.mt *             # Variant equality helper generation
+      aggregate_sort.mt *               # Topological sort of aggregate types
     # ---------------------------------------------------------------------------
     # Module Graph and Dependency Management
     # ---------------------------------------------------------------------------
     module/
-      graph.mt                          # Dependency graph, topological ordering, cycle detection
-      loader.mt                         # File path resolution, platform variants, package roots
+      graph.mt *                        # Dependency graph, topological ordering, cycle detection
+      loader.mt *                       # File path resolution, platform variants, package roots
     # ---------------------------------------------------------------------------
     # CLI
     # ---------------------------------------------------------------------------
     cli/
-      build.mt                          # build command
-      run.mt                            # run command
-      check.mt                          # check command (lex+parse+typeck only, no C output)
-      lint.mt                           # lint command
-      deps.mt                           # deps subcommands
+      build.mt                          # build command (load → lex → parse → lower → emit)
+      check.mt                          # check command (load → lex → parse → resolve → typeck)
       options.mt                        # Shared CLI option parsing
+      io.mt                             # File I/O helpers (read_file, write_file)
+      run.mt *                          # run command (build + execute)
+      lint.mt *                         # lint command
+      deps.mt *                         # deps subcommands
 ```
 
 ---
