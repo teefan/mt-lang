@@ -159,11 +159,11 @@ class MilkTeaCliTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["format", path, "--check"], out:, err:)
+      status = MilkTea::CLI.start(["format", path, "--check", "--verbose"], out:, err:)
 
       assert_equal 1, status
       assert_equal "", err.string
-      assert_match(/about to format-check .*sample\.mt/, out.string)
+      assert_match(/checking .*sample\.mt/, out.string)
       assert_match(/needs formatting/, out.string)
     end
   end
@@ -293,11 +293,11 @@ class MilkTeaCliTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["lint", path], out:, err:)
+      status = MilkTea::CLI.start(["lint", path, "--verbose"], out:, err:)
 
       assert_equal 1, status
       assert_equal "", err.string
-      assert_match(/about to lint .*sample\.mt/, out.string)
+      assert_match(/linting .*sample\.mt/, out.string)
       assert_match(/sample\.mt:2: unused-local: unused local 'unused'/, out.string)
     end
   end
@@ -313,14 +313,14 @@ class MilkTeaCliTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["lint", path, "--output-format", "json"], out:, err:)
+      status = MilkTea::CLI.start(["lint", path, "--format", "json"], out:, err:)
 
       assert_equal 1, status
       assert_equal "", err.string
       parsed = JSON.parse(out.string)
       assert_equal true, parsed.is_a?(Array)
       assert_equal "unused-local", parsed.first.fetch("code")
-      refute_match(/about to lint/, out.string)
+      refute_match(/linting/, out.string)
     end
   end
 
@@ -3812,7 +3812,7 @@ class MilkTeaCliTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["lint", path, "--profile"], out:, err:)
+      status = MilkTea::CLI.start(["lint", path, "--timings"], out:, err:)
 
       assert_equal 1, status
       assert_equal "", err.string
@@ -3832,7 +3832,7 @@ class MilkTeaCliTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["lint", path, "--fix", "--profile"], out:, err:)
+      status = MilkTea::CLI.start(["lint", path, "--fix", "--timings"], out:, err:)
 
       assert_equal 0, status
       assert_equal "", err.string
@@ -3853,7 +3853,7 @@ class MilkTeaCliTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["lint", path, "--output-format", "json"], out:, err:)
+      status = MilkTea::CLI.start(["lint", path, "--format", "json"], out:, err:)
 
       assert_equal 1, status
       parsed = JSON.parse(out.string)
@@ -3874,7 +3874,7 @@ class MilkTeaCliTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["lint", path, "--output-format", "json"], out:, err:)
+      status = MilkTea::CLI.start(["lint", path, "--format", "json"], out:, err:)
 
       assert_equal 0, status
       parsed = JSON.parse(out.string)
@@ -4043,8 +4043,8 @@ class MilkTeaCliTest < Minitest::Test
       [["lint"], /missing source file path/],
       [["lint", "--select"], /--select requires a comma-separated list of rule codes/],
       [["lint", "--ignore"], /--ignore requires a comma-separated list of rule codes/],
-      [["lint", "--output-format"], /--output-format requires an argument \(text, json\)/],
-      [["lint", "--output-format", "yaml", "sample.mt"], /unknown output format: yaml \(use text or json\)/],
+      [["lint", "--format"], /--format requires an argument \(text, json\)/],
+      [["lint", "--format", "yaml", "sample.mt"], /unknown format: yaml \(use text or json\)/],
       [["lint", "--bogus", "sample.mt"], /unknown lint flag: --bogus/],
     ].each do |argv, pattern|
       out = StringIO.new
@@ -4095,7 +4095,7 @@ class MilkTeaCliTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["lint", first_path, "--output-format", "text"], out:, err:)
+      status = MilkTea::CLI.start(["lint", first_path, "--format", "text"], out:, err:)
 
       assert_equal 0, status
       assert_equal "", err.string
@@ -4301,6 +4301,119 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal "", err.string
     assert_match(/Usage: mtc lex PATH/, out.string)
     assert_match(/mtc bindgen MODULE HEADER/, out.string)
+  end
+
+  def test_version_flag_and_command_print_version_to_stdout
+    %w[--version -V version].each do |arg|
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start([arg], out:, err:)
+
+      assert_equal 0, status, "#{arg} should exit 0"
+      assert_equal "", err.string
+      assert_equal "mtc #{MilkTea::VERSION}\n", out.string
+    end
+  end
+
+  def test_top_level_help_prints_overview_to_stdout
+    %w[--help -h help].each do |arg|
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start([arg], out:, err:)
+
+      assert_equal 0, status, "#{arg} should exit 0"
+      assert_equal "", err.string
+      assert_match(/Commands:/, out.string)
+      assert_match(/-V, --version/, out.string)
+      assert_match(/Usage: mtc lex PATH/, out.string)
+    end
+  end
+
+  def test_help_subcommand_prints_command_help
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["help", "build"], out:, err:)
+
+    assert_equal 0, status
+    assert_equal "", err.string
+    assert_match(/Usage: mtc build/, out.string)
+  end
+
+  def test_completions_emit_scripts_for_supported_shells
+    {
+      "bash" => /complete -F _mtc mtc/,
+      "zsh" => /#compdef mtc/,
+      "fish" => /complete -c mtc/,
+    }.each do |shell, pattern|
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["completions", shell], out:, err:)
+
+      assert_equal 0, status, "completions #{shell} should exit 0"
+      assert_equal "", err.string
+      assert_match(pattern, out.string)
+      assert_match(/\bcheck\b/, out.string)
+    end
+  end
+
+  def test_completions_rejects_unknown_shell
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["completions", "tcsh"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/shell must be bash, zsh, or fish/, err.string)
+  end
+
+  def test_invalid_color_value_is_rejected
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["--color", "rainbow", "check", "missing.mt"], out:, err:)
+
+    assert_equal 1, status
+    assert_match(/--color must be auto, always, or never/, err.string)
+  end
+
+  def test_quiet_suppresses_informational_success_output
+    Dir.mktmpdir("milk-tea-cli-quiet") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, "function main() -> int:\n    return 0\n")
+
+      out = StringIO.new
+      err = StringIO.new
+      assert_equal 0, MilkTea::CLI.start(["check", path], out:, err:)
+      assert_match(/checked .*sample\.mt as/, out.string)
+
+      quiet_out = StringIO.new
+      quiet_err = StringIO.new
+      assert_equal 0, MilkTea::CLI.start(["check", path, "--quiet"], out: quiet_out, err: quiet_err)
+      assert_equal "", quiet_out.string
+    end
+  end
+
+  def test_lint_progress_is_quiet_unless_verbose
+    Dir.mktmpdir("milk-tea-cli-lint-quiet-progress") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        function main() -> int:
+            let unused = 1
+            return 0
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      MilkTea::CLI.start(["lint", path], out:, err:)
+
+      refute_match(/linting/, out.string)
+      assert_match(/unused-local/, out.string)
+    end
   end
 
   def test_frozen_check_and_lint_report_missing_lockfiles
