@@ -4043,8 +4043,8 @@ class MilkTeaCliTest < Minitest::Test
       [["lint"], /missing source file path/],
       [["lint", "--select"], /--select requires a comma-separated list of rule codes/],
       [["lint", "--ignore"], /--ignore requires a comma-separated list of rule codes/],
-      [["lint", "--format"], /--format requires an argument \(text, json\)/],
-      [["lint", "--format", "yaml", "sample.mt"], /unknown format: yaml \(use text or json\)/],
+      [["lint", "--format"], /--format requires an argument \(text, sexpr\)/],
+      [["lint", "--format", "yaml", "sample.mt"], /unknown format: yaml \(use text or sexpr\)/],
       [["lint", "--bogus", "sample.mt"], /unknown lint flag: --bogus/],
     ].each do |argv, pattern|
       out = StringIO.new
