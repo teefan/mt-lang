@@ -1199,6 +1199,7 @@ Custom formatting hook notes:
 - conditions must be `bool`
 - no truthy/falsy integer or pointer coercion
 - mixed signed/unsigned integer arithmetic requires an explicit `T<-value` cast
+- non-widening integer conversions (narrowing, signed → unsigned) require an explicit `T<-value` cast; lossless widening is implicit
 - `%` requires integer-compatible operands
 - bitwise operators require matching integer/flags types
 - shift operators require integer operands
