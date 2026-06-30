@@ -305,6 +305,7 @@ module MilkTea
           mark_used(expression.field)
         when AST::PrefixCast
           visit_expression(expression.expression)
+          check_redundant_cast(expression)
         else
           nil
         end
@@ -563,6 +564,93 @@ module MilkTea
         type_node.name.parts.first
       rescue StandardError
         nil
+      end
+
+      # ── redundant cast ─────────────────────────────────────────────────────────
+
+      def check_redundant_cast(cast_expr)
+        return unless cast_expr.is_a?(AST::PrefixCast)
+        return unless cast_expr.target_type
+
+        target_name = type_ref_name(cast_expr.target_type)
+        return unless target_name
+
+        # Attempt to resolve the inner expression's type
+        actual_name = nil
+        actual_type = nil
+
+        if @sema_facts
+          actual_type = resolve_expr_type(cast_expr.expression)
+          actual_name = actual_type&.name
+        end
+
+        # Fallback: check if the expression is a literal whose type can be inferred
+        actual_name ||= expression_literal_type_name(cast_expr.expression)
+
+        return unless actual_name
+
+        # Exact match: T<-(T)
+        if actual_name == target_name
+          emit_redundant_cast(cast_expr, target_name, "cast to same type is redundant")
+          return
+        end
+
+        # Lossless widening check (requires sema_facts)
+        return unless actual_type
+        return unless actual_type.is_a?(Types::Primitive)
+
+        if implicit_cast_allowed?(actual_type, target_name)
+          emit_redundant_cast(cast_expr, target_name, "implicit widening makes this cast redundant")
+        end
+      end
+
+      def emit_redundant_cast(cast_expr, target_name, reason)
+        line = cast_expr.respond_to?(:line) ? cast_expr.line : expression_line(cast_expr)
+        column = cast_expr.respond_to?(:column) ? cast_expr.column : expression_column(cast_expr)
+
+        @warnings << Warning.new(
+          path: @path,
+          line: line,
+          column: column,
+          length: expression_length(cast_expr),
+          code: "redundant-cast",
+          message: "#{reason}: #{target_name}<-",
+          severity: :hint,
+        )
+      end
+
+      def implicit_cast_allowed?(inner_type, target_name)
+        return true if inner_type.name == target_name
+
+        target = find_primitive_type(target_name)
+        return false unless target
+        return false unless target.is_a?(Types::Primitive)
+        return false unless inner_type.fixed_width_integer? && target.fixed_width_integer?
+
+        if inner_type.signed_integer? == target.signed_integer?
+          return target.integer_width >= inner_type.integer_width
+        end
+
+        return false if inner_type.signed_integer?
+
+        target.signed_integer? && target.integer_width > inner_type.integer_width
+      end
+
+      def find_primitive_type(name)
+        return nil unless @sema_facts
+        return nil unless @sema_facts.types
+
+        @sema_facts.types[name]
+      end
+
+      def resolve_expr_type(expr)
+        return nil unless @sema_facts
+        return nil unless expr
+
+        node_id = @sema_facts.ast.node_ids[expr.object_id]
+        return nil unless node_id
+
+        @sema_facts.resolved_expr_types[node_id]
       end
 
       def expression_literal_type_name(expr)

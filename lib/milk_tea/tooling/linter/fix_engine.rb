@@ -14,6 +14,7 @@ module MilkTea
         when "prefer-let-else"        then prefer_let_else_edits(lines, warning)
         when "prefer-var-else"        then prefer_var_else_edits(lines, warning)
         when "redundant-bool-compare" then redundant_bool_compare_edits(lines, warning)
+        when "redundant-cast"        then redundant_cast_edits(lines, warning)
         when "redundant-else"         then redundant_else_edits(lines, warning)
         when "redundant-return"       then redundant_return_edits(lines, warning)
         when "redundant-type-annotation" then redundant_type_annotation_edits(lines, warning)
@@ -194,6 +195,28 @@ module MilkTea
         return [] unless type_match
 
         new_line = +"#{line[0...after_name]}#{rest[type_match.end(0)..]}"
+        [FixEdit.new(start_line: line_idx, start_char: 0, end_line: line_idx + 1, end_char: 0, new_text: new_line)]
+      end
+
+      def redundant_cast_edits(lines, warning)
+        return [] unless warning.line
+
+        line_idx = warning.line - 1
+        line = lines[line_idx]
+        return [] unless line
+        return [] unless warning.column
+
+        # Search for the cast pattern TypeName<-(...) starting at or before the column
+        col = warning.column - 1
+        # Also try searching from the beginning of the line
+        cast_match = line.match(/(\w+)\s*<-\s*\((.+)\)/)
+        return [] unless cast_match
+
+        match_start = cast_match.begin(0)
+        inner_expr = cast_match[2]
+        full_len = cast_match.end(0) - match_start
+
+        new_line = +"#{line[0...match_start]}#{inner_expr}#{line[(match_start + full_len)..]}"
         [FixEdit.new(start_line: line_idx, start_char: 0, end_line: line_idx + 1, end_char: 0, new_text: new_line)]
       end
     end
