@@ -4,8 +4,8 @@ import std.str as text
 import std.string as string
 import std.terminal as terminal
 import std.vec as vec
-import stdio_ext
 import lexer
+import lexer_sexpr
 import parser
 import parser_sexpr
 
@@ -175,7 +175,7 @@ function cmd_lex(options: ref[CliOptions]) -> int:
                         fatal("mtc: missing token")
                     unsafe:
                         let tok = read(ptr[lexer.Token]<-t)
-                        print_token_sexpr(tok)
+                        lexer_sexpr.print_token_sexpr(tok)
                     j += 1
                 stdio.print_char(int<-(']'))
                 stdio.print_char(int<-('\n'))
@@ -193,130 +193,6 @@ function cmd_lex(options: ref[CliOptions]) -> int:
             errors.release()
             tokens.release()
             return 0
-
-
-function print_token_sexpr(tok: lexer.Token) -> void:
-    stdio.print_format("(:{} :type ")
-    stdio_ext.print_quoted_str(lexer.kind_name(tok.kind))
-    stdio.print_format(" :lexeme ")
-    stdio_ext.print_quoted_str(tok.lexeme)
-    stdio.print_format(" :literal ")
-    print_token_literal(tok)
-    stdio.print_format(" :line %d :column %d :start_offset %lu :end_offset %lu)",
-        tok.line, tok.column, tok.start_offset, tok.end_offset)
-
-
-function print_token_literal(tok: lexer.Token) -> void:
-    if tok.kind == lexer.TOK_INTEGER:
-        stdio.print_format("%lu", parse_int_lexeme(tok.lexeme))
-    else if tok.kind == lexer.TOK_CHAR_LITERAL:
-        stdio.print_format("%lu", parse_char_lexeme(tok.lexeme))
-    else if tok.kind == lexer.TOK_KW_TRUE:
-        stdio.print_format("true")
-    else if tok.kind == lexer.TOK_KW_FALSE:
-        stdio.print_format("false")
-    else:
-        stdio.print_format("nil")
-
-
-function parse_int_lexeme(lexeme: str) -> ptr_uint:
-    var i: ptr_uint = 0
-    var base: ptr_uint = 10
-    if lexeme.len >= 2 and lexeme.byte_at(0) == '0':
-        let c = lexeme.byte_at(1)
-        if c == 'x' or c == 'X':
-            base = 16
-            i = 2
-        else if c == 'b' or c == 'B':
-            base = 2
-            i = 2
-    var acc: ptr_uint = 0
-    while i < lexeme.len:
-        let b = lexeme.byte_at(i)
-        if b == '_':
-            i += 1
-            continue
-        var d: ptr_uint = 0
-        if b >= '0' and b <= '9':
-            d = ptr_uint<-(b - '0')
-        else if base == 16 and b >= 'a' and b <= 'f':
-            d = ptr_uint<-(b - 'a') + 10
-        else if base == 16 and b >= 'A' and b <= 'F':
-            d = ptr_uint<-(b - 'A') + 10
-        else:
-            break
-        acc = acc * base + d
-        i += 1
-    return acc
-
-
-function parse_char_lexeme(lexeme: str) -> ptr_uint:
-    if lexeme.len < 3:
-        return 0
-    let c1 = lexeme.byte_at(1)
-    if c1 != '\\':
-        return ptr_uint<-c1
-    let e = lexeme.byte_at(2)
-    if e == 'n':
-        return 10
-    if e == 'r':
-        return 13
-    if e == 't':
-        return 9
-    if e == '0':
-        return 0
-    if e == '\'':
-        return 39
-    if e == '"':
-        return 34
-    if e == '\\':
-        return 92
-    if e == 'x' or e == 'X':
-        var v: ptr_uint = 0
-        var k: ptr_uint = 3
-        while k < lexeme.len:
-            let hb = lexeme.byte_at(k)
-            if hb == '\'':
-                break
-            var d: ptr_uint = 0
-            if hb >= '0' and hb <= '9':
-                d = ptr_uint<-(hb - '0')
-            else if hb >= 'a' and hb <= 'f':
-                d = ptr_uint<-(hb - 'a') + 10
-            else if hb >= 'A' and hb <= 'F':
-                d = ptr_uint<-(hb - 'A') + 10
-            else:
-                break
-            v = v * 16 + d
-            k += 1
-        return v
-    return ptr_uint<-e
-
-
-function print_quoted_str(s: str) -> void:
-    stdio.print_char(int<-('\"'))
-    var k: ptr_uint = 0
-    while k < s.len:
-        let b = s.byte_at(k)
-        if b == '\n':
-            stdio.print_char(int<-('\\'))
-            stdio.print_char(int<-('n'))
-        else if b == '\r':
-            stdio.print_char(int<-('\\'))
-            stdio.print_char(int<-('r'))
-        else if b == '\t':
-            stdio.print_char(int<-('\\'))
-            stdio.print_char(int<-('t'))
-        else if b == '\\':
-            stdio.print_char(int<-('\\'))
-            stdio.print_char(int<-('\\'))
-        else if b == '\"':
-            stdio.print_char(int<-('\\'))
-            stdio.print_char(int<-('\"'))
-        else:
-            stdio.print_char(int<-(b))
-        k += 1
-    stdio.print_char(int<-('\"'))
 
 
 function cmd_parse(options: ref[CliOptions]) -> int:
@@ -357,7 +233,9 @@ function cmd_parse(options: ref[CliOptions]) -> int:
             var source_file = parser.parse(tokens)
 
             if is_sexpr:
-                parser_sexpr.emit_sexpr(ref_of(source_file))
+                var module_parts = module_parts_from_path(file_path)
+                parser_sexpr.emit_sexpr(ref_of(source_file), ref_of(module_parts))
+                module_parts.release()
             else:
                 stdio.print_format("parsed %lu imports, %lu decls, %lu exprs\n",
                     source_file.imports.len(), source_file.declarations.len(),
@@ -414,3 +292,40 @@ function release_string_vec(values: ref[vec.Vec[string.String]]) -> void:
             read(ptr[string.String]<-value_ptr).release()
         index += 1
     values.release()
+
+
+function module_parts_from_path(path: str) -> vec.Vec[str]:
+    var parts = vec.Vec[str].create()
+    var start: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < path.len:
+        if path.byte_at(i) == '/':
+            if i > start:
+                parts.push(path.slice(start, i - start))
+            start = i + 1
+        i += 1
+    if path.len > start:
+        parts.push(path.slice(start, path.len - start))
+
+    if parts.len() > 0:
+        let last_idx = parts.len() - 1
+        let last_ptr = parts.get(last_idx) else:
+            return parts
+        let last = unsafe: read(ptr[str]<-last_ptr)
+        let cleaned = clean_module_basename(last)
+        unsafe:
+            read(ptr[str]<-last_ptr) = cleaned
+    return parts
+
+
+function clean_module_basename(name: str) -> str:
+    var n = name
+    if n.ends_with(".mt"):
+        n = n.slice(0, n.len - 3)
+    if n.ends_with(".linux"):
+        n = n.slice(0, n.len - 6)
+    else if n.ends_with(".windows"):
+        n = n.slice(0, n.len - 8)
+    else if n.ends_with(".wasm"):
+        n = n.slice(0, n.len - 5)
+    return n

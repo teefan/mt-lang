@@ -147,15 +147,17 @@ function parse_import(p: ref[Parser]) -> ast.Import:
         fatal("parser: import path empty")
     var alias_name = unsafe: read(ptr[str]<-last_ptr)
     var col = previous(p).column
+    var has_alias = false
 
     if match_token(p, lexer.TOK_KW_AS):
         let name_token = consume(p, lexer.TOK_IDENTIFIER, "expected identifier after as")
         alias_name = name_token.lexeme
         col = name_token.column
+        has_alias = true
 
     consume(p, lexer.TOK_NEWLINE, "expected newline after import")
     return ast.Import(path = path, alias_name = alias_name,
-        line = previous(p).line, column = col)
+        line = previous(p).line, column = col, has_alias = has_alias)
 
 
 function parse_qualified_name(p: ref[Parser]) -> ast.QualifiedName:

@@ -10,6 +10,7 @@ public struct Import:
     alias_name: str
     line: int
     column: int
+    has_alias: bool
 
 
 # ── types ───────────────────────────────────────────────────────────

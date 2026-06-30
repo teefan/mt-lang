@@ -6,8 +6,8 @@ import ast
 import lexer
 
 
-public function emit_sexpr(source: ref[ast.SourceFile]) -> void:
-    emit_source(source)
+public function emit_sexpr(source: ref[ast.SourceFile], module_parts: ref[vec.Vec[str]]) -> void:
+    emit_source(source, module_parts)
     stdio.print_char(int<-('\n'))
 
 
@@ -138,10 +138,19 @@ function emit_e(exprs: ref[vec.Vec[ast.Expression]], idx: ptr_uint) -> void:
         pn()
 
 
-function emit_source(sf: ref[ast.SourceFile]) -> void:
+function emit_source(sf: ref[ast.SourceFile], module_parts: ref[vec.Vec[str]]) -> void:
     var exprs = ref_of(sf.exprs.exprs)
 
-    pr("(a:source_file (a:qualified_name [] [] nil nil) :$module [")
+    pr("(a:source_file (a:qualified_name [")
+    var mp: ptr_uint = 0
+    while mp < module_parts.len():
+        if mp > 0:
+            sp()
+        let pp = module_parts.get(mp) else:
+            break
+        pq(unsafe: read(ptr[str]<-pp))
+        mp += 1
+    pr("] [] nil nil) :$module [")
     var ii: ptr_uint = 0
     while ii < sf.imports.len():
         if ii > 0:
@@ -159,7 +168,7 @@ function emit_source(sf: ref[ast.SourceFile]) -> void:
             pq(unsafe: read(ptr[str]<-pp))
             pi += 1
         pr("] [] nil nil) ")
-        if imp.alias_name.len > 0:
+        if imp.has_alias:
             pq(imp.alias_name)
         else:
             pn()
