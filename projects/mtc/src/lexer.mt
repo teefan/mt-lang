@@ -37,7 +37,9 @@ const CH_E: ubyte = 'e'
 const CH_E_UPPER: ubyte = 'E'
 const CH_TILDE: ubyte = '~'
 const CH_X_UPPER: ubyte = 'X'
+const CH_X: ubyte = 'x'
 const CH_B_UPPER: ubyte = 'B'
+const CH_B: ubyte = 'b'
 
 function is_alpha(b: ubyte) -> bool:
     return (b >= 'A' and b <= 'Z') or (b >= 'a' and b <= 'z') or b == '_'
@@ -53,6 +55,9 @@ function is_hex_digit(b: ubyte) -> bool:
 
 function is_binary_digit(b: ubyte) -> bool:
     return b == '0' or b == '1'
+
+function is_numeric_part(b: ubyte) -> bool:
+    return is_digit(b) or b == '_'
 
 # ── token kind constants ────────────────────────────────────────────────
 
@@ -141,6 +146,7 @@ public const TOK_KW_VAR: int = 94
 public const TOK_KW_VARIANT: int = 95
 public const TOK_KW_WHEN: int = 96
 public const TOK_KW_WHILE: int = 97
+public const TOK_KW_INCLUDE: int = 98
 
 public const TOK_LPAREN: int = 100
 public const TOK_RPAREN: int = 101
@@ -187,6 +193,9 @@ public const TOK_DOT_DOT: int = 157
 
 # ── data structures ──────────────────────────────────────────────────────
 
+const INDENT_STEP: int = 4
+
+
 public struct Token:
     kind: int
     lexeme: str
@@ -205,148 +214,150 @@ public struct LexError:
 # ── keyword lookup ───────────────────────────────────────────────────────
 
 function lookup_keyword(text_val: str) -> int:
-    if text_val.equal("and"):
-        return TOK_KW_AND
-    if text_val.equal("as"):
-        return TOK_KW_AS
-    if text_val.equal("async"):
-        return TOK_KW_ASYNC
-    if text_val.equal("attribute"):
-        return TOK_KW_ATTRIBUTE
-    if text_val.equal("attribute_arg"):
-        return TOK_KW_ATTRIBUTE_ARG
-    if text_val.equal("attribute_of"):
-        return TOK_KW_ATTRIBUTE_OF
-    if text_val.equal("attributes_of"):
-        return TOK_KW_ATTRIBUTES_OF
-    if text_val.equal("await"):
-        return TOK_KW_AWAIT
-    if text_val.equal("break"):
-        return TOK_KW_BREAK
-    if text_val.equal("callable_of"):
-        return TOK_KW_CALLABLE_OF
-    if text_val.equal("compiler_flag"):
-        return TOK_KW_COMPILER_FLAG
-    if text_val.equal("const"):
-        return TOK_KW_CONST
-    if text_val.equal("consuming"):
-        return TOK_KW_CONSUMING
-    if text_val.equal("continue"):
-        return TOK_KW_CONTINUE
-    if text_val.equal("defer"):
-        return TOK_KW_DEFER
-    if text_val.equal("detach"):
-        return TOK_KW_DETACH
-    if text_val.equal("dyn"):
-        return TOK_KW_DYN
-    if text_val.equal("editable"):
-        return TOK_KW_EDITABLE
-    if text_val.equal("else"):
-        return TOK_KW_ELSE
-    if text_val.equal("emit"):
-        return TOK_KW_EMIT
-    if text_val.equal("enum"):
-        return TOK_KW_ENUM
-    if text_val.equal("event"):
-        return TOK_KW_EVENT
-    if text_val.equal("extending"):
-        return TOK_KW_EXTENDING
-    if text_val.equal("external"):
-        return TOK_KW_EXTERNAL
-    if text_val.equal("false"):
-        return TOK_KW_FALSE
-    if text_val.equal("field_of"):
-        return TOK_KW_FIELD_OF
-    if text_val.equal("fields_of"):
-        return TOK_KW_FIELDS_OF
-    if text_val.equal("flags"):
-        return TOK_KW_FLAGS
-    if text_val.equal("fn"):
-        return TOK_KW_FN
-    if text_val.equal("for"):
-        return TOK_KW_FOR
-    if text_val.equal("foreign"):
-        return TOK_KW_FOREIGN
-    if text_val.equal("function"):
-        return TOK_KW_FUNCTION
-    if text_val.equal("gather"):
-        return TOK_KW_GATHER
-    if text_val.equal("has_attribute"):
-        return TOK_KW_HAS_ATTRIBUTE
-    if text_val.equal("if"):
-        return TOK_KW_IF
-    if text_val.equal("implements"):
-        return TOK_KW_IMPLEMENTS
-    if text_val.equal("import"):
-        return TOK_KW_IMPORT
-    if text_val.equal("in"):
-        return TOK_KW_IN
-    if text_val.equal("inline"):
-        return TOK_KW_INLINE
-    if text_val.equal("inout"):
-        return TOK_KW_INOUT
-    if text_val.equal("interface"):
-        return TOK_KW_INTERFACE
-    if text_val.equal("is"):
-        return TOK_KW_IS
-    if text_val.equal("let"):
-        return TOK_KW_LET
-    if text_val.equal("link"):
-        return TOK_KW_LINK
-    if text_val.equal("match"):
-        return TOK_KW_MATCH
-    if text_val.equal("members_of"):
-        return TOK_KW_MEMBERS_OF
-    if text_val.equal("module"):
-        return TOK_KW_MODULE
-    if text_val.equal("not"):
-        return TOK_KW_NOT
-    if text_val.equal("null"):
-        return TOK_KW_NULL
-    if text_val.equal("offset_of"):
-        return TOK_KW_OFFSET_OF
-    if text_val.equal("opaque"):
-        return TOK_KW_OPAQUE
-    if text_val.equal("or"):
-        return TOK_KW_OR
-    if text_val.equal("out"):
-        return TOK_KW_OUT
-    if text_val.equal("parallel"):
-        return TOK_KW_PARALLEL
-    if text_val.equal("pass"):
-        return TOK_KW_PASS
-    if text_val.equal("proc"):
-        return TOK_KW_PROC
-    if text_val.equal("public"):
-        return TOK_KW_PUBLIC
-    if text_val.equal("return"):
-        return TOK_KW_RETURN
-    if text_val.equal("size_of"):
-        return TOK_KW_SIZE_OF
-    if text_val.equal("static"):
-        return TOK_KW_STATIC
-    if text_val.equal("static_assert"):
-        return TOK_KW_STATIC_ASSERT
-    if text_val.equal("struct"):
-        return TOK_KW_STRUCT
-    if text_val.equal("true"):
-        return TOK_KW_TRUE
-    if text_val.equal("type"):
-        return TOK_KW_TYPE
-    if text_val.equal("union"):
-        return TOK_KW_UNION
-    if text_val.equal("unsafe"):
-        return TOK_KW_UNSAFE
-    if text_val.equal("var"):
-        return TOK_KW_VAR
-    if text_val.equal("variant"):
-        return TOK_KW_VARIANT
-    if text_val.equal("when"):
-        return TOK_KW_WHEN
-    if text_val.equal("while"):
-        return TOK_KW_WHILE
     if text_val.equal("align_of"):
         return TOK_KW_ALIGN_OF
+    else if text_val.equal("and"):
+        return TOK_KW_AND
+    else if text_val.equal("as"):
+        return TOK_KW_AS
+    else if text_val.equal("async"):
+        return TOK_KW_ASYNC
+    else if text_val.equal("attribute"):
+        return TOK_KW_ATTRIBUTE
+    else if text_val.equal("attribute_arg"):
+        return TOK_KW_ATTRIBUTE_ARG
+    else if text_val.equal("attribute_of"):
+        return TOK_KW_ATTRIBUTE_OF
+    else if text_val.equal("attributes_of"):
+        return TOK_KW_ATTRIBUTES_OF
+    else if text_val.equal("await"):
+        return TOK_KW_AWAIT
+    else if text_val.equal("break"):
+        return TOK_KW_BREAK
+    else if text_val.equal("callable_of"):
+        return TOK_KW_CALLABLE_OF
+    else if text_val.equal("compiler_flag"):
+        return TOK_KW_COMPILER_FLAG
+    else if text_val.equal("const"):
+        return TOK_KW_CONST
+    else if text_val.equal("consuming"):
+        return TOK_KW_CONSUMING
+    else if text_val.equal("continue"):
+        return TOK_KW_CONTINUE
+    else if text_val.equal("defer"):
+        return TOK_KW_DEFER
+    else if text_val.equal("detach"):
+        return TOK_KW_DETACH
+    else if text_val.equal("dyn"):
+        return TOK_KW_DYN
+    else if text_val.equal("editable"):
+        return TOK_KW_EDITABLE
+    else if text_val.equal("else"):
+        return TOK_KW_ELSE
+    else if text_val.equal("emit"):
+        return TOK_KW_EMIT
+    else if text_val.equal("enum"):
+        return TOK_KW_ENUM
+    else if text_val.equal("event"):
+        return TOK_KW_EVENT
+    else if text_val.equal("extending"):
+        return TOK_KW_EXTENDING
+    else if text_val.equal("external"):
+        return TOK_KW_EXTERNAL
+    else if text_val.equal("false"):
+        return TOK_KW_FALSE
+    else if text_val.equal("field_of"):
+        return TOK_KW_FIELD_OF
+    else if text_val.equal("fields_of"):
+        return TOK_KW_FIELDS_OF
+    else if text_val.equal("flags"):
+        return TOK_KW_FLAGS
+    else if text_val.equal("fn"):
+        return TOK_KW_FN
+    else if text_val.equal("for"):
+        return TOK_KW_FOR
+    else if text_val.equal("foreign"):
+        return TOK_KW_FOREIGN
+    else if text_val.equal("function"):
+        return TOK_KW_FUNCTION
+    else if text_val.equal("gather"):
+        return TOK_KW_GATHER
+    else if text_val.equal("has_attribute"):
+        return TOK_KW_HAS_ATTRIBUTE
+    else if text_val.equal("if"):
+        return TOK_KW_IF
+    else if text_val.equal("implements"):
+        return TOK_KW_IMPLEMENTS
+    else if text_val.equal("import"):
+        return TOK_KW_IMPORT
+    else if text_val.equal("in"):
+        return TOK_KW_IN
+    else if text_val.equal("include"):
+        return TOK_KW_INCLUDE
+    else if text_val.equal("inline"):
+        return TOK_KW_INLINE
+    else if text_val.equal("inout"):
+        return TOK_KW_INOUT
+    else if text_val.equal("interface"):
+        return TOK_KW_INTERFACE
+    else if text_val.equal("is"):
+        return TOK_KW_IS
+    else if text_val.equal("let"):
+        return TOK_KW_LET
+    else if text_val.equal("link"):
+        return TOK_KW_LINK
+    else if text_val.equal("match"):
+        return TOK_KW_MATCH
+    else if text_val.equal("members_of"):
+        return TOK_KW_MEMBERS_OF
+    else if text_val.equal("module"):
+        return TOK_KW_MODULE
+    else if text_val.equal("not"):
+        return TOK_KW_NOT
+    else if text_val.equal("null"):
+        return TOK_KW_NULL
+    else if text_val.equal("offset_of"):
+        return TOK_KW_OFFSET_OF
+    else if text_val.equal("opaque"):
+        return TOK_KW_OPAQUE
+    else if text_val.equal("or"):
+        return TOK_KW_OR
+    else if text_val.equal("out"):
+        return TOK_KW_OUT
+    else if text_val.equal("parallel"):
+        return TOK_KW_PARALLEL
+    else if text_val.equal("pass"):
+        return TOK_KW_PASS
+    else if text_val.equal("proc"):
+        return TOK_KW_PROC
+    else if text_val.equal("public"):
+        return TOK_KW_PUBLIC
+    else if text_val.equal("return"):
+        return TOK_KW_RETURN
+    else if text_val.equal("size_of"):
+        return TOK_KW_SIZE_OF
+    else if text_val.equal("static"):
+        return TOK_KW_STATIC
+    else if text_val.equal("static_assert"):
+        return TOK_KW_STATIC_ASSERT
+    else if text_val.equal("struct"):
+        return TOK_KW_STRUCT
+    else if text_val.equal("true"):
+        return TOK_KW_TRUE
+    else if text_val.equal("type"):
+        return TOK_KW_TYPE
+    else if text_val.equal("union"):
+        return TOK_KW_UNION
+    else if text_val.equal("unsafe"):
+        return TOK_KW_UNSAFE
+    else if text_val.equal("var"):
+        return TOK_KW_VAR
+    else if text_val.equal("variant"):
+        return TOK_KW_VARIANT
+    else if text_val.equal("when"):
+        return TOK_KW_WHEN
+    else if text_val.equal("while"):
+        return TOK_KW_WHILE
     return TOK_IDENTIFIER
 
 
@@ -408,7 +419,8 @@ struct HdResult:
 
 function is_heredoc_start(line_val: str, start_pos: ptr_uint,
                           is_cstr: bool, is_fmt: bool) -> bool:
-    if start_pos + 3 > line_val.len:
+    let required = if is_cstr or is_fmt: ptr_uint<-(4) else: ptr_uint<-(3)
+    if start_pos + required > line_val.len:
         return false
     var offset = start_pos
     if is_cstr:
@@ -711,7 +723,7 @@ public function lex(source: str, errors: ref[vec.Vec[LexError]]) -> vec.Vec[Toke
 
         let indent_amt = count_leading_spaces(line_str)
 
-        if indent_amt % 4 != 0:
+        if indent_amt % ptr_uint<-(INDENT_STEP) != 0:
             emit_error(errors, "indentation must use multiples of 4 spaces", line_num, 1)
 
         if group_depth > 0 and indent_amt == 0:
@@ -721,33 +733,29 @@ public function lex(source: str, errors: ref[vec.Vec[LexError]]) -> vec.Vec[Toke
 
         if group_depth == 0 and not cont_pending:
             let spaces = int<-indent_amt
-            let cur_len = indent_stack.len()
-            if cur_len == 0:
-                indent_stack.push(0)
-            else:
-                let top_ptr = indent_stack.last() else:
-                    fatal("lexer: indent stack empty")
-                let current = unsafe: read(ptr[int]<-top_ptr)
-                if spaces == current:
-                    pass
-                else if spaces > current:
-                    if spaces != current + 4:
-                        emit_error(errors, "indentation may only increase by 4 spaces at a time", line_num, 1)
-                    indent_stack.push(spaces)
-                    emit_token(ref_of(tokens), TOK_INDENT, "", line_num, 1, pos, pos)
-                else if spaces < current:
-                    while indent_stack.len() > 1:
-                        let p = indent_stack.last() else:
-                            fatal("lexer: indent stack empty")
-                        if unsafe: read(ptr[int]<-p) > spaces:
-                            indent_stack.pop()
-                            emit_token(ref_of(tokens), TOK_DEDENT, "", line_num, 1, pos, pos)
-                        else:
-                            break
-                    let final_ptr = indent_stack.last() else:
+            let top_ptr = indent_stack.last() else:
+                fatal("lexer: indent stack empty")
+            let current = unsafe: read(ptr[int]<-top_ptr)
+            if spaces == current:
+                pass
+            else if spaces > current:
+                if spaces != current + INDENT_STEP:
+                    emit_error(errors, "indentation may only increase by 4 spaces at a time", line_num, 1)
+                indent_stack.push(spaces)
+                emit_token(ref_of(tokens), TOK_INDENT, "", line_num, 1, pos, pos)
+            else if spaces < current:
+                while indent_stack.len() > 1:
+                    let p = indent_stack.last() else:
                         fatal("lexer: indent stack empty")
-                    if unsafe: read(ptr[int]<-final_ptr) != spaces:
-                        emit_error(errors, "indentation does not match any open block", line_num, 1)
+                    if unsafe: read(ptr[int]<-p) > spaces:
+                        indent_stack.pop()
+                        emit_token(ref_of(tokens), TOK_DEDENT, "", line_num, 1, pos, pos)
+                    else:
+                        break
+                let final_ptr = indent_stack.last() else:
+                    fatal("lexer: indent stack empty")
+                if unsafe: read(ptr[int]<-final_ptr) != spaces:
+                    emit_error(errors, "indentation does not match any open block", line_num, 1)
         cont_pending = false
 
         var line_pos = indent_amt
@@ -833,8 +841,8 @@ public function lex(source: str, errors: ref[vec.Vec[LexError]]) -> vec.Vec[Toke
                     if ch_val == CH_BACKSLASH:
                         if ch_pos + 1 < line_len:
                             let esc_ch = line_str.byte_at(ch_pos + 1)
-                            if esc_ch == CH_X_UPPER or esc_ch == CH_X_UPPER + 32:
-                                if ch_pos + 3 < line_len and line_str.byte_at(ch_pos + 4) == CH_SQUOTE:
+                            if esc_ch == CH_X_UPPER or esc_ch == CH_X:
+                                if ch_pos + 4 < line_len and line_str.byte_at(ch_pos + 4) == CH_SQUOTE:
                                     let lexeme = line_str.slice(start_pos, 6)
                                     emit_token(ref_of(tokens), TOK_CHAR_LITERAL, lexeme, line_num,
                                         int<-start_pos + 1, pos + start_pos, pos + ch_pos + 5)
@@ -869,16 +877,17 @@ public function lex(source: str, errors: ref[vec.Vec[LexError]]) -> vec.Vec[Toke
                 continue
 
             if is_digit(b):
-                let end_pos = scan_number(line_str, line_pos)
-                let lexeme = line_str.slice(line_pos, end_pos - line_pos)
+                let base_end = scan_number(line_str, line_pos)
+                let suffix_end = scan_number_suffix(line_str, line_pos, base_end)
+                let lexeme = line_str.slice(line_pos, suffix_end - line_pos)
                 let is_float = lexeme_is_float(lexeme)
                 if is_float:
                     emit_token(ref_of(tokens), TOK_FLOAT, lexeme, line_num,
-                        int<-line_pos + 1, pos + line_pos, pos + end_pos)
+                        int<-line_pos + 1, pos + line_pos, pos + suffix_end)
                 else:
                     emit_token(ref_of(tokens), TOK_INTEGER, lexeme, line_num,
-                        int<-line_pos + 1, pos + line_pos, pos + end_pos)
-                line_pos = end_pos
+                        int<-line_pos + 1, pos + line_pos, pos + suffix_end)
+                line_pos = suffix_end
                 continue
 
             line_pos = scan_op(line_str, line_pos, ref_of(tokens),
@@ -929,23 +938,23 @@ function scan_number(line_val: str, start_pos: ptr_uint) -> ptr_uint:
     if line_val.byte_at(pos) == CH_ZERO:
         if pos + 1 < line_val.len:
             let nxt = line_val.byte_at(pos + 1)
-            if nxt == CH_X_UPPER or nxt == CH_X_UPPER + 32:
+            if nxt == CH_X_UPPER or nxt == CH_X:
                 pos += 2
-                while pos < line_val.len and is_hex_digit(line_val.byte_at(pos)):
+                while pos < line_val.len and (is_hex_digit(line_val.byte_at(pos)) or line_val.byte_at(pos) == '_'):
                     pos += 1
-            else if nxt == CH_B_UPPER or nxt == CH_B_UPPER + 32:
+            else if nxt == CH_B_UPPER or nxt == CH_B:
                 pos += 2
-                while pos < line_val.len and is_binary_digit(line_val.byte_at(pos)):
+                while pos < line_val.len and (is_binary_digit(line_val.byte_at(pos)) or line_val.byte_at(pos) == '_'):
                     pos += 1
 
     if pos == start_pos:
-        while pos < line_val.len and is_digit(line_val.byte_at(pos)):
+        while pos < line_val.len and is_numeric_part(line_val.byte_at(pos)):
             pos += 1
 
     if pos < line_val.len and line_val.byte_at(pos) == CH_DOT:
         if pos + 1 < line_val.len and is_digit(line_val.byte_at(pos + 1)):
             pos += 1
-            while pos < line_val.len and is_digit(line_val.byte_at(pos)):
+            while pos < line_val.len and is_numeric_part(line_val.byte_at(pos)):
                 pos += 1
 
     if pos < line_val.len:
@@ -959,18 +968,51 @@ function scan_number(line_val: str, start_pos: ptr_uint) -> ptr_uint:
                 while pos < line_val.len and is_digit(line_val.byte_at(pos)):
                     pos += 1
 
-    while pos < line_val.len and is_alphanumeric(line_val.byte_at(pos)):
-        pos += 1
+    return pos
 
+
+function scan_number_suffix(line_val: str, num_start: ptr_uint,
+                            num_end: ptr_uint) -> ptr_uint:
+    var pos = num_end
+    if pos >= line_val.len:
+        return pos
+
+    let ch = line_val.byte_at(pos)
+    if not is_alpha(ch):
+        return pos
+
+    var is_float_num = false
+    var scan: ptr_uint = num_start
+    while scan < num_end:
+        let b = line_val.byte_at(scan)
+        if b == CH_DOT or b == CH_E or b == CH_E_UPPER:
+            is_float_num = true
+            break
+        scan += 1
+
+    if is_float_num:
+        if ch == 'f' or ch == 'd' or ch == 'F' or ch == 'D':
+            if pos + 1 >= line_val.len or not is_alphanumeric(line_val.byte_at(pos + 1)):
+                return pos + 1
+        return pos
+
+    if pos + 2 <= line_val.len:
+        let s2 = line_val.slice(pos, 2)
+        if (s2.equal("ub") or s2.equal("us") or s2.equal("ul") or s2.equal("iz")):
+            if pos + 2 >= line_val.len or not is_alphanumeric(line_val.byte_at(pos + 2)):
+                return pos + 2
+    if ch == 'u' or ch == 'b' or ch == 's' or ch == 'i' or ch == 'l' or ch == 'z':
+        if pos + 1 >= line_val.len or not is_alphanumeric(line_val.byte_at(pos + 1)):
+            return pos + 1
     return pos
 
 
 function lexeme_is_float(lexeme: str) -> bool:
     if lexeme.len >= 2 and lexeme.byte_at(0) == CH_ZERO:
         let second = lexeme.byte_at(1)
-        if second == CH_X_UPPER or second == CH_X_UPPER + 32:
+        if second == CH_X_UPPER or second == CH_X:
             return false
-        if second == CH_B_UPPER or second == CH_B_UPPER + 32:
+        if second == CH_B_UPPER or second == CH_B:
             return false
     var i: ptr_uint = 0
     while i < lexeme.len:

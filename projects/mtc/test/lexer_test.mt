@@ -1,4 +1,5 @@
 import std.testing as t
+import std.str as text
 import std.vec as vec
 import lexer
 
@@ -97,6 +98,33 @@ let total = subtotal +
     tax
 SRC
 
+const SRC_INCLUDE: str = <<-SRC
+include "sokol_gfx"
+SRC
+
+const SRC_UNDERSCORE_NUMBERS: str = <<-SRC
+1_000_000
+0xFF_FF
+0b1010_0101
+SRC
+
+const SRC_SUFFIX_BOUNDARY: str = <<-SRC
+123f
+SRC
+
+const SRC_HEREDOC_PREFIXES: str = <<-SRC
+const a = c<<-X
+body
+X
+const b = f<<-Y
+body
+Y
+SRC
+
+const SRC_CHAR_HEX_EDGE: str = <<-SRC
+'\x4'
+SRC
+
 # ── helpers ─────────────────────────────────────────────────────────────────
 
 function token_kind_at(tokens: ref[vec.Vec[lexer.Token]], index: ptr_uint) -> int:
@@ -122,6 +150,12 @@ function token_count(tokens: ref[vec.Vec[lexer.Token]], kind: int) -> int:
                 count += 1
         i += 1
     return count
+
+
+function token_lexeme_at(tokens: ref[vec.Vec[lexer.Token]], index: ptr_uint) -> str:
+    let tok = tokens.get(index) else:
+        fatal("lexer_test: token index out of bounds")
+    return unsafe: read(ptr[lexer.Token]<-tok).lexeme
 
 
 function kinds_of(tokens: ref[vec.Vec[lexer.Token]]) -> vec.Vec[int]:
@@ -325,6 +359,69 @@ function test_continuation() -> t.Check:
     t.expect_equal_int(token_kind_at(ref_of(tokens), 4), lexer.TOK_PLUS)?
     t.expect(token_count(ref_of(tokens), lexer.TOK_NEWLINE) == 1, "continuation suppresses newline")?
 
+    errors.release()
+    tokens.release()
+    return t.ok()
+
+
+@[test]
+function test_include_keyword() -> t.Check:
+    var errors = vec.Vec[lexer.LexError].create()
+    var tokens = lexer.lex(SRC_INCLUDE, ref_of(errors))
+
+    t.expect_equal_int(token_kind_at(ref_of(tokens), 0), lexer.TOK_KW_INCLUDE)?
+    t.expect_equal_int(token_kind_at(ref_of(tokens), 1), lexer.TOK_STRING)?
+    errors.release()
+    tokens.release()
+    return t.ok()
+
+
+@[test]
+function test_underscore_numbers() -> t.Check:
+    var errors = vec.Vec[lexer.LexError].create()
+    var tokens = lexer.lex(SRC_UNDERSCORE_NUMBERS, ref_of(errors))
+
+    t.expect_equal_int(token_kind_at(ref_of(tokens), 0), lexer.TOK_INTEGER)?
+    t.expect_equal_int(token_kind_at(ref_of(tokens), 2), lexer.TOK_INTEGER)?
+    t.expect_equal_int(token_kind_at(ref_of(tokens), 4), lexer.TOK_INTEGER)?
+    t.expect(token_count(ref_of(tokens), lexer.TOK_IDENTIFIER) == 0, "no stray identifiers")?
+    errors.release()
+    tokens.release()
+    return t.ok()
+
+
+@[test]
+function test_suffix_boundary() -> t.Check:
+    var errors = vec.Vec[lexer.LexError].create()
+    var tokens = lexer.lex(SRC_SUFFIX_BOUNDARY, ref_of(errors))
+
+    t.expect_equal_int(token_kind_at(ref_of(tokens), 0), lexer.TOK_INTEGER)?
+    t.expect(token_lexeme_at(ref_of(tokens), 0).equal("123"), "integer lexeme excludes suffix")?
+    t.expect_equal_int(token_kind_at(ref_of(tokens), 1), lexer.TOK_IDENTIFIER)?
+    t.expect(token_lexeme_at(ref_of(tokens), 1).equal("f"), "f becomes identifier")?
+    errors.release()
+    tokens.release()
+    return t.ok()
+
+
+@[test]
+function test_heredoc_prefixes() -> t.Check:
+    var errors = vec.Vec[lexer.LexError].create()
+    var tokens = lexer.lex(SRC_HEREDOC_PREFIXES, ref_of(errors))
+
+    t.expect(token_count(ref_of(tokens), lexer.TOK_CSTRING) >= 1, "c-string heredoc")?
+    t.expect(token_count(ref_of(tokens), lexer.TOK_FSTRING) >= 1, "f-string heredoc")?
+    errors.release()
+    tokens.release()
+    return t.ok()
+
+
+@[test]
+function test_char_hex_edge() -> t.Check:
+    var errors = vec.Vec[lexer.LexError].create()
+    var tokens = lexer.lex(SRC_CHAR_HEX_EDGE, ref_of(errors))
+
+    t.expect(errors.len() > 0, "emits error for unterminated hex char literal")?
     errors.release()
     tokens.release()
     return t.ok()
