@@ -334,6 +334,7 @@ function main() -> int:
       <tr><td><code>mtc build &lt;path&gt;</code></td><td>Build only (emit C, compile, link)</td></tr>
       <tr><td><code>mtc format &lt;path&gt;</code></td><td>Format sources in place (<code>--check</code> for dry-run)</td></tr>
       <tr><td><code>mtc lint &lt;path&gt;</code></td><td>Run linter (<code>--fix</code> to apply fixes)</td></tr>
+      <tr><td><code>mtc test &lt;path&gt;</code></td><td>Discover and run <code>@[test]</code> functions</td></tr>
       <tr><td><code>mtc new &lt;name&gt;</code></td><td>Scaffold a new package</td></tr>
     </table>
   </div>
@@ -2213,6 +2214,7 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>mtc emit-c &lt;path&gt;</code></td><td>Emit generated C to stdout</td></tr>
       <tr><td><code>mtc format &lt;path&gt;</code></td><td>Format sources in place (<code>--check</code> for dry-run)</td></tr>
       <tr><td><code>mtc lint &lt;path&gt;</code></td><td>Run linter (<code>--fix</code>, <code>--select</code>, <code>--ignore</code>)</td></tr>
+      <tr><td><code>mtc test &lt;path&gt;</code></td><td>Discover and run <code>@[test]</code> functions</td></tr>
       <tr><td><code>mtc new &lt;name&gt;</code></td><td>Scaffold a new package (<code>package.toml</code> + <code>src/main.mt</code>)</td></tr>
       <tr><td><code>mtc run-module &lt;module&gt;</code></td><td>Run a pre-built module by name</td></tr>
       <tr><td><code>mtc completions &lt;shell&gt;</code></td><td>Print a bash/zsh/fish completion script</td></tr>

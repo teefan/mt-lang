@@ -1099,6 +1099,7 @@ mtc debug  <file.mt>          # Print debug info (tokens, AST, facts, bindings, 
 mtc emit-c <path>             # Emit generated C to stdout
 mtc format <path>             # Format sources in place (--check for dry-run)
 mtc lint   <path>             # Run linter (--fix to apply fixes, --select/--ignore to filter)
+mtc test   <path>             # Discover and run @[test] functions (--timeout, --mem, --jobs)
 mtc new    <name>             # Scaffold a new package (package.toml + src/main.mt)
 mtc cache status              # Show build cache stats
 mtc lex    <file.mt>          # Print lexer token stream

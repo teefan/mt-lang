@@ -134,35 +134,54 @@ module MilkTea
               when :executable, :static, :shared then kind
               else raise BuildError, "unknown build kind #{kind}; expected executable|static|shared"
               end
-      manifest = PackageManifest.load(path)
-      @package_build = true
-      @source_path = manifest.source_path
-      @project_root = manifest.root_dir
-      @package_name = manifest.package_name
-      @archive = archive
-      @bundle = bundle || archive
-      if manifest.package_kind == :library && @kind == :executable
-        raise BuildError, "cannot build library package #{manifest.package_name} as an executable"
-      end
-      unless @source_path
-        raise BuildError, "application package #{manifest.package_name} has no build entry; set build.entry or create src/main.mt"
-      end
-      @profile = normalize_profile(profile || manifest.profile || (debug ? :debug : :debug))
-      @platform = normalize_platform(platform || manifest.platform || host_platform)
-      @resolved_source_path = ModuleLoader.resolve_source_path(@source_path, platform: @platform, error_class: BuildError)
-      validate_bundle_mode!
-      @manifest_output_path = manifest.output_path
       @explicit_output_path = !output_path.nil?
-      if @bundle
-        @bundle_root = File.expand_path(output_path || manifest.output_path || default_package_bundle_root)
-        @output_path = File.join(@bundle_root, "#{@package_name}#{artifact_extension}")
+      resolved_source = use_package_build_for?(path)
+      if resolved_source
+        @package_build = true
+        manifest = resolved_source[:manifest]
+        @source_path = manifest.source_path
+        @project_root = manifest.root_dir
+        @package_name = manifest.package_name
+        @archive = archive
+        @bundle = bundle || archive
+        if manifest.package_kind == :library && @kind == :executable
+          raise BuildError, "cannot build library package #{manifest.package_name} as an executable"
+        end
+        unless @source_path
+          raise BuildError, "application package #{manifest.package_name} has no build entry; set build.entry or create src/main.mt"
+        end
+        @profile = normalize_profile(profile || manifest.profile || (debug ? :debug : :debug))
+        @platform = normalize_platform(platform || manifest.platform || host_platform)
+        @resolved_source_path = ModuleLoader.resolve_source_path(@source_path, platform: @platform, error_class: BuildError)
+        validate_bundle_mode!
+        @manifest_output_path = manifest.output_path
+        if @bundle
+          @bundle_root = File.expand_path(output_path || manifest.output_path || default_package_bundle_root)
+          @output_path = File.join(@bundle_root, "#{@package_name}#{artifact_extension}")
+        else
+          @bundle_root = nil
+          resolved_output = output_path || manifest.output_path || default_package_output_path
+          @output_path = normalize_output_path(File.expand_path(resolved_output))
+        end
+        @assets_paths = manifest.assets_paths
+        @html_template_path = manifest.html_template_path
       else
+        @package_build = false
+        @source_path = File.expand_path(path)
+        @project_root = File.dirname(@source_path)
+        @package_name = File.basename(@project_root).tr("-", "_")
+        @archive = archive
+        @bundle = bundle || archive
+        @profile = normalize_profile(profile || (debug ? :debug : :debug))
+        @platform = normalize_platform(platform || host_platform)
+        @resolved_source_path = ModuleLoader.resolve_source_path(@source_path, platform: @platform, error_class: BuildError)
+        validate_bundle_mode!
+        @manifest_output_path = nil
         @bundle_root = nil
-        resolved_output = output_path || manifest.output_path || default_package_output_path
-        @output_path = normalize_output_path(File.expand_path(resolved_output))
+        @output_path = normalize_output_path(File.expand_path(output_path || default_source_output_path(@source_path)))
+        @assets_paths = []
+        @html_template_path = nil
       end
-      @assets_paths = manifest.assets_paths
-      @html_template_path = manifest.html_template_path
       @cc = resolve_compiler(cc)
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
       @raw_bindings = raw_bindings
@@ -172,34 +191,19 @@ module MilkTea
       @no_cache = no_cache || sanitize
       @sanitize = sanitize
       @debug = debug
-    rescue PackageManifestError => e
-      raise BuildError, e.message if package_manifest_required_for?(path)
+    end
 
-      @package_build = false
-      @source_path = File.expand_path(path)
-      @project_root = File.dirname(@source_path)
-      @package_name = File.basename(@project_root).tr("-", "_")
-      @archive = archive
-      @bundle = bundle || archive
-      @profile = normalize_profile(profile || (debug ? :debug : :debug))
-      @platform = normalize_platform(platform || host_platform)
-      @resolved_source_path = ModuleLoader.resolve_source_path(@source_path, platform: @platform, error_class: BuildError)
-      validate_bundle_mode!
-      @manifest_output_path = nil
-      @explicit_output_path = !output_path.nil?
-      @bundle_root = nil
-      @output_path = normalize_output_path(File.expand_path(output_path || default_source_output_path(@source_path)))
-      @assets_paths = []
-      @html_template_path = nil
-      @cc = resolve_compiler(cc)
-      @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
-      @raw_bindings = raw_bindings
-      @package_graph = package_graph
-      @module_roots = module_roots || MilkTea::ModuleRoots.roots_for_path(@source_path)
-      @frontend = frontend || RubyFrontend.new
-      @no_cache = no_cache || sanitize
-      @sanitize = sanitize
-      @debug = debug
+    def use_package_build_for?(path)
+      manifest = PackageManifest.load(path)
+      return nil unless manifest&.source_path
+
+      manifest_source = File.expand_path(manifest.source_path, manifest.root_dir)
+      given_source = File.expand_path(path)
+      return nil unless manifest_source == given_source || File.directory?(path)
+
+      { manifest: }
+    rescue PackageManifestError
+      nil
     end
 
     def clean
