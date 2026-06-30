@@ -1,6 +1,7 @@
 import std.str as text
 import std.stdio as stdio
 import std.vec as vec
+import stdio_ext
 import ast
 import lexer
 
@@ -22,29 +23,7 @@ function sp() -> void:
 
 
 function pq(s: str) -> void:
-    stdio.print_char(int<-('\"'))
-    var k: ptr_uint = 0
-    while k < s.len:
-        let b = s.byte_at(k)
-        if b == '\n':
-            stdio.print_char(int<-('\\'))
-            stdio.print_char(int<-('n'))
-        else if b == '\r':
-            stdio.print_char(int<-('\\'))
-            stdio.print_char(int<-('r'))
-        else if b == '\t':
-            stdio.print_char(int<-('\\'))
-            stdio.print_char(int<-('t'))
-        else if b == '\\':
-            stdio.print_char(int<-('\\'))
-            stdio.print_char(int<-('\\'))
-        else if b == '\"':
-            stdio.print_char(int<-('\\'))
-            stdio.print_char(int<-('\"'))
-        else:
-            stdio.print_char(int<-(b))
-        k += 1
-    stdio.print_char(int<-('\"'))
+    stdio_ext.print_quoted_str(s)
 
 
 function pn() -> void:

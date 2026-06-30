@@ -4,6 +4,7 @@ import std.str as text
 import std.string as string
 import std.terminal as terminal
 import std.vec as vec
+import stdio_ext
 import lexer
 import parser
 import parser_sexpr
@@ -196,9 +197,9 @@ function cmd_lex(options: ref[CliOptions]) -> int:
 
 function print_token_sexpr(tok: lexer.Token) -> void:
     stdio.print_format("(:{} :type ")
-    print_quoted_str(lexer.kind_name(tok.kind))
+    stdio_ext.print_quoted_str(lexer.kind_name(tok.kind))
     stdio.print_format(" :lexeme ")
-    print_quoted_str(tok.lexeme)
+    stdio_ext.print_quoted_str(tok.lexeme)
     stdio.print_format(" :literal nil :line %d :column %d :start_offset %lu :end_offset %lu)",
         tok.line, tok.column, tok.start_offset, tok.end_offset)
 
