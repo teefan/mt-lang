@@ -30,8 +30,9 @@ public struct Param:
 
 public variant Statement:
     empty
-    function_decl(name: str, ret: TypeRef, body: vec.Vec[Statement])
+    function_decl(name: str, ret: TypeRef, params: vec.Vec[Param], body: vec.Vec[Statement])
     struct_decl(name: str, fields: vec.Vec[Statement])
+    struct_field(name: str, ftype: TypeRef)
     const_decl(name: str, ctype: TypeRef, value_idx: ptr_uint)
     let_decl(name: str, ltype: TypeRef, value_idx: ptr_uint)
     return_stmt(value_idx: ptr_uint)

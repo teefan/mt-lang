@@ -611,6 +611,74 @@ public function kind_name(kind: int) -> str:
     return "unknown"
 
 
+public function op_lexeme(kind: int) -> str:
+    if kind == TOK_PLUS:
+        return "+"
+    if kind == TOK_MINUS:
+        return "-"
+    if kind == TOK_STAR:
+        return "*"
+    if kind == TOK_SLASH:
+        return "/"
+    if kind == TOK_PERCENT:
+        return "%"
+    if kind == TOK_DOT_DOT:
+        return ".."
+    if kind == TOK_PIPE:
+        return "|"
+    if kind == TOK_CARET:
+        return "^"
+    if kind == TOK_AMP:
+        return "&"
+    if kind == TOK_SHIFT_LEFT:
+        return "<<"
+    if kind == TOK_SHIFT_RIGHT:
+        return ">>"
+    if kind == TOK_EQUAL_EQUAL:
+        return "=="
+    if kind == TOK_BANG_EQUAL:
+        return "!="
+    if kind == TOK_LESS:
+        return "<"
+    if kind == TOK_GREATER:
+        return ">"
+    if kind == TOK_LESS_EQUAL:
+        return "<="
+    if kind == TOK_GREATER_EQUAL:
+        return ">="
+    if kind == TOK_KW_AND:
+        return "and"
+    if kind == TOK_KW_OR:
+        return "or"
+    if kind == TOK_KW_NOT:
+        return "not"
+    if kind == TOK_TILDE:
+        return "~"
+    if kind == TOK_EQUAL:
+        return "="
+    if kind == TOK_PLUS_EQUAL:
+        return "+="
+    if kind == TOK_MINUS_EQUAL:
+        return "-="
+    if kind == TOK_STAR_EQUAL:
+        return "*="
+    if kind == TOK_SLASH_EQUAL:
+        return "/="
+    if kind == TOK_PERCENT_EQUAL:
+        return "%="
+    if kind == TOK_AMP_EQUAL:
+        return "&="
+    if kind == TOK_PIPE_EQUAL:
+        return "|="
+    if kind == TOK_CARET_EQUAL:
+        return "^="
+    if kind == TOK_SHIFT_LEFT_EQUAL:
+        return "<<="
+    if kind == TOK_SHIFT_RIGHT_EQUAL:
+        return ">>="
+    return "unknown"
+
+
 # ── token helpers ─────────────────────────────────────────────────────────
 
 function emit_token(tokens: ref[vec.Vec[Token]], kind: int, lexeme: str,

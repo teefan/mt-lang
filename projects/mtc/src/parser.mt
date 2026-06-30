@@ -235,12 +235,12 @@ function parse_declaration(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -
 
 function parse_function_def(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
     let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected function name")
-    let _ = parse_params(p)
+    var params = parse_params(p)
     let ret = parse_optional_return_type(p)
     var body = parse_block(p, pool)
     consume(p, lexer.TOK_NEWLINE, "expected newline after function body")
 
-    return ast.Statement.function_decl(name = name_tok.lexeme, ret = ret, body = body)
+    return ast.Statement.function_decl(name = name_tok.lexeme, ret = ret, params = params, body = body)
 
 
 function parse_struct_decl(p: ref[Parser]) -> ast.Statement:
@@ -273,8 +273,7 @@ function parse_struct_decl(p: ref[Parser]) -> ast.Statement:
         consume(p, lexer.TOK_COLON, "expected colon after field name")
         let ftype = parse_type_ref(p)
         consume(p, lexer.TOK_NEWLINE, "expected newline after field type")
-        fields.push(ast.Statement.struct_decl(name = fname.lexeme,
-            fields = vec.Vec[ast.Statement].create()))
+        fields.push(ast.Statement.struct_field(name = fname.lexeme, ftype = ftype))
         skip_newlines(p)
 
     while check(p, lexer.TOK_DEDENT):

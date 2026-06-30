@@ -6,30 +6,22 @@ import lexer
 
 
 public function emit_sexpr(source: ref[ast.SourceFile]) -> void:
-    emit_source_file(source)
+    emit_source(source)
+    stdio.print_char(int<-('\n'))
 
 
-function print_s(s: str) -> void:
+function pr(s: str) -> void:
     var k: ptr_uint = 0
     while k < s.len:
         stdio.print_char(int<-(s.byte_at(k)))
         k += 1
 
 
-function print_open(tag: str) -> void:
-    print_s("(")
-    print_s(tag)
-
-
-function print_close() -> void:
-    print_s(")")
-
-
-function print_space() -> void:
+function sp() -> void:
     stdio.print_char(int<-(' '))
 
 
-function print_qstr(s: str) -> void:
+function pq(s: str) -> void:
     stdio.print_char(int<-('\"'))
     var k: ptr_uint = 0
     while k < s.len:
@@ -55,404 +47,384 @@ function print_qstr(s: str) -> void:
     stdio.print_char(int<-('\"'))
 
 
-function emit_expr(exprs: ref[vec.Vec[ast.Expression]], idx: ptr_uint) -> void:
+function pn() -> void:
+    pr("nil")
+
+
+function pf() -> void:
+    pr("false")
+
+
+function pt() -> void:
+    pr("true")
+
+
+function pl() -> void:
+    pr("[]")
+
+
+function tir(p: ref[vec.Vec[str]], n: bool) -> void:
+    pr("(a:type_ref (a:qualified_name [")
+    var i: ptr_uint = 0
+    while i < p.len():
+        if i > 0:
+            sp()
+        let pp = p.get(i) else:
+            break
+        pq(unsafe: read(ptr[str]<-pp))
+        i += 1
+    pr("] nil nil nil) [] ")
+    if n:
+        pr("true")
+    else:
+        pr("false")
+    pr(" nil 0 0 0)")
+
+
+function tir_empty() -> void:
+    pr("(a:type_ref (a:qualified_name [] nil nil nil) [] false nil 0 0 0)")
+
+
+function emit_e(exprs: ref[vec.Vec[ast.Expression]], idx: ptr_uint) -> void:
     if idx >= exprs.len():
-        print_s("nil")
+        pn()
         return
     let e_ptr = exprs.get(idx) else:
+        pn()
         return
     var e = unsafe: read(ptr[ast.Expression]<-e_ptr)
     if e.kind == ast.EXPR_INTEGER:
-        print_s(e.str_value)
+        pr("(a:integer_literal ")
+        pq(e.str_value)
+        sp()
+        pr(e.str_value)
+        pr(")")
     else if e.kind == ast.EXPR_FLOAT:
-        print_s(e.str_value)
+        pr("(a:float_literal ")
+        pq(e.str_value)
+        sp()
+        pr(e.str_value)
+        pr(")")
+    else if e.kind == ast.EXPR_STRING:
+        pr("(a:string_literal ")
+        pq(e.str_value)
+        pr(" nil false)")
     else if e.kind == ast.EXPR_BOOLEAN:
+        pr("(a:boolean_literal ")
         if e.bool_value:
-            print_s("true")
+            pt()
         else:
-            print_s("false")
+            pf()
+        pr(")")
     else if e.kind == ast.EXPR_NULL:
-        print_s("nil")
+        pn()
     else if e.kind == ast.EXPR_IDENTIFIER:
-        print_qstr(e.ident)
+        pr("(a:identifier ")
+        pq(e.ident)
+        pr(" 0 0)")
     else if e.kind == ast.EXPR_BINARY:
-        print_open("a:binary")
-        print_space()
-        emit_expr(exprs, e.lhs_idx)
-        print_space()
-        print_s(lexer.kind_name(e.op_kind))
-        print_space()
-        emit_expr(exprs, e.rhs_idx)
-        print_close()
+        pr("(a:binary_op ")
+        pq(lexer.op_lexeme(e.op_kind))
+        sp()
+        emit_e(exprs, e.lhs_idx)
+        sp()
+        emit_e(exprs, e.rhs_idx)
+        pr(")")
     else if e.kind == ast.EXPR_UNARY:
-        print_open("a:unary")
-        print_space()
-        print_s(lexer.kind_name(e.op_kind))
-        print_space()
-        emit_expr(exprs, e.lhs_idx)
-        print_close()
+        pr("(a:unary_op ")
+        pq(lexer.op_lexeme(e.op_kind))
+        sp()
+        emit_e(exprs, e.lhs_idx)
+        pr(")")
     else if e.kind == ast.EXPR_CALL:
-        print_open("a:call")
-        print_space()
-        emit_expr(exprs, e.lhs_idx)
-        print_space()
-        print_s("[")
+        pr("(a:call ")
+        emit_e(exprs, e.lhs_idx)
+        pr(" [")
         var ai: ptr_uint = 0
         while ai < e.args.len():
             if ai > 0:
-                print_space()
+                sp()
             let ap = e.args.get(ai) else:
                 break
-            emit_expr(exprs, unsafe: read(ptr[ptr_uint]<-ap))
+            emit_e(exprs, unsafe: read(ptr[ptr_uint]<-ap))
             ai += 1
-        print_s("]")
-        print_close()
+        pr("])")
     else if e.kind == ast.EXPR_MEMBER:
-        print_open("a:member")
-        print_space()
-        emit_expr(exprs, e.lhs_idx)
-        print_space()
-        print_qstr(e.str_value)
-        print_close()
+        pr("(a:member_access ")
+        emit_e(exprs, e.lhs_idx)
+        sp()
+        pq(e.str_value)
+        pr(" 0 0)")
     else:
-        print_s("nil")
+        pn()
 
 
-function emit_type_ref(t: ref[ast.TypeRef]) -> void:
-    var self = unsafe: read(ptr[ast.TypeRef]<-t)
-    if self.name_parts.len() == 0:
-        print_s("nil")
-        return
-    let fp = self.name_parts.get(0) else:
-        return
-    print_qstr(unsafe: read(ptr[str]<-fp))
+function emit_source(sf: ref[ast.SourceFile]) -> void:
+    var exprs = ref_of(sf.exprs.exprs)
 
-
-function emit_source_file(sf: ref[ast.SourceFile]) -> void:
-    print_open("a:source_file")
-    print_space()
-    print_qstr(sf.module_name)
-    print_space()
-    print_s(":$module")
-    print_space()
-    print_s("[")
+    pr("(a:source_file (a:qualified_name [] nil nil nil) :$module [")
     var ii: ptr_uint = 0
     while ii < sf.imports.len():
         if ii > 0:
-            print_space()
-        emit_import(ref_of(sf.imports), ii)
+            sp()
+        let ip = sf.imports.get(ii) else:
+            break
+        var imp = unsafe: read(ptr[ast.Import]<-ip)
+        pr("(a:import (a:qualified_name [")
+        var pi: ptr_uint = 0
+        while pi < imp.path.parts.len():
+            if pi > 0:
+                sp()
+            let pp = imp.path.parts.get(pi) else:
+                break
+            pq(unsafe: read(ptr[str]<-pp))
+            pi += 1
+        pr("] nil nil nil) ")
+        if imp.alias_name.len > 0:
+            pq(imp.alias_name)
+        else:
+            pn()
+        sp()
+        stdio.print_format("%d %d %d", imp.line, imp.column, imp.alias_name.len)
+        pr(")")
         ii += 1
-    print_s("] [] [")
+    pr("] [] [")
     var di: ptr_uint = 0
     while di < sf.declarations.len():
         if di > 0:
-            print_space()
-        emit_stmt(ref_of(sf.declarations), di, ref_of(sf.exprs.exprs))
+            sp()
+        emit_s(ref_of(sf.declarations), di, exprs)
         di += 1
-    print_s("] nil")
-    print_close()
-    stdio.print_char(int<-('\n'))
+    pr("] nil)")
 
 
-function emit_import(imports: ref[vec.Vec[ast.Import]], index: ptr_uint) -> void:
-    let ip = imports.get(index) else:
-        return
-    var imp = unsafe: read(ptr[ast.Import]<-ip)
-    print_open("a:import")
-    print_space()
-    emit_qn(ref_of(imp.path))
-    print_space()
-    if imp.alias_name.len > 0:
-        print_qstr(imp.alias_name)
-    else:
-        print_s("nil")
-    print_space()
-    stdio.print_format("%d %d", imp.line, imp.column)
-    print_close()
-
-
-function emit_qn(qn: ref[ast.QualifiedName]) -> void:
-    print_open("a:qualified_name")
-    print_space()
-    print_s("[")
-    var i: ptr_uint = 0
-    while i < qn.parts.len():
-        if i > 0:
-            print_space()
-        let pp = qn.parts.get(i) else:
-            break
-        print_qstr(unsafe: read(ptr[str]<-pp))
-        i += 1
-    print_s("]")
-    print_close()
-
-
-function emit_stmt(decls: ref[vec.Vec[ast.Statement]], index: ptr_uint,
-                    exprs: ref[vec.Vec[ast.Expression]]) -> void:
+function emit_s(decls: ref[vec.Vec[ast.Statement]], index: ptr_uint,
+                exprs: ref[vec.Vec[ast.Expression]]) -> void:
     let dp = decls.get(index) else:
         return
     var s = unsafe: read(ptr[ast.Statement]<-dp)
 
     match s:
         ast.Statement.function_decl as fd:
-            print_open("a:function_def")
-            print_space()
-            print_qstr(fd.name)
-            print_space()
-            print_s("[] [] ")
-            emit_type_ref(ref_of(fd.ret))
-            print_space()
-            print_s("[")
+            pr("(a:function_def ")
+            pq(fd.name)
+            pr(" [] ")
+            # params
+            pr("[")
+            var pi: ptr_uint = 0
+            while pi < fd.params.len():
+                if pi > 0:
+                    sp()
+                let pp = fd.params.get(pi) else:
+                    break
+                var pv = unsafe: read(ptr[ast.Param]<-pp)
+                pr("(a:param ")
+                pq(pv.name)
+                pr(" ")
+                tir(ref_of(pv.param_type.name_parts), pv.param_type.nullable)
+                pr(" 0 0)")
+                pi += 1
+            pr("] ")
+            if fd.ret.name_parts.len() > 0:
+                tir(ref_of(fd.ret.name_parts), fd.ret.nullable)
+            else:
+                tir_empty()
+            pr(" [")
             var i: ptr_uint = 0
             while i < fd.body.len():
                 if i > 0:
-                    print_space()
-                emit_stmt(ref_of(fd.body), i, exprs)
+                    sp()
+                emit_s(ref_of(fd.body), i, exprs)
                 i += 1
-            print_s("] :$private false false [] 0 0")
-            print_close()
+            pr("] :$private false false [] 0 0)")
         ast.Statement.struct_decl as sd:
-            print_open("a:struct_decl")
-            print_space()
-            print_qstr(sd.name)
-            print_space()
-            print_s("[] [] nil [")
+            pr("(a:struct_decl ")
+            pq(sd.name)
+            pr(" [] [] nil [")
             var i: ptr_uint = 0
             while i < sd.fields.len():
                 if i > 0:
-                    print_space()
+                    sp()
                 let fp = sd.fields.get(i) else:
                     break
                 match unsafe: read(ptr[ast.Statement]<-fp):
-                    ast.Statement.struct_decl as f2:
-                        print_open("a:struct_field")
-                        print_space()
-                        print_qstr(f2.name)
-                        print_space()
-                        print_s("nil :$private 0")
-                        print_close()
+                    ast.Statement.struct_field as f2:
+                        pr("(a:field ")
+                        pq(f2.name)
+                        pr(" ")
+                        tir(ref_of(f2.ftype.name_parts), f2.ftype.nullable)
+                        pr(" [] 0 0)")
                     else:
-                        print_s("nil")
+                        pn()
                 i += 1
-            print_s("] nil :$private [] 0")
-            print_close()
+            pr("] [] [] false nil :$private [] 0 0)")
         ast.Statement.const_decl as cd:
-            print_open("a:const_decl")
-            print_space()
-            print_qstr(cd.name)
-            print_space()
-            emit_type_ref(ref_of(cd.ctype))
-            print_space()
-            emit_expr(exprs, cd.value_idx)
-            print_space()
-            print_s(":$private 0 0")
-            print_close()
+            pr("(a:const_decl ")
+            pq(cd.name)
+            pr(" ")
+            tir(ref_of(cd.ctype.name_parts), cd.ctype.nullable)
+            pr(" ")
+            emit_e(exprs, cd.value_idx)
+            pr(" nil :$private [] 0 0)")
+        ast.Statement.let_decl as ld:
+            pr("(a:local_decl :$let ")
+            pq(ld.name)
+            pr(" ")
+            if ld.ltype.name_parts.len() > 0:
+                tir(ref_of(ld.ltype.name_parts), ld.ltype.nullable)
+            else:
+                tir_empty()
+            pr(" ")
+            emit_e(exprs, ld.value_idx)
+            pr(" nil nil [] 0 0)")
+        ast.Statement.return_stmt as rs:
+            pr("(a:return_stmt ")
+            emit_e(exprs, rs.value_idx)
+            pr(" 0 0 0)")
+        ast.Statement.if_stmt as ist:
+            pr("(a:if_stmt [(a:if_branch ")
+            emit_e(exprs, ist.cond_idx)
+            pr(" [")
+            var i: ptr_uint = 0
+            while i < ist.body.len():
+                if i > 0:
+                    sp()
+                emit_s(ref_of(ist.body), i, exprs)
+                i += 1
+            pr("] 0 0)] [")
+            var j: ptr_uint = 0
+            while j < ist.else_body.len():
+                if j > 0:
+                    sp()
+                emit_s(ref_of(ist.else_body), j, exprs)
+                j += 1
+            pr("] false 0 0 0)")
+        ast.Statement.while_stmt as ws2:
+            pr("(a:while_stmt ")
+            emit_e(exprs, ws2.cond_idx)
+            pr(" [")
+            var i: ptr_uint = 0
+            while i < ws2.body.len():
+                if i > 0:
+                    sp()
+                emit_s(ref_of(ws2.body), i, exprs)
+                i += 1
+            pr("] false 0 0 0)")
+        ast.Statement.for_stmt as fs:
+            pr("(a:for_stmt [")
+            pq(fs.binding)
+            pr("] [] [")
+            var i: ptr_uint = 0
+            while i < fs.body.len():
+                if i > 0:
+                    sp()
+                emit_s(ref_of(fs.body), i, exprs)
+                i += 1
+            pr("] false false 0 0)")
+        ast.Statement.assign_stmt as as2:
+            pr("(a:assignment ")
+            emit_e(exprs, as2.target_idx)
+            pr(" ")
+            pq(lexer.op_lexeme(as2.op_kind))
+            pr(" ")
+            emit_e(exprs, as2.value_idx)
+            pr(" 0 0)")
+        ast.Statement.expr_stmt as es:
+            pr("(a:expression_stmt ")
+            emit_e(exprs, es.value_idx)
+            pr(" 0)")
+        ast.Statement.defer_stmt as ds:
+            pr("(a:defer_stmt nil [")
+            var i: ptr_uint = 0
+            while i < ds.body.len():
+                if i > 0:
+                    sp()
+                emit_s(ref_of(ds.body), i, exprs)
+                i += 1
+            pr("] 0 0 0)")
         ast.Statement.enum_decl as ed:
-            print_open("a:enum_decl")
-            print_space()
-            print_qstr(ed.name)
-            print_space()
-            emit_type_ref(ref_of(ed.backing))
-            print_space()
-            print_s("[")
+            pr("(a:enum_decl ")
+            pq(ed.name)
+            pr(" ")
+            tir(ref_of(ed.backing.name_parts), ed.backing.nullable)
+            pr(" [")
             var i: ptr_uint = 0
             while i < ed.members.len():
                 if i > 0:
-                    print_space()
+                    sp()
                 let mp = ed.members.get(i) else:
                     break
                 match unsafe: read(ptr[ast.Statement]<-mp):
                     ast.Statement.const_decl as md:
-                        print_open("a:enum_member")
-                        print_space()
-                        print_qstr(md.name)
-                        print_space()
-                        emit_expr(exprs, md.value_idx)
-                        print_space()
-                        print_s("0")
-                        print_close()
+                        pr("(a:enum_member ")
+                        pq(md.name)
+                        pr(" ")
+                        emit_e(exprs, md.value_idx)
+                        pr(" 0 0)")
                     else:
-                        print_s("nil")
+                        pn()
                 i += 1
-            print_s("] :$private 0")
-            print_close()
+            pr("] :$private [] 0 0)")
         ast.Statement.variant_decl as vd:
-            print_open("a:variant_decl")
-            print_space()
-            print_qstr(vd.name)
-            print_space()
-            print_s("[] [] :$private [] 0")
-            print_close()
+            pr("(a:variant_decl ")
+            pq(vd.name)
+            pr(" [] [] :$private [] 0 0)")
         ast.Statement.opaque_decl as od:
-            print_open("a:opaque_decl")
-            print_space()
-            print_qstr(od.name)
-            print_space()
-            print_s("[] nil :$private 0")
-            print_close()
+            pr("(a:opaque_decl ")
+            pq(od.name)
+            pr(" [] nil :$private 0 0)")
         ast.Statement.interface_decl as id:
-            print_open("a:interface_decl")
-            print_space()
-            print_qstr(id.name)
-            print_space()
-            print_s("[] [] :$private [] 0")
-            print_close()
+            pr("(a:interface_decl ")
+            pq(id.name)
+            pr(" [] [] :$private 0 0)")
         ast.Statement.type_alias_decl as ta:
-            print_open("a:type_alias_decl")
-            print_space()
-            print_qstr(ta.name)
-            print_space()
-            emit_type_ref(ref_of(ta.target))
-            print_space()
-            print_s(":$private 0")
-            print_close()
+            pr("(a:type_alias_decl ")
+            pq(ta.name)
+            pr(" ")
+            tir(ref_of(ta.target.name_parts), ta.target.nullable)
+            pr(" :$private 0 0)")
         ast.Statement.var_decl as vd2:
-            print_open("a:var_decl")
-            print_space()
-            print_qstr(vd2.name)
-            print_space()
-            emit_type_ref(ref_of(vd2.vtype))
-            print_space()
-            emit_expr(exprs, vd2.value_idx)
-            print_space()
-            print_s(":$private 0 0")
-            print_close()
+            pr("(a:var_decl ")
+            pq(vd2.name)
+            pr(" ")
+            tir(ref_of(vd2.vtype.name_parts), vd2.vtype.nullable)
+            pr(" ")
+            emit_e(exprs, vd2.value_idx)
+            pr(" :$private 0 0)")
         ast.Statement.union_decl as ud:
-            print_open("a:union_decl")
-            print_space()
-            print_qstr(ud.name)
-            print_space()
-            print_s("[] :$private 0")
-            print_close()
+            pr("(a:union_decl ")
+            pq(ud.name)
+            pr(" nil [] :$private [] 0 0)")
         ast.Statement.extending_block as eb:
-            print_open("a:extending_block")
-            print_space()
-            print_qstr(eb.name)
-            print_space()
-            print_s("[] :$private [] 0")
-            print_close()
+            pr("(a:extending_block (a:identifier ")
+            pq(eb.name)
+            pr(" 0 0) [] 0 0)")
         ast.Statement.static_assert_stmt as sa:
-            print_open("a:static_assert")
-            print_space()
-            emit_expr(exprs, sa.cond_idx)
-            print_space()
+            pr("(a:static_assert ")
+            emit_e(exprs, sa.cond_idx)
+            pr(" ")
             if sa.message.len > 0:
-                print_qstr(sa.message)
+                pq(sa.message)
             else:
-                print_s("nil")
-            print_close()
+                pr("\"\"")
+            pr(" 0)")
         ast.Statement.attribute_decl as ad:
-            print_open("a:attribute_decl")
-            print_space()
-            print_qstr(ad.name)
-            print_space()
-            print_s("[] nil :$private [] 0")
-            print_close()
+            pr("(a:attribute_decl ")
+            pq(ad.name)
+            pr(" [] [] :$private 0 0)")
         ast.Statement.event_decl as ed2:
-            print_open("a:event_decl")
-            print_space()
-            print_qstr(ed2.name)
-            print_space()
-            print_s("0 nil :$private 0")
-            print_close()
+            pr("(a:event_decl ")
+            pq(ed2.name)
+            pr(" ")
+            stdio.print_format("%lu", ed2.capacity)
+            pr(" nil :$public [] 0 0)")
         ast.Statement.when_stmt as ws:
-            print_open("a:when_stmt")
-            print_space()
-            print_s("nil [] 0")
-            print_close()
+            pr("(a:when_stmt nil [] [] 0 0 0)")
         ast.Statement.extern_function_decl as ef:
-            print_open("a:extern_function_decl")
-            print_space()
-            print_qstr(ef.name)
-            print_space()
-            print_s("[] ")
-            emit_type_ref(ref_of(ef.ret))
-            print_space()
-            print_s("[] 0")
-            print_close()
-        ast.Statement.let_decl as ld:
-            print_open("a:let_decl")
-            print_space()
-            print_qstr(ld.name)
-            print_space()
-            emit_type_ref(ref_of(ld.ltype))
-            print_space()
-            emit_expr(exprs, ld.value_idx)
-            print_close()
-        ast.Statement.return_stmt as rs:
-            print_open("a:return_stmt")
-            print_space()
-            emit_expr(exprs, rs.value_idx)
-            print_close()
-        ast.Statement.if_stmt as ist:
-            print_open("a:if_stmt")
-            print_space()
-            emit_expr(exprs, ist.cond_idx)
-            print_space()
-            print_s("[")
-            var bi: ptr_uint = 0
-            while bi < ist.body.len():
-                if bi > 0: print_space()
-                emit_stmt(ref_of(ist.body), bi, exprs)
-                bi += 1
-            print_s("] [")
-            var bj: ptr_uint = 0
-            while bj < ist.else_body.len():
-                if bj > 0: print_space()
-                emit_stmt(ref_of(ist.else_body), bj, exprs)
-                bj += 1
-            print_s("]")
-            print_close()
-        ast.Statement.while_stmt as ws2:
-            print_open("a:while_stmt")
-            print_space()
-            emit_expr(exprs, ws2.cond_idx)
-            print_space()
-            print_s("[")
-            var wi: ptr_uint = 0
-            while wi < ws2.body.len():
-                if wi > 0: print_space()
-                emit_stmt(ref_of(ws2.body), wi, exprs)
-                wi += 1
-            print_s("]")
-            print_close()
-        ast.Statement.for_stmt as fs:
-            print_open("a:for_stmt")
-            print_space()
-            print_qstr(fs.binding)
-            print_space()
-            print_s("[")
-            var fi: ptr_uint = 0
-            while fi < fs.body.len():
-                if fi > 0: print_space()
-                emit_stmt(ref_of(fs.body), fi, exprs)
-                fi += 1
-            print_s("]")
-            print_close()
-        ast.Statement.assign_stmt as as2:
-            print_open("a:assign_stmt")
-            print_space()
-            emit_expr(exprs, as2.target_idx)
-            print_space()
-            print_s(lexer.kind_name(as2.op_kind))
-            print_space()
-            emit_expr(exprs, as2.value_idx)
-            print_close()
-        ast.Statement.expr_stmt as es:
-            print_open("a:expr_stmt")
-            print_space()
-            emit_expr(exprs, es.value_idx)
-            print_close()
-        ast.Statement.defer_stmt as ds:
-            print_open("a:defer_stmt")
-            print_space()
-            print_s("[")
-            var di: ptr_uint = 0
-            while di < ds.body.len():
-                if di > 0: print_space()
-                emit_stmt(ref_of(ds.body), di, exprs)
-                di += 1
-            print_s("]")
-            print_close()
+            pr("(a:extern_function_decl ")
+            pq(ef.name)
+            pr(" [] [] ")
+            tir(ref_of(ef.ret.name_parts), ef.ret.nullable)
+            pr(" false [] 0)")
         else:
-            print_s("nil")
+            pn()
