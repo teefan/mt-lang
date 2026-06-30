@@ -5,6 +5,8 @@ import std.string as string
 import std.terminal as terminal
 import std.vec as vec
 import lexer
+import parser
+import parser_sexpr
 
 struct CliOptions:
     module_roots: vec.Vec[string.String]
@@ -32,7 +34,7 @@ function main(args: span[str]) -> int:
     if command_text.equal("lex"):
         return cmd_lex(ref_of(options))
     else if command_text.equal("parse"):
-        return cmd_read_source("parse", ref_of(options))
+        return cmd_parse(ref_of(options))
     else if command_text.equal("check"):
         return cmd_read_source("check", ref_of(options))
     else if command_text.equal("lower"):
@@ -225,6 +227,59 @@ function print_quoted_str(s: str) -> void:
             stdio.print_char(int<-(b))
         k += 1
     stdio.print_char(int<-('\"'))
+
+
+function cmd_parse(options: ref[CliOptions]) -> int:
+    var is_sexpr: bool = false
+    var file_path: str = ""
+
+    var i: ptr_uint = 1
+    while i < options.positional.len():
+        let arg_ptr = options.positional.get(i) else:
+            fatal("mtc: missing arg")
+        let arg = unsafe: read(ptr[string.String]<-arg_ptr).as_str()
+        if arg.equal("--sexpr") or arg.equal("--format=sexpr"):
+            is_sexpr = true
+            i += 1
+            continue
+        if file_path.len == 0:
+            file_path = arg
+        i += 1
+
+    if file_path.len == 0:
+        terminal.write_stderr("mtc parse: missing source file path")
+        return 1
+
+    let path = file_path
+
+    match fs.read_text(path):
+        Result.failure as payload:
+            stamp_source_error(path, payload.error)
+            payload.error.release()
+            return 1
+        Result.success as payload:
+            var content = payload.value
+            defer content.release()
+
+            var errors = vec.Vec[lexer.LexError].create()
+            var tokens = lexer.lex(content.as_str(), ref_of(errors))
+
+            var source_file = parser.parse(tokens)
+
+            if is_sexpr:
+                parser_sexpr.emit_sexpr(ref_of(source_file))
+            else:
+                stdio.print_format("parsed %lu imports, %lu decls, %lu exprs\n",
+                    source_file.imports.len(), source_file.declarations.len(),
+                    source_file.exprs.exprs.len())
+
+            source_file.imports.release()
+            source_file.declarations.release()
+            source_file.exprs.exprs.release()
+
+            errors.release()
+            tokens.release()
+            return 0
 
 
 function cmd_read_source(command_name: str, options: ref[CliOptions]) -> int:
