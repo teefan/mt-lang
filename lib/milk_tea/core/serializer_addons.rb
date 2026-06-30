@@ -252,10 +252,13 @@ module MilkTea
       inst
     end
     def serialize_tref_dyn(type, h)
-      h.merge!("interface_name" => type.interface_binding.name, "type_arguments" => serialize_ast(type.type_arguments))
+      h.merge!("interface_name" => type.interface_binding.name,
+               "interface_binding" => interface_binding_to_hash(type.interface_binding),
+               "type_arguments" => serialize_ast(type.type_arguments))
     end
     def deserialize_tref_dyn(h)
-      Types::Registry.dyn(Struct.new(:name).new(h["interface_name"]), deserialize_ast(h["type_arguments"]))
+      ib = h["interface_binding"] ? unstub_interface_binding(h["interface_binding"]) : Struct.new(:name).new(h["interface_name"])
+      Types::Registry.dyn(ib, deserialize_ast(h["type_arguments"]))
     end
     def serialize_tref_dyn_vtable(type, h)
       h.merge!("linkage_name" => type.linkage_name, "interface_name" => type.interface_name,

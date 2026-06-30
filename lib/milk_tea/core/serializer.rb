@@ -331,7 +331,7 @@ module MilkTea
         "values" => serialize_ast(analysis.values),
         "functions" => serialize_functions(analysis.functions, analysis.ast),
         "methods" => serialize_methods(analysis.methods),
-        "implemented_interfaces" => serialize_ast(analysis.implemented_interfaces),
+        "implemented_interfaces" => serialize_implemented_interfaces(analysis.implemented_interfaces),
         "r_expr_types" => serialize_path_keyed_map(analysis.resolved_expr_types, rev),
         "r_call_kinds" => serialize_path_keyed_map(analysis.resolved_call_kinds, rev),
         "r_const_values" => serialize_path_keyed_map(analysis.const_values, rev),
@@ -355,8 +355,8 @@ module MilkTea
       attributes = deserialize_ast(raw["attributes"]) || {}
       attr_apps = deserialize_attr_apps(raw["attribute_applications"] || {}, path_ids, attributes)
       values = deserialize_ast(raw["values"]) || {}
-      functions = deserialize_functions(raw["functions"] || {}, ast)
-      methods = deserialize_methods(raw["methods"] || {})
+      functions = deserialize_functions(raw["functions"] || {}, ast, raw["module_name"])
+      methods = deserialize_methods(raw["methods"] || {}, raw["module_name"])
 
       SemanticAnalyzer::Analysis.new(
         ast:,
@@ -371,7 +371,7 @@ module MilkTea
         values:,
         functions:,
         methods:,
-        implemented_interfaces: deserialize_ast(raw["implemented_interfaces"]) || {},
+        implemented_interfaces: deserialize_implemented_interfaces(raw["implemented_interfaces"]),
         local_completion_frames: [],
         binding_resolution: SemanticAnalyzer::BindingResolution.new({}, {}, {}, {}, {}, {}),
         callable_value_identifier_sites: {},
@@ -431,13 +431,25 @@ module MilkTea
       result
     end
 
-    def strip_function_binding(fb)
+    def strip_function_binding(fb, seen = nil)
+      seen ||= {}
+      # Generic specializations point back at their owner (instance.owner == fb),
+      # forming a cycle. serialize_data_node has no cycle detection, so we break it
+      # here by nulling owner/specialization_owner and recursively stripping the
+      # instance tree (with an identity guard against pathological self-instances).
+      if seen[fb.object_id]
+        inner_instances = {}
+      else
+        seen[fb.object_id] = true
+        inner_instances = (fb.instances || {}).transform_values { |inst| strip_function_binding(inst, seen) }
+      end
+
       FunctionBinding.new(
         name: fb.name, type: fb.type, body_params: fb.body_params,
         body_return_type: fb.body_return_type, ast: fb.ast,
         external: fb.external, async: fb.async, type_params: fb.type_params,
         type_param_constraints: fb.type_param_constraints,
-        instances: fb.instances, type_arguments: fb.type_arguments,
+        instances: inner_instances, type_arguments: fb.type_arguments,
         owner: nil, specialization_owner: nil, type_substitutions: fb.type_substitutions,
         declared_receiver_type: fb.declared_receiver_type,
       )
@@ -488,10 +500,36 @@ module MilkTea
       )
     end
 
+    def serialize_implemented_interfaces(impls)
+      return [] if impls.nil?
+
+      impls.map do |type, interfaces|
+        {
+          "type" => serialize_ast(type),
+          "interfaces" => interfaces.map { |ib| interface_binding_to_hash(ib) },
+        }
+      end
+    end
+
+    def deserialize_implemented_interfaces(raw)
+      result = {}
+      Array(raw).each do |entry|
+        type = deserialize_ast(entry["type"])
+        result[type] = (entry["interfaces"] || []).map { |h| unstub_interface_binding(h) }.to_set
+      end
+      result
+    end
+
     def serialize_functions(funcs, ast)
+      # O(1) path lookups via the node-id maps assign_node_ids already computed,
+      # instead of re-walking the whole AST per function (which was O(functions * AST)).
+      path_by_node_id = ast.respond_to?(:node_path_ids) && ast.node_path_ids ? ast.node_path_ids.invert : {}
+      node_id_by_object_id = ast.respond_to?(:node_ids) && ast.node_ids ? ast.node_ids : {}
+
       result = {}
       funcs.each do |name, fb|
-        ast_path = find_ast_path_for(fb.ast, ast)
+        ast_path = fb.ast ? path_by_node_id[node_id_by_object_id[fb.ast.object_id]] : nil
+        ast_path ||= find_ast_path_for(fb.ast, ast)
         result[name] = {
           "name" => fb.name, "type" => serialize_ast(fb.type),
           "body_params" => serialize_ast(fb.body_params),
@@ -500,7 +538,7 @@ module MilkTea
           "external" => fb.external, "async" => fb.async,
           "type_params" => serialize_ast(fb.type_params),
           "type_param_constraints" => fb.type_param_constraints,
-          "instances" => fb.instances,
+          "instances" => serialize_ast(fb.instances.transform_values { |inst| strip_function_binding(inst) }),
           "type_arguments" => serialize_ast(fb.type_arguments),
           "type_substitutions" => fb.type_substitutions,
           "declared_receiver_type" => serialize_ast(fb.declared_receiver_type),
@@ -536,15 +574,35 @@ module MilkTea
     end
 
     def serialize_methods(methods)
-      result = {}
-      methods.each do |receiver_type, method_map|
-        key = type_to_string_key(receiver_type)
-        result[key] = serialize_ast(method_map.transform_values { |fb| strip_function_binding(fb) })
+      methods.map do |receiver_type, method_map|
+        {
+          "receiver" => serialize_ast(receiver_type),
+          "methods" => serialize_ast(method_map.transform_values { |fb| strip_function_binding(fb) }),
+        }
       end
-      result
     end
 
-    def deserialize_functions(raw, ast)
+    # Minimal owner restored on deserialized function/method bindings. The real
+    # owner is the module binding (used for owner.module_name when building C
+    # linkage names); serializing it would reintroduce the owner cycle, so we
+    # strip it on the way out and re-attach a module-name carrier on the way in.
+    FunctionOwnerStub = Struct.new(:module_name) do
+      def instantiate_function_binding(*)
+        raise "instantiate_function_binding is unavailable on a deserialized analysis owner"
+      end
+    end
+
+    def reattach_function_owner(fb, owner)
+      return fb unless fb.respond_to?(:with)
+
+      fb.with(
+        owner: owner,
+        instances: (fb.instances || {}).transform_values { |inst| reattach_function_owner(inst, owner) },
+      )
+    end
+
+    def deserialize_functions(raw, ast, module_name = nil)
+      owner = FunctionOwnerStub.new(module_name)
       result = {}
       raw.each do |name, fb_data|
         fb_ast = if fb_data["ast_path"] && !fb_data["ast_path"].empty?
@@ -552,7 +610,7 @@ module MilkTea
                   else
                     deserialize_ast(fb_data["ast"])
                   end
-        result[name] = FunctionBinding.new(
+        result[name] = reattach_function_owner(FunctionBinding.new(
           name: fb_data["name"] || name,
           type: deserialize_ast(fb_data["type"]),
           body_params: deserialize_ast(fb_data["body_params"]) || [],
@@ -562,12 +620,12 @@ module MilkTea
           async: fb_data["async"] || false,
           type_params: deserialize_ast(fb_data["type_params"]) || [],
           type_param_constraints: fb_data["type_param_constraints"] || {},
-          instances: fb_data["instances"] || {},
+          instances: deserialize_ast(fb_data["instances"]) || {},
           type_arguments: deserialize_ast(fb_data["type_arguments"]) || [],
           owner: nil, specialization_owner: nil,
           type_substitutions: fb_data["type_substitutions"] || {},
           declared_receiver_type: deserialize_ast(fb_data["declared_receiver_type"]),
-        )
+        ), owner)
       end
       result
     end
@@ -595,27 +653,15 @@ module MilkTea
       current
     end
 
-    def deserialize_methods(raw)
+    def deserialize_methods(raw, module_name = nil)
+      owner = FunctionOwnerStub.new(module_name)
       result = {}
-      raw.each do |key, method_map|
-        receiver_type = type_from_string_key(key)
-        result[receiver_type] = (deserialize_ast(method_map) || {}).transform_values { |fb| unstub_function_binding(fb) }
+      Array(raw).each do |entry|
+        receiver_type = deserialize_ast(entry["receiver"])
+        method_map = (deserialize_ast(entry["methods"]) || {}).transform_values { |fb| reattach_function_owner(unstub_function_binding(fb), owner) }
+        result[receiver_type] = method_map
       end
       result
-    end
-
-    def type_to_string_key(type)
-      Serializer.ref_type_name(type) + ":" + (type.respond_to?(:name) ? type.name.to_s : "")
-    end
-
-    def type_from_string_key(key)
-      tname, name = key.split(":", 2)
-      case tname
-      when "Primitive" then Types::Registry.primitive(name)
-      when "Struct", "StructInstance" then Types::Struct.new(name)
-      when "Nullable" then Types::Registry.nullable(Types::Primitive.new("void"))
-      else Types::Error.new
-      end
     end
 
     ModuleBindingStub = Data.define(:name) do
