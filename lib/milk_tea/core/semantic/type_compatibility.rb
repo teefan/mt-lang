@@ -39,6 +39,7 @@ module MilkTea
         return true if exact_compile_time_numeric_compatibility?(actual_type, expression, expected_type, scopes:)
         return true if integer_to_char_compatibility?(actual_type, expected_type) &&
                        (!expression || !scopes || integer_constant_fits_in_char?(expression, scopes))
+        return true if lossless_integer_compatibility?(actual_type, expected_type)
         return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
         return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type) &&
                        (!expression || !scopes || contextual_int_to_float_fits?(expression, expected_type, scopes))

@@ -34,6 +34,7 @@ module MilkTea
       prefer-let-else
       prefer-var-else
       redundant-bool-compare
+      redundant-cast
       redundant-else
       redundant-ignored-match-binding
       redundant-null-check
@@ -59,6 +60,7 @@ module MilkTea
       prefer-let-else
       prefer-var-else
       redundant-bool-compare
+      redundant-cast
       redundant-else
       redundant-return
       redundant-type-annotation
@@ -71,12 +73,13 @@ module MilkTea
       "line-too-long" => "Wrap long line",
       "prefer-let" => "Replace 'var' with 'let'",
       "redundant-ignored-match-binding" => "Remove redundant as _",
+      "redundant-bool-compare" => "Simplify boolean comparison",
+      "redundant-cast" => "Remove redundant cast",
       "redundant-else" => "Remove redundant else",
       "redundant-return" => "Remove redundant return",
       "redundant-type-annotation" => "Remove redundant type annotation",
       "prefer-let-else" => "Rewrite as let-else",
       "prefer-var-else" => "Rewrite as var-else",
-      "redundant-bool-compare" => "Simplify boolean comparison",
       "trailing-list-comma" => "Remove trailing list comma",
     }.freeze
     EVENT_STACK_SNAPSHOT_WARNING_THRESHOLD = 128

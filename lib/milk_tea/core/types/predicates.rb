@@ -150,6 +150,13 @@ module MilkTea
       expected_type.signed_integer? && expected_type.integer_width > actual_type.integer_width
     end
 
+    def lossless_integer_compatibility?(actual_type, expected_type)
+      return false unless actual_type.is_a?(Types::Primitive) && expected_type.is_a?(Types::Primitive)
+      return false unless actual_type.integer? && expected_type.integer?
+
+      lossless_external_integer_compatibility?(actual_type, expected_type)
+    end
+
     def contextual_int_to_float_compatibility?(actual_type, expected_type)
       actual_type.is_a?(Types::Primitive) && actual_type.integer? &&
         expected_type.is_a?(Types::Primitive) && expected_type.float?
