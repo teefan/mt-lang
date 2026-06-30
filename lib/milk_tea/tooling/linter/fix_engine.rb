@@ -206,9 +206,7 @@ module MilkTea
         return [] unless line
         return [] unless warning.column
 
-        # Search for the cast pattern TypeName<-(...) starting at or before the column
-        col = warning.column - 1
-        # Also try searching from the beginning of the line
+        # Search for the cast pattern TypeName<-(...) on the line
         cast_match = line.match(/(\w+)\s*<-\s*\((.+)\)/)
         return [] unless cast_match
 
