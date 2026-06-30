@@ -2307,6 +2307,7 @@ import std.math  # intentionally available for downstream</code></pre>
       <tr><td>Correctness</td><td><code>loop-single-iteration</code></td><td>Loop with known single iteration</td></tr>
       <tr><td>Style</td><td><code>prefer-let-else</code></td><td>Var followed by null check; suggest let...else</td></tr>
       <tr><td>Style</td><td><code>prefer-var-else</code></td><td>Same as above for mutable bindings</td></tr>
+      <tr><td>Style</td><td><code>redundant-cast</code></td><td>Explicit cast where implicit widening already works</td></tr>
       <tr><td>Style</td><td><code>redundant-return</code></td><td>Unnecessary return at end of void function</td></tr>
       <tr><td>Style</td><td><code>trailing-list-comma</code></td><td>Multiline lists should end with trailing comma</td></tr>
       <tr><td>Style</td><td><code>line-too-long</code></td><td>Line exceeds recommended width</td></tr>
@@ -2360,7 +2361,7 @@ import std.math  # intentionally available for downstream</code></pre>
   <h3>Expression Restrictions</h3>
   <ul style="margin-left:1.25rem;margin-bottom:1rem">
     <li>Conditions must be <code>bool</code>; no truthy/falsy coercion</li>
-    <li>Mixed signed/unsigned arithmetic requires explicit cast</li>
+    <li>Mixed signed/unsigned arithmetic requires explicit cast; non-widening integer conversions (narrowing, signed → unsigned) need explicit <code>T&lt;-value</code></li>
     <li>Enum and flags values do not implicitly coerce to backing integers</li>
     <li><code>+</code> does not support <code>str</code>/<code>cstr</code> concatenation</li>
     <li><code>==</code> and <code>!=</code> not supported on struct types; use <code>equal[T]</code></li>

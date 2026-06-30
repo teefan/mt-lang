@@ -884,6 +884,7 @@ Heredoc notes:
 - No truthy or falsy coercion.
 - Outside external-call boundaries, enum and flags values do not implicitly coerce to their backing integer types.
 - Mixed signed and unsigned integer arithmetic requires an explicit cast.
+- Non-widening integer conversions (narrowing, signed → unsigned) require an explicit cast. Lossless widening conversions (same signedness to wider or equal width, unsigned → wider signed) are implicit.
 - `%` requires integer-compatible operands.
 - Bitwise operators require matching integer or flags types.
 - Shift operators require integer operands.
@@ -1026,6 +1027,7 @@ Current compiler rejects:
 
 - conditions must be `bool`; integers and pointers have no implicit truthy or falsy coercion
 - mixed signed and unsigned integer arithmetic requires an explicit cast
+- non-widening integer conversions (narrowing, signed → unsigned) require an explicit `T<-value` cast; lossless widening is implicit
 - enum and flags values do not implicitly coerce to their backing integer types outside external-call boundaries
 - `enum` backing types must be integer primitives; `flags` members must be compile-time integer constants
 - `variant` arm payloads cannot use `ref[T]` in v1
