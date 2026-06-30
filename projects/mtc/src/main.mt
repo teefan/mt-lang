@@ -200,8 +200,97 @@ function print_token_sexpr(tok: lexer.Token) -> void:
     stdio_ext.print_quoted_str(lexer.kind_name(tok.kind))
     stdio.print_format(" :lexeme ")
     stdio_ext.print_quoted_str(tok.lexeme)
-    stdio.print_format(" :literal nil :line %d :column %d :start_offset %lu :end_offset %lu)",
+    stdio.print_format(" :literal ")
+    print_token_literal(tok)
+    stdio.print_format(" :line %d :column %d :start_offset %lu :end_offset %lu)",
         tok.line, tok.column, tok.start_offset, tok.end_offset)
+
+
+function print_token_literal(tok: lexer.Token) -> void:
+    if tok.kind == lexer.TOK_INTEGER:
+        stdio.print_format("%lu", parse_int_lexeme(tok.lexeme))
+    else if tok.kind == lexer.TOK_CHAR_LITERAL:
+        stdio.print_format("%lu", parse_char_lexeme(tok.lexeme))
+    else if tok.kind == lexer.TOK_KW_TRUE:
+        stdio.print_format("true")
+    else if tok.kind == lexer.TOK_KW_FALSE:
+        stdio.print_format("false")
+    else:
+        stdio.print_format("nil")
+
+
+function parse_int_lexeme(lexeme: str) -> ptr_uint:
+    var i: ptr_uint = 0
+    var base: ptr_uint = 10
+    if lexeme.len >= 2 and lexeme.byte_at(0) == '0':
+        let c = lexeme.byte_at(1)
+        if c == 'x' or c == 'X':
+            base = 16
+            i = 2
+        else if c == 'b' or c == 'B':
+            base = 2
+            i = 2
+    var acc: ptr_uint = 0
+    while i < lexeme.len:
+        let b = lexeme.byte_at(i)
+        if b == '_':
+            i += 1
+            continue
+        var d: ptr_uint = 0
+        if b >= '0' and b <= '9':
+            d = ptr_uint<-(b - '0')
+        else if base == 16 and b >= 'a' and b <= 'f':
+            d = ptr_uint<-(b - 'a') + 10
+        else if base == 16 and b >= 'A' and b <= 'F':
+            d = ptr_uint<-(b - 'A') + 10
+        else:
+            break
+        acc = acc * base + d
+        i += 1
+    return acc
+
+
+function parse_char_lexeme(lexeme: str) -> ptr_uint:
+    if lexeme.len < 3:
+        return 0
+    let c1 = lexeme.byte_at(1)
+    if c1 != '\\':
+        return ptr_uint<-c1
+    let e = lexeme.byte_at(2)
+    if e == 'n':
+        return 10
+    if e == 'r':
+        return 13
+    if e == 't':
+        return 9
+    if e == '0':
+        return 0
+    if e == '\'':
+        return 39
+    if e == '"':
+        return 34
+    if e == '\\':
+        return 92
+    if e == 'x' or e == 'X':
+        var v: ptr_uint = 0
+        var k: ptr_uint = 3
+        while k < lexeme.len:
+            let hb = lexeme.byte_at(k)
+            if hb == '\'':
+                break
+            var d: ptr_uint = 0
+            if hb >= '0' and hb <= '9':
+                d = ptr_uint<-(hb - '0')
+            else if hb >= 'a' and hb <= 'f':
+                d = ptr_uint<-(hb - 'a') + 10
+            else if hb >= 'A' and hb <= 'F':
+                d = ptr_uint<-(hb - 'A') + 10
+            else:
+                break
+            v = v * 16 + d
+            k += 1
+        return v
+    return ptr_uint<-e
 
 
 function print_quoted_str(s: str) -> void:

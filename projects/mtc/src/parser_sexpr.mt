@@ -52,7 +52,7 @@ function tir(p: ref[vec.Vec[str]], n: bool) -> void:
             break
         pq(unsafe: read(ptr[str]<-pp))
         i += 1
-    pr("] nil nil nil) [] ")
+    pr("] [] nil nil) [] ")
     if n:
         pr("true")
     else:
@@ -61,7 +61,7 @@ function tir(p: ref[vec.Vec[str]], n: bool) -> void:
 
 
 function tir_empty() -> void:
-    pr("(a:type_ref (a:qualified_name [] nil nil nil) [] false nil 0 0 0)")
+    pr("(a:type_ref (a:qualified_name [] [] nil nil) [] false nil 0 0 0)")
 
 
 function emit_e(exprs: ref[vec.Vec[ast.Expression]], idx: ptr_uint) -> void:
@@ -141,7 +141,7 @@ function emit_e(exprs: ref[vec.Vec[ast.Expression]], idx: ptr_uint) -> void:
 function emit_source(sf: ref[ast.SourceFile]) -> void:
     var exprs = ref_of(sf.exprs.exprs)
 
-    pr("(a:source_file (a:qualified_name [] nil nil nil) :$module [")
+    pr("(a:source_file (a:qualified_name [] [] nil nil) :$module [")
     var ii: ptr_uint = 0
     while ii < sf.imports.len():
         if ii > 0:
@@ -158,7 +158,7 @@ function emit_source(sf: ref[ast.SourceFile]) -> void:
                 break
             pq(unsafe: read(ptr[str]<-pp))
             pi += 1
-        pr("] nil nil nil) ")
+        pr("] [] nil nil) ")
         if imp.alias_name.len > 0:
             pq(imp.alias_name)
         else:

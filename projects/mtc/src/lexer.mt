@@ -732,7 +732,11 @@ function is_blank_or_comment(line_val: str) -> bool:
 
 struct HdResult:
     lexeme: str
+    start_off: ptr_uint
     end_off: ptr_uint
+    term_line: int
+    term_off: ptr_uint
+    term_len: ptr_uint
 
 
 function is_heredoc_start(line_val: str, start_pos: ptr_uint,
@@ -788,6 +792,16 @@ function find_heredoc_tag(line_val: str, start_pos: ptr_uint) -> str:
     return line_val.slice(tag_start, tag_end - tag_start)
 
 
+function emit_heredoc(tokens: ref[vec.Vec[Token]], kind: int, consumed: HdResult,
+                     hd_line: int, hd_col: ptr_uint, group_depth: int) -> void:
+    emit_token(tokens, kind, consumed.lexeme, hd_line, int<-hd_col + 1,
+        consumed.start_off, consumed.end_off)
+    if group_depth == 0:
+        let nl_start = consumed.term_off + consumed.term_len
+        emit_token(tokens, TOK_NEWLINE, "\n", consumed.term_line,
+            int<-consumed.term_len + 1, nl_start, nl_start + 1)
+
+
 function lex_heredoc(source: str, pos: ref[ptr_uint], line_num: ref[int],
                      first_line: str, start_pos: ptr_uint) -> HdResult:
     let tag = find_heredoc_tag(first_line, start_pos)
@@ -808,7 +822,9 @@ function lex_heredoc(source: str, pos: ref[ptr_uint], line_num: ref[int],
             let lexeme = source.slice(start_offset, end_offset - start_offset)
             write_ref_u(pos, line_end + 1)
             write_ref_i(line_num, scan_line + 1)
-            return HdResult(lexeme = lexeme, end_off = end_offset)
+            return HdResult(lexeme = lexeme, start_off = start_offset,
+                end_off = end_offset, term_line = scan_line,
+                term_off = scan_pos, term_len = line_len)
 
         scan_pos = line_end + 1
         scan_line = scan_line + 1
@@ -816,7 +832,8 @@ function lex_heredoc(source: str, pos: ref[ptr_uint], line_num: ref[int],
     write_ref_u(pos, scan_pos)
     write_ref_i(line_num, scan_line)
     return HdResult(lexeme = source.slice(start_offset, scan_pos - start_offset),
-        end_off = scan_pos)
+        start_off = start_offset, end_off = scan_pos,
+        term_line = scan_line, term_off = scan_pos, term_len = 0)
 
 
 function trim_blank(s: str) -> str:
@@ -931,7 +948,8 @@ function try_merge_adjacent(source: str, pos: ref[ptr_uint],
                             line_num: ref[int],
                             tokens: ref[vec.Vec[Token]],
                             indent_amt: ptr_uint,
-                            current_line_end: ptr_uint) -> int:
+                            current_line_end: ptr_uint,
+                            group_depth: int) -> int:
     if tokens.len() == 0:
         return 0
     let last_tok = tokens.last() else:
@@ -942,6 +960,8 @@ function try_merge_adjacent(source: str, pos: ref[ptr_uint],
 
     var merged: int = 0
     var next_pos = current_line_end + 1
+    var last_nl_start: ptr_uint = 0
+    var last_col_len: ptr_uint = 0
 
     while true:
         while next_pos < source.len and source.byte_at(next_pos) == CH_CR:
@@ -992,6 +1012,8 @@ function try_merge_adjacent(source: str, pos: ref[ptr_uint],
                 new_end - read(tok_ptr).start_offset)
             read(tok_ptr).end_offset = new_end
 
+        last_nl_start = next_pos + nll
+        last_col_len = nll
         next_pos = nle + 1
         merged = merged + 1
 
@@ -999,7 +1021,11 @@ function try_merge_adjacent(source: str, pos: ref[ptr_uint],
         return 0
 
     write_ref_u(pos, next_pos)
-    write_ref_i(line_num, read_ref_i(line_num) + merged)
+    let term_line = read_ref_i(line_num) + merged
+    write_ref_i(line_num, term_line + 1)
+    if group_depth == 0:
+        emit_token(tokens, TOK_NEWLINE, "\n", term_line,
+            int<-last_col_len + 1, last_nl_start, last_nl_start + 1)
     return merged
 
 
@@ -1116,8 +1142,7 @@ public function lex(source: str, errors: ref[vec.Vec[LexError]]) -> vec.Vec[Toke
                 let hd_line = line_num
                 let consumed = lex_heredoc(source, ref_of(pos), ref_of(line_num),
                     line_str, line_pos)
-                emit_token(ref_of(tokens), TOK_CSTRING, consumed.lexeme, hd_line,
-                    int<-line_pos + 1, pos + line_pos, pos + consumed.end_off)
+                emit_heredoc(ref_of(tokens), TOK_CSTRING, consumed, hd_line, line_pos, group_depth)
                 heredoc_consumed = true
                 break
 
@@ -1137,8 +1162,7 @@ public function lex(source: str, errors: ref[vec.Vec[LexError]]) -> vec.Vec[Toke
                 let hd_line = line_num
                 let consumed = lex_heredoc(source, ref_of(pos), ref_of(line_num),
                     line_str, line_pos)
-                emit_token(ref_of(tokens), TOK_FSTRING, consumed.lexeme, hd_line,
-                    int<-line_pos + 1, pos + line_pos, pos + consumed.end_off)
+                emit_heredoc(ref_of(tokens), TOK_FSTRING, consumed, hd_line, line_pos, group_depth)
                 heredoc_consumed = true
                 break
 
@@ -1146,8 +1170,7 @@ public function lex(source: str, errors: ref[vec.Vec[LexError]]) -> vec.Vec[Toke
                 let hd_line = line_num
                 let consumed = lex_heredoc(source, ref_of(pos), ref_of(line_num),
                     line_str, line_pos)
-                emit_token(ref_of(tokens), TOK_STRING, consumed.lexeme, hd_line,
-                    int<-line_pos + 1, pos + line_pos, pos + consumed.end_off)
+                emit_heredoc(ref_of(tokens), TOK_STRING, consumed, hd_line, line_pos, group_depth)
                 heredoc_consumed = true
                 break
 
@@ -1212,9 +1235,9 @@ public function lex(source: str, errors: ref[vec.Vec[LexError]]) -> vec.Vec[Toke
                               ref_of(group_depth), line_num, pos, errors)
 
         adj_consumed = try_merge_adjacent(source, ref_of(pos), ref_of(line_num),
-            ref_of(tokens), indent_amt, line_end) > 0
+            ref_of(tokens), indent_amt, line_end, group_depth) > 0
 
-        if group_depth == 0:
+        if group_depth == 0 and not heredoc_consumed and not adj_consumed:
             let is_cont = is_continuation_op(ref_of(tokens))
             if is_cont:
                 cont_pending = true
@@ -1232,9 +1255,9 @@ public function lex(source: str, errors: ref[vec.Vec[LexError]]) -> vec.Vec[Toke
 
     while indent_stack.len() > 1:
         indent_stack.pop()
-        emit_token(ref_of(tokens), TOK_DEDENT, "", line_num, 1, pos, pos)
+        emit_token(ref_of(tokens), TOK_DEDENT, "", line_num - 1, 1, pos, pos)
 
-    emit_token(ref_of(tokens), TOK_EOF, "", line_num + 1, 1, pos, pos)
+    emit_token(ref_of(tokens), TOK_EOF, "", line_num, 1, pos, pos)
     indent_stack.release()
     return tokens
 
