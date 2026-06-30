@@ -56,7 +56,7 @@ function print_qstr(s: str) -> void:
 
 
 function emit_expr(exprs: ref[vec.Vec[ast.Expression]], idx: ptr_uint) -> void:
-    if idx == 0 or idx > exprs.len():
+    if idx >= exprs.len():
         print_s("nil")
         return
     let e_ptr = exprs.get(idx) else:
@@ -369,6 +369,90 @@ function emit_stmt(decls: ref[vec.Vec[ast.Statement]], index: ptr_uint,
             emit_type_ref(ref_of(ef.ret))
             print_space()
             print_s("[] 0")
+            print_close()
+        ast.Statement.let_decl as ld:
+            print_open("a:let_decl")
+            print_space()
+            print_qstr(ld.name)
+            print_space()
+            emit_type_ref(ref_of(ld.ltype))
+            print_space()
+            emit_expr(exprs, ld.value_idx)
+            print_close()
+        ast.Statement.return_stmt as rs:
+            print_open("a:return_stmt")
+            print_space()
+            emit_expr(exprs, rs.value_idx)
+            print_close()
+        ast.Statement.if_stmt as ist:
+            print_open("a:if_stmt")
+            print_space()
+            emit_expr(exprs, ist.cond_idx)
+            print_space()
+            print_s("[")
+            var bi: ptr_uint = 0
+            while bi < ist.body.len():
+                if bi > 0: print_space()
+                emit_stmt(ref_of(ist.body), bi, exprs)
+                bi += 1
+            print_s("] [")
+            var bj: ptr_uint = 0
+            while bj < ist.else_body.len():
+                if bj > 0: print_space()
+                emit_stmt(ref_of(ist.else_body), bj, exprs)
+                bj += 1
+            print_s("]")
+            print_close()
+        ast.Statement.while_stmt as ws2:
+            print_open("a:while_stmt")
+            print_space()
+            emit_expr(exprs, ws2.cond_idx)
+            print_space()
+            print_s("[")
+            var wi: ptr_uint = 0
+            while wi < ws2.body.len():
+                if wi > 0: print_space()
+                emit_stmt(ref_of(ws2.body), wi, exprs)
+                wi += 1
+            print_s("]")
+            print_close()
+        ast.Statement.for_stmt as fs:
+            print_open("a:for_stmt")
+            print_space()
+            print_qstr(fs.binding)
+            print_space()
+            print_s("[")
+            var fi: ptr_uint = 0
+            while fi < fs.body.len():
+                if fi > 0: print_space()
+                emit_stmt(ref_of(fs.body), fi, exprs)
+                fi += 1
+            print_s("]")
+            print_close()
+        ast.Statement.assign_stmt as as2:
+            print_open("a:assign_stmt")
+            print_space()
+            emit_expr(exprs, as2.target_idx)
+            print_space()
+            print_s(lexer.kind_name(as2.op_kind))
+            print_space()
+            emit_expr(exprs, as2.value_idx)
+            print_close()
+        ast.Statement.expr_stmt as es:
+            print_open("a:expr_stmt")
+            print_space()
+            emit_expr(exprs, es.value_idx)
+            print_close()
+        ast.Statement.defer_stmt as ds:
+            print_open("a:defer_stmt")
+            print_space()
+            print_s("[")
+            var di: ptr_uint = 0
+            while di < ds.body.len():
+                if di > 0: print_space()
+                emit_stmt(ref_of(ds.body), di, exprs)
+                di += 1
+            print_s("]")
             print_close()
         else:
             print_s("nil")
