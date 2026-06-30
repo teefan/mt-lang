@@ -100,7 +100,7 @@ module MilkTea
 
     def self.lex_to_json(source, path: nil)
       tokens = lex(source, path: path)
-      Serializer.tokens_to_json(tokens)
+      Serializer.tokens_to_sexpr(tokens)
     end
 
     def initialize(source, path: nil, mode: :syntax_only, recovery_errors: nil)

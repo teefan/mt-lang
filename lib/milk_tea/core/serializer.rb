@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "json"
+require_relative "sexpr"
 
 module MilkTea
   module Serializer
@@ -26,12 +26,12 @@ module MilkTea
       result
     end
 
-    def tokens_to_json(tokens)
-      JSON.generate(tokens.map { |t| token_to_hash(t) })
+    def tokens_to_sexpr(tokens)
+      SExpr.to_sexpr(tokens.map { |t| token_to_hash(t) })
     end
 
-    def tokens_from_json(json_string)
-      JSON.parse(json_string).map { |h| hash_to_token(h) }
+    def tokens_from_sexpr(text)
+      SExpr.from_sexpr(text).map { |h| hash_to_token(h) }
     end
 
     def hash_to_token(h)
@@ -271,37 +271,37 @@ module MilkTea
 
     # ── Convenience ─────────────────────────────────────
 
-    def ir_to_json(ir_program)
+    def ir_to_sexpr(ir_program)
       Thread.current[:mt_ser_visited] = nil
-      JSON.generate(serialize_ast(ir_program))
+      SExpr.to_sexpr(serialize_ast(ir_program))
     ensure
       Thread.current[:mt_ser_visited] = nil
     end
 
-    def ir_from_json(json_string)
+    def ir_from_sexpr(text)
       Thread.current[:mt_deser_type_cache] = nil
-      deserialize_ast(JSON.parse(json_string))
+      deserialize_ast(SExpr.from_sexpr(text))
     ensure
       Thread.current[:mt_deser_type_cache] = nil
     end
 
-    def ast_to_json(node)
+    def ast_to_sexpr(node)
       Thread.current[:mt_ser_visited] = nil
-      JSON.generate(serialize_ast(node))
+      SExpr.to_sexpr(serialize_ast(node))
     ensure
       Thread.current[:mt_ser_visited] = nil
     end
 
-    def ast_from_json(json_string)
+    def ast_from_sexpr(text)
       Thread.current[:mt_deser_type_cache] = nil
-      deserialize_ast(JSON.parse(json_string))
+      deserialize_ast(SExpr.from_sexpr(text))
     ensure
       Thread.current[:mt_deser_type_cache] = nil
     end
 
     # Identity-only mode: for expression types, skip fields/arms/events/nested_types
-    def self.ast_from_json_with_ids(json_string)
-      ast = ast_from_json(json_string)
+    def self.ast_from_sexpr_with_ids(text)
+      ast = ast_from_sexpr(text)
       ast = AST.assign_node_ids(ast) if ast
       ast
     end
@@ -310,7 +310,7 @@ module MilkTea
 
     A_KEY = "$mt_analysis"
 
-    def analysis_to_json(analysis)
+    def analysis_to_sexpr(analysis)
       Thread.current[:mt_ser_visited] = nil
       ast = analysis.ast
       path_ids = ast.node_path_ids || {}
@@ -337,14 +337,14 @@ module MilkTea
         "r_const_values" => serialize_path_keyed_map(analysis.const_values, rev),
         "uses_parallel_for" => analysis.uses_parallel_for,
       }
-      JSON.generate(result)
+      SExpr.to_sexpr(result)
     ensure
       Thread.current[:mt_ser_visited] = nil
     end
 
-    def analysis_from_json(json_string)
+    def analysis_from_sexpr(text)
       Thread.current[:mt_deser_type_cache] = nil
-      raw = JSON.parse(json_string)
+      raw = SExpr.from_sexpr(text)
       ast = deserialize_ast(raw["ast"])
       ast = AST.assign_node_ids(ast)
       path_ids = ast.node_path_ids || {}

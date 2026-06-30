@@ -37,7 +37,7 @@ module MilkTea
     end
 
     def self.emit_from_json(json_string, emit_line_directives: true)
-      ir_program = Serializer.ir_from_json(json_string)
+      ir_program = Serializer.ir_from_sexpr(json_string)
       emit(ir_program, emit_line_directives:)
     end
 
