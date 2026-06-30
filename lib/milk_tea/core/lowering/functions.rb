@@ -32,11 +32,13 @@ module MilkTea
 
                 lowered << lower_function_decl(binding)
                 @artifacts.lowered_function_linkage_names[linkage_name] = true
-                if (entrypoint = build_root_main_entrypoint(binding))
-                  next if @artifacts.lowered_function_linkage_names[entrypoint.linkage_name]
+                if @ctx.module_name.to_s == @program.root_analysis.module_name.to_s
+                  if (entrypoint = build_root_main_entrypoint(binding))
+                    next if @artifacts.lowered_function_linkage_names[entrypoint.linkage_name]
 
-                  lowered << entrypoint
-                  @artifacts.lowered_function_linkage_names[entrypoint.linkage_name] = true
+                    lowered << entrypoint
+                    @artifacts.lowered_function_linkage_names[entrypoint.linkage_name] = true
+                  end
                 end
                 changed = true
               end
