@@ -1,20 +1,19 @@
 # frozen_string_literal: true
 
-require "json"
 require "stringio"
 require "tmpdir"
 require "fileutils"
 require_relative "../test_helper"
 
-# Exercises the development JSON IR pipeline end to end:
-#   source -> tokens(JSON) -> AST(JSON) -> analysis(JSON) -> IR(JSON) -> C
+# Exercises the development SExpr IR pipeline end to end:
+#   source -> tokens(sexpr) -> AST(sexpr) -> analysis(sexpr) -> IR(sexpr) -> C
 #
 # Guarantees verified here:
-#   * each stage round-trips through JSON (from_json(to_json(x)) is faithful)
-#   * driving the pipeline stage-by-stage through JSON produces byte-identical
+#   * each stage round-trips through sexpr (from_sexpr(to_sexpr(x)) is faithful)
+#   * driving the pipeline stage-by-stage through sexpr produces byte-identical
 #     C to the in-process path (single- and multi-module)
 #   * emission is deterministic and independent of analysis/module ordering
-class MilkTeaJsonPipelineTest < Minitest::Test
+class MilkTeaPipelineTest < Minitest::Test
   # ── Corpus ────────────────────────────────────────────────────────────────
 
   MINIMAL = {
@@ -95,10 +94,10 @@ class MilkTeaJsonPipelineTest < Minitest::Test
     end
   end
 
-  def test_ast_json_pipeline_matches_direct_emit_c
+  def test_ast_sexpr_pipeline_matches_direct_emit_c
     each_corpus do |dir, root_path|
       direct = emit_c_direct(dir, root_path)
-      staged = emit_c_via_ast_json(dir, root_path)
+      staged = emit_c_via_ast_sexpr(dir, root_path)
       assert_equal direct, staged
     end
   end
@@ -113,21 +112,21 @@ class MilkTeaJsonPipelineTest < Minitest::Test
 
   def test_lowering_is_independent_of_imported_module_ordering
     program = MULTI_MODULE
-    Dir.mktmpdir("mt-json-order") do |dir|
+    Dir.mktmpdir("mt-sexpr-order") do |dir|
       write_files(dir, program[:files])
       root_path = File.join(dir, program[:root])
 
-      bundle_path = File.join(dir, "bundle.json")
-      status, = cli("check", root_path, "-I", dir, "--emit-analysis-json", bundle_path)
+      bundle_path = File.join(dir, "bundle.sexpr")
+      status, = cli("check", root_path, "-I", dir, "--emit-analysis-sexpr", bundle_path)
       assert_equal 0, status
 
-      original = JSON.parse(File.read(bundle_path))
+      original = MilkTea::SExpr.from_sexpr(File.read(bundle_path))
       refute_empty original["imported"], "expected imported modules in the bundle"
 
       # Reverse the imported-module ordering; emission must be unaffected.
       reordered = original.merge("imported" => original["imported"].to_a.reverse.to_h)
-      reordered_path = File.join(dir, "bundle_reordered.json")
-      File.write(reordered_path, JSON.generate(reordered))
+      reordered_path = File.join(dir, "bundle_reordered.sexpr")
+      File.write(reordered_path, MilkTea::SExpr.to_sexpr(reordered))
 
       assert_equal lower_then_emit(dir, bundle_path), lower_then_emit(dir, reordered_path)
     end
@@ -138,28 +137,28 @@ class MilkTeaJsonPipelineTest < Minitest::Test
   def test_tokens_round_trip
     source = FEATURES[:files]["feat.mt"]
     tokens = MilkTea::Lexer.lex(source, path: "feat.mt")
-    once = MilkTea::Serializer.tokens_to_json(tokens)
-    twice = MilkTea::Serializer.tokens_to_json(MilkTea::Serializer.tokens_from_json(once))
+    once = MilkTea::Serializer.tokens_to_sexpr(tokens)
+    twice = MilkTea::Serializer.tokens_to_sexpr(MilkTea::Serializer.tokens_from_sexpr(once))
     assert_equal once, twice
   end
 
   def test_ast_round_trip
     source = FEATURES[:files]["feat.mt"]
     ast = MilkTea::Parser.parse(source, path: "feat.mt")
-    once = MilkTea::Serializer.ast_to_json(ast)
-    twice = MilkTea::Serializer.ast_to_json(MilkTea::Serializer.ast_from_json(once))
+    once = MilkTea::Serializer.ast_to_sexpr(ast)
+    twice = MilkTea::Serializer.ast_to_sexpr(MilkTea::Serializer.ast_from_sexpr(once))
     assert_equal once, twice
   end
 
   def test_ir_round_trip_produces_identical_c
     %w[minimal features].each do |name|
       program_spec = CORPUS.fetch(name)
-      Dir.mktmpdir("mt-json-ir-rt") do |dir|
+      Dir.mktmpdir("mt-sexpr-ir-rt") do |dir|
         write_files(dir, program_spec[:files])
         root_path = File.join(dir, program_spec[:root])
         program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
         ir = MilkTea::Lowering.lower(program)
-        ir2 = MilkTea::Serializer.ir_from_json(MilkTea::Serializer.ir_to_json(ir))
+        ir2 = MilkTea::Serializer.ir_from_sexpr(MilkTea::Serializer.ir_to_sexpr(ir))
         c1 = MilkTea::CBackend.generate_c(ir, emit_line_directives: false)
         c2 = MilkTea::CBackend.generate_c(ir2, emit_line_directives: false)
         assert_equal c1, c2, "IR round-trip changed emitted C for #{name}"
@@ -171,7 +170,7 @@ class MilkTeaJsonPipelineTest < Minitest::Test
 
   def each_corpus
     CORPUS.each_value do |spec|
-      Dir.mktmpdir("mt-json-pipeline") do |dir|
+      Dir.mktmpdir("mt-sexpr-pipeline") do |dir|
         write_files(dir, spec[:files])
         yield dir, File.join(dir, spec[:root])
       end
@@ -200,28 +199,28 @@ class MilkTeaJsonPipelineTest < Minitest::Test
   end
 
   def emit_c_via_analysis_bundle(dir, root_path)
-    bundle = File.join(dir, "bundle.json")
-    s1, _o1, e1 = cli("check", root_path, "-I", dir, "--emit-analysis-json", bundle)
-    assert_equal 0, s1, "check --emit-analysis-json failed: #{e1}"
+    bundle = File.join(dir, "bundle.sexpr")
+    s1, _o1, e1 = cli("check", root_path, "-I", dir, "--emit-analysis-sexpr", bundle)
+    assert_equal 0, s1, "check --emit-analysis-sexpr failed: #{e1}"
     lower_then_emit(dir, bundle)
   end
 
-  def emit_c_via_ast_json(dir, root_path)
-    ast = File.join(dir, "ast.json")
-    bundle = File.join(dir, "ast_bundle.json")
-    s1, _o1, e1 = cli("parse", root_path, "-I", dir, "--emit-ast-json", ast)
-    assert_equal 0, s1, "parse --emit-ast-json failed: #{e1}"
-    s2, _o2, e2 = cli("check", "--from-ast-json", ast, "-I", dir, "--emit-analysis-json", bundle)
-    assert_equal 0, s2, "check --from-ast-json failed: #{e2}"
+  def emit_c_via_ast_sexpr(dir, root_path)
+    ast = File.join(dir, "ast.sexpr")
+    bundle = File.join(dir, "ast_bundle.sexpr")
+    s1, _o1, e1 = cli("parse", root_path, "-I", dir, "--emit-ast-sexpr", ast)
+    assert_equal 0, s1, "parse --emit-ast-sexpr failed: #{e1}"
+    s2, _o2, e2 = cli("check", "--from-ast-sexpr", ast, "-I", dir, "--emit-analysis-sexpr", bundle)
+    assert_equal 0, s2, "check --from-ast-sexpr failed: #{e2}"
     lower_then_emit(dir, bundle, suffix: "ast")
   end
 
   def lower_then_emit(dir, bundle_path, suffix: "")
-    ir = File.join(dir, "ir#{suffix}.json")
-    s1, _o1, e1 = cli("lower", "--from-analysis-json", bundle_path, "--emit-ir-json", ir)
-    assert_equal 0, s1, "lower --from-analysis-json failed: #{e1}"
-    s2, out, e2 = cli("emit-c", "--from-ir-json", ir)
-    assert_equal 0, s2, "emit-c --from-ir-json failed: #{e2}"
+    ir = File.join(dir, "ir#{suffix}.sexpr")
+    s1, _o1, e1 = cli("lower", "--from-analysis-sexpr", bundle_path, "--emit-ir-sexpr", ir)
+    assert_equal 0, s1, "lower --from-analysis-sexpr failed: #{e1}"
+    s2, out, e2 = cli("emit-c", "--from-ir-sexpr", ir)
+    assert_equal 0, s2, "emit-c --from-ir-sexpr failed: #{e2}"
     out
   end
 end

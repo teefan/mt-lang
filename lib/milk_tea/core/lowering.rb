@@ -66,17 +66,17 @@ module MilkTea
 
     def self.lower_to_json(program)
       ir_program = lower(program)
-      Serializer.ir_to_json(ir_program)
+      Serializer.ir_to_sexpr(ir_program)
     end
 
     def self.lower_from_analysis_json(json_string)
-      analysis = Serializer.analysis_from_json(json_string)
+      analysis = Serializer.analysis_from_sexpr(json_string)
       lower_from_analysis(analysis)
     end
 
     def self.lower_from_analysis_json_with_imports(root_json, imported_jsons = {})
-      root_analysis = Serializer.analysis_from_json(root_json)
-      imported_analyses = imported_jsons.transform_values { |j| Serializer.analysis_from_json(j) }
+      root_analysis = Serializer.analysis_from_sexpr(root_json)
+      imported_analyses = imported_jsons.transform_values { |j| Serializer.analysis_from_sexpr(j) }
       lower_from_analyses(root_analysis, imported_analyses)
     end
 
