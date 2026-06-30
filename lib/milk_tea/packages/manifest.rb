@@ -42,6 +42,18 @@ module MilkTea
       new(path).load
     end
 
+    def self.manifest_exists_for?(path)
+      path = File.expand_path(path)
+      current = File.directory?(path) ? path : File.dirname(path)
+      loop do
+        return true if File.file?(File.join(current, "package.toml"))
+        parent = File.dirname(current)
+        break if parent == current
+        current = parent
+      end
+      false
+    end
+
     def initialize(path)
       @path = File.expand_path(path)
     end

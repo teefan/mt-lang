@@ -202,7 +202,10 @@ module MilkTea
       return nil unless manifest_source == given_source || File.directory?(path)
 
       { manifest: }
-    rescue PackageManifestError
+    rescue PackageManifestError => e
+      if PackageManifest.manifest_exists_for?(path)
+        raise BuildError, e.message
+      end
       nil
     end
 
