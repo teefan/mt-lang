@@ -317,5 +317,58 @@ function emit_stmt(decls: ref[vec.Vec[ast.Statement]], index: ptr_uint,
             print_space()
             print_s(":$private 0 0")
             print_close()
+        ast.Statement.union_decl as ud:
+            print_open("a:union_decl")
+            print_space()
+            print_qstr(ud.name)
+            print_space()
+            print_s("[] :$private 0")
+            print_close()
+        ast.Statement.extending_block as eb:
+            print_open("a:extending_block")
+            print_space()
+            print_qstr(eb.name)
+            print_space()
+            print_s("[] :$private [] 0")
+            print_close()
+        ast.Statement.static_assert_stmt as sa:
+            print_open("a:static_assert")
+            print_space()
+            emit_expr(exprs, sa.cond_idx)
+            print_space()
+            if sa.message.len > 0:
+                print_qstr(sa.message)
+            else:
+                print_s("nil")
+            print_close()
+        ast.Statement.attribute_decl as ad:
+            print_open("a:attribute_decl")
+            print_space()
+            print_qstr(ad.name)
+            print_space()
+            print_s("[] nil :$private [] 0")
+            print_close()
+        ast.Statement.event_decl as ed2:
+            print_open("a:event_decl")
+            print_space()
+            print_qstr(ed2.name)
+            print_space()
+            print_s("0 nil :$private 0")
+            print_close()
+        ast.Statement.when_stmt as ws:
+            print_open("a:when_stmt")
+            print_space()
+            print_s("nil [] 0")
+            print_close()
+        ast.Statement.extern_function_decl as ef:
+            print_open("a:extern_function_decl")
+            print_space()
+            print_qstr(ef.name)
+            print_space()
+            print_s("[] ")
+            emit_type_ref(ref_of(ef.ret))
+            print_space()
+            print_s("[] 0")
+            print_close()
         else:
             print_s("nil")

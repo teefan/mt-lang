@@ -47,6 +47,13 @@ public variant Statement:
     interface_decl(name: str)
     type_alias_decl(name: str, target: TypeRef)
     var_decl(name: str, vtype: TypeRef, value_idx: ptr_uint)
+    union_decl(name: str, fields: vec.Vec[Statement])
+    extending_block(name: str, methods: vec.Vec[Statement])
+    static_assert_stmt(cond_idx: ptr_uint, message: str)
+    attribute_decl(name: str, params: vec.Vec[Statement])
+    event_decl(name: str, capacity: ptr_uint)
+    when_stmt(name: str, body: vec.Vec[Statement])
+    extern_function_decl(name: str, ret: TypeRef)
 
 
 # ── expressions ─────────────────────────────────────────────────────

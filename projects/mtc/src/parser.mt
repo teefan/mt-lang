@@ -184,11 +184,23 @@ function parse_declaration(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -
     if check(p, lexer.TOK_KW_IMPORT):
         let _ = parse_import(p)
         return ast.Statement.empty
+    if match_token(p, lexer.TOK_KW_PUBLIC):
+        return parse_declaration(p, pool)  # recurse past public
 
+    if match_token(p, lexer.TOK_KW_ASYNC):
+        consume(p, lexer.TOK_KW_FUNCTION, "expected function after async")
+        return parse_function_def(p, pool)
+    if match_token(p, lexer.TOK_KW_CONST):
+        if check(p, lexer.TOK_KW_FUNCTION):
+            let _ = advance(p)
+            return parse_function_def(p, pool)
+        return parse_const_decl(p, pool)
     if match_token(p, lexer.TOK_KW_FUNCTION):
         return parse_function_def(p, pool)
     if match_token(p, lexer.TOK_KW_STRUCT):
         return parse_struct_decl(p)
+    if match_token(p, lexer.TOK_KW_UNION):
+        return parse_union_decl(p)
     if match_token(p, lexer.TOK_KW_ENUM):
         return parse_enum_decl(p, pool)
     if match_token(p, lexer.TOK_KW_FLAGS):
@@ -203,12 +215,18 @@ function parse_declaration(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -
         return parse_type_alias_decl(p)
     if match_token(p, lexer.TOK_KW_VAR):
         return parse_var_decl(p, pool)
-    if match_token(p, lexer.TOK_KW_CONST):
-        return parse_const_decl(p, pool)
-    if match_token(p, lexer.TOK_KW_LET):
-        return parse_let_stmt(p, pool)
-    if match_token(p, lexer.TOK_KW_RETURN):
-        return parse_return_stmt(p, pool)
+    if match_token(p, lexer.TOK_KW_EXTENDING):
+        return parse_extending_block(p)
+    if match_token(p, lexer.TOK_KW_STATIC_ASSERT):
+        return parse_static_assert_stmt(p, pool)
+    if match_token(p, lexer.TOK_KW_ATTRIBUTE):
+        return parse_attribute_decl(p)
+    if match_token(p, lexer.TOK_KW_EVENT):
+        return parse_event_decl(p)
+    if match_token(p, lexer.TOK_KW_WHEN):
+        return parse_when_decl(p, pool)
+    if match_token(p, lexer.TOK_KW_EXTERNAL):
+        return parse_extern_function_decl(p)
 
     let tok = peek(p)
     let _ = advance(p)
@@ -277,6 +295,7 @@ function parse_const_decl(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) ->
 
 
 function parse_let_stmt(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
+    let _ = advance(p)
     let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected variable name")
     var t = type_void()
     var val_idx: ptr_uint = 0
@@ -410,6 +429,108 @@ function parse_var_decl(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> a
         val_idx = parse_expr(p, pool)
     consume(p, lexer.TOK_NEWLINE, "expected newline after var")
     return ast.Statement.var_decl(name = name_tok.lexeme, vtype = t, value_idx = val_idx)
+
+
+function parse_union_decl(p: ref[Parser]) -> ast.Statement:
+    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected union name")
+    consume(p, lexer.TOK_COLON, "expected colon after union name")
+    consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
+    if not match_token(p, lexer.TOK_INDENT):
+        return ast.Statement.union_decl(name = name_tok.lexeme,
+            fields = vec.Vec[ast.Statement].create())
+    skip_body(p)
+    return ast.Statement.union_decl(name = name_tok.lexeme,
+        fields = vec.Vec[ast.Statement].create())
+
+
+function parse_extending_block(p: ref[Parser]) -> ast.Statement:
+    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected type name after extending")
+    consume(p, lexer.TOK_COLON, "expected colon after extending type")
+    consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
+    if match_token(p, lexer.TOK_INDENT):
+        skip_body(p)
+    return ast.Statement.extending_block(name = name_tok.lexeme,
+        methods = vec.Vec[ast.Statement].create())
+
+
+function parse_static_assert_stmt(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
+    consume(p, lexer.TOK_LPAREN, "expected '(' after static_assert")
+    let cond = parse_expr(p, pool)
+    var msg = ""
+    if match_token(p, lexer.TOK_COMMA):
+        let msg_tok = consume(p, lexer.TOK_STRING, "expected string message")
+        msg = msg_tok.lexeme
+    consume(p, lexer.TOK_RPAREN, "expected ')'")
+    consume(p, lexer.TOK_NEWLINE, "expected newline after static_assert")
+    return ast.Statement.static_assert_stmt(cond_idx = cond, message = msg)
+
+
+function parse_attribute_decl(p: ref[Parser]) -> ast.Statement:
+    if check(p, lexer.TOK_LBRACKET):
+        let _ = advance(p)
+        while not check(p, lexer.TOK_RBRACKET) and not eof(p):
+            let _ = advance(p)
+        consume(p, lexer.TOK_RBRACKET, "expected ']'")
+    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected attribute name")
+    if check(p, lexer.TOK_LPAREN):
+        let _ = advance(p)
+        while not check(p, lexer.TOK_RPAREN) and not eof(p):
+            let _ = advance(p)
+        consume(p, lexer.TOK_RPAREN, "expected ')'")
+    consume(p, lexer.TOK_NEWLINE, "expected newline after attribute")
+    return ast.Statement.attribute_decl(name = name_tok.lexeme,
+        params = vec.Vec[ast.Statement].create())
+
+
+function parse_event_decl(p: ref[Parser]) -> ast.Statement:
+    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected event name")
+    var capacity: ptr_uint = 0
+    if check(p, lexer.TOK_LBRACKET):
+        let _ = advance(p)
+        if check(p, lexer.TOK_INTEGER):
+            let cap_tok = advance(p)
+            let _cap = cap_tok
+        consume(p, lexer.TOK_RBRACKET, "expected ']'")
+    if check(p, lexer.TOK_LPAREN):
+        let _ = advance(p)
+        while not check(p, lexer.TOK_RPAREN) and not eof(p):
+            let _ = advance(p)
+        consume(p, lexer.TOK_RPAREN, "expected ')'")
+    consume(p, lexer.TOK_NEWLINE, "expected newline after event")
+    return ast.Statement.event_decl(name = name_tok.lexeme, capacity = capacity)
+
+
+function parse_when_decl(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
+    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected expression after when")
+    if name_tok.kind != lexer.TOK_IDENTIFIER:
+        let _ = parse_expr(p, pool)
+    consume(p, lexer.TOK_COLON, "expected ':' after when")
+    consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
+    if match_token(p, lexer.TOK_INDENT):
+        skip_body(p)
+    return ast.Statement.when_stmt(name = "", body = vec.Vec[ast.Statement].create())
+
+
+function parse_extern_function_decl(p: ref[Parser]) -> ast.Statement:
+    consume(p, lexer.TOK_KW_FUNCTION, "expected function after external")
+    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected function name")
+    if check(p, lexer.TOK_LPAREN):
+        parse_params(p)
+    var ret = type_void()
+    if match_token(p, lexer.TOK_ARROW):
+        ret = parse_type_ref(p)
+    consume(p, lexer.TOK_NEWLINE, "expected newline after extern function")
+    return ast.Statement.extern_function_decl(name = name_tok.lexeme, ret = ret)
+
+
+function skip_body_or_line(p: ref[Parser]) -> void:
+    if check(p, lexer.TOK_COLON):
+        consume(p, lexer.TOK_COLON, "expected ':'")
+        consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
+        if match_token(p, lexer.TOK_INDENT):
+            skip_body(p)
+    else:
+        skip_to_newline(p)
 
 
 # ── expressions ───────────────────────────────────────────────────────
@@ -719,11 +840,17 @@ function parse_for_stmt(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> a
         let _ = consume(p, lexer.TOK_IDENTIFIER, "expected for variable")
     consume(p, lexer.TOK_KW_IN, "expected 'in' after for bindings")
 
-    # Parse iterable(s) — expressions separated by commas, no parens required
+    var has_parens = check(p, lexer.TOK_LPAREN)
+    if has_parens:
+        let _ = advance(p)
     while not eof(p) and not check(p, lexer.TOK_COLON):
+        if has_parens and check(p, lexer.TOK_RPAREN):
+            break
         let _ = parse_expr(p, pool)
         if not match_token(p, lexer.TOK_COMMA):
             break
+    if has_parens:
+        consume(p, lexer.TOK_RPAREN, "expected ')'")
 
     consume(p, lexer.TOK_COLON, "expected ':' after for")
     var body = vec.Vec[ast.Statement].create()
