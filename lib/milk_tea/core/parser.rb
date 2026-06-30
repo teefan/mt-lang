@@ -39,16 +39,6 @@ module MilkTea
       new(token_stream, path: path).parse
     end
 
-    def self.parse_from_tokens_json(json_string, path: nil)
-      tokens = Serializer.tokens_from_sexpr(json_string)
-      parse(tokens: tokens, path: path)
-    end
-
-    def self.parse_to_ast_json(source, path: nil)
-      ast = parse(source, path: path)
-      Serializer.ast_to_sexpr(ast)
-    end
-
     def self.parse_collecting_errors(source = nil, path: nil, tokens: nil)
       if tokens
         return new(tokens, path: path).parse_collecting_errors

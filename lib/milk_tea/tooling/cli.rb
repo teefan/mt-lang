@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pp"
+require "json"
 require "socket"
 require "stringio"
 require "tempfile"
@@ -221,35 +222,18 @@ module MilkTea
 
 
     def lex_command
-      output_format = :pp
-      output_file = nil
       path = nil
 
       args = @argv.dup
       @argv = []
       until args.empty?
         arg = args.shift
-        case arg
-        when "--sexpr", "--format=sexpr"
-          output_format = :json
-        when "--format"
-          val = args.shift
-          output_format = :json if val == "sexpr"
-        when "--emit-tokens-sexpr"
-          output_file = args.shift
-          output_format = :json
-          unless output_file
-            @err.puts("missing file path for --emit-tokens-sexpr")
-            return 1
-          end
+        if path.nil?
+          path = arg
         else
-          if path.nil?
-            path = arg
-          else
-            @err.puts("unknown option: #{arg}")
-            print_usage(@err)
-            return 1
-          end
+          @err.puts("unknown option: #{arg}")
+          print_usage(@err)
+          return 1
         end
       end
 
@@ -259,68 +243,17 @@ module MilkTea
         return 1
       end
 
-      if output_format == :json
-        json = Lexer.lex_to_json(read_source_file(path), path: path)
-        if output_file
-          File.write(output_file, json)
-        else
-          @out.puts(json)
-        end
-        return 0
-      end
-
       tokens = Lexer.lex(read_source_file(path), path: path)
       @out.write(PP.pp(tokens, +""))
       0
     end
 
     def parse_command
-      output_format = :text
-      output_file = nil
-      from_tokens_file = nil
-
       args = @argv.dup
       @argv = []
       until args.empty?
         arg = args.shift
-        case arg
-        when "--sexpr", "--format=sexpr"
-          output_format = :json
-        when "--format"
-          val = args.shift
-          output_format = :json if val == "sexpr"
-        when "--emit-ast-sexpr"
-          output_file = args.shift
-          output_format = :json
-          unless output_file
-            @err.puts("missing file path for --emit-ast-sexpr")
-            return 1
-          end
-        when "--from-tokens-sexpr"
-          from_tokens_file = args.shift
-          unless from_tokens_file
-            @err.puts("missing file path for --from-tokens-sexpr")
-            return 1
-          end
-        else
-          @argv << arg
-        end
-      end
-
-      if from_tokens_file
-        json = File.read(from_tokens_file)
-        ast = Parser.parse_from_tokens_json(json, path: from_tokens_file)
-        if output_format == :json
-          result = Serializer.ast_to_sexpr(ast)
-          if output_file
-            File.write(output_file, result)
-          else
-            @out.puts(result)
-          end
-        else
-          @out.write(PrettyPrinter.format_ast(ast))
-        end
-        return 0
+        @argv << arg
       end
 
       unless @argv.any?
@@ -341,23 +274,11 @@ module MilkTea
       multiple = paths.length > 1
       paths.each_with_index do |path, index|
         ast = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).load_file(path)
-        if output_format == :json
-          result = Serializer.ast_to_sexpr(ast)
-          if multiple
-            @out.puts("# --- #{path} ---")
-          end
-          if output_file
-            File.write(output_file, result)
-          else
-            @out.puts(result)
-          end
-        else
-          if multiple
-            @out.puts("# --- #{path} ---")
-          end
-          @out.write(PrettyPrinter.format_ast(ast))
-          @out.puts if multiple && index < paths.length - 1
+        if multiple
+          @out.puts("# --- #{path} ---")
         end
+        @out.write(PrettyPrinter.format_ast(ast))
+        @out.puts if multiple && index < paths.length - 1
       end
       0
     end
@@ -473,7 +394,6 @@ module MilkTea
       ignore = nil
       fix = false
       init = false
-      output_format = :text
       ignore_generated = false
       profile = false
       input_paths = []
@@ -509,19 +429,6 @@ module MilkTea
         when "--frozen"
           resolution[:locked] = true
           resolution[:frozen] = true
-        when "--format"
-          fmt_arg = @argv.shift
-          unless fmt_arg
-            @err.puts("--format requires an argument (text, sexpr)")
-            return 1
-          end
-          case fmt_arg
-          when "text" then output_format = :text
-          when "json", "sexpr" then output_format = :json
-          else
-            @err.puts("unknown format: #{fmt_arg} (use text or sexpr)")
-            return 1
-          end
         when "--ignore-generated"
           ignore_generated = true
         when "--timings"
@@ -532,13 +439,8 @@ module MilkTea
         end
       end
 
-      if profile && output_format == :json
-        @err.puts("--timings is only supported with --format text")
-        return 1
-      end
-
       if init
-        if input_paths.empty? && !select && !ignore && !fix && output_format == :text && !resolution[:locked] && !resolution[:frozen]
+        if input_paths.empty? && !select && !ignore && !fix && !resolution[:locked] && !resolution[:frozen]
           return init_lint_config
         end
 
@@ -604,7 +506,7 @@ module MilkTea
 
       lint_profiles = []
       all_warnings = paths.flat_map do |p|
-        announce_file_action(p, "lint") if output_format == :text
+        announce_file_action(p, "lint")
         source = read_source_file(p)
         next [] if ignore_generated && generated_source?(source)
 
@@ -615,13 +517,6 @@ module MilkTea
         total_ms = start_time ? ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000.0).round(1) : nil
         lint_profiles << { path: p, profile: prof, mode: :lint, total_ms: } if prof
         warnings
-      end
-
-      if output_format == :json
-        @out.puts(SExpr.to_sexpr(all_warnings.map do |w|
-          { path: w.path, line: w.line, code: w.code, message: w.message, severity: w.severity.to_s }
-        end))
-        return all_warnings.empty? ? 0 : 1
       end
 
       if all_warnings.empty?
@@ -749,41 +644,11 @@ module MilkTea
     end
 
     def check_command
-      output_format = :text
-      output_file = nil
-      from_ast_file = nil
-
       args = @argv.dup
       @argv = []
       until args.empty?
         arg = args.shift
-        case arg
-        when "--sexpr", "--format=sexpr"
-          output_format = :json
-        when "--format"
-          val = args.shift
-          output_format = :json if val == "sexpr"
-        when "--emit-analysis-sexpr"
-          output_file = args.shift
-          output_format = :json
-          unless output_file
-            @err.puts("missing file path for --emit-analysis-sexpr")
-            return 1
-          end
-        when "--from-ast-sexpr"
-          from_ast_file = args.shift
-          unless from_ast_file
-            @err.puts("missing file path for --from-ast-sexpr")
-            return 1
-          end
-        else
-          @argv << arg
-        end
-      end
-
-      if from_ast_file
-        resolution = extract_resolution_flags!
-        return check_from_ast_json(from_ast_file, output_format:, output_file:, locked: resolution[:locked])
+        @argv << arg
       end
 
       unless @argv.any?
@@ -801,38 +666,9 @@ module MilkTea
 
       ensure_current_lockfiles!(paths) if resolution[:frozen]
 
-      paths.each do |path|
-        loader = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform)
-        program = loader.check_program(path) rescue nil
-
-        if program && output_format == :json
-          analysis = program.root_analysis
-          if analysis
-            if output_file
-              bundle = {
-                "$mt_analysis_bundle" => true,
-                "root" => Serializer.analysis_to_sexpr(analysis),
-                "imported" => program.analyses_by_module_name
-                  .reject { |name, a| name == analysis.module_name.to_s }
-                  .transform_values { |a| Serializer.analysis_to_sexpr(a) }
-              }
-              File.write(output_file, SExpr.to_sexpr(bundle))
-            else
-              @out.puts(Serializer.analysis_to_sexpr(analysis))
-            end
-            return 0
-          end
-        end
-      end
-
-      # Text mode: original reporting behavior
       all_diagnostics = []
       paths.each do |path|
         diagnostics, module_name, closure_errors = check_single_reporting_all(path, locked: resolution[:locked])
-        # A single-file check also surfaces errors in its imported modules: those
-        # modules are analyzed, but their errors are otherwise only reported when
-        # the module is checked directly. A multi-file/directory check already
-        # checks each module directly, so it must not re-report them here.
         closure_errors = [] if paths.length > 1
         diagnostics = sort_by_location(diagnostics)
 
@@ -869,44 +705,6 @@ module MilkTea
       @err.puts("#{info_count} note(s)") if info_count > 0 && error_count == 0
       final_error_count = error_count + (resolution[:warnings_as_errors] ? warning_count : 0)
       final_error_count > 0 ? 1 : 0
-    end
-
-    def check_from_ast_json(file, output_format:, output_file:, locked:)
-      ast = Serializer.ast_from_sexpr_with_ids(File.read(file))
-      loader = make_module_loader(nil, locked:, platform: ModuleLoader.default_host_platform)
-      imported = loader.imported_modules_for_ast(ast, importer_path: nil)
-      result = SemanticAnalyzer.check_collecting_errors(ast, imported_modules: imported, path: file)
-      analysis = result[:analysis]
-      errors = result[:errors] || []
-
-      if output_format == :json
-        if errors.any? || analysis.nil?
-          errors.each_with_index { |e, i| @err.puts(ErrorFormatter.format(e, color: error_color?(@err), index: i + 1)) }
-          return 1
-        end
-
-        if output_file
-          imported_analyses = loader.checked_analyses_by_module_name
-            .reject { |name, _| name == analysis.module_name.to_s }
-          bundle = {
-            "$mt_analysis_bundle" => true,
-            "root" => Serializer.analysis_to_sexpr(analysis),
-            "imported" => imported_analyses.transform_values { |a| Serializer.analysis_to_sexpr(a) },
-          }
-          File.write(output_file, SExpr.to_sexpr(bundle))
-        else
-          @out.puts(Serializer.analysis_to_sexpr(analysis))
-        end
-        return 0
-      end
-
-      if errors.empty?
-        info("checked #{ast.module_name} (from AST sexpr)")
-        return 0
-      end
-
-      errors.each_with_index { |e, i| @err.puts(ErrorFormatter.format(e, color: error_color?(@err), index: i + 1)) }
-      1
     end
 
     def check_single_reporting_all(path, locked: false)
@@ -949,75 +747,11 @@ module MilkTea
     end
 
     def lower_command
-      output_format = :text
-      output_file = nil
-      from_analysis_file = nil
-      import_analysis_files = {}
-
       args = @argv.dup
       @argv = []
       until args.empty?
         arg = args.shift
-        case arg
-        when "--sexpr", "--format=sexpr"
-          output_format = :json
-        when "--format"
-          val = args.shift
-          output_format = :json if val == "sexpr"
-        when "--emit-ir-sexpr"
-          output_file = args.shift
-          output_format = :json
-          unless output_file
-            @err.puts("missing file path for --emit-ir-sexpr")
-            return 1
-          end
-        when "--from-analysis-sexpr"
-          from_analysis_file = args.shift
-          unless from_analysis_file
-            @err.puts("missing file path for --from-analysis-sexpr")
-            return 1
-          end
-        when "--import"
-          import_spec = args.shift
-          unless import_spec && import_spec.include?("=")
-            @err.puts("usage: --import module_name=analysis.sexpr")
-            return 1
-          end
-          name, file = import_spec.split("=", 2)
-          import_analysis_files[name] = file
-        else
-          @argv << arg
-        end
-      end
-
-      if from_analysis_file
-        raw = File.read(from_analysis_file)
-        begin
-          parsed = SExpr.from_sexpr(raw)
-          if parsed.is_a?(Hash) && parsed["$mt_analysis_bundle"]
-            root_json = parsed["root"]
-            import_jsons = parsed.fetch("imported", {})
-            import_jsons.merge!(import_analysis_files.transform_values { |f| File.read(f) })
-          else
-            root_json = raw
-            import_jsons = import_analysis_files.transform_values { |f| File.read(f) }
-          end
-        rescue RuntimeError, MilkTea::SExpr::Error
-          root_json = raw
-          import_jsons = import_analysis_files.transform_values { |f| File.read(f) }
-        end
-        ir_program = Lowering.lower_from_analysis_json_with_imports(root_json, import_jsons)
-        if output_format == :json
-          result = Serializer.ir_to_sexpr(ir_program)
-          if output_file
-            File.write(output_file, result)
-          else
-            @out.puts(result)
-          end
-        else
-          @out.write(PrettyPrinter.format_ir(ir_program))
-        end
-        return 0
+        @argv << arg
       end
 
       unless @argv.any?
@@ -1038,62 +772,21 @@ module MilkTea
       multiple = paths.length > 1
       paths.each_with_index do |path, index|
         program = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).check_program(path)
-        if output_format == :json
-          json = Lowering.lower_to_json(program)
-          if multiple
-            @out.puts("# --- #{path} ---")
-          end
-          if output_file
-            File.write(output_file, json)
-          else
-            @out.puts(json)
-          end
-        else
-          if multiple
-            @out.puts("# --- #{path} ---")
-          end
-          @out.write(PrettyPrinter.format_ir(Lowering.lower(program)))
-          @out.puts if multiple && index < paths.length - 1
+        if multiple
+          @out.puts("# --- #{path} ---")
         end
+        @out.write(PrettyPrinter.format_ir(Lowering.lower(program)))
+        @out.puts if multiple && index < paths.length - 1
       end
       0
     end
 
     def emit_c_command
-      from_ir_file = nil
-      output_file = nil
-
       args = @argv.dup
       @argv = []
       until args.empty?
         arg = args.shift
-        case arg
-        when "--from-ir-sexpr"
-          from_ir_file = args.shift
-          unless from_ir_file
-            @err.puts("missing file path for --from-ir-sexpr")
-            return 1
-          end
-        when "-o", "--output"
-          output_file = args.shift
-          unless output_file
-            @err.puts("missing output path for -o")
-            return 1
-          end
-        else
-          @argv << arg
-        end
-      end
-
-      if from_ir_file
-        json = File.read(from_ir_file)
-        c_source = CBackend.emit_from_json(json, emit_line_directives: false)
-        if output_file
-          File.write(output_file, c_source)
-        else
-          @out.write(c_source)
-        end
-        return 0
+        @argv << arg
       end
 
       unless @argv.any?
@@ -1844,15 +1537,6 @@ module MilkTea
       )
     end
 
-    def compute_semantic_entries(tokens, facts)
-      return nil unless facts
-
-      server = MilkTea::LSP::Server.allocate
-      server.send(:build_semantic_token_entries, tokens, facts)
-    rescue StandardError
-      nil
-    end
-
     def docs_command
       port = nil
       open_flag = false
@@ -1996,8 +1680,8 @@ module MilkTea
           entry[:length] = char_length
         end
 
-        temp = Tempfile.new(["mt_semantic", ".sexpr"])
-        temp.write(SExpr.to_sexpr(semantic_result[:entries]))
+        temp = Tempfile.new(["mt_semantic", ".json"])
+        temp.write(JSON.generate(semantic_result[:entries]))
         temp.close
         args.push("-s", temp.path)
         system(*args)
@@ -2078,7 +1762,6 @@ module MilkTea
         facts: facts,
         snapshot: snapshot,
         path: resolved_path,
-        semantic_entries: compute_semantic_entries(tokens, facts),
       )
 
       @out.puts(text)
@@ -2573,8 +2256,8 @@ module MilkTea
           human summary, for CI.
         HELP
       "debug"           => "Usage: mtc debug PATH [--locked] [--frozen] [-I PATH]\n\n  Print debug information for a source file: tokens, AST, semantic facts,\n  binding resolution, and diagnostics.",
-      "lex"             => "Usage: mtc lex PATH [--sexpr] [--emit-tokens-sexpr FILE]\n\n  Tokenize a source file and print the token stream.\n\n  Options:\n    --sexpr               Output Token sexpr to stdout.\n    --emit-tokens-sexpr   Write Token sexpr to FILE.\n    --format FORMAT       Output format: pp (default) or sexpr.",
-      "parse"           => "Usage: mtc parse PATH|DIR [PATH|DIR ...] [OPTIONS]\n         mtc parse --from-tokens-sexpr FILE [--sexpr] [--emit-ast-sexpr FILE]\n\n  Parse one or more source files and print the AST.\n\n  Options:\n    --sexpr                Output AST sexpr to stdout.\n    --emit-ast-sexpr FILE  Write AST sexpr to FILE.\n    --from-tokens-sexpr    Parse from Token sexpr (no import resolution).\n    --format FORMAT        Output format: text (default) or sexpr.\n    --locked               Resolve dependencies from package.lock.\n    --frozen               Require a current package.lock.\n    -I, --include-path     Add an extra module root.",
+      "lex"             => "Usage: mtc lex PATH\n\n  Tokenize a source file and print the token stream.",
+      "parse"           => "Usage: mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Parse one or more source files and print the AST.\n\n  Options:\n    --locked               Resolve dependencies from package.lock.\n    --frozen               Require a current package.lock.\n    -I, --include-path     Add an extra module root.",
       "format"          => <<~HELP,
         Usage: mtc format PATH|DIR [PATH|DIR ...] [OPTIONS]
 
@@ -2606,7 +2289,6 @@ module MilkTea
             --select RULES          Comma-separated list of rule codes to enable.
             --ignore RULES          Comma-separated list of rule codes to suppress.
             --fix                   Apply auto-fixable changes in place.
-            --format FORMAT         Output format: text (default) or json.
             --ignore-generated      Skip files that start with '# generated by mtc'.
             --timings               Print lint timing: per-file summary and per-rule breakdown.
             --locked                Use package.lock for semantic dependency resolution.
@@ -2614,18 +2296,11 @@ module MilkTea
             -I, --include-path PATH Add an extra module root for semantic resolution.
         HELP
       "check"           => <<~HELP,
-        Usage: mtc check PATH|DIR [PATH|DIR ...] [--sexpr] [--emit-analysis-sexpr FILE] [--locked] [--frozen] [-Werror] [-I PATH]
-               mtc check --from-ast-sexpr FILE [--emit-analysis-sexpr FILE] [-I PATH]
+        Usage: mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH]
 
           Run semantic analysis on one or more source files and report errors.
 
           Options:
-            --sexpr                      Emit the root module's Analysis as sexpr to stdout.
-            --emit-analysis-sexpr FILE   Write the Analysis bundle (root + imported modules) to FILE;
-                                         consumable by `mtc lower --from-analysis-sexpr`.
-            --from-ast-sexpr FILE        Analyze a parsed AST (from `mtc parse --emit-ast-sexpr`) instead
-                                         of source; imports are resolved from the module roots (-I), and
-                                         the root module's Analysis is emitted.
             -Werror                     Treat warnings as errors.
             --locked / --frozen         Dependency resolution mode.
             -I, --include-path PATH     Add an extra module root.
@@ -2813,14 +2488,12 @@ module MilkTea
     end
 
     def print_usage(io)
-      io.puts("Usage: mtc lex PATH [--json] [--emit-tokens-json FILE]")
-      io.puts("       mtc parse PATH|DIR [PATH|DIR ...] [--json] [--emit-ast-json FILE] [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc parse --from-tokens-json FILE [--json] [--emit-ast-json FILE]")
+      io.puts("Usage: mtc lex PATH")
+      io.puts("       mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|--preserve|--tidy] [--max-line-length N] [--timings]")
-      io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--format text|json] [--ignore-generated] [--timings] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--ignore-generated] [--timings] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lint --init")
-      io.puts("       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH] [--json] [--emit-analysis-json FILE]")
-      io.puts("       mtc check --from-ast-json FILE [--emit-analysis-json FILE] [-I PATH]")
+      io.puts("       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH]")
       io.puts("       mtc debug PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
