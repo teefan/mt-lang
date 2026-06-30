@@ -512,14 +512,14 @@ module MilkTea
         when "--format"
           fmt_arg = @argv.shift
           unless fmt_arg
-            @err.puts("--format requires an argument (text, json)")
+            @err.puts("--format requires an argument (text, sexpr)")
             return 1
           end
           case fmt_arg
           when "text" then output_format = :text
-          when "json" then output_format = :json
+          when "json", "sexpr" then output_format = :json
           else
-            @err.puts("unknown format: #{fmt_arg} (use text or json)")
+            @err.puts("unknown format: #{fmt_arg} (use text or sexpr)")
             return 1
           end
         when "--ignore-generated"
@@ -619,7 +619,7 @@ module MilkTea
 
       if output_format == :json
         @out.puts(SExpr.to_sexpr(all_warnings.map do |w|
-          { path: w.path, line: w.line, code: w.code, message: w.message, severity: w.severity }
+          { path: w.path, line: w.line, code: w.code, message: w.message, severity: w.severity.to_s }
         end))
         return all_warnings.empty? ? 0 : 1
       end
