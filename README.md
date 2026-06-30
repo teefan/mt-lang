@@ -1137,7 +1137,7 @@ mtc toolchain tools           # List available native tools
 
 Build and run commands support `--profile`, `--platform`, `--cc`, `--keep-c`, `--locked`, `--frozen`, and `-I` include paths. Dependency-locked flows support `--locked` (use package.lock) and `--frozen` (require current package.lock).
 
-Global options work with any command (before or after the subcommand, up to a `--` separator): `-h`/`--help` (also `mtc help <command>` for command-specific help), `-V`/`--version`, `-q`/`--quiet` (suppress informational output), `-v`/`--verbose` (per-file progress), and `--color auto|always|never`. Generate shell completions with `mtc completions bash|zsh|fish`. Timing breakdowns use `--timings` (on `format`, `lint`, `build`, `run`, `test`); `lint` selects machine output with `--format text|json`.
+Global options work with any command (before or after the subcommand, up to a `--` separator): `-h`/`--help` (also `mtc help <command>` for command-specific help), `-V`/`--version`, `-q`/`--quiet` (suppress informational output), `-v`/`--verbose` (per-file progress), and `--color auto|always|never`. Generate shell completions with `mtc completions bash|zsh|fish`. Timing breakdowns use `--timings` (on `format`, `lint`, `build`, `run`, `test`); `lint` reports warnings with per-file progress.
 
 Diagnostic output uses standard compiler format (file:line:column with source context, error codes, and caret highlighting):
 

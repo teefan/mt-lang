@@ -38,20 +38,6 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
-  def test_parse_command_emits_ast_json_for_direct_source
-    Dir.mktmpdir("milk-tea-cli-parse-json") do |dir|
-      path = write_simple_source(dir)
-      out = StringIO.new
-      err = StringIO.new
-
-      status = MilkTea::CLI.start(["parse", path, "--sexpr"], out:, err:)
-
-      assert_equal 0, status
-      assert_equal "", err.string
-      assert_match(/\(a:source_file /, out.string)
-    end
-  end
-
   def test_check_lower_and_emit_c_commands_for_direct_source
     Dir.mktmpdir("milk-tea-cli-check-lower-emit-direct") do |dir|
       path = write_simple_source(dir)
@@ -299,28 +285,6 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal "", err.string
       assert_match(/linting .*sample\.mt/, out.string)
       assert_match(/sample\.mt:2: unused-local: unused local 'unused'/, out.string)
-    end
-  end
-
-  def test_lint_command_json_output_remains_machine_readable
-    Dir.mktmpdir("milk-tea-cli-lint-json-readable") do |dir|
-      path = File.join(dir, "sample.mt")
-      File.write(path, <<~MT)
-        function main() -> int:
-            let unused = 1
-            return 0
-      MT
-      out = StringIO.new
-      err = StringIO.new
-
-      status = MilkTea::CLI.start(["lint", path, "--format", "sexpr"], out:, err:)
-
-      assert_equal 1, status
-      assert_equal "", err.string
-      parsed = MilkTea::SExpr.from_sexpr(out.string)
-      assert_equal true, parsed.is_a?(Array)
-      assert_equal "unused-local", parsed.first.fetch("code")
-      refute_match(/linting/, out.string)
     end
   end
 
@@ -3842,46 +3806,6 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
-  def test_lint_command_output_format_json
-    Dir.mktmpdir("milk-tea-cli-lint-json") do |dir|
-      path = File.join(dir, "sample.mt")
-      File.write(path, <<~MT)
-        function main() -> int:
-            let unused = 1
-            return 0
-      MT
-      out = StringIO.new
-      err = StringIO.new
-
-      status = MilkTea::CLI.start(["lint", path, "--format", "sexpr"], out:, err:)
-
-      assert_equal 1, status
-      parsed = MilkTea::SExpr.from_sexpr(out.string)
-      assert_kind_of Array, parsed
-      assert_equal 1, parsed.size
-      assert_equal "unused-local", parsed.first["code"]
-      assert_equal "warning",      parsed.first["severity"].to_s
-    end
-  end
-
-  def test_lint_command_output_format_json_clean_returns_empty_array
-    Dir.mktmpdir("milk-tea-cli-lint-json-clean") do |dir|
-      path = File.join(dir, "clean.mt")
-      File.write(path, <<~MT)
-        function main() -> int:
-            return 0
-      MT
-      out = StringIO.new
-      err = StringIO.new
-
-      status = MilkTea::CLI.start(["lint", path, "--format", "sexpr"], out:, err:)
-
-      assert_equal 0, status
-      parsed = JSON.parse(out.string)
-      assert_equal [], parsed
-    end
-  end
-
   def test_lint_command_summary_line_shown_on_warnings
     Dir.mktmpdir("milk-tea-cli-lint-summary") do |dir|
       path = File.join(dir, "sample.mt")
@@ -4043,8 +3967,8 @@ class MilkTeaCliTest < Minitest::Test
       [["lint"], /missing source file path/],
       [["lint", "--select"], /--select requires a comma-separated list of rule codes/],
       [["lint", "--ignore"], /--ignore requires a comma-separated list of rule codes/],
-      [["lint", "--format"], /--format requires an argument \(text, sexpr\)/],
-      [["lint", "--format", "yaml", "sample.mt"], /unknown format: yaml \(use text or sexpr\)/],
+      [["lint", "--format"], /unknown lint flag: --format/],
+      [["lint", "--format", "yaml", "sample.mt"], /unknown lint flag: --format/],
       [["lint", "--bogus", "sample.mt"], /unknown lint flag: --bogus/],
     ].each do |argv, pattern|
       out = StringIO.new
@@ -4095,7 +4019,7 @@ class MilkTeaCliTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["lint", first_path, "--format", "text"], out:, err:)
+      status = MilkTea::CLI.start(["lint", first_path], out:, err:)
 
       assert_equal 0, status
       assert_equal "", err.string
@@ -4413,39 +4337,6 @@ class MilkTeaCliTest < Minitest::Test
 
       refute_match(/linting/, out.string)
       assert_match(/unused-local/, out.string)
-    end
-  end
-
-  def test_check_from_ast_json_reports_clean_module
-    Dir.mktmpdir("milk-tea-cli-check-ast-ok") do |dir|
-      path = File.join(dir, "ok.mt")
-      File.write(path, "function main() -> int:\n    return 0\n")
-      ast_json = File.join(dir, "ast.sexpr")
-      assert_equal 0, MilkTea::CLI.start(["parse", path, "--emit-ast-sexpr", ast_json], out: StringIO.new, err: StringIO.new)
-
-      out = StringIO.new
-      err = StringIO.new
-      status = MilkTea::CLI.start(["check", "--from-ast-sexpr", ast_json], out:, err:)
-
-      assert_equal 0, status
-      assert_equal "", err.string
-      assert_match(/checked .*from AST sexpr/, out.string)
-    end
-  end
-
-  def test_check_from_ast_json_reports_type_errors
-    Dir.mktmpdir("milk-tea-cli-check-ast-err") do |dir|
-      path = File.join(dir, "bad.mt")
-      File.write(path, "function main() -> int:\n    return \"not an int\"\n")
-      ast_json = File.join(dir, "ast.sexpr")
-      assert_equal 0, MilkTea::CLI.start(["parse", path, "--emit-ast-sexpr", ast_json], out: StringIO.new, err: StringIO.new)
-
-      out = StringIO.new
-      err = StringIO.new
-      status = MilkTea::CLI.start(["check", "--from-ast-sexpr", ast_json], out:, err:)
-
-      assert_equal 1, status
-      refute_empty err.string
     end
   end
 
