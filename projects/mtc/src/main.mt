@@ -4,6 +4,7 @@ import std.str as text
 import std.string as string
 import std.terminal as terminal
 import std.vec as vec
+import lexer
 
 struct CliOptions:
     module_roots: vec.Vec[string.String]
@@ -29,7 +30,7 @@ function main(args: span[str]) -> int:
     let command_text = unsafe: read(ptr[string.String]<-command).as_str()
 
     if command_text.equal("lex"):
-        return cmd_read_source("lex", ref_of(options))
+        return cmd_lex(ref_of(options))
     else if command_text.equal("parse"):
         return cmd_read_source("parse", ref_of(options))
     else if command_text.equal("check"):
@@ -124,6 +125,44 @@ function print_usage() -> void:
     stdio.print_line("  format    Format source files")
     stdio.print_line("  lint      Lint source files")
     stdio.print_line("  new       Scaffold a new package")
+
+
+function cmd_lex(options: ref[CliOptions]) -> int:
+    if options.positional.len() < 2:
+        var msg = string.String.from_str("mtc lex: missing source file path")
+        terminal.write_stderr(msg.as_str())
+        msg.release()
+        return 1
+
+    let path_ptr = options.positional.get(1) else:
+        fatal("mtc: missing path in positional arguments")
+    let path = unsafe: read(ptr[string.String]<-path_ptr).as_str()
+
+    match fs.read_text(path):
+        Result.failure as payload:
+            stamp_source_error(path, payload.error)
+            payload.error.release()
+            return 1
+        Result.success as payload:
+            var content = payload.value
+            defer content.release()
+
+            var errors = vec.Vec[lexer.LexError].create()
+            var tokens = lexer.lex(content.as_str(), ref_of(errors))
+
+            var i: ptr_uint = 0
+            while i < tokens.len():
+                let t = tokens.get(i) else:
+                    fatal("mtc: missing token")
+                unsafe:
+                    let tok = read(ptr[lexer.Token]<-t)
+                    stdio.print_format("kind=%d %d:%d\n",
+                        tok.kind, tok.line, tok.column)
+                i += 1
+
+            errors.release()
+            tokens.release()
+            return 0
 
 
 function cmd_read_source(command_name: str, options: ref[CliOptions]) -> int:
