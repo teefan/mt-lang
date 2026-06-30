@@ -28,7 +28,7 @@ function parser_create(tokens: vec.Vec[lexer.Token]) -> Parser:
     return p
 
 
-# ── combinators ────────────────────────────────────────────────────────
+# ── combinators ───────────────────────────────────────────────────────
 
 function peek(p: ref[Parser]) -> lexer.Token:
     let self = unsafe: read(ptr[Parser]<-p)
@@ -95,7 +95,14 @@ function is_path_component_kind(kind: int) -> bool:
     return kind == lexer.TOK_IDENTIFIER or (kind >= 20 and kind <= 98)
 
 
-# ── entry point ────────────────────────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────────────────
+
+function type_void() -> ast.TypeRef:
+    return ast.TypeRef(name_parts = vec.Vec[str].create(),
+        type_args = vec.Vec[ast.TypeRef].create(), nullable = false, is_function_type = false)
+
+
+# ── entry point ───────────────────────────────────────────────────────
 
 public function parse(tokens: vec.Vec[lexer.Token]) -> ast.SourceFile:
     var p = parser_create(tokens)
@@ -120,8 +127,11 @@ function parse_source_file(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -
 
     while not eof(p):
         let decl = parse_declaration(p, pool)
-        if decl.kind != 0:
-            declarations.push(decl)
+        match decl:
+            ast.Statement.empty:
+                pass
+            else:
+                declarations.push(decl)
         skip_newlines(p)
 
     return ast.SourceFile(module_name = "", imports = imports,
@@ -129,7 +139,7 @@ function parse_source_file(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -
         exprs = ast.ExpressionPool(exprs = vec.Vec[ast.Expression].create()))
 
 
-# ── import ─────────────────────────────────────────────────────────────
+# ── import ────────────────────────────────────────────────────────────
 
 function parse_import(p: ref[Parser]) -> ast.Import:
     let path = parse_qualified_name(p)
@@ -163,13 +173,17 @@ function consume_path_component(p: ref[Parser], message: str) -> lexer.Token:
     return peek(p)
 
 
-# ── declarations ───────────────────────────────────────────────────────
+# ── declarations ──────────────────────────────────────────────────────
 
 function parse_declaration(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
     skip_newlines(p)
+    if check(p, lexer.TOK_AT):
+        let _ = advance(p)
+        skip_to_newline(p)
+        return ast.Statement.empty
     if check(p, lexer.TOK_KW_IMPORT):
-        let _imp = parse_import(p)
-        return stmt_empty()
+        let _ = parse_import(p)
+        return ast.Statement.empty
 
     if match_token(p, lexer.TOK_KW_FUNCTION):
         return parse_function_def(p, pool)
@@ -178,7 +192,7 @@ function parse_declaration(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -
     if match_token(p, lexer.TOK_KW_ENUM):
         return parse_enum_decl(p, pool)
     if match_token(p, lexer.TOK_KW_FLAGS):
-        return parse_flags_decl(p, pool)
+        return parse_enum_decl(p, pool)
     if match_token(p, lexer.TOK_KW_VARIANT):
         return parse_variant_decl(p)
     if match_token(p, lexer.TOK_KW_OPAQUE):
@@ -198,18 +212,7 @@ function parse_declaration(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -
 
     let tok = peek(p)
     let _ = advance(p)
-    return stmt_empty()
-
-
-function stmt_empty() -> ast.Statement:
-    return ast.Statement(kind = ast.STMT_EMPTY, name = "",
-        stmt_type = type_void(), expr2 = 0, op_kind = 0, is_inline = false, expr = 0,
-        children = vec.Vec[ast.Statement].create(), else_body = vec.Vec[ast.Statement].create(), bindings = vec.Vec[str].create(), line = 0, column = 0)
-
-
-function type_void() -> ast.TypeRef:
-    return ast.TypeRef(name_parts = vec.Vec[str].create(),
-        type_args = vec.Vec[ast.TypeRef].create(), nullable = false, is_function_type = false)
+    return ast.Statement.empty
 
 
 function parse_function_def(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
@@ -219,9 +222,7 @@ function parse_function_def(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) 
     var body = parse_block(p, pool)
     consume(p, lexer.TOK_NEWLINE, "expected newline after function body")
 
-    return ast.Statement(kind = ast.STMT_FUNCTION, name = name_tok.lexeme,
-        stmt_type = ret, expr2 = 0, op_kind = 0, is_inline = false, expr = 0, children = body,
-        line = name_tok.line, column = name_tok.column)
+    return ast.Statement.function_decl(name = name_tok.lexeme, ret = ret, body = body)
 
 
 function parse_struct_decl(p: ref[Parser]) -> ast.Statement:
@@ -230,145 +231,38 @@ function parse_struct_decl(p: ref[Parser]) -> ast.Statement:
     consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
 
     if not match_token(p, lexer.TOK_INDENT):
-        return ast.Statement(kind = ast.STMT_STRUCT, name = name_tok.lexeme,
-            stmt_type = type_void(),
-            children = vec.Vec[ast.Statement].create(),
-            line = name_tok.line, column = name_tok.column)
+        return ast.Statement.struct_decl(name = name_tok.lexeme,
+            fields = vec.Vec[ast.Statement].create())
 
     var fields = vec.Vec[ast.Statement].create()
     while not eof(p) and not check(p, lexer.TOK_DEDENT):
         skip_newlines(p)
         if check(p, lexer.TOK_DEDENT):
             break
-        let field_name = consume(p, lexer.TOK_IDENTIFIER, "expected field name")
+        if check(p, lexer.TOK_KW_STRUCT):
+            let _ = advance(p)
+            let _ns = parse_struct_decl(p)
+            skip_newlines(p)
+            continue
+        if check(p, lexer.TOK_AT):
+            let _ = advance(p)
+            skip_to_newline(p)
+            continue
+        if not check(p, lexer.TOK_IDENTIFIER):
+            skip_to_newline(p)
+            continue
+        let fname = consume(p, lexer.TOK_IDENTIFIER, "expected field name")
         consume(p, lexer.TOK_COLON, "expected colon after field name")
-        let field_type = parse_type_ref(p)
+        let ftype = parse_type_ref(p)
         consume(p, lexer.TOK_NEWLINE, "expected newline after field type")
-        fields.push(ast.Statement(kind = ast.STMT_EMPTY,
-            name = field_name.lexeme, stmt_type = field_type,
-            children = vec.Vec[ast.Statement].create(),
-            line = field_name.line, column = field_name.column))
+        fields.push(ast.Statement.struct_decl(name = fname.lexeme,
+            fields = vec.Vec[ast.Statement].create()))
         skip_newlines(p)
 
     while check(p, lexer.TOK_DEDENT):
         let _ = advance(p)
 
-    return ast.Statement(kind = ast.STMT_STRUCT, name = name_tok.lexeme,
-        stmt_type = type_void(), children = fields,
-        line = name_tok.line, column = name_tok.column)
-
-    skip_body(p)
-
-    return ast.Statement(kind = ast.STMT_STRUCT, name = name_tok.lexeme,
-        stmt_type = type_void(), expr2 = 0, op_kind = 0, is_inline = false, expr = 0,
-        children = vec.Vec[ast.Statement].create(),
-        line = name_tok.line, column = name_tok.column)
-
-
-function parse_enum_decl(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
-    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected enum name")
-    consume(p, lexer.TOK_COLON, "expected colon after enum name")
-    let _bt = parse_type_ref(p)
-    consume(p, lexer.TOK_NEWLINE, "expected newline after enum type")
-
-    if not match_token(p, lexer.TOK_INDENT):
-        return ast.Statement(kind = ast.STMT_ENUM, name = name_tok.lexeme,
-            stmt_type = _bt, children = vec.Vec[ast.Statement].create(),
-            line = name_tok.line, column = name_tok.column)
-
-    var members = vec.Vec[ast.Statement].create()
-    while not eof(p) and not check(p, lexer.TOK_DEDENT):
-        skip_newlines(p)
-        if check(p, lexer.TOK_DEDENT):
-            break
-        let m_name = consume(p, lexer.TOK_IDENTIFIER, "expected enum member name")
-        var val_idx: ptr_uint = 0
-        if match_token(p, lexer.TOK_EQUAL):
-            val_idx = parse_expr(p, pool)
-        members.push(ast.Statement(kind = ast.STMT_EMPTY,
-            name = m_name.lexeme, stmt_type = type_void(),
-            expr = int<-(val_idx),
-            children = vec.Vec[ast.Statement].create(),
-            line = m_name.line, column = m_name.column))
-        consume(p, lexer.TOK_NEWLINE, "expected newline after enum member")
-        skip_newlines(p)
-
-    while check(p, lexer.TOK_DEDENT):
-        let _ = advance(p)
-
-    return ast.Statement(kind = ast.STMT_ENUM, name = name_tok.lexeme,
-        stmt_type = _bt, children = members,
-        line = name_tok.line, column = name_tok.column)
-
-
-function parse_flags_decl(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
-    return parse_enum_decl(p, pool)
-
-
-function parse_variant_decl(p: ref[Parser]) -> ast.Statement:
-    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected variant name")
-    consume(p, lexer.TOK_COLON, "expected colon after variant name")
-    consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
-
-    if not match_token(p, lexer.TOK_INDENT):
-        return ast.Statement(kind = ast.STMT_VARIANT, name = name_tok.lexeme,
-            stmt_type = type_void(), children = vec.Vec[ast.Statement].create(),
-            line = name_tok.line, column = name_tok.column)
-
-    skip_body(p)
-    return ast.Statement(kind = ast.STMT_VARIANT, name = name_tok.lexeme,
-        stmt_type = type_void(), children = vec.Vec[ast.Statement].create(),
-        line = name_tok.line, column = name_tok.column)
-
-
-function parse_opaque_decl(p: ref[Parser]) -> ast.Statement:
-    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected opaque name")
-    let line = name_tok.line
-    if check(p, lexer.TOK_NEWLINE):
-        let _ = advance(p)
-    return ast.Statement(kind = ast.STMT_OPAQUE, name = name_tok.lexeme,
-        stmt_type = type_void(), children = vec.Vec[ast.Statement].create(),
-        line = line, column = name_tok.column)
-
-
-function parse_interface_decl(p: ref[Parser]) -> ast.Statement:
-    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected interface name")
-    consume(p, lexer.TOK_COLON, "expected colon after interface name")
-    consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
-
-    if not match_token(p, lexer.TOK_INDENT):
-        return ast.Statement(kind = ast.STMT_INTERFACE, name = name_tok.lexeme,
-            stmt_type = type_void(), children = vec.Vec[ast.Statement].create(),
-            line = name_tok.line, column = name_tok.column)
-
-    skip_body(p)
-    return ast.Statement(kind = ast.STMT_INTERFACE, name = name_tok.lexeme,
-        stmt_type = type_void(), children = vec.Vec[ast.Statement].create(),
-        line = name_tok.line, column = name_tok.column)
-
-
-function parse_type_alias_decl(p: ref[Parser]) -> ast.Statement:
-    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected type alias name")
-    consume(p, lexer.TOK_EQUAL, "expected = after type alias name")
-    let t = parse_type_ref(p)
-    consume(p, lexer.TOK_NEWLINE, "expected newline after type alias")
-    return ast.Statement(kind = ast.STMT_TYPE_ALIAS, name = name_tok.lexeme,
-        stmt_type = t, children = vec.Vec[ast.Statement].create(),
-        line = name_tok.line, column = name_tok.column)
-
-
-function parse_var_decl(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
-    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected var name")
-    var t = type_void()
-    var val_idx: ptr_uint = 0
-    if match_token(p, lexer.TOK_COLON):
-        t = parse_type_ref(p)
-    if match_token(p, lexer.TOK_EQUAL):
-        val_idx = parse_expr(p, pool)
-    consume(p, lexer.TOK_NEWLINE, "expected newline after var")
-    return ast.Statement(kind = ast.STMT_VAR, name = name_tok.lexeme,
-        stmt_type = t, expr = int<-(val_idx), children = vec.Vec[ast.Statement].create(),
-        line = name_tok.line, column = name_tok.column)
+    return ast.Statement.struct_decl(name = name_tok.lexeme, fields = fields)
 
 
 function parse_const_decl(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
@@ -376,48 +270,36 @@ function parse_const_decl(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) ->
     consume(p, lexer.TOK_COLON, "expected colon after const name")
     let t = parse_type_ref(p)
     var val_idx: ptr_uint = 0
-
     if match_token(p, lexer.TOK_EQUAL):
         val_idx = parse_expr(p, pool)
-
     consume(p, lexer.TOK_NEWLINE, "expected newline after const")
-    return ast.Statement(kind = ast.STMT_CONST, name = name_tok.lexeme,
-        stmt_type = t, expr2 = 0, op_kind = 0, is_inline = false, expr = int<-(val_idx),
-        children = vec.Vec[ast.Statement].create(),
-        line = name_tok.line, column = name_tok.column)
+    return ast.Statement.const_decl(name = name_tok.lexeme, ctype = t, value_idx = val_idx)
 
 
 function parse_let_stmt(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
     let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected variable name")
     var t = type_void()
     var val_idx: ptr_uint = 0
-
     if match_token(p, lexer.TOK_COLON):
         t = parse_type_ref(p)
     if match_token(p, lexer.TOK_EQUAL):
         val_idx = parse_expr(p, pool)
-
     consume(p, lexer.TOK_NEWLINE, "expected newline after let")
-    return ast.Statement(kind = ast.STMT_LET, name = name_tok.lexeme,
-        stmt_type = t, expr2 = 0, op_kind = 0, is_inline = false, expr = int<-(val_idx),
-        children = vec.Vec[ast.Statement].create(),
-        line = name_tok.line, column = name_tok.column)
+    return ast.Statement.let_decl(name = name_tok.lexeme, ltype = t, value_idx = val_idx)
 
 
-# ── type parsing ───────────────────────────────────────────────────────
+# ── type parsing ──────────────────────────────────────────────────────
 
 function parse_params(p: ref[Parser]) -> vec.Vec[ast.Param]:
     var params = vec.Vec[ast.Param].create()
     consume(p, lexer.TOK_LPAREN, "expected '(' for parameter list")
-
     while not eof(p) and not check(p, lexer.TOK_RPAREN):
-        let param_name = consume(p, lexer.TOK_IDENTIFIER, "expected parameter name")
+        let pname = consume(p, lexer.TOK_IDENTIFIER, "expected parameter name")
         consume(p, lexer.TOK_COLON, "expected colon after parameter name")
-        let param_type = parse_type_ref(p)
-        params.push(ast.Param(name = param_name.lexeme, param_type = param_type))
+        let ptype = parse_type_ref(p)
+        params.push(ast.Param(name = pname.lexeme, param_type = ptype))
         if not match_token(p, lexer.TOK_COMMA):
             break
-
     consume(p, lexer.TOK_RPAREN, "expected ')' after parameter list")
     return params
 
@@ -430,19 +312,24 @@ function parse_optional_return_type(p: ref[Parser]) -> ast.TypeRef:
 
 function parse_type_ref(p: ref[Parser]) -> ast.TypeRef:
     var nullable = false
-
     if check(p, lexer.TOK_QUESTION):
         nullable = true
         let _ = advance(p)
 
+    if check(p, lexer.TOK_KW_FN) or check(p, lexer.TOK_KW_PROC):
+        let _ = advance(p)
+        parse_params(p)
+        if match_token(p, lexer.TOK_ARROW):
+            let _ = parse_type_ref(p)
+        return ast.TypeRef(name_parts = vec.Vec[str].create(),
+            type_args = vec.Vec[ast.TypeRef].create(), nullable = nullable, is_function_type = true)
+
     let first = consume_path_component(p, "expected type name")
     var parts = vec.Vec[str].create()
     parts.push(first.lexeme)
-
     while match_token(p, lexer.TOK_DOT):
         let part = consume_path_component(p, "expected identifier after '.'")
         parts.push(part.lexeme)
-
     var type_args = vec.Vec[ast.TypeRef].create()
     if match_token(p, lexer.TOK_LBRACKET):
         while not eof(p) and not check(p, lexer.TOK_RBRACKET):
@@ -450,20 +337,103 @@ function parse_type_ref(p: ref[Parser]) -> ast.TypeRef:
             if not match_token(p, lexer.TOK_COMMA):
                 break
         consume(p, lexer.TOK_RBRACKET, "expected ']' after type arguments")
-
     return ast.TypeRef(name_parts = parts, type_args = type_args,
         nullable = nullable, is_function_type = false)
 
 
-# ── expressions ────────────────────────────────────────────────────────
+function parse_enum_decl(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
+    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected enum name")
+    consume(p, lexer.TOK_COLON, "expected colon after enum name")
+    let bt = parse_type_ref(p)
+    consume(p, lexer.TOK_NEWLINE, "expected newline after enum type")
+    if not match_token(p, lexer.TOK_INDENT):
+        return ast.Statement.enum_decl(name = name_tok.lexeme, backing = bt,
+            members = vec.Vec[ast.Statement].create())
+    var members = vec.Vec[ast.Statement].create()
+    while not eof(p) and not check(p, lexer.TOK_DEDENT):
+        skip_newlines(p)
+        if check(p, lexer.TOK_DEDENT):
+            break
+        let mname = consume(p, lexer.TOK_IDENTIFIER, "expected enum member name")
+        var mval: ptr_uint = 0
+        if match_token(p, lexer.TOK_EQUAL):
+            mval = parse_expr(p, pool)
+        members.push(ast.Statement.const_decl(name = mname.lexeme,
+            ctype = type_void(), value_idx = mval))
+        consume(p, lexer.TOK_NEWLINE, "expected newline after enum member")
+        skip_newlines(p)
+    while check(p, lexer.TOK_DEDENT):
+        let _ = advance(p)
+    return ast.Statement.enum_decl(name = name_tok.lexeme, backing = bt, members = members)
+
+
+function parse_variant_decl(p: ref[Parser]) -> ast.Statement:
+    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected variant name")
+    consume(p, lexer.TOK_COLON, "expected colon after variant name")
+    consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
+    if match_token(p, lexer.TOK_INDENT):
+        skip_body(p)
+    return ast.Statement.variant_decl(name = name_tok.lexeme)
+
+
+function parse_opaque_decl(p: ref[Parser]) -> ast.Statement:
+    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected opaque name")
+    if check(p, lexer.TOK_NEWLINE):
+        let _ = advance(p)
+    return ast.Statement.opaque_decl(name = name_tok.lexeme)
+
+
+function parse_interface_decl(p: ref[Parser]) -> ast.Statement:
+    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected interface name")
+    consume(p, lexer.TOK_COLON, "expected colon after interface name")
+    consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
+    if match_token(p, lexer.TOK_INDENT):
+        skip_body(p)
+    return ast.Statement.interface_decl(name = name_tok.lexeme)
+
+
+function parse_type_alias_decl(p: ref[Parser]) -> ast.Statement:
+    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected type alias name")
+    consume(p, lexer.TOK_EQUAL, "expected = after type alias name")
+    let t = parse_type_ref(p)
+    consume(p, lexer.TOK_NEWLINE, "expected newline after type alias")
+    return ast.Statement.type_alias_decl(name = name_tok.lexeme, target = t)
+
+
+function parse_var_decl(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
+    let name_tok = consume(p, lexer.TOK_IDENTIFIER, "expected var name")
+    var t = type_void()
+    var val_idx: ptr_uint = 0
+    if match_token(p, lexer.TOK_COLON):
+        t = parse_type_ref(p)
+    if match_token(p, lexer.TOK_EQUAL):
+        val_idx = parse_expr(p, pool)
+    consume(p, lexer.TOK_NEWLINE, "expected newline after var")
+    return ast.Statement.var_decl(name = name_tok.lexeme, vtype = t, value_idx = val_idx)
+
+
+# ── expressions ───────────────────────────────────────────────────────
 
 function parse_expr(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ptr_uint:
     return parse_additive(p, pool)
 
 
 function parse_additive(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ptr_uint:
+    var left = parse_shift(p, pool)
+    while check(p, lexer.TOK_PLUS) or check(p, lexer.TOK_MINUS) or check(p, lexer.TOK_DOT_DOT) or check(p, lexer.TOK_PIPE) or check(p, lexer.TOK_CARET) or check(p, lexer.TOK_AMP) or check(p, lexer.TOK_EQUAL_EQUAL) or check(p, lexer.TOK_BANG_EQUAL) or check(p, lexer.TOK_LESS) or check(p, lexer.TOK_GREATER) or check(p, lexer.TOK_LESS_EQUAL) or check(p, lexer.TOK_GREATER_EQUAL) or check(p, lexer.TOK_KW_AND) or check(p, lexer.TOK_KW_OR):
+        let op_kind = peek(p).kind
+        let _ = advance(p)
+        let right = parse_shift(p, pool)
+        left = pool_push(pool, ast.Expression(kind = ast.EXPR_BINARY, int_value = 0,
+            float_value = 0.0, str_value = "", bool_value = true, ident = "",
+            op_kind = op_kind, lhs_idx = left, rhs_idx = right, callee_idx = 0,
+            args = vec.Vec[ptr_uint].create(), line = previous(p).line, column = previous(p).column))
+    return left
+
+
+function parse_shift(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ptr_uint:
     var left = parse_multiplicative(p, pool)
-    while check(p, lexer.TOK_PLUS) or check(p, lexer.TOK_MINUS):
+    while check(p, lexer.TOK_SHIFT_LEFT) or check(p, lexer.TOK_SHIFT_RIGHT):
         let op_kind = peek(p).kind
         let _ = advance(p)
         let right = parse_multiplicative(p, pool)
@@ -487,6 +457,8 @@ function parse_multiplicative(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]
     return left
 
 
+
+
 function parse_unary(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ptr_uint:
     let op = peek(p).kind
     if op == lexer.TOK_MINUS or op == lexer.TOK_KW_NOT:
@@ -501,7 +473,6 @@ function parse_unary(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ptr_
 
 function parse_postfix(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ptr_uint:
     var left = parse_primary(p, pool)
-
     while true:
         if check(p, lexer.TOK_DOT):
             let _ = advance(p)
@@ -511,7 +482,6 @@ function parse_postfix(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> pt
                 op_kind = 0, lhs_idx = left, rhs_idx = 0, callee_idx = 0,
                 args = vec.Vec[ptr_uint].create(), line = previous(p).line, column = previous(p).column))
             continue
-
         if check(p, lexer.TOK_LPAREN):
             let _ = advance(p)
             var args = vec.Vec[ptr_uint].create()
@@ -525,9 +495,7 @@ function parse_postfix(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> pt
                 op_kind = 0, lhs_idx = left, rhs_idx = 0, callee_idx = 0,
                 args = args, line = previous(p).line, column = previous(p).column))
             continue
-
         break
-
     return left
 
 
@@ -586,14 +554,13 @@ function parse_primary(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> pt
         args = vec.Vec[ptr_uint].create(), line = tok.line, column = tok.column))
 
 
-
 function pool_push(pool: ref[vec.Vec[ast.Expression]], expr: ast.Expression) -> ptr_uint:
     let idx = pool.len()
     pool.push(expr)
     return idx
 
 
-# ── block parsing ──────────────────────────────────────────────────────
+# ── block parsing ─────────────────────────────────────────────────────
 
 function parse_block(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> vec.Vec[ast.Statement]:
     var body = vec.Vec[ast.Statement].create()
@@ -603,6 +570,20 @@ function parse_block(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> vec.
     if not match_token(p, lexer.TOK_INDENT):
         return body
     return parse_block_body(p, pool)
+
+
+function parse_block_body(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> vec.Vec[ast.Statement]:
+    var body = vec.Vec[ast.Statement].create()
+    var limit: int = 0
+    while not eof(p) and not check(p, lexer.TOK_DEDENT):
+        body.push(parse_statement(p, pool))
+        skip_newlines(p)
+        limit += 1
+        if limit >= 500:
+            break
+    while check(p, lexer.TOK_DEDENT):
+        let _ = advance(p)
+    return body
 
 
 function skip_body(p: ref[Parser]) -> void:
@@ -615,6 +596,8 @@ function skip_body(p: ref[Parser]) -> void:
     while check(p, lexer.TOK_DEDENT):
         let _ = advance(p)
 
+
+# ── statements ────────────────────────────────────────────────────────
 
 function parse_statement(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
     skip_newlines(p)
@@ -630,132 +613,151 @@ function parse_statement(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> 
         return parse_for_stmt(p, pool)
     if check(p, lexer.TOK_KW_DEFER):
         return parse_defer_stmt(p, pool)
+    if check(p, lexer.TOK_KW_WHEN):
+        let _ = advance(p)
+        skip_to_newline(p)
+        return ast.Statement.empty
+    if check(p, lexer.TOK_KW_MATCH):
+        let _ = advance(p)
+        skip_to_newline(p)
+        return ast.Statement.empty
+    if check(p, lexer.TOK_KW_UNSAFE):
+        let _ = advance(p)
+        skip_to_newline(p)
+        return ast.Statement.empty
+    if check(p, lexer.TOK_KW_PARALLEL):
+        let _ = advance(p)
+        skip_to_newline(p)
+        return ast.Statement.empty
+    if check(p, lexer.TOK_KW_GATHER):
+        let _ = advance(p)
+        skip_to_newline(p)
+        return ast.Statement.empty
+    if check(p, lexer.TOK_KW_STATIC_ASSERT):
+        let _ = advance(p)
+        skip_to_newline(p)
+        return ast.Statement.empty
+    if check(p, lexer.TOK_KW_EMIT):
+        let _ = advance(p)
+        skip_to_newline(p)
+        return ast.Statement.empty
     return parse_assign_or_expr_stmt(p, pool)
 
 
+function skip_to_newline(p: ref[Parser]) -> void:
+    var limit: int = 0
+    while not eof(p) and not check(p, lexer.TOK_NEWLINE):
+        let _ = advance(p)
+        limit += 1
+        if limit >= 1000:
+            break
+    if check(p, lexer.TOK_NEWLINE):
+        let _ = advance(p)
+
+
+function parse_return_stmt(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
+    let _ = advance(p)
+    var val_idx: ptr_uint = 0
+    if not check(p, lexer.TOK_NEWLINE) and not check(p, lexer.TOK_DEDENT):
+        val_idx = parse_expr(p, pool)
+    consume(p, lexer.TOK_NEWLINE, "expected newline after return")
+    return ast.Statement.return_stmt(value_idx = val_idx)
+
+
 function parse_if_stmt(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
-    let tok = advance(p)
+    let _ = advance(p)
     let cond = parse_expr(p, pool)
     consume(p, lexer.TOK_COLON, "expected ':' after if condition")
-    consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
-    consume(p, lexer.TOK_INDENT, "expected indent for if body")
-    var body = parse_block_body(p, pool)
+
+    var body = vec.Vec[ast.Statement].create()
     var else_b = vec.Vec[ast.Statement].create()
+    var is_inline = false
+
+    if not check(p, lexer.TOK_NEWLINE):
+        # inline if: `if cond : expr`
+        is_inline = true
+        body.push(parse_statement(p, pool))
+    else:
+        consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
+        consume(p, lexer.TOK_INDENT, "expected indent for if body")
+        body = parse_block_body(p, pool)
+
     if match_token(p, lexer.TOK_KW_ELSE):
         consume(p, lexer.TOK_COLON, "expected ':' after else")
         if check(p, lexer.TOK_KW_IF):
             else_b.push(parse_if_stmt(p, pool))
+        else if not check(p, lexer.TOK_NEWLINE):
+            else_b.push(parse_statement(p, pool))
         else:
             consume(p, lexer.TOK_NEWLINE, "expected newline after else colon")
             consume(p, lexer.TOK_INDENT, "expected indent for else body")
             else_b = parse_block_body(p, pool)
-    return ast.Statement(kind = ast.STMT_IF, name = "", stmt_type = type_void(),
-        expr = int<-(cond), children = body, else_body = else_b,
-        line = tok.line, column = tok.column)
+
+    if not is_inline:
+        consume(p, lexer.TOK_NEWLINE, "expected newline after if")
+    return ast.Statement.if_stmt(cond_idx = cond, body = body, else_body = else_b)
 
 
 function parse_while_stmt(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
-    let tok = advance(p)
-    var is_inline = false
-    if check(p, lexer.TOK_COLON):
-        is_inline = true
+    let _ = advance(p)
     let cond = parse_expr(p, pool)
     consume(p, lexer.TOK_COLON, "expected ':' after while condition")
     var body = vec.Vec[ast.Statement].create()
-    if is_inline:
+    if not check(p, lexer.TOK_NEWLINE):
         body.push(parse_statement(p, pool))
     else:
         consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
         consume(p, lexer.TOK_INDENT, "expected indent for while body")
         body = parse_block_body(p, pool)
-    return ast.Statement(kind = ast.STMT_WHILE, name = "", stmt_type = type_void(),
-        expr = int<-(cond), children = body, is_inline = is_inline,
-        line = tok.line, column = tok.column)
+    return ast.Statement.while_stmt(cond_idx = cond, body = body)
 
 
 function parse_for_stmt(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
-    let tok = advance(p)
-    var bindings = vec.Vec[str].create()
-    bindings.push(consume(p, lexer.TOK_IDENTIFIER, "expected for variable").lexeme)
+    let _ = advance(p)
+    let binding = consume(p, lexer.TOK_IDENTIFIER, "expected for variable").lexeme
     while match_token(p, lexer.TOK_COMMA):
-        bindings.push(consume(p, lexer.TOK_IDENTIFIER, "expected for variable").lexeme)
+        let _ = consume(p, lexer.TOK_IDENTIFIER, "expected for variable")
     consume(p, lexer.TOK_KW_IN, "expected 'in' after for bindings")
-    var iterables = vec.Vec[ptr_uint].create()
-    consume(p, lexer.TOK_LPAREN, "expected '(' for iterables")
-    while not check(p, lexer.TOK_RPAREN) and not eof(p):
-        iterables.push(parse_expr(p, pool))
+
+    # Parse iterable(s) — expressions separated by commas, no parens required
+    while not eof(p) and not check(p, lexer.TOK_COLON):
+        let _ = parse_expr(p, pool)
         if not match_token(p, lexer.TOK_COMMA):
             break
-    consume(p, lexer.TOK_RPAREN, "expected ')'")
+
     consume(p, lexer.TOK_COLON, "expected ':' after for")
-    consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
-    consume(p, lexer.TOK_INDENT, "expected indent for for body")
-    var body = parse_block_body(p, pool)
-    return ast.Statement(kind = ast.STMT_FOR, name = "", stmt_type = type_void(),
-        expr = 0, children = body, bindings = bindings,
-        line = tok.line, column = tok.column)
+    var body = vec.Vec[ast.Statement].create()
+    if not check(p, lexer.TOK_NEWLINE):
+        body.push(parse_statement(p, pool))
+    else:
+        consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
+        consume(p, lexer.TOK_INDENT, "expected indent for for body")
+        body = parse_block_body(p, pool)
+    return ast.Statement.for_stmt(binding = binding, body = body)
 
 
 function parse_defer_stmt(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
-    let tok = advance(p)
+    let _ = advance(p)
     consume(p, lexer.TOK_COLON, "expected ':' after defer")
     consume(p, lexer.TOK_NEWLINE, "expected newline after colon")
     consume(p, lexer.TOK_INDENT, "expected indent for defer body")
     var body = parse_block_body(p, pool)
-    return ast.Statement(kind = ast.STMT_DEFER, name = "", stmt_type = type_void(),
-        expr = 0, children = body,
-        line = tok.line, column = tok.column)
+    return ast.Statement.defer_stmt(body = body)
 
 
 function parse_assign_or_expr_stmt(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
-    let tok = peek(p)
     let lhs = parse_expr(p, pool)
-
-    if check(p, lexer.TOK_EQUAL) or check(p, lexer.TOK_PLUS_EQUAL) or check(p, lexer.TOK_MINUS_EQUAL) or check(p, lexer.TOK_STAR_EQUAL) or check(p, lexer.TOK_SLASH_EQUAL):
+    if check(p, lexer.TOK_EQUAL) or check(p, lexer.TOK_PLUS_EQUAL):
         let op = peek(p).kind
         let _ = advance(p)
-        let rhs = parse_expression_stmt_tail(p, pool, lhs, op, tok)
-        return rhs
-
+        let rhs = parse_expr(p, pool)
+        consume(p, lexer.TOK_NEWLINE, "expected newline")
+        return ast.Statement.assign_stmt(target_idx = lhs, op_kind = op, value_idx = rhs)
     consume(p, lexer.TOK_NEWLINE, "expected newline")
-    return ast.Statement(kind = ast.STMT_EXPR, name = "", stmt_type = type_void(),
-        expr = int<-(lhs), line = tok.line, column = tok.column)
+    return ast.Statement.expr_stmt(value_idx = lhs)
 
 
-function parse_expression_stmt_tail(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]],
-                                    lhs_idx: ptr_uint, op_k: int, tok: lexer.Token) -> ast.Statement:
-    let rhs = parse_expr(p, pool)
-    consume(p, lexer.TOK_NEWLINE, "expected newline")
-    return ast.Statement(kind = ast.STMT_ASSIGN, name = "", stmt_type = type_void(),
-        expr = int<-(lhs_idx), expr2 = int<-(rhs), op_kind = op_k,
-        line = tok.line, column = tok.column)
-
-
-function parse_block_body(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> vec.Vec[ast.Statement]:
-    var body = vec.Vec[ast.Statement].create()
-    var limit: int = 0
-    while not eof(p) and not check(p, lexer.TOK_DEDENT):
-        body.push(parse_statement(p, pool))
-        skip_newlines(p)
-        limit += 1
-        if limit >= 1000:
-            break
-    while check(p, lexer.TOK_DEDENT):
-        let _ = advance(p)
-    return body
-
-
-function parse_return_stmt(p: ref[Parser], pool: ref[vec.Vec[ast.Expression]]) -> ast.Statement:
-    let tok = advance(p)
-    var val_idx: ptr_uint = 0
-    if not check(p, lexer.TOK_NEWLINE) and not check(p, lexer.TOK_DEDENT):
-        val_idx = parse_expr(p, pool)
-    consume(p, lexer.TOK_NEWLINE, "expected newline after return")
-    return ast.Statement(kind = ast.STMT_RETURN, name = "", stmt_type = type_void(),
-        expr = int<-(val_idx), line = tok.line, column = tok.column)
-
-
-# ── known names pre-scan ───────────────────────────────────────────────
+# ── known names pre-scan ──────────────────────────────────────────────
 
 function seed_known_names(p: ref[Parser]) -> void:
     var known = unsafe: read(ptr[Parser]<-p).known_type_names

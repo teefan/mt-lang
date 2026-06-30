@@ -28,47 +28,28 @@ public struct Param:
 
 # ── statements ──────────────────────────────────────────────────────
 
-public const STMT_FUNCTION: int = 1
-public const STMT_STRUCT: int = 2
-public const STMT_CONST: int = 3
-public const STMT_LET: int = 4
-public const STMT_RETURN: int = 5
-public const STMT_EXPR: int = 6
-public const STMT_IF: int = 7
-public const STMT_WHILE: int = 8
-public const STMT_FOR: int = 9
-public const STMT_ASSIGN: int = 10
-public const STMT_DEFER: int = 11
-public const STMT_ENUM: int = 12
-public const STMT_VARIANT: int = 13
-public const STMT_FLAGS: int = 14
-public const STMT_OPAQUE: int = 15
-public const STMT_INTERFACE: int = 16
-public const STMT_TYPE_ALIAS: int = 17
-public const STMT_VAR: int = 18
-public const STMT_EMPTY: int = 0
-
-
-public struct Statement:
-    kind: int
-    name: str
-    stmt_type: TypeRef
-    expr: int
-    expr2: int
-    op_kind: int
-    is_inline: bool
-    children: vec.Vec[Statement]
-    else_body: vec.Vec[Statement]
-    bindings: vec.Vec[str]
-    line: int
-    column: int
+public variant Statement:
+    empty
+    function_decl(name: str, ret: TypeRef, body: vec.Vec[Statement])
+    struct_decl(name: str, fields: vec.Vec[Statement])
+    const_decl(name: str, ctype: TypeRef, value_idx: ptr_uint)
+    let_decl(name: str, ltype: TypeRef, value_idx: ptr_uint)
+    return_stmt(value_idx: ptr_uint)
+    if_stmt(cond_idx: ptr_uint, body: vec.Vec[Statement], else_body: vec.Vec[Statement])
+    while_stmt(cond_idx: ptr_uint, body: vec.Vec[Statement])
+    for_stmt(binding: str, body: vec.Vec[Statement])
+    assign_stmt(target_idx: ptr_uint, op_kind: int, value_idx: ptr_uint)
+    expr_stmt(value_idx: ptr_uint)
+    defer_stmt(body: vec.Vec[Statement])
+    enum_decl(name: str, backing: TypeRef, members: vec.Vec[Statement])
+    variant_decl(name: str)
+    opaque_decl(name: str)
+    interface_decl(name: str)
+    type_alias_decl(name: str, target: TypeRef)
+    var_decl(name: str, vtype: TypeRef, value_idx: ptr_uint)
 
 
 # ── expressions ─────────────────────────────────────────────────────
-
-# Pool-based expression tree — expressions are stored in a flat vec,
-# children referenced by integer index to avoid recursive inline types.
-# Expression 0 is the sentinel / empty expression.
 
 public const EXPR_INTEGER: int = 0
 public const EXPR_FLOAT: int = 1
@@ -102,21 +83,6 @@ public struct Expression:
 
 public struct ExpressionPool:
     exprs: vec.Vec[Expression]
-
-
-public function expr_pool_create() -> ExpressionPool:
-    var pool = ExpressionPool(exprs = vec.Vec[Expression].create())
-    pool.exprs.push(Expression(kind = EXPR_ERROR, int_value = 0,
-        float_value = 0.0, str_value = "", bool_value = false, ident = "",
-        op_kind = 0, lhs_idx = 0, rhs_idx = 0, callee_idx = 0,
-        args = vec.Vec[ptr_uint].create(), line = 0, column = 0))
-    return pool
-
-
-public function expr_pool_alloc(pool: ref[ExpressionPool], expr: Expression) -> ptr_uint:
-    let idx = pool.exprs.len()
-    pool.exprs.push(expr)
-    return idx
 
 
 public struct SourceFile:

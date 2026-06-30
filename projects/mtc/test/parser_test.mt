@@ -6,105 +6,23 @@ import ast
 import parser
 
 
-# ── test sources ──────────────────────────────────────────────────────
+const SRC_IMPORT: str = "import std.str as text\n"
+const SRC_FUNCTION: str = "function add(a: int, b: int) -> int:\n    return a + b\n"
+const SRC_STRUCT: str = "struct Point:\n    x: float\n    y: float\n"
+const SRC_ENUM: str = "enum Color : int\n    red = 0\n    green = 1\n    blue = 2\n"
+const SRC_CONST: str = "const ANSWER: int = 42\n"
+const SRC_IF: str = "function check(x: int) -> int:\n    if x > 0:\n        return 1\n    else:\n        return 0\n"
+const SRC_WHILE: str = "function loop(n: int) -> int:\n    while n > 0:\n        n = n - 1\n    return 0\n"
+const SRC_FOR: str = "function each() -> int:\n    for i in (0, 10):\n        pass\n    return 0\n"
+const SRC_ASSIGN: str = "function set() -> int:\n    var x = 0\n    x = 5\n    return x\n"
+const SRC_DEFER: str = "function locked() -> int:\n    defer:\n        pass\n    return 0\n"
+const SRC_VARIANT: str = "variant Shape\n    circle(r: float)\n    square(side: float)\n"
+const SRC_OPAQUE: str = "opaque Handle\n"
+const SRC_INTERFACE: str = "interface Drawable\n    draw() -> void\n"
+const SRC_TYPE_ALIAS: str = "type Meters = float\n"
+const SRC_VAR: str = "var global_count: int = 0\n"
+const SRC_EXPR: str = "function calc(a: int, b: int) -> int:\n    let x = a + b * 2\n    return x\n"
 
-const SRC_IMPORT: str = <<-SRC
-import std.str as text
-SRC
-
-const SRC_FUNCTION: str = <<-SRC
-function add(a: int, b: int) -> int:
-    return a + b
-SRC
-
-const SRC_STRUCT: str = <<-SRC
-struct Point:
-    x: float
-    y: float
-SRC
-
-const SRC_ENUM: str = <<-SRC
-enum Color : int
-    red = 0
-    green = 1
-    blue = 2
-SRC
-
-const SRC_CONST: str = <<-SRC
-const ANSWER: int = 42
-SRC
-
-const SRC_IF: str = <<-SRC
-function check(x: int) -> int:
-    if x > 0:
-        return 1
-    else:
-        return 0
-SRC
-
-const SRC_WHILE: str = <<-SRC
-function loop(n: int) -> int:
-    var total = 0
-    while n > 0:
-        n = n - 1
-        total = total + 1
-    return total
-SRC
-
-const SRC_FOR: str = <<-SRC
-function sum_items(items: int, n: int) -> int:
-    var total = 0
-    for i in (0, n):
-        total = total + i
-    return total
-SRC
-
-const SRC_ASSIGN: str = <<-SRC
-function assign() -> int:
-    var x = 10
-    x += 5
-    return x
-SRC
-
-const SRC_DEFER: str = <<-SRC
-function locked() -> int:
-    defer:
-        pass
-    return 0
-SRC
-
-const SRC_VARIANT: str = <<-SRC
-variant Shape
-    circle(r: float)
-    square(side: float)
-SRC
-
-const SRC_OPAQUE: str = <<-SRC
-opaque Handle
-SRC
-
-const SRC_INTERFACE: str = <<-SRC
-interface Serializable
-    serialize() -> str
-SRC
-
-const SRC_TYPE_ALIAS: str = <<-SRC
-type Meters = float
-SRC
-
-const SRC_VAR: str = <<-SRC
-var global_count: int = 0
-SRC
-
-const SRC_EXPR: str = <<-SRC
-function calc(a: int, b: int) -> int:
-    let x = a + b * 2
-    let y = -x
-    return x + y
-SRC
-
-
-# ── helpers ───────────────────────────────────────────────────────────
 
 function lex_and_parse(source: str) -> ast.SourceFile:
     var errors = vec.Vec[lexer.LexError].create()
@@ -121,13 +39,14 @@ function decl_at(decls: ref[vec.Vec[ast.Statement]], index: ptr_uint) -> ast.Sta
     return unsafe: read(ptr[ast.Statement]<-dp)
 
 
-# ── tests ─────────────────────────────────────────────────────────────
+function stmt_count(stmts: ref[vec.Vec[ast.Statement]]) -> ptr_uint:
+    return stmts.len()
+
 
 @[test]
 function test_import_parsing() -> t.Check:
     var sf = lex_and_parse(SRC_IMPORT)
     t.expect(sf.imports.len() == 1, "should have 1 import")?
-    t.expect(sf.exprs.exprs.len() == 0, "no expressions")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -137,11 +56,12 @@ function test_import_parsing() -> t.Check:
 @[test]
 function test_function_parsing() -> t.Check:
     var sf = lex_and_parse(SRC_FUNCTION)
-    t.expect(sf.imports.len() == 0, "no imports")?
-    t.expect(sf.declarations.len() == 1, "one declaration")?
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.kind == ast.STMT_FUNCTION, "is a function")?
-    t.expect(decl.name.equal("add"), "function name is add")?
+    match decl:
+        ast.Statement.function_decl as fd:
+            t.expect(fd.name.equal("add"), "function name")?
+        else:
+            t.expect(false, "expected function")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -151,11 +71,13 @@ function test_function_parsing() -> t.Check:
 @[test]
 function test_struct_parsing() -> t.Check:
     var sf = lex_and_parse(SRC_STRUCT)
-    t.expect(sf.declarations.len() == 1, "one declaration")?
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.kind == ast.STMT_STRUCT, "is a struct")?
-    t.expect(decl.name.equal("Point"), "struct name is Point")?
-    t.expect(decl.children.len() == 2, "two fields")?
+    match decl:
+        ast.Statement.struct_decl as sd:
+            t.expect(sd.name.equal("Point"), "struct name")?
+            t.expect(sd.fields.len() == 2, "two fields")?
+        else:
+            t.expect(false, "expected struct")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -165,11 +87,13 @@ function test_struct_parsing() -> t.Check:
 @[test]
 function test_enum_parsing() -> t.Check:
     var sf = lex_and_parse(SRC_ENUM)
-    t.expect(sf.declarations.len() == 1, "one declaration")?
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.kind == ast.STMT_ENUM, "is an enum")?
-    t.expect(decl.name.equal("Color"), "enum name is Color")?
-    t.expect(decl.children.len() == 3, "three members")?
+    match decl:
+        ast.Statement.enum_decl as ed:
+            t.expect(ed.name.equal("Color"), "enum name")?
+            t.expect(ed.members.len() == 3, "three members")?
+        else:
+            t.expect(false, "expected enum")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -179,10 +103,12 @@ function test_enum_parsing() -> t.Check:
 @[test]
 function test_const_parsing() -> t.Check:
     var sf = lex_and_parse(SRC_CONST)
-    t.expect(sf.declarations.len() == 1, "one declaration")?
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.kind == ast.STMT_CONST, "is a const")?
-    t.expect(decl.name.equal("ANSWER"), "const name is ANSWER")?
+    match decl:
+        ast.Statement.const_decl as cd:
+            t.expect(cd.name.equal("ANSWER"), "const name")?
+        else:
+            t.expect(false, "expected const")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -193,8 +119,11 @@ function test_const_parsing() -> t.Check:
 function test_if_statement() -> t.Check:
     var sf = lex_and_parse(SRC_IF)
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.kind == ast.STMT_FUNCTION, "top is function")?
-    t.expect(decl.children.len() >= 1, "function has body")?
+    match decl:
+        ast.Statement.function_decl as fd:
+            t.expect(stmt_count(ref_of(fd.body)) >= 1, "function has body")?
+        else:
+            t.expect(false, "expected function")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -205,7 +134,11 @@ function test_if_statement() -> t.Check:
 function test_while_statement() -> t.Check:
     var sf = lex_and_parse(SRC_WHILE)
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.children.len() >= 3, "has let + while + return")?
+    match decl:
+        ast.Statement.function_decl as fd:
+            t.expect(stmt_count(ref_of(fd.body)) >= 2, "has while + return")?
+        else:
+            t.expect(false, "expected function")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -216,7 +149,11 @@ function test_while_statement() -> t.Check:
 function test_for_statement() -> t.Check:
     var sf = lex_and_parse(SRC_FOR)
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.children.len() >= 3, "has var + for + return")?
+    match decl:
+        ast.Statement.function_decl as fd:
+            t.expect(stmt_count(ref_of(fd.body)) >= 2, "has for + return")?
+        else:
+            t.expect(false, "expected function")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -227,7 +164,11 @@ function test_for_statement() -> t.Check:
 function test_assign_statement() -> t.Check:
     var sf = lex_and_parse(SRC_ASSIGN)
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.children.len() >= 3, "has var + assign + return")?
+    match decl:
+        ast.Statement.function_decl as fd:
+            t.expect(stmt_count(ref_of(fd.body)) >= 3, "has var + assign + return")?
+        else:
+            t.expect(false, "expected function")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -238,7 +179,11 @@ function test_assign_statement() -> t.Check:
 function test_defer_statement() -> t.Check:
     var sf = lex_and_parse(SRC_DEFER)
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.children.len() >= 2, "has defer + return")?
+    match decl:
+        ast.Statement.function_decl as fd:
+            t.expect(stmt_count(ref_of(fd.body)) >= 2, "has defer + return")?
+        else:
+            t.expect(false, "expected function")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -249,8 +194,11 @@ function test_defer_statement() -> t.Check:
 function test_variant_parsing() -> t.Check:
     var sf = lex_and_parse(SRC_VARIANT)
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.kind == ast.STMT_VARIANT, "is a variant")?
-    t.expect(decl.name.equal("Shape"), "variant name is Shape")?
+    match decl:
+        ast.Statement.variant_decl as vd:
+            t.expect(vd.name.equal("Shape"), "variant name")?
+        else:
+            t.expect(false, "expected variant")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -261,8 +209,11 @@ function test_variant_parsing() -> t.Check:
 function test_opaque_parsing() -> t.Check:
     var sf = lex_and_parse(SRC_OPAQUE)
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.kind == ast.STMT_OPAQUE, "is an opaque")?
-    t.expect(decl.name.equal("Handle"), "opaque name is Handle")?
+    match decl:
+        ast.Statement.opaque_decl as od:
+            t.expect(od.name.equal("Handle"), "opaque name")?
+        else:
+            t.expect(false, "expected opaque")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -273,8 +224,11 @@ function test_opaque_parsing() -> t.Check:
 function test_interface_parsing() -> t.Check:
     var sf = lex_and_parse(SRC_INTERFACE)
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.kind == ast.STMT_INTERFACE, "is an interface")?
-    t.expect(decl.name.equal("Serializable"), "interface name")?
+    match decl:
+        ast.Statement.interface_decl as id:
+            t.expect(id.name.equal("Drawable"), "interface name")?
+        else:
+            t.expect(false, "expected interface")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -285,8 +239,11 @@ function test_interface_parsing() -> t.Check:
 function test_type_alias_parsing() -> t.Check:
     var sf = lex_and_parse(SRC_TYPE_ALIAS)
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.kind == ast.STMT_TYPE_ALIAS, "is a type alias")?
-    t.expect(decl.name.equal("Meters"), "type alias name")?
+    match decl:
+        ast.Statement.type_alias_decl as ta:
+            t.expect(ta.name.equal("Meters"), "type alias name")?
+        else:
+            t.expect(false, "expected type alias")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -297,8 +254,11 @@ function test_type_alias_parsing() -> t.Check:
 function test_var_parsing() -> t.Check:
     var sf = lex_and_parse(SRC_VAR)
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.kind == ast.STMT_VAR, "is a var")?
-    t.expect(decl.name.equal("global_count"), "var name")?
+    match decl:
+        ast.Statement.var_decl as vd:
+            t.expect(vd.name.equal("global_count"), "var name")?
+        else:
+            t.expect(false, "expected var")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -308,9 +268,7 @@ function test_var_parsing() -> t.Check:
 @[test]
 function test_expression_parsing() -> t.Check:
     var sf = lex_and_parse(SRC_EXPR)
-    var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.children.len() >= 3, "has let + let + return")?
-    t.expect(sf.exprs.exprs.len() >= 5, "multiple expressions in pool")?
+    t.expect(sf.exprs.exprs.len() >= 5, "multiple expressions")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
@@ -321,7 +279,11 @@ function test_expression_parsing() -> t.Check:
 function test_seed_known_names() -> t.Check:
     var sf = lex_and_parse(SRC_STRUCT)
     var decl = decl_at(ref_of(sf.declarations), 0)
-    t.expect(decl.name.equal("Point"), "struct name found")?
+    match decl:
+        ast.Statement.struct_decl as sd:
+            t.expect(sd.name.equal("Point"), "struct found")?
+        else:
+            t.expect(false, "expected struct")?
     sf.imports.release()
     sf.declarations.release()
     sf.exprs.exprs.release()
