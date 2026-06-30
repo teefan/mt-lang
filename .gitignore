@@ -70,6 +70,7 @@ pnpm-debug.log*
 # Development environment files:
 .idea/
 .vscode/
+.cache/
 .env
 *.code-workspace
 .github/copilot-instructions.md
