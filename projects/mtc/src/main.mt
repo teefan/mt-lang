@@ -128,15 +128,27 @@ function print_usage() -> void:
 
 
 function cmd_lex(options: ref[CliOptions]) -> int:
-    if options.positional.len() < 2:
-        var msg = string.String.from_str("mtc lex: missing source file path")
-        terminal.write_stderr(msg.as_str())
-        msg.release()
+    var is_sexpr: bool = false
+    var file_path: str = ""
+
+    var i: ptr_uint = 1
+    while i < options.positional.len():
+        let arg_ptr = options.positional.get(i) else:
+            fatal("mtc: missing arg")
+        let arg = unsafe: read(ptr[string.String]<-arg_ptr).as_str()
+        if arg.equal("--sexpr") or arg.equal("--format=sexpr"):
+            is_sexpr = true
+            i += 1
+            continue
+        if file_path.len == 0:
+            file_path = arg
+        i += 1
+
+    if file_path.len == 0:
+        terminal.write_stderr("mtc lex: missing source file path")
         return 1
 
-    let path_ptr = options.positional.get(1) else:
-        fatal("mtc: missing path in positional arguments")
-    let path = unsafe: read(ptr[string.String]<-path_ptr).as_str()
+    let path = file_path
 
     match fs.read_text(path):
         Result.failure as payload:
@@ -150,19 +162,69 @@ function cmd_lex(options: ref[CliOptions]) -> int:
             var errors = vec.Vec[lexer.LexError].create()
             var tokens = lexer.lex(content.as_str(), ref_of(errors))
 
-            var i: ptr_uint = 0
-            while i < tokens.len():
-                let t = tokens.get(i) else:
-                    fatal("mtc: missing token")
-                unsafe:
-                    let tok = read(ptr[lexer.Token]<-t)
-                    stdio.print_format("kind=%d %d:%d\n",
-                        tok.kind, tok.line, tok.column)
-                i += 1
+            if is_sexpr:
+                stdio.print_char(int<-('['))
+                var j: ptr_uint = 0
+                while j < tokens.len():
+                    if j > 0:
+                        stdio.print_char(int<-(' '))
+                    let t = tokens.get(j) else:
+                        fatal("mtc: missing token")
+                    unsafe:
+                        let tok = read(ptr[lexer.Token]<-t)
+                        print_token_sexpr(tok)
+                    j += 1
+                stdio.print_char(int<-(']'))
+                stdio.print_char(int<-('\n'))
+            else:
+                var jj: ptr_uint = 0
+                while jj < tokens.len():
+                    let t = tokens.get(jj) else:
+                        fatal("mtc: missing token")
+                    unsafe:
+                        let tok = read(ptr[lexer.Token]<-t)
+                        stdio.print_format("kind=%d %d:%d\n",
+                            tok.kind, tok.line, tok.column)
+                    jj += 1
 
             errors.release()
             tokens.release()
             return 0
+
+
+function print_token_sexpr(tok: lexer.Token) -> void:
+    stdio.print_format("(:{} :type ")
+    print_quoted_str(lexer.kind_name(tok.kind))
+    stdio.print_format(" :lexeme ")
+    print_quoted_str(tok.lexeme)
+    stdio.print_format(" :literal nil :line %d :column %d :start_offset %lu :end_offset %lu)",
+        tok.line, tok.column, tok.start_offset, tok.end_offset)
+
+
+function print_quoted_str(s: str) -> void:
+    stdio.print_char(int<-('\"'))
+    var k: ptr_uint = 0
+    while k < s.len:
+        let b = s.byte_at(k)
+        if b == '\n':
+            stdio.print_char(int<-('\\'))
+            stdio.print_char(int<-('n'))
+        else if b == '\r':
+            stdio.print_char(int<-('\\'))
+            stdio.print_char(int<-('r'))
+        else if b == '\t':
+            stdio.print_char(int<-('\\'))
+            stdio.print_char(int<-('t'))
+        else if b == '\\':
+            stdio.print_char(int<-('\\'))
+            stdio.print_char(int<-('\\'))
+        else if b == '\"':
+            stdio.print_char(int<-('\\'))
+            stdio.print_char(int<-('\"'))
+        else:
+            stdio.print_char(int<-(b))
+        k += 1
+    stdio.print_char(int<-('\"'))
 
 
 function cmd_read_source(command_name: str, options: ref[CliOptions]) -> int:

@@ -361,6 +361,256 @@ function lookup_keyword(text_val: str) -> int:
     return TOK_IDENTIFIER
 
 
+public function kind_name(kind: int) -> str:
+    if kind == TOK_EOF:
+        return "eof"
+    if kind == TOK_IDENTIFIER:
+        return "identifier"
+    if kind == TOK_INTEGER:
+        return "integer"
+    if kind == TOK_FLOAT:
+        return "float"
+    if kind == TOK_STRING:
+        return "string"
+    if kind == TOK_CSTRING:
+        return "cstring"
+    if kind == TOK_CHAR_LITERAL:
+        return "char_literal"
+    if kind == TOK_FSTRING:
+        return "fstring"
+    if kind == TOK_INDENT:
+        return "indent"
+    if kind == TOK_DEDENT:
+        return "dedent"
+    if kind == TOK_NEWLINE:
+        return "newline"
+    if kind == TOK_KW_TRUE:
+        return "true"
+    if kind == TOK_KW_FALSE:
+        return "false"
+    if kind == TOK_KW_NULL:
+        return "null"
+    if kind == TOK_KW_ALIGN_OF:
+        return "align_of"
+    if kind == TOK_KW_AND:
+        return "and"
+    if kind == TOK_KW_AS:
+        return "as"
+    if kind == TOK_KW_ASYNC:
+        return "async"
+    if kind == TOK_KW_ATTRIBUTE:
+        return "attribute"
+    if kind == TOK_KW_ATTRIBUTE_ARG:
+        return "attribute_arg"
+    if kind == TOK_KW_ATTRIBUTE_OF:
+        return "attribute_of"
+    if kind == TOK_KW_ATTRIBUTES_OF:
+        return "attributes_of"
+    if kind == TOK_KW_AWAIT:
+        return "await"
+    if kind == TOK_KW_BREAK:
+        return "break"
+    if kind == TOK_KW_CALLABLE_OF:
+        return "callable_of"
+    if kind == TOK_KW_COMPILER_FLAG:
+        return "compiler_flag"
+    if kind == TOK_KW_CONST:
+        return "const"
+    if kind == TOK_KW_CONSUMING:
+        return "consuming"
+    if kind == TOK_KW_CONTINUE:
+        return "continue"
+    if kind == TOK_KW_DEFER:
+        return "defer"
+    if kind == TOK_KW_DETACH:
+        return "detach"
+    if kind == TOK_KW_DYN:
+        return "dyn"
+    if kind == TOK_KW_EDITABLE:
+        return "editable"
+    if kind == TOK_KW_ELSE:
+        return "else"
+    if kind == TOK_KW_EMIT:
+        return "emit"
+    if kind == TOK_KW_ENUM:
+        return "enum"
+    if kind == TOK_KW_EVENT:
+        return "event"
+    if kind == TOK_KW_EXTENDING:
+        return "extending"
+    if kind == TOK_KW_EXTERNAL:
+        return "external"
+    if kind == TOK_KW_FIELD_OF:
+        return "field_of"
+    if kind == TOK_KW_FIELDS_OF:
+        return "fields_of"
+    if kind == TOK_KW_FLAGS:
+        return "flags"
+    if kind == TOK_KW_FN:
+        return "fn"
+    if kind == TOK_KW_FOR:
+        return "for"
+    if kind == TOK_KW_FOREIGN:
+        return "foreign"
+    if kind == TOK_KW_FUNCTION:
+        return "function"
+    if kind == TOK_KW_GATHER:
+        return "gather"
+    if kind == TOK_KW_HAS_ATTRIBUTE:
+        return "has_attribute"
+    if kind == TOK_KW_IF:
+        return "if"
+    if kind == TOK_KW_IMPLEMENTS:
+        return "implements"
+    if kind == TOK_KW_IMPORT:
+        return "import"
+    if kind == TOK_KW_IN:
+        return "in"
+    if kind == TOK_KW_INCLUDE:
+        return "include"
+    if kind == TOK_KW_INLINE:
+        return "inline"
+    if kind == TOK_KW_INOUT:
+        return "inout"
+    if kind == TOK_KW_INTERFACE:
+        return "interface"
+    if kind == TOK_KW_IS:
+        return "is"
+    if kind == TOK_KW_LET:
+        return "let"
+    if kind == TOK_KW_LINK:
+        return "link"
+    if kind == TOK_KW_MATCH:
+        return "match"
+    if kind == TOK_KW_MEMBERS_OF:
+        return "members_of"
+    if kind == TOK_KW_MODULE:
+        return "module"
+    if kind == TOK_KW_NOT:
+        return "not"
+    if kind == TOK_KW_OFFSET_OF:
+        return "offset_of"
+    if kind == TOK_KW_OPAQUE:
+        return "opaque"
+    if kind == TOK_KW_OR:
+        return "or"
+    if kind == TOK_KW_OUT:
+        return "out"
+    if kind == TOK_KW_PARALLEL:
+        return "parallel"
+    if kind == TOK_KW_PASS:
+        return "pass"
+    if kind == TOK_KW_PROC:
+        return "proc"
+    if kind == TOK_KW_PUBLIC:
+        return "public"
+    if kind == TOK_KW_RETURN:
+        return "return"
+    if kind == TOK_KW_SIZE_OF:
+        return "size_of"
+    if kind == TOK_KW_STATIC:
+        return "static"
+    if kind == TOK_KW_STATIC_ASSERT:
+        return "static_assert"
+    if kind == TOK_KW_STRUCT:
+        return "struct"
+    if kind == TOK_KW_TYPE:
+        return "type"
+    if kind == TOK_KW_UNION:
+        return "union"
+    if kind == TOK_KW_UNSAFE:
+        return "unsafe"
+    if kind == TOK_KW_VAR:
+        return "var"
+    if kind == TOK_KW_VARIANT:
+        return "variant"
+    if kind == TOK_KW_WHEN:
+        return "when"
+    if kind == TOK_KW_WHILE:
+        return "while"
+    if kind == TOK_LPAREN:
+        return "lparen"
+    if kind == TOK_RPAREN:
+        return "rparen"
+    if kind == TOK_LBRACKET:
+        return "lbracket"
+    if kind == TOK_RBRACKET:
+        return "rbracket"
+    if kind == TOK_COLON:
+        return "colon"
+    if kind == TOK_COMMA:
+        return "comma"
+    if kind == TOK_DOT:
+        return "dot"
+    if kind == TOK_AT:
+        return "at"
+    if kind == TOK_ARROW:
+        return "arrow"
+    if kind == TOK_QUESTION:
+        return "question"
+    if kind == TOK_ELLIPSIS:
+        return "ellipsis"
+    if kind == TOK_EQUAL:
+        return "equal"
+    if kind == TOK_PLUS_EQUAL:
+        return "plus_equal"
+    if kind == TOK_MINUS_EQUAL:
+        return "minus_equal"
+    if kind == TOK_STAR_EQUAL:
+        return "star_equal"
+    if kind == TOK_SLASH_EQUAL:
+        return "slash_equal"
+    if kind == TOK_PERCENT_EQUAL:
+        return "percent_equal"
+    if kind == TOK_AMP_EQUAL:
+        return "amp_equal"
+    if kind == TOK_PIPE_EQUAL:
+        return "pipe_equal"
+    if kind == TOK_CARET_EQUAL:
+        return "caret_equal"
+    if kind == TOK_SHIFT_LEFT_EQUAL:
+        return "shift_left_equal"
+    if kind == TOK_SHIFT_RIGHT_EQUAL:
+        return "shift_right_equal"
+    if kind == TOK_PLUS:
+        return "plus"
+    if kind == TOK_MINUS:
+        return "minus"
+    if kind == TOK_STAR:
+        return "star"
+    if kind == TOK_SLASH:
+        return "slash"
+    if kind == TOK_PERCENT:
+        return "percent"
+    if kind == TOK_AMP:
+        return "amp"
+    if kind == TOK_PIPE:
+        return "pipe"
+    if kind == TOK_CARET:
+        return "caret"
+    if kind == TOK_TILDE:
+        return "tilde"
+    if kind == TOK_LESS:
+        return "less"
+    if kind == TOK_GREATER:
+        return "greater"
+    if kind == TOK_EQUAL_EQUAL:
+        return "equal_equal"
+    if kind == TOK_BANG_EQUAL:
+        return "bang_equal"
+    if kind == TOK_LESS_EQUAL:
+        return "less_equal"
+    if kind == TOK_GREATER_EQUAL:
+        return "greater_equal"
+    if kind == TOK_SHIFT_LEFT:
+        return "shift_left"
+    if kind == TOK_SHIFT_RIGHT:
+        return "shift_right"
+    if kind == TOK_DOT_DOT:
+        return "dot_dot"
+    return "unknown"
+
+
 # ── token helpers ─────────────────────────────────────────────────────────
 
 function emit_token(tokens: ref[vec.Vec[Token]], kind: int, lexeme: str,
@@ -901,7 +1151,7 @@ public function lex(source: str, errors: ref[vec.Vec[LexError]]) -> vec.Vec[Toke
             if is_cont:
                 cont_pending = true
             else:
-                emit_token(ref_of(tokens), TOK_NEWLINE, "", line_num, int<-line_len + 1,
+                emit_token(ref_of(tokens), TOK_NEWLINE, "\n", line_num, int<-line_len + 1,
                     pos + line_len, pos + line_len + 1)
 
         if adj_consumed:
