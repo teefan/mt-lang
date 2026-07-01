@@ -3,6 +3,7 @@ import lexer.token as token
 import std.fmt as fmt
 import std.mem.arena as arena
 import std.string
+import std.vec
 
 public function parse_block(stream: ref[ts.TokenStream]) -> bool:
     if not ts.match_symbol(stream, ":"):
@@ -97,3 +98,52 @@ public function synchronize_to_next_decl(stream: ref[ts.TokenStream]) -> void:
                 break
         else:
             ts.advance(stream)
+
+
+public function parse_body_lines(stream: ref[ts.TokenStream]) -> vec.Vec[str]:
+    var result = vec.Vec[str].create()
+    if not ts.check_kind(stream, token.TokenKind.indent):
+        return result
+    ts.advance(stream)
+
+    var depth: ptr_uint = 1
+    var member_start: ptr_uint = ts.peek(stream).start_offset
+    var iter_count: ptr_uint = 0
+
+    while not ts.eof(stream) and depth > 0:
+        iter_count += 1
+        if iter_count >= 50000:
+            let ftok = ts.peek(stream)
+            var arena_storage = arena.create(256)
+            var msg = string.String.create()
+            msg.append(stream.path)
+            msg.append(":")
+            fmt.append_ptr_uint(ref_of(msg), ftok.line)
+            msg.append(": fatal: parse_body_lines hung after 50000 iter")
+            fatal(arena_storage.to_cstr(msg.as_str()))
+
+        let kind = ts.peek_kind(stream)
+        if kind == token.TokenKind.indent:
+            depth += 1
+            ts.advance(stream)
+        else if kind == token.TokenKind.dedent:
+            depth -= 1
+            if depth == 0:
+                let member_end = ts.peek_prev(stream).end_offset
+                if member_end > member_start:
+                    result.push(ts.source_slice(stream, member_start, member_end))
+                ts.advance(stream)
+                return result
+            ts.advance(stream)
+        else if kind == token.TokenKind.newline:
+            let member_end = ts.peek_prev(stream).end_offset
+            if member_end > member_start:
+                result.push(ts.source_slice(stream, member_start, member_end))
+            ts.advance(stream)
+            ts.skip_newlines(stream)
+            if not ts.eof(stream) and ts.peek_kind(stream) != token.TokenKind.dedent:
+                member_start = ts.peek(stream).start_offset
+        else:
+            ts.advance(stream)
+
+    return result

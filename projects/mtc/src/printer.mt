@@ -39,29 +39,29 @@ function head_start_of(decl: ast.Decl) -> ptr_uint:
             return head_start
         ast.Decl.type_alias(_, _, head_start, _):
             return head_start
-        ast.Decl.struct_decl(_, _, head_start, _, _, _):
+        ast.Decl.struct_decl(_, _, _, head_start, _, _, _):
             return head_start
-        ast.Decl.union_decl(_, head_start, _, _, _):
+        ast.Decl.union_decl(_, _, head_start, _, _, _):
             return head_start
-        ast.Decl.enum_decl(_, _, head_start, _, _, _):
+        ast.Decl.enum_decl(_, _, _, head_start, _, _, _):
             return head_start
-        ast.Decl.flags_decl(_, _, head_start, _, _, _):
+        ast.Decl.flags_decl(_, _, _, head_start, _, _, _):
             return head_start
-        ast.Decl.variant_decl(_, _, head_start, _, _, _):
+        ast.Decl.variant_decl(_, _, _, head_start, _, _, _):
             return head_start
         ast.Decl.opaque_decl(_, head_start, _):
             return head_start
-        ast.Decl.interface_decl(_, _, head_start, _, _, _):
+        ast.Decl.interface_decl(_, _, _, head_start, _, _, _):
             return head_start
-        ast.Decl.extending_block(_, head_start, _, _, _):
+        ast.Decl.extending_block(_, _, head_start, _, _, _):
             return head_start
-        ast.Decl.function_decl(_, _, _, _, _, _, _, head_start, _, _, _):
+        ast.Decl.function_decl(_, _, _, _, _, _, _, _, head_start, _, _, _):
             return head_start
         ast.Decl.extern_function(_, _, _, head_start, _):
             return head_start
         ast.Decl.static_assert_decl(_, _, head_start, _):
             return head_start
-        ast.Decl.when_block(_, head_start, _, _, _):
+        ast.Decl.when_block(_, _, head_start, _, _, _):
             return head_start
         ast.Decl.event_decl(_, _, head_start, _):
             return head_start
@@ -81,29 +81,29 @@ function head_end_of(decl: ast.Decl) -> ptr_uint:
             return head_end
         ast.Decl.type_alias(_, _, _, head_end):
             return head_end
-        ast.Decl.struct_decl(_, _, _, head_end, _, _):
+        ast.Decl.struct_decl(_, _, _, _, head_end, _, _):
             return head_end
-        ast.Decl.union_decl(_, _, head_end, _, _):
+        ast.Decl.union_decl(_, _, _, head_end, _, _):
             return head_end
-        ast.Decl.enum_decl(_, _, _, head_end, _, _):
+        ast.Decl.enum_decl(_, _, _, _, head_end, _, _):
             return head_end
-        ast.Decl.flags_decl(_, _, _, head_end, _, _):
+        ast.Decl.flags_decl(_, _, _, _, head_end, _, _):
             return head_end
-        ast.Decl.variant_decl(_, _, _, head_end, _, _):
+        ast.Decl.variant_decl(_, _, _, _, head_end, _, _):
             return head_end
         ast.Decl.opaque_decl(_, _, head_end):
             return head_end
-        ast.Decl.interface_decl(_, _, _, head_end, _, _):
+        ast.Decl.interface_decl(_, _, _, _, head_end, _, _):
             return head_end
-        ast.Decl.extending_block(_, _, head_end, _, _):
+        ast.Decl.extending_block(_, _, _, head_end, _, _):
             return head_end
-        ast.Decl.function_decl(_, _, _, _, _, _, _, _, head_end, _, _):
+        ast.Decl.function_decl(_, _, _, _, _, _, _, _, _, head_end, _, _):
             return head_end
         ast.Decl.extern_function(_, _, _, _, head_end):
             return head_end
         ast.Decl.static_assert_decl(_, _, _, head_end):
             return head_end
-        ast.Decl.when_block(_, _, head_end, _, _):
+        ast.Decl.when_block(_, _, _, head_end, _, _):
             return head_end
         ast.Decl.event_decl(_, _, _, head_end):
             return head_end
@@ -115,23 +115,23 @@ function body_start_of(decl: ast.Decl) -> ptr_uint:
     match decl:
         ast.Decl.const_decl(_, _, _, _, _, _, body_start, _):
             return body_start
-        ast.Decl.struct_decl(_, _, _, _, body_start, _):
+        ast.Decl.struct_decl(_, _, _, _, _, body_start, _):
             return body_start
-        ast.Decl.union_decl(_, _, _, body_start, _):
+        ast.Decl.union_decl(_, _, _, _, body_start, _):
             return body_start
-        ast.Decl.enum_decl(_, _, _, _, body_start, _):
+        ast.Decl.enum_decl(_, _, _, _, _, body_start, _):
             return body_start
-        ast.Decl.flags_decl(_, _, _, _, body_start, _):
+        ast.Decl.flags_decl(_, _, _, _, _, body_start, _):
             return body_start
-        ast.Decl.variant_decl(_, _, _, _, body_start, _):
+        ast.Decl.variant_decl(_, _, _, _, _, body_start, _):
             return body_start
-        ast.Decl.interface_decl(_, _, _, _, body_start, _):
+        ast.Decl.interface_decl(_, _, _, _, _, body_start, _):
             return body_start
-        ast.Decl.extending_block(_, _, _, body_start, _):
+        ast.Decl.extending_block(_, _, _, _, body_start, _):
             return body_start
-        ast.Decl.function_decl(_, _, _, _, _, _, _, _, _, body_start, _):
+        ast.Decl.function_decl(_, _, _, _, _, _, _, _, _, _, body_start, _):
             return body_start
-        ast.Decl.when_block(_, _, _, body_start, _):
+        ast.Decl.when_block(_, _, _, _, body_start, _):
             return body_start
         _:
             return 0
@@ -141,23 +141,23 @@ function body_end_of(decl: ast.Decl) -> ptr_uint:
     match decl:
         ast.Decl.const_decl(_, _, _, _, _, _, _, body_end):
             return body_end
-        ast.Decl.struct_decl(_, _, _, _, _, body_end):
+        ast.Decl.struct_decl(_, _, _, _, _, _, body_end):
             return body_end
-        ast.Decl.union_decl(_, _, _, _, body_end):
+        ast.Decl.union_decl(_, _, _, _, _, body_end):
             return body_end
-        ast.Decl.enum_decl(_, _, _, _, _, body_end):
+        ast.Decl.enum_decl(_, _, _, _, _, _, body_end):
             return body_end
-        ast.Decl.flags_decl(_, _, _, _, _, body_end):
+        ast.Decl.flags_decl(_, _, _, _, _, _, body_end):
             return body_end
-        ast.Decl.variant_decl(_, _, _, _, _, body_end):
+        ast.Decl.variant_decl(_, _, _, _, _, _, body_end):
             return body_end
-        ast.Decl.interface_decl(_, _, _, _, _, body_end):
+        ast.Decl.interface_decl(_, _, _, _, _, _, body_end):
             return body_end
-        ast.Decl.extending_block(_, _, _, _, body_end):
+        ast.Decl.extending_block(_, _, _, _, _, body_end):
             return body_end
-        ast.Decl.function_decl(_, _, _, _, _, _, _, _, _, _, body_end):
+        ast.Decl.function_decl(_, _, _, _, _, _, _, _, _, _, _, body_end):
             return body_end
-        ast.Decl.when_block(_, _, _, _, body_end):
+        ast.Decl.when_block(_, _, _, _, _, body_end):
             return body_end
         _:
             return 0
