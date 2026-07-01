@@ -12,12 +12,19 @@ import std.vec
 
 # ---- Import ----
 
-public function parse_import_names(stream: ref[ts.TokenStream]) -> bool:
+public function parse_import_names(stream: ref[ts.TokenStream], path_out: ref[str], alias_out: ref[str]) -> bool:
+    let path_start = ts.peek(stream).start_offset
     types.parse_qualified_name(stream)
+    let path_end = ts.peek_prev(stream).end_offset
+    read(path_out) = ts.source_slice(stream, path_start, path_end)
+    read(alias_out) = ""
 
     if ts.check_keyword(stream, "as"):
         ts.advance(stream)
+        let alias_start = ts.peek(stream).start_offset
         types.parse_qualified_name(stream)
+        let alias_end = ts.peek_prev(stream).end_offset
+        read(alias_out) = ts.source_slice(stream, alias_start, alias_end)
 
     return true
 

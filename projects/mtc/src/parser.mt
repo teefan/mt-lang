@@ -19,9 +19,10 @@ public struct ParseResult:
 public function parse(
     tokens: ref[vec.Vec[token.Token]],
     path: str,
+    source: str,
     decls_out: ref[vec.Vec[ast.Decl]],
 ) -> ParseResult:
-    var tok_stream = ts.make_stream(tokens, path)
+    var tok_stream = ts.make_stream(tokens, path, source)
     var stats = decl.zero_stats()
     let result = parse_source_file(ref_of(tok_stream), ref_of(stats), decls_out, null)
     return build_result(result, ref_of(stats))
@@ -48,7 +49,7 @@ public function parse_recovering(
             errors.push(parser_error.create(path, le.line, le.column, le.message.as_str()))
         index += 1
 
-    var tok_stream = ts.make_stream(ref_of(tokens), path)
+    var tok_stream = ts.make_stream(ref_of(tokens), path, source)
     var stats = decl.zero_stats()
     let result = parse_source_file(ref_of(tok_stream), ref_of(stats), decls_out, unsafe: ptr[vec.Vec[parser_error.ParseError]]<-ptr_of(read(errors)))
     return build_result(result, ref_of(stats))
@@ -85,10 +86,12 @@ function parse_source_file(
     while ts.check_keyword(s, "import"):
         let head_start = ts.peek(s).start_offset
         ts.advance(s)
-        let ok = decl.parse_import_names(s)
+        var path_buf: str = ""
+        var alias_buf: str = ""
+        let ok = decl.parse_import_names(s, ref_of(path_buf), ref_of(alias_buf))
         if not ok:
             return false
-        decls_out.push(ast.Decl.import_decl(head_start = head_start, head_end = ts.peek_prev(s).end_offset, path = "", alias = ""))
+        decls_out.push(ast.Decl.import_decl(head_start = head_start, head_end = ts.peek_prev(s).end_offset, path = path_buf, alias = alias_buf))
         stats.imports += 1
         ts.skip_newlines(s)
 
@@ -113,10 +116,12 @@ function parse_raw_module(
     while ts.check_keyword(s, "import"):
         let head_start = ts.peek(s).start_offset
         ts.advance(s)
-        let ok = decl.parse_import_names(s)
+        var path_buf: str = ""
+        var alias_buf: str = ""
+        let ok = decl.parse_import_names(s, ref_of(path_buf), ref_of(alias_buf))
         if not ok:
             return false
-        decls_out.push(ast.Decl.import_decl(head_start = head_start, head_end = ts.peek_prev(s).end_offset, path = "", alias = ""))
+        decls_out.push(ast.Decl.import_decl(head_start = head_start, head_end = ts.peek_prev(s).end_offset, path = path_buf, alias = alias_buf))
         stats.imports += 1
         ts.skip_newlines(s)
 

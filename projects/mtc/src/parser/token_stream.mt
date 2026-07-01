@@ -1,4 +1,5 @@
 import lexer.token as token
+import std.str
 import std.vec
 
 public struct TokenStream:
@@ -6,20 +7,22 @@ public struct TokenStream:
     count: ptr_uint
     current: ptr_uint
     path: str
+    source: str
 
 
-public function make_stream(tokens: ref[vec.Vec[token.Token]], path: str) -> TokenStream:
+public function make_stream(tokens: ref[vec.Vec[token.Token]], path: str, source: str) -> TokenStream:
     if tokens.is_empty():
-        return TokenStream(data = null, count = 0, current = 0, path = path)
+        return TokenStream(data = null, count = 0, current = 0, path = path, source = source)
 
     let first = tokens.get(0) else:
-        return TokenStream(data = null, count = 0, current = 0, path = path)
+        return TokenStream(data = null, count = 0, current = 0, path = path, source = source)
 
     return unsafe: TokenStream(
         data = ptr[token.Token]<-first,
         count = tokens.len(),
         current = 0,
         path = path,
+        source = source,
     )
 
 
@@ -175,3 +178,11 @@ public function save_position(ts: ref[TokenStream]) -> ptr_uint:
 
 public function restore_position(ts: ref[TokenStream], pos: ptr_uint) -> void:
     ts.current = pos
+
+
+public function source_slice(ts: ref[TokenStream], start_off: ptr_uint, end_off: ptr_uint) -> str:
+    if end_off <= start_off or start_off >= ts.source.len:
+        return ""
+    if end_off > ts.source.len:
+        return ts.source.slice(start_off, ts.source.len - start_off)
+    return ts.source.slice(start_off, end_off - start_off)
