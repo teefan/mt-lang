@@ -316,3 +316,5 @@ public function write_token_line(tokens: ref[vec.Vec[token_mod.Token]], index: p
         fmt.append_ptr_uint(output, tok.start_offset)
         output.push_byte(32)
         fmt.append_ptr_uint(output, tok.end_offset)
+        output.push_byte(32)
+        output.append(tok.lexeme)
