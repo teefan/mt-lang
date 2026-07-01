@@ -18,7 +18,7 @@ public function parse_expression(stream: ref[ts.TokenStream]) -> bool:
     return parse_assignment(stream)
 
 
-function is_assign_op(lexeme: str) -> bool:
+public function is_assign_op(lexeme: str) -> bool:
     return (
         lexeme == "="
         or lexeme == "+=" or lexeme == "-=" or lexeme == "*=" or lexeme == "/="
@@ -437,8 +437,8 @@ function parse_body_or_expr(stream: ref[ts.TokenStream]) -> bool:
 
 # ---- Utility ----
 
-function parse_comma_separated_until(stream: ref[ts.TokenStream], end_sym: str) -> void:
-    while not ts.check_symbol(stream, end_sym) and not ts.eof(stream):
+function parse_expr_comma_list(stream: ref[ts.TokenStream], end_symbol: str) -> void:
+    while not ts.check_symbol(stream, end_symbol) and not ts.eof(stream):
         let _ = parse_expression(stream)
         if not ts.match_symbol(stream, ","):
             break

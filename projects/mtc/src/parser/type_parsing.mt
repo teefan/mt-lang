@@ -164,7 +164,7 @@ public function skip_type_arguments(stream: ref[ts.TokenStream]) -> void:
     blocks.parse_group_content(stream, "[", "]")
 
 
-function parse_comma_separated_until(stream: ref[ts.TokenStream], end_symbol: str) -> void:
+function parse_type_comma_list(stream: ref[ts.TokenStream], end_symbol: str) -> void:
     while not ts.check_symbol(stream, end_symbol) and not ts.eof(stream):
         let tok = ts.peek(stream)
         if tok.kind == token.TokenKind.keyword:

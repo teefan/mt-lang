@@ -388,7 +388,7 @@ function parse_assign_or_expr(stream: ref[ts.TokenStream]) -> bool:
     let _ = expr.parse_expression(stream)
 
     let tok = ts.peek(stream)
-    if tok.kind == token.TokenKind.symbol and is_assign_op(tok.lexeme):
+    if tok.kind == token.TokenKind.symbol and expr.is_assign_op(tok.lexeme):
         ts.advance(stream)
         let _ = expr.parse_expression(stream)
 
@@ -398,17 +398,6 @@ function parse_assign_or_expr(stream: ref[ts.TokenStream]) -> bool:
     skip_to_newline(stream)
     return true
 
-
-function is_assign_op(lexeme: str) -> bool:
-    return (
-        lexeme == "="
-        or lexeme == "+=" or lexeme == "-=" or lexeme == "*=" or lexeme == "/="
-        or lexeme == "%=" or lexeme == "&=" or lexeme == "|=" or lexeme == "^="
-        or lexeme == "<<=" or lexeme == ">>="
-    )
-
-
-# ---- Inline statements ----
 
 function parse_inline_stmt(stream: ref[ts.TokenStream]) -> bool:
     let next = ts.peek(stream)

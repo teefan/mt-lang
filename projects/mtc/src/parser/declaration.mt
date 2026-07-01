@@ -65,8 +65,6 @@ public function parse_declaration(
     var head_end: ptr_uint = head_start
     var body_start: ptr_uint = 0
     var body_end: ptr_uint = 0
-    var _text_a: str = ""
-    var _text_b: str = ""
 
     if ts.check_keyword(stream, "attribute"):
         ts.advance(stream)
@@ -94,45 +92,50 @@ public function parse_declaration(
                 return true
             return handle_branch_error(stream, recover)
         let name = peek_name(stream)
-        let ok = parse_const_decl(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end), ref_of(_text_a))
+        var const_type: str = ""
+        let ok = parse_const_decl(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end), ref_of(const_type))
         if ok:
-            decls.push(ast.Decl.const_decl(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, name = name, ctype = _text_a, has_block_body = false, is_const_fn = false))
+            decls.push(ast.Decl.const_decl(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, name = name, const_type = const_type, has_block_body = false, is_const_fn = false))
             return true
         return handle_branch_error(stream, recover)
 
     if ts.check_keyword(stream, "var"):
         ts.advance(stream)
         let name = peek_name(stream)
-        let ok = parse_var_decl(stream, track, ref_of(head_end), ref_of(_text_a))
+        var var_type: str = ""
+        let ok = parse_var_decl(stream, track, ref_of(head_end), ref_of(var_type))
         if ok:
-            decls.push(ast.Decl.var_decl(head_start = head_start, head_end = head_end, name = name, vtype = _text_a))
+            decls.push(ast.Decl.var_decl(head_start = head_start, head_end = head_end, name = name, var_type = var_type))
             return true
         return handle_branch_error(stream, recover)
 
     if ts.check_keyword(stream, "event"):
         ts.advance(stream)
         let name = peek_name(stream)
-        let ok = parse_event_decl(stream, track, ref_of(head_end), ref_of(_text_a))
+        var payload: str = ""
+        let ok = parse_event_decl(stream, track, ref_of(head_end), ref_of(payload))
         if ok:
-            decls.push(ast.Decl.event_decl(head_start = head_start, head_end = head_end, name = name, payload = _text_a))
+            decls.push(ast.Decl.event_decl(head_start = head_start, head_end = head_end, name = name, payload = payload))
             return true
         return handle_branch_error(stream, recover)
 
     if ts.check_keyword(stream, "type"):
         ts.advance(stream)
         let name = peek_name(stream)
-        let ok = parse_type_alias(stream, track, ref_of(head_end), ref_of(_text_a))
+        var target_text: str = ""
+        let ok = parse_type_alias(stream, track, ref_of(head_end), ref_of(target_text))
         if ok:
-            decls.push(ast.Decl.type_alias(head_start = head_start, head_end = head_end, name = name, target = _text_a))
+            decls.push(ast.Decl.type_alias(head_start = head_start, head_end = head_end, name = name, target = target_text))
             return true
         return handle_branch_error(stream, recover)
 
     if ts.check_keyword(stream, "struct"):
         ts.advance(stream)
         let name = peek_name(stream)
-        let ok = parse_struct_decl(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end), ref_of(_text_b))
+        var type_params: str = ""
+        let ok = parse_struct_decl(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end), ref_of(type_params))
         if ok:
-            decls.push(ast.Decl.struct_decl(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, name = name, type_params = _text_b))
+            decls.push(ast.Decl.struct_decl(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, name = name, type_params = type_params))
             return true
         return handle_branch_error(stream, recover)
 
@@ -148,27 +151,30 @@ public function parse_declaration(
     if ts.check_keyword(stream, "enum"):
         ts.advance(stream)
         let name = peek_name(stream)
-        let ok = parse_enum_decl(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end), ref_of(_text_a))
+        var backing: str = ""
+        let ok = parse_enum_decl(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end), ref_of(backing))
         if ok:
-            decls.push(ast.Decl.enum_decl(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, name = name, backing = _text_a))
+            decls.push(ast.Decl.enum_decl(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, name = name, backing = backing))
             return true
         return handle_branch_error(stream, recover)
 
     if ts.check_keyword(stream, "flags"):
         ts.advance(stream)
         let name = peek_name(stream)
-        let ok = parse_flags_decl(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end), ref_of(_text_a))
+        var backing: str = ""
+        let ok = parse_flags_decl(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end), ref_of(backing))
         if ok:
-            decls.push(ast.Decl.flags_decl(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, name = name, backing = _text_a))
+            decls.push(ast.Decl.flags_decl(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, name = name, backing = backing))
             return true
         return handle_branch_error(stream, recover)
 
     if ts.check_keyword(stream, "variant"):
         ts.advance(stream)
         let name = peek_name(stream)
-        let ok = parse_variant_decl(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end), ref_of(_text_b))
+        var type_params: str = ""
+        let ok = parse_variant_decl(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end), ref_of(type_params))
         if ok:
-            decls.push(ast.Decl.variant_decl(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, name = name, type_params = _text_b))
+            decls.push(ast.Decl.variant_decl(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, name = name, type_params = type_params))
             return true
         return handle_branch_error(stream, recover)
 
@@ -184,9 +190,10 @@ public function parse_declaration(
     if ts.check_keyword(stream, "interface"):
         ts.advance(stream)
         let name = peek_name(stream)
-        let ok = parse_interface_decl(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end), ref_of(_text_b))
+        var type_params: str = ""
+        let ok = parse_interface_decl(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end), ref_of(type_params))
         if ok:
-            decls.push(ast.Decl.interface_decl(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, name = name, type_params = _text_b))
+            decls.push(ast.Decl.interface_decl(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, name = name, type_params = type_params))
             return true
         return handle_branch_error(stream, recover)
 
@@ -242,9 +249,10 @@ public function parse_declaration(
 
     if ts.check_keyword(stream, "static_assert"):
         ts.advance(stream)
-        let ok = parse_static_assert_decl(stream, track, ref_of(head_end), ref_of(_text_a))
+        var condition_text: str = ""
+        let ok = parse_static_assert_decl(stream, track, ref_of(head_end), ref_of(condition_text))
         if ok:
-            decls.push(ast.Decl.static_assert_decl(head_start = head_start, head_end = head_end, cond = _text_a, message = ""))
+            decls.push(ast.Decl.static_assert_decl(head_start = head_start, head_end = head_end, condition = condition_text, message = ""))
             return true
         return handle_branch_error(stream, recover)
 
@@ -253,7 +261,7 @@ public function parse_declaration(
         let name = peek_name(stream)
         let ok = parse_when_top_level(stream, track, ref_of(head_end), ref_of(body_start), ref_of(body_end))
         if ok:
-            decls.push(ast.Decl.when_block(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, discriminant_line = name))
+            decls.push(ast.Decl.when_block(head_start = head_start, head_end = head_end, body_start = body_start, body_end = body_end, discriminant_text = name))
             return true
         return handle_branch_error(stream, recover)
 
@@ -303,7 +311,7 @@ function parse_attribute_decl(stream: ref[ts.TokenStream], track: ref[DeclStats]
 
 # ---- Const ----
 
-function parse_const_decl(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint], body_start_out: ref[ptr_uint], body_end_out: ref[ptr_uint], ctype_out: ref[str]) -> bool:
+function parse_const_decl(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint], body_start_out: ref[ptr_uint], body_end_out: ref[ptr_uint], const_type_out: ref[str]) -> bool:
     if ts.peek_kind(stream) != token.TokenKind.identifier:
         ts.advance(stream)
     else:
@@ -329,7 +337,7 @@ function parse_const_decl(stream: ref[ts.TokenStream], track: ref[DeclStats], he
 
 # ---- Var ----
 
-function parse_var_decl(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint], vtype_out: ref[str]) -> bool:
+function parse_var_decl(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint], var_type_out: ref[str]) -> bool:
     if ts.peek_kind(stream) == token.TokenKind.identifier:
         ts.advance(stream)
 
@@ -383,8 +391,8 @@ function parse_type_alias(stream: ref[ts.TokenStream], track: ref[DeclStats], he
 # ---- Struct ----
 
 function parse_struct_decl(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint], body_start_out: ref[ptr_uint], body_end_out: ref[ptr_uint], type_params_out: ref[str]) -> bool:
-    var _naptp: str = ""
-    parse_name_and_type_params(stream, ref_of(_naptp))
+    var _unused: str = ""
+    parse_name_and_type_params(stream, ref_of(_unused))
 
     if ts.check_keyword(stream, "implements"):
         ts.advance(stream)
@@ -446,8 +454,8 @@ function parse_flags_decl(stream: ref[ts.TokenStream], track: ref[DeclStats], he
 # ---- Variant ----
 
 function parse_variant_decl(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint], body_start_out: ref[ptr_uint], body_end_out: ref[ptr_uint], type_params_out: ref[str]) -> bool:
-    var _naptp: str = ""
-    parse_name_and_type_params(stream, ref_of(_naptp))
+    var _unused: str = ""
+    parse_name_and_type_params(stream, ref_of(_unused))
     parse_decl_block(stream, head_end_out, body_start_out, body_end_out)
     track.variants += 1
     return true
@@ -475,8 +483,8 @@ function parse_opaque_decl(stream: ref[ts.TokenStream], track: ref[DeclStats], h
 # ---- Interface ----
 
 function parse_interface_decl(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint], body_start_out: ref[ptr_uint], body_end_out: ref[ptr_uint], type_params_out: ref[str]) -> bool:
-    var _naptp: str = ""
-    parse_name_and_type_params(stream, ref_of(_naptp))
+    var _unused: str = ""
+    parse_name_and_type_params(stream, ref_of(_unused))
     parse_decl_block(stream, head_end_out, body_start_out, body_end_out)
     track.interfaces += 1
     return true
@@ -495,11 +503,10 @@ function parse_extending_block(stream: ref[ts.TokenStream], track: ref[DeclStats
 
 function parse_function_signature(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint], body_start_out: ref[ptr_uint], body_end_out: ref[ptr_uint]) -> bool:
     ts.advance(stream)
-    var _naptp: str = ""
-    parse_name_and_type_params(stream, ref_of(_naptp))
-    var _mt_var: bool = false
-    var _mtp: str = ""
-    parse_params(stream, ref_of(_mt_var), ref_of(_mtp))
+    var _unused: str = ""
+    parse_name_and_type_params(stream, ref_of(_unused))
+    var _unused_bool: bool = false
+    parse_params(stream, ref_of(_unused_bool), ref_of(_unused))
 
     if ts.match_symbol(stream, "->"):
         let _ = types.parse_type_ref(stream)
@@ -526,11 +533,10 @@ function parse_function_signature(stream: ref[ts.TokenStream], track: ref[DeclSt
 
 function parse_extern_function(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint]) -> bool:
     ts.advance(stream)
-    var _naptp: str = ""
-    parse_name_and_type_params(stream, ref_of(_naptp))
-    var _mt_var: bool = false
-    var _mtp: str = ""
-    parse_params(stream, ref_of(_mt_var), ref_of(_mtp))
+    var _unused: str = ""
+    parse_name_and_type_params(stream, ref_of(_unused))
+    var _unused_bool: bool = false
+    parse_params(stream, ref_of(_unused_bool), ref_of(_unused))
 
     if ts.match_symbol(stream, "->"):
         let _ = types.parse_type_ref(stream)
@@ -546,7 +552,7 @@ function parse_extern_function(stream: ref[ts.TokenStream], track: ref[DeclStats
 
 # ---- Static assert ----
 
-function parse_static_assert_decl(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint], cond_out: ref[str]) -> bool:
+function parse_static_assert_decl(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint], condition_out: ref[str]) -> bool:
     if not ts.match_symbol(stream, "("):
         return false
     let _ = expr.parse_expression(stream)
