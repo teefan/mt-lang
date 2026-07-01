@@ -2,7 +2,7 @@
 
 module MilkTea
   class CBackend
-    module CBackendExpressions
+    module Expressions
       private
 
 

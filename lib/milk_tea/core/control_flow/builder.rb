@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module CFG
+  module ControlFlow
     class Builder
       def initialize(ignore_name: nil, binding_resolution: nil, strict_binding_ids: false, local_decl_without_initializer_writes: false)
         @ignore_name = ignore_name || ->(_name) { false }

@@ -2,7 +2,7 @@
 
 module MilkTea
   class CBackend
-    module CBackendAggregateUtils
+    module AggregateUtils
       private
 
           def each_variant_arm_field_type

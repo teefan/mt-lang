@@ -2,7 +2,7 @@
 
 module MilkTea
   class CBackend
-    module CBackendStatements
+    module Statements
       private
 
           def emit_statement_sequence(statements, level, function:, used_labels:, loop_continue_label: nil, loop_break_label: nil)

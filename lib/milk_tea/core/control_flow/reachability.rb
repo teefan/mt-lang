@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module CFG
+  module ControlFlow
     class Reachability
       Result = Data.define(:reachable_ids)
 

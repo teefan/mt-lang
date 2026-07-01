@@ -97,8 +97,8 @@ module MilkTea
       def loop_body_can_break?(body)
         return false if body.nil? || body.empty?
   
-        graph = CFG::Builder.new.build_loop_body(body)
-        reachability = CFG::Reachability.solve(graph)
+        graph = ControlFlow::Builder.new.build_loop_body(body)
+        reachability = ControlFlow::Reachability.solve(graph)
         graph.each_node.any? do |node|
           node.kind == :break_exit && reachability.reachable_ids.include?(node.id)
         end
@@ -439,7 +439,7 @@ module MilkTea
         return unless identifier&.name == declaration.name
         return unless nullable_binding_declaration?(declaration)
         return if expected_kind == :var && !prefer_var_else_binding_mutated?(declaration)
-        return unless CFG::Termination.block_always_terminates?(branch.body, ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_binding_resolution)
+        return unless ControlFlow::Termination.block_always_terminates?(branch.body, ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_binding_resolution)
   
         { declaration:, if_stmt:, branch: }
       end

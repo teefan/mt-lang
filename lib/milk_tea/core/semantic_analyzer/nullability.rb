@@ -9,8 +9,8 @@ module MilkTea
         return unless binding.ast.respond_to?(:body)
 
         resolution = binding_resolution_snapshot
-        graph = CFG::Builder.new(
-          binding_resolution: CFG::BindingResolution.new(
+        graph = ControlFlow::Builder.new(
+          binding_resolution: ControlFlow::BindingResolution.new(
             identifier_binding_ids: resolution.identifier_binding_ids,
             declaration_binding_ids: resolution.declaration_binding_ids,
             mutating_argument_identifier_ids: resolution.mutating_argument_identifier_ids,
@@ -36,7 +36,7 @@ module MilkTea
         # preassigned (for example module-level const/var bindings).
         initially_assigned.merge(graph.read_bindings - local_declared_ids)
 
-        result = CFG::DefiniteAssignment.solve(graph, initially_assigned:)
+        result = ControlFlow::DefiniteAssignment.solve(graph, initially_assigned:)
         first_issue = result.read_before_assignment.min_by do |issue|
           [issue.line || Float::INFINITY, issue.column || Float::INFINITY, issue.node_id]
         end
@@ -60,18 +60,18 @@ module MilkTea
 
         @nullability_flow_result = nil
         resolution = precheck_binding_resolution(binding.ast.body, scopes)
-        graph = CFG::Builder.new(
-          binding_resolution: CFG::BindingResolution.new(
+        graph = ControlFlow::Builder.new(
+          binding_resolution: ControlFlow::BindingResolution.new(
             identifier_binding_ids: resolution.identifier_binding_ids,
             declaration_binding_ids: resolution.declaration_binding_ids,
             mutating_argument_identifier_ids: resolution.mutating_argument_identifier_ids,
           ),
           strict_binding_ids: true,
         ).build(binding.ast.body)
-        @nullability_flow_result = CFG::NullabilityFlow.solve(graph)
+        @nullability_flow_result = ControlFlow::NullabilityFlow.solve(graph)
       end
 
-      # After processing a statement, apply CFG-derived non-null refinements to
+      # After processing a statement, apply ControlFlow-derived non-null refinements to
       # the scopes so the *next* statement benefits from cross-branch narrowing.
       def apply_nullability_continuation_refinements!(scopes, next_stmt)
         return unless @nullability_flow_result

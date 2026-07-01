@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module CFG
+  module ControlFlow
     class Dataflow
       Result = Data.define(:in_states, :out_states)
 

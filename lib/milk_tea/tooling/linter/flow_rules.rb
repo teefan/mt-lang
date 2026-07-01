@@ -90,7 +90,7 @@ module MilkTea
   
         binding_resolution = @sema_facts&.binding_resolution
         @cfg_binding_resolution = if binding_resolution
-                                    CFG::BindingResolution.new(
+                                    ControlFlow::BindingResolution.new(
                                       identifier_binding_ids: binding_resolution.identifier_binding_ids,
                                       declaration_binding_ids: binding_resolution.declaration_binding_ids,
                                       mutating_argument_identifier_ids: binding_resolution.mutating_argument_identifier_ids,
@@ -105,12 +105,12 @@ module MilkTea
         @statement_flow_analysis_cache[stmts.object_id] ||= begin
           binding_resolution = cfg_binding_resolution
           graph = profile_phase("flow.graph") do
-            CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution:).build(stmts)
+            ControlFlow::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution:).build(stmts)
           end
-          reachability = profile_phase("flow.reachability") { CFG::Reachability.solve(graph) }
-          nullability = profile_phase("flow.nullability") { CFG::NullabilityFlow.solve(graph) }
+          reachability = profile_phase("flow.reachability") { ControlFlow::Reachability.solve(graph) }
+          nullability = profile_phase("flow.nullability") { ControlFlow::NullabilityFlow.solve(graph) }
           constant_propagation = profile_phase("flow.constant_propagation") do
-            CFG::ConstantPropagation.solve(graph, binding_resolution:, strict_binding_ids: !binding_resolution.nil?)
+            ControlFlow::ConstantPropagation.solve(graph, binding_resolution:, strict_binding_ids: !binding_resolution.nil?)
           end
           loop_body_nodes = profile_phase("flow.loop_body_nodes") { compute_loop_body_nodes(graph) }
           StatementFlowAnalysis.new(graph:, reachability:, nullability:, constant_propagation:, loop_body_nodes:)
@@ -122,13 +122,13 @@ module MilkTea
         @dead_assignment_analysis_cache[stmts.object_id] ||= begin
           binding_resolution = cfg_binding_resolution
           graph = profile_phase("dead_assignment.graph") do
-            CFG::Builder.new(
+            ControlFlow::Builder.new(
               ignore_name: method(:ignored_binding_name?),
               binding_resolution:,
               local_decl_without_initializer_writes: true,
             ).build(stmts)
           end
-          liveness = profile_phase("dead_assignment.liveness") { CFG::Liveness.solve(graph) }
+          liveness = profile_phase("dead_assignment.liveness") { ControlFlow::Liveness.solve(graph) }
           locally_declared = profile_phase("dead_assignment.locals") do
             graph.each_node.each_with_object(Set.new) do |node, bindings|
               node.writes_info.each do |write|
@@ -192,7 +192,7 @@ module MilkTea
           next if skip_node || cond_expr.nil?
   
           in_state  = cp.in_states[node.id] || {}
-          const_val = CFG::ConstantPropagation.constant_value_of(
+          const_val = ControlFlow::ConstantPropagation.constant_value_of(
             cond_expr,
             in_state,
             binding_resolution:,
@@ -334,7 +334,7 @@ module MilkTea
           case stmt
           when AST::WhileStmt
             body = stmt.body || []
-            if !body.empty? && CFG::Termination.loop_body_always_exits?(body)
+            if !body.empty? && ControlFlow::Termination.loop_body_always_exits?(body)
               @warnings << Warning.new(
                 path: @path,
                 line: stmt.line,
@@ -348,7 +348,7 @@ module MilkTea
             walk_stmts_for_loop_check(body)
           when AST::ForStmt
             body = stmt.body || []
-            if !body.empty? && CFG::Termination.loop_body_always_exits?(body)
+            if !body.empty? && ControlFlow::Termination.loop_body_always_exits?(body)
               @warnings << Warning.new(
                 path: @path,
                 line: stmt.line,

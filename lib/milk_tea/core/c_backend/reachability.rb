@@ -4,7 +4,7 @@ require "set"
 
 module MilkTea
   class CBackend
-    module CBackendReachability
+    module Reachability
       private
 
           def emitted_constants

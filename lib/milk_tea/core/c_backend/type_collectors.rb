@@ -2,7 +2,7 @@
 
 module MilkTea
   class CBackend
-    module CBackendTypeCollectors
+    module TypeCollectors
       private
 
           def collect_checked_array_index_types(nullable_only: false)

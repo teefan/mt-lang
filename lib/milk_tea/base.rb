@@ -36,7 +36,7 @@ module MilkTea
     :linux
   end
 
-  # Unified diagnostic value shared by the linter, sema, and all CFG analyses.
+  # Unified diagnostic value shared by the linter, sema, and all ControlFlow analyses.
   # severity: :error | :warning | :hint | :info
   Diagnostic = Data.define(:path, :line, :column, :length, :code, :message, :severity, :symbol_name) do
     def initialize(path:, line:, column: nil, length: nil, code:, message:, severity: :warning, symbol_name: nil) = super

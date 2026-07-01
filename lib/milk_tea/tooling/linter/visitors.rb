@@ -132,7 +132,7 @@ module MilkTea
       def visit_statement_list(stmts)
         terminated = false
         stmts.each do |stmt|
-          next if terminated  # skip visitation only; CFG emits the warning
+          next if terminated  # skip visitation only; ControlFlow emits the warning
   
           visit_statement(stmt)
           terminated = true if terminator?(stmt)

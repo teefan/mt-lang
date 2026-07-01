@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module CFG
+  module ControlFlow
     class Liveness
       Result = Data.define(:live_in, :live_out)
 

@@ -3,7 +3,7 @@
 require_relative "../compile_time/const_eval"
 
 module MilkTea
-  module CFG
+  module ControlFlow
     class ConstantPropagation
       ConstVal = Data.define(:value)
 

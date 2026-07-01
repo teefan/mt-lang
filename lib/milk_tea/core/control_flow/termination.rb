@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module CFG
+  module ControlFlow
     class Termination
       def self.block_always_terminates?(statements, **builder_options)
         return false if statements.nil? || statements.empty?

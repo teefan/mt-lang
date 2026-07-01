@@ -43,7 +43,7 @@ module MilkTea
       end
 
       def cfg_block_always_terminates?(statements)
-        CFG::Termination.block_always_terminates?(statements, ignore_name: ->(_name) { false })
+        ControlFlow::Termination.block_always_terminates?(statements, ignore_name: ->(_name) { false })
       end
 
       def check_statement(statement, scopes:, return_type:, allow_return: true)
@@ -416,7 +416,7 @@ module MilkTea
         check_block(statement.else_body, scopes: else_scopes, return_type:, allow_return:) if statement.else_body
         if statement.else_body && !statement.recovered_else
           terminator = if inside_loop?
-                         CFG::Termination.block_always_terminates_in_loop?(statement.else_body)
+                         ControlFlow::Termination.block_always_terminates_in_loop?(statement.else_body)
                        else
                          cfg_block_always_terminates?(statement.else_body)
                        end
