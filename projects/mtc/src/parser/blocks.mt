@@ -1,5 +1,8 @@
 import parser.token_stream as ts
 import lexer.token as token
+import std.fmt as fmt
+import std.mem.arena as arena
+import std.string
 
 public function parse_block(stream: ref[ts.TokenStream]) -> bool:
     if not ts.match_symbol(stream, ":"):
@@ -8,17 +11,25 @@ public function parse_block(stream: ref[ts.TokenStream]) -> bool:
         return false
     if not ts.match_kind(stream, token.TokenKind.indent):
         return false
-
     return true
-
 
 public function consume_dedent(stream: ref[ts.TokenStream]) -> bool:
     return ts.match_kind(stream, token.TokenKind.dedent)
 
-
 public function skip_to_dedent(stream: ref[ts.TokenStream]) -> void:
     var depth: ptr_uint = 1
+    var sk_iters: ptr_uint = 0
     while not ts.eof(stream) and depth > 0:
+        sk_iters += 1
+        if sk_iters >= 10000:
+            let ftok = ts.peek(stream)
+            var arena_storage = arena.create(256)
+            var msg = string.String.create()
+            msg.append(stream.path)
+            msg.append(":")
+            fmt.append_ptr_uint(ref_of(msg), ftok.line)
+            msg.append(": fatal: skip_to_dedent hung after 10000 iter")
+            fatal(arena_storage.to_cstr(msg.as_str()))
         let kind = ts.peek_kind(stream)
         if kind == token.TokenKind.indent:
             depth += 1
@@ -29,13 +40,22 @@ public function skip_to_dedent(stream: ref[ts.TokenStream]) -> void:
                 return
         else if kind == token.TokenKind.eof:
             return
-
         ts.advance(stream)
-
 
 public function parse_group_content(stream: ref[ts.TokenStream], open: str, close: str) -> void:
     var depth: ptr_uint = 1
+    var gc_iters: ptr_uint = 0
     while not ts.eof(stream) and depth > 0:
+        gc_iters += 1
+        if gc_iters >= 10000:
+            let ftok = ts.peek(stream)
+            var arena_storage = arena.create(256)
+            var msg = string.String.create()
+            msg.append(stream.path)
+            msg.append(":")
+            fmt.append_ptr_uint(ref_of(msg), ftok.line)
+            msg.append(": fatal: parse_group_content hung after 10000 iter")
+            fatal(arena_storage.to_cstr(msg.as_str()))
         let tok = ts.peek(stream)
         if tok.kind == token.TokenKind.symbol:
             if tok.lexeme == open or tok.lexeme == "[" or tok.lexeme == "(":
@@ -45,13 +65,22 @@ public function parse_group_content(stream: ref[ts.TokenStream], open: str, clos
                 if depth == 0:
                     ts.advance(stream)
                     return
-
         ts.advance(stream)
-
 
 public function synchronize_to_next_decl(stream: ref[ts.TokenStream]) -> void:
     var indent_depth: ptr_uint = 0
+    var sync_iters: ptr_uint = 0
     while not ts.eof(stream):
+        sync_iters += 1
+        if sync_iters >= 10000:
+            let ftok = ts.peek(stream)
+            var arena_storage = arena.create(256)
+            var msg = string.String.create()
+            msg.append(stream.path)
+            msg.append(":")
+            fmt.append_ptr_uint(ref_of(msg), ftok.line)
+            msg.append(": fatal: synchronize_to_next_decl hung after 10000 iter")
+            fatal(arena_storage.to_cstr(msg.as_str()))
         let tok = ts.peek(stream)
         if tok.kind == token.TokenKind.indent:
             indent_depth += 1

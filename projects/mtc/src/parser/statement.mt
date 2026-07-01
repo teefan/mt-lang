@@ -2,6 +2,7 @@ import parser.token_stream as ts
 import lexer.token as token
 import parser.blocks as blocks
 import parser.expression as expr
+import parser.stmt_ast as stmt_ast
 import parser.type_parsing as types
 import std.log as log
 
@@ -104,13 +105,29 @@ function parse_full_block(stream: ref[ts.TokenStream]) -> bool:
     return true
 
 
-function parse_statement_block_body(stream: ref[ts.TokenStream]) -> void:
+public function parse_statement_block_body(stream: ref[ts.TokenStream]) -> void:
     while not ts.eof(stream):
         let kind = ts.peek_kind(stream)
         if kind == token.TokenKind.dedent or kind == token.TokenKind.eof:
             return
 
         let _ = parse_statement(stream)
+        let remaining_kind = ts.peek_kind(stream)
+        if remaining_kind != token.TokenKind.newline and remaining_kind != token.TokenKind.dedent and remaining_kind != token.TokenKind.eof:
+            var fallback_depth: ptr_uint = 0
+            while not ts.eof(stream):
+                let k = ts.peek_kind(stream)
+                if k == token.TokenKind.indent:
+                    fallback_depth += 1
+                else if k == token.TokenKind.dedent:
+                    if fallback_depth == 0:
+                        break
+                    fallback_depth -= 1
+                else if k == token.TokenKind.newline and fallback_depth == 0:
+                    break
+                else if k == token.TokenKind.eof:
+                    break
+                ts.advance(stream)
 
         ts.skip_newlines(stream)
 

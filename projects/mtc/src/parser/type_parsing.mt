@@ -142,9 +142,18 @@ function parse_type_arguments(stream: ref[ts.TokenStream]) -> void:
         parse_name_part(stream)
         let _ = ts.match_symbol(stream, ",")
 
-    parse_comma_separated_until(stream, "]")
-
-    let _ = ts.match_symbol(stream, "]")
+    var bracket_depth: ptr_uint = 1
+    while not ts.eof(stream) and bracket_depth > 0:
+        let tok = ts.peek(stream)
+        if tok.kind == token.TokenKind.symbol:
+            if tok.lexeme == "[":
+                bracket_depth += 1
+            else if tok.lexeme == "]":
+                bracket_depth -= 1
+                if bracket_depth == 0:
+                    ts.advance(stream)
+                    return
+        ts.advance(stream)
 
 
 public function skip_type_arguments(stream: ref[ts.TokenStream]) -> void:

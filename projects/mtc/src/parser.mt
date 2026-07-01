@@ -6,6 +6,8 @@ import parser.ast_types as ast
 import parser.declaration as decl
 import parser.error as parser_error
 import std.string
+import std.fmt as fmt
+import std.mem.arena as arena
 import std.vec
 
 
@@ -95,7 +97,29 @@ function parse_source_file(
         stats.imports += 1
         ts.skip_newlines(s)
 
+    var top_last_pos: ptr_uint = ts.save_position(s)
+    var top_stall: ptr_uint = 0
+    let top_max_stall: ptr_uint = 200
+
     while not ts.eof(s):
+        let pos = ts.save_position(s)
+        if pos == top_last_pos:
+            top_stall += 1
+            if top_stall >= top_max_stall:
+                let ftok = ts.peek(s)
+                var arena_storage = arena.create(256)
+                var msg = string.String.create()
+                msg.append(s.path)
+                msg.append(":")
+                fmt.append_ptr_uint(ref_of(msg), ftok.line)
+                msg.append(": fatal: parse_source_file hung after ")
+                fmt.append_ptr_uint(ref_of(msg), top_max_stall)
+                msg.append(" stall iterations")
+                fatal(arena_storage.to_cstr(msg.as_str()))
+        else:
+            top_last_pos = pos
+            top_stall = 0
+
         if not decl.parse_declaration(s, stats, decls_out, recover):
             if recover == null:
                 return false

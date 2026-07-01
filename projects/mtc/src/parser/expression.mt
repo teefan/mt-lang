@@ -15,7 +15,26 @@ public function report_error(stream: ref[ts.TokenStream], message: str) -> void:
 # ---- Entry point ----
 
 public function parse_expression(stream: ref[ts.TokenStream]) -> bool:
-    return parse_range(stream)
+    return parse_assignment(stream)
+
+
+function is_assign_op(lexeme: str) -> bool:
+    return (
+        lexeme == "="
+        or lexeme == "+=" or lexeme == "-=" or lexeme == "*=" or lexeme == "/="
+        or lexeme == "%=" or lexeme == "&=" or lexeme == "|=" or lexeme == "^="
+        or lexeme == "<<=" or lexeme == ">>="
+    )
+
+
+function parse_assignment(stream: ref[ts.TokenStream]) -> bool:
+    if not parse_range(stream):
+        return false
+    let tok = ts.peek(stream)
+    if tok.kind == token.TokenKind.symbol and is_assign_op(tok.lexeme):
+        ts.advance(stream)
+        return parse_assignment(stream)
+    return true
 
 
 # ---- Range ----
@@ -386,10 +405,19 @@ function parse_match_expr(stream: ref[ts.TokenStream]) -> bool:
         return false
     if not ts.match_kind(stream, token.TokenKind.newline):
         return false
-    if not ts.match_kind(stream, token.TokenKind.indent):
-        return false
+    if ts.match_kind(stream, token.TokenKind.indent):
+        blocks.skip_to_dedent(stream)
+        return true
 
-    blocks.skip_to_dedent(stream)
+    while not ts.eof(stream):
+        let k = ts.peek_kind(stream)
+        if k == token.TokenKind.dedent or k == token.TokenKind.eof:
+            break
+        if k == token.TokenKind.keyword:
+            let lx = ts.peek(stream).lexeme
+            if lx == "let" or lx == "var" or lx == "return" or lx == "defer" or lx == "if" or lx == "while" or lx == "for" or lx == "match" or lx == "unsafe" or lx == "static_assert" or lx == "emit" or lx == "gather" or lx == "pass" or lx == "break" or lx == "continue" or lx == "when" or lx == "inline" or lx == "parallel":
+                break
+        ts.advance(stream)
     return true
 
 

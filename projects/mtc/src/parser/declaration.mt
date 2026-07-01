@@ -4,6 +4,7 @@ import parser.ast_types as ast
 import parser.blocks as blocks
 import parser.expression as expr
 import parser.error as parser_error
+import parser.statement as stmt
 import parser.type_parsing as types
 import std.log as log
 import std.fmt as fmt
@@ -635,6 +636,21 @@ function skip_decl_block_body(stream: ref[ts.TokenStream]) -> void:
 
     if ts.match_kind(stream, token.TokenKind.indent):
         blocks.skip_to_dedent(stream)
+
+
+function parse_function_body(stream: ref[ts.TokenStream], head_end_out: ref[ptr_uint], body_start_out: ref[ptr_uint], body_end_out: ref[ptr_uint]) -> void:
+    read(head_end_out) = ts.peek(stream).start_offset
+    read(body_start_out) = read(head_end_out)
+    read(body_end_out) = read(head_end_out)
+    if not ts.check_symbol(stream, ":"):
+        return
+    ts.advance(stream)
+    if ts.check_kind(stream, token.TokenKind.newline):
+        ts.advance(stream)
+    if ts.match_kind(stream, token.TokenKind.indent):
+        stmt.parse_statement_block_body(stream)
+        let _ = ts.match_kind(stream, token.TokenKind.dedent)
+        read(body_end_out) = ts.peek_prev(stream).end_offset
 
 
 # ---- Stats tracking ----
