@@ -79,6 +79,8 @@ public function scan_heredoc(
 
     token_mod.push_token(tokens, kind, lexeme, line_num, start_col, heredoc_start, terminator_nl)
 
+    var has_nl: bool = terminator_nl < source.len and source.byte_at(terminator_nl) == '\n'
+    var nl_w: ptr_uint = if has_nl: 1 else: 0
     token_mod.push_token(
         tokens,
         token_mod.TokenKind.newline,
@@ -86,7 +88,7 @@ public function scan_heredoc(
         line_num + consumed - 1,
         1,
         terminator_nl,
-        terminator_nl + 1,
+        terminator_nl + nl_w,
     )
 
     return token_mod.ScanResult(lines_consumed = consumed, next_offset = scan_end)
@@ -99,43 +101,51 @@ public function try_concat_string_line(
     base_indent: ptr_uint,
     line_num: ptr_uint,
 ) -> ptr_uint:
+    var consumed: ptr_uint = 1
     var lookahead = prev_line_end + 1
-    if lookahead >= source.len:
-        return 1
 
-    var next_nl = lookahead
-    while next_nl < source.len and source.byte_at(next_nl) != '\n':
-        next_nl += 1
+    while true:
+        if lookahead >= source.len:
+            return consumed
 
-    let next_line = source.slice(lookahead, next_nl - lookahead)
-    var ls: ptr_uint = 0
-    while ls < next_line.len and next_line.byte_at(ls) == ' ':
-        ls += 1
+        var next_nl = lookahead
+        while next_nl < source.len and source.byte_at(next_nl) != '\n':
+            next_nl += 1
 
-    if ls <= base_indent:
-        return 1
+        let next_line = source.slice(lookahead, next_nl - lookahead)
 
-    let rest = next_line.slice(ls, next_line.len - ls)
-    if rest.len == 0:
-        return 1
+        var ls: ptr_uint = 0
+        while ls < next_line.len and next_line.byte_at(ls) == ' ':
+            ls += 1
 
-    if rest.byte_at(0) == '#':
-        return 1
+        if ls <= base_indent:
+            return consumed
 
-    let last_tok_ptr = tokens.last() else:
-        return 1
+        let rest = next_line.slice(ls, next_line.len - ls)
+        if rest.len == 0:
+            return consumed
 
-    let last_kind = unsafe: read(ptr[token_mod.Token]<-last_tok_ptr).kind
+        if rest.byte_at(0) == '#':
+            return consumed
 
-    if last_kind == token_mod.TokenKind.string_literal and rest.byte_at(0) == '"':
-        let _idx = scan_string(tokens, rest, 0, line_num + 1, lookahead + ls)
-        return 2
+        let last_tok_ptr = tokens.last() else:
+            return consumed
 
-    if last_kind == token_mod.TokenKind.cstring_literal and rest.len >= 2 and rest.byte_at(0) == 'c' and rest.byte_at(1) == '"':
-        let _idx = scan_cstring(tokens, rest, 0, line_num + 1, lookahead + ls)
-        return 2
+        let last_kind = unsafe: read(ptr[token_mod.Token]<-last_tok_ptr).kind
 
-    return 1
+        if last_kind == token_mod.TokenKind.string_literal and rest.byte_at(0) == '"':
+            let _idx = scan_string(tokens, rest, 0, line_num + consumed, lookahead + ls)
+            consumed += 1
+            lookahead = next_nl + 1
+            continue
+
+        if last_kind == token_mod.TokenKind.cstring_literal and rest.len >= 2 and rest.byte_at(0) == 'c' and rest.byte_at(1) == '"':
+            let _idx = scan_cstring(tokens, rest, 0, line_num + consumed, lookahead + ls)
+            consumed += 1
+            lookahead = next_nl + 1
+            continue
+
+        return consumed
 
 
 public function scan_string(

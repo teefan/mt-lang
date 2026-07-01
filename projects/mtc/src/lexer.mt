@@ -142,14 +142,6 @@ function scan_line(
             idx = string_mod.scan_char(tokens, line, idx, line_num, line_start)
             continue
 
-        if scanner_mod.is_alpha(ch) or ch == '_':
-            idx = scan_identifier(tokens, line, idx, line_num, line_start)
-            continue
-
-        if scanner_mod.is_digit(ch):
-            idx = number_mod.scan_number(tokens, line, idx, line_num, line_start)
-            continue
-
         if ch == 'c' and idx + 1 < line.len and line.byte_at(idx + 1) == '"':
             idx = string_mod.scan_cstring(tokens, line, idx, line_num, line_start)
             continue
@@ -182,6 +174,14 @@ function scan_line(
                 false, true,
             )
 
+        if scanner_mod.is_alpha(ch) or ch == '_':
+            idx = scan_identifier(tokens, line, idx, line_num, line_start)
+            continue
+
+        if scanner_mod.is_digit(ch):
+            idx = number_mod.scan_number(tokens, line, idx, line_num, line_start)
+            continue
+
         idx = scan_symbol(tokens, grouping_depth, line, idx, line_num, line_start)
 
     return token_mod.ScanResult(lines_consumed = 1, next_offset = line_end + 1)
@@ -206,18 +206,19 @@ public function lex(source: str) -> vec.Vec[token_mod.Token]:
         let line_len = line_end - offset
         let line_text = source.slice(offset, line_len)
         let has_newline = line_end < source.len
+        var nl_width: ptr_uint = if has_newline: 1 else: 0
 
         if indent_mod.has_tab(line_text):
             fatal(c"tabs are not allowed; use 4 spaces for indentation")
 
         if indent_mod.is_blank_line(line_text):
-            offset = line_end + ptr_uint<-(int<-(has_newline))
+            offset = line_end + nl_width
             line_num += 1
             continue
 
         let stripped = line_text.slice(indent_mod.leading_space_count(line_text), line_text.len - indent_mod.leading_space_count(line_text))
         if stripped.len > 0 and stripped.byte_at(0) == '#':
-            offset = line_end + ptr_uint<-(int<-(has_newline))
+            offset = line_end + nl_width
             line_num += 1
             continue
 
@@ -248,7 +249,7 @@ public function lex(source: str) -> vec.Vec[token_mod.Token]:
                 line_num,
             )
 
-        if grouping_depth == 0 and has_newline and scan_result.lines_consumed == 1 and effective_consumed == 1:
+        if grouping_depth == 0 and scan_result.lines_consumed == 1 and effective_consumed == 1:
             let last_tok_ptr = tokens.last()
             let suppress = last_tok_ptr != null and is_continuation_operator(unsafe: read(ptr[token_mod.Token]<-last_tok_ptr).lexeme)
             if not suppress:
@@ -259,7 +260,7 @@ public function lex(source: str) -> vec.Vec[token_mod.Token]:
                     line_num,
                     line_len + 1,
                     offset + line_len,
-                    offset + line_len + 1,
+                    offset + line_len + nl_width,
                 )
             else:
                 continuation_pending = true
