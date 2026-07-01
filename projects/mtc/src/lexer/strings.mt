@@ -99,6 +99,17 @@ public function scan_heredoc(
     return token_mod.ScanResult(lines_consumed = consumed, next_offset = scan_end)
 
 
+function find_quote_end(line: str, quote_idx: ptr_uint) -> ptr_uint:
+    var idx = quote_idx + 1
+    while idx < line.len and line.byte_at(idx) != '"':
+        if line.byte_at(idx) == '\\' and idx + 1 < line.len:
+            idx += 1
+        idx += 1
+    if idx < line.len:
+        idx += 1
+    return idx
+
+
 public function try_concat_string_line(
     tokens: ref[vec.Vec[token_mod.Token]],
     source: str,
@@ -145,28 +156,16 @@ public function try_concat_string_line(
 
         if last_kind == token_mod.TokenKind.string_literal and rest.byte_at(0) == '"':
             cont_line_start = lookahead
-            var idx: ptr_uint = 1
-            while idx < rest.len and rest.byte_at(idx) != '"':
-                if rest.byte_at(idx) == '\\' and idx + 1 < rest.len:
-                    idx += 1
-                idx += 1
-            if idx < rest.len:
-                idx += 1
-            final_end = lookahead + ls + idx
+            let end_idx = find_quote_end(rest, 0)
+            final_end = lookahead + ls + end_idx
             consumed += 1
             lookahead = next_nl + 1
             continue
 
         if last_kind == token_mod.TokenKind.cstring_literal and rest.len >= 2 and rest.byte_at(0) == 'c' and rest.byte_at(1) == '"':
             cont_line_start = lookahead
-            var idx: ptr_uint = 2
-            while idx < rest.len and rest.byte_at(idx) != '"':
-                if rest.byte_at(idx) == '\\' and idx + 1 < rest.len:
-                    idx += 1
-                idx += 1
-            if idx < rest.len:
-                idx += 1
-            final_end = lookahead + ls + idx
+            let end_idx = find_quote_end(rest, 1)
+            final_end = lookahead + ls + end_idx
             consumed += 1
             lookahead = next_nl + 1
             continue
@@ -206,15 +205,7 @@ public function scan_string(
     line_num: ptr_uint,
     line_offset: ptr_uint,
 ) -> ptr_uint:
-    var idx = start + 1
-    while idx < line.len and line.byte_at(idx) != '"':
-        if line.byte_at(idx) == '\\' and idx + 1 < line.len:
-            idx += 1
-        idx += 1
-
-    if idx < line.len:
-        idx += 1
-
+    let idx = find_quote_end(line, start)
     let lexeme = line.slice(start, idx - start)
     token_mod.push_token(tokens, token_mod.TokenKind.string_literal, lexeme, line_num, start + 1, line_offset + start, line_offset + idx)
     return idx
@@ -227,15 +218,7 @@ public function scan_cstring(
     line_num: ptr_uint,
     line_offset: ptr_uint,
 ) -> ptr_uint:
-    var idx = start + 2
-    while idx < line.len and line.byte_at(idx) != '"':
-        if line.byte_at(idx) == '\\' and idx + 1 < line.len:
-            idx += 1
-        idx += 1
-
-    if idx < line.len:
-        idx += 1
-
+    let idx = find_quote_end(line, start + 1)
     let lexeme = line.slice(start, idx - start)
     token_mod.push_token(tokens, token_mod.TokenKind.cstring_literal, lexeme, line_num, start + 1, line_offset + start, line_offset + idx)
     return idx
