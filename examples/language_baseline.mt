@@ -12,6 +12,7 @@
 # =============================================================================
 
 import std.async as aio
+import std.hash
 import std.linear_algebra
 
 # =============================================================================
@@ -55,6 +56,18 @@ SQL
 const VOID_PTR:    ptr[char]? = null
 const TYPED_NULL:  ptr[int]?  = null[ptr[int]]
 var char_buf: array[char, 4]
+
+var shorts: short = 0
+var bytes:  byte  = 0
+var ptrint: ptr_int = 0
+
+const FIRST_CHAR:   ubyte = 'A'
+const NEWLINE:      ubyte = '\n'
+const TAB_CHAR:     ubyte = '\t'
+const BACKSLASH:    ubyte = '\\'
+const SINGLE_QUOTE: ubyte = '\''
+const NULL_BYTE:    ubyte = '\0'
+const HEX_BYTE:     ubyte = '\x41'
 
 # =============================================================================
 # 3  Data declarations
@@ -241,6 +254,18 @@ variant OpStatus:
 static_assert(has_attribute(field_of(Labeled, value), rename), "rename attribute missing")
 static_assert(has_attribute(callable_of(identity), traced), "traced attribute missing")
 
+const HAS_RENAME:       bool = has_attribute(field_of(Labeled, value), rename)
+const RENAME_ARG:       str  = attribute_arg[str](
+    attribute_of(field_of(Labeled, value), rename),
+    name
+)
+
+function attributes_demo() -> int:
+    var count: int = 0
+    inline for attr in attributes_of(field_of(Labeled, value)):
+        count += 1
+    return count
+
 const SIZEOF_LABELED: ptr_uint = size_of(Labeled)
 const ALIGNOF_LABELED: ptr_uint = align_of(Labeled)
 const OFFSET_VALUE: ptr_uint = offset_of(Labeled, value)
@@ -287,6 +312,11 @@ function read_into[T](source: T, target: ref[T]) -> void:
     read(target) = source
 
 external function atoi(input: cstr) -> int
+
+foreign function parse_int_foreign(input: str as cstr) -> int = atoi
+
+function foreign_demo() -> int:
+    return parse_int_foreign("42")
 
 # =============================================================================
 # 8  Statements: locals, guards, ? propagation, control flow
@@ -343,6 +373,13 @@ function statements_demo() -> int:
     var positions: array[int, 4] = array[int, 4](0, 1, 2, 3)
     parallel for i in 0..4:
         positions[i] += 1
+
+    var pa: int = 0
+    var pb: int = 0
+    parallel:
+        pa = 42
+        pb = 99
+    result += pa + pb
 
     values[0..2] = (1, 2)
 
@@ -686,8 +723,14 @@ function expressions_demo(x: int, y: int) -> int:
     let mask_b = Mask.b
     let flags_eq = mask_a == mask_a
     let flags_ne = mask_a != mask_b
+    let flags_or  = mask_a | mask_b
+    let flags_and = mask_a & mask_b
+    let flags_xor = mask_a ^ mask_b
+    let flags_not = ~mask_a
 
-    return expr_result + enum_op + int<-(flags_eq) + int<-(flags_ne)
+    let enum_backing: bool = State.idle == ubyte<-0
+
+    return expr_result + enum_op + int<-(flags_eq) + int<-(flags_ne) + int<-(flags_or) + int<-(flags_and) + int<-(flags_xor) + int<-(flags_not) + int<-(enum_backing)
 
 # =============================================================================
 # 10  Built-in callable surface
@@ -724,7 +767,13 @@ function builtins_demo() -> int:
     let bits = unsafe: reinterpret[uint](counter)
     let _bits_val = bits
 
-    return val_ref + val_ptr + zeroed + default_npc.hp
+    var int_left: int = 10
+    var int_right: int = 20
+    let int_hash = hash[int](ptr_of(int_left))
+    let int_eq   = equal[int](ptr_of(int_left), ptr_of(int_right))
+    let int_ord  = order[int](ptr_of(int_left), ptr_of(int_right))
+
+    return val_ref + val_ptr + zeroed + default_npc.hp + int<-(int_hash) + int<-(int_eq) + int_ord
 
 # =============================================================================
 # 11  unsafe blocks
@@ -1096,6 +1145,9 @@ function vector_demo() -> float:
     let len_val = v3.length()
     let cross_val = v3.cross(v3)
 
+    let v3_partial = v3.with(x = 99.0)
+    let _vp = v3_partial
+
     return (
         v2.x + v3.x + v4.x + float<-(iv2.x)
         + vsum.x + vdiff.x + vmul.x + vneg.x
@@ -1343,6 +1395,8 @@ function main() -> int:
     total += int<-(nested_struct_demo())
     total += traced_demo()
     total += atomic_demo()
+    total += foreign_demo()
+    total += attributes_demo()
 
     total += aio.wait(async_child())
     total += aio.wait(async_demo())
