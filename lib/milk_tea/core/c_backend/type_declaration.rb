@@ -2,7 +2,7 @@
 
 module MilkTea
   class CBackend
-    module CBackendTypes
+    module TypeDeclaration
       private
 
           C_KEYWORDS = %w[

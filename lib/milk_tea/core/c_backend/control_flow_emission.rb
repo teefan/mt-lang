@@ -2,7 +2,7 @@
 
 module MilkTea
   class CBackend
-    module CBackendControlFlow
+    module ControlFlowEmission
       private
 
           INVERTED_BOOLEAN_OPS = {

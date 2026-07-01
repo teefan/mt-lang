@@ -2,7 +2,7 @@
 
 module MilkTea
   class CBackend
-    module CBackendHelpers
+    module RuntimeHelpers
       private
 
           def emit_fatal_helper

@@ -2,18 +2,18 @@
 
 require "set"
 
-require_relative "cfg/graph"
-require_relative "cfg/builder"
-require_relative "cfg/dataflow"
-require_relative "cfg/liveness"
-require_relative "cfg/definite_assignment"
-require_relative "cfg/reachability"
-require_relative "cfg/termination"
-require_relative "cfg/nullability_flow"
-require_relative "cfg/constant_propagation"
+require_relative "control_flow/graph"
+require_relative "control_flow/builder"
+require_relative "control_flow/dataflow"
+require_relative "control_flow/liveness"
+require_relative "control_flow/definite_assignment"
+require_relative "control_flow/reachability"
+require_relative "control_flow/termination"
+require_relative "control_flow/nullability_flow"
+require_relative "control_flow/constant_propagation"
 
 module MilkTea
-  module CFG
+  module ControlFlow
     BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids)
     ReadSite = Data.define(:binding_key, :line, :column, :length)
 

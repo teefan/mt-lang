@@ -13,8 +13,8 @@ class MilkTeaCFGTest < Minitest::Test
           return index
     MT
 
-    graph = MilkTea::CFG::Builder.new.build(body)
-    liveness = MilkTea::CFG::Liveness.solve(graph)
+    graph = MilkTea::ControlFlow::Builder.new.build(body)
+    liveness = MilkTea::ControlFlow::Liveness.solve(graph)
 
     write_node = graph.each_node.find { |node| node.writes.include?("index") && node.kind == :assignment }
     refute_nil write_node
@@ -30,8 +30,8 @@ class MilkTeaCFGTest < Minitest::Test
           return count
     MT
 
-    graph = MilkTea::CFG::Builder.new.build(body)
-    liveness = MilkTea::CFG::Liveness.solve(graph)
+    graph = MilkTea::ControlFlow::Builder.new.build(body)
+    liveness = MilkTea::ControlFlow::Liveness.solve(graph)
 
     init_node = graph.each_node.find do |node|
       node.writes_info.any? { |w| w[:name] == "count" && w[:origin] == :declaration }
@@ -51,8 +51,8 @@ class MilkTeaCFGTest < Minitest::Test
           return x
     MT
 
-    graph = MilkTea::CFG::Builder.new.build(body)
-    liveness = MilkTea::CFG::Liveness.solve(graph)
+    graph = MilkTea::ControlFlow::Builder.new.build(body)
+    liveness = MilkTea::ControlFlow::Liveness.solve(graph)
 
     init_node = graph.each_node.find do |node|
       node.writes_info.any? { |w| w[:name] == "x" && w[:origin] == :declaration }
@@ -71,7 +71,7 @@ class MilkTeaCFGTest < Minitest::Test
           return x
     MT
 
-    graph = MilkTea::CFG::Builder.new(
+    graph = MilkTea::ControlFlow::Builder.new(
       binding_resolution: context[:facts].binding_resolution,
       strict_binding_ids: true,
     ).build(context[:function].body)
@@ -92,14 +92,14 @@ class MilkTeaCFGTest < Minitest::Test
           return x
     MT
 
-    graph = MilkTea::CFG::Builder.new(
+    graph = MilkTea::ControlFlow::Builder.new(
       binding_resolution: context[:facts].binding_resolution,
       strict_binding_ids: true,
       local_decl_without_initializer_writes: false,
     ).build(context[:function].body)
 
     initially_assigned = context[:binding].body_params.each_with_object(Set.new) { |param, set| set << param.id }
-    result = MilkTea::CFG::DefiniteAssignment.solve(graph, initially_assigned:)
+    result = MilkTea::ControlFlow::DefiniteAssignment.solve(graph, initially_assigned:)
 
     refute_empty result.read_before_assignment
     first_issue = result.read_before_assignment.min_by { |issue| [issue.line || Float::INFINITY, issue.column || Float::INFINITY, issue.node_id] }
@@ -118,11 +118,11 @@ class MilkTeaCFGTest < Minitest::Test
           return f"\#{x}"
     MT
 
-    graph = MilkTea::CFG::Builder.new(
+    graph = MilkTea::ControlFlow::Builder.new(
       local_decl_without_initializer_writes: false,
     ).build(body)
 
-    result = MilkTea::CFG::DefiniteAssignment.solve(graph, initially_assigned: Set["flag"])
+    result = MilkTea::ControlFlow::DefiniteAssignment.solve(graph, initially_assigned: Set["flag"])
 
     assert_includes result.read_before_assignment.map(&:binding_key), "x"
     format_read = result.read_before_assignment.find { |issue| issue.binding_key == "x" }
@@ -140,7 +140,7 @@ class MilkTeaCFGTest < Minitest::Test
           return left + right
     MT
 
-    graph = MilkTea::CFG::Builder.new.build(body)
+    graph = MilkTea::ControlFlow::Builder.new.build(body)
     assignment_node = graph.each_node.find { |node| node.kind == :assignment }
 
     refute_nil assignment_node
@@ -157,8 +157,8 @@ class MilkTeaCFGTest < Minitest::Test
           let dead = 1
     MT
 
-    graph    = MilkTea::CFG::Builder.new.build(body)
-    reach    = MilkTea::CFG::Reachability.solve(graph)
+    graph    = MilkTea::ControlFlow::Builder.new.build(body)
+    reach    = MilkTea::ControlFlow::Reachability.solve(graph)
     dead_node = graph.each_node.find { |n| n.kind == :local_decl && n.statement.respond_to?(:name) && n.statement.name == "dead" }
 
     refute_nil dead_node
@@ -175,8 +175,8 @@ class MilkTeaCFGTest < Minitest::Test
           let dead = 3
     MT
 
-    graph    = MilkTea::CFG::Builder.new.build(body)
-    reach    = MilkTea::CFG::Reachability.solve(graph)
+    graph    = MilkTea::ControlFlow::Builder.new.build(body)
+    reach    = MilkTea::ControlFlow::Reachability.solve(graph)
     dead_node = graph.each_node.find { |n| n.kind == :local_decl && n.statement.respond_to?(:name) && n.statement.name == "dead" }
 
     refute_nil dead_node
@@ -189,8 +189,8 @@ class MilkTeaCFGTest < Minitest::Test
           return 42
     MT
 
-    graph = MilkTea::CFG::Builder.new.build(body)
-    reach = MilkTea::CFG::Reachability.solve(graph)
+    graph = MilkTea::ControlFlow::Builder.new.build(body)
+    reach = MilkTea::ControlFlow::Reachability.solve(graph)
 
     assert_includes reach.reachable_ids, graph.entry_id
   end
@@ -205,7 +205,7 @@ class MilkTeaCFGTest < Minitest::Test
           return 0
     MT
 
-    graph = MilkTea::CFG::Builder.new.build(body)
+    graph = MilkTea::ControlFlow::Builder.new.build(body)
     cond  = graph.each_node.find { |n| n.kind == :if_condition }
 
     refute_nil cond
@@ -223,8 +223,8 @@ class MilkTeaCFGTest < Minitest::Test
           return 0
     MT
 
-    graph  = MilkTea::CFG::Builder.new.build(body)
-    result = MilkTea::CFG::NullabilityFlow.solve(graph)
+    graph  = MilkTea::ControlFlow::Builder.new.build(body)
+    result = MilkTea::ControlFlow::NullabilityFlow.solve(graph)
 
     # All nodes should have in_states populated (no errors)
     assert_equal graph.nodes.count, result.in_states.size
@@ -239,8 +239,8 @@ class MilkTeaCFGTest < Minitest::Test
           return 0
     MT
 
-    graph = MilkTea::CFG::Builder.new.build(body)
-    result = MilkTea::CFG::NullabilityFlow.solve(graph)
+    graph = MilkTea::ControlFlow::Builder.new.build(body)
+    result = MilkTea::ControlFlow::NullabilityFlow.solve(graph)
     outer_if = body.first
     inner_if = outer_if.branches.first.body.first
     inner_branch = inner_if.branches.first
@@ -258,8 +258,8 @@ class MilkTeaCFGTest < Minitest::Test
           return x
     MT
 
-    graph  = MilkTea::CFG::Builder.new.build(body)
-    result = MilkTea::CFG::ConstantPropagation.solve(graph)
+    graph  = MilkTea::ControlFlow::Builder.new.build(body)
+    result = MilkTea::ControlFlow::ConstantPropagation.solve(graph)
 
     ret_node = graph.each_node.find { |n| n.kind == :return }
     refute_nil ret_node
@@ -276,8 +276,8 @@ class MilkTeaCFGTest < Minitest::Test
           return c
     MT
 
-    graph  = MilkTea::CFG::Builder.new.build(body)
-    result = MilkTea::CFG::ConstantPropagation.solve(graph)
+    graph  = MilkTea::ControlFlow::Builder.new.build(body)
+    result = MilkTea::ControlFlow::ConstantPropagation.solve(graph)
 
     ret_node = graph.each_node.find { |n| n.kind == :return }
     refute_nil ret_node
@@ -291,8 +291,8 @@ class MilkTeaCFGTest < Minitest::Test
           return y
     MT
 
-    graph  = MilkTea::CFG::Builder.new.build(body)
-    result = MilkTea::CFG::ConstantPropagation.solve(graph)
+    graph  = MilkTea::ControlFlow::Builder.new.build(body)
+    result = MilkTea::ControlFlow::ConstantPropagation.solve(graph)
 
     ret_node = graph.each_node.find { |n| n.kind == :return }
     refute_nil ret_node
@@ -310,12 +310,12 @@ class MilkTeaCFGTest < Minitest::Test
     MT
 
     resolution = context[:facts].binding_resolution
-    graph = MilkTea::CFG::Builder.new(
+    graph = MilkTea::ControlFlow::Builder.new(
       binding_resolution: resolution,
       strict_binding_ids: true,
     ).build(context[:function].body)
 
-    result = MilkTea::CFG::ConstantPropagation.solve(
+    result = MilkTea::ControlFlow::ConstantPropagation.solve(
       graph,
       binding_resolution: resolution,
       strict_binding_ids: true,
@@ -348,9 +348,9 @@ class MilkTeaCFGTest < Minitest::Test
     let_stmt = for_stmt.body.first
     else_body = let_stmt.else_body
 
-    refute MilkTea::CFG::Termination.block_always_terminates?(else_body),
+    refute MilkTea::ControlFlow::Termination.block_always_terminates?(else_body),
       "plain block_always_terminates? does not understand continue in a let...else: else body"
-    assert MilkTea::CFG::Termination.block_always_terminates_in_loop?(else_body),
+    assert MilkTea::ControlFlow::Termination.block_always_terminates_in_loop?(else_body),
       "block_always_terminates_in_loop? must treat continue as terminating"
   end
 
@@ -369,7 +369,7 @@ class MilkTeaCFGTest < Minitest::Test
     let_stmt = for_stmt.body.first
     else_body = let_stmt.else_body
 
-    assert MilkTea::CFG::Termination.block_always_terminates_in_loop?(else_body),
+    assert MilkTea::ControlFlow::Termination.block_always_terminates_in_loop?(else_body),
       "block_always_terminates_in_loop? must treat break as terminating"
   end
 
@@ -387,7 +387,7 @@ class MilkTeaCFGTest < Minitest::Test
     let_stmt = for_stmt.body.first
     else_body = let_stmt.else_body
 
-    refute MilkTea::CFG::Termination.block_always_terminates_in_loop?(else_body),
+    refute MilkTea::ControlFlow::Termination.block_always_terminates_in_loop?(else_body),
       "block_always_terminates_in_loop? must reject fall-through else body"
   end
 

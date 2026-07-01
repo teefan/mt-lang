@@ -2,7 +2,7 @@
 
 module MilkTea
   class CBackend
-    module CBackendFeatureDetection
+    module FeatureDetection
       private
 
           def uses_fmt_builder?

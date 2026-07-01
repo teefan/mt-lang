@@ -2,7 +2,7 @@
 
 module MilkTea
   class CBackend
-    module CBackendTypeSystem
+    module TypeSystem
       private
 
           PRIMITIVE_C_TYPE_MAP = {

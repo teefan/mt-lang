@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module CFG
+  module ControlFlow
     class DefiniteAssignment
       ReadBeforeAssignment = Data.define(:node_id, :binding_key, :line, :column, :length)
       Result = Data.define(:definitely_assigned_in, :definitely_assigned_out, :read_before_assignment)

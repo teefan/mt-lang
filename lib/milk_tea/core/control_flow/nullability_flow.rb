@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module CFG
+  module ControlFlow
     class NullabilityFlow
       Result = Data.define(:in_states, :out_states, :stmt_to_node_id) do
         def nonnull_before(stmt)

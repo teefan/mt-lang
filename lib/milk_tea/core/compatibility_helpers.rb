@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../types/predicates"
+require_relative "types/predicates"
 
 module MilkTea
   module CompatibilityHelpers

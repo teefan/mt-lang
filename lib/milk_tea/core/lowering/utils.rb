@@ -686,7 +686,7 @@ module MilkTea
       end
 
       def cfg_block_always_terminates?(statements)
-        CFG::Termination.block_always_terminates?(statements, ignore_name: ->(_name) { false })
+        ControlFlow::Termination.block_always_terminates?(statements, ignore_name: ->(_name) { false })
       end
 
       def conditional_common_type(then_type, else_type)

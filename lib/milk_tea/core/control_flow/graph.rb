@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module CFG
+  module ControlFlow
     class Graph
       attr_accessor :entry_id, :exit_id
       attr_reader :nodes

@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
-require_relative "c_backend/aggregate_sorting"
-require_relative "c_backend/type_emission"
-require_relative "c_backend/dead_code_elimination"
+require_relative "c_backend/aggregate_utils"
+require_relative "c_backend/type_system"
+require_relative "c_backend/reachability"
 require_relative "c_backend/feature_detection"
 require_relative "c_backend/type_collectors"
 require_relative "c_backend/statements"
-require_relative "c_backend/control_flow"
+require_relative "c_backend/control_flow_emission"
 require_relative "c_backend/runtime_helpers"
-require_relative "c_backend/forward_decls"
+require_relative "c_backend/type_declaration"
 require_relative "c_backend/expressions"
 require_relative "c_backend/reinterpret"
 
@@ -257,16 +257,16 @@ module MilkTea
 
     EQUALITY_OPERATORS = ["==", "!="].freeze
 
-    include CBackendAggregateUtils
-    include CBackendTypeSystem
-    include CBackendReachability
-    include CBackendFeatureDetection
-    include CBackendTypeCollectors
-    include CBackendStatements
-    include CBackendControlFlow
-    include CBackendHelpers
-    include CBackendTypes
-    include CBackendExpressions
-    include CBackendReinterpret
+    include AggregateUtils
+    include TypeSystem
+    include Reachability
+    include FeatureDetection
+    include TypeCollectors
+    include Statements
+    include ControlFlowEmission
+    include RuntimeHelpers
+    include TypeDeclaration
+    include Expressions
+    include Reinterpret
   end
 end
