@@ -97,7 +97,17 @@ module MilkTea
       end
 
       def parse_and
-        parse_left_associative(:parse_is, :and)
+        parse_left_associative(:parse_not, :and)
+      end
+
+      def parse_not
+        if match(:not)
+          operator = previous.lexeme
+          operand = parse_not
+          return AST::UnaryOp.new(operator:, operand:)
+        end
+
+        parse_is
       end
 
       def parse_is
@@ -179,7 +189,7 @@ module MilkTea
           line = previous.line
           column = previous.column
           AST::DetachExpr.new(body: [AST::ExpressionStmt.new(expression: parse_unary)], line:, column:)
-        elsif match(:not, :minus, :plus, :tilde, :out, :in, :inout)
+        elsif match(:minus, :plus, :tilde, :out, :in, :inout)
           operator = previous.lexeme
           operand = parse_unary
           AST::UnaryOp.new(operator:, operand:)
