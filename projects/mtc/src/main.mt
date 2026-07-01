@@ -5,6 +5,7 @@ import std.string
 import std.terminal as terminal
 import std.log as log
 import lexer
+import parser
 
 
 const VERSION: str = "0.1.0"
@@ -180,9 +181,43 @@ function handle_lex(parsed: cli.Match) -> int:
 
 
 function handle_parse(parsed: cli.Match) -> int:
-    if parsed.flag("verbose"):
-        log.debug("parse stub")
-    log.info("parse stub: would parse source and print the AST")
+    if parsed.positionals_len() == 0:
+        var msg = fmt.format("missing source file path")
+        defer msg.release()
+        return print_stderr(msg.as_str())
+
+    let path_payload = parsed.positional(0)
+    let file_path = path_payload else:
+        return print_stderr("missing source file path")
+
+    match fs.read_text(file_path):
+        Result.failure as read_error:
+            var error = read_error.error
+            defer error.release()
+            return print_stderr(error.message.as_str())
+        Result.success as read_payload:
+            var content = read_payload.value
+            defer content.release()
+
+            var tokens = lexer.lex(content.as_str())
+            defer tokens.release()
+
+            let result = parser.parse(ref_of(tokens), file_path)
+
+            if result.success:
+                var msg = fmt.format(f"parsed #{file_path}: #{result.total_decls} declaration(s), #{result.imports} import(s)")
+                defer msg.release()
+                let _ = write_stderr_text(msg.as_str())
+
+                log.info(f"  structs=#{result.stats.structs} enums=#{result.stats.enums} consts=#{result.stats.consts}")
+                log.info(f"  functions=#{result.stats.functions} vars=#{result.stats.vars} flags=#{result.stats.flags_count}")
+                return 0
+            else:
+                var msg = fmt.format(f"parse failed for #{file_path}")
+                defer msg.release()
+                let _ = write_stderr_text(msg.as_str())
+                return 1
+
     return 0
 
 
