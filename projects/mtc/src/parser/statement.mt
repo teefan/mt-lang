@@ -2,7 +2,7 @@ import parser.token_stream as ts
 import lexer.token as token
 import parser.blocks as blocks
 import parser.expression as expr
-import parser.stmt_ast as stmt_ast
+import parser.ast_types as ast
 import parser.type_parsing as types
 import std.log as log
 
@@ -148,10 +148,10 @@ function parse_local_decl(stream: ref[ts.TokenStream]) -> bool:
         return false
 
     if ts.match_symbol(stream, ":"):
-        let _ = types.parse_type_ref(stream)
+        let _ = types.parse_type_ref_void(stream)
 
     if ts.match_symbol(stream, "="):
-        let _ = expr.parse_expression(stream)
+        let _ = expr.parse_expression_void(stream)
 
     if ts.check_keyword(stream, "else"):
         ts.advance(stream)
@@ -163,7 +163,7 @@ function parse_local_decl(stream: ref[ts.TokenStream]) -> bool:
 
     if not is_inline_body(stream):
         if not ts.check_kind(stream, token.TokenKind.newline) and not ts.check_kind(stream, token.TokenKind.dedent) and not ts.eof(stream):
-            let _ = expr.parse_expression(stream)
+            let _ = expr.parse_expression_void(stream)
 
     ts.skip_newlines(stream)
 
@@ -183,10 +183,10 @@ function parse_destructure_decl(stream: ref[ts.TokenStream]) -> bool:
     ts.match_symbol(stream, ")")
 
     if ts.match_symbol(stream, ":"):
-        let _ = types.parse_type_ref(stream)
+        let _ = types.parse_type_ref_void(stream)
 
     if ts.match_symbol(stream, "="):
-        let _ = expr.parse_expression(stream)
+        let _ = expr.parse_expression_void(stream)
 
     ts.skip_newlines(stream)
 
@@ -198,7 +198,7 @@ function parse_destructure_decl(stream: ref[ts.TokenStream]) -> bool:
 function parse_if_stmt(stream: ref[ts.TokenStream]) -> bool:
     ts.advance(stream)
 
-    let _ = expr.parse_expression(stream)
+    let _ = expr.parse_expression_void(stream)
 
     if not parse_block_opt(stream):
         return false
@@ -206,7 +206,7 @@ function parse_if_stmt(stream: ref[ts.TokenStream]) -> bool:
     while ts.check_keyword(stream, "else") and ts.peek_next(stream, 1).kind == token.TokenKind.keyword and ts.peek_next(stream, 1).lexeme == "if":
         ts.advance(stream)
         ts.advance(stream)
-        let _ = expr.parse_expression(stream)
+        let _ = expr.parse_expression_void(stream)
         if not parse_block_opt(stream):
             return false
 
@@ -221,7 +221,7 @@ function parse_if_stmt(stream: ref[ts.TokenStream]) -> bool:
 
 function parse_match_stmt(stream: ref[ts.TokenStream]) -> bool:
     ts.advance(stream)
-    let _ = expr.parse_expression(stream)
+    let _ = expr.parse_expression_void(stream)
     return parse_match_arms(stream)
 
 
@@ -279,7 +279,7 @@ function parse_for_iterables(stream: ref[ts.TokenStream]) -> void:
     var first = true
     while first or ts.match_symbol(stream, ","):
         first = false
-        let _ = expr.parse_expression(stream)
+        let _ = expr.parse_expression_void(stream)
 
 
 function parse_parallel_stmt(stream: ref[ts.TokenStream]) -> bool:
@@ -308,16 +308,16 @@ function parse_parallel_stmt(stream: ref[ts.TokenStream]) -> bool:
 
 function parse_gather_stmt(stream: ref[ts.TokenStream]) -> bool:
     ts.advance(stream)
-    let _ = expr.parse_expression(stream)
+    let _ = expr.parse_expression_void(stream)
     while ts.match_symbol(stream, ","):
-        let _ = expr.parse_expression(stream)
+        let _ = expr.parse_expression_void(stream)
     skip_to_newline(stream)
     return true
 
 
 function parse_while_stmt(stream: ref[ts.TokenStream]) -> bool:
     ts.advance(stream)
-    let _ = expr.parse_expression(stream)
+    let _ = expr.parse_expression_void(stream)
     return parse_full_block(stream)
 
 
@@ -346,7 +346,7 @@ function parse_return_stmt(stream: ref[ts.TokenStream]) -> bool:
     if ts.check_kind(stream, token.TokenKind.newline) or ts.check_kind(stream, token.TokenKind.dedent) or ts.eof(stream):
         skip_to_newline(stream)
         return true
-    let _ = expr.parse_expression(stream)
+    let _ = expr.parse_expression_void(stream)
     skip_to_newline(stream)
     return true
 
@@ -357,7 +357,7 @@ function parse_defer_stmt(stream: ref[ts.TokenStream]) -> bool:
     if ts.check_symbol(stream, ":"):
         return parse_full_block(stream)
 
-    let _ = expr.parse_expression(stream)
+    let _ = expr.parse_expression_void(stream)
     skip_to_newline(stream)
     return true
 
@@ -368,9 +368,9 @@ function parse_static_assert_stmt(stream: ref[ts.TokenStream]) -> bool:
     ts.advance(stream)
     if not ts.match_symbol(stream, "("):
         return false
-    let _ = expr.parse_expression(stream)
+    let _ = expr.parse_expression_void(stream)
     ts.match_symbol(stream, ",")
-    let _ = expr.parse_expression(stream)
+    let _ = expr.parse_expression_void(stream)
     ts.match_symbol(stream, ")")
     skip_to_newline(stream)
     return true
@@ -385,12 +385,12 @@ function parse_emit_stmt(stream: ref[ts.TokenStream]) -> bool:
 # ---- Assignment / expression ----
 
 function parse_assign_or_expr(stream: ref[ts.TokenStream]) -> bool:
-    let _ = expr.parse_expression(stream)
+    let _ = expr.parse_expression_void(stream)
 
     let tok = ts.peek(stream)
     if tok.kind == token.TokenKind.symbol and expr.is_assign_op(tok.lexeme):
         ts.advance(stream)
-        let _ = expr.parse_expression(stream)
+        let _ = expr.parse_expression_void(stream)
 
     if is_inline_body(stream):
         return false
@@ -411,11 +411,11 @@ function parse_inline_stmt(stream: ref[ts.TokenStream]) -> bool:
             return parse_full_block(stream)
         else if next.lexeme == "while":
             ts.advance(stream)
-            let _ = expr.parse_expression(stream)
+            let _ = expr.parse_expression_void(stream)
             return parse_full_block(stream)
         else if next.lexeme == "match":
             ts.advance(stream)
-            let _ = expr.parse_expression(stream)
+            let _ = expr.parse_expression_void(stream)
             return parse_match_arms(stream)
         else if next.lexeme == "if":
             ts.advance(stream)
@@ -427,7 +427,7 @@ function parse_inline_stmt(stream: ref[ts.TokenStream]) -> bool:
 # ---- When ----
 
 function parse_when_stmt(stream: ref[ts.TokenStream]) -> bool:
-    let _ = expr.parse_expression(stream)
+    let _ = expr.parse_expression_void(stream)
     return parse_match_arms(stream)
 
 
