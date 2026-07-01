@@ -228,6 +228,8 @@ module MilkTea
       @argv = []
       until args.empty?
         arg = args.shift
+        next if arg == "--"
+
         if path.nil?
           path = arg
         else
@@ -433,6 +435,9 @@ module MilkTea
           ignore_generated = true
         when "--timings"
           profile = true
+        when "--"
+          input_paths.concat(@argv)
+          @argv.clear
         else
           @err.puts("unknown lint flag: #{flag}")
           return 1
@@ -965,6 +970,10 @@ module MilkTea
             return nil
           end
           format = value.to_sym
+        when "--"
+          remaining << arg
+          remaining.concat(@argv)
+          @argv.clear
         else
           remaining << arg
         end
@@ -1420,6 +1429,9 @@ module MilkTea
     end
 
     def app_command
+      options = parse_build_options
+      return 1 unless options
+
       module_name = @argv.shift
       unless module_name
         @err.puts("missing module name")
@@ -1433,9 +1445,6 @@ module MilkTea
         return 1
       end
 
-      options = parse_build_options
-      return 1 unless options
-
       frozen = options.delete(:frozen)
       ensure_current_lockfile!(path) if frozen
 
@@ -1443,14 +1452,10 @@ module MilkTea
     end
 
     def extract_path_and_options(allow_clean: false)
-      path = nil
-      if @argv.first && !@argv.first.start_with?("-")
-        path = @argv.shift
-      end
-
       options = parse_build_options(allow_clean:)
       return nil unless options
 
+      path = @argv.shift
       unless path
         if File.file?(File.join(Dir.pwd, "package.toml"))
           path = Dir.pwd
@@ -1872,6 +1877,7 @@ module MilkTea
       }
       options[:clean] = false if allow_clean
 
+      positional = []
       until @argv.empty?
         option = @argv.shift
         case option
@@ -1936,18 +1942,19 @@ module MilkTea
             return nil
           end
         when "--"
-          break
+          positional.concat(@argv)
+          @argv.clear
         else
           if option.start_with?("-")
             @err.puts("unknown build option #{option}")
             print_usage(@err)
             return nil
           end
-          @argv.unshift(option)
-          break
+          positional << option
         end
       end
 
+      @argv = positional
       options
     end
 
@@ -1991,6 +1998,9 @@ module MilkTea
             options[:max_line_length] = line_length
           when "--timings"
             options[:profile] = true
+          when "--"
+            input_paths.concat(@argv)
+            @argv.clear
           else
             @err.puts("unknown format option #{option}")
             print_usage(@err)
@@ -2123,8 +2133,9 @@ module MilkTea
       frozen = false
       warnings_as_errors = false
       remaining = []
-
-      @argv.each do |arg|
+      i = 0
+      while i < @argv.length
+        arg = @argv[i]
         if arg == "--locked"
           locked = true
         elsif arg == "--frozen"
@@ -2132,11 +2143,14 @@ module MilkTea
           frozen = true
         elsif arg == "-Werror" || arg == "--warnings-as-errors"
           warnings_as_errors = true
+        elsif arg == "--"
+          remaining.concat(@argv[i + 1..])
+          break
         else
           remaining << arg
         end
+        i += 1
       end
-
       @argv = remaining
       { locked:, frozen:, warnings_as_errors: }
     end
