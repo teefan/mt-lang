@@ -27,7 +27,7 @@ public struct Token:
     end_offset: ptr_uint
 
 
-const KEYWORD_COUNT: ptr_uint = 57
+const KEYWORD_COUNT: ptr_uint = 73
 
 const keywords_list: array[str, KEYWORD_COUNT] = array[str, KEYWORD_COUNT](
     "function", "struct", "enum", "union", "variant", "flags", "opaque",
@@ -38,8 +38,13 @@ const keywords_list: array[str, KEYWORD_COUNT] = array[str, KEYWORD_COUNT](
     "static_assert", "defer", "unsafe", "pass", "break", "continue",
     "async", "await", "inline", "when", "emit",
     "parallel", "detach", "gather",
-    "with", "proc",
+    "proc",
     "as", "do", "module", "consuming", "compiler_flag", "include", "link",
+    "type", "fn", "editable", "static", "implements", "dyn",
+    "has_attribute", "field_of", "callable_of",
+    "attribute_arg", "attribute_of", "attributes_of",
+    "fields_of", "members_of",
+    "size_of", "align_of", "offset_of"
 )
 
 
@@ -63,6 +68,24 @@ public function is_keyword(ident: str) -> bool:
         index += 1
 
     return false
+
+
+public function token_kind_name(kind: TokenKind) -> str:
+    return match kind:
+        TokenKind.eof: "eof"
+        TokenKind.identifier: "identifier"
+        TokenKind.keyword: "keyword"
+        TokenKind.integer_literal: "integer_literal"
+        TokenKind.float_literal: "float_literal"
+        TokenKind.char_literal: "char_literal"
+        TokenKind.string_literal: "string_literal"
+        TokenKind.cstring_literal: "cstring_literal"
+        TokenKind.fstring_literal: "fstring_literal"
+        TokenKind.symbol: "symbol"
+        TokenKind.indent: "indent"
+        TokenKind.dedent: "dedent"
+        TokenKind.newline: "newline"
+        TokenKind.comment: "comment"
 
 
 public function push_token(

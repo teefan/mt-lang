@@ -162,9 +162,16 @@ function handle_lex(parsed: cli.Match) -> int:
                     var tokens = lexer.lex(content.as_str())
                     defer tokens.release()
 
-                    var msg = fmt.format(f"lexed #{tokens.len()} tokens")
-                    defer msg.release()
-                    let _ = write_stdout_text(msg.as_str())
+                    let count = tokens.len()
+                    var index: ptr_uint = 0
+                    var output = string.String.create()
+                    defer output.release()
+
+                    while index < count:
+                        lexer.write_token_line(ref_of(tokens), index, ref_of(output))
+                        let _ = write_stdout_text(output.as_str())
+                        index += 1
+
                     return 0
         Option.none:
             return 1

@@ -41,6 +41,7 @@ public function scan_heredoc(
     var scan_end = line_end + 1
     var consumed: ptr_uint = 1
     var terminator_nl: ptr_uint = line_end
+    var terminator_line_start: ptr_uint = line_end
 
     var offset_local = tag_start
     while offset_local < source.len and scanner.is_alphanumeric(source.byte_at(offset_local)):
@@ -62,6 +63,7 @@ public function scan_heredoc(
 
         if is_terminator(cur_line, tag):
             terminator_nl = next_nl
+            terminator_line_start = scan_end
             scan_end = next_nl + 1
             break
 
@@ -79,14 +81,17 @@ public function scan_heredoc(
 
     token_mod.push_token(tokens, kind, lexeme, line_num, start_col, heredoc_start, terminator_nl)
 
-    var has_nl: bool = terminator_nl < source.len and source.byte_at(terminator_nl) == '\n'
-    var nl_w: ptr_uint = if has_nl: 1 else: 0
+    var nl_column: ptr_uint = terminator_nl - terminator_line_start + 1
+    var nl_w: ptr_uint = 0
+    if terminator_nl < source.len and source.byte_at(terminator_nl) == '\n':
+        nl_w = 1
+
     token_mod.push_token(
         tokens,
         token_mod.TokenKind.newline,
         "\n",
         line_num + consumed - 1,
-        1,
+        nl_column,
         terminator_nl,
         terminator_nl + nl_w,
     )
@@ -100,13 +105,23 @@ public function try_concat_string_line(
     prev_line_end: ptr_uint,
     base_indent: ptr_uint,
     line_num: ptr_uint,
-) -> ptr_uint:
+) -> token_mod.ScanResult:
     var consumed: ptr_uint = 1
     var lookahead = prev_line_end + 1
 
+    let last_tok_ptr = tokens.last() else:
+        return token_mod.ScanResult(lines_consumed = 1, next_offset = prev_line_end + 1)
+
+    var last_kind = unsafe: read(ptr[token_mod.Token]<-last_tok_ptr).kind
+    if last_kind != token_mod.TokenKind.string_literal and last_kind != token_mod.TokenKind.cstring_literal:
+        return token_mod.ScanResult(lines_consumed = 1, next_offset = prev_line_end + 1)
+
+    var final_end = unsafe: read(ptr[token_mod.Token]<-last_tok_ptr).end_offset
+    var cont_line_start: ptr_uint = 0
+
     while true:
         if lookahead >= source.len:
-            return consumed
+            break
 
         var next_nl = lookahead
         while next_nl < source.len and source.byte_at(next_nl) != '\n':
@@ -119,33 +134,69 @@ public function try_concat_string_line(
             ls += 1
 
         if ls <= base_indent:
-            return consumed
+            break
 
         let rest = next_line.slice(ls, next_line.len - ls)
         if rest.len == 0:
-            return consumed
+            break
 
         if rest.byte_at(0) == '#':
-            return consumed
-
-        let last_tok_ptr = tokens.last() else:
-            return consumed
-
-        let last_kind = unsafe: read(ptr[token_mod.Token]<-last_tok_ptr).kind
+            break
 
         if last_kind == token_mod.TokenKind.string_literal and rest.byte_at(0) == '"':
-            let _idx = scan_string(tokens, rest, 0, line_num + consumed, lookahead + ls)
+            cont_line_start = lookahead
+            var idx: ptr_uint = 1
+            while idx < rest.len and rest.byte_at(idx) != '"':
+                if rest.byte_at(idx) == '\\' and idx + 1 < rest.len:
+                    idx += 1
+                idx += 1
+            if idx < rest.len:
+                idx += 1
+            final_end = lookahead + ls + idx
             consumed += 1
             lookahead = next_nl + 1
             continue
 
         if last_kind == token_mod.TokenKind.cstring_literal and rest.len >= 2 and rest.byte_at(0) == 'c' and rest.byte_at(1) == '"':
-            let _idx = scan_cstring(tokens, rest, 0, line_num + consumed, lookahead + ls)
+            cont_line_start = lookahead
+            var idx: ptr_uint = 2
+            while idx < rest.len and rest.byte_at(idx) != '"':
+                if rest.byte_at(idx) == '\\' and idx + 1 < rest.len:
+                    idx += 1
+                idx += 1
+            if idx < rest.len:
+                idx += 1
+            final_end = lookahead + ls + idx
             consumed += 1
             lookahead = next_nl + 1
             continue
 
-        return consumed
+        break
+
+    if consumed <= 1:
+        return token_mod.ScanResult(lines_consumed = 1, next_offset = prev_line_end + 1)
+
+    unsafe:
+        let tok_ptr = ptr[token_mod.Token]<-last_tok_ptr
+        let start = read(tok_ptr).start_offset
+        read(tok_ptr).lexeme = source.slice(start, final_end - start)
+        read(tok_ptr).end_offset = final_end
+
+    let nl_pos = lookahead - 1
+    var nl_column: ptr_uint = 1
+    if cont_line_start != 0:
+        nl_column = nl_pos - cont_line_start + 1
+    token_mod.push_token(
+        tokens,
+        token_mod.TokenKind.newline,
+        "\n",
+        line_num + consumed - 1,
+        nl_column,
+        nl_pos,
+        lookahead,
+    )
+
+    return token_mod.ScanResult(lines_consumed = consumed, next_offset = lookahead)
 
 
 public function scan_string(

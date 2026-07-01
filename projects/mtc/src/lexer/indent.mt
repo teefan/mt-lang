@@ -26,7 +26,7 @@ public function is_blank_line(line: str) -> bool:
         if ch != ' ' and ch != '\r':
             return false
         idx += 1
-    return false
+    return true
 
 
 public function lex_indentation(

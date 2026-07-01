@@ -3,7 +3,9 @@ import lexer.indent as indent_mod
 import lexer.numbers as number_mod
 import lexer.scanner as scanner_mod
 import lexer.strings as string_mod
+import std.fmt as fmt
 import std.str
+import std.string
 import std.vec
 
 
@@ -241,13 +243,14 @@ public function lex(source: str) -> vec.Vec[token_mod.Token]:
 
         var effective_consumed = scan_result.lines_consumed
         if scan_result.lines_consumed == 1 and has_newline and grouping_depth == 0 and not continuation_pending:
-            effective_consumed = string_mod.try_concat_string_line(
+            let concat_result = string_mod.try_concat_string_line(
                 ref_of(tokens),
                 source,
                 line_end,
                 indent_mod.leading_space_count(line_text),
                 line_num,
             )
+            effective_consumed = concat_result.lines_consumed
 
         if grouping_depth == 0 and scan_result.lines_consumed == 1 and effective_consumed == 1:
             let last_tok_ptr = tokens.last()
@@ -267,7 +270,7 @@ public function lex(source: str) -> vec.Vec[token_mod.Token]:
 
         if scan_result.lines_consumed > 1:
             offset = scan_result.next_offset
-            line_num += scan_result.lines_consumed - 1
+            line_num += scan_result.lines_consumed
         else:
             var total = effective_consumed
             var skip_nl: ptr_uint = 0
@@ -277,14 +280,39 @@ public function lex(source: str) -> vec.Vec[token_mod.Token]:
                 if adv <= source.len and source.byte_at(adv - 1) == '\n':
                     skip_nl += 1
             offset = adv
-            line_num += total
+            line_num += skip_nl
 
     if grouping_depth > 0:
         fatal(c"unclosed grouping delimiter")
+
+    if line_num > 0:
+        line_num = line_num - 1
 
     while indent_stack.len() > 1:
         indent_stack.pop()
         token_mod.push_token(ref_of(tokens), token_mod.TokenKind.dedent, "", line_num, 1, source.len, source.len)
 
-    token_mod.push_token(ref_of(tokens), token_mod.TokenKind.eof, "", line_num, 1, source.len, source.len)
+    token_mod.push_token(ref_of(tokens), token_mod.TokenKind.eof, "", line_num + 1, 1, source.len, source.len)
     return tokens
+
+
+public function token_kind_name(kind: token_mod.TokenKind) -> str:
+    return token_mod.token_kind_name(kind)
+
+
+public function write_token_line(tokens: ref[vec.Vec[token_mod.Token]], index: ptr_uint, output: ref[string.String]) -> void:
+    let tok_ptr = tokens.get(index) else:
+        fatal(c"write_token_line missing token at index")
+
+    unsafe:
+        let tok = read(tok_ptr)
+        output.assign("")
+        output.append(token_mod.token_kind_name(tok.kind))
+        output.push_byte(32)
+        fmt.append_ptr_uint(output, tok.line)
+        output.push_byte(32)
+        fmt.append_ptr_uint(output, tok.column)
+        output.push_byte(32)
+        fmt.append_ptr_uint(output, tok.start_offset)
+        output.push_byte(32)
+        fmt.append_ptr_uint(output, tok.end_offset)
