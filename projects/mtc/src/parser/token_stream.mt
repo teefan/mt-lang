@@ -1,6 +1,4 @@
 import lexer.token as token
-import std.mem.heap as heap
-import std.string
 import std.vec
 
 public struct TokenStream:

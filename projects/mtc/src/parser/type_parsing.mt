@@ -1,5 +1,6 @@
 import parser.token_stream as ts
 import lexer.token as token
+import parser.blocks as blocks
 
 public function parse_qualified_name(stream: ref[ts.TokenStream]) -> bool:
     if not parse_name_part(stream):
@@ -151,7 +152,7 @@ public function skip_type_arguments(stream: ref[ts.TokenStream]) -> void:
         return
 
     ts.advance(stream)
-    parse_group_content_until(stream, "[", "]")
+    blocks.parse_group_content(stream, "[", "]")
 
 
 function parse_comma_separated_until(stream: ref[ts.TokenStream], end_symbol: str) -> void:
@@ -173,18 +174,3 @@ function parse_comma_separated_until(stream: ref[ts.TokenStream], end_symbol: st
 
         if not ts.match_symbol(stream, ","):
             break
-
-
-function parse_group_content_until(stream: ref[ts.TokenStream], open_sym: str, close_sym: str) -> void:
-    var depth: ptr_uint = 1
-    while not ts.eof(stream) and depth > 0:
-        let tok = ts.peek(stream)
-        if tok.kind == token.TokenKind.symbol:
-            if tok.lexeme == open_sym or tok.lexeme == "[" or tok.lexeme == "(":
-                depth += 1
-            else if tok.lexeme == close_sym or tok.lexeme == "]" or tok.lexeme == ")":
-                depth -= 1
-                if depth == 0:
-                    ts.advance(stream)
-                    return
-        ts.advance(stream)

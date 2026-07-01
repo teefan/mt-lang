@@ -1,7 +1,6 @@
 import lexer.token as token
 import parser.token_stream as ts
 import parser.declaration as decl
-import std.log as log
 import std.vec
 
 public struct ParseResult:
@@ -12,10 +11,10 @@ public struct ParseResult:
 
 
 public function parse(tokens: ref[vec.Vec[token.Token]], path: str) -> ParseResult:
-    var stream = ts.make_stream(tokens, path)
+    var tok_stream = ts.make_stream(tokens, path)
     var stats = decl.zero_stats()
 
-    let result = parse_source_file(ref_of(stream), ref_of(stats))
+    let result = parse_source_file(ref_of(tok_stream), ref_of(stats))
 
     var total = (
         stats.consts + stats.vars + stats.events + stats.type_aliases
@@ -33,45 +32,45 @@ public function parse(tokens: ref[vec.Vec[token.Token]], path: str) -> ParseResu
     )
 
 
-function parse_source_file(stream: ref[ts.TokenStream], stats: ref[decl.DeclStats]) -> bool:
-    ts.skip_newlines(stream)
+function parse_source_file(s: ref[ts.TokenStream], stats: ref[decl.DeclStats]) -> bool:
+    ts.skip_newlines(s)
 
-    if ts.check_keyword(stream, "external"):
-        return parse_raw_module(stream, stats)
+    if ts.check_keyword(s, "external"):
+        return parse_raw_module(s, stats)
 
-    while ts.check_keyword(stream, "import"):
-        ts.advance(stream)
-        decl.parse_import(stream)
+    while ts.check_keyword(s, "import"):
+        ts.advance(s)
+        decl.parse_import(s)
         stats.imports += 1
-        ts.skip_newlines(stream)
+        ts.skip_newlines(s)
 
-    while not ts.eof(stream):
-        if not decl.parse_declaration(stream, stats):
+    while not ts.eof(s):
+        if not decl.parse_declaration(s, stats):
             return false
-        ts.skip_newlines(stream)
+        ts.skip_newlines(s)
 
     return true
 
 
-function parse_raw_module(stream: ref[ts.TokenStream], stats: ref[decl.DeclStats]) -> bool:
-    ts.advance(stream)
-    ts.skip_newlines(stream)
+function parse_raw_module(s: ref[ts.TokenStream], stats: ref[decl.DeclStats]) -> bool:
+    ts.advance(s)
+    ts.skip_newlines(s)
 
-    while ts.check_keyword(stream, "import"):
-        ts.advance(stream)
-        decl.parse_import(stream)
+    while ts.check_keyword(s, "import"):
+        ts.advance(s)
+        decl.parse_import(s)
         stats.imports += 1
-        ts.skip_newlines(stream)
+        ts.skip_newlines(s)
 
-    while ts.check_keyword(stream, "link") or ts.check_keyword(stream, "include") or ts.check_keyword(stream, "compiler_flag"):
-        ts.advance(stream)
-        if ts.peek_kind(stream) == token.TokenKind.string_literal:
-            ts.advance(stream)
-        ts.skip_newlines(stream)
+    while ts.check_keyword(s, "link") or ts.check_keyword(s, "include") or ts.check_keyword(s, "compiler_flag"):
+        ts.advance(s)
+        if ts.peek_kind(s) == token.TokenKind.string_literal:
+            ts.advance(s)
+        ts.skip_newlines(s)
 
-    while not ts.eof(stream):
-        if not decl.parse_declaration(stream, stats):
+    while not ts.eof(s):
+        if not decl.parse_declaration(s, stats):
             return false
-        ts.skip_newlines(stream)
+        ts.skip_newlines(s)
 
     return true

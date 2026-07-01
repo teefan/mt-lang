@@ -1,42 +1,19 @@
 import parser.token_stream as ts
 import lexer.token as token
-import parser.expression as expr_parser
-import parser.statement as stmt_parser
-import parser.type_parsing as type_parsing
+import parser.blocks as blocks
+import parser.expression as expr
+import parser.type_parsing as types
 import std.log as log
 import std.fmt as fmt
-
-public enum DeclKind: ubyte
-    none = 0
-    import_decl = 1
-    const_decl = 2
-    var_decl = 3
-    event_decl = 4
-    type_alias_decl = 5
-    attribute_decl = 6
-    struct_decl = 7
-    union_decl = 8
-    enum_decl = 9
-    flags_decl = 10
-    variant_decl = 11
-    opaque_decl = 12
-    interface_decl = 13
-    extending_block = 14
-    function_def = 15
-    extern_function = 16
-    foreign_function = 17
-    static_assert_decl = 18
-    when_decl = 19
-
 
 # ---- Import ----
 
 public function parse_import(stream: ref[ts.TokenStream]) -> bool:
-    type_parsing.parse_qualified_name(stream)
+    types.parse_qualified_name(stream)
 
     if ts.check_keyword(stream, "as"):
         ts.advance(stream)
-        type_parsing.parse_qualified_name(stream)
+        types.parse_qualified_name(stream)
 
     ts.skip_newlines(stream)
     return true
@@ -62,7 +39,7 @@ public function parse_declaration(stream: ref[ts.TokenStream], track: ref[DeclSt
         ts.advance(stream)
         if ts.check_keyword(stream, "function"):
             ts.advance(stream)
-            return parse_function_body(stream, track)
+            return parse_function_signature(stream, track)
         return parse_const_decl(stream, track)
 
     if ts.check_keyword(stream, "var"):
@@ -112,17 +89,17 @@ public function parse_declaration(stream: ref[ts.TokenStream], track: ref[DeclSt
     if ts.check_keyword(stream, "foreign"):
         ts.advance(stream)
         ts.match_keyword(stream, "function")
-        return parse_function_body(stream, track)
+        return parse_function_signature(stream, track)
 
     if ts.check_keyword(stream, "async"):
         ts.advance(stream)
         if ts.check_keyword(stream, "function"):
             ts.advance(stream)
-        return parse_function_body(stream, track)
+        return parse_function_signature(stream, track)
 
     if ts.check_keyword(stream, "function"):
         ts.advance(stream)
-        return parse_function_body(stream, track)
+        return parse_function_signature(stream, track)
 
     if ts.check_keyword(stream, "external"):
         ts.advance(stream)
@@ -151,7 +128,7 @@ function parse_attribute_applications(stream: ref[ts.TokenStream]) -> void:
     while ts.check_symbol(stream, "@"):
         ts.advance(stream)
         if ts.match_symbol(stream, "["):
-            parse_group_content(stream, "[", "]")
+            blocks.parse_group_content(stream, "[", "]")
     ts.skip_newlines(stream)
 
 
@@ -169,7 +146,7 @@ function parse_attribute_decl(stream: ref[ts.TokenStream], track: ref[DeclStats]
 
     if ts.check_symbol(stream, "("):
         ts.advance(stream)
-        parse_group_content(stream, "(", ")")
+        blocks.parse_group_content(stream, "(", ")")
 
     ts.skip_newlines(stream)
     track.attributes += 1
@@ -185,16 +162,16 @@ function parse_const_decl(stream: ref[ts.TokenStream], track: ref[DeclStats]) ->
         ts.advance(stream)
 
     if ts.match_symbol(stream, "->"):
-        let _ = type_parsing.parse_type_ref(stream)
-        parse_block_body(stream)
+        let _ = types.parse_type_ref(stream)
+        parse_decl_block(stream)
         track.consts += 1
         return true
 
     if ts.match_symbol(stream, ":"):
-        let _ = type_parsing.parse_type_ref(stream)
+        let _ = types.parse_type_ref(stream)
 
     if ts.match_symbol(stream, "="):
-        let _ = expr_parser.parse_expression(stream)
+        let _ = expr.parse_expression(stream)
 
     ts.skip_newlines(stream)
     track.consts += 1
@@ -208,10 +185,10 @@ function parse_var_decl(stream: ref[ts.TokenStream], track: ref[DeclStats]) -> b
         ts.advance(stream)
 
     if ts.match_symbol(stream, ":"):
-        let _ = type_parsing.parse_type_ref(stream)
+        let _ = types.parse_type_ref(stream)
 
     if ts.match_symbol(stream, "="):
-        let _ = expr_parser.parse_expression(stream)
+        let _ = expr.parse_expression(stream)
 
     ts.skip_newlines(stream)
     track.vars += 1
@@ -228,7 +205,7 @@ function parse_event_decl(stream: ref[ts.TokenStream], track: ref[DeclStats]) ->
         ts.match_symbol(stream, "]")
 
     if ts.match_symbol(stream, "("):
-        let _ = type_parsing.parse_type_ref(stream)
+        let _ = types.parse_type_ref(stream)
         ts.match_symbol(stream, ")")
 
     ts.skip_newlines(stream)
@@ -244,7 +221,7 @@ function parse_type_alias(stream: ref[ts.TokenStream], track: ref[DeclStats]) ->
 
     ts.match_symbol(stream, "=")
 
-    let _ = type_parsing.parse_type_ref(stream)
+    let _ = types.parse_type_ref(stream)
 
     ts.skip_newlines(stream)
     track.type_aliases += 1
@@ -258,11 +235,11 @@ function parse_struct_decl(stream: ref[ts.TokenStream], track: ref[DeclStats]) -
 
     if ts.check_keyword(stream, "implements"):
         ts.advance(stream)
-        type_parsing.parse_qualified_name(stream)
-        type_parsing.skip_type_arguments(stream)
+        types.parse_qualified_name(stream)
+        types.skip_type_arguments(stream)
         while ts.match_symbol(stream, ","):
-            type_parsing.parse_qualified_name(stream)
-            type_parsing.skip_type_arguments(stream)
+            types.parse_qualified_name(stream)
+            types.skip_type_arguments(stream)
 
     if ts.match_symbol(stream, "="):
         if ts.check_kind(stream, token.TokenKind.cstring_literal):
@@ -293,7 +270,7 @@ function parse_enum_decl(stream: ref[ts.TokenStream], track: ref[DeclStats]) -> 
     ts.advance(stream)
 
     if ts.match_symbol(stream, ":"):
-        let _ = type_parsing.parse_type_ref(stream)
+        let _ = types.parse_type_ref(stream)
 
     parse_decl_block(stream)
     track.enums += 1
@@ -306,7 +283,7 @@ function parse_flags_decl(stream: ref[ts.TokenStream], track: ref[DeclStats]) ->
     ts.advance(stream)
 
     if ts.match_symbol(stream, ":"):
-        let _ = type_parsing.parse_type_ref(stream)
+        let _ = types.parse_type_ref(stream)
 
     parse_decl_block(stream)
     track.flags_count += 1
@@ -329,7 +306,7 @@ function parse_opaque_decl(stream: ref[ts.TokenStream], track: ref[DeclStats]) -
 
     if ts.check_keyword(stream, "implements"):
         ts.advance(stream)
-        type_parsing.parse_qualified_name(stream)
+        types.parse_qualified_name(stream)
 
     if ts.match_symbol(stream, "="):
         if ts.check_kind(stream, token.TokenKind.cstring_literal):
@@ -352,30 +329,30 @@ function parse_interface_decl(stream: ref[ts.TokenStream], track: ref[DeclStats]
 # ---- Extending ----
 
 function parse_extending_block(stream: ref[ts.TokenStream], track: ref[DeclStats]) -> bool:
-    let _ = type_parsing.parse_type_ref(stream)
+    let _ = types.parse_type_ref(stream)
     parse_decl_block(stream)
     track.extending_blocks += 1
     return true
 
 
-# ---- Function ----
+# ---- Function signature ----
 
-function parse_function_body(stream: ref[ts.TokenStream], track: ref[DeclStats]) -> bool:
+function parse_function_signature(stream: ref[ts.TokenStream], track: ref[DeclStats]) -> bool:
     ts.advance(stream)
     parse_name_and_type_params(stream)
-    parse_function_params(stream)
+    parse_params(stream)
 
     if ts.match_symbol(stream, "->"):
-        let _ = type_parsing.parse_type_ref(stream)
+        let _ = types.parse_type_ref(stream)
 
     if ts.match_symbol(stream, "="):
-        let _ = expr_parser.parse_expression(stream)
+        let _ = expr.parse_expression(stream)
         ts.skip_newlines(stream)
         track.functions += 1
         return true
 
     if ts.check_kind(stream, token.TokenKind.newline) or ts.check_symbol(stream, ":"):
-        parse_block_body(stream)
+        parse_decl_block(stream)
         track.functions += 1
         return true
 
@@ -389,13 +366,13 @@ function parse_function_body(stream: ref[ts.TokenStream], track: ref[DeclStats])
 function parse_extern_function(stream: ref[ts.TokenStream], track: ref[DeclStats]) -> bool:
     ts.advance(stream)
     parse_name_and_type_params(stream)
-    parse_function_params(stream)
+    parse_params(stream)
 
     if ts.match_symbol(stream, "->"):
-        let _ = type_parsing.parse_type_ref(stream)
+        let _ = types.parse_type_ref(stream)
 
     if ts.match_symbol(stream, "="):
-        let _ = expr_parser.parse_expression(stream)
+        let _ = expr.parse_expression(stream)
 
     ts.skip_newlines(stream)
     track.extern_functions += 1
@@ -407,9 +384,9 @@ function parse_extern_function(stream: ref[ts.TokenStream], track: ref[DeclStats
 function parse_static_assert_decl(stream: ref[ts.TokenStream], track: ref[DeclStats]) -> bool:
     if not ts.match_symbol(stream, "("):
         return false
-    let _ = expr_parser.parse_expression(stream)
+    let _ = expr.parse_expression(stream)
     ts.match_symbol(stream, ",")
-    let _ = expr_parser.parse_expression(stream)
+    let _ = expr.parse_expression(stream)
     ts.match_symbol(stream, ")")
     ts.skip_newlines(stream)
     track.static_asserts += 1
@@ -419,7 +396,7 @@ function parse_static_assert_decl(stream: ref[ts.TokenStream], track: ref[DeclSt
 # ---- When (top-level) ----
 
 function parse_when_top_level(stream: ref[ts.TokenStream], track: ref[DeclStats]) -> bool:
-    let _ = expr_parser.parse_expression(stream)
+    let _ = expr.parse_expression(stream)
     parse_decl_block(stream)
     track.when_blocks += 1
     return true
@@ -433,106 +410,35 @@ function parse_name_and_type_params(stream: ref[ts.TokenStream]) -> void:
 
     if ts.check_symbol(stream, "["):
         ts.advance(stream)
-        parse_group_content(stream, "[", "]")
+        blocks.parse_group_content(stream, "[", "]")
 
 
-function parse_function_params(stream: ref[ts.TokenStream]) -> void:
+function parse_params(stream: ref[ts.TokenStream]) -> void:
     if ts.match_symbol(stream, "("):
-        parse_group_content(stream, "(", ")")
+        blocks.parse_group_content(stream, "(", ")")
 
 
 # ---- Block utilities ----
-
-function parse_block_body(stream: ref[ts.TokenStream]) -> void:
-    if ts.check_kind(stream, token.TokenKind.newline):
-        ts.advance(stream)
-
-    if ts.match_kind(stream, token.TokenKind.indent):
-        var depth: ptr_uint = 1
-        while not ts.eof(stream) and depth > 0:
-            let kind = ts.peek_kind(stream)
-            if kind == token.TokenKind.indent:
-                depth += 1
-            else if kind == token.TokenKind.dedent:
-                depth -= 1
-                if depth == 0:
-                    ts.advance(stream)
-                    return
-            else if kind == token.TokenKind.eof:
-                return
-            ts.advance(stream)
-        return
-
-    if not ts.check_symbol(stream, ":"):
-        return
-    if not ts.check_kind(stream, token.TokenKind.newline) and not ts.check_symbol(stream, ":"):
-        return
-
-    ts.advance(stream)
-    if ts.check_kind(stream, token.TokenKind.newline):
-        ts.advance(stream)
-    if ts.match_kind(stream, token.TokenKind.indent):
-        var depth: ptr_uint = 1
-        while not ts.eof(stream) and depth > 0:
-            let kind = ts.peek_kind(stream)
-            if kind == token.TokenKind.indent:
-                depth += 1
-            else if kind == token.TokenKind.dedent:
-                depth -= 1
-                if depth == 0:
-                    ts.advance(stream)
-                    return
-            else if kind == token.TokenKind.eof:
-                return
-            ts.advance(stream)
-
 
 function parse_decl_block(stream: ref[ts.TokenStream]) -> void:
     if not ts.check_symbol(stream, ":"):
         ts.skip_newlines(stream)
         if ts.match_symbol(stream, ":"):
-            parse_decl_block_after(stream)
+            skip_decl_block_body(stream)
         else if ts.check_kind(stream, token.TokenKind.indent):
-            parse_decl_block_after(stream)
+            skip_decl_block_body(stream)
         return
 
     ts.advance(stream)
-    parse_decl_block_after(stream)
+    skip_decl_block_body(stream)
 
 
-function parse_decl_block_after(stream: ref[ts.TokenStream]) -> void:
+function skip_decl_block_body(stream: ref[ts.TokenStream]) -> void:
     if ts.check_kind(stream, token.TokenKind.newline):
         ts.advance(stream)
 
     if ts.match_kind(stream, token.TokenKind.indent):
-        var depth: ptr_uint = 1
-        while not ts.eof(stream) and depth > 0:
-            let kind = ts.peek_kind(stream)
-            if kind == token.TokenKind.indent:
-                depth += 1
-            else if kind == token.TokenKind.dedent:
-                depth -= 1
-                if depth == 0:
-                    ts.advance(stream)
-                    return
-            else if kind == token.TokenKind.eof:
-                return
-            ts.advance(stream)
-
-
-function parse_group_content(stream: ref[ts.TokenStream], open_sym: str, close_sym: str) -> void:
-    var depth: ptr_uint = 1
-    while not ts.eof(stream) and depth > 0:
-        let tok = ts.peek(stream)
-        if tok.kind == token.TokenKind.symbol:
-            if tok.lexeme == open_sym or tok.lexeme == "[" or tok.lexeme == "(":
-                depth += 1
-            else if tok.lexeme == close_sym or tok.lexeme == "]" or tok.lexeme == ")":
-                depth -= 1
-                if depth == 0:
-                    ts.advance(stream)
-                    return
-        ts.advance(stream)
+        blocks.skip_to_dedent(stream)
 
 
 # ---- Stats tracking ----
