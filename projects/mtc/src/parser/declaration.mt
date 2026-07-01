@@ -3,6 +3,7 @@ import lexer.token as token
 import parser.ast_types as ast
 import parser.blocks as blocks
 import parser.expression as expr
+import parser.error as parser_error
 import parser.type_parsing as types
 import std.log as log
 import std.fmt as fmt
@@ -38,6 +39,7 @@ public function parse_declaration(
     stream: ref[ts.TokenStream],
     track: ref[DeclStats],
     decls: ref[vec.Vec[ast.Decl]],
+    recover: ptr[vec.Vec[parser_error.ParseError]]?,
 ) -> bool:
     parse_attribute_applications(stream)
     let head_start = ts.peek(stream).start_offset
@@ -214,10 +216,15 @@ public function parse_declaration(
         return ok
 
     let tok = ts.peek(stream)
-    var msg = fmt.format(f"#{stream.path}:#{tok.line}:#{tok.column}: error: expected declaration, got #{tok.lexeme} (kind #{token.token_kind_name(tok.kind)})")
-    defer msg.release()
-    log.error(msg.as_str())
-    return false
+    let errors = recover else:
+        var msg = fmt.format(f"#{stream.path}:#{tok.line}:#{tok.column}: error: expected declaration, got #{tok.lexeme} (kind #{token.token_kind_name(tok.kind)})")
+        defer msg.release()
+        log.error(msg.as_str())
+        return false
+    unsafe:
+        read(errors).push(parser_error.create(stream.path, tok.line, tok.column, "expected declaration"))
+    blocks.synchronize_to_next_decl(stream)
+    return true
 
 
 # ---- Attribute parsing ----
@@ -444,7 +451,8 @@ function parse_extending_block(stream: ref[ts.TokenStream], track: ref[DeclStats
 function parse_function_signature(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint]) -> bool:
     ts.advance(stream)
     parse_name_and_type_params(stream)
-    parse_params(stream)
+    var _mt_var: bool = false
+    parse_params(stream, ref_of(_mt_var))
 
     if ts.match_symbol(stream, "->"):
         let _ = types.parse_type_ref(stream)
@@ -472,7 +480,8 @@ function parse_function_signature(stream: ref[ts.TokenStream], track: ref[DeclSt
 function parse_extern_function(stream: ref[ts.TokenStream], track: ref[DeclStats], head_end_out: ref[ptr_uint]) -> bool:
     ts.advance(stream)
     parse_name_and_type_params(stream)
-    parse_params(stream)
+    var _mt_var: bool = false
+    parse_params(stream, ref_of(_mt_var))
 
     if ts.match_symbol(stream, "->"):
         let _ = types.parse_type_ref(stream)
@@ -521,9 +530,26 @@ function parse_name_and_type_params(stream: ref[ts.TokenStream]) -> void:
         blocks.parse_group_content(stream, "[", "]")
 
 
-function parse_params(stream: ref[ts.TokenStream]) -> void:
-    if ts.match_symbol(stream, "("):
-        blocks.parse_group_content(stream, "(", ")")
+function parse_params(stream: ref[ts.TokenStream], has_variadic: ref[bool]) -> void:
+    read(has_variadic) = false
+    if not ts.match_symbol(stream, "("):
+        return
+    var depth: ptr_uint = 1
+    while not ts.eof(stream) and depth > 0:
+        let tok = ts.peek(stream)
+        if tok.kind == token.TokenKind.ellipsis:
+            read(has_variadic) = true
+            ts.advance(stream)
+            continue
+        if tok.kind == token.TokenKind.symbol:
+            if tok.lexeme == "(" or tok.lexeme == "[":
+                depth += 1
+            else if tok.lexeme == ")" or tok.lexeme == "]":
+                depth -= 1
+                if depth == 0:
+                    ts.advance(stream)
+                    return
+        ts.advance(stream)
 
 
 # ---- Block utilities ----

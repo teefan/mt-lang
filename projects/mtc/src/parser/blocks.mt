@@ -47,3 +47,24 @@ public function parse_group_content(stream: ref[ts.TokenStream], open: str, clos
                     return
 
         ts.advance(stream)
+
+
+public function synchronize_to_next_decl(stream: ref[ts.TokenStream]) -> void:
+    var indent_depth: ptr_uint = 0
+    while not ts.eof(stream):
+        let tok = ts.peek(stream)
+        if tok.kind == token.TokenKind.indent:
+            indent_depth += 1
+        else if tok.kind == token.TokenKind.dedent:
+            if indent_depth == 0:
+                ts.advance(stream)
+                break
+            indent_depth -= 1
+        else if tok.kind == token.TokenKind.newline and indent_depth == 0:
+            ts.advance(stream)
+            ts.skip_newlines(stream)
+            let next = ts.peek(stream)
+            if next.kind == token.TokenKind.keyword:
+                break
+        else:
+            ts.advance(stream)

@@ -8,6 +8,7 @@ import std.vec
 import lexer
 import parser
 import parser.ast_types as ast
+import parser.error as parser_error
 import printer
 
 
@@ -202,13 +203,24 @@ function handle_parse(parsed: cli.Match) -> int:
             var content = read_payload.value
             defer content.release()
 
-            var tokens = lexer.lex(content.as_str(), file_path)
-            defer tokens.release()
-
             var decls = vec.Vec[ast.Decl].create()
             defer decls.release()
 
-            let result = parser.parse(ref_of(tokens), file_path, ref_of(decls))
+            var errors = vec.Vec[parser_error.ParseError].create()
+            defer errors.release()
+
+            let result = parser.parse_recovering(content.as_str(), file_path, ref_of(decls), ref_of(errors))
+
+            var ec: ptr_uint = 0
+            while ec < errors.len():
+                let err_ptr = errors.get(ec) else:
+                    fatal(c"handle_parse missing error")
+                unsafe:
+                    let e = read(err_ptr)
+                    var msg = fmt.format(f"#{e.path}:#{e.line}:#{e.column}: error: #{e.message.as_str()}")
+                    defer msg.release()
+                    let _ = write_stderr_text(msg.as_str())
+                ec += 1
 
             if result.success:
                 var msg = fmt.format(f"parsed #{file_path}: #{result.total_decls} declaration(s), #{result.imports} import(s)")
@@ -222,6 +234,8 @@ function handle_parse(parsed: cli.Match) -> int:
                 defer output.release()
                 printer.print_ast(ref_of(decls), content.as_str(), ref_of(output))
                 let _ = write_stdout_text(output.as_str())
+                if errors.len() > 0:
+                    return 1
                 return 0
             else:
                 var msg = fmt.format(f"parse failed for #{file_path}")

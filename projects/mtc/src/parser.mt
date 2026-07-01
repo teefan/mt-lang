@@ -1,9 +1,13 @@
+import lexer
 import lexer.token as token
+import lexer.error as lex_error
 import parser.token_stream as ts
 import parser.ast_types as ast
 import parser.declaration as decl
+import parser.error as parser_error
 import std.string
 import std.vec
+
 
 public struct ParseResult:
     success: bool
@@ -19,22 +23,51 @@ public function parse(
 ) -> ParseResult:
     var tok_stream = ts.make_stream(tokens, path)
     var stats = decl.zero_stats()
+    let result = parse_source_file(ref_of(tok_stream), ref_of(stats), decls_out, null)
+    return build_result(result, ref_of(stats))
 
-    let result = parse_source_file(ref_of(tok_stream), ref_of(stats), decls_out)
 
+public function parse_recovering(
+    source: str,
+    path: str,
+    decls_out: ref[vec.Vec[ast.Decl]],
+    errors: ref[vec.Vec[parser_error.ParseError]],
+) -> ParseResult:
+    var lex_errors = vec.Vec[lex_error.LexError].create()
+    defer lex_errors.release()
+
+    var tokens = lexer.lex_recovering(source, path, ref_of(lex_errors))
+    defer tokens.release()
+
+    var index: ptr_uint = 0
+    while index < lex_errors.len():
+        let lex_err_ptr = lex_errors.get(index) else:
+            fatal(c"parse_recovering missing lex error")
+        unsafe:
+            let le = read(lex_err_ptr)
+            errors.push(parser_error.create(path, le.line, le.column, le.message.as_str()))
+        index += 1
+
+    var tok_stream = ts.make_stream(ref_of(tokens), path)
+    var stats = decl.zero_stats()
+    let result = parse_source_file(ref_of(tok_stream), ref_of(stats), decls_out, unsafe: ptr[vec.Vec[parser_error.ParseError]]<-ptr_of(read(errors)))
+    return build_result(result, ref_of(stats))
+
+
+function build_result(ok: bool, stats: ref[decl.DeclStats]) -> ParseResult:
     var total = (
-        stats.consts + stats.vars + stats.events + stats.type_aliases
-        + stats.attributes + stats.structs + stats.unions + stats.enums
-        + stats.flags_count + stats.variants + stats.opaques + stats.interfaces
-        + stats.extending_blocks + stats.functions + stats.extern_functions
-        + stats.static_asserts + stats.when_blocks
+        read(stats).consts + read(stats).vars + read(stats).events + read(stats).type_aliases
+        + read(stats).attributes + read(stats).structs + read(stats).unions + read(stats).enums
+        + read(stats).flags_count + read(stats).variants + read(stats).opaques + read(stats).interfaces
+        + read(stats).extending_blocks + read(stats).functions + read(stats).extern_functions
+        + read(stats).static_asserts + read(stats).when_blocks
     )
 
     return ParseResult(
-        success = result,
-        imports = stats.imports,
+        success = ok,
+        imports = read(stats).imports,
         total_decls = total,
-        stats = stats,
+        stats = read(stats),
     )
 
 
@@ -42,11 +75,12 @@ function parse_source_file(
     s: ref[ts.TokenStream],
     stats: ref[decl.DeclStats],
     decls_out: ref[vec.Vec[ast.Decl]],
+    recover: ptr[vec.Vec[parser_error.ParseError]]?,
 ) -> bool:
     ts.skip_newlines(s)
 
     if ts.check_keyword(s, "external"):
-        return parse_raw_module(s, stats, decls_out)
+        return parse_raw_module(s, stats, decls_out, recover)
 
     while ts.check_keyword(s, "import"):
         let head_start = ts.peek(s).start_offset
@@ -59,8 +93,9 @@ function parse_source_file(
         ts.skip_newlines(s)
 
     while not ts.eof(s):
-        if not decl.parse_declaration(s, stats, decls_out):
-            return false
+        if not decl.parse_declaration(s, stats, decls_out, recover):
+            if recover == null:
+                return false
         ts.skip_newlines(s)
 
     return true
@@ -70,6 +105,7 @@ function parse_raw_module(
     s: ref[ts.TokenStream],
     stats: ref[decl.DeclStats],
     decls_out: ref[vec.Vec[ast.Decl]],
+    recover: ptr[vec.Vec[parser_error.ParseError]]?,
 ) -> bool:
     ts.advance(s)
     ts.skip_newlines(s)
@@ -91,8 +127,9 @@ function parse_raw_module(
         ts.skip_newlines(s)
 
     while not ts.eof(s):
-        if not decl.parse_declaration(s, stats, decls_out):
-            return false
+        if not decl.parse_declaration(s, stats, decls_out, recover):
+            if recover == null:
+                return false
         ts.skip_newlines(s)
 
     return true
