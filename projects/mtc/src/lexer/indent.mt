@@ -37,22 +37,26 @@ public function lex_indentation(
     line: ptr_uint,
     line_offset: ptr_uint,
     path: str,
+    recover: ptr[vec.Vec[lex_error.LexError]]?,
 ) -> void:
+    var adjusted = indent
     if indent % 4 != 0:
-        lex_error.fatal_at(path, line, 1, "indentation must use multiples of 4 spaces")
+        lex_error.recover_or_fatal_at(recover, path, line, 1, "indentation must use multiples of 4 spaces")
+        adjusted = indent - (indent % 4)
 
     let last_indent_ptr = indent_stack.last() else:
         return
 
     let current_indent = unsafe: read(last_indent_ptr)
-    if indent == current_indent:
+    if adjusted == current_indent:
         return
 
-    if indent > current_indent:
-        if indent != current_indent + 4:
-            lex_error.fatal_at(path, line, 1, "indentation may only increase by 4 spaces at a time")
+    if adjusted > current_indent:
+        if adjusted > current_indent + 4:
+            lex_error.recover_or_fatal_at(recover, path, line, 1, "indentation may only increase by 4 spaces at a time")
+            adjusted = current_indent + 4
 
-        indent_stack.push(indent)
+        indent_stack.push(adjusted)
         token_mod.push_token(tokens, token_mod.TokenKind.indent, "", line, 1, line_offset, line_offset)
         return
 
@@ -61,7 +65,7 @@ public function lex_indentation(
             break
 
         let top = unsafe: read(top_ptr)
-        if top <= indent:
+        if top <= adjusted:
             break
 
         indent_stack.pop()
@@ -71,5 +75,5 @@ public function lex_indentation(
         return
 
     let final = unsafe: read(final_ptr)
-    if final != indent:
-        lex_error.fatal_at(path, line, 1, "indentation does not match any open block")
+    if final != adjusted:
+        lex_error.recover_or_fatal_at(recover, path, line, 1, "indentation does not match any open block")

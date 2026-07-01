@@ -4,8 +4,11 @@ import std.fs
 import std.string
 import std.terminal as terminal
 import std.log as log
+import std.vec
 import lexer
 import parser
+import parser.ast_types as ast
+import printer
 
 
 const VERSION: str = "0.1.0"
@@ -202,7 +205,10 @@ function handle_parse(parsed: cli.Match) -> int:
             var tokens = lexer.lex(content.as_str(), file_path)
             defer tokens.release()
 
-            let result = parser.parse(ref_of(tokens), file_path)
+            var decls = vec.Vec[ast.Decl].create()
+            defer decls.release()
+
+            let result = parser.parse(ref_of(tokens), file_path, ref_of(decls))
 
             if result.success:
                 var msg = fmt.format(f"parsed #{file_path}: #{result.total_decls} declaration(s), #{result.imports} import(s)")
@@ -211,6 +217,11 @@ function handle_parse(parsed: cli.Match) -> int:
 
                 log.info(f"  structs=#{result.stats.structs} enums=#{result.stats.enums} consts=#{result.stats.consts}")
                 log.info(f"  functions=#{result.stats.functions} vars=#{result.stats.vars} flags=#{result.stats.flags_count}")
+
+                var output = string.String.create()
+                defer output.release()
+                printer.print_ast(ref_of(decls), content.as_str(), ref_of(output))
+                let _ = write_stdout_text(output.as_str())
                 return 0
             else:
                 var msg = fmt.format(f"parse failed for #{file_path}")

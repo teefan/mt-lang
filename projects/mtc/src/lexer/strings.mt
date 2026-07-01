@@ -1,5 +1,6 @@
 import lexer.token as token_mod
 import lexer.scanner
+import std.string
 import std.str
 import std.vec
 
@@ -314,3 +315,103 @@ public function scan_fstring(
     let lexeme = line.slice(start, idx - start)
     token_mod.push_token(tokens, token_mod.TokenKind.fstring_literal, lexeme, line_num, start + 1, line_offset + start, line_offset + idx)
     return idx
+
+
+public function string_content(lexeme: str) -> string.String:
+    var result = string.String.create()
+    var idx: ptr_uint = 1
+    while idx + 1 <= lexeme.len:
+        let ch = lexeme.byte_at(idx)
+        if ch == '\\' and idx + 1 < lexeme.len:
+            let escaped = lexeme.byte_at(idx + 1)
+            result.push_byte(escaped)
+            idx += 2
+            continue
+        if ch == '"' and idx + 1 == lexeme.len:
+            break
+        result.push_byte(ch)
+        idx += 1
+    return result
+
+
+public function cstring_content(lexeme: str) -> string.String:
+    var result = string.String.create()
+    var idx: ptr_uint = 2
+    while idx + 1 <= lexeme.len:
+        let ch = lexeme.byte_at(idx)
+        if ch == '\\' and idx + 1 < lexeme.len:
+            let escaped = lexeme.byte_at(idx + 1)
+            result.push_byte(escaped)
+            idx += 2
+            continue
+        if ch == '"' and idx + 1 == lexeme.len:
+            break
+        result.push_byte(ch)
+        idx += 1
+    return result
+
+
+public function heredoc_dedented(lexeme: str) -> string.String:
+    var idx: ptr_uint = 0
+    while idx < lexeme.len and lexeme.byte_at(idx) != '\n' and lexeme.byte_at(idx) != '\r':
+        idx += 1
+    if idx >= lexeme.len:
+        return string.String.create()
+
+    while idx < lexeme.len and (lexeme.byte_at(idx) == '\n' or lexeme.byte_at(idx) == '\r'):
+        idx += 1
+    if idx >= lexeme.len:
+        return string.String.create()
+
+    let content_start = idx
+    var content_end = idx
+    while content_end < lexeme.len:
+        if lexeme.byte_at(content_end) == '\n' or lexeme.byte_at(content_end) == '\r':
+            var nl_next = content_end + 1
+            if content_end + 1 < lexeme.len and lexeme.byte_at(content_end) == '\r' and lexeme.byte_at(content_end + 1) == '\n':
+                nl_next = content_end + 2
+            var lookahead = nl_next
+            while lookahead < lexeme.len and lexeme.byte_at(lookahead) == ' ':
+                lookahead += 1
+            if lookahead < lexeme.len and lexeme.byte_at(lookahead) != '\n' and lexeme.byte_at(lookahead) != '\r':
+                break
+            content_end = lookahead
+        content_end += 1
+
+    var min_indent: ptr_uint = 0
+    var first_line: bool = true
+    var scan = content_start
+    while scan < content_end:
+        var line_indent: ptr_uint = 0
+        while scan < content_end and lexeme.byte_at(scan) == ' ':
+            line_indent += 1
+            scan += 1
+        var non_blank: bool = false
+        while scan < content_end and lexeme.byte_at(scan) != '\n' and lexeme.byte_at(scan) != '\r':
+            non_blank = true
+            scan += 1
+        if scan < content_end and lexeme.byte_at(scan) == '\r' and scan + 1 < content_end and lexeme.byte_at(scan + 1) == '\n':
+            scan += 1
+        if scan < content_end:
+            scan += 1
+        if non_blank and (first_line or line_indent < min_indent):
+            min_indent = line_indent
+            first_line = false
+
+    var result = string.String.create()
+    scan = content_start
+    while scan < content_end:
+        var indent_count: ptr_uint = 0
+        while scan < content_end and lexeme.byte_at(scan) == ' ' and indent_count < min_indent:
+            indent_count += 1
+            scan += 1
+        while scan < content_end and lexeme.byte_at(scan) != '\n' and lexeme.byte_at(scan) != '\r':
+            result.push_byte(lexeme.byte_at(scan))
+            scan += 1
+        if scan < content_end and lexeme.byte_at(scan) == '\r' and scan + 1 < content_end and lexeme.byte_at(scan + 1) == '\n':
+            scan += 1
+        if scan < content_end:
+            result.push_byte('\n')
+            scan += 1
+
+    return result

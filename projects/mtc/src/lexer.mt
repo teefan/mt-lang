@@ -27,13 +27,41 @@ function is_continuation_operator(lexeme: str) -> bool:
     return false
 
 
-function adjust_grouping_depth(depth: ref[ptr_uint], lexeme: str, path: str, line: ptr_uint, column: ptr_uint) -> void:
+function is_heredoc_context_allowed(tokens: ref[vec.Vec[token_mod.Token]]) -> bool:
+    if tokens.is_empty():
+        return true
+    let prev_ptr = tokens.last() else:
+        return true
+    let prev = unsafe: read(prev_ptr)
+    if prev.kind == token_mod.TokenKind.identifier:
+        return false
+    if prev.kind == token_mod.TokenKind.integer_literal or prev.kind == token_mod.TokenKind.float_literal:
+        return false
+    if prev.kind == token_mod.TokenKind.string_literal or prev.kind == token_mod.TokenKind.cstring_literal or prev.kind == token_mod.TokenKind.fstring_literal:
+        return false
+    if prev.kind == token_mod.TokenKind.char_literal:
+        return false
+    if prev.kind == token_mod.TokenKind.symbol:
+        if prev.lexeme == ")" or prev.lexeme == "]":
+            return false
+    return true
+
+
+function adjust_grouping_depth(
+    depth: ref[ptr_uint],
+    lexeme: str,
+    path: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    recover: ptr[vec.Vec[lex_error.LexError]]?,
+) -> void:
     if lexeme == "(" or lexeme == "[":
         read(depth) += 1
     else if lexeme == ")" or lexeme == "]":
         if unsafe: read(depth) == 0:
-            lex_error.fatal_at(path, line, column, "unexpected closing delimiter")
-        read(depth) -= 1
+            lex_error.recover_or_fatal_at(recover, path, line, column, "unexpected closing delimiter")
+        else:
+            read(depth) -= 1
 
 
 function symbol_kind(ch: ubyte) -> bool:
@@ -94,6 +122,7 @@ function scan_symbol(
     start: ptr_uint,
     line_num: ptr_uint,
     line_offset: ptr_uint,
+    recover: ptr[vec.Vec[lex_error.LexError]]?,
 ) -> ptr_uint:
     if start + 3 <= line.len:
         let three = line.slice(start, 3)
@@ -102,21 +131,28 @@ function scan_symbol(
             return start + 3
         if three == "<<=" or three == ">>=":
             token_mod.push_token(tokens, token_mod.TokenKind.symbol, three, line_num, start + 1, line_offset + start, line_offset + start + 3)
-            adjust_grouping_depth(grouping_depth, three, path, line_num, start + 1)
+            adjust_grouping_depth(grouping_depth, three, path, line_num, start + 1, recover)
             return start + 3
 
     if try_scan_two_char(tokens, line, start, line_num, line_offset):
         let two = line.slice(start, 2)
-        adjust_grouping_depth(grouping_depth, two, path, line_num, start + 1)
+        adjust_grouping_depth(grouping_depth, two, path, line_num, start + 1, recover)
         return start + 2
 
     let one = line.slice(start, 1)
     let ch = line.byte_at(start)
     if not symbol_kind(ch):
-        lex_error.fatal_at_token(path, line_num, start + 1, one, token_mod.TokenKind.symbol, "unexpected character")
+        let kind = token_mod.TokenKind.symbol
+        let errors = recover else:
+            lex_error.fatal_at_token(path, line_num, start + 1, one, kind, "unexpected character")
+            return start
+        unsafe:
+            read(errors).push(lex_error.create("unexpected character", line_num, start + 1))
+        token_mod.push_token(tokens, kind, one, line_num, start + 1, line_offset + start, line_offset + start + 1)
+        return start + 1
 
     token_mod.push_token(tokens, token_mod.TokenKind.symbol, one, line_num, start + 1, line_offset + start, line_offset + start + 1)
-    adjust_grouping_depth(grouping_depth, one, path, line_num, start + 1)
+    adjust_grouping_depth(grouping_depth, one, path, line_num, start + 1, recover)
     return start + 1
 
 
@@ -128,6 +164,7 @@ function scan_line(
     line_start: ptr_uint,
     line_end: ptr_uint,
     line_num: ptr_uint,
+    recover: ptr[vec.Vec[lex_error.LexError]]?,
 ) -> token_mod.ScanResult:
     let line = source.slice(line_start, line_end - line_start)
     var idx: ptr_uint = 0
@@ -159,28 +196,59 @@ function scan_line(
             continue
 
         if ch == '<' and idx + 2 < line.len and line.byte_at(idx + 1) == '<' and line.byte_at(idx + 2) == '-':
-            return string_mod.scan_heredoc(
-                tokens, source,
-                line_start + idx, idx + 1, line_end,
-                line_start + idx + 3, line_num,
-                false, false,
-            )
+            if is_heredoc_context_allowed(tokens):
+                return string_mod.scan_heredoc(
+                    tokens, source,
+                    line_start + idx, idx + 1, line_end,
+                    line_start + idx + 3, line_num,
+                    false, false,
+                )
+            idx = scan_symbol(tokens, grouping_depth, path, line, idx, line_num, line_start, recover)
+            continue
 
         if ch == 'c' and idx + 3 < line.len and line.byte_at(idx + 1) == '<' and line.byte_at(idx + 2) == '<' and line.byte_at(idx + 3) == '-':
-            return string_mod.scan_heredoc(
-                tokens, source,
-                line_start + idx, idx + 1, line_end,
-                line_start + idx + 4, line_num,
-                true, false,
-            )
+            if is_heredoc_context_allowed(tokens):
+                return string_mod.scan_heredoc(
+                    tokens, source,
+                    line_start + idx, idx + 1, line_end,
+                    line_start + idx + 4, line_num,
+                    true, false,
+                )
+            idx = scan_symbol(tokens, grouping_depth, path, line, idx, line_num, line_start, recover)
+            continue
+
+        if ch == 'c' and idx + 2 < line.len and line.byte_at(idx + 1) == '<' and line.byte_at(idx + 2) == '-':
+            let next_idx = idx + 3
+            if next_idx < line.len and scanner_mod.is_alpha(line.byte_at(next_idx)):
+                var suggested = string.String.create()
+                suggested.append("expected '<<-' for heredoc string; did you mean 'c<<-")
+                suggested.append(scanner_mod.scan_identifier_text(line, next_idx))
+                suggested.append("'?")
+                lex_error.recover_or_fatal_at(recover, path, line_num, idx + 1, suggested.as_str())
+                idx = scan_symbol(tokens, grouping_depth, path, line, idx, line_num, line_start, recover)
+                continue
 
         if ch == 'f' and idx + 3 < line.len and line.byte_at(idx + 1) == '<' and line.byte_at(idx + 2) == '<' and line.byte_at(idx + 3) == '-':
-            return string_mod.scan_heredoc(
-                tokens, source,
-                line_start + idx, idx + 1, line_end,
-                line_start + idx + 4, line_num,
-                false, true,
-            )
+            if is_heredoc_context_allowed(tokens):
+                return string_mod.scan_heredoc(
+                    tokens, source,
+                    line_start + idx, idx + 1, line_end,
+                    line_start + idx + 4, line_num,
+                    false, true,
+                )
+            idx = scan_symbol(tokens, grouping_depth, path, line, idx, line_num, line_start, recover)
+            continue
+
+        if ch == 'f' and idx + 2 < line.len and line.byte_at(idx + 1) == '<' and line.byte_at(idx + 2) == '-':
+            let next_idx = idx + 3
+            if next_idx < line.len and scanner_mod.is_alpha(line.byte_at(next_idx)):
+                var suggested = string.String.create()
+                suggested.append("expected '<<-' for heredoc string; did you mean 'f<<-")
+                suggested.append(scanner_mod.scan_identifier_text(line, next_idx))
+                suggested.append("'?")
+                lex_error.recover_or_fatal_at(recover, path, line_num, idx + 1, suggested.as_str())
+                idx = scan_symbol(tokens, grouping_depth, path, line, idx, line_num, line_start, recover)
+                continue
 
         if scanner_mod.is_alpha(ch) or ch == '_':
             idx = scan_identifier(tokens, line, idx, line_num, line_start)
@@ -190,12 +258,20 @@ function scan_line(
             idx = number_mod.scan_number(tokens, line, idx, line_num, line_start)
             continue
 
-        idx = scan_symbol(tokens, grouping_depth, path, line, idx, line_num, line_start)
+        idx = scan_symbol(tokens, grouping_depth, path, line, idx, line_num, line_start, recover)
 
     return token_mod.ScanResult(lines_consumed = 1, next_offset = line_end + 1)
 
 
 public function lex(source: str, path: str) -> vec.Vec[token_mod.Token]:
+    return lex_mode(source, path, null)
+
+
+public function lex_recovering(source: str, path: str, errors: ref[vec.Vec[lex_error.LexError]]) -> vec.Vec[token_mod.Token]:
+    return unsafe: lex_mode(source, path, ptr[vec.Vec[lex_error.LexError]]<-ptr_of(read(errors)))
+
+
+function lex_mode(source: str, path: str, recover: ptr[vec.Vec[lex_error.LexError]]?) -> vec.Vec[token_mod.Token]:
     var tokens = vec.Vec[token_mod.Token].create()
     var indent_stack = vec.Vec[ptr_uint].create()
     defer indent_stack.release()
@@ -208,16 +284,21 @@ public function lex(source: str, path: str) -> vec.Vec[token_mod.Token]:
 
     while offset < source.len:
         var line_end = offset
-        while line_end < source.len and source.byte_at(line_end) != '\n':
+        while line_end < source.len and source.byte_at(line_end) != '\n' and source.byte_at(line_end) != '\r':
             line_end += 1
 
         let line_len = line_end - offset
         let line_text = source.slice(offset, line_len)
         let has_newline = line_end < source.len
-        var nl_width: ptr_uint = if has_newline: 1 else: 0
+        var nl_width: ptr_uint = 0
+        if has_newline:
+            if source.byte_at(line_end) == '\r' and line_end + 1 < source.len and source.byte_at(line_end + 1) == '\n':
+                nl_width = 2
+            else:
+                nl_width = 1
 
         if indent_mod.has_tab(line_text):
-            lex_error.fatal_at(path, line_num, 1, "tabs are not allowed; use 4 spaces for indentation")
+            lex_error.recover_or_fatal_at(recover, path, line_num, 1, "tabs are not allowed; use 4 spaces for indentation")
 
         if indent_mod.is_blank_line(line_text):
             offset = line_end + nl_width
@@ -233,7 +314,7 @@ public function lex(source: str, path: str) -> vec.Vec[token_mod.Token]:
         if grouping_depth == 0:
             if not continuation_pending:
                 let indent = indent_mod.leading_space_count(line_text)
-                indent_mod.lex_indentation(ref_of(tokens), ref_of(indent_stack), indent, line_num, offset, path)
+                indent_mod.lex_indentation(ref_of(tokens), ref_of(indent_stack), indent, line_num, offset, path, recover)
 
         if grouping_depth == 0:
             continuation_pending = false
@@ -246,6 +327,7 @@ public function lex(source: str, path: str) -> vec.Vec[token_mod.Token]:
             offset,
             line_end,
             line_num,
+            recover,
         )
 
         var effective_consumed = scan_result.lines_consumed
@@ -283,14 +365,19 @@ public function lex(source: str, path: str) -> vec.Vec[token_mod.Token]:
             var skip_nl: ptr_uint = 0
             var adv = line_end
             while skip_nl < total and adv < source.len:
+                let ch = source.byte_at(adv)
                 adv += 1
-                if adv <= source.len and source.byte_at(adv - 1) == '\n':
+                if ch == '\r' and adv < source.len and source.byte_at(adv) == '\n':
+                    adv += 1
+                    skip_nl += 1
+                else if ch == '\n' or ch == '\r':
                     skip_nl += 1
             offset = adv
             line_num += skip_nl
 
     if grouping_depth > 0:
-        lex_error.fatal_at(path, line_num, 1, "unclosed grouping delimiter")
+        lex_error.recover_or_fatal_at(recover, path, line_num, 1, "unclosed grouping delimiter")
+        grouping_depth = 0
 
     if line_num > 0:
         line_num = line_num - 1

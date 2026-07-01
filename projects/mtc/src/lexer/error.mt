@@ -2,6 +2,7 @@ import lexer.token as token_mod
 import std.fmt as fmt
 import std.mem.arena as arena
 import std.string
+import std.vec
 
 public struct LexError:
     message: string.String
@@ -53,6 +54,44 @@ public function fatal_at_token(
     formatted.append(token_mod.token_kind_name(kind))
     formatted.append(")")
     fatal(arena_storage.to_cstr(formatted.as_str()))
+
+
+public function recover_or_fatal_at(
+    recover: ptr[vec.Vec[LexError]]?,
+    path: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    message: str,
+) -> void:
+    let errors = recover else:
+        fatal_at(path, line, column, message)
+        return
+    unsafe:
+        read(errors).push(LexError(
+            message = string.String.from_str(message),
+            line = line,
+            column = column,
+        ))
+
+
+public function recover_or_fatal_at_token(
+    recover: ptr[vec.Vec[LexError]]?,
+    path: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    lexeme: str,
+    kind: token_mod.TokenKind,
+    message: str,
+) -> void:
+    let errors = recover else:
+        fatal_at_token(path, line, column, lexeme, kind, message)
+        return
+    unsafe:
+        read(errors).push(LexError(
+            message = string.String.from_str(message),
+            line = line,
+            column = column,
+        ))
 
 
 extending LexError:
