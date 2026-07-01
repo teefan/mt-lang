@@ -160,7 +160,7 @@ function handle_lex(parsed: cli.Match) -> int:
                 Result.success as read_payload:
                     var content = read_payload.value
                     defer content.release()
-                    var tokens = lexer.lex(content.as_str())
+                    var tokens = lexer.lex(content.as_str(), file_path)
                     defer tokens.release()
 
                     let count = tokens.len()
@@ -199,7 +199,7 @@ function handle_parse(parsed: cli.Match) -> int:
             var content = read_payload.value
             defer content.release()
 
-            var tokens = lexer.lex(content.as_str())
+            var tokens = lexer.lex(content.as_str(), file_path)
             defer tokens.release()
 
             let result = parser.parse(ref_of(tokens), file_path)

@@ -3,6 +3,7 @@ import lexer.indent as indent_mod
 import lexer.numbers as number_mod
 import lexer.scanner as scanner_mod
 import lexer.strings as string_mod
+import lexer.error as lex_error
 import std.fmt as fmt
 import std.str
 import std.string
@@ -26,12 +27,12 @@ function is_continuation_operator(lexeme: str) -> bool:
     return false
 
 
-function adjust_grouping_depth(depth: ref[ptr_uint], lexeme: str) -> void:
+function adjust_grouping_depth(depth: ref[ptr_uint], lexeme: str, path: str, line: ptr_uint, column: ptr_uint) -> void:
     if lexeme == "(" or lexeme == "[":
         read(depth) += 1
     else if lexeme == ")" or lexeme == "]":
         if unsafe: read(depth) == 0:
-            fatal(c"unexpected closing delimiter")
+            lex_error.fatal_at(path, line, column, "unexpected closing delimiter")
         read(depth) -= 1
 
 
@@ -88,6 +89,7 @@ function try_scan_two_char(
 function scan_symbol(
     tokens: ref[vec.Vec[token_mod.Token]],
     grouping_depth: ref[ptr_uint],
+    path: str,
     line: str,
     start: ptr_uint,
     line_num: ptr_uint,
@@ -95,29 +97,33 @@ function scan_symbol(
 ) -> ptr_uint:
     if start + 3 <= line.len:
         let three = line.slice(start, 3)
-        if three == "..." or three == "<<=" or three == ">>=":
+        if three == "...":
+            token_mod.push_token(tokens, token_mod.TokenKind.ellipsis, three, line_num, start + 1, line_offset + start, line_offset + start + 3)
+            return start + 3
+        if three == "<<=" or three == ">>=":
             token_mod.push_token(tokens, token_mod.TokenKind.symbol, three, line_num, start + 1, line_offset + start, line_offset + start + 3)
-            adjust_grouping_depth(grouping_depth, three)
+            adjust_grouping_depth(grouping_depth, three, path, line_num, start + 1)
             return start + 3
 
     if try_scan_two_char(tokens, line, start, line_num, line_offset):
         let two = line.slice(start, 2)
-        adjust_grouping_depth(grouping_depth, two)
+        adjust_grouping_depth(grouping_depth, two, path, line_num, start + 1)
         return start + 2
 
     let one = line.slice(start, 1)
     let ch = line.byte_at(start)
     if not symbol_kind(ch):
-        fatal(c"unexpected character")
+        lex_error.fatal_at_token(path, line_num, start + 1, one, token_mod.TokenKind.symbol, "unexpected character")
 
     token_mod.push_token(tokens, token_mod.TokenKind.symbol, one, line_num, start + 1, line_offset + start, line_offset + start + 1)
-    adjust_grouping_depth(grouping_depth, one)
+    adjust_grouping_depth(grouping_depth, one, path, line_num, start + 1)
     return start + 1
 
 
 function scan_line(
     tokens: ref[vec.Vec[token_mod.Token]],
     grouping_depth: ref[ptr_uint],
+    path: str,
     source: str,
     line_start: ptr_uint,
     line_end: ptr_uint,
@@ -184,12 +190,12 @@ function scan_line(
             idx = number_mod.scan_number(tokens, line, idx, line_num, line_start)
             continue
 
-        idx = scan_symbol(tokens, grouping_depth, line, idx, line_num, line_start)
+        idx = scan_symbol(tokens, grouping_depth, path, line, idx, line_num, line_start)
 
     return token_mod.ScanResult(lines_consumed = 1, next_offset = line_end + 1)
 
 
-public function lex(source: str) -> vec.Vec[token_mod.Token]:
+public function lex(source: str, path: str) -> vec.Vec[token_mod.Token]:
     var tokens = vec.Vec[token_mod.Token].create()
     var indent_stack = vec.Vec[ptr_uint].create()
     defer indent_stack.release()
@@ -211,7 +217,7 @@ public function lex(source: str) -> vec.Vec[token_mod.Token]:
         var nl_width: ptr_uint = if has_newline: 1 else: 0
 
         if indent_mod.has_tab(line_text):
-            fatal(c"tabs are not allowed; use 4 spaces for indentation")
+            lex_error.fatal_at(path, line_num, 1, "tabs are not allowed; use 4 spaces for indentation")
 
         if indent_mod.is_blank_line(line_text):
             offset = line_end + nl_width
@@ -227,7 +233,7 @@ public function lex(source: str) -> vec.Vec[token_mod.Token]:
         if grouping_depth == 0:
             if not continuation_pending:
                 let indent = indent_mod.leading_space_count(line_text)
-                indent_mod.lex_indentation(ref_of(tokens), ref_of(indent_stack), indent, line_num, offset)
+                indent_mod.lex_indentation(ref_of(tokens), ref_of(indent_stack), indent, line_num, offset, path)
 
         if grouping_depth == 0:
             continuation_pending = false
@@ -235,6 +241,7 @@ public function lex(source: str) -> vec.Vec[token_mod.Token]:
         let scan_result = scan_line(
             ref_of(tokens),
             ref_of(grouping_depth),
+            path,
             source,
             offset,
             line_end,
@@ -283,7 +290,7 @@ public function lex(source: str) -> vec.Vec[token_mod.Token]:
             line_num += skip_nl
 
     if grouping_depth > 0:
-        fatal(c"unclosed grouping delimiter")
+        lex_error.fatal_at(path, line_num, 1, "unclosed grouping delimiter")
 
     if line_num > 0:
         line_num = line_num - 1

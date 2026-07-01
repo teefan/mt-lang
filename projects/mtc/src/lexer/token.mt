@@ -17,6 +17,7 @@ public enum TokenKind: ubyte
     dedent = 11
     newline = 12
     comment = 13
+    ellipsis = 14
 
 public struct Token:
     kind: TokenKind
@@ -86,6 +87,7 @@ public function token_kind_name(kind: TokenKind) -> str:
         TokenKind.dedent: "dedent"
         TokenKind.newline: "newline"
         TokenKind.comment: "comment"
+        TokenKind.ellipsis: "ellipsis"
 
 
 public function push_token(

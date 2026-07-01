@@ -1,4 +1,5 @@
 import lexer.token as token_mod
+import lexer.error as lex_error
 import std.str
 import std.vec
 
@@ -35,9 +36,10 @@ public function lex_indentation(
     indent: ptr_uint,
     line: ptr_uint,
     line_offset: ptr_uint,
+    path: str,
 ) -> void:
     if indent % 4 != 0:
-        fatal(c"indentation must use multiples of 4 spaces")
+        lex_error.fatal_at(path, line, 1, "indentation must use multiples of 4 spaces")
 
     let last_indent_ptr = indent_stack.last() else:
         return
@@ -48,7 +50,7 @@ public function lex_indentation(
 
     if indent > current_indent:
         if indent != current_indent + 4:
-            fatal(c"indentation may only increase by 4 spaces at a time")
+            lex_error.fatal_at(path, line, 1, "indentation may only increase by 4 spaces at a time")
 
         indent_stack.push(indent)
         token_mod.push_token(tokens, token_mod.TokenKind.indent, "", line, 1, line_offset, line_offset)
@@ -70,4 +72,4 @@ public function lex_indentation(
 
     let final = unsafe: read(final_ptr)
     if final != indent:
-        fatal(c"indentation does not match any open block")
+        lex_error.fatal_at(path, line, 1, "indentation does not match any open block")
