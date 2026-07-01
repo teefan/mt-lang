@@ -5,6 +5,30 @@ module MilkTea
     module CBackendTypeSystem
       private
 
+          PRIMITIVE_C_TYPE_MAP = {
+            "bool" => "bool",
+            "byte" => "int8_t",
+            "ubyte" => "uint8_t",
+            "char" => "char",
+            "short" => "int16_t",
+            "ushort" => "uint16_t",
+            "int" => "int32_t",
+            "uint" => "uint32_t",
+            "long" => "int64_t",
+            "ulong" => "uint64_t",
+            "ptr_int" => "intptr_t",
+            "ptr_uint" => "uintptr_t",
+            "float" => "float",
+            "double" => "double",
+            "void" => "void",
+            "cstr" => "const char*",
+          }.freeze
+
+          SANITIZE_NON_ALNUM_RE = /[^A-Za-z0-9_]+/
+          SANITIZE_UNDERSCORES_RE = /_+/
+          SANITIZE_LEADING_UNDERSCORES_RE = /^_+/
+          SANITIZE_TRAILING_UNDERSCORES_RE = /_+$/
+
           def c_declaration(type, name)
             base, declarator = c_declaration_parts(type, name)
             declarator.empty? ? base : "#{base} #{declarator}"
@@ -218,7 +242,7 @@ module MilkTea
           end
 
           def sanitize_identifier(text)
-            identifier = text.gsub(/[^A-Za-z0-9_]+/, "_").gsub(/_+/, "_").sub(/^_+/, "").sub(/_+$/, "")
+            identifier = text.gsub(SANITIZE_NON_ALNUM_RE, "_").gsub(SANITIZE_UNDERSCORES_RE, "_").sub(SANITIZE_LEADING_UNDERSCORES_RE, "").sub(SANITIZE_TRAILING_UNDERSCORES_RE, "")
             identifier.empty? ? "value" : identifier
           end
 
@@ -227,24 +251,7 @@ module MilkTea
           end
 
           def primitive_c_type(name)
-            {
-              "bool" => "bool",
-              "byte" => "int8_t",
-              "ubyte" => "uint8_t",
-              "char" => "char",
-              "short" => "int16_t",
-              "ushort" => "uint16_t",
-              "int" => "int32_t",
-              "uint" => "uint32_t",
-              "long" => "int64_t",
-              "ulong" => "uint64_t",
-              "ptr_int" => "intptr_t",
-              "ptr_uint" => "uintptr_t",
-              "float" => "float",
-              "double" => "double",
-              "void" => "void",
-              "cstr" => "const char*",
-            }.fetch(name)
+            PRIMITIVE_C_TYPE_MAP.fetch(name)
           end
 
           def generic_c_type(type)

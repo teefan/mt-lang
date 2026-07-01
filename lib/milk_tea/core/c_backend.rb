@@ -255,6 +255,8 @@ module MilkTea
 
     private
 
+    EQUALITY_OPERATORS = ["==", "!="].freeze
+
     include CBackendAggregateUtils
     include CBackendTypeSystem
     include CBackendReachability

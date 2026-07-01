@@ -5,6 +5,7 @@ module MilkTea
     module CBackendExpressions
       private
 
+
           def emit_expression(expression)
             case expression
             when IR::Name
@@ -102,7 +103,7 @@ module MilkTea
           end
 
           def str_equality_expression?(expression)
-            ["==", "!="].include?(expression.operator) && expression.left.type.is_a?(Types::StringView) && expression.right.type.is_a?(Types::StringView)
+            EQUALITY_OPERATORS.include?(expression.operator) && expression.left.type.is_a?(Types::StringView) && expression.right.type.is_a?(Types::StringView)
           end
 
           def emit_binary_expression(expression)
@@ -165,7 +166,7 @@ module MilkTea
           end
 
           def variant_equality_expression?(expression)
-            ["==", "!="].include?(expression.operator) &&
+            EQUALITY_OPERATORS.include?(expression.operator) &&
               (expression.left.type.is_a?(Types::Variant) || expression.left.type.is_a?(Types::VariantArmPayload))
           end
 
@@ -185,7 +186,7 @@ module MilkTea
           end
 
           def nullable_null_comparison?(expression)
-            return false unless ["==", "!="].include?(expression.operator)
+            return false unless EQUALITY_OPERATORS.include?(expression.operator)
 
             (nullable_value_type?(expression.left.type) && expression.right.is_a?(IR::NullLiteral)) ||
               (nullable_value_type?(expression.right.type) && expression.left.is_a?(IR::NullLiteral))
