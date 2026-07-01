@@ -342,7 +342,7 @@ module MilkTea
 
             case expression
             when IR::Binary
-              ["==", "!="].include?(expression.operator) &&
+              EQUALITY_OPERATORS.include?(expression.operator) &&
                 (expression.left.type.is_a?(Types::Variant) || expression.left.type.is_a?(Types::VariantArmPayload))
             when IR::Call
               expression.arguments.any? { |arg| expression_uses_variant_equality?(arg) }

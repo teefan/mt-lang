@@ -5,6 +5,15 @@ module MilkTea
     module CBackendControlFlow
       private
 
+          INVERTED_BOOLEAN_OPS = {
+            "==" => "!=",
+            "!=" => "==",
+            "<"  => ">=",
+            "<=" => ">",
+            ">"  => "<=",
+            ">=" => "<",
+          }.freeze
+
           def loop_continue_label_name(statements)
             return if statements.empty?
 
@@ -158,14 +167,7 @@ module MilkTea
           end
 
           def inverted_boolean_operator(operator)
-            {
-              "==" => "!=",
-              "!=" => "==",
-              "<" => ">=",
-              "<=" => ">",
-              ">" => "<=",
-              ">=" => "<",
-            }[operator]
+            INVERTED_BOOLEAN_OPS[operator]
           end
 
           def emit_if_statement(statement, level, function:, used_labels:, loop_continue_label: nil, loop_break_label: nil)
