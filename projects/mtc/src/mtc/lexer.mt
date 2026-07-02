@@ -3,7 +3,7 @@ import std.string as string
 import std.vec as vec
 
 const KEYWORD_COUNT: int = 77
-const ptr_uint_max_value: ptr_uint = 0xffffffffffffffff
+const PTR_UINT_MAX_VALUE: ptr_uint = 0xffffffffffffffff
 
 
 public enum TokenKind: int
@@ -146,7 +146,7 @@ public struct Token:
     lexeme: string.String
 
 
-const integer_suffixes: array[str, 10] = array[str, 10](
+const INTEGER_SUFFIXES: array[str, 10] = array[str, 10](
     "ub", "us", "ul", "iz", "b", "s", "i", "u", "l", "z",
 )
 
@@ -368,7 +368,7 @@ function skip_number_suffix(l: ref[Lexer]) -> void:
             var valid = false
             var vi: ptr_uint = 0
             while vi < 10:
-                if suffix == integer_suffixes[vi]:
+                if suffix == INTEGER_SUFFIXES[vi]:
                     valid = true
                     break
                 vi += 1
@@ -657,7 +657,7 @@ function scan_heredoc(l: ref[Lexer], tokens: ref[vec.Vec[Token]], token_kind: To
 
 
 function heredoc_margin(source: str, start: ptr_uint, end: ptr_uint) -> ptr_uint:
-    var min_space: ptr_uint = ptr_uint_max_value
+    var min_space: ptr_uint = PTR_UINT_MAX_VALUE
     var pos = start
     var line_spaces: ptr_uint = 0
     var in_leading = true
@@ -681,7 +681,7 @@ function heredoc_margin(source: str, start: ptr_uint, end: ptr_uint) -> ptr_uint
         if line_spaces < min_space:
             min_space = line_spaces
 
-    if min_space == ptr_uint_max_value:
+    if min_space == PTR_UINT_MAX_VALUE:
         return 0
 
     return min_space

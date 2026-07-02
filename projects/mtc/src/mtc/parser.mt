@@ -71,11 +71,6 @@ function expr_to_vec(expr: ast.Expr) -> vec.Vec[ast.Expr]:
     return v
 
 
-function stmt_to_vec(stmt: ast.Stmt) -> vec.Vec[ast.Stmt]:
-    var v = vec.Vec[ast.Stmt].create()
-    v.push(stmt)
-    return v
-
 
 # =============================================================================
 # Token stream helpers
@@ -398,7 +393,7 @@ function parse_declaration(p: ref[Parser]) -> ast.Decl:
     if parser_match(p, lexer.TokenKind.kw_type):
         return parse_type_alias_decl(p, false)
     if parser_match(p, lexer.TokenKind.kw_public):
-        return parse_pub_decl(p)
+        return parse_public_declaration(p)
     if parser_match(p, lexer.TokenKind.kw_static_assert):
         return parse_static_assert_decl(p)
     if parser_match(p, lexer.TokenKind.kw_attribute):
@@ -407,6 +402,8 @@ function parse_declaration(p: ref[Parser]) -> ast.Decl:
         return parse_event_decl(p, false)
     if parser_match(p, lexer.TokenKind.kw_extending):
         return parse_extending_block(p, false)
+    if parser_match(p, lexer.TokenKind.kw_when):
+        return parse_when_decl(p)
     if parser_match(p, lexer.TokenKind.kw_async):
         let _ = parser_consume(p, lexer.TokenKind.kw_function, "expected function after async")
         return parse_func_def(p, false, true)
@@ -550,10 +547,6 @@ function parse_implements_clause(p: ref[Parser]) -> vec.Vec[ast.QualifiedName]:
     return impls
 
 
-function parse_primary_expr_name(p: ref[Parser]) -> str:
-    let token = parser_consume_name(p, "expected name")
-    return token.lexeme.as_str()
-
 
 # =============================================================================
 # Method parsing (for extending blocks)
@@ -624,6 +617,25 @@ function parse_block_body(p: ref[Parser]) -> vec.Vec[ast.Stmt]:
 # =============================================================================
 
 function parse_statement(p: ref[Parser]) -> ast.Stmt:
+    if parser_match(p, lexer.TokenKind.kw_inline):
+        if parser_match(p, lexer.TokenKind.kw_for):
+            return parse_for_stmt(p)
+        if parser_match(p, lexer.TokenKind.kw_while):
+            return parse_while_stmt(p)
+        if parser_match(p, lexer.TokenKind.kw_match):
+            return parse_match_stmt(p)
+        if parser_match(p, lexer.TokenKind.kw_if):
+            return parse_if_stmt(p)
+        return parse_expression_stmt(p)
+    if parser_match(p, lexer.TokenKind.kw_parallel):
+        if parser_match(p, lexer.TokenKind.kw_for):
+            let keyword_token = parser_previous(p)
+            return parse_for_stmt(p)
+        return parse_parallel_block(p)
+    if parser_match(p, lexer.TokenKind.kw_gather):
+        return parse_gather_stmt(p)
+    if parser_match(p, lexer.TokenKind.kw_emit):
+        return parse_emit_stmt(p)
     if parser_match(p, lexer.TokenKind.kw_let):
         return parse_local_decl(p, "let")
     if parser_match(p, lexer.TokenKind.kw_var):
@@ -661,7 +673,7 @@ function parse_statement(p: ref[Parser]) -> ast.Stmt:
 # Declaration stubs with loop guards
 # =============================================================================
 
-function parse_pub_decl(p: ref[Parser]) -> ast.Decl:
+function parse_public_declaration(p: ref[Parser]) -> ast.Decl:
     if parser_match(p, lexer.TokenKind.kw_function): return parse_func_def(p, false, false)
     if parser_match(p, lexer.TokenKind.kw_const): return parse_const_decl(p, true)
     if parser_match(p, lexer.TokenKind.kw_var): return parse_var_decl(p, true)
@@ -806,8 +818,23 @@ function parse_if_stmt(p: ref[Parser]) -> ast.Stmt:
     let keyword_token = parser_previous(p)
     let condition = parse_expression(p)
     let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after if condition")
-    let body = parse_block_body(p)
 
+    if not parser_check(p, lexer.TokenKind.newline):
+        p.in_inline_block_body = true
+        var inline_body = vec.Vec[ast.Stmt].create()
+        inline_body.push(parse_statement(p))
+        p.in_inline_block_body = false
+        var branches = vec.Vec[ast.IfBranch].create()
+        branches.push(ast.IfBranch(condition = expr_to_vec(condition), body = inline_body, line = keyword_token.line, column = keyword_token.column, length = 0))
+        var else_body = Option[vec.Vec[ast.Stmt]].none
+        if parser_match(p, lexer.TokenKind.kw_else):
+            let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after else")
+            var else_stmts = vec.Vec[ast.Stmt].create()
+            else_stmts.push(parse_statement(p))
+            else_body = Option[vec.Vec[ast.Stmt]].some(value = else_stmts)
+        return ast.Stmt.if_stmt(node = ast.IfStmt(branches = branches, else_body = else_body, is_inline = true, line = keyword_token.line, else_line = 0, else_column = 0))
+
+    let body = parse_block_body(p)
     var branches = vec.Vec[ast.IfBranch].create()
     branches.push(ast.IfBranch(condition = expr_to_vec(condition), body = body, line = keyword_token.line, column = keyword_token.column, length = 0))
     var else_body = Option[vec.Vec[ast.Stmt]].none
@@ -817,6 +844,16 @@ function parse_if_stmt(p: ref[Parser]) -> ast.Stmt:
         if parser_match(p, lexer.TokenKind.kw_if):
             let else_cond = parse_expression(p)
             let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after else if condition")
+            if not parser_check(p, lexer.TokenKind.newline):
+                var eb = vec.Vec[ast.Stmt].create()
+                eb.push(parse_statement(p))
+                branches.push(ast.IfBranch(condition = expr_to_vec(else_cond), body = eb, line = 0, column = 0, length = 0))
+                if parser_match(p, lexer.TokenKind.kw_else):
+                    let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after else")
+                    var es = vec.Vec[ast.Stmt].create()
+                    es.push(parse_statement(p))
+                    else_body = Option[vec.Vec[ast.Stmt]].some(value = es)
+                return ast.Stmt.if_stmt(node = ast.IfStmt(branches = branches, else_body = else_body, is_inline = true, line = keyword_token.line, else_line = 0, else_column = 0))
             let else_block = parse_block_body(p)
             branches.push(ast.IfBranch(condition = expr_to_vec(else_cond), body = else_block, line = 0, column = 0, length = 0))
         else:
@@ -825,20 +862,29 @@ function parse_if_stmt(p: ref[Parser]) -> ast.Stmt:
             break
         loop_guard_check(p)
 
-    return ast.Stmt.if_stmt(node = ast.IfStmt(
-        branches = branches,
-        else_body = else_body,
-        is_inline = false,
-        line = keyword_token.line,
-        else_line = 0,
-        else_column = 0,
-    ))
+    return ast.Stmt.if_stmt(node = ast.IfStmt(branches = branches, else_body = else_body, is_inline = false, line = keyword_token.line, else_line = 0, else_column = 0))
 
 
 function parse_match_stmt(p: ref[Parser]) -> ast.Stmt:
     let keyword_token = parser_previous(p)
     let expr = parse_expression(p)
     let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after match expression")
+
+    if not parser_check(p, lexer.TokenKind.newline):
+        var arms = vec.Vec[ast.MatchExprArm].create()
+        let arm = parse_match_expression_arm(p)
+        var ai: ptr_uint = 0
+        while ai < arm.len():
+            let a_ptr = arm.get(ai) else:
+                fatal(c"missing")
+            unsafe:
+                arms.push(read(a_ptr))
+            ai += 1
+        return ast.Stmt.expression_stmt(node = ast.ExpressionStmt(
+            expression = expr_to_vec(ast.Expr.match_expr(expression = expr_to_vec(expr), arms = arms, line = keyword_token.line, column = keyword_token.column, length = 0)),
+            line = keyword_token.line,
+        ))
+
     let _ = parser_consume(p, lexer.TokenKind.newline, "expected newline after match colon")
     let _ = parser_consume(p, lexer.TokenKind.indent, "expected indented match arms")
 
@@ -852,12 +898,8 @@ function parse_match_stmt(p: ref[Parser]) -> ast.Stmt:
 
     let _ = parser_consume(p, lexer.TokenKind.dedent, "expected dedent after match arms")
     return ast.Stmt.match_stmt(node = ast.MatchStmt(
-        expression = expr_to_vec(expr),
-        arms = arms,
-        is_inline = false,
-        line = keyword_token.line,
-        column = keyword_token.column,
-        length = 0,
+        expression = expr_to_vec(expr), arms = arms, is_inline = false,
+        line = keyword_token.line, column = keyword_token.column, length = 0,
     ))
 
 
@@ -891,28 +933,72 @@ function parse_for_stmt(p: ref[Parser]) -> ast.Stmt:
     var bindings = vec.Vec[ast.ForBinding].create()
     var iterables = vec.Vec[ast.Expr].create()
 
-    let binding_token = parser_consume_name(p, "expected for binding name")
-    bindings.push(ast.ForBinding(name = binding_token.lexeme.as_str(), line = binding_token.line, column = binding_token.column))
+    while true:
+        let binding_token = parser_consume_name(p, "expected for binding name")
+        bindings.push(ast.ForBinding(name = binding_token.lexeme.as_str(), line = binding_token.line, column = binding_token.column))
+        if not parser_match(p, lexer.TokenKind.comma):
+            break
 
-    if parser_match(p, lexer.TokenKind.kw_in):
-        if parser_check(p, lexer.TokenKind.dot_dot):
-            let _ = parser_advance(p)
+    if not parser_match(p, lexer.TokenKind.kw_in):
+        iterables.push(ast.Expr.error_expr(line = 0, column = 0, length = 0, message = Option[str].none))
+        return ast.Stmt.for_stmt(node = ast.ForStmt(
+            bindings = bindings, iterables = iterables, body = vec.Vec[ast.Stmt].create(),
+            is_inline = false, threaded = false, line = keyword_token.line, column = keyword_token.column,
+        ))
+
+    while true:
+        if parser_match(p, lexer.TokenKind.dot_dot):
             let end_expr = parse_expression(p)
             iterables.push(end_expr)
         else:
             iterables.push(parse_expression(p))
-        let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after for header")
-        let body = parse_block_body(p)
-        return ast.Stmt.for_stmt(node = ast.ForStmt(
-            bindings = bindings, iterables = iterables, body = body,
-            is_inline = false, threaded = false, line = keyword_token.line, column = keyword_token.column,
-        ))
+        if not parser_match(p, lexer.TokenKind.comma):
+            break
 
-    iterables.push(ast.Expr.error_expr(line = 0, column = 0, length = 0, message = Option[str].none))
+    let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after for header")
+    let body = parse_block_body(p)
     return ast.Stmt.for_stmt(node = ast.ForStmt(
-        bindings = bindings, iterables = iterables, body = vec.Vec[ast.Stmt].create(),
+        bindings = bindings, iterables = iterables, body = body,
         is_inline = false, threaded = false, line = keyword_token.line, column = keyword_token.column,
     ))
+
+
+function parse_emit_stmt(p: ref[Parser]) -> ast.Stmt:
+    let token = parser_previous(p)
+    let decl = parse_declaration(p)
+    return ast.Stmt.emit_stmt(node = ast.EmitStmt(declaration = ast.Decl.function_def(node = ast.FunctionDef(
+        name = "", type_params = vec.Vec[ast.TypeParam].create(), params = vec.Vec[ast.Param].create(),
+        return_type = Option[ast.TypeRef].none, body = Option[vec.Vec[ast.Stmt]].none,
+        is_public = false, is_async = false, is_const = false,
+        attributes = vec.Vec[ast.AttributeApplication].create(), line = token.line, column = token.column,
+    )), line = token.line, column = token.column))
+
+
+function parse_gather_stmt(p: ref[Parser]) -> ast.Stmt:
+    let token = parser_previous(p)
+    var handles = vec.Vec[ast.Expr].create()
+    if not parser_check(p, lexer.TokenKind.newline):
+        handles.push(parse_expression(p))
+    parser_consume_end_of_statement(p)
+    return ast.Stmt.gather_stmt(node = ast.GatherStmt(handles = handles, line = token.line, column = token.column))
+
+
+function parse_parallel_block(p: ref[Parser]) -> ast.Stmt:
+    let token = parser_previous(p)
+    let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after parallel")
+    let _ = parser_consume(p, lexer.TokenKind.newline, "expected newline after parallel")
+    let _ = parser_consume(p, lexer.TokenKind.indent, "expected indented parallel body")
+
+    var bodies = vec.Vec[vec.Vec[ast.Stmt]].create()
+    parser_skip_newlines(p)
+    while not parser_check(p, lexer.TokenKind.dedent) and not parser_eof(p):
+        var body = vec.Vec[ast.Stmt].create()
+        body.push(parse_statement(p))
+        bodies.push(body)
+        parser_skip_newlines(p)
+
+    let _ = parser_consume(p, lexer.TokenKind.dedent, "expected end of parallel body")
+    return ast.Stmt.parallel_block(node = ast.ParallelBlockStmt(bodies = bodies, line = token.line, column = token.column))
 
 
 function parse_return_stmt(p: ref[Parser]) -> ast.Stmt:
@@ -927,11 +1013,14 @@ function parse_return_stmt(p: ref[Parser]) -> ast.Stmt:
 function parse_defer_stmt(p: ref[Parser]) -> ast.Stmt:
     let keyword_token = parser_previous(p)
     var val = vec.Vec[ast.Expr].create()
-    if not parser_check(p, lexer.TokenKind.newline):
-        val = expr_to_vec(parse_expression(p))
     if parser_match(p, lexer.TokenKind.colon):
         let body = parse_block_body(p)
         return ast.Stmt.defer_stmt(node = ast.DeferStmt(expression = val, body = Option[vec.Vec[ast.Stmt]].some(value = body), line = keyword_token.line, column = keyword_token.column, length = 0))
+    if not parser_check(p, lexer.TokenKind.newline):
+        val = expr_to_vec(parse_expression(p))
+        if parser_match(p, lexer.TokenKind.colon):
+            let body = parse_block_body(p)
+            return ast.Stmt.defer_stmt(node = ast.DeferStmt(expression = val, body = Option[vec.Vec[ast.Stmt]].some(value = body), line = keyword_token.line, column = keyword_token.column, length = 0))
     parser_consume_end_of_statement(p)
     return ast.Stmt.defer_stmt(node = ast.DeferStmt(expression = val, body = Option[vec.Vec[ast.Stmt]].none, line = keyword_token.line, column = keyword_token.column, length = 0))
 
@@ -1222,6 +1311,8 @@ function parse_postfix(p: ref[Parser]) -> ast.Expr:
         else if parser_match(p, lexer.TokenKind.lparen):
             expr = ast.Expr.call(callee = expr_to_vec(expr), arguments = parse_call_arguments(p))
         else if parser_match(p, lexer.TokenKind.lbracket):
+            if parser_check(p, lexer.TokenKind.rbracket):
+                break
             let index = parse_expression(p)
             let _ = parser_consume(p, lexer.TokenKind.rbracket, "expected ']' after index expression")
             expr = ast.Expr.index_access(receiver = expr_to_vec(expr), index = expr_to_vec(index))
@@ -1771,16 +1862,13 @@ function parse_foreign_decl(p: ref[Parser], is_public: bool) -> ast.Decl:
             let param_token = parser_consume_name(p, "expected parameter name")
             var mode_str = Option[str].none
             var boundary = Option[str].none
-            if pmatch_foreign_mode(p):
+            if parser_match_foreign_mode(p):
                 mode_str = Option[str].some(value = parser_previous(p).lexeme.as_str())
-            else if parser_match(p, lexer.TokenKind.colon):
-                pass
             let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after parameter name")
             let param_type = parse_type_ref(p)
             if parser_match(p, lexer.TokenKind.kw_as):
-                boundary = Option[str].some(value = parse_primary_expr_name(p))
-                let _ = parser_consume(p, lexer.TokenKind.lparen, "expected '(' after boundary type")
-                let _ = parser_consume(p, lexer.TokenKind.rparen, "expected ')' after boundary type")
+                let boundary_token = parser_consume_name(p, "expected type name after 'as'")
+                boundary = Option[str].some(value = boundary_token.lexeme.as_str())
             params.push(ast.ForeignParam(name = param_token.lexeme.as_str(), foreign_type = param_type, mode = mode_str, boundary_type = boundary))
             if not parser_match(p, lexer.TokenKind.comma):
                 break
@@ -1800,7 +1888,7 @@ function parse_foreign_decl(p: ref[Parser], is_public: bool) -> ast.Decl:
     ))
 
 
-function pmatch_foreign_mode(p: ref[Parser]) -> bool:
+function parser_match_foreign_mode(p: ref[Parser]) -> bool:
     return parser_match(p, lexer.TokenKind.kw_out) or parser_match(p, lexer.TokenKind.kw_in) or parser_match(p, lexer.TokenKind.kw_inout) or parser_match(p, lexer.TokenKind.kw_consuming)
 
 
@@ -1925,6 +2013,36 @@ function parse_extending_block(p: ref[Parser], is_public: bool) -> ast.Decl:
     return ast.Decl.extending_block(node = ast.ExtendingBlock(
         type_name = type_name, methods = methods,
         line = keyword_token.line, column = type_name.column,
+    ))
+
+
+function parse_when_decl(p: ref[Parser]) -> ast.Decl:
+    let keyword_token = parser_previous(p)
+    let discriminant = parse_expression(p)
+    let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after when discriminant")
+    let _ = parser_consume(p, lexer.TokenKind.newline, "expected newline after when header")
+    let _ = parser_consume(p, lexer.TokenKind.indent, "expected indented when body")
+
+    var branches = vec.Vec[ast.WhenBranch].create()
+    var else_body = Option[vec.Vec[ast.Stmt]].none
+    parser_skip_newlines(p)
+    reset_guard(p)
+    while not parser_check(p, lexer.TokenKind.dedent) and not parser_eof(p):
+        if parser_match(p, lexer.TokenKind.kw_else):
+            let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after else")
+            else_body = Option[vec.Vec[ast.Stmt]].some(value = parse_block_body(p))
+            break
+        let pattern = parse_expression(p)
+        let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after when pattern")
+        let body = parse_block_body(p)
+        branches.push(ast.WhenBranch(pattern = expr_to_vec(pattern), binding_name = Option[str].none, binding_line = 0, binding_column = 0, body = body))
+        parser_skip_newlines(p)
+        loop_guard_check(p)
+
+    let _ = parser_consume(p, lexer.TokenKind.dedent, "expected end of when body")
+    return ast.Decl.when_stmt(node = ast.WhenStmt(
+        discriminant = expr_to_vec(discriminant), branches = branches, else_body = else_body,
+        line = keyword_token.line, column = keyword_token.column, length = 0,
     ))
 
 
