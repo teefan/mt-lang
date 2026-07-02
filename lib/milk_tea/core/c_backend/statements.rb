@@ -65,8 +65,13 @@ module MilkTea
               when IR::ExpressionStmt
                 if statement.expression.is_a?(IR::Assignment)
                   emit_assignment_expression(statement.expression, indent)
-                else
+                elsif statement.expression.is_a?(IR::Call)
                   ["#{indent}#{emit_expression(statement.expression)};"]
+                else
+                  # A pure-value expression discarded as a statement (e.g. the
+                  # `T<-x` touch idiom) needs a void cast, otherwise the value
+                  # is unused and triggers -Wunused-value.
+                  ["#{indent}(void)(#{emit_expression(statement.expression)});"]
                 end
               when IR::ReturnStmt
                 if statement.value
@@ -120,8 +125,10 @@ module MilkTea
                   emit_switch_as_if_statement(statement, level, function:, used_labels:, loop_continue_label:, loop_break_label:)
                 else
                 lines = ["#{indent}switch (#{emit_expression(statement.expression)}) {"]
+                has_default = false
                 statement.cases.each do |switch_case|
                   if switch_case.is_a?(IR::SwitchDefaultCase)
+                    has_default = true
                     lines << "#{indent}#{INDENT}default: {"
                   else
                     lines << "#{indent}#{INDENT}case #{emit_expression(switch_case.value)}: {"
@@ -129,6 +136,13 @@ module MilkTea
                   lines.concat(emit_statement_sequence(switch_case.body, level + 2, function:, used_labels:, loop_continue_label:))
                   lines << "#{indent}#{INDENT}#{INDENT}break;" unless body_terminates?(switch_case.body)
                   lines << "#{indent}#{INDENT}}"
+                end
+                # An exhaustive enum/variant match covers every arm, so the C
+                # `default` path is unreachable. Emitting it lets the compiler
+                # prove non-void functions always return, avoiding spurious
+                # -Wreturn-type warnings on the implicit no-match path.
+                if statement.exhaustive && !has_default
+                  lines << "#{indent}#{INDENT}default: __builtin_unreachable();"
                 end
                 lines << "#{indent}}"
                 lines

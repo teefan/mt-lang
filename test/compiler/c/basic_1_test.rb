@@ -2527,8 +2527,8 @@ function main() -> int:
 
     assert_match(/#include <stdio\.h>/, generated)
     assert_match(/#include <stdlib\.h>/, generated)
-    refute_match(/static void mt_fatal\(const char\* message\)/, generated)
-    assert_match(/static void mt_fatal_str\(mt_str message\)/, generated)
+    refute_match(/void mt_fatal\(const char\* message\)/, generated)
+    assert_match(/static _Noreturn void mt_fatal_str\(mt_str message\)/, generated)
     assert_match(/fwrite\(message\.data, 1, message\.len, stderr\);/, generated)
     assert_match(/abort\(\);/, generated)
     assert_match(/mt_fatal_str\(mt_str_lit_\d+\);/, generated)
