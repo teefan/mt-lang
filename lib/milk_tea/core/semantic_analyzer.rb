@@ -30,6 +30,10 @@ module MilkTea
       @suggestion = suggestion
     end
 
+    def code
+      "sema/error"
+    end
+
     def to_diagnostic(path: nil)
       Diagnostic.new(
         path:,

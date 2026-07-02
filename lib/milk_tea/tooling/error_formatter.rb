@@ -2,7 +2,7 @@
 
 module MilkTea
   module ErrorFormatter
-    def self.format(error, path: nil, source: nil, color: true, index: nil)
+    def self.format(error, path: nil, source: nil, color: true)
       error_message = error.respond_to?(:message) ? error.message : error.to_s
       return error_message unless error.respond_to?(:line) && error.line
       return error_message unless error.respond_to?(:column) && error.column

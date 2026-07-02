@@ -8,6 +8,10 @@ module MilkTea
       @path = path
       super("#{message}: #{path}")
     end
+
+    def code
+      "module/error"
+    end
   end
 
   class ModuleLoader
