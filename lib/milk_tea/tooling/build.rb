@@ -300,8 +300,8 @@ module MilkTea
       end
 
       ir_program = Lowering.lower(program)
-      compiled_c = CBackend.emit(ir_program, emit_line_directives:)
       saved_c = CBackend.emit(ir_program, emit_line_directives: false)
+      compiled_c = emit_line_directives ? CBackend.emit(ir_program, emit_line_directives: true) : saved_c
 
       frontend_modules = Build.send(:frontend_modules, program)
 
