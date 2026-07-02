@@ -152,6 +152,7 @@ module MilkTea
             var: statement.kind == :var
           )
           check_redundant_type_annotation(statement)
+          flag_redundant_widening_cast(statement.value) if statement.type && statement.value
         when AST::Assignment
           visit_expression(statement.value)          # visit RHS first — reads in RHS count against dead-assignment
           mark_assignment_target_reads(statement.target, statement.operator) # compound: marks target as read
@@ -159,6 +160,7 @@ module MilkTea
           mark_mutated(statement.target)
           check_self_assignment(statement)
           check_noop_compound_assignment(statement)
+          flag_redundant_widening_cast(statement.value) if statement.operator == "="
         when AST::IfStmt
           statement.branches.each do |branch|
             visit_expression(branch.condition)
@@ -167,6 +169,10 @@ module MilkTea
           with_scope { visit_statement_list(statement.else_body) } if statement.else_body
           check_redundant_else(statement)
           check_duplicate_if_conditions(statement)
+          if full_tier?
+            check_prefer_inline_if(statement)
+            check_prefer_conditional_expression_if(statement)
+          end
         when AST::MatchStmt
           visit_expression(statement.expression)
           statement.arms.each do |arm|
@@ -177,6 +183,11 @@ module MilkTea
               declare_local(arm.binding_name, binding_line, column: binding_column, var: false) if arm.binding_name
               visit_statement_list(arm.body)
             end
+          end
+          if full_tier?
+            check_prefer_conditional_expression_match(statement)
+            check_prefer_or_pattern(statement.arms, body_of: ->(arm) { arm.body })
+            check_prefer_try(statement.expression, statement.arms)
           end
         when AST::UnsafeStmt
           with_scope { visit_statement_list(statement.body) }
@@ -191,6 +202,7 @@ module MilkTea
           with_scope { visit_statement_list(statement.body) }
         when AST::ReturnStmt
           visit_expression(statement.value) if statement.value
+          flag_redundant_widening_cast(statement.value) if statement.value
         when AST::DeferStmt
           visit_expression(statement.expression) if statement.expression
           with_scope { visit_statement_list(statement.body) } if statement.body
@@ -238,6 +250,7 @@ module MilkTea
           mark_alias_source_mutated(expression)
           mark_call_receiver_mutated(expression)
           check_directional_ffi_call(expression)
+          check_prefer_struct_with(expression) if full_tier?
         when AST::UnaryOp
           visit_expression(expression.operand)
         when AST::BinaryOp
@@ -264,6 +277,10 @@ module MilkTea
               declare_local(arm.binding_name, binding_line, column: binding_column, var: false) if arm.binding_name
               visit_expression(arm.value)
             end
+          end
+          if full_tier?
+            check_prefer_is_variant(expression)
+            check_prefer_or_pattern(expression.arms, body_of: ->(arm) { arm.value })
           end
         when AST::UnsafeExpr
           visit_expression(expression.expression)
@@ -568,6 +585,283 @@ module MilkTea
 
       # ── redundant cast ─────────────────────────────────────────────────────────
 
+      # Detects a two-arm match expression that only maps a single variant arm
+      # to a boolean and everything else to the opposite boolean, e.g.
+      #   match token: TokenKind.eof: true; _: false
+      # which is exactly what `token is TokenKind.eof` desugars to. Only fires
+      # when the scrutinee is a variant (the `is` operator is variant-only), so
+      # enum/int/str bool-matches are never misreported.
+      def check_prefer_is_variant(match_expr)
+        return unless @sema_facts
+
+        arms = match_expr.arms
+        return unless arms.size == 2
+
+        wildcard_arm, arm_pattern_arm = classify_is_variant_arms(arms)
+        return unless wildcard_arm && arm_pattern_arm
+
+        # The variant arm must be a bare `Type.arm` reference: no payload
+        # destructure and no `as` binding, otherwise it is not equivalent to `is`.
+        pattern = arm_pattern_arm.pattern
+        return unless pattern.is_a?(AST::MemberAccess)
+        return unless arm_pattern_arm.binding_name.nil?
+
+        variant_value = boolean_literal_value(arm_pattern_arm.value)
+        wildcard_value = boolean_literal_value(wildcard_arm.value)
+        return if variant_value.nil? || wildcard_value.nil?
+        return if variant_value == wildcard_value
+
+        scrutinee_type = resolve_expr_type(match_expr.expression)
+        return unless scrutinee_type.is_a?(Types::Variant)
+
+        arm_text = expr_source_name(pattern)
+        suggestion = variant_value ? "expr is #{arm_text}" : "not (expr is #{arm_text})"
+
+        @warnings << Warning.new(
+          path: @path,
+          line: match_expr.line,
+          column: match_expr.column,
+          length: match_expr.length,
+          code: "prefer-is-variant",
+          message: "prefer `#{suggestion}` over a match that maps one variant arm to a boolean",
+          severity: :hint,
+        )
+      end
+
+      def classify_is_variant_arms(arms)
+        wildcard = arms.find { |arm| wildcard_pattern?(arm.pattern) }
+        other = arms.find { |arm| !wildcard_pattern?(arm.pattern) }
+        return [nil, nil] unless wildcard && other
+
+        [wildcard, other]
+      end
+
+      def wildcard_pattern?(pattern)
+        pattern.is_a?(AST::Identifier) && pattern.name == "_"
+      end
+
+      def boolean_literal_value(expr)
+        expr.is_a?(AST::BooleanLiteral) ? expr.value : nil
+      end
+
+      def expr_source_name(expr)
+        case expr
+        when AST::Identifier then expr.name
+        when AST::MemberAccess then "#{expr_source_name(expr.receiver)}.#{expr.member}"
+        else "…"
+        end
+      end
+
+      # ── conciseness hints ─────────────────────────────────────────────────
+
+      def emit_conciseness_hint(code, line:, column:, message:, length: nil)
+        @warnings << Warning.new(path: @path, line:, column:, length:, code:, message:, severity: :hint)
+      end
+
+      # Position-insensitive structural fingerprint of an AST node, used to test
+      # whether two branch/arm bodies are equivalent regardless of source
+      # location.
+      def node_fingerprint(node)
+        case node
+        when ::Data
+          skip = %i[line column length else_line else_column binding_line binding_column]
+          parts = node.deconstruct_keys(nil).reject { |k, _| skip.include?(k) }
+          "#{node.class.name}(#{parts.map { |k, v| "#{k}:#{node_fingerprint(v)}" }.join(",")})"
+        when Array
+          "[#{node.map { |e| node_fingerprint(e) }.join(",")}]"
+        else
+          node.inspect
+        end
+      end
+
+      def single_statement_body(body)
+        body.is_a?(Array) && body.size == 1 ? body.first : nil
+      end
+
+      def inline_simple_statement?(stmt)
+        case stmt
+        when AST::ReturnStmt, AST::Assignment, AST::ExpressionStmt, AST::BreakStmt, AST::ContinueStmt, AST::LocalDecl
+          true
+        else
+          false
+        end
+      end
+
+      # prefer-inline-if: a block-form if/else whose every branch is a single
+      # simple statement can be written on one line.
+      def check_prefer_inline_if(statement)
+        return if statement.inline
+        return unless statement.else_body
+
+        bodies = statement.branches.map(&:body) + [statement.else_body]
+        stmts = bodies.map { |b| single_statement_body(b) }
+        return if stmts.any?(&:nil?)
+        return unless stmts.all? { |s| inline_simple_statement?(s) }
+
+        emit_conciseness_hint(
+          "prefer-inline-if",
+          line: statement.line,
+          column: statement.branches.first&.column,
+          message: "if/else with single-statement branches can be written inline",
+        )
+      end
+
+      # prefer-conditional-expression: if/match whose every branch either
+      # returns a value or assigns the same lvalue can become an expression form
+      # (`return if …: … else: …` or `x = match …`).
+      def check_prefer_conditional_expression_if(statement)
+        return unless statement.else_body
+
+        stmts = (statement.branches.map(&:body) + [statement.else_body]).map { |b| single_statement_body(b) }
+        report_conditional_expression(stmts, line: statement.line, column: statement.branches.first&.column, kind: "if")
+      end
+
+      def check_prefer_conditional_expression_match(statement)
+        return unless statement.arms.any? { |arm| wildcard_pattern?(arm.pattern) }
+        return if statement.arms.any? { |arm| arm.binding_name }
+
+        stmts = statement.arms.map { |arm| single_statement_body(arm.body) }
+        report_conditional_expression(stmts, line: statement.line, column: statement.column, kind: "match")
+      end
+
+      def report_conditional_expression(stmts, line:, column:, kind:)
+        return if stmts.empty? || stmts.any?(&:nil?)
+
+        if stmts.all? { |s| s.is_a?(AST::ReturnStmt) && s.value }
+          emit_conciseness_hint(
+            "prefer-conditional-expression",
+            line:, column:,
+            message: "every #{kind} branch returns a value; use a `return #{kind} …` expression",
+          )
+        elsif stmts.all? { |s| s.is_a?(AST::Assignment) && s.operator == "=" } &&
+              stmts.map { |s| node_fingerprint(s.target) }.uniq.size == 1
+          emit_conciseness_hint(
+            "prefer-conditional-expression",
+            line:, column:,
+            message: "every #{kind} branch assigns the same target; use a `#{kind} …` expression",
+          )
+        end
+      end
+
+      # prefer-or-pattern: adjacent match arms with identical bodies and no
+      # bindings can be merged with `|`.
+      def check_prefer_or_pattern(arms, body_of:)
+        arms.each_cons(2) do |first, second|
+          next if first.binding_name || second.binding_name
+          next if wildcard_pattern?(first.pattern) || wildcard_pattern?(second.pattern)
+          next unless node_fingerprint(body_of.call(first)) == node_fingerprint(body_of.call(second))
+
+          pattern_line = second.pattern.respond_to?(:line) ? second.pattern.line : nil
+          pattern_column = second.pattern.respond_to?(:column) ? second.pattern.column : nil
+          emit_conciseness_hint(
+            "prefer-or-pattern",
+            line: pattern_line,
+            column: pattern_column,
+            message: "adjacent match arms have identical bodies; merge them with `|`",
+          )
+        end
+      end
+
+      # prefer-struct-with: a constructor literal that copies all-but-one field
+      # from the same source value can use `.with(...)`.
+      def check_prefer_struct_with(call)
+        return unless @sema_facts
+        return unless call.callee.is_a?(AST::Identifier) || call.callee.is_a?(AST::MemberAccess)
+        return if call.arguments.empty?
+        return unless call.arguments.all? { |arg| arg.name }
+
+        copied, changed = call.arguments.partition { |arg| copy_field_argument?(arg) }
+        return unless changed.size >= 1 && copied.size >= 2
+
+        sources = copied.map { |arg| node_fingerprint(arg.value.receiver) }.uniq
+        return unless sources.size == 1
+
+        struct_type = resolve_expr_type(call)
+        return unless struct_type.is_a?(Types::Struct)
+        source_type = resolve_expr_type(copied.first.value.receiver)
+        return unless source_type.equal?(struct_type) || (source_type.respond_to?(:name) && source_type.name == struct_type.name)
+
+        field_names = struct_type.fields.keys.map(&:to_s).to_set
+        copied_names = copied.map { |arg| arg.name.to_s }.to_set
+        changed_names = changed.map { |arg| arg.name.to_s }
+        return unless (field_names - changed_names.to_set) == copied_names
+
+        source_text = expr_source_name(copied.first.value.receiver)
+        emit_conciseness_hint(
+          "prefer-struct-with",
+          line: call.callee.respond_to?(:line) ? call.callee.line : nil,
+          column: call.callee.respond_to?(:column) ? call.callee.column : nil,
+          message: "copies #{copied.size} field(s) from `#{source_text}`; use `#{source_text}.with(#{changed_names.join(", ")} = …)`",
+        )
+      end
+
+      def copy_field_argument?(argument)
+        value = argument.value
+        value.is_a?(AST::MemberAccess) && value.member.to_s == argument.name.to_s
+      end
+
+      # prefer-try: a two-arm match on Result/Option whose failure/none arm only
+      # returns is error-propagation and can usually be written `expr?`.
+      def check_prefer_try(scrutinee, arms)
+        return unless @sema_facts
+        return unless arms.size == 2
+
+        scrutinee_type = resolve_expr_type(scrutinee)
+        return unless scrutinee_type.is_a?(Types::Variant)
+        base = scrutinee_type.name.to_s.split(".").last
+        return unless %w[Result Option].include?(base)
+
+        early_return_arm = arms.find do |arm|
+          stmt = single_statement_body(arm.body)
+          next false unless stmt.is_a?(AST::ReturnStmt) && stmt.value
+          next false unless short_circuit_arm_pattern?(arm.pattern, base)
+
+          propagation_return?(stmt.value, base, arm.binding_name)
+        end
+        return unless early_return_arm
+
+        emit_conciseness_hint(
+          "prefer-try",
+          line: scrutinee.respond_to?(:line) ? scrutinee.line : nil,
+          column: scrutinee.respond_to?(:column) ? scrutinee.column : nil,
+          message: "this #{base} match only propagates the failure branch; consider `expr?`",
+        )
+      end
+
+      def short_circuit_arm_pattern?(pattern, base)
+        name = pattern.is_a?(AST::MemberAccess) ? pattern.member.to_s : nil
+        return false unless name
+
+        (base == "Result" && name == "failure") || (base == "Option" && name == "none")
+      end
+
+      # The early-return value must re-propagate the short-circuit case
+      # *unchanged*: `Option[_].none`, or `Result[_, _].failure(error = <b>.error)`
+      # where `<b>` is the arm's own binding. This excludes map/map_error
+      # patterns (transformed error or value), which `expr?` cannot express.
+      def propagation_return?(value, base, binding_name)
+        if base == "Option"
+          return member_named?(value, "none") || (value.is_a?(AST::Call) && member_named?(value.callee, "none"))
+        end
+
+        return false unless binding_name
+        return false unless value.is_a?(AST::Call) && member_named?(value.callee, "failure")
+        return false unless value.arguments.size == 1
+
+        error_arg = value.arguments.first
+        return false unless error_arg.name.to_s == "error"
+
+        forwarded = error_arg.value
+        forwarded.is_a?(AST::MemberAccess) &&
+          forwarded.member.to_s == "error" &&
+          forwarded.receiver.is_a?(AST::Identifier) &&
+          forwarded.receiver.name == binding_name
+      end
+
+      def member_named?(node, name)
+        node.is_a?(AST::MemberAccess) && node.member.to_s == name
+      end
+
       def check_redundant_cast(cast_expr)
         return unless cast_expr.is_a?(AST::PrefixCast)
         return unless cast_expr.target_type
@@ -575,33 +869,64 @@ module MilkTea
         target_name = type_ref_name(cast_expr.target_type)
         return unless target_name
 
-        # Attempt to resolve the inner expression's type
-        actual_name = nil
-        actual_type = nil
-
+        # When facts are available compare the *full* resolved types, not just
+        # the nominal base name. Comparing names alone wrongly treats e.g.
+        # `ptr[void]<-p` (p: ptr[ubyte]) as same-type because both are "ptr",
+        # and removing that cast is a real type error.
         if @sema_facts
-          actual_type = resolve_expr_type(cast_expr.expression)
-          actual_name = actual_type&.name
+          cast_type = resolve_expr_type(cast_expr)
+          inner_type = resolve_expr_type(cast_expr.expression)
+          if cast_type && inner_type
+            emit_redundant_cast(cast_expr, target_name, "cast to same type is redundant") if same_resolved_type?(cast_type, inner_type)
+            return
+          end
         end
 
-        # Fallback: check if the expression is a literal whose type can be inferred
-        actual_name ||= expression_literal_type_name(cast_expr.expression)
-
-        return unless actual_name
-
-        # Exact match: T<-(T)
-        if actual_name == target_name
+        # Fallback when the inner type cannot be resolved (e.g. no sema facts):
+        # a value literal whose type is known by name.
+        literal_name = expression_literal_type_name(cast_expr.expression)
+        if literal_name && literal_name == target_name
           emit_redundant_cast(cast_expr, target_name, "cast to same type is redundant")
-          return
         end
 
-        # Lossless widening check (requires sema_facts)
-        return unless actual_type
-        return unless actual_type.is_a?(Types::Primitive)
+        # NOTE: widening redundancy is intentionally NOT reported here. A
+        # widening cast can be load-bearing at its site (e.g. `(ulong<-x) << 32`
+        # controls the shift width), so it is only redundant at a coercion
+        # boundary whose declared type is the target. Those cases are handled by
+        # check_boundary_widening_cast at the specific boundary sites.
+      end
 
-        if implicit_cast_allowed?(actual_type, target_name)
-          emit_redundant_cast(cast_expr, target_name, "implicit widening makes this cast redundant")
-        end
+      # Reports a widening cast as redundant only when it sits *directly* at a
+      # coercion slot: the RHS of a typed `let`/`var`, a `return` value, or the
+      # RHS of a plain `=` assignment. At those positions the slot type is
+      # pinned by an annotation / return type / declared lvalue, so the value is
+      # coerced to that type and never consumed by a width-sensitive operator at
+      # the site. Because widening composes losslessly, removing the cast
+      # preserves both type and behavior regardless of the exact slot type.
+      #
+      # Call arguments and aggregate field initializers are intentionally NOT
+      # treated as slots: a generic parameter/field would let the removed cast
+      # change type inference (and hence behavior), which is not sound without
+      # resolving the callee/struct signature.
+      def flag_redundant_widening_cast(value)
+        return unless value.is_a?(AST::PrefixCast)
+        return unless @sema_facts
+
+        target_name = type_ref_name(value.target_type)
+        return unless target_name
+
+        inner_type = resolve_expr_type(value.expression)
+        return unless inner_type.is_a?(Types::Primitive)
+        return if inner_type.name == target_name # same-type handled elsewhere
+        return unless implicit_cast_allowed?(inner_type, target_name)
+
+        emit_redundant_cast(value, target_name, "implicit widening makes this cast redundant")
+      end
+
+      def same_resolved_type?(left, right)
+        return true if left.equal?(right)
+
+        left.to_s == right.to_s
       end
 
       def emit_redundant_cast(cast_expr, target_name, reason)

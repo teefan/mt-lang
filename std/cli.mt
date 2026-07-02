@@ -628,7 +628,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
                 result.release()
                 return Result[Match, Error].failure(error= unknown_command_error(arg))
 
-            let command = unsafe: read(ptr[CommandSpec]<-command_ptr)
+            let command = unsafe: read(command_ptr)
             result.has_command = true
             result.command_name.assign(command.name)
             command_options = command.options

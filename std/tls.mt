@@ -116,7 +116,7 @@ function handle_as_poll(handle: ptr[NativeHandle]) -> ptr[NativePollHandle]:
 
 
 function noop_waiter(frame: ptr[void]) -> void:
-    unsafe: ptr[void]<-frame
+    unsafe: frame
 
 
 function poll_task(state: ptr[PollState]) -> Task[Result[int, Error]]:

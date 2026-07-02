@@ -199,23 +199,27 @@ module MilkTea
       end
 
       def redundant_cast_edits(lines, warning)
-        return [] unless warning.line
+        return [] unless warning.line && warning.column
 
         line_idx = warning.line - 1
         line = lines[line_idx]
         return [] unless line
-        return [] unless warning.column
 
-        # Search for the cast pattern TypeName<-(...) on the line
-        cast_match = line.match(/(\w+)\s*<-\s*\((.+)\)/)
-        return [] unless cast_match
+        start = warning.column - 1
+        return [] unless start >= 0 && start < line.length
 
-        match_start = cast_match.begin(0)
-        inner_expr = cast_match[2]
-        full_len = cast_match.end(0) - match_start
+        # The warning column points at the cast target type. Delete the
+        # `TargetType<-` prefix, keeping the inner expression as-is. This
+        # covers both bare (`ulong<-x`) and parenthesized (`uint<-(a - b)`)
+        # forms; type refs never contain `<`, so the first `<-` at/after the
+        # column is the cast arrow.
+        arrow = line.index("<-", start)
+        return [] unless arrow
 
-        new_line = +"#{line[0...match_start]}#{inner_expr}#{line[(match_start + full_len)..]}"
-        [FixEdit.new(start_line: line_idx, start_char: 0, end_line: line_idx + 1, end_char: 0, new_text: new_line)]
+        type_ref = line[start...arrow]
+        return [] unless type_ref.match?(/\A[A-Za-z_][A-Za-z0-9_\[\]\.,\s@]*\z/)
+
+        [FixEdit.new(start_line: line_idx, start_char: start, end_line: line_idx, end_char: arrow + 2, new_text: "")]
       end
     end
   end

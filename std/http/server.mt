@@ -739,10 +739,10 @@ async function handle_connection(stream: net.TcpStream, serve_dir: str) -> void:
         await send_error(conn, 405, "Method Not Allowed")
         return
 
-    var url_prefix = url_path
+    let url_prefix = url_path
     var path_is_root = false
     if url_path.starts_with("/"):
-        var stripped = url_path.slice(1, url_path.len - 1)
+        let stripped = url_path.slice(1, url_path.len - 1)
         if stripped.len == 0:
             path_is_root = true
             url_path = "index.html"
@@ -783,7 +783,7 @@ async function main(args: span[str]) -> void:
     if port <= 0:
         port = DEFAULT_PORT
 
-    var serve_dir = parse_serve_dir(args)
+    let serve_dir = parse_serve_dir(args)
 
     var port_str = fmt.to_string_int(port)
     defer port_str.release()

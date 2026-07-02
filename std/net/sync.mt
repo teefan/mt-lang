@@ -103,7 +103,7 @@ extending CompressedUshort:
         if clamped > this.max:
             clamped = this.max
         let ratio = (clamped - this.min) / (this.max - this.min)
-        return ushort<-(float<-ratio * 65535.0)
+        return ushort<-(ratio * 65535.0)
 
 
     public function decode(encoded: ushort) -> float:
@@ -123,7 +123,7 @@ extending CompressedUbyte:
         if clamped > this.max:
             clamped = this.max
         let ratio = (clamped - this.min) / (this.max - this.min)
-        return ubyte<-(float<-ratio * 255.0)
+        return ubyte<-(ratio * 255.0)
 
 
     public function decode(encoded: ubyte) -> float:

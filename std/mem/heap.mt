@@ -43,7 +43,7 @@ public function must_alloc_bytes(size_bytes: ptr_uint) -> ptr[void]:
     let memory = alloc_bytes(size_bytes) else:
         fatal(c"heap.must_alloc_bytes out of memory")
 
-    return ptr[void]<-memory
+    return memory
 
 
 public function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[void]?:
@@ -73,7 +73,7 @@ public function must_alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_ui
     let memory = alloc_bytes_aligned(size_bytes, normalized_alignment) else:
         fatal(c"heap.must_alloc_bytes_aligned out of memory")
 
-    return ptr[void]<-memory
+    return memory
 
 
 public function alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint) -> ptr[void]?:
@@ -93,7 +93,7 @@ public function must_alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr
     let memory = alloc_zeroed_bytes(count, element_size_bytes) else:
         fatal(c"heap.must_alloc_zeroed_bytes out of memory")
 
-    return ptr[void]<-memory
+    return memory
 
 
 public function copy_bytes(destination: ptr[ubyte]?, source: ptr[ubyte]?, size_bytes: ptr_uint) -> void:
@@ -106,7 +106,7 @@ public function copy_bytes(destination: ptr[ubyte]?, source: ptr[ubyte]?, size_b
     var index: ptr_uint = 0
     while index < size_bytes:
         unsafe:
-            read(ptr[ubyte]<-destination + index) = read(ptr[ubyte]<-source + index)
+            read(destination + index) = read(source + index)
         index += 1
 
 
@@ -125,7 +125,7 @@ public function must_resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> p
     let resized = resize_bytes(memory, size_bytes) else:
         fatal(c"heap.must_resize_bytes out of memory")
 
-    return ptr[void]<-resized
+    return resized
 
 
 public function release_bytes(memory: ptr[void]?) -> void:

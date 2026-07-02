@@ -51,7 +51,7 @@ public function payload_after_header(data: span[ubyte]) -> span[ubyte]:
         let result = empty.as_span()
         return result
     unsafe:
-        return span[ubyte](data = ptr[ubyte]<-data.data + header_bytes, len = data.len - header_bytes)
+        return span[ubyte](data = data.data + header_bytes, len = data.len - header_bytes)
 
 
 public async function call_and_wait(

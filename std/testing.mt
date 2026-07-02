@@ -20,8 +20,8 @@
 import std.string as string
 import std.fmt as fmt
 import std.stdio as stdio
-import std.hash
 import std.str
+import std.hash
 
 # A test outcome: success carries no meaningful value; failure carries a
 # `Failure`. `Result` is used (not a bespoke variant) so `?` propagation works.

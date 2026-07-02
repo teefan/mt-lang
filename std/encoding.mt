@@ -49,7 +49,7 @@ public function decode_utf8_codepoint(text: str, byte_offset: ptr_uint) -> Optio
     if len == 1:
         return Option[uint].some(value = uint<-(b0))
 
-    var codepoint: uint = uint<-(b0)
+    var codepoint: uint = (b0)
     if len == 2:
         codepoint = codepoint & uint<-(0x1F)
     else if len == 3:
@@ -76,7 +76,7 @@ public function utf8_overlong_check(text: str) -> bool:
             index += 1
             continue
 
-        if len > ptr_uint<-(text.len - index):
+        if len > (text.len - index):
             return false
 
         if len == 3:

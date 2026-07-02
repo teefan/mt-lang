@@ -79,7 +79,7 @@ extending Rng:
     public editable function next_int_range(min: int, max: int) -> int:
         if min >= max:
             return min
-        let range = uint<-(int<-max - int<-min)
+        let range = uint<-(max - min)
         let offset = this.next_u32() % range
         return min + int<-offset
 
@@ -125,7 +125,6 @@ extending Rng:
             let j = ptr_uint<-this.next_uint_range(0u, uint<-(i + 1z))
             items.swap(i, j)
             i -= 1
-        return
 
 
     public editable function skip(count: ptr_uint) -> void:
@@ -133,7 +132,6 @@ extending Rng:
         while i < count:
             this.next_u32()
             i += 1
-        return
 
 
     public editable function fork() -> Rng:

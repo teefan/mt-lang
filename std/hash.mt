@@ -110,7 +110,7 @@ extending float:
             # collapse both to one hash so hash stays consistent with `equal`.
             if v == 0.0:
                 return 0
-            return uint<-reinterpret[uint](v)
+            return reinterpret[uint](v)
 
 
     public static function equal(a: const_ptr[float], b: const_ptr[float]) -> bool:

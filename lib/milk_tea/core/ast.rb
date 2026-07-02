@@ -251,7 +251,9 @@ module MilkTea
     NullLiteral = Data.define(:type, :line, :column) do
       def initialize(type:, line: nil, column: nil) = super
     end
-    PrefixCast = Data.define(:target_type, :expression)
+    PrefixCast = Data.define(:target_type, :expression, :line, :column, :length) do
+      def initialize(target_type:, expression:, line: nil, column: nil, length: nil) = super
+    end
 
     def self.assign_node_ids(source_file)
       next_id = 0

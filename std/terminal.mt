@@ -289,7 +289,7 @@ function read_stdin(timeout_ms: int) -> Result[vec.Vec[ubyte], Error]:
     var result = vec.Vec[ubyte].with_capacity(read_count)
     if read_count != 0:
         unsafe:
-            let read_span = span[ubyte](data = ptr[ubyte]<-ptr_of(buffer[0]), len = read_count)
+            let read_span = span[ubyte](data = ptr_of(buffer[0]), len = read_count)
             result.append_span(read_span)
 
     return Result[vec.Vec[ubyte], Error].success(value= result)

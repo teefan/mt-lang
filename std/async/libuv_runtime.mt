@@ -82,7 +82,7 @@ function work_as_req(work: ptr[NativeWorkRequest]) -> ptr[NativeRequest]:
 function close_all_handles_cb(handle: ptr[NativeHandle], arg: ptr[void]) -> void:
     if libuv.is_closing(handle) == 0:
         libuv.close(handle, close_all_handles_close_cb)
-    unsafe: ptr[void]<-arg
+    unsafe: arg
 
 
 function close_all_handles_close_cb(handle: ptr[NativeHandle]) -> void:
@@ -90,7 +90,7 @@ function close_all_handles_close_cb(handle: ptr[NativeHandle]) -> void:
 
 
 function noop_waiter(frame: ptr[void]) -> void:
-    unsafe: ptr[void]<-frame
+    unsafe: frame
 
 
 function require_current_runtime() -> Runtime:

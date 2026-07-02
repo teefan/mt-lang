@@ -189,10 +189,10 @@ function read_path_matches(file: stdio.File?, path_length: ptr_uint, logical_pat
     let path_buffer = heap.must_alloc[ubyte](path_length)
     defer heap.release(path_buffer)
 
-    if not read_exact(file, ptr[ubyte]<-path_buffer, path_length):
+    if not read_exact(file, path_buffer, path_length):
         return Result[bool, Error].failure(error= Error.malformed_index)
 
-    return Result[bool, Error].success(value= bytes_equal_str(ptr[ubyte]<-path_buffer, path_length, logical_path))
+    return Result[bool, Error].success(value= bytes_equal_str(path_buffer, path_length, logical_path))
 
 
 function read_payload(file: stdio.File?, size_bytes: ptr_uint) -> Result[bytes.Bytes, Error]:
@@ -200,11 +200,11 @@ function read_payload(file: stdio.File?, size_bytes: ptr_uint) -> Result[bytes.B
         return Result[bytes.Bytes, Error].success(value= bytes.Bytes.empty())
 
     let data = heap.must_alloc[ubyte](size_bytes)
-    if not read_exact(file, ptr[ubyte]<-data, size_bytes):
+    if not read_exact(file, data, size_bytes):
         heap.release(data)
         return Result[bytes.Bytes, Error].failure(error= Error.io)
 
-    return Result[bytes.Bytes, Error].success(value= bytes.Bytes(data = ptr[ubyte]<-data, len = size_bytes))
+    return Result[bytes.Bytes, Error].success(value= bytes.Bytes(data = data, len = size_bytes))
 
 
 function read_exact(file: stdio.File?, buffer: ptr[ubyte], size_bytes: ptr_uint) -> bool:
@@ -244,7 +244,7 @@ function decode_u32_le(bytes: ptr[ubyte]) -> uint:
 
 
 function decode_u64_le(bytes: ptr[ubyte]) -> Result[ptr_uint, Error]:
-    if ptr_uint<-size_of(ptr[void]) < 8:
+    if size_of(ptr[void]) < 8:
         var upper_index: ptr_uint = 4
         while upper_index < 8:
             unsafe:
@@ -252,7 +252,7 @@ function decode_u64_le(bytes: ptr[ubyte]) -> Result[ptr_uint, Error]:
                     return Result[ptr_uint, Error].failure(error= Error.range)
             upper_index += 1
 
-    let word_bytes = ptr_uint<-size_of(ptr[void])
+    let word_bytes = size_of(ptr[void])
     var count = word_bytes
     if count > 8:
         count = 8
