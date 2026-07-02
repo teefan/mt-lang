@@ -565,7 +565,6 @@ function main() -> int:
         return code
 
     let _ = test_alignof_field[CompactHeader]()
-    let _ = test_alignof_field[CompactHeader]()
 
     var ts = TaggedStruct(data = 0u)
     let _ = reflect_constrained[TaggedStruct](ref_of(ts))

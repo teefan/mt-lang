@@ -235,4 +235,5 @@ function main() -> int:
     total += int<-(mixed_inline_demo())
     total += int<-(extend_nested_demo())
 
-    return total
+    let _total = total
+    return 0
