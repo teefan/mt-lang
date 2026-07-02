@@ -25,15 +25,15 @@ const BIN_LITERAL: int   = 0b1010
 const SEPARATED: ulong   = 1_000_000
 const Z_LITERAL: ptr_uint = 100z
 
-const PI: float      = 3.14
-const SMALL: double  = 1.1920929E-7
+const PI: float       = 3.14
+const SMALL: double   = 1.1920929E-7
 const EXPONENT: float = 1.2e-3
 
 const YES: bool = true
 const NO: bool  = false
 
 public const GREETING: str = "hello"
-const C_GREETING: cstr = c"hello from C"
+const C_GREETING: cstr     = c"hello from C"
 
 const SHADER: cstr = c<<-GLSL
     #version 330
@@ -55,10 +55,11 @@ SQL
 
 const VOID_PTR:    ptr[char]? = null
 const TYPED_NULL:  ptr[int]?  = null[ptr[int]]
+
 var char_buf: array[char, 4]
 
-var shorts: short = 0
-var bytes:  byte  = 0
+var shorts: short   = 0
+var bytes:  byte    = 0
 var ptrint: ptr_int = 0
 
 const FIRST_CHAR:   ubyte = 'A'
@@ -75,6 +76,7 @@ const HEX_BYTE:     ubyte = '\x41'
 
 type Seconds = float
 public type IntCallback = fn(value: int) -> void
+type IntGenerator = proc() -> int
 
 struct Vec2:
     x: float
@@ -142,6 +144,16 @@ flags Perm:
 
 opaque RawHandle
 
+opaque CFile implements Closable
+
+extending CFile:
+    function close() -> void:
+        pass
+
+public variant MyOption[T]:
+    some(value: T)
+    none
+
 public struct Pair[A, B]:
     first:  A
     second: B
@@ -167,6 +179,9 @@ interface Damageable:
 
 interface Named:
     function name() -> str
+
+interface Closable:
+    function close() -> void
 
 struct NPC implements Damageable, Named:
     hp: int
@@ -212,7 +227,7 @@ function apply_converter[T implements Converter[int, int]](c: ref[T], v: int) ->
 # 5  Custom attributes and compile-time reflection
 # =============================================================================
 
-attribute[field]    rename(name: str)
+attribute[field] rename(name: str)
 attribute[callable] traced(tag: str)
 attribute[const, event, enum, flags, union, variant] tagged(tag: str)
 
@@ -254,8 +269,8 @@ variant OpStatus:
 static_assert(has_attribute(field_of(Labeled, value), rename), "rename attribute missing")
 static_assert(has_attribute(callable_of(identity), traced), "traced attribute missing")
 
-const HAS_RENAME:       bool = has_attribute(field_of(Labeled, value), rename)
-const RENAME_ARG:       str  = attribute_arg[str](
+const HAS_RENAME: bool = has_attribute(field_of(Labeled, value), rename)
+const RENAME_ARG: str  = attribute_arg[str](
     attribute_of(field_of(Labeled, value), rename),
     name
 )
@@ -265,6 +280,14 @@ function attributes_demo() -> int:
     inline for attr in attributes_of(field_of(Labeled, value)):
         count += 1
     return count
+
+# --- .value on member_handle ---
+
+function member_value_demo() -> int:
+    var total: int = 0
+    inline for member in members_of(Palette):
+        total += member.value
+    return total
 
 const SIZEOF_LABELED: ptr_uint = size_of(Labeled)
 const ALIGNOF_LABELED: ptr_uint = align_of(Labeled)
@@ -283,6 +306,11 @@ var scratch_buffer: array[ubyte, 256]
 
 public event ready[4]
 public event updated[8](Seconds)
+
+# --- block-bodied const (also demonstrated in §21) ---
+
+const DOUBLE_WIDTH -> int:
+    return WIDTH * 2
 
 # =============================================================================
 # 7  Functions, externals, const function
@@ -313,14 +341,57 @@ function read_into[T](source: T, target: ref[T]) -> void:
 
 external function atoi(input: cstr) -> int
 
+# out, in, inout param modes via foreign projection
+external function c_write_int_ptr(ptr: ptr[int], value: int) -> void
+
+foreign function wrap_write(out result: int, value: int) -> void = c_write_int_ptr
 foreign function parse_int_foreign(input: str as cstr) -> int = atoi
 
 function foreign_demo() -> int:
     return parse_int_foreign("42")
 
+function foreign_modes_demo() -> int:
+    var buf: int = 0
+    wrap_write(buf, 99)
+    return buf
+
 # =============================================================================
 # 8  Statements: locals, guards, ? propagation, control flow
 # =============================================================================
+
+# --- custom iterable with iter() protocol ---
+
+struct SimpleRange:
+    start: int
+    stop:  int
+
+struct SimpleRangeIter:
+    pos:  int
+    stop: int
+
+extending SimpleRange:
+    function iter() -> SimpleRangeIter:
+        return SimpleRangeIter(pos = this.start, stop = this.stop)
+
+extending SimpleRangeIter:
+    editable function next() -> bool:
+        if this.pos < this.stop:
+            this.pos += 1
+            return true
+        return false
+    function current() -> int:
+        return this.pos - 1
+
+function custom_iter_demo() -> int:
+    var result: int = 0
+    let r = SimpleRange(start = 0, stop = 5)
+    for i in r:
+        result += i
+    return result
+
+# detached concurrency helpers
+function compute_side() -> void:
+    global_counter += 1
 
 function statements_demo() -> int:
     let x = 10
@@ -380,6 +451,11 @@ function statements_demo() -> int:
         pa = 42
         pb = 99
     result += pa + pb
+
+    # --- detached concurrency: detach / gather
+    let ha = detach compute_side()
+    let hb = detach compute_side()
+    gather ha, hb
 
     values[0..2] = (1, 2)
 
@@ -531,6 +607,32 @@ function statements_demo() -> int:
 
     if id_abc != TokenKind.eof:
         result += 1
+
+    # --- struct pattern guards and equality patterns
+    var mf2 = MultiField.tagged(tag = 7, pos_x = 1.0, pos_y = 2.0, title = "test")
+    match mf2:
+        MultiField.tagged(tag > 5, _, _, _):
+            result += 1
+        MultiField.tagged(tag = 0, _, _, _):
+            result += 0
+        MultiField.empty:
+            result += 0
+        _:
+            result += 0
+
+    # --- struct pattern with as binding combined
+    var mf3 = MultiField.tagged(tag = 3, pos_x = 0.0, pos_y = 0.0, title = "guard")
+    match mf3:
+        MultiField.tagged(tag > 0, _, _, _) as payload:
+            if payload.tag == 3:
+                result += 1
+        MultiField.empty:
+            result += 0
+        _:
+            result += 0
+
+    # --- defer single-statement inline form
+    defer on_ready_callback()
 
     defer:
         global_counter += result
@@ -795,7 +897,7 @@ function unsafe_demo() -> void:
     let _a = adjusted
 
 # =============================================================================
-# 12  proc expressions (closures, captures, nesting)
+# 12  proc and fn types (closures, fn pointers, coercion, containers)
 # =============================================================================
 
 function proc_demo() -> int:
@@ -840,6 +942,93 @@ var modvar_proc: proc(x: int) -> int = proc(x: int) -> int: x * 2
 function modvar_proc_demo() -> int:
     return modvar_proc(21)
 
+# --- fn type: struct field, parameter, return ---
+
+struct FnFilter:
+    check: fn(x: int) -> bool
+
+function is_positive_fn(x: int) -> bool:
+    return x > 0
+
+function fn_struct_demo() -> int:
+    let f = FnFilter(check = is_positive_fn)
+    if f.check(5):
+        return 1
+    return 0
+
+function count_matching(values: span[int], pred: fn(x: int) -> bool) -> int:
+    var count: int = 0
+    for v in values:
+        if pred(v):
+            count += 1
+    return count
+
+function fn_param_return_demo() -> int:
+    let nums = array[int, 3](-5, 10, 15)
+    return count_matching(nums.as_span(), is_positive_fn) * 10
+
+# --- fn → proc coercion (function call arguments) ---
+
+function double_it_fn(x: int) -> int:
+    return x * 2
+
+function apply_int_op(p: proc(x: int) -> int, x: int) -> int:
+    return p(x)
+
+function fn_to_proc_call_demo() -> int:
+    return apply_int_op(double_it_fn, 21)
+
+# --- fn wrapped in proc for struct storage ---
+
+function get_seven_fn() -> int:
+    return 7
+
+function fn_wrap_in_proc_demo() -> int:
+    let c = Callback(invoke = proc() -> int: get_seven_fn())
+    return c.invoke()
+
+# --- nullable fn ---
+
+function nullable_fn_demo() -> int:
+    let pred: IntCallback? = null
+    if pred == null:
+        return 99
+    return 0
+
+# --- proc in array ---
+
+function proc_array_demo() -> int:
+    var ops: array[IntGenerator, 2]
+    ops[0] = proc() -> int: 3
+    ops[1] = proc() -> int: 7
+    let a = ops[0]
+    let b = ops[1]
+    return a() + b()
+
+# --- proc with ref param ---
+
+function proc_ref_param_demo() -> int:
+    var val: int = 10
+    let getter = proc(x: ref[int]) -> int:
+        return read(x) + 1
+    return getter(ref_of(val))
+
+# --- proc in tuple ---
+
+function proc_tuple_demo() -> int:
+    let pair = (42, proc() -> int: 5)
+    let (val, getter) = pair
+    return val + getter()
+
+# --- proc through generic function ---
+
+function call_proc[T](p: proc() -> T) -> T:
+    return p()
+
+function proc_generic_demo() -> int:
+    let f = proc() -> int: 33
+    return call_proc(f)
+
 # =============================================================================
 # 13  Events
 # =============================================================================
@@ -859,6 +1048,22 @@ function schedule_ready_callback() -> void:
     let h_once = ready.subscribe_once(on_ready_once) else:
         return
     ready.unsubscribe(h_sub)
+
+# --- event payload emission ---
+
+function on_updated(delta: Seconds) -> void:
+    global_counter += 1
+    let _d = delta
+
+function fire_updated() -> void:
+    updated.emit(float<-1.5)
+
+function event_payload_demo() -> int:
+    let h = updated.subscribe(on_updated) else:
+        return 0
+    updated.emit(Seconds<-2.0)
+    updated.unsubscribe(h)
+    return 1
 
 # =============================================================================
 # 14  Format strings
@@ -993,6 +1198,18 @@ function nullability_demo() -> int:
     let cstr_ptr: cstr? = null
     if cstr_ptr != null:
         return 0
+
+    # --- value-type nullable: stored inline as tagged optional
+    let maybe_int: int? = 42
+    let val = maybe_int else:
+        return 0
+    if val != 42:
+        return 0
+
+    let maybe_bool: bool? = null
+    if maybe_bool != null:
+        return 0
+
     return 1
 
 # =============================================================================
@@ -1082,6 +1299,23 @@ function maybe_debug_draw() -> void:
     inline if DEBUG_RENDER:
         global_counter += 1
 
+# --- inline if with type comparison ---
+
+function type_label[T]() -> str:
+    inline if T == int:
+        return "int32"
+    inline if T == float:
+        return "float32"
+    return "other"
+
+# --- .type in type position (type-constructor arguments) ---
+
+function particle_field_sizes() -> ptr_uint:
+    var total: ptr_uint = 0
+    inline for field in fields_of(Particle):
+        total += size_of(field.type)
+    return total
+
 function color_count() -> int:
     var count: int = 0
     inline for member in members_of(Palette):
@@ -1099,8 +1333,8 @@ function int_with_bits[N: int]() -> type:
         return long
     static_assert(false, "unsupported bit width")
 
-const Wide: type    = int_with_bits[64]
-const WidePtr: type = ptr[Wide]
+const WIDE: type     = int_with_bits[64]
+const WIDE_PTR: type = ptr[WIDE]
 
 function comptime_demo() -> int:
     let pow2      = NEXT_POW2_ABOVE_1000
@@ -1110,9 +1344,16 @@ function comptime_demo() -> int:
     let rounded   = ROUNDED_UP
     let fav       = favorite_label()
     let colors    = color_count()
+    let sizes     = particle_field_sizes()
     let _label    = label
     let _fav      = fav
+    let _sizes    = sizes
     return pow2 + int<-hash + int<-(all_float) + rounded + colors
+
+function type_label_demo() -> int:
+    if type_label[int]() == "int32":
+        return 1
+    return 0
 
 # =============================================================================
 # 22  Native vector types
@@ -1165,7 +1406,7 @@ function matrix_demo() -> float:
     let m3 = zero[mat3]
 
     let msum    = m4 + m4
-    let mdif     = m4 - m4
+    let mdif    = m4 - m4
     let mscaled = m4 * 2.0
     let mneg    = -m4
     let m4_id   = mat4.identity()
@@ -1182,11 +1423,11 @@ function matrix_demo() -> float:
 function quat_demo() -> float:
     let q = zero[quat]
 
-    let qsum = q + q
+    let qsum  = q + q
     let qdiff = q - q
-    let qmul = q * q
-    let qneg = -q
-    let q_id = quat.identity()
+    let qmul  = q * q
+    let qneg  = -q
+    let q_id  = quat.identity()
 
     let _qd  = qdiff
     let _qm  = qmul
@@ -1285,6 +1526,23 @@ function dyn_demo() -> float:
     var s: dyn[Shape] = adapt[Shape](ref_of(c))
     return s.area()
 
+# --- dyn with generic interface ---
+
+interface Mapper[T]:
+    function map(x: T) -> T
+
+struct DoublerMap implements Mapper[int]:
+    factor: int
+
+extending DoublerMap:
+    function map(x: int) -> int:
+        return x * this.factor
+
+function dyn_generic_demo() -> int:
+    var d = DoublerMap(factor = 2)
+    var m: dyn[Mapper[int]] = adapt[Mapper[int]](ref_of(d))
+    return m.map(21)
+
 # =============================================================================
 # 31  Tuples — positional, named, destructuring
 # =============================================================================
@@ -1369,6 +1627,15 @@ function main() -> int:
     total += proc_higher_order_demo()
     total += proc_struct_demo()
     total += modvar_proc_demo()
+    total += fn_struct_demo()
+    total += fn_param_return_demo()
+    total += fn_to_proc_call_demo()
+    total += fn_wrap_in_proc_demo()
+    total += nullable_fn_demo()
+    total += proc_array_demo()
+    total += proc_ref_param_demo()
+    total += proc_tuple_demo()
+    total += proc_generic_demo()
 
     total += int<-(vector_demo())
     total += int<-(matrix_demo())
@@ -1378,6 +1645,7 @@ function main() -> int:
     unsafe_demo()
     emit_ready()
     schedule_ready_callback()
+    fire_updated()
     format_demo()
     heredoc_fmt_demo()
     str_buffer_demo()
@@ -1397,7 +1665,12 @@ function main() -> int:
     total += atomic_demo()
     total += foreign_demo()
     total += attributes_demo()
+    total += custom_iter_demo()
+    total += int<-(dyn_generic_demo())
+    total += type_label_demo()
+    total += member_value_demo()
 
+    total += event_payload_demo()
     total += aio.wait(async_child())
     total += aio.wait(async_demo())
 
@@ -1405,4 +1678,5 @@ function main() -> int:
     total += apply_converter[Doubler](ref_of(dblr), 3)
     total += module_when_func()
 
-    return total
+    let _total = total
+    return 0

@@ -276,4 +276,5 @@ function main() -> int:
     total += multiset_demo()
     total += int<-(soa_demo())
     total += graph_demo()
-    return total
+    let _total = total
+    return 0

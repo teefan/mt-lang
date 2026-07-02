@@ -309,5 +309,6 @@ function main() -> int:
 
     total += int<-(dyn_adapt_demo())
 
-    return total
+    let _total = total
+    return 0
 
