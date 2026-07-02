@@ -43,6 +43,83 @@ function main() -> int:
     end
   end
 
+  def test_incremental_warm_rebuild_matches_clean_build
+    Dir.mktmpdir("milk-tea-warm-rebuild") do |dir|
+      cache_root = File.join(dir, "cache")
+      FileUtils.mkdir_p(cache_root)
+      compiler_path = write_fake_compiler(dir, File.join(dir, "compiler.log"))
+
+      src_dir = File.join(dir, "src")
+      FileUtils.mkdir_p(src_dir)
+      lib_path = File.join(src_dir, "warm_lib.mt")
+      app_path = File.join(src_dir, "warm_app.mt")
+      output_path = File.join(dir, "warm_app")
+
+      # warm_lib owns the synthetic generic-struct and tuple types, so the
+      # incremental rebuild must round-trip its cached synthetics.
+      File.write(lib_path, <<~MT)
+        public struct Box[T]:
+            value: T
+
+        public function make_box(n: int) -> Box[int]:
+            return Box[int](value = n)
+
+        public function pair_up(n: int) -> (int, int):
+            return (n, n + 1)
+      MT
+
+      write_app = lambda do |tail|
+        File.write(app_path, <<~MT)
+          import warm_lib
+
+          function main() -> int:
+              let b = warm_lib.make_box(5)
+              let p = warm_lib.pair_up(3)
+              return #{tail}
+        MT
+      end
+
+      with_data_root(cache_root) do
+        # 1. Cold build of V1 populates the per-module IR + synthetic cache.
+        write_app.call("b.value + p._0")
+        MilkTea::Build.build(app_path, output_path:, cc: compiler_path, module_roots: [src_dir])
+
+        # 2. Touch only the root module -> V2; warm_lib is unchanged.
+        write_app.call("b.value + p._1")
+
+        # 3. Incremental (warm) rebuild: warm_lib is reused from cache.
+        incremental_kwargs = nil
+        original_lower_incremental = MilkTea::Lowering.method(:lower_incremental)
+        warm_c = nil
+        with_singleton_method_override(MilkTea::Lowering, :lower_incremental, lambda do |program, **kwargs|
+          incremental_kwargs = kwargs
+          original_lower_incremental.call(program, **kwargs)
+        end) do
+          warm_c = capture_compiled_c do
+            MilkTea::Build.build(app_path, output_path:, cc: compiler_path, module_roots: [src_dir])
+          end
+        end
+
+        # 4. Clean (no-cache) build of the identical V2 sources.
+        clean_c = capture_compiled_c do
+          MilkTea::Build.build(app_path, output_path:, cc: compiler_path, module_roots: [src_dir], no_cache: true)
+        end
+
+        # (a) The warm path reused the unchanged module's IR and synthetics.
+        refute_nil incremental_kwargs, "expected the warm rebuild to run lower_incremental"
+        assert incremental_kwargs[:cached]&.key?("warm_lib"),
+               "expected warm_lib IR to be reused; cached=#{incremental_kwargs[:cached]&.keys.inspect}"
+        assert incremental_kwargs[:cached_synthetics]&.dig("warm_lib")&.values&.any? { |group| group.any? },
+               "expected warm_lib synthetics to be reused; got #{incremental_kwargs[:cached_synthetics]&.dig('warm_lib').inspect}"
+
+        # (b) Incremental output is byte-identical to a clean rebuild.
+        refute_nil warm_c
+        refute_nil clean_c
+        assert_equal clean_c, warm_c
+      end
+    end
+  end
+
   def test_frontend_build_artifacts_capture_plain_module_metadata
     Dir.mktmpdir("milk-tea-build-frontend-modules") do |dir|
       source_path = File.join(dir, "frontend-modules.mt")
@@ -1901,6 +1978,32 @@ function main() -> int:
 
     )
     path
+  end
+
+  # Redirects the build/analysis cache (rooted at MilkTea.data_root) to an
+  # isolated directory so warm-rebuild tests start from a clean cache.
+  def with_data_root(dir)
+    previous = MilkTea.instance_variable_get(:@data_root)
+    MilkTea.instance_variable_set(:@data_root, Pathname.new(File.expand_path(dir)))
+    yield
+  ensure
+    MilkTea.instance_variable_set(:@data_root, previous)
+  end
+
+  # Captures the line-directive'd C emitted during the block (the source that
+  # is actually compiled), so incremental and clean builds can be compared.
+  def capture_compiled_c
+    emitted = []
+    original_emit = MilkTea::CBackend.method(:emit)
+    with_singleton_method_override(MilkTea::CBackend, :emit, lambda do |program, **kwargs|
+      result = original_emit.call(program, **kwargs)
+      emitted << [kwargs[:emit_line_directives], result]
+      result
+    end) do
+      yield
+    end
+    with_line_directives = emitted.select { |flag, _| flag }.map(&:last)
+    with_line_directives.last || emitted.map(&:last).last
   end
 
   def write_fake_compiler(dir, log_path, shell_copy_path: nil, basename: "fake-cc")
