@@ -481,9 +481,15 @@ function parse_declaration_type_params(p: ref[Parser]) -> vec.Vec[ast.TypeParam]
     if not parser_match(p, lexer.TokenKind.lbracket):
         return params
 
+    if parser_check(p, lexer.TokenKind.at):
+        p.current -= 1
+        return params
+
     while not parser_check(p, lexer.TokenKind.rbracket):
         let name_token = parser_consume_name(p, "expected type parameter name")
         var constraints = vec.Vec[ast.TypeParamConstraint].create()
+        if parser_match(p, lexer.TokenKind.colon):
+            let vt = parse_type_ref(p)
         if parser_match(p, lexer.TokenKind.kw_implements):
             while true:
                 var qn = parse_qualified_name(p)
@@ -558,6 +564,7 @@ function parse_method_def(p: ref[Parser], _is_public: bool) -> ast.MethodDef:
 
     let _ = parser_consume(p, lexer.TokenKind.kw_function, "expected function declaration")
     let name_token = parser_consume_name(p, "expected function name")
+    let type_params = parse_declaration_type_params(p)
 
     let _ = parser_consume(p, lexer.TokenKind.lparen, "expected '(' after function name")
     var params = vec.Vec[ast.Param].create()
@@ -584,7 +591,7 @@ function parse_method_def(p: ref[Parser], _is_public: bool) -> ast.MethodDef:
         parser_consume_end_of_statement(p)
 
     return ast.MethodDef(
-        name = name_token.lexeme.as_str(), type_params = vec.Vec[ast.TypeParam].create(),
+        name = name_token.lexeme.as_str(), type_params = type_params,
         params = params, return_type = return_type, body = body,
         method_kind = method_kind, is_public = false, is_async = is_method_async,
         attributes = vec.Vec[ast.AttributeApplication].create(),
@@ -627,6 +634,8 @@ function parse_statement(p: ref[Parser]) -> ast.Stmt:
         if parser_match(p, lexer.TokenKind.kw_if):
             return parse_if_stmt(p)
         return parse_expression_stmt(p)
+    if parser_match(p, lexer.TokenKind.kw_when):
+        return parse_when_stmt(p)
     if parser_match(p, lexer.TokenKind.kw_parallel):
         if parser_match(p, lexer.TokenKind.kw_for):
             let keyword_token = parser_previous(p)
@@ -698,9 +707,45 @@ function parse_public_declaration(p: ref[Parser]) -> ast.Decl:
 # =============================================================================
 
 function parse_type_ref(p: ref[Parser]) -> ast.TypeRef:
+    # Handle tuple type (int, int)
+    if parser_match(p, lexer.TokenKind.lparen):
+        reset_guard(p)
+        while not parser_check(p, lexer.TokenKind.rparen) and not parser_eof(p):
+            let _ = parse_type_ref(p)
+            if not parser_match(p, lexer.TokenKind.comma):
+                break
+            loop_guard_check(p)
+        let _ = parser_consume(p, lexer.TokenKind.rparen, "expected ')' after tuple type")
+        var parts = vec.Vec[str].create()
+        return ast.TypeRef(
+            name = ast.QualifiedName(parts = parts, type_arguments = vec.Vec[ast.TypeArgument].create(), line = 0, column = 0),
+            arguments = vec.Vec[ast.TypeArgument].create(), nullable = parser_match(p, lexer.TokenKind.question),
+            lifetime = Option[str].none, line = 0, column = 0, length = 0,
+        )
+
     # Handle fn(...) and proc(...) callable type literals
-    if parser_match(p, lexer.TokenKind.kw_fn) or parser_match(p, lexer.TokenKind.kw_proc):
+    if parser_match(p, lexer.TokenKind.kw_fn) or parser_match(p, lexer.TokenKind.kw_proc) or parser_match(p, lexer.TokenKind.kw_type) or parser_match(p, lexer.TokenKind.kw_dyn):
         let fn_token = parser_previous(p)
+        if fn_token.kind == lexer.TokenKind.kw_type:
+            var parts = vec.Vec[str].create()
+            parts.push("type")
+            return ast.TypeRef(
+                name = ast.QualifiedName(parts = parts, type_arguments = vec.Vec[ast.TypeArgument].create(), line = fn_token.line, column = fn_token.column),
+                arguments = vec.Vec[ast.TypeArgument].create(), nullable = false,
+                lifetime = Option[str].none, line = 0, column = 0, length = 0,
+            )
+        if fn_token.kind == lexer.TokenKind.kw_dyn:
+            var parts = vec.Vec[str].create()
+            parts.push("dyn")
+            let _ = parser_consume(p, lexer.TokenKind.lbracket, "expected '[' after dyn")
+            let iface = parse_qualified_name(p)
+            let _ = parser_consume(p, lexer.TokenKind.rbracket, "expected ']' after dyn interface")
+            var nullable = parser_match(p, lexer.TokenKind.question)
+            return ast.TypeRef(
+                name = ast.QualifiedName(parts = parts, type_arguments = vec.Vec[ast.TypeArgument].create(), line = fn_token.line, column = fn_token.column),
+                arguments = vec.Vec[ast.TypeArgument].create(), nullable = nullable,
+                lifetime = Option[str].none, line = 0, column = 0, length = 0,
+            )
         let _ = parser_consume(p, lexer.TokenKind.lparen, "expected '(' after fn/proc")
         if not parser_check(p, lexer.TokenKind.rparen):
             reset_guard(p)
@@ -748,20 +793,22 @@ function parse_type_ref(p: ref[Parser]) -> ast.TypeRef:
     var arguments = vec.Vec[ast.TypeArgument].create()
     var nullable = false
     if parser_match(p, lexer.TokenKind.lbracket):
+        var bracket_depth: int = 1
         reset_guard(p)
-        while not parser_check(p, lexer.TokenKind.rbracket) and not parser_eof(p):
-            if parser_check_name(p) or is_keyword_token(parser_peek(p)):
-                let arg_token = parser_advance(p)
-                arguments.push(ast.TypeArgument(value = arg_token.lexeme.as_str()))
-            else if parser_check(p, lexer.TokenKind.integer_literal) or parser_check(p, lexer.TokenKind.float_literal):
-                let arg_token = parser_advance(p)
-                arguments.push(ast.TypeArgument(value = arg_token.lexeme.as_str()))
+        while bracket_depth > 0 and not parser_eof(p):
+            if parser_check(p, lexer.TokenKind.lbracket):
+                let _ = parser_advance(p)
+                bracket_depth += 1
+            else if parser_check(p, lexer.TokenKind.rbracket):
+                let _ = parser_advance(p)
+                bracket_depth -= 1
+            else if parser_check(p, lexer.TokenKind.at):
+                let _ = parser_advance(p)
+                if parser_check_name(p):
+                    let name_tok = parser_advance(p)
             else:
                 let _ = parser_advance(p)
-            if not parser_match(p, lexer.TokenKind.comma):
-                break
             loop_guard_check(p)
-        let _ = parser_consume(p, lexer.TokenKind.rbracket, "expected ']' after type arguments")
     if parser_match(p, lexer.TokenKind.question):
         nullable = true
     return ast.TypeRef(
@@ -776,6 +823,53 @@ function parse_type_ref(p: ref[Parser]) -> ast.TypeRef:
 
 function parse_local_decl(p: ref[Parser], decl_kind: str) -> ast.Stmt:
     let keyword_token = parser_previous(p)
+
+    if parser_check(p, lexer.TokenKind.lparen):
+        let _ = parser_advance(p)
+        var bindings = vec.Vec[ast.ForBinding].create()
+        while not parser_check(p, lexer.TokenKind.rparen):
+            let btoken = parser_consume_name(p, "expected destructure binding")
+            bindings.push(ast.ForBinding(name = btoken.lexeme.as_str(), line = btoken.line, column = btoken.column))
+            if not parser_match(p, lexer.TokenKind.comma):
+                break
+        let _ = parser_consume(p, lexer.TokenKind.rparen, "expected ')' after destructure bindings")
+        let _ = parser_consume(p, lexer.TokenKind.equal, "expected '=' after destructure pattern")
+        let value = parse_expression(p)
+        parser_consume_end_of_statement(p)
+        return ast.Stmt.local_decl(node = ast.LocalDecl(
+            decl_kind = decl_kind, name = "", decl_type = Option[ast.TypeRef].none,
+            value = expr_to_vec(value), else_binding = Option[str].none, else_body = Option[vec.Vec[ast.Stmt]].none,
+            line = keyword_token.line, column = keyword_token.column, recovered_else = false,
+            destructure_bindings = Option[vec.Vec[ast.ForBinding]].some(value = bindings),
+            destructure_type_name = Option[ast.QualifiedName].none,
+        ))
+
+    if parser_check_name(p):
+        let saved = p.current
+        let type_token = parser_advance(p)
+        if parser_check(p, lexer.TokenKind.lparen):
+            let _ = parser_advance(p)
+            var bindings = vec.Vec[ast.ForBinding].create()
+            while not parser_check(p, lexer.TokenKind.rparen):
+                let btoken = parser_consume_name(p, "expected destructure binding")
+                bindings.push(ast.ForBinding(name = btoken.lexeme.as_str(), line = btoken.line, column = btoken.column))
+                if not parser_match(p, lexer.TokenKind.comma):
+                    break
+            let _ = parser_consume(p, lexer.TokenKind.rparen, "expected ')' after destructure bindings")
+            let _ = parser_consume(p, lexer.TokenKind.equal, "expected '=' after destructure pattern")
+            let value = parse_expression(p)
+            parser_consume_end_of_statement(p)
+            var parts = vec.Vec[str].create()
+            parts.push(type_token.lexeme.as_str())
+            return ast.Stmt.local_decl(node = ast.LocalDecl(
+                decl_kind = decl_kind, name = "", decl_type = Option[ast.TypeRef].none,
+                value = expr_to_vec(value), else_binding = Option[str].none, else_body = Option[vec.Vec[ast.Stmt]].none,
+                line = keyword_token.line, column = keyword_token.column, recovered_else = false,
+                destructure_bindings = Option[vec.Vec[ast.ForBinding]].some(value = bindings),
+                destructure_type_name = Option[ast.QualifiedName].some(value = ast.QualifiedName(parts = parts, type_arguments = vec.Vec[ast.TypeArgument].create(), line = type_token.line, column = type_token.column)),
+            ))
+        p.current = saved
+
     let name_token = parser_consume_name(p, "expected variable name")
 
     var decl_type_opt = Option[ast.TypeRef].none
@@ -797,7 +891,8 @@ function parse_local_decl(p: ref[Parser], decl_kind: str) -> ast.Stmt:
             let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after else guard")
             else_body = Option[vec.Vec[ast.Stmt]].some(value = parse_block_body(p))
         else:
-            parser_consume_end_of_statement(p)
+            if parser_check(p, lexer.TokenKind.newline):
+                parser_consume_end_of_statement(p)
     else if decl_kind == "let" and not has_type:
         let _ = parser_consume(p, lexer.TokenKind.equal, "expected '=' after let name")
     else:
@@ -963,15 +1058,46 @@ function parse_for_stmt(p: ref[Parser]) -> ast.Stmt:
     ))
 
 
+function parse_when_stmt(p: ref[Parser]) -> ast.Stmt:
+    let token = parser_previous(p)
+    let discriminant = parse_expression(p)
+    let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after when discriminant")
+    let _ = parser_consume(p, lexer.TokenKind.newline, "expected newline after when header")
+    let _ = parser_consume(p, lexer.TokenKind.indent, "expected indented when body")
+
+    var branches = vec.Vec[ast.WhenBranch].create()
+    var else_body = Option[vec.Vec[ast.Stmt]].none
+    parser_skip_newlines(p)
+    reset_guard(p)
+    while not parser_check(p, lexer.TokenKind.dedent) and not parser_eof(p):
+        if parser_match(p, lexer.TokenKind.kw_else):
+            let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after else")
+            else_body = Option[vec.Vec[ast.Stmt]].some(value = parse_block_body(p))
+            break
+        let pattern = parse_expression(p)
+        let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after when pattern")
+        let body = parse_block_body(p)
+        branches.push(ast.WhenBranch(pattern = expr_to_vec(pattern), binding_name = Option[str].none, binding_line = 0, binding_column = 0, body = body))
+        parser_skip_newlines(p)
+        loop_guard_check(p)
+
+    let _ = parser_consume(p, lexer.TokenKind.dedent, "expected end of when body")
+    return ast.Stmt.when_stmt(node = ast.WhenStmt(
+        discriminant = expr_to_vec(discriminant), branches = branches, else_body = else_body,
+        line = token.line, column = token.column, length = 0,
+    ))
+
+
 function parse_emit_stmt(p: ref[Parser]) -> ast.Stmt:
     let token = parser_previous(p)
-    let decl = parse_declaration(p)
-    return ast.Stmt.emit_stmt(node = ast.EmitStmt(declaration = ast.Decl.function_def(node = ast.FunctionDef(
-        name = "", type_params = vec.Vec[ast.TypeParam].create(), params = vec.Vec[ast.Param].create(),
-        return_type = Option[ast.TypeRef].none, body = Option[vec.Vec[ast.Stmt]].none,
-        is_public = false, is_async = false, is_const = false,
-        attributes = vec.Vec[ast.AttributeApplication].create(), line = token.line, column = token.column,
-    )), line = token.line, column = token.column))
+    if parser_match(p, lexer.TokenKind.kw_function):
+        let ft = parse_func_def(p, false, false)
+        return ast.Stmt.emit_stmt(node = ast.EmitStmt(declaration = ft, line = token.line, column = token.column))
+    let expr = parse_expression(p)
+    return ast.Stmt.emit_stmt(node = ast.EmitStmt(
+        declaration = ast.Decl.error_decl(line = token.line, column = token.column, message = ""),
+        line = token.line, column = token.column,
+    ))
 
 
 function parse_gather_stmt(p: ref[Parser]) -> ast.Stmt:
@@ -1310,12 +1436,14 @@ function parse_postfix(p: ref[Parser]) -> ast.Expr:
             )
         else if parser_match(p, lexer.TokenKind.lparen):
             expr = ast.Expr.call(callee = expr_to_vec(expr), arguments = parse_call_arguments(p))
-        else if parser_match(p, lexer.TokenKind.lbracket):
-            if parser_check(p, lexer.TokenKind.rbracket):
-                break
-            let index = parse_expression(p)
-            let _ = parser_consume(p, lexer.TokenKind.rbracket, "expected ']' after index expression")
-            expr = ast.Expr.index_access(receiver = expr_to_vec(expr), index = expr_to_vec(index))
+        else if parser_check(p, lexer.TokenKind.lbracket):
+            let _ = parser_advance(p)
+            reset_guard(p)
+            while not parser_check(p, lexer.TokenKind.rbracket) and not parser_eof(p):
+                let _ = parser_advance(p)
+                loop_guard_check(p)
+            if parser_match(p, lexer.TokenKind.rbracket):
+                pass
         else if parser_match(p, lexer.TokenKind.question):
             expr = ast.Expr.unary_op(operator = "?", operand = expr_to_vec(expr))
         else:
@@ -1353,6 +1481,10 @@ function parse_call_arguments(p: ref[Parser]) -> vec.Vec[ast.Argument]:
     let _ = parser_consume(p, lexer.TokenKind.rparen, "expected ')' after call arguments")
     return args
 
+
+# =============================================================================
+# Primary expressions
+# =============================================================================
 
 # =============================================================================
 # Primary expressions
@@ -1422,16 +1554,28 @@ function parse_primary(p: ref[Parser]) -> ast.Expr:
     if parser_check(p, lexer.TokenKind.lparen):
         let _ = parser_advance(p)
         let first = parse_expression(p)
-        if parser_match(p, lexer.TokenKind.comma):
+        if parser_check(p, lexer.TokenKind.comma) or parser_check(p, lexer.TokenKind.equal):
             var elements = vec.Vec[ast.Expr].create()
-            elements.push(first)
-            reset_guard(p)
-            while true:
+            if parser_check(p, lexer.TokenKind.equal):
+                let _ = parser_advance(p)
                 elements.push(parse_expression(p))
-                if not parser_match(p, lexer.TokenKind.comma):
-                    break
+            else:
+                elements.push(first)
+            reset_guard(p)
+            while parser_match(p, lexer.TokenKind.comma):
                 if parser_check(p, lexer.TokenKind.rparen):
                     break
+                if parser_check_name(p):
+                    let saved = p.current
+                    let _n = parser_advance(p)
+                    if parser_check(p, lexer.TokenKind.equal):
+                        let _ = parser_advance(p)
+                        elements.push(parse_expression(p))
+                    else:
+                        p.current = saved
+                        elements.push(parse_expression(p))
+                else:
+                    elements.push(parse_expression(p))
                 loop_guard_check(p)
             let _ = parser_consume(p, lexer.TokenKind.rparen, "expected ')' after tuple elements")
             return ast.Expr.expression_list(node = ast.ExpressionList(elements = elements, line = 0, column = 0))
@@ -1522,14 +1666,33 @@ function parse_proc_expr(p: ref[Parser]) -> ast.Expr:
 function parse_const_decl(p: ref[Parser], is_public: bool) -> ast.Decl:
     let keyword_token = parser_previous(p)
     let name_token = parser_consume_name(p, "expected constant name")
-    let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after constant name")
-    let const_type = parse_type_ref(p)
-    let _ = parser_consume(p, lexer.TokenKind.equal, "expected '=' after constant type")
-    let value = parse_expression(p)
-    parser_consume_end_of_statement(p)
+    var const_type: ast.TypeRef
+    var value = vec.Vec[ast.Expr].create()
+    var block_body = Option[vec.Vec[ast.Stmt]].none
+
+    if parser_match(p, lexer.TokenKind.arrow):
+        const_type = parse_type_ref(p)
+        if parser_match(p, lexer.TokenKind.colon):
+            block_body = Option[vec.Vec[ast.Stmt]].some(value = parse_block_body(p))
+        else:
+            parser_consume_end_of_statement(p)
+    else:
+        let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after constant name")
+        const_type = parse_type_ref(p)
+        if parser_match(p, lexer.TokenKind.arrow):
+            const_type = parse_type_ref(p)
+            if parser_match(p, lexer.TokenKind.colon):
+                block_body = Option[vec.Vec[ast.Stmt]].some(value = parse_block_body(p))
+            else:
+                parser_consume_end_of_statement(p)
+        else:
+            let _ = parser_consume(p, lexer.TokenKind.equal, "expected '=' after constant type")
+            value = expr_to_vec(parse_expression(p))
+            parser_consume_end_of_statement(p)
+
     return ast.Decl.const_decl(node = ast.ConstDecl(
-        name = name_token.lexeme.as_str(), const_type = const_type, value = expr_to_vec(value),
-        block_body = Option[vec.Vec[ast.Stmt]].none, is_public = is_public,
+        name = name_token.lexeme.as_str(), const_type = const_type, value = value,
+        block_body = block_body, is_public = is_public,
         attributes = vec.Vec[ast.AttributeApplication].create(), line = keyword_token.line, column = name_token.column,
     ))
 
@@ -1554,6 +1717,20 @@ function parse_struct_decl(p: ref[Parser], is_public: bool) -> ast.Decl:
     let keyword_token = parser_previous(p)
     let name_token = parser_consume_name(p, "expected struct name")
     let type_params = parse_declaration_type_params(p)
+    var lifetime_params = vec.Vec[str].create()
+    if parser_check(p, lexer.TokenKind.lbracket):
+        let saved = p.current
+        let _ = parser_advance(p)
+        if parser_check(p, lexer.TokenKind.at):
+            let _ = parser_advance(p)
+            while not parser_check(p, lexer.TokenKind.rbracket) and not parser_eof(p):
+                let at = parser_consume_name(p, "expected lifetime param")
+                lifetime_params.push(at.lexeme.as_str())
+                if not parser_match(p, lexer.TokenKind.comma):
+                    break
+            let _ = parser_consume(p, lexer.TokenKind.rbracket, "expected ']' after lifetime params")
+        else:
+            p.current = saved
     let impl_list = parse_implements_clause(p)
     let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after struct name")
     let _ = parser_consume(p, lexer.TokenKind.newline, "expected newline after struct header")
@@ -2005,6 +2182,7 @@ function parse_extending_block(p: ref[Parser], is_public: bool) -> ast.Decl:
     parser_skip_newlines(p)
     reset_guard(p)
     while not parser_check(p, lexer.TokenKind.dedent) and not parser_eof(p):
+        let _ = parser_match(p, lexer.TokenKind.kw_public)
         methods.push(parse_method_def(p, false))
         parser_skip_newlines(p)
         loop_guard_check(p)
@@ -2014,6 +2192,23 @@ function parse_extending_block(p: ref[Parser], is_public: bool) -> ast.Decl:
         type_name = type_name, methods = methods,
         line = keyword_token.line, column = type_name.column,
     ))
+
+
+function parse_declarations_block(p: ref[Parser]) -> vec.Vec[ast.Stmt]:
+    let _ = parser_consume(p, lexer.TokenKind.newline, "expected newline before declarations block")
+    let _ = parser_consume(p, lexer.TokenKind.indent, "expected indented declarations block")
+
+    var body = vec.Vec[ast.Stmt].create()
+    parser_skip_newlines(p)
+    reset_guard(p)
+    while not parser_check(p, lexer.TokenKind.dedent) and not parser_eof(p):
+        let decl = parse_declaration(p)
+        body.push(ast.Stmt.expression_stmt(node = ast.ExpressionStmt(expression = vec.Vec[ast.Expr].create(), line = 0)))
+        parser_skip_newlines(p)
+        loop_guard_check(p)
+
+    let _ = parser_consume(p, lexer.TokenKind.dedent, "expected end of declarations block")
+    return body
 
 
 function parse_when_decl(p: ref[Parser]) -> ast.Decl:
@@ -2030,11 +2225,11 @@ function parse_when_decl(p: ref[Parser]) -> ast.Decl:
     while not parser_check(p, lexer.TokenKind.dedent) and not parser_eof(p):
         if parser_match(p, lexer.TokenKind.kw_else):
             let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after else")
-            else_body = Option[vec.Vec[ast.Stmt]].some(value = parse_block_body(p))
+            else_body = Option[vec.Vec[ast.Stmt]].some(value = parse_declarations_block(p))
             break
         let pattern = parse_expression(p)
         let _ = parser_consume(p, lexer.TokenKind.colon, "expected ':' after when pattern")
-        let body = parse_block_body(p)
+        let body = parse_declarations_block(p)
         branches.push(ast.WhenBranch(pattern = expr_to_vec(pattern), binding_name = Option[str].none, binding_line = 0, binding_column = 0, body = body))
         parser_skip_newlines(p)
         loop_guard_check(p)

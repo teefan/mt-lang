@@ -527,11 +527,11 @@ function scan_string(l: ref[Lexer], tokens: ref[vec.Vec[Token]], kind: TokenKind
     let start_col = l.column
     let _ = advance(l)
 
-    while not is_at_end(l) and peek_current(l) != 34:
+    while not is_at_end(l) and peek_current(l) != '"':
         if is_newline(peek_current(l)):
             emit_token(l, tokens, TokenKind.error, start, start_line, start_col)
             return
-        if peek_current(l) == 92:
+        if peek_current(l) == '\\':
             let _ = advance(l)
             let _ = scan_escape(l, false)
         else:
@@ -542,6 +542,46 @@ function scan_string(l: ref[Lexer], tokens: ref[vec.Vec[Token]], kind: TokenKind
         return
 
     let _ = advance(l)
+
+    var saved_idx = l.index
+    var saved_line = l.line
+    var saved_col = l.column
+
+    while peek_current(l) == '\n':
+        let _ = advance(l)
+        l.line += 1
+        l.column = 1
+        if is_at_end(l):
+            break
+        var indent = count_indent(l.source, l.index)
+        if indent >= 4:
+            l.index += ptr_uint<-indent
+            l.column += indent
+            if peek_current(l) == '"':
+                let _ = advance(l)
+                while not is_at_end(l) and peek_current(l) != '"':
+                    if is_newline(peek_current(l)):
+                        l.index = saved_idx
+                        l.line = saved_line
+                        l.column = saved_col
+                        emit_token(l, tokens, kind, start, start_line, start_col)
+                        return
+                    let _ = advance(l)
+                if not is_at_end(l):
+                    let _ = advance(l)
+                    saved_idx = l.index
+                    saved_line = l.line
+                    saved_col = l.column
+                    continue
+            l.index = saved_idx
+            l.line = saved_line
+            l.column = saved_col
+            break
+        l.index = saved_idx
+        l.line = saved_line
+        l.column = saved_col
+        break
+
     emit_token(l, tokens, kind, start, start_line, start_col)
 
 
