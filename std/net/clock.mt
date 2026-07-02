@@ -217,7 +217,7 @@ extending TickClock:
     public function elapsed_ticks() -> uint:
         let now = monotonic_ns()
         let elapsed_ns = now - this.epoch
-        let tick_duration_ns = ulong<-(1000000000ul / ulong<-uint<-this.rate)
+        let tick_duration_ns = (1000000000ul / ulong<-this.rate)
         if tick_duration_ns == 0ul:
             return 0u
         return uint<-(elapsed_ns / tick_duration_ns)
@@ -226,10 +226,10 @@ extending TickClock:
     public function time_to_next_tick() -> ptr_uint:
         let now = monotonic_ns()
         let elapsed_ns = now - this.epoch
-        let tick_ns = ulong<-(1000000000ul / ulong<-(ulong<-uint<-this.rate))
+        let tick_ns = (1000000000ul / (ulong<-this.rate))
         let into_current = elapsed_ns % tick_ns
         let remaining = tick_ns - into_current
-        return ptr_uint<-(remaining / 1000ul)
+        return (remaining / 1000ul)
 
 
     public function tick_ready() -> bool:

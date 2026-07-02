@@ -45,7 +45,7 @@ function decode_packet_length(header: bytes.Bytes) -> ptr_uint:
 
     let header_span = header.as_span()
     let length = ((uint<-header_span[0]) << 24) | ((uint<-header_span[1]) << 16) | ((uint<-header_span[2]) << 8) | (uint<-header_span[3])
-    return ptr_uint<-length
+    return length
 
 
 function frame_bytes(content: span[ubyte]) -> bytes.Bytes:

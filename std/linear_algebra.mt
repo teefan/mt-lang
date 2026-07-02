@@ -88,7 +88,7 @@ extending vec3:
         return vec3(
             x = this.y * v.z - this.z * v.y,
             y = this.z * v.x - this.x * v.z,
-            z = this.x * v.y - this.y * v.x,
+            z = this.x * v.y - this.y * v.x
         )
 
 
@@ -197,7 +197,7 @@ extending mat3:
         return mat3(
             col0 = vec3(x = 1.0, y = 0.0, z = 0.0),
             col1 = vec3(x = 0.0, y = 1.0, z = 0.0),
-            col2 = vec3(x = 0.0, y = 0.0, z = 1.0),
+            col2 = vec3(x = 0.0, y = 0.0, z = 1.0)
         )
 
 
@@ -205,7 +205,7 @@ extending mat3:
         return mat3(
             col0 = vec3(x = this.col0.x, y = this.col1.x, z = this.col2.x),
             col1 = vec3(x = this.col0.y, y = this.col1.y, z = this.col2.y),
-            col2 = vec3(x = this.col0.z, y = this.col1.z, z = this.col2.z),
+            col2 = vec3(x = this.col0.z, y = this.col1.z, z = this.col2.z)
         )
 
 # ---------------------------------------------------------------------------
@@ -218,7 +218,7 @@ extending mat4:
             col0 = vec4(x = 1.0, y = 0.0, z = 0.0, w = 0.0),
             col1 = vec4(x = 0.0, y = 1.0, z = 0.0, w = 0.0),
             col2 = vec4(x = 0.0, y = 0.0, z = 1.0, w = 0.0),
-            col3 = vec4(x = 0.0, y = 0.0, z = 0.0, w = 1.0),
+            col3 = vec4(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
         )
 
 
@@ -227,7 +227,7 @@ extending mat4:
             col0 = vec4(x = this.col0.x, y = this.col1.x, z = this.col2.x, w = this.col3.x),
             col1 = vec4(x = this.col0.y, y = this.col1.y, z = this.col2.y, w = this.col3.y),
             col2 = vec4(x = this.col0.z, y = this.col1.z, z = this.col2.z, w = this.col3.z),
-            col3 = vec4(x = this.col0.w, y = this.col1.w, z = this.col2.w, w = this.col3.w),
+            col3 = vec4(x = this.col0.w, y = this.col1.w, z = this.col2.w, w = this.col3.w)
         )
 
 # ---------------------------------------------------------------------------

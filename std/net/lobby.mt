@@ -463,7 +463,7 @@ async function handle_join_request(host: ref[LobbyHost], msg: ref[mux.MuxedMessa
                 let slot_ptr = host.slots.get(ptr_uint<-slot_index) else:
                     break
                 if not unsafe: read(slot_ptr).occupied:
-                    first_free = int<-slot_index
+                    first_free = slot_index
                     break
                 slot_index += 1
 
@@ -737,7 +737,7 @@ public function parse_beacon_response(data: span[ubyte]) -> Result[LobbyInfo, ne
             )
         Result.success as bp:
             bp.value.release()
-    return decode_lobby_info_payload_offset(data, ptr_uint<-beacon_probe_len)
+    return decode_lobby_info_payload_offset(data, beacon_probe_len)
 
 
 function decode_lobby_info_payload_offset(data: span[ubyte], offset: ptr_uint) -> Result[LobbyInfo, net.Error]:

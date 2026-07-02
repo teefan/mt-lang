@@ -30,8 +30,14 @@ module MilkTea
       missing-return
       noop-compound-assignment
       platform-api-drift
+      prefer-conditional-expression
+      prefer-inline-if
+      prefer-is-variant
       prefer-let
       prefer-let-else
+      prefer-or-pattern
+      prefer-struct-with
+      prefer-try
       prefer-var-else
       redundant-bool-compare
       redundant-cast
@@ -64,10 +70,15 @@ module MilkTea
       redundant-else
       redundant-return
       redundant-type-annotation
-      unused-import
       reserved-primitive-name
       trailing-list-comma
     ].freeze
+    # NOTE: `unused-import` is intentionally NOT auto-fixable. Removing an import
+    # has non-local effects the linter cannot see under per-file validation:
+    # it may drop extension methods / canonical hooks (`hash[T]`, `equal[T]`),
+    # a bare-name type provided via the prelude bootstrap (e.g. `std.option`),
+    # or break downstream consumers of a library module. It remains a reported
+    # hint so authors can remove genuinely-unused imports deliberately.
     LINT_TIERS = %i[fast full].freeze
     STATIC_QUICK_FIX_TITLES = {
       "line-too-long" => "Wrap long line",
@@ -379,14 +390,17 @@ module MilkTea
       current_source = source
       current_sema_facts = sema_facts
 
-      preflight_warnings = lint_source(
-        current_source,
+      # When no semantic facts are supplied, omit the argument entirely so
+      # lint_source rebuilds a best-effort context. Passing an explicit `nil`
+      # would suppress sema-dependent rules (e.g. widening redundant-cast).
+      preflight_args = {
         path:,
-        sema_facts: current_sema_facts,
         select: Set.new(enabled_rules),
         ignore: effective_ignore,
         profile:,
-      )
+      }
+      preflight_args[:sema_facts] = current_sema_facts if current_sema_facts
+      preflight_warnings = lint_source(current_source, **preflight_args)
       return current_source if preflight_warnings.empty?
 
       preflight_codes = preflight_warnings.map(&:code).to_set
@@ -461,7 +475,15 @@ module MilkTea
           fixed_source = apply_reserved_primitive_name_fixes(fixed_source, reserved_fixes)
         end
       end
-      validated_fixed_source(source, fixed_source, path:, baseline_errors: working_context&.[](:errors))
+      # Validation compares a best-effort re-analysis of the fixed source against
+      # a baseline. When the caller supplied rich (full-package) facts there is
+      # no working_context, but the fixed-source check is still best-effort — so
+      # the baseline must also come from a best-effort analysis of the ORIGINAL
+      # source, otherwise pre-existing best-effort-only errors (e.g. unresolved
+      # cross-module imports in std files) would be counted as "new" and reject
+      # every otherwise-valid fix.
+      baseline_context = working_context || best_effort_lint_context(source, path:)
+      validated_fixed_source(source, fixed_source, path:, baseline_errors: baseline_context[:errors])
     end
 
     def self.validated_fixed_source(original_source, fixed_source, path:, baseline_errors:)

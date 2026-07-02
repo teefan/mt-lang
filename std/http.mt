@@ -531,7 +531,7 @@ function discard_buffer_prefix(buffer: ref[vec.Vec[ubyte]], count: ptr_uint) -> 
 
     let remaining = buffer.len - count
     unsafe:
-        let data_ptr = ptr[ubyte]<-data
+        let data_ptr = data
         var index: ptr_uint = 0
         while index < remaining:
             read(data_ptr + index) = read(data_ptr + count + index)

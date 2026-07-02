@@ -161,13 +161,13 @@ public function expo_in_out(t: float, b: float, c: float, d: float) -> float:
 
 
 public function back_in(t: float, b: float, c: float, d: float) -> float:
-    let s: float = 1.70158
+    let s = 1.70158
     let current = t / d
     return (c * current * current * (((s + 1.0) * current) - s) + b)
 
 
 public function back_out(t: float, b: float, c: float, d: float) -> float:
-    let s: float = 1.70158
+    let s = 1.70158
     let current = (t / d) - 1.0
     return (c * (current * current * (((s + 1.0) * current) + s) + 1.0) + b)
 

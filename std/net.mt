@@ -194,7 +194,7 @@ struct UdpReceiveState:
 
 
 function noop_waiter(frame: ptr[void]) -> void:
-    unsafe: ptr[void]<-frame
+    unsafe: frame
 
 
 function resolve_state(frame: ptr[void]) -> ptr[ResolveState]:
@@ -422,8 +422,8 @@ function socket_address_from_sockaddr(address: ptr[NativeSockAddr]?, length: ptr
     let live_address = address else:
         return Result[SocketAddress, Error].failure(error= invalid_address_error("resolver returned null address"))
 
-    let ipv4_size = ptr_uint<-size_of(NativeSockAddrIn)
-    let ipv6_size = ptr_uint<-size_of(NativeSockAddrIn6)
+    let ipv4_size = size_of(NativeSockAddrIn)
+    let ipv6_size = size_of(NativeSockAddrIn6)
     let storage = heap.must_alloc_zeroed[NativeSocketStorage](1)
 
     var result = SocketAddress(storage = storage, len = 0, kind = AddressKind.ipv4)
@@ -476,14 +476,14 @@ function tcp_socket_address_from_getsockname(handle: ptr[NativeTcpHandle]?) -> R
     var name_length = int<-size_of(NativeSocketStorage)
     let status_code = libuv_c.uv_tcp_getsockname(
             live_handle,
-            sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+            sockaddr_storage_as_sockaddr(unsafe: ptr_of(raw)),
             ptr_of(name_length)
         )
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
 
     return socket_address_from_sockaddr(
-        sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+        sockaddr_storage_as_sockaddr(unsafe: ptr_of(raw)),
         ptr_uint<-name_length
     )
 
@@ -496,14 +496,14 @@ function tcp_socket_address_from_getpeername(handle: ptr[NativeTcpHandle]?) -> R
     var name_length = int<-size_of(NativeSocketStorage)
     let status_code = libuv_c.uv_tcp_getpeername(
             live_handle,
-            sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+            sockaddr_storage_as_sockaddr(unsafe: ptr_of(raw)),
             ptr_of(name_length)
         )
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
 
     return socket_address_from_sockaddr(
-        sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+        sockaddr_storage_as_sockaddr(unsafe: ptr_of(raw)),
         ptr_uint<-name_length
     )
 
@@ -517,7 +517,7 @@ function tcp_socket_fd(handle: ptr[NativeTcpHandle]?) -> Result[int, Error]:
     if status_code != 0:
         return Result[int, Error].failure(error= libuv_error(status_code))
 
-    return Result[int, Error].success(value= int<-fd)
+    return Result[int, Error].success(value= fd)
 
 
 function udp_socket_address_from_getsockname(handle: ptr[NativeUdpHandle]?) -> Result[SocketAddress, Error]:
@@ -528,14 +528,14 @@ function udp_socket_address_from_getsockname(handle: ptr[NativeUdpHandle]?) -> R
     var name_length = int<-size_of(NativeSocketStorage)
     let status_code = libuv_c.uv_udp_getsockname(
             live_handle,
-            sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+            sockaddr_storage_as_sockaddr(unsafe: ptr_of(raw)),
             ptr_of(name_length)
         )
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
 
     return socket_address_from_sockaddr(
-        sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+        sockaddr_storage_as_sockaddr(unsafe: ptr_of(raw)),
         ptr_uint<-name_length
     )
 
@@ -548,14 +548,14 @@ function udp_socket_address_from_getpeername(handle: ptr[NativeUdpHandle]?) -> R
     var name_length = int<-size_of(NativeSocketStorage)
     let status_code = libuv_c.uv_udp_getpeername(
             live_handle,
-            sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+            sockaddr_storage_as_sockaddr(unsafe: ptr_of(raw)),
             ptr_of(name_length)
         )
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
 
     return socket_address_from_sockaddr(
-        sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+        sockaddr_storage_as_sockaddr(unsafe: ptr_of(raw)),
         ptr_uint<-name_length
     )
 
@@ -785,7 +785,7 @@ function finish_connect(state: ptr[ConnectState], result_value: Result[TcpStream
             notify = true
 
     if notify and waiter_frame != null[ptr[void]]:
-        waiter(unsafe: ptr[void]<-waiter_frame)
+        waiter(unsafe: waiter_frame)
         return
 
     if unsafe: read(state).released:
@@ -805,7 +805,7 @@ function connect_callback(req: ptr[NativeConnectRequest], status_code: int) -> v
     if status_code != 0:
         let handle = unsafe: read(state).handle
         if handle != null[ptr[NativeTcpHandle]]:
-            close_tcp_handle(unsafe: ptr[NativeTcpHandle]<-handle)
+            close_tcp_handle(unsafe: handle)
             unsafe: read(state).handle = null
 
         finish_connect(state, Result[TcpStream, Error].failure(error= libuv_error(status_code)), status_code)
@@ -861,7 +861,7 @@ function accept_release(frame: ptr[void]) -> void:
 
     let listener = unsafe: read(state).listener
     if listener != null[ptr[ListenerState]]:
-        let live_listener = unsafe: ptr[ListenerState]<-listener
+        let live_listener = unsafe: listener
         if unsafe: read(live_listener).accept_state == state:
             unsafe: read(live_listener).accept_state = null
 
@@ -904,7 +904,7 @@ function finish_accept(state: ptr[AcceptState], result_value: Result[TcpStream, 
             notify = true
 
     if notify and waiter_frame != null[ptr[void]]:
-        waiter(unsafe: ptr[void]<-waiter_frame)
+        waiter(unsafe: waiter_frame)
 
 
 function listener_close_callback(handle: ptr[NativeHandle]) -> void:
@@ -917,7 +917,7 @@ function listener_close_callback(handle: ptr[NativeHandle]) -> void:
     if pending_accept != null[ptr[AcceptState]]:
         unsafe: read(listener).accept_state = null
         finish_accept(
-            unsafe: ptr[AcceptState]<-pending_accept,
+            unsafe: pending_accept,
             Result[TcpStream, Error].failure(error= net_error("listener closed")),
             -1
         )
@@ -959,7 +959,7 @@ function listener_connection_callback(server: ptr[NativeStreamHandle], status_co
         if pending_accept != null[ptr[AcceptState]]:
             unsafe: read(listener).accept_state = null
             finish_accept(
-                unsafe: ptr[AcceptState]<-pending_accept,
+                unsafe: pending_accept,
                 Result[TcpStream, Error].failure(error= libuv_error(status_code)),
                 status_code
             )
@@ -969,7 +969,7 @@ function listener_connection_callback(server: ptr[NativeStreamHandle], status_co
 
     if pending_accept != null[ptr[AcceptState]]:
         unsafe: read(listener).accept_state = null
-        perform_listener_accept(listener, unsafe: ptr[AcceptState]<-pending_accept)
+        perform_listener_accept(listener, unsafe: pending_accept)
         return
 
     unsafe: read(listener).pending_connections += 1
@@ -1044,7 +1044,7 @@ function tcp_stream_close_callback(handle: ptr[NativeHandle]) -> void:
             read(stream).read_state = null
             read(pending_read).stream = null
         finish_stream_read(
-            unsafe: ptr[ReadState]<-pending_read,
+            unsafe: pending_read,
             Result[bytes.Bytes, Error].failure(error= net_error("tcp stream closed")),
             -1
         )
@@ -1101,7 +1101,7 @@ function write_cleanup_and_release(state: ptr[WriteState]) -> void:
             let result_value = read(state).result
             match result_value:
                 Result.success as ok_payload:
-                    ptr_uint<-ok_payload.value
+                    ok_payload.value
                 Result.failure as error_payload:
                     error_payload.error.release()
             read(state).result_owned = false
@@ -1157,7 +1157,7 @@ function finish_write(
             notify = true
 
     if notify and waiter_frame != null[ptr[void]]:
-        waiter(unsafe: ptr[void]<-waiter_frame)
+        waiter(unsafe: waiter_frame)
         return
 
     if unsafe: read(state).released:
@@ -1334,7 +1334,7 @@ function stream_read_release(frame: ptr[void]) -> void:
 
     let stream = unsafe: read(state).stream
     if stream != null[ptr[TcpStreamState]]:
-        let live_stream = unsafe: ptr[TcpStreamState]<-stream
+        let live_stream = unsafe: stream
         let handle = unsafe: read(live_stream).handle
         unsafe:
             if read(live_stream).read_state == state:
@@ -1342,7 +1342,7 @@ function stream_read_release(frame: ptr[void]) -> void:
             read(state).stream = null
 
         if handle != null[ptr[NativeTcpHandle]]:
-            libuv.read_stop(tcp_as_stream(unsafe: ptr[NativeTcpHandle]<-handle))
+            libuv.read_stop(tcp_as_stream(unsafe: handle))
 
     finish_stream_read(state, Result[bytes.Bytes, Error].failure(error= net_error("tcp read released")), -1)
 
@@ -1381,7 +1381,7 @@ function finish_stream_read(state: ptr[ReadState], result_value: Result[bytes.By
             notify = true
 
     if notify and waiter_frame != null[ptr[void]]:
-        waiter(unsafe: ptr[void]<-waiter_frame)
+        waiter(unsafe: waiter_frame)
         return
 
     if unsafe: read(state).released:
@@ -1405,7 +1405,7 @@ function stream_read_alloc_callback(
         unsafe: read(buf) = libuv.buf_init(storage, 0)
         return
 
-    let state = unsafe: ptr[ReadState]<-pending_read
+    let state = unsafe: pending_read
     var capacity = suggested_size
     let remaining = unsafe: read(state).max_bytes - read(state).received_bytes
     if remaining < capacity:
@@ -1435,7 +1435,7 @@ function stream_read_callback(
         release_uv_buffer(raw_buffer)
         return
 
-    let state = unsafe: ptr[ReadState]<-pending_read
+    let state = unsafe: pending_read
     if nread == 0:
         release_uv_buffer(raw_buffer)
         return
@@ -1479,7 +1479,7 @@ function stream_read_callback(
     let chunk_len = ptr_uint<-nread
     let received_bytes = unsafe: read(state).received_bytes
     unsafe:
-        heap.copy_bytes(ptr[ubyte]<-destination + received_bytes, ptr[ubyte]<-raw_buffer.base, chunk_len)
+        heap.copy_bytes(destination + received_bytes, ptr[ubyte]<-raw_buffer.base, chunk_len)
         read(state).received_bytes = received_bytes + chunk_len
 
     release_uv_buffer(raw_buffer)
@@ -1593,7 +1593,7 @@ function shutdown_cleanup_and_release(state: ptr[ShutdownState]) -> void:
             let result_value = read(state).result
             match result_value:
                 Result.success as payload:
-                    bool<-payload.value
+                    payload.value
                 Result.failure as payload:
                     payload.error.release()
             read(state).result_owned = false
@@ -1649,7 +1649,7 @@ function finish_shutdown(
             notify = true
 
     if notify and waiter_frame != null[ptr[void]]:
-        waiter(unsafe: ptr[void]<-waiter_frame)
+        waiter(unsafe: waiter_frame)
         return
 
     if unsafe: read(state).released:
@@ -1722,7 +1722,7 @@ function udp_socket_close_callback(handle: ptr[NativeHandle]) -> void:
             read(socket).receive_state = null
             read(pending_receive).socket = null
         finish_udp_receive(
-            unsafe: ptr[UdpReceiveState]<-pending_receive,
+            unsafe: pending_receive,
             Result[UdpDatagram, Error].failure(error= net_error("udp socket closed")),
             -1
         )
@@ -1784,7 +1784,7 @@ function udp_send_cleanup_and_release(state: ptr[UdpSendState]) -> void:
             let result_value = read(state).result
             match result_value:
                 Result.success as ok_payload:
-                    ptr_uint<-ok_payload.value
+                    ok_payload.value
                 Result.failure as error_payload:
                     error_payload.error.release()
             read(state).result_owned = false
@@ -1850,7 +1850,7 @@ function finish_udp_send(
                     close_udp_socket_handle(h)
 
     if notify and waiter_frame != null[ptr[void]]:
-        waiter(unsafe: ptr[void]<-waiter_frame)
+        waiter(unsafe: waiter_frame)
         return
 
     if unsafe: read(state).released:
@@ -2083,7 +2083,7 @@ function udp_receive_release(frame: ptr[void]) -> void:
     if unsafe: read(state).ready:
         let socket = unsafe: read(state).socket
         if socket != null[ptr[UdpSocketState]]:
-            let live_socket = unsafe: ptr[UdpSocketState]<-socket
+            let live_socket = unsafe: socket
             if unsafe: read(live_socket).receive_state == state:
                 unsafe: read(live_socket).receive_state = null
         udp_receive_cleanup_and_release(state)
@@ -2093,7 +2093,7 @@ function udp_receive_release(frame: ptr[void]) -> void:
 
     let socket = unsafe: read(state).socket
     if socket != null[ptr[UdpSocketState]]:
-        let live_socket = unsafe: ptr[UdpSocketState]<-socket
+        let live_socket = unsafe: socket
         let handle = unsafe: read(live_socket).handle
         unsafe:
             if read(live_socket).receive_state == state:
@@ -2101,7 +2101,7 @@ function udp_receive_release(frame: ptr[void]) -> void:
             read(state).socket = null
 
         if handle != null[ptr[NativeUdpHandle]]:
-            libuv.udp_recv_stop(unsafe: ptr[NativeUdpHandle]<-handle)
+            libuv.udp_recv_stop(unsafe: handle)
 
     finish_udp_receive(state, Result[UdpDatagram, Error].failure(error= net_error("udp receive released")), -1)
 
@@ -2144,7 +2144,7 @@ function finish_udp_receive(
             notify = true
 
     if notify and waiter_frame != null[ptr[void]]:
-        waiter(unsafe: ptr[void]<-waiter_frame)
+        waiter(unsafe: waiter_frame)
         return
 
     if unsafe: read(state).released:
@@ -2168,7 +2168,7 @@ function udp_receive_alloc_callback(
         unsafe: read(buf) = libuv.buf_init(storage, 0)
         return
 
-    let state = unsafe: ptr[UdpReceiveState]<-pending_receive
+    let state = unsafe: pending_receive
     var capacity = suggested_size
     let max_bytes = unsafe: read(state).max_bytes
     if max_bytes < capacity:
@@ -2200,7 +2200,7 @@ function udp_receive_callback(
         release_uv_buffer(raw_buffer)
         return
 
-    let state = unsafe: ptr[UdpReceiveState]<-pending_receive
+    let state = unsafe: pending_receive
     if nread == 0:
         release_uv_buffer(raw_buffer)
         return
@@ -2350,7 +2350,7 @@ function finish_resolve(state: ptr[ResolveState], result_value: Result[SocketAdd
             notify = true
 
     if notify and waiter_frame != null[ptr[void]]:
-        waiter(unsafe: ptr[void]<-waiter_frame)
+        waiter(unsafe: waiter_frame)
 
 
 function finish_resolve_all(
@@ -2374,7 +2374,7 @@ function finish_resolve_all(
             notify = true
 
     if notify and waiter_frame != null[ptr[void]]:
-        waiter(unsafe: ptr[void]<-waiter_frame)
+        waiter(unsafe: waiter_frame)
 
 
 function resolve_callback(
@@ -2454,7 +2454,7 @@ function resolve_all_callback(
         if current == null:
             break
 
-        let live_current = unsafe: ptr[NativeAddrInfo]<-current
+        let live_current = unsafe: current
         let ai = unsafe: read(live_current)
         let address_result = socket_address_from_sockaddr(ai.ai_addr, ptr_uint<-ai.ai_addrlen)
         match address_result:
@@ -2723,7 +2723,7 @@ extending SocketAddress:
                 error = invalid_address_error("socket address is released")
             )
 
-        let ss_ptr = unsafe: ptr[libuv.sockaddr_storage]<-storage
+        let ss_ptr = unsafe: storage
         let family = (unsafe: read(ss_ptr)).ss_family
 
         let v4_family = ipv4_socket_family()
@@ -2800,7 +2800,7 @@ extending TcpListener:
             if pending_accept != null[ptr[AcceptState]]:
                 unsafe: read(listener).accept_state = null
                 finish_accept(
-                    unsafe: ptr[AcceptState]<-pending_accept,
+                    unsafe: pending_accept,
                     Result[TcpStream, Error].failure(error= net_error("listener released")),
                     -1
                 )

@@ -141,7 +141,7 @@ extending String:
             fatal(c"string.push_byte missing storage")
 
         unsafe:
-            let data_ptr = ptr[ubyte]<-data
+            let data_ptr = data
             read(data_ptr + this.len) = value
         this.len += 1
 
@@ -168,7 +168,7 @@ extending String:
             fatal(c"string.append missing storage")
 
         unsafe:
-            let destination = ptr[ubyte]<-data + current_len
+            let destination = data + current_len
             if copied != null:
                 heap.copy_bytes(destination, copied, suffix.len)
                 heap.release(copied)
@@ -211,7 +211,7 @@ extending String:
         var result = vec.Vec[String].create()
         var remaining = this.as_str()
         while true:
-            var found = remaining.find_substring(separator)
+            let found = remaining.find_substring(separator)
             let idx = found else:
                 break
             result.push(String.from_str(remaining.slice(0, idx)))
@@ -224,7 +224,7 @@ extending String:
         var result = String.create()
         var remaining = this.as_str()
         while true:
-            var found = remaining.find_substring(old_substr)
+            let found = remaining.find_substring(old_substr)
             let idx = found else:
                 break
             result.append(remaining.slice(0, idx))

@@ -12,14 +12,14 @@ public struct Interner:
 public function create() -> Interner:
     return Interner(
         table = map.Map[str, ptr_uint].create(),
-        strings = vec.Vec[str].create(),
+        strings = vec.Vec[str].create()
     )
 
 
 public function with_capacity(capacity: ptr_uint) -> Interner:
     return Interner(
         table = map.Map[str, ptr_uint].with_capacity(capacity),
-        strings = vec.Vec[str].with_capacity(capacity),
+        strings = vec.Vec[str].with_capacity(capacity)
     )
 
 

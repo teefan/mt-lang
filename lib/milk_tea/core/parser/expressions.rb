@@ -202,6 +202,7 @@ module MilkTea
         saved_current = @current
         return nil unless check_name && known_type_like_name?(peek.lexeme)
 
+        start_token = peek
         expression = nil
         target_type = parse_type_ref
         type_tail = @tokens[@current - 1]
@@ -219,7 +220,7 @@ module MilkTea
         advance
 
         expression = parse_unary
-        AST::PrefixCast.new(target_type:, expression:)
+        AST::PrefixCast.new(target_type:, expression:, line: start_token.line, column: start_token.column)
       rescue ParseError => e
         raise e if parse_diagnostic_hint?(e)
 

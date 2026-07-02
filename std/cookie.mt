@@ -103,7 +103,7 @@ function apply_attribute(cookie: ref[Cookie], attribute_text: str) -> void:
 
         Option.some as e:
             let key_text = attribute_text.slice(0, e.value).trim_ascii_whitespace()
-            var value_text = attribute_text.slice(e.value + 1, attribute_text.len - e.value - 1).trim_ascii_whitespace()
+            let value_text = attribute_text.slice(e.value + 1, attribute_text.len - e.value - 1).trim_ascii_whitespace()
 
             var normalized_key = ascii_lower(key_text)
             defer normalized_key.release()

@@ -63,7 +63,7 @@ extending Bitset:
             fatal(c"bitset.set missing storage")
         let bit = bit_offset(index)
         unsafe:
-            let word_ptr = ptr[ptr_uint]<-words + wi
+            let word_ptr = words + wi
             read(word_ptr) = read(word_ptr) | ptr_uint<-1 << bit
 
 
@@ -75,7 +75,7 @@ extending Bitset:
             return
         let bit = bit_offset(index)
         unsafe:
-            let word_ptr = ptr[ptr_uint]<-words + wi
+            let word_ptr = words + wi
             read(word_ptr) = read(word_ptr) & ~(ptr_uint<-1 << bit)
 
 
@@ -87,7 +87,7 @@ extending Bitset:
             return false
         let bit = bit_offset(index)
         unsafe:
-            let word_ptr = ptr[ptr_uint]<-words + wi
+            let word_ptr = words + wi
             return (read(word_ptr) >> bit & ptr_uint<-1) != 0
 
 
@@ -99,7 +99,7 @@ extending Bitset:
             fatal(c"bitset.toggle missing storage")
         let bit = bit_offset(index)
         unsafe:
-            let word_ptr = ptr[ptr_uint]<-words + wi
+            let word_ptr = words + wi
             read(word_ptr) = read(word_ptr) ^ ptr_uint<-1 << bit
 
 

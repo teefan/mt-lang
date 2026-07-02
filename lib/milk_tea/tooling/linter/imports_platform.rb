@@ -512,6 +512,7 @@ module MilkTea
           collect_indirect_import_uses_from_expr(expr.receiver, used, binding_resolution, import_module_names)
           collect_indirect_import_uses_from_expr(expr.index, used, binding_resolution, import_module_names)
         when AST::Specialization
+          collect_hook_provider_import_uses(expr.callee, used)
           collect_indirect_import_uses_from_expr(expr.callee, used, binding_resolution, import_module_names)
         when AST::Call
           if expr.callee.is_a?(AST::MemberAccess)
@@ -544,6 +545,8 @@ module MilkTea
           collect_indirect_import_uses_from_expr(expr.expression, used, binding_resolution, import_module_names)
         when AST::UnsafeExpr
           collect_indirect_import_uses_from_expr(expr.expression, used, binding_resolution, import_module_names)
+        when AST::PrefixCast
+          collect_indirect_import_uses_from_expr(expr.expression, used, binding_resolution, import_module_names)
         when AST::FormatString
           expr.parts.each { |part| collect_indirect_import_uses_from_expr(part.expression, used, binding_resolution, import_module_names) if part.is_a?(AST::FormatExprPart) }
         when AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr
@@ -572,6 +575,35 @@ module MilkTea
       # the module that *defines* the receiver type, so it misses extension
       # methods (`extending str:`, `extending int:`, ...) declared in a
       # different module on a builtin or foreign type.
+      # Canonical hook builtins (`hash[T]`, `equal[T]`, `order[T]`, `default[T]`)
+      # dispatch to `T.hash` / `T.equal` / `T.order` / `T.default` associated
+      # functions that are frequently supplied by an imported extension module
+      # (e.g. `import std.hash`, `import std.str`) with no module-qualified
+      # reference in the source. Because the type argument may be reflective
+      # (`hash[field.type]`) and thus unresolvable here, any import that provides
+      # a hook associated function is credited whenever a hook builtin is used.
+      # This keeps genuinely-needed hook-provider imports rather than risk
+      # auto-removing them.
+      HOOK_BUILTIN_NAMES = %w[hash equal order default].freeze
+
+      def collect_hook_provider_import_uses(callee, used)
+        return unless callee.is_a?(AST::Identifier)
+        return unless HOOK_BUILTIN_NAMES.include?(callee.name)
+        return unless @sema_facts.respond_to?(:imports)
+
+        @sema_facts.imports.each do |local_name, module_binding|
+          next unless module_binding.respond_to?(:methods) && module_binding.methods
+
+          used << local_name if import_module_provides_hook_method?(module_binding.methods)
+        end
+      end
+
+      def import_module_provides_hook_method?(method_map)
+        method_map.each_value.any? do |entries|
+          entries.keys.any? { |key| HOOK_BUILTIN_NAMES.include?(key.to_s.delete_prefix("static:")) }
+        end
+      end
+
       def collect_method_provider_import_uses(receiver, member_name, used, binding_resolution)
         return unless receiver.is_a?(AST::Identifier)
         return unless @sema_facts.respond_to?(:imports)
@@ -779,6 +811,9 @@ module MilkTea
           expr.body.each { |s| collect_names_from_statement(s, used) }
         when AST::AwaitExpr then collect_names_from_expr(expr.expression, used)
         when AST::UnsafeExpr then collect_names_from_expr(expr.expression, used)
+        when AST::PrefixCast
+          collect_names_from_type(expr.target_type, used)
+          collect_names_from_expr(expr.expression, used)
         when AST::FormatString
           expr.parts.each { |p| collect_names_from_expr(p.expression, used) if p.is_a?(AST::FormatExprPart) }
         when AST::SizeofExpr, AST::AlignofExpr

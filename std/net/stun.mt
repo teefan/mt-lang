@@ -88,10 +88,10 @@ function read_uint_be(data: span[ubyte], offset: ptr_uint) -> uint:
 
 
 function format_ipv4(addr: uint) -> string.String:
-    let a = uint<-(addr & 0xFFu)
-    let b = uint<-((addr >> 8u) & 0xFFu)
-    let c = uint<-((addr >> 16u) & 0xFFu)
-    let d = uint<-((addr >> 24u) & 0xFFu)
+    let a = (addr & 0xFFu)
+    let b = ((addr >> 8u) & 0xFFu)
+    let c = ((addr >> 16u) & 0xFFu)
+    let d = ((addr >> 24u) & 0xFFu)
     var s = string.String.with_capacity(16)
     fmt.append_uint(ref_of(s), d)
     s.append(".")
@@ -123,7 +123,7 @@ public function parse_binding_response(
             "not a binding success response"
         ))
 
-    var attr_len: ptr_uint = ptr_uint<-read_ushort_be(data, 2z)
+    var attr_len: ptr_uint = read_ushort_be(data, 2z)
     let cookie = read_uint_be(data, 4z)
     if cookie != stun_magic_cookie:
         return Result[StunResult, Error].failure(error = stun_error(err_bad_cookie, "invalid magic cookie"))

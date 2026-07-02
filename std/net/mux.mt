@@ -739,7 +739,7 @@ function assemble_fragment(
             msg_flags = h.msg_flags,
             total = total,
             received_count = 1,
-            received_bits = uint<-(1 << (uint<-frag_index)),
+            received_bits = (1 << (uint<-frag_index)),
             data = buf,
             last_frame = frame
         ))

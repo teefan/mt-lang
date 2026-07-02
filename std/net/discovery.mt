@@ -42,7 +42,7 @@ public function build_response(
     max_players: ubyte,
     game_name: str
 ) -> bytes.Bytes:
-    var w = bin.Writer.with_capacity(probe_bytes + 6z + ptr_uint<-game_name.len)
+    var w = bin.Writer.with_capacity(probe_bytes + 6z + game_name.len)
     w.write_ubyte(discovery_magic[0])
     w.write_ubyte(discovery_magic[1])
     w.write_ubyte(discovery_magic[2])
@@ -93,7 +93,7 @@ function parse_response(data: span[ubyte]) -> Result[ServerInfo, net.Error]:
     _bp.release()
 
     var game_port: int = 0
-    game_port = int<-r.read_ushort().map_error(proc(_: bin.Error) -> net.Error:
+    game_port = r.read_ushort().map_error(proc(_: bin.Error) -> net.Error:
         discovery_error("discovery response malformed port")
     )?
 

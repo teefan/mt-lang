@@ -196,6 +196,285 @@ class MilkTeaLinterTest < Minitest::Test
     refute_includes fixed, "\n    return\n"
   end
 
+  def test_same_type_cast_has_position_and_is_fixable
+    source = <<~MT
+      function widen(p: ptr[int]) -> ptr[int]:
+          let q = ptr[int]<-p
+          return q
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "redundant-cast" }
+    refute_empty warnings
+    assert(warnings.all? { |w| w.line && w.column }, "redundant-cast warnings must carry a source position")
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-cast"])
+    assert_includes fixed, "let q = p\n"
+    refute_includes fixed, "ptr[int]<-p"
+  end
+
+  def test_widening_cast_reported_and_fixed_only_at_typed_boundaries
+    source = <<~MT
+      function widen(a: uint) -> ulong:
+          let x: ulong = ulong<-a
+          return ulong<-a
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "redundant-cast" }
+    assert_equal 2, warnings.size
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-cast"])
+    assert_includes fixed, "let x: ulong = a\n"
+    assert_includes fixed, "return a\n"
+  end
+
+  def test_widening_cast_reported_at_plain_assignment_slot
+    source = <<~MT
+      function widen(a: uint) -> ulong:
+          var acc: ulong = 0ul
+          acc = ulong<-a
+          return acc
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "redundant-cast" }
+    assert_equal 1, warnings.size
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-cast"])
+    assert_includes fixed, "acc = a\n"
+  end
+
+  def test_widening_cast_not_reported_in_compound_assignment
+    # `acc += ulong<-a` desugars through `+`, a width-sensitive operator, so the
+    # cast is load-bearing and must not be flagged.
+    source = <<~MT
+      function widen(a: uint) -> ulong:
+          var acc: ulong = 0ul
+          acc += ulong<-a
+          return acc
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "redundant-cast" }
+    assert_empty warnings
+  end
+
+  def test_widening_cast_not_reported_in_load_bearing_positions
+    # A widening cast that controls an operation's width, or that pins an
+    # inferred binding's type, must NOT be reported (removing it changes
+    # runtime behavior even though it stays type-valid).
+    source = <<~MT
+      function shift_use(a: uint) -> ulong:
+          let masked = (ulong<-a) << 16
+          let hi = ulong<-a
+          return masked + (hi << 32)
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "redundant-cast" }
+    assert_empty warnings
+  end
+
+  def test_prefer_is_variant_on_bool_match_over_variant
+    source = <<~MT
+      variant Token:
+          ident(text: str)
+          eof
+
+      function is_end(t: Token) -> bool:
+          return match t:
+              Token.eof: true
+              _: false
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "prefer-is-variant" }
+    assert_equal 1, warnings.size
+    assert_includes warnings.first.message, "is Token.eof"
+  end
+
+  def test_prefer_is_variant_negated_form
+    source = <<~MT
+      variant Token:
+          ident(text: str)
+          eof
+
+      function not_end(t: Token) -> bool:
+          return match t:
+              Token.eof: false
+              _: true
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "prefer-is-variant" }
+    assert_equal 1, warnings.size
+    assert_includes warnings.first.message, "not (expr is Token.eof)"
+  end
+
+  def test_prefer_is_variant_not_reported_for_enum_scrutinee
+    # `is` is variant-only; an enum bool-match must not be flagged.
+    source = <<~MT
+      enum Color: ubyte
+          red = 0
+          green = 1
+
+      function is_red(c: Color) -> bool:
+          return match c:
+              Color.red: true
+              _: false
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "prefer-is-variant" }
+    assert_empty warnings
+  end
+
+  def test_prefer_is_variant_not_reported_with_payload_binding
+    source = <<~MT
+      variant Token:
+          ident(text: str)
+          eof
+
+      function has_text(t: Token) -> bool:
+          return match t:
+              Token.ident as _: true
+              _: false
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "prefer-is-variant" }
+    assert_empty warnings
+  end
+
+  def test_prefer_inline_if_for_single_statement_branches
+    source = <<~MT
+      function f(x: int) -> int:
+          if x > 0:
+              return 1
+          else:
+              return 2
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    assert_includes codes, "prefer-inline-if"
+  end
+
+  def test_prefer_inline_if_not_reported_for_multi_statement_branch
+    source = <<~MT
+      function f(x: int) -> int:
+          if x > 0:
+              log_it()
+              return 1
+          else:
+              return 2
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    refute_includes codes, "prefer-inline-if"
+  end
+
+  def test_prefer_conditional_expression_for_same_target_assignment
+    source = <<~MT
+      function f(x: int) -> int:
+          var r: int = 0
+          if x > 0:
+              r = 1
+          else:
+              r = 2
+          return r
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    assert_includes codes, "prefer-conditional-expression"
+  end
+
+  def test_prefer_or_pattern_for_identical_adjacent_arms
+    source = <<~MT
+      variant E:
+          a
+          b
+          c
+      function f(e: E) -> int:
+          match e:
+              E.a:
+                  return 1
+              E.b:
+                  return 1
+              _:
+                  return 0
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    assert_includes codes, "prefer-or-pattern"
+  end
+
+  def test_prefer_or_pattern_not_reported_for_distinct_bodies
+    source = <<~MT
+      variant E:
+          a
+          b
+      function f(e: E) -> int:
+          match e:
+              E.a:
+                  return 1
+              E.b:
+                  return 2
+              _:
+                  return 0
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    refute_includes codes, "prefer-or-pattern"
+  end
+
+  def test_prefer_struct_with_for_copy_all_but_one_field
+    source = <<~MT
+      struct V:
+          x: int
+          y: int
+          z: int
+      function f(v: V) -> V:
+          return V(x = v.x, y = v.y, z = 9)
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    assert_includes codes, "prefer-struct-with"
+  end
+
+  def test_prefer_struct_with_not_reported_for_mixed_sources
+    source = <<~MT
+      struct V:
+          x: int
+          y: int
+      function f(a: V, b: V) -> V:
+          return V(x = a.x, y = b.y)
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    refute_includes codes, "prefer-struct-with"
+  end
+
+  def test_prefer_try_for_result_propagation_match
+    source = <<~MT
+      function f(r: Result[int, int]) -> Result[int, int]:
+          match r:
+              Result.success as s:
+                  return Result[int, int].success(value = s.value + 1)
+              Result.failure as fail:
+                  return Result[int, int].failure(error = fail.error)
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    assert_includes codes, "prefer-try"
+  end
+
+  def test_prefer_try_not_reported_for_map_error_transform
+    # The failure arm transforms the error, so `expr?` cannot express it.
+    source = <<~MT
+      function f(r: Result[int, int]) -> Result[int, str]:
+          match r:
+              Result.success as s:
+                  return Result[int, str].success(value = s.value)
+              Result.failure as fail:
+                  return Result[int, str].failure(error = "bad")
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    refute_includes codes, "prefer-try"
+  end
+
   def test_warns_on_redundant_ignored_match_binding
     source = <<~MT
       function main(value: Option[int]) -> int:
@@ -897,6 +1176,83 @@ class MilkTeaLinterTest < Minitest::Test
       warnings = MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis)
 
       refute warnings.any? { |warning| warning.code == "unused-import" }
+    end
+  end
+
+  def test_does_not_report_import_used_only_inside_cast
+    Dir.mktmpdir("linter_cast_only_import") do |dir|
+      File.write(File.join(dir, "pick.mt"), <<~MT)
+        public function value() -> int:
+            return 7
+      MT
+
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        import pick
+
+        function f() -> long:
+            return long<-pick.value()
+      MT
+      File.write(path, source)
+
+      ast = MilkTea::Parser.parse(source, path: path)
+      loader = MilkTea::ModuleLoader.new(module_roots: [dir])
+      analysis = MilkTea::SemanticAnalyzer.check(ast, imported_modules: loader.imported_modules_for_ast(ast))
+      warnings = MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis)
+
+      refute warnings.any? { |warning| warning.code == "unused-import" }
+    end
+  end
+
+  def test_does_not_report_hook_provider_import_used_via_builtin
+    Dir.mktmpdir("linter_hook_provider_import") do |dir|
+      File.write(File.join(dir, "inthash.mt"), <<~MT)
+        extending int:
+            public static function equal(left: const_ptr[int], right: const_ptr[int]) -> bool:
+                return unsafe: read(left) == unsafe: read(right)
+      MT
+
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        import inthash
+
+        function same(a: int, b: int) -> bool:
+            return equal[int](a, b)
+      MT
+      File.write(path, source)
+
+      ast = MilkTea::Parser.parse(source, path: path)
+      loader = MilkTea::ModuleLoader.new(module_roots: [dir])
+      analysis = MilkTea::SemanticAnalyzer.check(ast, imported_modules: loader.imported_modules_for_ast(ast))
+      warnings = MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis)
+
+      refute warnings.any? { |warning| warning.code == "unused-import" }
+    end
+  end
+
+  def test_reports_hook_provider_import_when_no_hook_builtin_used
+    Dir.mktmpdir("linter_hook_provider_unused") do |dir|
+      File.write(File.join(dir, "inthash.mt"), <<~MT)
+        extending int:
+            public static function equal(left: const_ptr[int], right: const_ptr[int]) -> bool:
+                return unsafe: read(left) == unsafe: read(right)
+      MT
+
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        import inthash
+
+        function noop() -> int:
+            return 0
+      MT
+      File.write(path, source)
+
+      ast = MilkTea::Parser.parse(source, path: path)
+      loader = MilkTea::ModuleLoader.new(module_roots: [dir])
+      analysis = MilkTea::SemanticAnalyzer.check(ast, imported_modules: loader.imported_modules_for_ast(ast))
+      warnings = MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis)
+
+      assert warnings.any? { |warning| warning.code == "unused-import" && warning.symbol_name == "inthash" }
     end
   end
 
@@ -1906,7 +2262,10 @@ end
 # ── fix_source: unused-import + dead-assignment ────────────────────────────
 
 class MilkTeaLinterFixUnusedImportDeadAssignmentTest < Minitest::Test
-  def test_fix_source_removes_unused_import
+  def test_fix_source_does_not_remove_unused_import
+    # Import removal is not auto-fixable: it has non-local effects (extension
+    # methods, prelude-provided types, downstream consumers) that per-file
+    # validation cannot see, so `--fix` must never strip imports automatically.
     source = <<~MT
       import demo.other
 
@@ -1916,7 +2275,19 @@ class MilkTeaLinterFixUnusedImportDeadAssignmentTest < Minitest::Test
 
     fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
 
-    refute_match(/import demo\.other/, fixed)
+    assert_match(/import demo\.other/, fixed)
+  end
+
+  def test_unused_import_is_still_reported_as_a_warning
+    source = <<~MT
+      import demo.other
+
+      function main() -> int:
+          return 0
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    assert_includes codes, "unused-import"
   end
 
   def test_fix_source_keeps_used_import

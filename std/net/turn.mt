@@ -78,10 +78,10 @@ function read_uint_be(data: span[ubyte], offset: ptr_uint) -> uint:
 
 
 function format_ipv4(addr: uint) -> string.String:
-    let a = uint<-(addr & 0xFFu)
-    let b = uint<-((addr >> 8u) & 0xFFu)
-    let c = uint<-((addr >> 16u) & 0xFFu)
-    let d = uint<-((addr >> 24u) & 0xFFu)
+    let a = (addr & 0xFFu)
+    let b = ((addr >> 8u) & 0xFFu)
+    let c = ((addr >> 16u) & 0xFFu)
+    let d = ((addr >> 24u) & 0xFFu)
     var s = string.String.with_capacity(16)
     fmt.append_uint(ref_of(s), d)
     s.append(".")
@@ -169,7 +169,7 @@ public function parse_allocate_response(
             )
         j += 1
 
-    var attr_len: ptr_uint = ptr_uint<-read_ushort_be(data, 2z)
+    var attr_len: ptr_uint = read_ushort_be(data, 2z)
     var offset: ptr_uint = turn_header_len
     while attr_len >= 4z:
         if offset + 4z > data.len:
@@ -339,7 +339,7 @@ public function parse_data_indication(
             error = turn_error(err_parse_failed, "not a data indication")
         )
 
-    var attr_len: ptr_uint = ptr_uint<-read_ushort_be(data, 2z)
+    var attr_len: ptr_uint = read_ushort_be(data, 2z)
     var offset: ptr_uint = turn_header_len
     var found_peer: bool = false
     var peer_addr: net.SocketAddress = zero[net.SocketAddress]

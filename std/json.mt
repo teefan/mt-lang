@@ -216,10 +216,10 @@ function convert_raw_object(item: ptr[cjson.JSON]) -> Result[Value, Error]:
     unsafe:
         read(object_ptr) = Object.create()
 
-    var child = unsafe: ptr[cjson.JSON]?<-read(ptr[raw.cJSON]<-item).child
+    var child = unsafe: ptr[cjson.JSON]?<-read(item).child
     while child != null:
-        let current = unsafe: ptr[cjson.JSON]<-child
-        let key_ptr = unsafe: ptr[char]?<-read(ptr[raw.cJSON]<-current).string else:
+        let current = unsafe: child
+        let key_ptr = unsafe: ptr[char]?<-read(current).string else:
             unsafe:
                 read(object_ptr).release()
             heap.release(object_ptr)
@@ -238,7 +238,7 @@ function convert_raw_object(item: ptr[cjson.JSON]) -> Result[Value, Error]:
                         value = payload.value
                     ))
 
-        child = unsafe: ptr[cjson.JSON]?<-read(ptr[raw.cJSON]<-current).next
+        child = unsafe: ptr[cjson.JSON]?<-read(current).next
 
     return Result[Value, Error].success(value = object_value(object_ptr))
 
@@ -380,7 +380,7 @@ function render_with_mode(value: Value, pretty: bool) -> Result[string.String, E
     if pretty:
         let rendered_ptr = cjson.print(raw_value) else:
             return Result[string.String, Error].failure(error = error_message("json print failed"))
-        defer raw.cJSON_free(unsafe: ptr[void]<-rendered_ptr)
+        defer raw.cJSON_free(unsafe: rendered_ptr)
         return Result[
             string.String,
             Error
@@ -388,7 +388,7 @@ function render_with_mode(value: Value, pretty: bool) -> Result[string.String, E
 
     let rendered_ptr = cjson.print_unformatted(raw_value) else:
         return Result[string.String, Error].failure(error = error_message("json print failed"))
-    defer raw.cJSON_free(unsafe: ptr[void]<-rendered_ptr)
+    defer raw.cJSON_free(unsafe: rendered_ptr)
     return Result[string.String, Error].success(value = string.String.from_str(text.chars_as_str(rendered_ptr)))
 
 

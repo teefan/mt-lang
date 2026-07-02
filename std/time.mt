@@ -37,7 +37,7 @@ public function format_into(buffer: ptr[char], max_size: ptr_uint, format: str, 
     if value == null:
         return 0
 
-    return format_date_time(buffer, max_size, format, ptr[DateTime]<-value)
+    return format_date_time(buffer, max_size, format, value)
 
 
 public function format_local_time_into(

@@ -91,11 +91,11 @@ extending Pool:
         var index: ptr_uint = 0
         while index < this.slot_count:
             unsafe:
-                let state_ptr = ptr[bool]<-occupancy + index
+                let state_ptr = occupancy + index
                 if not (read(state_ptr)):
                     read(state_ptr) = true
                     this.used_count = this.used_count + 1
-                    return ptr[ubyte]<-memory + (index * this.slot_size)
+                    return memory + (index * this.slot_size)
             index = index + 1
 
         return null
@@ -132,9 +132,9 @@ extending Pool:
         var index: ptr_uint = 0
         while index < this.slot_count:
             unsafe:
-                let candidate = ptr[ubyte]<-memory + (index * this.slot_size)
-                if candidate == ptr[ubyte]<-slot:
-                    let state_ptr = ptr[bool]<-occupancy + index
+                let candidate = memory + (index * this.slot_size)
+                if candidate == slot:
+                    let state_ptr = occupancy + index
                     if not (read(state_ptr)):
                         return false
 

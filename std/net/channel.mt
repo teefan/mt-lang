@@ -128,7 +128,7 @@ function release_protocol_state(protocol: ptr[ProtocolState]) -> void:
 
 
 function release_peer_state(peer: ptr[PeerState]) -> void:
-    let protocol = unsafe: ptr[ProtocolState]<-ptr_of(read(peer).protocol)
+    let protocol = unsafe: ptr_of(read(peer).protocol)
     release_protocol_state(protocol)
     unsafe: read(peer).address.release()
 
@@ -418,7 +418,7 @@ extending HostMessage:
 
 extending Channel:
     public editable function release() -> void:
-        let protocol = unsafe: ptr[ProtocolState]<-ptr_of(this.protocol)
+        let protocol = unsafe: ptr_of(this.protocol)
         release_protocol_state(protocol)
         this.socket.release()
 
@@ -442,7 +442,7 @@ extending Channel:
                 message = string.String.from_str("udp channel payload exceeds configured maximum")
             ))
 
-        let protocol = unsafe: ptr[ProtocolState]<-ptr_of(this.protocol)
+        let protocol = unsafe: ptr_of(this.protocol)
         let sequence = allocate_sequence(protocol)
         (await send_connected_packet(this.socket, protocol, sequence, 0, content))?
         return Result[uint, net.Error].success(value = sequence)
@@ -455,7 +455,7 @@ extending Channel:
                 message = string.String.from_str("udp channel payload exceeds configured maximum")
             ))
 
-        let protocol = unsafe: ptr[ProtocolState]<-ptr_of(this.protocol)
+        let protocol = unsafe: ptr_of(this.protocol)
         let pending_len = unsafe: read(protocol).pending_reliable.len()
         if pending_len >= pending_window_limit(this.config):
             return Result[uint, net.Error].failure(error = net.Error(
@@ -478,7 +478,7 @@ extending Channel:
         defer packet.release()
 
         let header = decode_header(packet)?
-        let protocol = unsafe: ptr[ProtocolState]<-ptr_of(this.protocol)
+        let protocol = unsafe: ptr_of(this.protocol)
         remove_acked_pending(protocol, header.ack, header.ack_bits)
         let is_new = mark_received(protocol, header.sequence)
         let is_reliable = (header.packet_flags & reliable_flag) != 0
@@ -499,7 +499,7 @@ extending Channel:
 
 
     public async editable function tick(frame: uint) -> Result[ptr_uint, net.Error]:
-        let protocol = unsafe: ptr[ProtocolState]<-ptr_of(this.protocol)
+        let protocol = unsafe: ptr_of(this.protocol)
         var resent: ptr_uint = 0
         var index: ptr_uint = 0
         while true:
@@ -537,7 +537,7 @@ extending Host:
             if removed.is_none():
                 break
             var peer = removed.unwrap()
-            let peer_ptr = unsafe: ptr[PeerState]<-ptr_of(peer)
+            let peer_ptr = unsafe: ptr_of(peer)
             release_peer_state(peer_ptr)
 
         this.peers.release()
@@ -559,7 +559,7 @@ extending Host:
             let peer_ptr = this.peers.get(index) else:
                 fatal(c"udp channel host peer missing storage")
 
-            let protocol = unsafe: ptr[ProtocolState]<-ptr_of(read(peer_ptr).protocol)
+            let protocol = unsafe: ptr_of(read(peer_ptr).protocol)
             total += unsafe: read(protocol).pending_reliable.len()
             index += 1
 
@@ -577,7 +577,7 @@ extending Host:
             ))
 
         let peer_ptr = get_or_create_peer(ref_of(this), destination)?
-        let protocol = unsafe: ptr[ProtocolState]<-ptr_of(read(peer_ptr).protocol)
+        let protocol = unsafe: ptr_of(read(peer_ptr).protocol)
         let sequence = allocate_sequence(protocol)
         (await send_packet_to(
             this.socket,
@@ -602,7 +602,7 @@ extending Host:
             ))
 
         let peer_ptr = get_or_create_peer(ref_of(this), destination)?
-        let protocol = unsafe: ptr[ProtocolState]<-ptr_of(read(peer_ptr).protocol)
+        let protocol = unsafe: ptr_of(read(peer_ptr).protocol)
         let pending_len = unsafe: read(protocol).pending_reliable.len()
         if pending_len >= pending_window_limit(this.config):
             return Result[uint, net.Error].failure(error = net.Error(
@@ -643,7 +643,7 @@ extending Host:
                         return Result[Option[HostMessage], net.Error].failure(error = peer_payload.error)
                     Result.success as peer_payload:
                         let peer_ptr = peer_payload.value
-                        let protocol = unsafe: ptr[ProtocolState]<-ptr_of(read(peer_ptr).protocol)
+                        let protocol = unsafe: ptr_of(read(peer_ptr).protocol)
                         let header = header_payload.value
                         remove_acked_pending(protocol, header.ack, header.ack_bits)
                         let is_new = mark_received(protocol, header.sequence)
@@ -694,7 +694,7 @@ extending Host:
             let peer_ptr = this.peers.get(peer_index) else:
                 fatal(c"udp channel host peer missing storage")
 
-            let protocol = unsafe: ptr[ProtocolState]<-ptr_of(read(peer_ptr).protocol)
+            let protocol = unsafe: ptr_of(read(peer_ptr).protocol)
             var index: ptr_uint = 0
             while true:
                 let pending_len = unsafe: read(protocol).pending_reliable.len()

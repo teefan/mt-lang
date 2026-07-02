@@ -63,7 +63,7 @@ function empty_environment() -> span[EnvironmentEntry]:
 
 
 function pointer_storage_bytes(count: ptr_uint) -> ptr_uint:
-    let pointer_size = ptr_uint<-size_of(ptr[char])
+    let pointer_size = size_of(ptr[char])
     if heap.mul_overflows(count, pointer_size):
         fatal(c"process pointer storage overflow")
 
@@ -71,7 +71,7 @@ function pointer_storage_bytes(count: ptr_uint) -> ptr_uint:
 
 
 function clear_pointer_slot(slot: ptr[ptr[char]]) -> void:
-    let slot_bytes = ptr_uint<-size_of(ptr[char])
+    let slot_bytes = size_of(ptr[char])
     var index: ptr_uint = 0
     unsafe:
         let buffer = ptr[ubyte]<-slot
@@ -148,7 +148,7 @@ function prepare_command(
     let allocated_args = storage.alloc[ptr[char]](command.len + 1) else:
         fatal(c"process args storage exhausted")
 
-    let args_ptr = unsafe: ptr[ptr[char]]<-allocated_args
+    let args_ptr = unsafe: allocated_args
 
     var env_ptr: ptr[ptr[char]]? = null
     var env_storage: ptr[ptr[char]]? = null
@@ -156,7 +156,7 @@ function prepare_command(
         let allocated = storage.alloc[ptr[char]](env.len + 1) else:
             fatal(c"process env pointer storage exhausted")
 
-        let allocated_ptr = unsafe: ptr[ptr[char]]<-allocated
+        let allocated_ptr = unsafe: allocated
         env_ptr = allocated_ptr
         env_storage = allocated_ptr
 
@@ -172,7 +172,7 @@ function prepare_command(
         let allocated_ptr = env_storage else:
             fatal(c"process env pointer storage missing")
 
-        let env_storage_ptr = unsafe: ptr[ptr[char]]<-allocated_ptr
+        let env_storage_ptr = unsafe: allocated_ptr
         index = 0
         while index < env.len:
             let entry = unsafe: read(env.data + index)

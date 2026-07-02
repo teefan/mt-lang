@@ -47,7 +47,7 @@ function error_from_mailbox(source: aio_mailbox.Error) -> Error:
 
 
 function noop_completion(arg: ptr[void]) -> void:
-    unsafe: ptr[void]<-arg
+    unsafe: arg
 
 
 function stop_pool_state(state: ptr[PoolState]) -> void:
