@@ -104,20 +104,6 @@ module MilkTea
         end
       end
 
-      def lower_frame_fields_task_release(fields, frame_expr)
-        statements = []
-        fields.each_value do |field_info|
-          field_type = field_info[:storage_type] || field_info[:type]
-          next if field_info[:pointer]
-          next if field_info[:field_name].start_with?("local_match_binding_")
-          next unless contains_task_type?(field_type)
-
-          field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_type)
-          statements.concat(lower_contained_task_release_statements(field_expr, field_type))
-        end
-        statements
-      end
-
       def lower_async_local_decl_statement(statement, field_info:, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers: [], loop_flow: nil)
         lowered = []
         type = field_info[:type]

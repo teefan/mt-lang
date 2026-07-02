@@ -399,10 +399,6 @@ module MilkTea
       @on_generic_instance = on_generic_instance
     end
 
-    def visit_literal_type_arg(type)
-      @on_error.call("#{@context} of function #{@function_name} must be a type, got #{type}")
-    end
-
     def visit_type_var(type)
       @on_error.call("cannot infer type argument #{type.name} for function #{@function_name}")
     end

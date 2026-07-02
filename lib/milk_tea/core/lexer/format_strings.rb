@@ -57,14 +57,6 @@ module MilkTea
         end
       end
 
-      def advance_text_position(char:, line:, column:)
-        if char == "\n"
-          [line + 1, 1]
-        else
-          [line, column + 1]
-        end
-      end
-
       def lex_format_string(line, index, line_number, line_offset:)
         start = index
         index += 2

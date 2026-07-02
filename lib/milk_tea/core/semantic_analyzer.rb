@@ -151,7 +151,6 @@ module MilkTea
         @compile_time_depth = 0
         @foreign_mapping_depth = 0
         @async_function_depth = 0
-        @proc_expression_depth = 0
         @checked_function_bindings = {}
         @checking_function_bindings = {}
         @evaluating_const_values = []

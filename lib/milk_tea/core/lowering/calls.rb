@@ -1373,13 +1373,6 @@ module MilkTea
         end
       end
 
-      def raw_pointer_argument_expression(operand)
-        AST::Call.new(
-          callee: AST::Identifier.new(name: "ptr_of"),
-          arguments: [AST::Argument.new(name: nil, value: operand)],
-        )
-      end
-
       def foreign_function_binding?(binding)
         binding.ast.is_a?(AST::ForeignFunctionDecl)
       end

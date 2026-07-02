@@ -1951,44 +1951,12 @@ module MilkTea
         end
       end
 
-      def resolve_attribute_binding_for_name(name)
-        case name.parts.length
-        when 1
-          @ctx.attributes[name.parts.first] || builtin_attribute_binding(name.parts.first)
-        when 2
-          imported_module = @ctx.imports[name.parts.first]
-          return nil unless imported_module
-          return nil if imported_module.private_attribute?(name.parts.last)
-
-          imported_module.attributes[name.parts.last]
-        else
-          nil
-        end
-      end
-
       def same_attribute_binding?(left, right)
         left.name == right.name && left.module_name == right.module_name
       end
 
       def builtin_attribute_binding(name)
         MilkTea.builtin_attribute_binding(name, @ctx.types)
-      end
-
-      def attribute_argument_values(binding, application, env:)
-        positional_index = 0
-
-        application.arguments.each_with_object({}) do |argument, values|
-          param_name = if argument.name
-            argument.name
-          else
-            parameter = binding.params[positional_index]
-            positional_index += 1
-            parameter&.name
-          end
-          next unless param_name
-
-          values[param_name] = compile_time_const_value(argument.value, env:)
-        end
       end
 
       def specialize_function_binding(binding, arguments, env, receiver_type: nil)
@@ -2320,11 +2288,6 @@ module MilkTea
         @program.analyses_by_module_name.fetch(module_name)
       end
 
-      def each_analysis_module(&block)
-        return @program.analyses_by_module_name.each_value unless block
-        @program.analyses_by_module_name.each_value(&block)
-      end
-
       def each_raw_module_analysis(&block)
         return @program.analyses_by_module_name.each_value.select { |a| a.module_kind == :raw_module }.each unless block
         @program.analyses_by_module_name.each_value { |a| block.call(a) if a.module_kind == :raw_module }
@@ -2341,14 +2304,6 @@ module MilkTea
 
       def imports_for_module(module_name)
         @program.analyses_by_module_name.fetch(module_name).imports
-      end
-
-      def directives_for_module(module_name)
-        @program.analyses_by_module_name.fetch(module_name).directives
-      end
-
-      def module_kind_for(module_name)
-        @program.analyses_by_module_name.fetch(module_name).module_kind
       end
 
       def const_declaration_for_module(module_name, name)

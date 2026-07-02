@@ -359,21 +359,6 @@ module MilkTea
       end
     end
 
-    def field_layout_compatible?(native_field_type, foreign_field_type)
-      return true if native_field_type == foreign_field_type
-      return true if native_field_type.is_a?(Types::Vector) && foreign_field_type.is_a?(Types::Struct) && foreign_field_type.external && struct_fields_match_vector?(native_field_type, foreign_field_type)
-      return true if foreign_field_type.is_a?(Types::Vector) && native_field_type.is_a?(Types::Struct) && native_field_type.external && struct_fields_match_vector?(foreign_field_type, native_field_type)
-
-      false
-    end
-
-    def struct_fields_match_vector?(vector_type, struct_type)
-      return false unless vector_type.fields.size == struct_type.fields.size
-
-      struct_fields = struct_type.fields.values
-      vector_type.fields.values.zip(struct_fields).all? { |vf, sf| vf == sf }
-    end
-
     def char_pointer_type?(type)
       pointer_type?(type) && type.arguments.first == Types::Registry.primitive("char")
     end

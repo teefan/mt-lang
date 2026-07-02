@@ -41,10 +41,6 @@ module MilkTea
         false
       end
 
-      def nullable?
-        false
-      end
-
       def sendable?
         SendableCheckVisitor.new.tap { |v| v.visit(self) }.sendable?
       end
@@ -194,10 +190,6 @@ module MilkTea
 
       def fixed_width_integer?
         @fixed_width_integer
-      end
-
-      def pointer_sized_integer?
-        @pointer_sized_integer
       end
 
       def boolean?
@@ -409,10 +401,6 @@ module MilkTea
       alias == eql?
 
       attr_reader :hash
-
-      def nullable?
-        true
-      end
 
       def to_s
         "#{base}?"
@@ -938,11 +926,6 @@ module MilkTea
 
       def define_events(events)
         @events = events.freeze
-        self
-      end
-
-      def define_nested_type(name, type)
-        @nested_types[name] = type
         self
       end
 
@@ -1706,20 +1689,8 @@ module MilkTea
       type.is_a?(GenericInstance) && type.name == "array" && type.arguments.length == 2
     end
 
-    def self.dynamic_array_type?(type)
-      array_type?(type) && !type.arguments.first.is_a?(LiteralTypeArg)
-    end
-
-    def self.fixed_array_type?(type)
-      array_type?(type) && type.arguments.last.is_a?(LiteralTypeArg) && type.arguments.last.value.is_a?(Integer)
-    end
-
     def self.str_buffer_type?(type)
       type.is_a?(GenericInstance) && type.name == "str_buffer" && type.arguments.length == 1
-    end
-
-    def self.str_buffer_struct_type?(type)
-      type.is_a?(GenericStructDefinition) && type.name == "str_buffer"
     end
   end
 end

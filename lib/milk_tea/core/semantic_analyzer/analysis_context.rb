@@ -244,10 +244,6 @@ module MilkTea
         statements.any? { |statement| statement_contains_await?(statement) }
       end
 
-      def await_expression?(expression)
-        expression.is_a?(AST::AwaitExpr)
-      end
-
       def expression_contains_await?(expression)
         case expression
         when AST::AwaitExpr

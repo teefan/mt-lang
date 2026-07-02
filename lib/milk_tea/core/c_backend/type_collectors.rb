@@ -270,55 +270,6 @@ module MilkTea
             end
           end
 
-          def collect_tuple_types
-            tuple_types = []
-            visited = {}
-
-            emitted_functions.each do |function|
-              r_collect_tuple_type(function.return_type, tuple_types, visited)
-              function.params.each do |param|
-                r_collect_tuple_type(param.type, tuple_types, visited)
-              end
-              collect_tuple_from_statements(function.body, tuple_types, visited)
-            end
-
-            @program.structs.each do |struct_decl|
-              struct_decl.fields.each do |field|
-                r_collect_tuple_type(field.type, tuple_types, visited)
-              end
-            end
-
-            tuple_types.uniq
-          end
-
-          def collect_tuple_from_statements(statements, tuple_types, visited)
-            statements&.each do |stmt|
-              case stmt
-              when IR::LocalDecl
-                r_collect_tuple_type(stmt.type, tuple_types, visited)
-              when IR::BlockStmt
-                collect_tuple_from_statements(stmt.body, tuple_types, visited)
-              when IR::IfStmt
-                collect_tuple_from_statements(stmt.then_body, tuple_types, visited)
-                collect_tuple_from_statements(stmt.else_body, tuple_types, visited)
-              when IR::WhileStmt
-                collect_tuple_from_statements(stmt.body, tuple_types, visited)
-              when IR::ForStmt
-                collect_tuple_from_statements(stmt.body, tuple_types, visited)
-              end
-            end
-          end
-
-          def r_collect_tuple_type(type, tuple_types, visited)
-            return unless type
-            return if visited[type]
-            return unless type.is_a?(Types::Tuple)
-
-            tuple_types << type
-            visited[type] = true
-            type.element_types.each { |et| r_collect_tuple_type(et, tuple_types, visited) }
-          end
-
           def collect_generic_struct_decls
             collect_generic_struct_types.map do |type|
               fields = type.fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) }
