@@ -679,14 +679,11 @@ module MilkTea
 
         if diagnostics.any? || closure_errors.any?
           source = read_source_file(path)
-          index = 0
           diagnostics.each do |d|
-            index += 1
-            @err.puts(ErrorFormatter.format(d, source:, color: error_color?(@err), index: index))
+            @err.puts(ErrorFormatter.format(d, source:, color: error_color?(@err)))
           end
           closure_errors.each do |d|
-            index += 1
-            @err.puts(ErrorFormatter.format(d, color: error_color?(@err), index: index))
+            @err.puts(ErrorFormatter.format(d, color: error_color?(@err)))
           end
           all_diagnostics.concat(diagnostics)
           all_diagnostics.concat(closure_errors)
@@ -702,12 +699,16 @@ module MilkTea
       info_count = all_diagnostics.count { |d| d.respond_to?(:severity) && (d.severity == :info || d.severity == :hint) }
 
       @err.puts
+      parts = []
+      parts << "#{error_count} #{error_count == 1 ? 'error' : 'errors'}" if error_count > 0
+      parts << "#{warning_count} #{warning_count == 1 ? 'warning' : 'warnings'}" if warning_count > 0
+      parts << "#{info_count} #{info_count == 1 ? 'note' : 'notes'}" if info_count > 0
+      body = parts.join("; ")
       if error_count > 0
-        @err.puts("error: could not check due to #{error_count} previous #{error_count == 1 ? 'error' : 'errors'}")
+        @err.puts("error: could not check due to #{body}")
       elsif warning_count > 0
-        @err.puts("#{warning_count} warning(s) found")
+        @err.puts("warning: #{body}")
       end
-      @err.puts("#{info_count} note(s)") if info_count > 0 && error_count == 0
       final_error_count = error_count + (resolution[:warnings_as_errors] ? warning_count : 0)
       final_error_count > 0 ? 1 : 0
     end
