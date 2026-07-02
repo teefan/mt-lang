@@ -374,10 +374,11 @@ module MilkTea
     def dispatch(type)
       case type
       when Types::Nullable, Types::GenericInstance, Types::Struct, Types::Union,
-           Types::StructInstance, Types::Variant, Types::VariantInstance, Types::VariantArmPayload
+           Types::StructInstance, Types::Variant, Types::VariantInstance, Types::VariantArmPayload,
+           Types::Tuple, Types::Span
         visit_children(type)
       when Types::Proc
-      else
+      when Types::Task, Types::Function, Types::Dyn, Types::SoA
         @supported = false
       end
     end
