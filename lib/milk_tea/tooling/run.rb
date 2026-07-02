@@ -210,11 +210,11 @@ module MilkTea
 
     Result = Data.define(:stdout, :stderr, :exit_status, :output_path, :c_path, :compiler, :link_flags, :platform, :bundle_root, :archive_path, :cached)
 
-    def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil, argv: [], no_cache: false, kind: :executable)
-      new(path, output_path:, cc:, keep_c_path:, module_roots:, package_graph:, frontend:, profile:, platform:, bundle:, archive:, browser_opener:, preview_server_class:, preview_started:, argv:, no_cache:, kind:).run
+    def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil, argv: [], no_cache: false, kind: :executable, debug_guards: nil)
+      new(path, output_path:, cc:, keep_c_path:, module_roots:, package_graph:, frontend:, profile:, platform:, bundle:, archive:, browser_opener:, preview_server_class:, preview_started:, argv:, no_cache:, kind:, debug_guards:).run
     end
 
-    def initialize(path, output_path:, cc:, keep_c_path:, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil, argv: [], no_cache: false, kind: :executable)
+    def initialize(path, output_path:, cc:, keep_c_path:, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil, argv: [], no_cache: false, kind: :executable, debug_guards: nil)
       @input_path = File.expand_path(path)
       @output_path = output_path ? File.expand_path(output_path) : nil
       @cc = cc
@@ -232,6 +232,7 @@ module MilkTea
       @preview_started = preview_started
       @argv = argv
       @no_cache = no_cache
+      @debug_guards = debug_guards
     end
 
     def run
@@ -272,6 +273,7 @@ module MilkTea
         bundle: @bundle,
         archive: @archive,
         no_cache: @no_cache,
+        debug_guards: @debug_guards,
       )
       return run_wasm_preview(build_result) if build_result.platform == :wasm
 
