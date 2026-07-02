@@ -2058,7 +2058,7 @@ module MilkTea
     end
 
     def handled_error_classes
-      classes = [LexError, ParseError, ModuleLoadError, SemanticError, LoweringError, BuildError, RunError, FormatterError, PackageManifestError, PackageManifestEditorError, PackageGraphError, PackageLockError, PackageSourceResolverError, PackageSourceFetcherError, PackageRegistryStoreError, PackageRegistryMetadataProviderError, PackageDependencySolverError, PackageVersionError, ProjectScaffoldError]
+      classes = [LexError, ParseError, ModuleLoadError, SemanticError, LoweringError, CBackendError, BuildError, RunError, FormatterError, PackageManifestError, PackageManifestEditorError, PackageGraphError, PackageLockError, PackageSourceResolverError, PackageSourceFetcherError, PackageRegistryStoreError, PackageRegistryMetadataProviderError, PackageDependencySolverError, PackageVersionError, ProjectScaffoldError]
       classes << BindgenError if MilkTea.const_defined?(:BindgenError, false)
       classes << UpstreamSources::Error if MilkTea.const_defined?(:UpstreamSources, false)
       classes

@@ -55,6 +55,10 @@ module MilkTea
       @column = column
       @path = path
     end
+
+    def code
+      "lowering/internal"
+    end
   end
 
   class Lowering

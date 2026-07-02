@@ -19,6 +19,18 @@ module MilkTea
       location = [path, "#{token.line}:#{token.column}"].compact.join(":")
       super(location.empty? ? message : "#{message} at #{location}")
     end
+
+    def line
+      @token.line
+    end
+
+    def column
+      @token.column
+    end
+
+    def code
+      "parse/error"
+    end
   end
 
   class Parser

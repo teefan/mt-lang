@@ -22,6 +22,10 @@ module MilkTea
       location = [path, "#{line}:#{column}"].compact.join(":")
       super(location.empty? ? message : "#{message} at #{location}")
     end
+
+    def code
+      "lex/error"
+    end
   end
 
   class Lexer

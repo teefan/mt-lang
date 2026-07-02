@@ -22,6 +22,10 @@ module MilkTea
       @column = column
       @path = path
     end
+
+    def code
+      "backend/internal"
+    end
   end
 
   class CBackend
