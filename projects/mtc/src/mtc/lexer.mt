@@ -6,7 +6,7 @@ const KEYWORD_COUNT: int = 77
 const ptr_uint_max_value: ptr_uint = 0xffffffffffffffff
 
 
-enum TokenKind: int
+public enum TokenKind: int
     eof = 0
     newline
     indent
@@ -139,7 +139,7 @@ enum TokenKind: int
     kw_while
 
 
-struct Token:
+public struct Token:
     kind: TokenKind
     line: int
     column: int

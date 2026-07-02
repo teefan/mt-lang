@@ -1,4 +1,5 @@
 import mtc.lexer as lexer
+import mtc.parser as parser
 import std.cli as cli
 import std.string as string
 import std.terminal as terminal
@@ -31,9 +32,30 @@ function run_lex(path: str) -> int:
     return 0
 
 
-function run_parse(_path: str) -> int:
-    write_stderr("parse: not yet implemented\n")
-    return 1
+function run_parse(path: str) -> int:
+    var source = fs.read_text(path) else as error:
+        write_stderr(f"error reading '#{path}': #{error.message.as_str()}\n")
+        return 1
+
+    defer source.release()
+    let tokens = lexer.lex(source.as_str())
+
+    let result = parser.parse(tokens)
+    if result.error_count > 0:
+        let label = if result.error_count == 1: "error" else: "errors"
+        write_stdout(f"Lexed #{tokens.len()} tokens, #{result.error_count} #{label}:\n")
+        var i: ptr_uint = 0
+        while i < result.errors.len():
+            let err_ptr = result.errors.get(i) else:
+                fatal(c"run_parse missing error")
+            unsafe:
+                let e = read(err_ptr)
+                write_stdout(f"  #{e.line}:#{e.column}: #{e.message.as_str()}\n")
+            i += 1
+        return 1
+
+    write_stdout(f"Lexed #{tokens.len()} tokens, parsed #{result.source_file.declarations.len()} declarations\n")
+    return 0
 
 
 function run_check(_path: str) -> int:
