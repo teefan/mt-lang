@@ -89,6 +89,17 @@ module MilkTea
 
     INTEGER_SUFFIX_STRINGS = %w[ub us ul iz b s i u l z].sort_by { |s| -s.length }.freeze
 
+    # Byte-classification lookup tables (indexed 0..255). Scanning by raw byte
+    # via String#getbyte avoids allocating a one-character String and running
+    # the regex engine for every source character, which dominated lexing.
+    IDENT_START_BYTE = Array.new(256) { |b| b.chr.match?(/[A-Za-z_]/) }.freeze
+    IDENT_PART_BYTE = Array.new(256) { |b| b.chr.match?(/[A-Za-z0-9_]/) }.freeze
+    DIGIT_BYTE = Array.new(256) { |b| b.chr.match?(/[0-9]/) }.freeze
+    NUMERIC_PART_BYTE = Array.new(256) { |b| b.chr.match?(/[0-9_]/) }.freeze
+    HEX_DIGIT_BYTE = Array.new(256) { |b| b.chr.match?(/[0-9a-fA-F_]/) }.freeze
+    BIN_DIGIT_BYTE = Array.new(256) { |b| b.chr.match?(/[01_]/) }.freeze
+    SPACE_BYTE = " ".ord
+
     def self.lex(source, path: nil, mode: :syntax_only, recovery_errors: nil)
       result = new(source, path: path, mode:, recovery_errors:).lex
       mode == :with_trivia ? result.tokens : result
@@ -448,8 +459,9 @@ module MilkTea
 
     def lex_identifier(line, index, line_number, line_offset:)
       start = index
+      length = line.length
       index += 1
-      while index < line.length && identifier_part?(line[index])
+      while index < length && (byte = line.getbyte(index)) && IDENT_PART_BYTE[byte]
         index += 1
       end
 
@@ -475,19 +487,19 @@ module MilkTea
       if line[index] == "0" && %w[x X b B].include?(line[index + 1])
         base_char = line[index + 1]
         index += 2
-        allowed = base_char.downcase == "x" ? /[0-9a-fA-F_]/ : /[01_]/
-        while index < line.length && line[index].match?(allowed)
+        allowed = base_char.downcase == "x" ? HEX_DIGIT_BYTE : BIN_DIGIT_BYTE
+        while index < line.length && (byte = line.getbyte(index)) && allowed[byte]
           index += 1
         end
       else
-        while index < line.length && numeric_part?(line[index])
+        while index < line.length && (byte = line.getbyte(index)) && NUMERIC_PART_BYTE[byte]
           index += 1
         end
 
         if line[index] == "." && digit?(line[index + 1])
           type = :float
           index += 1
-          while index < line.length && numeric_part?(line[index])
+          while index < line.length && (byte = line.getbyte(index)) && NUMERIC_PART_BYTE[byte]
             index += 1
           end
         end
@@ -496,7 +508,7 @@ module MilkTea
           type = :float
           index += 1
           index += 1 if %w[+ -].include?(line[index])
-          while index < line.length && numeric_part?(line[index])
+          while index < line.length && (byte = line.getbyte(index)) && NUMERIC_PART_BYTE[byte]
             index += 1
           end
         end
@@ -1231,15 +1243,19 @@ module MilkTea
     # ── character classification ────────────────────────────────────
 
     def leading_space_count(line)
-      line[/\A */].length
+      index = 0
+      index += 1 while line.getbyte(index) == SPACE_BYTE
+      index
     end
 
     def identifier_start?(char)
-      char.match?(/[A-Za-z_]/)
+      byte = char && char.getbyte(0)
+      byte ? IDENT_START_BYTE[byte] : false
     end
 
     def identifier_part?(char)
-      char.match?(/[A-Za-z0-9_]/)
+      byte = char && char.getbyte(0)
+      byte ? IDENT_PART_BYTE[byte] : false
     end
 
     def identifier_start_token(line, start_index)
@@ -1251,11 +1267,13 @@ module MilkTea
     end
 
     def digit?(char)
-      char && char.match?(/[0-9]/)
+      byte = char && char.getbyte(0)
+      byte ? DIGIT_BYTE[byte] : false
     end
 
     def numeric_part?(char)
-      char && char.match?(/[0-9_]/)
+      byte = char && char.getbyte(0)
+      byte ? NUMERIC_PART_BYTE[byte] : false
     end
 
     def exponent_part?(line, index)

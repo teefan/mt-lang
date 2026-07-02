@@ -67,6 +67,7 @@ module MilkTea
 
       def initialize(name)
         @name = name
+        @hash = [self.class, name].hash
         freeze
       end
 
@@ -76,9 +77,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, name].hash
-      end
+      attr_reader :hash
 
 
       def to_s
@@ -141,6 +140,23 @@ module MilkTea
 
       def initialize(name)
         @name = name
+        @hash = [self.class, name].hash
+
+        # Precompute classification flags: `name` is immutable and these
+        # predicates are called constantly during type checking, so resolve
+        # them once instead of rescanning arrays/hashes on every call.
+        @integer = INTEGER_NAMES.include?(name)
+        @float = FLOAT_NAMES.include?(name)
+        @numeric = @integer || @float
+        @pointer_sized_integer = name == "ptr_int" || name == "ptr_uint"
+        @signed_integer = FIXED_SIGNED_INTEGER_WIDTHS.key?(name) || name == "ptr_int"
+        @unsigned_integer = FIXED_UNSIGNED_INTEGER_WIDTHS.key?(name) || name == "ptr_uint"
+        @fixed_width_integer = FIXED_SIGNED_INTEGER_WIDTHS.key?(name) || FIXED_UNSIGNED_INTEGER_WIDTHS.key?(name) || @pointer_sized_integer
+        @integer_width = FIXED_SIGNED_INTEGER_WIDTHS[name] || FIXED_UNSIGNED_INTEGER_WIDTHS[name] || (@pointer_sized_integer ? POINTER_INTEGER_WIDTH : nil)
+        @float_width = FLOAT_WIDTHS[name]
+        @boolean = name == "bool"
+        @void = name == "void"
+
         freeze
       end
 
@@ -150,56 +166,46 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, name].hash
-      end
+      attr_reader :hash, :integer_width, :float_width
 
       def numeric?
-        integer? || float?
+        @numeric
       end
 
       def bitwise?
-        integer?
+        @integer
       end
 
       def integer?
-        INTEGER_NAMES.include?(name)
+        @integer
       end
 
       def float?
-        FLOAT_NAMES.include?(name)
+        @float
       end
 
       def signed_integer?
-        FIXED_SIGNED_INTEGER_WIDTHS.key?(name) || name == "ptr_int"
+        @signed_integer
       end
 
       def unsigned_integer?
-        FIXED_UNSIGNED_INTEGER_WIDTHS.key?(name) || name == "ptr_uint"
+        @unsigned_integer
       end
 
       def fixed_width_integer?
-        FIXED_SIGNED_INTEGER_WIDTHS.key?(name) || FIXED_UNSIGNED_INTEGER_WIDTHS.key?(name) || pointer_sized_integer?
+        @fixed_width_integer
       end
 
       def pointer_sized_integer?
-        name == "ptr_int" || name == "ptr_uint"
-      end
-
-      def integer_width
-        FIXED_SIGNED_INTEGER_WIDTHS[name] || FIXED_UNSIGNED_INTEGER_WIDTHS[name] || (pointer_sized_integer? ? POINTER_INTEGER_WIDTH : nil)
-      end
-
-      def float_width
-        FLOAT_WIDTHS[name]
+        @pointer_sized_integer
       end
 
       def boolean?
-        name == "bool"
+        @boolean
       end
 
       def void?
-        name == "void"
+        @void
       end
 
       def to_s
@@ -212,6 +218,7 @@ module MilkTea
 
       def initialize(target_type = nil)
         @target_type = target_type
+        @hash = [self.class, target_type].hash
         freeze
       end
 
@@ -221,9 +228,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, target_type].hash
-      end
+      attr_reader :hash
 
 
       def to_s
@@ -257,6 +262,7 @@ module MilkTea
       def initialize(struct_type, declaration)
         @struct_type = struct_type
         @declaration = declaration
+        @hash = [self.class, struct_type].hash
         freeze
       end
 
@@ -266,9 +272,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, struct_type].hash
-      end
+      attr_reader :hash
 
 
       def to_s
@@ -283,6 +287,7 @@ module MilkTea
         @struct_handle = struct_handle
         @field_name = field_name
         @field_declaration = field_declaration
+        @hash = [self.class, struct_handle, field_name].hash
         freeze
       end
 
@@ -292,9 +297,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, struct_handle, field_name].hash
-      end
+      attr_reader :hash
 
 
       def to_s
@@ -308,6 +311,7 @@ module MilkTea
       def initialize(display_name, declaration)
         @display_name = display_name
         @declaration = declaration
+        @hash = [self.class, display_name].hash
         freeze
       end
 
@@ -317,9 +321,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, display_name].hash
-      end
+      attr_reader :hash
 
 
       def to_s
@@ -336,6 +338,7 @@ module MilkTea
         @target = target
         @params = params.freeze
         @argument_values = argument_values&.freeze
+        @hash = [self.class, attribute_module_name, attribute_name, target].hash
         freeze
       end
 
@@ -348,9 +351,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, attribute_module_name, attribute_name, target].hash
-      end
+      attr_reader :hash
 
 
       def to_s
@@ -366,6 +367,7 @@ module MilkTea
         @enum_handle = enum_handle
         @member_name = member_name
         @member_value = member_value
+        @hash = [self.class, enum_handle, member_name].hash
         freeze
       end
 
@@ -383,9 +385,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, enum_handle, member_name].hash
-      end
+      attr_reader :hash
 
 
       def to_s
@@ -398,6 +398,7 @@ module MilkTea
 
       def initialize(base)
         @base = base
+        @hash = [self.class, base].hash
         freeze
       end
 
@@ -407,9 +408,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, base].hash
-      end
+      attr_reader :hash
 
       def nullable?
         true
@@ -429,6 +428,7 @@ module MilkTea
 
       def initialize(value)
         @value = value
+        @hash = [self.class, value].hash
         freeze
       end
 
@@ -438,9 +438,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, value].hash
-      end
+      attr_reader :hash
 
       def to_s
         value.to_s
@@ -453,6 +451,7 @@ module MilkTea
       def initialize(name, arguments)
         @name = name
         @arguments = arguments.freeze
+        @hash = [self.class, name, @arguments].hash
         freeze
       end
 
@@ -462,9 +461,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, name, arguments].hash
-      end
+      attr_reader :hash
 
       def to_s
         "#{name}[#{arguments.join(', ')}]"
@@ -533,6 +530,7 @@ module MilkTea
           "data" => GenericInstance.new("ptr", [element_type]),
           "len" => Primitive.new("ptr_uint"),
         }.freeze
+        @hash = [self.class, element_type].hash
         freeze
       end
 
@@ -542,9 +540,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, element_type].hash
-      end
+      attr_reader :hash
 
       def name
         to_s
@@ -646,6 +642,7 @@ module MilkTea
             return_type: Primitive.new("void"),
           ),
         }.freeze
+        @hash = [self.class, result_type].hash
         freeze
       end
 
@@ -655,9 +652,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, result_type].hash
-      end
+      attr_reader :hash
 
       def name
         to_s
@@ -771,6 +766,7 @@ module MilkTea
           parts << capacity.to_s
           parts.compact.reject(&:empty?).join("_")
         end
+        @hash = [self.class, name, capacity, payload_type, module_name, visibility, owner_type_name].hash
         freeze
       end
 
@@ -786,9 +782,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, name, capacity, payload_type, module_name, visibility, owner_type_name].hash
-      end
+      attr_reader :hash
 
       def hidden_field_name
         "__event_#{name}"
@@ -1066,6 +1060,7 @@ module MilkTea
         @module_name = module_name
         @arms = {}       # arm_name => { field_name => type }
         @arm_names = []
+        @hash = [self.class, name, module_name].hash
       end
 
       def define_arms(arms_hash)
@@ -1093,9 +1088,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, name, module_name].hash
-      end
+      attr_reader :hash
 
       def to_s
         module_name ? "#{module_name}.#{name}" : name
@@ -1116,6 +1109,7 @@ module MilkTea
         @module_name = module_name
         @arms = {}
         @instances = {}
+        @hash = [self.class, name, @type_params, module_name].hash
       end
 
       def define_arms(arms_hash)
@@ -1141,9 +1135,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, name, type_params, module_name].hash
-      end
+      attr_reader :hash
 
       def instantiate(arguments)
         raise ArgumentError, "#{name} expects #{type_params.length} type arguments, got #{arguments.length}" unless arguments.length == type_params.length
@@ -1177,6 +1169,7 @@ module MilkTea
         super(definition.name, module_name: definition.module_name)
         @definition = definition
         @arguments = arguments.freeze
+        @hash = [self.class, definition, @arguments].hash
       end
 
       def eql?(other)
@@ -1185,9 +1178,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, definition, arguments].hash
-      end
+      attr_reader :hash
 
       def to_s
         base = module_name ? "#{module_name}.#{name}" : name
@@ -1224,6 +1215,7 @@ module MilkTea
         @module_name = module_name
         @external = external
         @linkage_name = linkage_name
+        @hash = [self.class, name, module_name, external, linkage_name].hash
       end
 
       def eql?(other)
@@ -1236,9 +1228,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, name, module_name, external, linkage_name].hash
-      end
+      attr_reader :hash
 
       def to_s
         module_name ? "#{module_name}.#{name}" : name
@@ -1255,6 +1245,7 @@ module MilkTea
         @backing_type = nil
         @members = {}
         @member_values = {}
+        @hash = [self.class, name, module_name, external].hash
       end
 
       def define_members(backing_type, member_names)
@@ -1293,9 +1284,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, name, module_name, external].hash
-      end
+      attr_reader :hash
 
       def to_s
         module_name ? "#{module_name}.#{name}" : name
@@ -1320,6 +1309,7 @@ module MilkTea
         @mutable = mutable
         @passing_mode = passing_mode
         @boundary_type = boundary_type
+        @hash = [self.class, type, mutable, passing_mode, boundary_type].hash
         freeze
       end
 
@@ -1337,9 +1327,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, type, mutable, passing_mode, boundary_type].hash
-      end
+      attr_reader :hash
 
       def children
         [type, boundary_type].compact
@@ -1357,6 +1345,7 @@ module MilkTea
         @receiver_editable = receiver_editable
         @variadic = variadic
         @external = external
+        @hash = [self.class, @params, return_type, receiver_type, receiver_editable, variadic].hash
         freeze
       end
 
@@ -1371,9 +1360,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, params, return_type, receiver_type, receiver_editable, variadic].hash
-      end
+      attr_reader :hash
 
 
       def to_s
@@ -1397,6 +1384,7 @@ module MilkTea
       def initialize(params:, return_type:)
         @params = params.freeze
         @return_type = return_type
+        @hash = [self.class, @params, return_type].hash
         freeze
       end
 
@@ -1406,9 +1394,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, params, return_type].hash
-      end
+      attr_reader :hash
 
       def to_s
         "proc(#{params.map(&:type).join(', ')}) -> #{return_type}"
@@ -1435,6 +1421,7 @@ module MilkTea
         @fields = FIELD_NAMES.first(width).each_with_object({}) do |fname, h|
           h[fname] = element_type
         end.freeze
+        @hash = [self.class, name, element_type].hash
         freeze
       end
 
@@ -1444,9 +1431,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, name, element_type].hash
-      end
+      attr_reader :hash
 
       def fields
         @fields
@@ -1477,6 +1462,7 @@ module MilkTea
         @fields = (0...dim).each_with_object({}) do |i, h|
           h["col#{i}"] = col_type
         end.freeze
+        @hash = [self.class, name].hash
         freeze
       end
 
@@ -1486,9 +1472,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, name].hash
-      end
+      attr_reader :hash
 
       def fields
         @fields
@@ -1519,6 +1503,7 @@ module MilkTea
         @fields = FIELD_NAMES.each_with_object({}) do |fname, h|
           h[fname] = BUILTIN_VECTOR_ELEMENT
         end.freeze
+        @hash = [self.class, name].hash
         freeze
       end
 
@@ -1528,9 +1513,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, name].hash
-      end
+      attr_reader :hash
 
       def fields
         @fields
@@ -1565,6 +1548,7 @@ module MilkTea
                    else
                      {}.freeze
                    end.freeze
+        @hash = [self.class, element_type, count].hash
         freeze
       end
 
@@ -1574,9 +1558,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, element_type, count].hash
-      end
+      attr_reader :hash
 
       def fields
         @fields
@@ -1604,6 +1586,7 @@ module MilkTea
         @fields = @field_names.each_with_index.each_with_object({}) do |(name, index), h|
           h[name] = element_types[index]
         end.freeze
+        @hash = [self.class, @element_types, @field_names].hash
         freeze
       end
 
@@ -1613,9 +1596,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, element_types, field_names].hash
-      end
+      attr_reader :hash
 
       def fields
         @fields
@@ -1645,6 +1626,7 @@ module MilkTea
       def initialize(interface_binding, type_arguments = [])
         @interface_binding = interface_binding
         @type_arguments = type_arguments
+        @hash = [self.class, interface_binding, type_arguments].hash
         freeze
       end
 
@@ -1654,9 +1636,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, interface_binding, type_arguments].hash
-      end
+      attr_reader :hash
 
       def to_s
         if type_arguments.any?
@@ -1683,6 +1663,7 @@ module MilkTea
         @interface_name = interface_name
         @linkage_name = "mt_vtable_#{interface_name}"
         @fields = fields
+        @hash = [self.class, @linkage_name].hash
         freeze
       end
 
@@ -1692,9 +1673,7 @@ module MilkTea
 
       alias == eql?
 
-      def hash
-        [self.class, linkage_name].hash
-      end
+      attr_reader :hash
 
       def to_s
         linkage_name
