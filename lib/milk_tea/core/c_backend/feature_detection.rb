@@ -135,6 +135,8 @@ module MilkTea
           end
 
           def uses_mt_fatal_helper?
+            return true if @debug_guards
+
             collect_checked_array_index_types.any? || collect_checked_span_index_types.any? ||
               uses_format_helpers? ||
               emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_fatal mt_str_buffer_len mt_str_buffer_as_cstr mt_str_buffer_assign mt_str_buffer_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }

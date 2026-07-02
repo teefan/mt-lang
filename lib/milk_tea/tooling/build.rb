@@ -17,9 +17,9 @@ module MilkTea
     FrontendModule = Data.define(:name, :kind, :link_libraries, :compiler_flags, :uses_parallel_for)
 
     class RubyFrontend
-      def compile(path:, module_roots:, package_graph:, platform:, emit_line_directives:, binary_path:)
+      def compile(path:, module_roots:, package_graph:, platform:, emit_line_directives:, binary_path:, debug_guards: false)
         program = ModuleLoader.new(module_roots:, package_graph:, platform:).check_program(path)
-        Build.frontend_build_artifacts(program, emit_line_directives:, binary_path:)
+        Build.frontend_build_artifacts(program, emit_line_directives:, binary_path:, debug_guards:)
       end
     end
 
@@ -70,9 +70,9 @@ module MilkTea
 
     Result = Data.define(:output_path, :c_path, :compiler, :link_flags, :profile, :platform, :bundle_root, :archive_path, :cached)
 
-    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false, sanitize: false, kind: :executable)
+    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false, sanitize: false, kind: :executable, debug_guards: nil)
       raw_bindings ||= default_raw_bindings
-      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, frontend:, debug:, profile:, platform:, bundle:, archive:, no_cache:, sanitize:, kind:).build
+      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, frontend:, debug:, profile:, platform:, bundle:, archive:, no_cache:, sanitize:, kind:, debug_guards:).build
     end
 
     def self.clean(path, output_path: nil, profile: nil, platform: nil, bundle: false, archive: false)
@@ -91,10 +91,10 @@ module MilkTea
       ).clean
     end
 
-    def self.frontend_build_artifacts(program, emit_line_directives: false, binary_path: nil)
+    def self.frontend_build_artifacts(program, emit_line_directives: false, binary_path: nil, debug_guards: false)
       ir_program = program.is_a?(IR::Program) ? program : Lowering.lower(program)
       ensure_program_has_entrypoint!(program, ir_program)
-      compiled_c = CBackend.emit(ir_program, emit_line_directives: emit_line_directives)
+      compiled_c = CBackend.emit(ir_program, emit_line_directives:, debug_guards:)
       saved_c = emit_line_directives ? nil : compiled_c
 
       {
@@ -129,7 +129,7 @@ module MilkTea
     end
     private_class_method :default_raw_bindings
 
-    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false, sanitize: false, kind: :executable)
+    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false, sanitize: false, kind: :executable, debug_guards: nil)
       @kind = case kind
               when :executable, :static, :shared then kind
               else raise BuildError, "unknown build kind #{kind}; expected executable|static|shared"
@@ -191,6 +191,7 @@ module MilkTea
       @no_cache = no_cache || sanitize
       @sanitize = sanitize
       @debug = debug
+      @debug_guards = debug_guards
     end
 
     def use_package_build_for?(path)
@@ -300,8 +301,9 @@ module MilkTea
       end
 
       ir_program = Lowering.lower(program)
-      saved_c = CBackend.emit(ir_program, emit_line_directives: false)
-      compiled_c = emit_line_directives ? CBackend.emit(ir_program, emit_line_directives: true) : saved_c
+      dbg = debug_guards_enabled?
+      saved_c = CBackend.emit(ir_program, emit_line_directives: false, debug_guards: dbg)
+      compiled_c = emit_line_directives ? CBackend.emit(ir_program, emit_line_directives: true, debug_guards: dbg) : saved_c
 
       frontend_modules = Build.send(:frontend_modules, program)
 
@@ -371,7 +373,7 @@ module MilkTea
       if @keep_c_path
         saved_c ||= compiled_c unless emit_line_directives
         if emit_line_directives && saved_c.nil?
-          saved_c = CBackend.emit(Lowering.lower(program), emit_line_directives: false)
+          saved_c = CBackend.emit(Lowering.lower(program), emit_line_directives: false, debug_guards: false)
         end
         raise BuildError, "frontend did not provide saved C output for --keep-c debug build" if saved_c.nil?
 
@@ -406,6 +408,7 @@ module MilkTea
         platform: @platform,
         emit_line_directives: emit_line_directives,
         binary_path: @output_path,
+        debug_guards: debug_guards_enabled?,
       )
       ir_program = artifacts[:ir_program]
       compiled_c = artifacts.fetch(:compiled_c)
@@ -421,7 +424,7 @@ module MilkTea
 
       if @keep_c_path
         saved_c ||= compiled_c unless emit_line_directives
-        saved_c ||= CBackend.emit(ir_program, emit_line_directives: false) if emit_line_directives && ir_program
+        saved_c ||= CBackend.emit(ir_program, emit_line_directives: false, debug_guards: false) if emit_line_directives && ir_program
         raise BuildError, "frontend did not provide saved C output for --keep-c debug build" if saved_c.nil?
 
         write_c_file(@keep_c_path, saved_c)
@@ -537,7 +540,7 @@ module MilkTea
       )
 
       Build.ensure_program_has_entrypoint!(program, ir_program)
-      compiled_c = CBackend.emit(ir_program, emit_line_directives:)
+      compiled_c = CBackend.emit(ir_program, emit_line_directives:, debug_guards: debug_guards_enabled?)
 
       frontend_modules = Build.send(:frontend_modules, program)
 
@@ -1088,6 +1091,12 @@ module MilkTea
 
     def line_directives_required?
       @debug || @profile == :debug
+    end
+
+    def debug_guards_enabled?
+      return @debug_guards unless @debug_guards.nil?
+
+      @profile == :debug
     end
 
     def compiler_available?(compiler)

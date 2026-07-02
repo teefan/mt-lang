@@ -1875,6 +1875,7 @@ module MilkTea
         no_cache: false,
         kind: :executable,
         timings: false,
+        debug_guards: nil,
       }
       options[:clean] = false if allow_clean
 
@@ -1919,6 +1920,10 @@ module MilkTea
           options[:frozen] = true
         when "--no-cache"
           options[:no_cache] = true
+        when "--debug-guards"
+          options[:debug_guards] = true
+        when "--no-debug-guards"
+          options[:debug_guards] = false
         when "--timings"
           options[:timings] = true
         when "--kind"
@@ -2336,12 +2341,14 @@ module MilkTea
             --platform PLATFORM          linux (default) | windows | wasm.
             --bundle                     Package a native package build into a distributable directory.
             --archive                    Also write a .tar.gz archive for the native bundle (implies --bundle).
-            --locked                     Resolve dependencies from package.lock.
-            --frozen                     Require a current package.lock and use locked resolution.
-            --no-cache                   Skip build cache, force rebuild from source.
-            --clean                      Remove existing build outputs and exit.
-            -I, --include-path PATH      Add an extra module root.
-        HELP
+             --locked                     Resolve dependencies from package.lock.
+             --frozen                     Require a current package.lock and use locked resolution.
+             --no-cache                   Skip build cache, force rebuild from source.
+             --debug-guards               Enable loop iteration and recursion guards (default: on in debug, off in release).
+             --no-debug-guards            Disable loop iteration and recursion guards.
+             --clean                      Remove existing build outputs and exit.
+             -I, --include-path PATH      Add an extra module root.
+         HELP
       "new"             => <<~HELP,
         Usage: mtc new NAME
 
@@ -2364,12 +2371,14 @@ module MilkTea
             --keep-c C_PATH              Write the generated C source to this path.
             --profile PROFILE            debug (default) | release.
             --platform PLATFORM          linux (default) | windows | wasm.
-            --locked                     Resolve dependencies from package.lock.
-            --frozen                     Require a current package.lock and use locked resolution.
-            --no-cache                   Skip build cache, force rebuild from source.
-            -I, --include-path PATH      Add an extra module root.
-        HELP
-      "run-module"      => <<~HELP,
+             --locked                     Resolve dependencies from package.lock.
+             --frozen                     Require a current package.lock and use locked resolution.
+             --no-cache                   Skip build cache, force rebuild from source.
+             --debug-guards               Enable loop iteration and recursion guards (default: on in debug, off in release).
+             --no-debug-guards            Disable loop iteration and recursion guards.
+             -I, --include-path PATH      Add an extra module root.
+         HELP
+       "run-module"      => <<~HELP,
         Usage: mtc run-module MODULE [OPTIONS] [-- ARGS...]
 
           Resolve a standard-library module by name, build it, and run it.
@@ -2512,9 +2521,9 @@ module MilkTea
       io.puts("       mtc debug PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--clean] [-I PATH]")
+      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--clean] [-I PATH]")
       io.puts("       mtc new NAME")
-      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [--debug-guards|--no-debug-guards]")
       io.puts("       mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [-n SUBSTRING] [--format human|tap|junit] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc run-module MODULE [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [-- ARGS...]")
       io.puts("       mtc toolchain bootstrap")

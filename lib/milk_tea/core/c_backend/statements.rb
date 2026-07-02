@@ -88,19 +88,45 @@ module MilkTea
                 body = body_continue_label ? statement.body[0...-1] : statement.body
                 body_break_label = loop_break_label_name(body, remaining_statements)
                 @suppressed_labels << body_break_label if body_break_label && !statements_need_explicit_break_label_after_emission?(body, body_break_label, loop_break_label_active: true)
-                lines = ["#{indent}while (#{emit_expression(statement.condition)}) {"]
-                lines.concat(emit_statement_sequence(body, level + 1, function:, used_labels:, loop_continue_label: body_continue_label, loop_break_label: body_break_label))
-                lines << "#{indent}}"
-                lines
+                if @debug_guards
+                  @loop_guard_id += 1
+                  guard_name = "__mt_loop_#{@loop_guard_id}"
+                  lines = ["#{indent}{ uintptr_t #{guard_name} = 0;"]
+                  lines << "#{indent}while (#{emit_expression(statement.condition)}) {"
+                  guard = "#{INDENT * (level + 1)}if (++#{guard_name} > 50000) mt_fatal(\"loop iteration limit exceeded in #{function.linkage_name}\");"
+                  lines << guard
+                  lines.concat(emit_statement_sequence(body, level + 1, function:, used_labels:, loop_continue_label: body_continue_label, loop_break_label: body_break_label))
+                  lines << "#{indent}}"
+                  lines << "#{indent}}"
+                  lines
+                else
+                  lines = ["#{indent}while (#{emit_expression(statement.condition)}) {"]
+                  lines.concat(emit_statement_sequence(body, level + 1, function:, used_labels:, loop_continue_label: body_continue_label, loop_break_label: body_break_label))
+                  lines << "#{indent}}"
+                  lines
+                end
               when IR::ForStmt
                 body_continue_label = loop_continue_label_name(statement.body)
                 body = body_continue_label ? statement.body[0...-1] : statement.body
                 body_break_label = loop_break_label_name(body, remaining_statements)
                 @suppressed_labels << body_break_label if body_break_label && !statements_need_explicit_break_label_after_emission?(body, body_break_label, loop_break_label_active: true)
-                lines = ["#{indent}for (#{emit_for_clause_statement(statement.init)}; #{emit_expression(statement.condition)}; #{emit_for_clause_statement(statement.post)}) {"]
-                lines.concat(emit_statement_sequence(body, level + 1, function:, used_labels:, loop_continue_label: body_continue_label, loop_break_label: body_break_label))
-                lines << "#{indent}}"
-                lines
+                if @debug_guards
+                  @loop_guard_id += 1
+                  guard_name = "__mt_loop_#{@loop_guard_id}"
+                  lines = ["#{indent}{ uintptr_t #{guard_name} = 0;"]
+                  lines << "#{indent}for (#{emit_for_clause_statement(statement.init)}; #{emit_expression(statement.condition)}; #{emit_for_clause_statement(statement.post)}) {"
+                  guard = "#{INDENT * (level + 1)}if (++#{guard_name} > 50000) mt_fatal(\"loop iteration limit exceeded in #{function.linkage_name}\");"
+                  lines << guard
+                  lines.concat(emit_statement_sequence(body, level + 1, function:, used_labels:, loop_continue_label: body_continue_label, loop_break_label: body_break_label))
+                  lines << "#{indent}}"
+                  lines << "#{indent}}"
+                  lines
+                else
+                  lines = ["#{indent}for (#{emit_for_clause_statement(statement.init)}; #{emit_expression(statement.condition)}; #{emit_for_clause_statement(statement.post)}) {"]
+                  lines.concat(emit_statement_sequence(body, level + 1, function:, used_labels:, loop_continue_label: body_continue_label, loop_break_label: body_break_label))
+                  lines << "#{indent}}"
+                  lines
+                end
               when IR::BreakStmt
                 ["#{indent}break;"]
               when IR::ContinueStmt

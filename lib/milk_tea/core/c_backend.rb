@@ -32,20 +32,22 @@ module MilkTea
     INDENT = "  "
     ARRAY_OUT_PARAM_NAME = "__mt_out"
 
-    def self.emit(program, emit_line_directives: true)
-      new(program, emit_line_directives:).emit
+    def self.emit(program, emit_line_directives: true, debug_guards: false)
+      new(program, emit_line_directives:, debug_guards:).emit
     end
 
-    def self.generate_c(ir_program, emit_line_directives: true)
-      emit(ir_program, emit_line_directives:)
+    def self.generate_c(ir_program, emit_line_directives: true, debug_guards: false)
+      emit(ir_program, emit_line_directives:, debug_guards:)
     end
 
-    def initialize(program, emit_line_directives: true)
+    def initialize(program, emit_line_directives: true, debug_guards: false)
       @program = program
       @source_path = program.source_path
       @emit_line_directives = emit_line_directives
+      @debug_guards = debug_guards
       @checked_index_alias_stack = []
       @checked_index_alias_id = 0
+      @loop_guard_id = 0
     end
 
     def emit
