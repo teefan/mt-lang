@@ -44,26 +44,25 @@ module MilkTea
                             else               [red,    "error"]
                             end
 
-      index_text = index ? "#{bold}[E#{sprintf('%04d', index)}]#{reset}#{bold} " : ""
-      code_text = code ? " #{cyan}[#{code}]#{reset}" : ""
+      code_text = code ? "#{cyan}[#{code}]#{reset}" : ""
 
       [
-        "#{index_text}#{sev_color}#{sev_text}#{code_text}#{reset}: #{error_message}",
+        "#{bold}#{sev_color}#{sev_text}#{code_text}#{reset}: #{error_message}",
         "  #{bold}-->#{reset} #{path}:#{line}:#{column}",
         "   #{bold}|#{reset}",
         "#{line.to_s.rjust(5)} #{bold}|#{reset} #{stripped}",
         "      #{bold}|#{reset} #{sev_color}#{indent}#{highlight}#{reset}",
-        *error_suggestion_lines(error, color, bold, cyan, reset),
+        *error_suggestion_lines(error, color, bold, reset),
       ].join("\n")
     end
 
-    def self.error_suggestion_lines(error, color, bold, cyan, reset)
+    def self.error_suggestion_lines(error, color, bold, reset)
       suggestion = error.respond_to?(:suggestion) ? error.suggestion : nil
       return [] unless suggestion
 
       suggestions = suggestion.is_a?(Array) ? suggestion : [suggestion]
       suggestions.map do |s|
-        label = color ? "#{bold}#{cyan}note#{reset}#{bold}:#{reset}" : "note:"
+        label = color ? "#{bold}= help:#{reset}" : "= help:"
         "  #{label} #{s}"
       end
     end
