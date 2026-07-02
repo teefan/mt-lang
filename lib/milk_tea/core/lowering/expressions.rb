@@ -895,11 +895,11 @@ module MilkTea
           raise LoweringError, "format spec ':x' and ':X' require integer interpolation, got #{type}"
         end
 
-        if %w[byte short int long ptr_int].include?(type.name)
+        if type.signed_integer?
           return [uppercase ? "append_long_hex_upper" : "append_long_hex", @ctx.types.fetch("long")]
         end
 
-        if %w[ubyte ushort uint ulong ptr_uint].include?(type.name)
+        if type.unsigned_integer?
           return [uppercase ? "append_ulong_hex_upper" : "append_ulong_hex", @ctx.types.fetch("ulong")]
         end
 
@@ -916,11 +916,11 @@ module MilkTea
           raise LoweringError, "format spec ':o' and ':O' require integer interpolation, got #{type}"
         end
 
-        if %w[byte short int long ptr_int].include?(type.name)
+        if type.signed_integer?
           return ["append_long_oct", @ctx.types.fetch("long")]
         end
 
-        if %w[ubyte ushort uint ulong ptr_uint].include?(type.name)
+        if type.unsigned_integer?
           return ["append_ulong_oct", @ctx.types.fetch("ulong")]
         end
 
@@ -937,11 +937,11 @@ module MilkTea
           raise LoweringError, "format spec ':b' and ':B' require integer interpolation, got #{type}"
         end
 
-        if %w[byte short int long ptr_int].include?(type.name)
+        if type.signed_integer?
           return ["append_long_bin", @ctx.types.fetch("long")]
         end
 
-        if %w[ubyte ushort uint ulong ptr_uint].include?(type.name)
+        if type.unsigned_integer?
           return ["append_ulong_bin", @ctx.types.fetch("ulong")]
         end
 

@@ -1360,8 +1360,12 @@ module MilkTea
       end
 
       def sanitize_identifier(text)
+        cache = (@sanitize_identifier_cache ||= {})
+        cached = cache[text]
+        return cached if cached
+
         identifier = text.gsub(/[^A-Za-z0-9_]+/, "_").gsub(/_+/, "_").sub(/_+$/, "").sub(/^_{2,}/, "_")
-        identifier.empty? ? "value" : identifier
+        cache[text] = identifier.empty? ? "value" : identifier
       end
 
       def lower_assignment_target(expression, env:)
