@@ -331,7 +331,7 @@ function main() -> int:
     assert_match(/char\* data;/, generated)
     assert_match(/uintptr_t len;/, generated)
     assert_match(/static const mt_str demo_str_surface_greeting = \{ \.data = "hello", \.len = 5 \};/, generated)
-    assert_match(/static void mt_fatal_str\(mt_str message\) \{/, generated)
+    assert_match(/static _Noreturn void mt_fatal_str\(mt_str message\) \{/, generated)
     assert_match(/fwrite\(message\.data, 1, message\.len, stderr\);/, generated)
     assert_match(/mt_fatal_str\(demo_str_surface_greeting\);/, generated)
   end

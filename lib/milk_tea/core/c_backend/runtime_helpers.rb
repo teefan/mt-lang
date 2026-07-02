@@ -10,7 +10,7 @@ module MilkTea
 
             if uses_mt_fatal_helper?
               lines.concat([
-                "static void mt_fatal(const char* message) {",
+                "static _Noreturn void mt_fatal(const char* message) {",
                 "#{INDENT}fputs(message, stderr);",
                 "#{INDENT}fputc('\\n', stderr);",
                 "#{INDENT}abort();",
@@ -21,7 +21,7 @@ module MilkTea
             if uses_mt_fatal_str_helper?
               lines << "" unless lines.empty?
               lines.concat([
-                "static void mt_fatal_str(mt_str message) {",
+                "static _Noreturn void mt_fatal_str(mt_str message) {",
                 "#{INDENT}fwrite(message.data, 1, message.len, stderr);",
                 "#{INDENT}fputc('\\n', stderr);",
                 "#{INDENT}abort();",
