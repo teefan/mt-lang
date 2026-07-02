@@ -48,10 +48,6 @@ module MilkTea
             c_type(array_type?(type) ? void_type : type)
           end
 
-          def function_returns_value_in_c?(function)
-            c_function_return_type(function.return_type) != c_type(void_type)
-          end
-
           def array_out_param_declaration(type, name)
             c_declaration(type, "(*#{name})")
           end

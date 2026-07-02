@@ -71,20 +71,12 @@ module MilkTea
         _intern([:soa, element_type, count]) { SoA.new(element_type, count: count) }
       end
 
-      def type_var(name)
-        TypeVar.new(name)
-      end
-
       def lifetime_ref(name)
         LifetimeRef.new(name)
       end
 
       def dyn(interface_binding, type_arguments = [])
         Dyn.new(interface_binding, type_arguments)
-      end
-
-      def literal_type_arg(value)
-        LiteralTypeArg.new(value)
       end
     end
   end

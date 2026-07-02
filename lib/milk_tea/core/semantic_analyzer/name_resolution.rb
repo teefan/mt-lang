@@ -1091,16 +1091,6 @@ module MilkTea
         false
       end
 
-      def proc_expression_allowed?
-        @proc_expression_depth.positive?
-      end
-
-      def with_proc_expression
-        @proc_expression_depth += 1
-        yield
-      ensure
-        @proc_expression_depth -= 1
-      end
 
       def freeze_scope_bindings(scope)
         frozen_scope = scope.is_a?(FlowScope) ? FlowScope.new : {}
@@ -1156,12 +1146,6 @@ module MilkTea
         visitor = ProcStorageSupportedVisitor.new
         visitor.visit(type)
         visitor.result?
-      end
-
-      def validate_stored_proc_type!(type, context)
-        if contains_proc_type?(type)
-          raise_sema_error("#{context} cannot store proc values") unless proc_storage_supported_type?(type)
-        end
       end
 
       def validate_parameter_ref_type!(type, function_name:, parameter_name:, external:)

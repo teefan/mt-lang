@@ -504,13 +504,6 @@ module MilkTea
         end
       end
 
-      def const_declaration_for(analysis, name)
-        declaration = analysis.ast.declarations.find { |decl| decl.is_a?(AST::ConstDecl) && decl.name == name }
-        raise LoweringError, "unknown constant #{analysis.module_name}.#{name}" unless declaration
-
-        declaration
-      end
-
       def local_binding(type:, linkage_name:, mutable:, pointer:, storage_type: nil, projection: nil, cstr_backed: false, cstr_list_backed: false, const_value: nil)
         { type:, storage_type: storage_type || type, linkage_name:, mutable:, pointer:, projection:, cstr_backed:, cstr_list_backed:, const_value: }
       end
@@ -1265,10 +1258,6 @@ module MilkTea
 
       def enum_member_c_name(type, member_name)
         "#{c_type_name(type)}_#{member_name}"
-      end
-
-      def local_named_type?(type)
-        type.respond_to?(:module_name) && (type.module_name == @ctx.module_name || type.module_name.nil?)
       end
 
       def function_binding_c_name(binding, module_name:, receiver_type: nil)

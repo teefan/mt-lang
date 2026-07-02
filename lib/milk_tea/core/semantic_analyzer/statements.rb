@@ -223,13 +223,7 @@ module MilkTea
         declared_type = statement.type ? resolve_type_ref(statement.type) : nil
         if statement.value
           validate_consuming_foreign_expression!(statement.value, scopes:, root_allowed: false)
-          inferred_type = if statement.value.is_a?(AST::ProcExpr)
-                            with_proc_expression do
-                              infer_expression(statement.value, scopes:, expected_type: declared_type)
-                            end
-                          else
-                            infer_expression(statement.value, scopes:, expected_type: declared_type)
-                          end
+          inferred_type = infer_expression(statement.value, scopes:, expected_type: declared_type)
         else
           raise_sema_error("local #{statement.name} without initializer requires an explicit type") unless declared_type
 
