@@ -280,6 +280,7 @@ module MilkTea
 
         current_scope = current_actual_scope(scopes)
         statement.destructure_bindings.each_with_index do |name, index|
+          next if name == "_"
           raise_sema_error("duplicate local #{name} in destructure") if current_scope.key?(name)
           ensure_non_reserved_primitive_name!(name, kind_label: "local", line: statement.line, column: statement.column)
           field_type = value_type.element_types[index]
@@ -311,6 +312,7 @@ module MilkTea
 
         current_scope = current_actual_scope(scopes)
         statement.destructure_bindings.each do |name|
+          next if name == "_"
           raise_sema_error("duplicate local #{name} in destructure") if current_scope.key?(name)
           raise_sema_error("unknown field #{display_name}.#{name}") unless fields.key?(name)
           ensure_non_reserved_primitive_name!(name, kind_label: "local", line: statement.line, column: statement.column)

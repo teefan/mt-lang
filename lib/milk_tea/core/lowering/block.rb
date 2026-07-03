@@ -975,6 +975,7 @@ module MilkTea
           destructure_type = value_type
           fields = destructure_type.fields
           statement.destructure_bindings.each do |name|
+            next if name == "_"
             field_type = fields[name]
             field_expr = IR::Member.new(receiver: IR::Name.new(name: temp_name, type: destructure_type, pointer: false), member: name, type: field_type)
             decl_c_name = c_local_name(name)
@@ -984,6 +985,7 @@ module MilkTea
         else
           # Tuple destructure: index by position
           statement.destructure_bindings.each_with_index do |name, index|
+            next if name == "_"
             field_name = value_type.field_names[index]
             field_type = value_type.element_types[index]
             field_expr = IR::Member.new(receiver: IR::Name.new(name: temp_name, type: value_type, pointer: false), member: field_name, type: field_type)
