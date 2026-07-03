@@ -48,6 +48,7 @@ module MilkTea
       @checked_index_alias_stack = []
       @checked_index_alias_id = 0
       @loop_guard_id = 0
+      @emitted_span_type_names = Set.new
     end
 
     def emit
@@ -151,6 +152,9 @@ module MilkTea
       end
 
       collect_span_types.each do |type|
+        span_name = span_type_name(type)
+        next if @emitted_span_type_names.include?(span_name)
+        @emitted_span_type_names.add(span_name)
         lines.concat(emit_span_type(type))
         lines << ""
       end
