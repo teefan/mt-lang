@@ -181,7 +181,7 @@ function check_tabs(session: ref[LexSession], line_start: ptr_uint, line_len: pt
     while i < line_len:
         let b = unsafe: ubyte<-read(session.source.data + line_start + i)
         if b == TAB_BYTE:
-            session_fatal(session, c"tabs are not allowed; use 4 spaces for indentation", line_number, i + 1z)
+            session_fatal(session, c"tabs are not allowed; use 4 spaces for indentation", line_number, i + 1)
         i += 1
 
 
@@ -996,7 +996,7 @@ function scan_heredoc(
 
     let kind = (if is_format: tk.TokenKind.fstring else: (if is_cstring: tk.TokenKind.cstring else: tk.TokenKind.string))
     let lsc = line_start_cached(source, start)
-    let col = start - lsc + 1z
+    let col = start - lsc + 1
     let tok = tok.Token(
         kind = kind,
         start_offset = start,

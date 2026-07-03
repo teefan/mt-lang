@@ -11,6 +11,7 @@ import std.stdio as stdio
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.token as token_mod
 import mtc.lexer.lexer as lexer
+import mtc.parser.parser as parser
 
 
 function main(args: span[str]) -> int:
@@ -31,6 +32,12 @@ function main(args: span[str]) -> int:
             return 1
         return lex_command(args[file_index], machine)
 
+    if cmd == "parse":
+        if args.len < 2:
+            print_help()
+            return 1
+        return parse_command(args[1])
+
     if cmd == "help":
         print_help()
         return 0
@@ -46,11 +53,51 @@ function print_help() -> void:
     stdio.print_line("")
     stdio.print_line("commands:")
     stdio.print_line("  lex   <file>  print the lexer token stream")
+    stdio.print_line("  parse <file>  parse source and print AST")
     stdio.print_line("  help          print this help")
 
 
 function print_unknown(cmd: str) -> void:
     stdio.print_format(c"mtc: unknown command '%.*s'\n", int<-(cmd.len), cmd.data)
+
+
+function parse_command(file_path: str) -> int:
+    match fs.read_text(file_path):
+        Result.failure:
+            stdio.print_format(c"error: cannot read '%.*s'\n", int<-(file_path.len), file_path.data)
+            return 1
+        Result.success as payload:
+            var content = payload.value
+            defer content.release()
+
+            let source = content.as_str()
+            var diags = vec.Vec[parser.ParseDiagnostic].create()
+            let ok = parser.parse_reporting(source, ref_of(diags))
+
+            if diags.len() > 0:
+                var di: ptr_uint = 0
+                while di < diags.len():
+                    let d = diags.get(di) else:
+                        break
+                    unsafe:
+                        let rd = read(d)
+                        stdio.print_format(
+                            c"parse error: L%d:%d lexeme='%.*s' kind=%.*s: %s\n",
+                            int<-(rd.line),
+                            int<-(rd.column),
+                            int<-(rd.lexeme.len), rd.lexeme.data,
+                            int<-(rd.kind.len), rd.kind.data,
+                            rd.message,
+                        )
+                    di += 1
+
+            diags.release()
+
+            if ok:
+                stdio.print_format(c"parse succeeded: %.*s\n", int<-(file_path.len), file_path.data)
+                return 0
+            stdio.print_format(c"parse FAILED: %.*s\n", int<-(file_path.len), file_path.data)
+            return 1
 
 
 function lex_command(file_path: str, machine: bool) -> int:

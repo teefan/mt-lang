@@ -31,7 +31,7 @@ function test_basic_lexing() -> t.Check:
         let x = 42
     SRC
     var tokens = lexer.lex(source)
-    t.expect(tokens.len() == 6z, "should produce 6 tokens")?
+    t.expect(tokens.len() == 6, "should produce 6 tokens")?
     return t.ok()
 
 
@@ -41,7 +41,7 @@ function test_numbers_lexing() -> t.Check:
         0xff 0b1010 3.14 42u
     SRC
     var tokens = lexer.lex(source)
-    t.expect(tokens.len() == 6z, "should produce 6 tokens")?
+    t.expect(tokens.len() == 6, "should produce 6 tokens")?
     return t.ok()
 
 
@@ -54,7 +54,7 @@ function test_indentation_lexing() -> t.Check:
             y
     SRC
     var tokens = lexer.lex(source)
-    t.expect(tokens.len() == 16z, "should produce 16 tokens")?
+    t.expect(tokens.len() == 16, "should produce 16 tokens")?
     return t.ok()
 
 
@@ -64,7 +64,7 @@ function test_operators_lexing() -> t.Check:
         a + b << c == d
     SRC
     var tokens = lexer.lex(source)
-    t.expect(tokens.len() == 9z, "should produce 9 tokens")?
+    t.expect(tokens.len() == 9, "should produce 9 tokens")?
     return t.ok()
 
 
@@ -75,7 +75,7 @@ function test_function_lexing() -> t.Check:
             return 0
     SRC
     var tokens = lexer.lex(source)
-    t.expect(tokens.len() == 14z, "should produce 14 tokens")?
+    t.expect(tokens.len() == 14, "should produce 14 tokens")?
     return t.ok()
 
 
@@ -122,7 +122,7 @@ function test_string_escape_sequences() -> t.Check:
         "hello\nworld"
     SRC
     var tokens = lexer.lex(source)
-    t.expect(tokens.len() >= 3z, "should have string + newline + eof")?
+    t.expect(tokens.len() >= 3, "should have string + newline + eof")?
     return t.ok()
 
 
@@ -132,7 +132,7 @@ function test_char_literal_normal() -> t.Check:
         'a'
     SRC
     var tokens = lexer.lex(source)
-    t.expect(tokens.len() >= 3z, "should have char_literal + newline + eof")?
+    t.expect(tokens.len() >= 3, "should have char_literal + newline + eof")?
     return t.ok()
 
 
@@ -142,7 +142,7 @@ function test_char_literal_escape() -> t.Check:
         '\n'
     SRC
     var tokens = lexer.lex(source)
-    t.expect(tokens.len() >= 3z, "should have char_literal + newline + eof")?
+    t.expect(tokens.len() >= 3, "should have char_literal + newline + eof")?
     return t.ok()
 
 
@@ -152,7 +152,7 @@ function test_char_literal_hex_escape() -> t.Check:
         '\x41'
     SRC
     var tokens = lexer.lex(source)
-    t.expect(tokens.len() >= 3z, "should have char_literal + newline + eof")?
+    t.expect(tokens.len() >= 3, "should have char_literal + newline + eof")?
     return t.ok()
 
 
