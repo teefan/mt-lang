@@ -862,3 +862,270 @@ function test_parses_external_file_header() -> t.Check:
         external function init() -> void
     SRC
     return check_parse(source)
+
+
+function check_parse_fails(source: str) -> t.Check:
+    var diags = vec.Vec[parser.ParseDiagnostic].create()
+    defer diags.release()
+    let (ok, decl_count) = parser.parse_reporting(source, ref_of(diags))
+    if ok:
+        return t.fail("expected parse errors but got none")
+    return t.ok()
+
+
+# =============================================================================
+#  Statement coverage
+# =============================================================================
+
+@[test]
+function test_parses_break() -> t.Check:
+    var source = <<-SRC
+        function test() -> int:
+            var i: int = 0
+            while i < 10:
+                if i == 5:
+                    break
+                i += 1
+            return i
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_continue() -> t.Check:
+    var source = <<-SRC
+        function test() -> int:
+            var i: int = 0
+            var s: int = 0
+            while i < 10:
+                i += 1
+                if i == 5:
+                    continue
+                s += i
+            return s
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_pass() -> t.Check:
+    var source = <<-SRC
+        function noop() -> void:
+            pass
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_return_void() -> t.Check:
+    var source = <<-SRC
+        function test():
+            return
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_let_discard_else() -> t.Check:
+    var source = <<-SRC
+        function test() -> int:
+            let _ = maybe_val() else:
+                return 1
+            return 0
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_var_else_guard() -> t.Check:
+    var source = <<-SRC
+        function test() -> int:
+            var x = maybe_int() else:
+                return 1
+            return x
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_let_else_as_error() -> t.Check:
+    var source = <<-SRC
+        function test() -> int:
+            let val = maybe_result() else as error:
+                return error
+            return val
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_unsafe_expression_form() -> t.Check:
+    var source = <<-SRC
+        function test() -> int:
+            let val = unsafe: read(ptr)
+            return val
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_single_line_if_else() -> t.Check:
+    var source = <<-SRC
+        function test() -> int:
+            if true: return 1 else: return 0
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_range_index_assignment() -> t.Check:
+    var source = <<-SRC
+        function test() -> void:
+            var buf: array[float, 4]
+            buf[0..2] = (1.0, 2.0)
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_named_args() -> t.Check:
+    var source = <<-SRC
+        function configure(host: str, port: int) -> void:
+            pass
+        function test() -> int:
+            configure(host = "localhost", port = 8080)
+            return 1
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_enum_comparison() -> t.Check:
+    var source = <<-SRC
+        enum Color: ubyte
+            red = 1
+            green = 2
+        function test() -> bool:
+            return Color.red == Color.red and Color.red != Color.green and Color.red < Color.green
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_flags_bitwise() -> t.Check:
+    var source = <<-SRC
+        flags Mask: uint
+            a = 1 << 0
+            b = 1 << 1
+        function test() -> uint:
+            var m = Mask.a
+            m = m | Mask.b
+            m = m & Mask.a
+            return uint<-(m)
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_heredoc_string() -> t.Check:
+    var source = <<-SRC
+        const GREET: str = <<-MSG
+            hello world
+        MSG
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_heredoc_cstring() -> t.Check:
+    var source = <<-SRC
+        const SHADER: cstr = c<<-GLSL
+            void main() {}
+        GLSL
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_multiple_imports() -> t.Check:
+    var source = <<-SRC
+        import std.vec as vec
+        import std.map as map
+        import std.str
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_complex_precedence() -> t.Check:
+    var source = <<-SRC
+        function test() -> bool:
+            return not (a == b) and (c or d) or not e is Kind.eof
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_nested_if_else() -> t.Check:
+    var source = <<-SRC
+        function test() -> int:
+            if a:
+                return 1
+            else if b:
+                return 2
+            else if c:
+                return 3
+            else:
+                return 0
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_var_no_initializer() -> t.Check:
+    var source = <<-SRC
+        function test() -> int:
+            var result: int
+            result = 42
+            return result
+    SRC
+    return check_parse(source)
+
+
+@[test]
+function test_parses_while_with_and_condition() -> t.Check:
+    var source = <<-SRC
+        function test() -> int:
+            var i: int = 0
+            var j: int = 0
+            while i < 5 and j < 3:
+                i += 1
+                j += 1
+            return i
+    SRC
+    return check_parse(source)
+
+
+# =============================================================================
+#  Error recovery / negative tests
+# =============================================================================
+
+@[test]
+function test_errors_on_missing_end_of_statement() -> t.Check:
+    var source = <<-SRC
+        const X: int = 42
+        const Y: int 42
+    SRC
+    return check_parse_fails(source)
+
+
+@[test]
+function test_recovery_continues_after_error() -> t.Check:
+    var source = <<-SRC
+        function good() -> int:
+            return 1
+        garbage_token
+        function also_good() -> int:
+            return 2
+    SRC
+    return check_parse_fails(source)
