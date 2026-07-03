@@ -6,9 +6,7 @@
 
 import std.fs as fs
 import std.vec as vec
-import std.string as string
 import std.stdio as stdio
-import std.str
 
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.token as token_mod
