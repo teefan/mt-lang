@@ -25,7 +25,15 @@ public struct TokenStream:
 
 
 public function create(tokens: vec.Vec[token_mod.Token]) -> TokenStream:
-    return TokenStream(tokens = tokens, current = 0)
+    var result = TokenStream(tokens = vec.Vec[token_mod.Token].with_capacity(tokens.len()), current = 0)
+    var i: ptr_uint = 0
+    while i < tokens.len():
+        let tok_ptr = tokens.get(i) else:
+            break
+        unsafe:
+            result.tokens.push(read(tok_ptr))
+        i += 1
+    return result
 
 
 public function peek(s: ref[TokenStream]) -> ptr[token_mod.Token]?:

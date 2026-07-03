@@ -6,6 +6,9 @@
 ## Loop guard: every while-loop increments a step counter; at 100,000 steps
 ## the parser aborts to prevent infinite loops during development.
 
+import std.hash
+import std.map as map_mod
+import std.str
 import std.vec as vec
 import std.mem.heap as heap_mod
 
@@ -37,6 +40,10 @@ struct ParserState:
     step_counter: ptr_uint
     in_inline_block_body: bool
     recovery_errors: ptr[vec.Vec[ParseDiagnostic]]?
+    known_type_names: map_mod.Map[str, bool]
+    known_import_aliases: map_mod.Map[str, bool]
+    known_generic_callable_names: map_mod.Map[str, bool]
+    current_type_param_names: vec.Vec[str]
 
 
 # =============================================================================
@@ -193,19 +200,24 @@ function consume_name(s: ref[ParserState], msg: cstr) -> void:
     advance(s)
 
 function consume_name_allowing_keywords(s: ref[ParserState], msg: cstr) -> void:
+    if check_name(s):
+        advance(s)
+        return
     let tok = peek(s) else:
         parser_error_naked(s, msg)
         skip_to_sync_point(s)
         return
-    if not check_name(s):
-        unsafe:
-            let t = read(tok)
-            let lexeme = token_mod.token_lexeme(t, s.source)
-            let kn = token_mod.kind_name(t.kind)
-            parser_error_at(s, msg, t.line, t.column, lexeme, kn)
-            skip_to_sync_point(s)
+    unsafe:
+        let t = read(tok)
+        if is_keyword_token(t):
+            advance(s)
             return
-    advance(s)
+    unsafe:
+        let t = read(tok)
+        let lexeme = token_mod.token_lexeme(t, s.source)
+        let kn = token_mod.kind_name(t.kind)
+        parser_error_at(s, msg, t.line, t.column, lexeme, kn)
+        skip_to_sync_point(s)
 
 function consume_end_of_statement(s: ref[ParserState]) -> void:
     if s.in_inline_block_body:
@@ -225,6 +237,219 @@ function previous_lexeme(s: ref[ParserState]) -> str:
     unsafe:
         let t = read(tok)
         return token_mod.token_lexeme(t, s.source)
+
+
+# =============================================================================
+#  Name disambiguation infrastructure
+# =============================================================================
+
+const BUILTIN_TYPE_NAME_COUNT: ptr_uint = 45
+const BUILTIN_TYPE_NAMES: array[str, 45] = array[str, 45](
+    "bool", "byte", "ubyte", "char", "short", "ushort", "int", "uint",
+    "long", "ulong", "ptr_int", "ptr_uint", "float", "double", "void",
+    "str", "cstr", "vec2", "vec3", "vec4", "ivec2", "ivec3", "ivec4",
+    "mat3", "mat4", "quat", "ptr", "const_ptr", "ref", "span", "array",
+    "str_buffer", "atomic", "Task", "Option", "Result", "SoA",
+    "struct_handle", "field_handle", "callable_handle", "attribute_handle",
+    "member_handle", "type", "EventError", "Subscription"
+)
+
+function builtin_type_names() -> span[str]:
+    return BUILTIN_TYPE_NAMES.as_span()
+
+
+function is_builtin_type_name(name: str) -> bool:
+    let names = builtin_type_names()
+    var i: ptr_uint = 0
+    while i < names.len:
+        if unsafe: read(names.data + i) == name:
+            return true
+        i += 1
+    return false
+
+
+function known_type_like_name(s: ref[ParserState], name: str) -> bool:
+    if s.known_type_names.contains(name):
+        return true
+    if s.known_import_aliases.contains(name):
+        return true
+    var ci: ptr_uint = 0
+    while ci < s.current_type_param_names.len():
+        let tp_ptr = s.current_type_param_names.get(ci) else:
+            break
+        if unsafe: read(tp_ptr) == name:
+            return true
+        ci += 1
+    return false
+
+
+function check_next(s: ref[ParserState], kind: tk.TokenKind) -> bool:
+    return ts.check_next(ref_of(s.stream), kind)
+
+
+function type_name_token_check(tok_ptr: ptr[token_mod.Token]?) -> bool:
+    if tok_ptr == null:
+        return false
+    unsafe:
+        return read(tok_ptr).kind == tk.TokenKind.identifier
+
+
+function keyword_token_check(tok_ptr: ptr[token_mod.Token]?) -> bool:
+    if tok_ptr == null:
+        return false
+    unsafe:
+        return is_keyword_token(read(tok_ptr))
+
+
+function block_expression(expr: ptr[ast.Expr]?) -> bool:
+    if expr == null:
+        return false
+    unsafe:
+        let e = read(expr)
+        return e is ast.Expr.expr_proc or e is ast.Expr.expr_match
+
+
+function matching_rbracket_index(s: ref[ParserState], start_index: ptr_uint) -> Option[ptr_uint]:
+    var depth: int = 0
+    var index = start_index
+    let token_count = s.stream.tokens.len()
+    while index < token_count:
+        let tok_opt = s.stream.tokens.get(index) else:
+            break
+        unsafe:
+            let kind = read(tok_opt).kind
+            if kind == tk.TokenKind.lbracket:
+                depth += 1
+            else if kind == tk.TokenKind.rbracket:
+                depth -= 1
+                if depth == 0:
+                    return Option[ptr_uint].some(value = index)
+        index += 1
+    return Option[ptr_uint].none
+
+
+# =============================================================================
+#  Name seeding — pre-scans tokens to populate known-name maps
+# =============================================================================
+
+function seed_known_names(s: ref[ParserState]) -> void:
+    let names = builtin_type_names()
+    var ni: ptr_uint = 0
+    while ni < names.len:
+        let name = unsafe: read(names.data + ni)
+        s.known_type_names.set(name, true)
+        ni += 1
+
+    var depth: int = 0
+    var index: ptr_uint = 0
+    let token_count = s.stream.tokens.len()
+    while index < token_count:
+        let tok_opt = s.stream.tokens.get(index) else:
+            break
+        var kind: tk.TokenKind
+        unsafe:
+            kind = read(tok_opt).kind
+
+        if kind == tk.TokenKind.indent:
+            depth += 1
+        else if kind == tk.TokenKind.dedent:
+            if depth > 0:
+                depth -= 1
+        else if kind == tk.TokenKind.tk_import and depth == 0:
+            index = seed_import_alias(s, index + 1)
+            continue
+        else if kind == tk.TokenKind.tk_function and depth == 0:
+            let name_opt = s.stream.tokens.get(index + 1)
+            let tp_opt = s.stream.tokens.get(index + 2)
+            if name_opt != null and tp_opt != null:
+                unsafe:
+                    if read(name_opt).kind == tk.TokenKind.identifier and read(tp_opt).kind == tk.TokenKind.lbracket:
+                        s.known_generic_callable_names.set(token_mod.token_lexeme(read(name_opt), s.source), true)
+                        index += 1
+                        continue
+        else if kind == tk.TokenKind.tk_async and depth == 0:
+            let next_opt = s.stream.tokens.get(index + 1)
+            if next_opt != null:
+                unsafe:
+                    if read(next_opt).kind == tk.TokenKind.tk_function:
+                        let name_opt = s.stream.tokens.get(index + 2)
+                        let tp_opt = s.stream.tokens.get(index + 3)
+                        if name_opt != null and tp_opt != null:
+                            if read(name_opt).kind == tk.TokenKind.identifier and read(tp_opt).kind == tk.TokenKind.lbracket:
+                                s.known_generic_callable_names.set(token_mod.token_lexeme(read(name_opt), s.source), true)
+                                index += 3
+                                continue
+        else if kind == tk.TokenKind.tk_foreign and depth == 0:
+            let next_opt = s.stream.tokens.get(index + 1)
+            if next_opt != null:
+                unsafe:
+                    if read(next_opt).kind == tk.TokenKind.tk_function:
+                        let name_opt = s.stream.tokens.get(index + 2)
+                        let tp_opt = s.stream.tokens.get(index + 3)
+                        if name_opt != null and tp_opt != null:
+                            if read(name_opt).kind == tk.TokenKind.identifier and read(tp_opt).kind == tk.TokenKind.lbracket:
+                                s.known_generic_callable_names.set(token_mod.token_lexeme(read(name_opt), s.source), true)
+                                index += 3
+                                continue
+        else if depth == 0 and (
+            kind == tk.TokenKind.tk_struct or kind == tk.TokenKind.tk_union
+            or kind == tk.TokenKind.tk_enum or kind == tk.TokenKind.tk_flags
+            or kind == tk.TokenKind.tk_opaque or kind == tk.TokenKind.tk_type
+            or kind == tk.TokenKind.tk_variant
+        ):
+            let name_opt = s.stream.tokens.get(index + 1)
+            if name_opt != null:
+                unsafe:
+                    if read(name_opt).kind == tk.TokenKind.identifier:
+                        s.known_type_names.set(token_mod.token_lexeme(read(name_opt), s.source), true)
+
+        index += 1
+
+
+function seed_import_alias(s: ref[ParserState], start_index: ptr_uint) -> ptr_uint:
+    var cursor = start_index
+    var last_part: Option[str] = Option[str].none
+    let token_count = s.stream.tokens.len()
+    while cursor < token_count:
+        let tok_opt = s.stream.tokens.get(cursor) else:
+            break
+        unsafe:
+            let t = read(tok_opt)
+            if t.kind == tk.TokenKind.newline:
+                break
+            if t.kind == tk.TokenKind.tk_as:
+                let alias_opt = s.stream.tokens.get(cursor + 1)
+                if alias_opt != null and (unsafe: read(alias_opt).kind) == tk.TokenKind.identifier:
+                    unsafe:
+                        s.known_import_aliases.set(token_mod.token_lexeme(read(alias_opt), s.source), true)
+                return cursor
+            if t.kind == tk.TokenKind.identifier:
+                unsafe:
+                    last_part = Option[str].some(value = token_mod.token_lexeme(t, s.source))
+        cursor += 1
+    match last_part:
+        Option.some as lp:
+            s.known_import_aliases.set(lp.value, true)
+        Option.none:
+            pass
+    return cursor
+
+
+# =============================================================================
+#  Generic comma-separated list helper
+# =============================================================================
+
+function parse_comma_separated_until(s: ref[ParserState], closing_type: tk.TokenKind,
+                                      parse_item: proc(session: ref[ParserState]) -> void) -> void:
+    if check(s, closing_type):
+        return
+    while true:
+        step(s)
+        parse_item(s)
+        if not match_kind(s, tk.TokenKind.comma):
+            break
+        if check(s, closing_type):
+            break
 
 # =============================================================================
 #  Literal value extraction
@@ -464,7 +689,12 @@ public function parse(source: str) -> bool:
         step_counter = 0,
         in_inline_block_body = false,
         recovery_errors = null,
+        known_type_names = map_mod.Map[str, bool].create(),
+        known_import_aliases = map_mod.Map[str, bool].create(),
+        known_generic_callable_names = map_mod.Map[str, bool].create(),
+        current_type_param_names = vec.Vec[str].create(),
     )
+    seed_known_names(ref_of(state))
     var decl_count = parse_source_file(ref_of(state))
     return decl_count > 0
 
@@ -476,7 +706,12 @@ public function parse_reporting(source: str, errors: ref[vec.Vec[ParseDiagnostic
         step_counter = 0,
         in_inline_block_body = false,
         recovery_errors = ptr_of(errors),
+        known_type_names = map_mod.Map[str, bool].create(),
+        known_import_aliases = map_mod.Map[str, bool].create(),
+        known_generic_callable_names = map_mod.Map[str, bool].create(),
+        current_type_param_names = vec.Vec[str].create(),
     )
+    seed_known_names(ref_of(state))
     var nodes = parse_source_file(ref_of(state))
     return (errors.len() == 0, nodes)
 
@@ -1311,13 +1546,6 @@ function parse_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
 
 
 function check_next_is_unsafe_block(s: ref[ParserState]) -> bool:
-    # unsafe: newline indent ... is the block form; unsafe: expr is expression
-    let tok = peek(s) else:
-        return false
-    unsafe:
-        let t = read(tok)
-        if t.kind != tk.TokenKind.tk_unsafe:
-            return false
     return ts.check_next(ref_of(s.stream), tk.TokenKind.colon)
 
 
