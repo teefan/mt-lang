@@ -351,7 +351,7 @@ function lex_lines(session: ref[LexSession]) -> void:
         var actual_end = line_end
         var rem = consumed_lines - 1
         while rem > 0:
-            let (unused_a, next_end, unused_b) = find_line_bounds(source, actual_end)
+            let (_, next_end, _) = find_line_bounds(source, actual_end)
             actual_end = next_end
             rem -= 1
 
