@@ -110,6 +110,21 @@ function consume(s: ref[ParserState], kind: tk.TokenKind, msg: cstr) -> void:
     advance(s)
 
 
+function consume_or_sync(s: ref[ParserState], kind: tk.TokenKind, msg: cstr) -> void:
+    if check(s, kind):
+        advance(s)
+        return
+    let tok = peek(s) else:
+        parser_error_naked(s, msg)
+        return
+    unsafe:
+        let t = read(tok)
+        let lexeme = token_mod.token_lexeme(t, s.source)
+        let kn = token_mod.kind_name(t.kind)
+        parser_error_at(s, msg, t.line, t.column, lexeme, kn)
+    synchronize_to_statement_boundary(s)
+
+
 function parser_error_naked(s: ref[ParserState], msg: cstr) -> void:
     let tok = peek(s) else:
         parser_error_at(s, msg, 0, 0, "", "")
@@ -1736,7 +1751,7 @@ function parse_if_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
 
 
 function parse_if_branch_body(s: ref[ParserState]) -> ptr[ast.Stmt]:
-    consume(s, tk.TokenKind.colon, c"expected ':' after if condition")
+    consume_or_sync(s, tk.TokenKind.colon, c"expected ':' after if condition")
     if match_kind(s, tk.TokenKind.newline):
         consume(s, tk.TokenKind.indent, c"expected indented body")
         var body_span = parse_block_body_producing(s)
@@ -1795,7 +1810,7 @@ function parse_while_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
         ln = read(start_tok).line
         cn = read(start_tok).column
     var condition = parse_expression(s)
-    consume(s, tk.TokenKind.colon, c"expected ':' after while condition")
+    consume_or_sync(s, tk.TokenKind.colon, c"expected ':' after while condition")
     var is_inline = false
     var body = alloc_stmt(s)
     if match_kind(s, tk.TokenKind.newline):
@@ -1839,7 +1854,7 @@ function parse_for_stmt(s: ref[ParserState], threaded: bool) -> ptr[ast.Stmt]:
         var next_iter = parse_expression(s)
         unsafe:
             iterables.push(read(next_iter))
-    consume(s, tk.TokenKind.colon, c"expected ':' after for iterable")
+    consume_or_sync(s, tk.TokenKind.colon, c"expected ':' after for iterable")
     var body = alloc_stmt(s)
     if match_kind(s, tk.TokenKind.newline):
         consume(s, tk.TokenKind.indent, c"expected indented for body")
@@ -2893,6 +2908,15 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         var node = alloc_expr(s)
         unsafe:
             read(node) = ast.Expr.expr_string_literal(lexeme = lex, value = lex, is_cstring = false)
+        return node
+    else if match_kind(s, tk.TokenKind.at):
+        consume(s, tk.TokenKind.lbracket, c"expected '[' after @")
+        skip_attribute_content(s)
+        consume(s, tk.TokenKind.rbracket, c"expected ']' after attribute")
+        parser_error_naked(s, c"expected expression")
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_error(line = 0, column = 0, message = "unexpected @[attr] in expression")
         return node
     else:
         let tok_ptr = peek(s) else:

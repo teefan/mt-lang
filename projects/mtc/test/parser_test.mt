@@ -1111,6 +1111,27 @@ function test_parses_while_with_and_condition() -> t.Check:
 # =============================================================================
 
 @[test]
+function test_errors_on_missing_colon_after_if() -> t.Check:
+    var source = <<-SRC
+        function test() -> int:
+            if true
+                return 1
+            return 0
+    SRC
+    return check_parse_fails(source)
+
+
+@[test]
+function test_errors_on_unexpected_token_in_body() -> t.Check:
+    var source = <<-SRC
+        function test() -> int:
+            var x: int = @@@
+            return 0
+    SRC
+    return check_parse_fails(source)
+
+
+@[test]
 function test_errors_on_missing_end_of_statement() -> t.Check:
     var source = <<-SRC
         const X: int = 42
