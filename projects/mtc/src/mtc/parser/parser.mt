@@ -901,11 +901,117 @@ function parse_params_producing(s: ref[ParserState]) -> span[ast.Param]:
 
 
 function parse_type_ref(s: ref[ParserState]) -> void:
-    consume_name(s, c"expected type name")
+    var _tr = parse_type_ref_producing(s)
+
+
+function parse_type_ref_producing(s: ref[ParserState]) -> ptr[ast.TypeRef]:
+    # fn(...) -> T
+    if match_kind(s, tk.TokenKind.tk_fn):
+        return parse_callable_type_ref(s, false)
+    # proc(...) -> T
+    if match_kind(s, tk.TokenKind.tk_proc):
+        return parse_callable_type_ref(s, true)
+    # dyn[Interface]
+    if match_kind(s, tk.TokenKind.tk_dyn):
+        return parse_dyn_type_ref(s)
+    # @lifetime ref
+    if match_kind(s, tk.TokenKind.at):
+        let lt_tok = peek(s) else:
+            fatal(c"unexpected eof after @ in type ref")
+        var lt_ln: ptr_uint
+        var lt_cn: ptr_uint
+        unsafe:
+            lt_ln = read(lt_tok).line
+            lt_cn = read(lt_tok).column
+        consume_name(s, c"expected lifetime name after @")
+        let lt_name = previous_lexeme(s)
+        var node = heap_mod.must_alloc[ast.TypeRef](1)
+        unsafe:
+            read(node) = ast.TypeRef(
+                name = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef](), line = lt_ln, column = lt_cn),
+                arguments = span[ast.TypeRef](), nullable = false,
+                lifetime = Option[str].some(value = lt_name), line = lt_ln, column = lt_cn,
+                fn_params = span[ast.Param](), fn_return = null,
+                is_proc = false, is_fn = false,
+                dyn_interface = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef]()),
+                is_dyn = false, is_tuple = false
+            )
+        return node
+    # (T, U) tuple type or (T) parenthesized type
+    if match_kind(s, tk.TokenKind.lparen):
+        return parse_tuple_or_parenthesized_type(s)
+
+    # Named type ref
+    return parse_named_type_ref(s, true)
+
+
+function parse_callable_type_ref(s: ref[ParserState], is_proc_val: bool) -> ptr[ast.TypeRef]:
+    let start_tok = peek(s) else:
+        fatal(c"unexpected eof in callable type")
+    var ln: ptr_uint
+    var cn: ptr_uint
+    unsafe:
+        ln = read(start_tok).line
+        cn = read(start_tok).column
+    consume(s, tk.TokenKind.lparen, c"expected '(' after fn/proc")
+    var params_vec = vec.Vec[ast.Param].create()
+    if not check(s, tk.TokenKind.rparen):
+        while true:
+            step(s)
+            let ptok = peek(s) else:
+                break
+            var pln: ptr_uint
+            var pcn: ptr_uint
+            unsafe:
+                pln = read(ptok).line
+                pcn = read(ptok).column
+            consume_name(s, c"expected parameter name in callable type")
+            let pname = previous_lexeme(s)
+            consume(s, tk.TokenKind.colon, c"expected ':' after parameter name")
+            var ptype = parse_type_ref_producing(s)
+            unsafe:
+                params_vec.push(ast.Param(name = pname, param_type = read(ptype), line = pln, column = pcn))
+            if not match_kind(s, tk.TokenKind.comma):
+                break
+            if check(s, tk.TokenKind.rparen):
+                break
+    consume(s, tk.TokenKind.rparen, c"expected ')' after callable type params")
+    consume(s, tk.TokenKind.arrow, c"expected '->' after callable type params")
+    var ret_type = parse_type_ref_producing(s)
+    var node = heap_mod.must_alloc[ast.TypeRef](1)
+    var params_span = params_vec.as_span()
+    params_vec.release()
+    unsafe:
+        read(node) = ast.TypeRef(
+            name = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef](), line = ln, column = cn),
+            arguments = span[ast.TypeRef](), nullable = false,
+            lifetime = Option[str].none, line = ln, column = cn,
+            fn_params = params_span, fn_return = ret_type,
+            is_proc = is_proc_val, is_fn = not is_proc_val,
+            dyn_interface = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef]()),
+            is_dyn = false, is_tuple = false
+        )
+    return node
+
+
+function parse_dyn_type_ref(s: ref[ParserState]) -> ptr[ast.TypeRef]:
+    let start_tok = previous_token(s)
+    var ln: ptr_uint
+    var cn: ptr_uint
+    unsafe:
+        ln = start_tok.line
+        cn = start_tok.column
+    consume(s, tk.TokenKind.lbracket, c"expected '[' after dyn")
+    consume_name(s, c"expected interface name after dyn[")
+    let iface_name = previous_lexeme(s)
+    var parts_vec = vec.Vec[str].create()
+    parts_vec.push(iface_name)
     while match_kind(s, tk.TokenKind.dot):
-        consume_name(s, c"expected type name after '.'")
+        consume_name(s, c"expected interface name after '.'")
+        parts_vec.push(previous_lexeme(s))
+    var iface_qname = ast.QualifiedName(parts = parts_vec.as_span(), type_arguments = span[ast.TypeRef](), line = ln, column = cn)
+    # Optionally consume type arguments for generic interfaces like dyn[Mapper[int]]
     if match_kind(s, tk.TokenKind.lbracket):
-        # Generic type arguments — parse until rbracket
         var depth: int = 1
         while not eof(s) and depth > 0:
             step(s)
@@ -917,11 +1023,68 @@ function parse_type_ref(s: ref[ParserState]) -> void:
                 advance(s)
             else:
                 advance(s)
-    if match_kind(s, tk.TokenKind.question):
-        pass
+    consume(s, tk.TokenKind.rbracket, c"expected ']' after dyn interface")
+    var nullable = match_kind(s, tk.TokenKind.question)
+    var node = heap_mod.must_alloc[ast.TypeRef](1)
+    unsafe:
+        read(node) = ast.TypeRef(
+            name = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef](), line = ln, column = cn),
+            arguments = span[ast.TypeRef](), nullable = nullable,
+            lifetime = Option[str].none, line = ln, column = cn,
+            fn_params = span[ast.Param](), fn_return = null,
+            is_proc = false, is_fn = false,
+            dyn_interface = iface_qname,
+            is_dyn = true, is_tuple = false
+        )
+    parts_vec.release()
+    return node
 
 
-function parse_type_ref_producing(s: ref[ParserState]) -> ptr[ast.TypeRef]:
+function parse_tuple_or_parenthesized_type(s: ref[ParserState]) -> ptr[ast.TypeRef]:
+    let start_tok = peek(s) else:
+        fatal(c"unexpected eof in tuple type")
+    var ln: ptr_uint
+    var cn: ptr_uint
+    unsafe:
+        ln = read(start_tok).line
+        cn = read(start_tok).column
+    var first_type = parse_type_ref_producing(s)
+    if match_kind(s, tk.TokenKind.comma):
+        var types_vec = vec.Vec[ast.TypeRef].create()
+        unsafe:
+            types_vec.push(read(first_type))
+        while true:
+            step(s)
+            if check(s, tk.TokenKind.rparen):
+                break
+            var next_type = parse_type_ref_producing(s)
+            unsafe:
+                types_vec.push(read(next_type))
+            if not match_kind(s, tk.TokenKind.comma):
+                break
+            if check(s, tk.TokenKind.rparen):
+                break
+        consume(s, tk.TokenKind.rparen, c"expected ')' after tuple type elements")
+        var nullable = match_kind(s, tk.TokenKind.question)
+        var types_span = types_vec.as_span()
+        types_vec.release()
+        var node = heap_mod.must_alloc[ast.TypeRef](1)
+        unsafe:
+            read(node) = ast.TypeRef(
+                name = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef](), line = ln, column = cn),
+                arguments = types_span, nullable = nullable,
+                lifetime = Option[str].none, line = ln, column = cn,
+                fn_params = span[ast.Param](), fn_return = null,
+                is_proc = false, is_fn = false,
+                dyn_interface = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef]()),
+                is_dyn = false, is_tuple = true
+            )
+        return node
+    consume(s, tk.TokenKind.rparen, c"expected ')' after type")
+    return first_type
+
+
+function parse_named_type_ref(s: ref[ParserState], allow_nullable: bool) -> ptr[ast.TypeRef]:
     let tok = peek(s) else:
         fatal(c"unexpected eof in type ref")
     var ln: ptr_uint
@@ -936,27 +1099,87 @@ function parse_type_ref_producing(s: ref[ParserState]) -> ptr[ast.TypeRef]:
     while match_kind(s, tk.TokenKind.dot):
         consume_name(s, c"expected type name after '.'")
         part_names.push(previous_lexeme(s))
-    var type_args = span[ast.TypeRef]()
+    var type_args_vec = vec.Vec[ast.TypeRef].create()
+    var lifetime: Option[str] = Option[str].none
     if match_kind(s, tk.TokenKind.lbracket):
-        var depth: int = 1
-        while not eof(s) and depth > 0:
-            step(s)
-            if check(s, tk.TokenKind.lbracket):
-                depth += 1
-                advance(s)
-            else if check(s, tk.TokenKind.rbracket):
-                depth -= 1
-                advance(s)
-            else:
-                advance(s)
-    var nullable = match_kind(s, tk.TokenKind.question)
+        if check(s, tk.TokenKind.at):
+            advance(s)
+            let lt_name_tok = peek(s) else:
+                fatal(c"unexpected eof after @ in type arguments")
+            unsafe:
+                consume_name(s, c"expected lifetime name after @")
+                lifetime = Option[str].some(value = previous_lexeme(s))
+                consume(s, tk.TokenKind.comma, c"expected ',' after lifetime in type arguments")
+        if not check(s, tk.TokenKind.rbracket):
+            while true:
+                step(s)
+                var ta = parse_type_argument(s)
+                unsafe:
+                    type_args_vec.push(read(ta))
+                if not match_kind(s, tk.TokenKind.comma):
+                    break
+                if check(s, tk.TokenKind.rbracket):
+                    break
+        consume(s, tk.TokenKind.rbracket, c"expected ']' after type arguments")
+    var nullable = false
+    if allow_nullable:
+        nullable = match_kind(s, tk.TokenKind.question)
     var name_parts_span = part_names.as_span()
-    var qname = ast.QualifiedName(parts = name_parts_span, type_arguments = type_args, line = ln, column = cn)
-    var tr = heap_mod.must_alloc[ast.TypeRef](1)
+    var type_args_span = type_args_vec.as_span()
+    var qname = ast.QualifiedName(parts = name_parts_span, type_arguments = type_args_span, line = ln, column = cn)
+    var node = heap_mod.must_alloc[ast.TypeRef](1)
     unsafe:
-        read(tr) = ast.TypeRef(name = qname, arguments = type_args, nullable = nullable, lifetime = Option[str].none, line = ln, column = cn)
+        read(node) = ast.TypeRef(
+            name = qname, arguments = type_args_span, nullable = nullable,
+            lifetime = lifetime, line = ln, column = cn,
+            fn_params = span[ast.Param](), fn_return = null,
+            is_proc = false, is_fn = false,
+            dyn_interface = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef]()),
+            is_dyn = false, is_tuple = false
+        )
     part_names.release()
-    return tr
+    type_args_vec.release()
+    return node
+
+
+function parse_type_argument(s: ref[ParserState]) -> ptr[ast.TypeRef]:
+    if match_kind(s, tk.TokenKind.integer):
+        let lex = previous_lexeme(s)
+        var node = heap_mod.must_alloc[ast.TypeRef](1)
+        var parts = vec.Vec[str].create()
+        parts.push(lex)
+        var span_parts = parts.as_span()
+        unsafe:
+            read(node) = ast.TypeRef(
+                name = ast.QualifiedName(parts = span_parts, type_arguments = span[ast.TypeRef](), line = 0, column = 0),
+                arguments = span[ast.TypeRef](), nullable = false,
+                lifetime = Option[str].none, line = 0, column = 0,
+                fn_params = span[ast.Param](), fn_return = null,
+                is_proc = false, is_fn = false,
+                dyn_interface = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef]()),
+                is_dyn = false, is_tuple = false
+            )
+        parts.release()
+        return node
+    if match_kind(s, tk.TokenKind.float_literal):
+        let lex = previous_lexeme(s)
+        var node = heap_mod.must_alloc[ast.TypeRef](1)
+        var parts = vec.Vec[str].create()
+        parts.push(lex)
+        var span_parts = parts.as_span()
+        unsafe:
+            read(node) = ast.TypeRef(
+                name = ast.QualifiedName(parts = span_parts, type_arguments = span[ast.TypeRef](), line = 0, column = 0),
+                arguments = span[ast.TypeRef](), nullable = false,
+                lifetime = Option[str].none, line = 0, column = 0,
+                fn_params = span[ast.Param](), fn_return = null,
+                is_proc = false, is_fn = false,
+                dyn_interface = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef]()),
+                is_dyn = false, is_tuple = false
+            )
+        parts.release()
+        return node
+    return parse_named_type_ref(s, false)
 
 
 function parse_block(s: ref[ParserState]) -> void:

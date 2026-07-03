@@ -53,6 +53,13 @@ public struct TypeRef:
     lifetime: Option[str]
     line: ptr_uint
     column: ptr_uint
+    fn_params: span[Param]
+    fn_return: ptr[TypeRef]?
+    is_proc: bool
+    is_fn: bool
+    dyn_interface: QualifiedName
+    is_dyn: bool
+    is_tuple: bool
 
 
 public struct FunctionType:
