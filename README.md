@@ -159,6 +159,7 @@ Tuple destructuring:
 ```mt
 let (a, b) = pair()
 let (x, y) = (1, 2)
+let (_, _, title) = triple  # _ may appear more than once
 ```
 
 Struct destructuring:
@@ -447,6 +448,7 @@ Rules:
 - variant scrutinees
 - integer scrutinees
 - `str` scrutinees
+- tuple scrutinees
 
 `match` may also be used as an expression, producing a value from the matched arm:
 
@@ -460,7 +462,7 @@ let label = match code:
 `match` rules:
 
 - Enum and variant matches must be exhaustive unless `_` is present.
-- Integer and `str` matches require `_`. Integer match arms accept integer literals and char literals; `str` match arms accept string literals.
+- Integer, `str`, and tuple matches require `_`. Integer match arms accept integer literals and char literals; `str` match arms accept string literals; tuple match arms accept tuple literal patterns whose elements may be literals, char literals, string literals, or `_` discard.
 - Multiple pattern values may share the same arm body using `|`: `kind` matches `kind_a | kind_b`.
 - Variant payload arms may bind with `as name`.
 - Variant payload arms may destructure fields inline with struct patterns: `Variant.arm(field > 0, other)` — comparisons are guards (arm skipped if false), identifiers are bindings (field becomes a local), and `field = value` is an equality guard.
@@ -480,12 +482,29 @@ match multi_field:
         use_label(label)
 ```
 
+Tuple match example:
+
+```mt
+# Expression form
+let label = match rgb:
+    (255, 0, 0): "red"
+    (0, 255, 0): "green"
+    _: "other"
+
+# Statement form with wildcards
+match point:
+    (_, y) if y > 0:
+        handle_above(y)
+    _:
+        handle_other()
+```
+
 Struct pattern rules:
 
 - Guards (`hp > 0`, `level >= 3`) skip the arm if the condition is false; the match tries the next arm. Supported guard operators: `==`, `!=`, `<`, `<=`, `>`, `>=`.
 - Equality patterns (`kind = Kind.boss`) skip the arm if the field does not equal the value.
 - Bindings (`position`) create immutable local variables bound to the field value.
-- Discard (`_`) skips a field position without binding it; useful when you only need a subset of a multi-field payload arm.
+- Discard (`_`) skips a field position without binding it; useful when you only need a subset of a multi-field payload arm. `_` may appear more than once.
 - Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field gatherively cover every member of the enum, the arm is considered exhaustive.
 - For variant payload arms, struct patterns compose with `as name` bindings.
 - When a variant arm has exactly one payload field of struct type, and no pattern argument references that field name, the struct's own fields are transparently destructured. For example, `Entity.positioned(x, y)` where `positioned(loc: Pos)` destructures through `Pos` to bind `x` and `y`.

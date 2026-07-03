@@ -553,6 +553,8 @@ module MilkTea
           check_integer_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
         elsif scrutinee_type.is_a?(Types::StringView)
           check_string_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        elsif scrutinee_type.is_a?(Types::Tuple)
+          check_tuple_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
         else
           raise_sema_error("match requires an enum, variant, or integer scrutinee, got #{scrutinee_type}")
         end
@@ -652,6 +654,55 @@ module MilkTea
           value = arm.pattern.value
           raise_sema_error("duplicate match arm value \"#{value}\"") if covered_values.key?(value)
           covered_values[value] = true
+          check_block(arm.body, scopes:, return_type:, allow_return:)
+        end
+      end
+
+      def check_tuple_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        has_wildcard = statement.arms.any? { |arm| wildcard_pattern?(arm.pattern) }
+        raise_sema_error("match on tuple type #{scrutinee_type} requires a wildcard arm (_:)") unless has_wildcard
+
+        arity = scrutinee_type.element_types.length
+        covered_values = {}
+        wildcard_seen = false
+
+        statement.arms.each do |arm|
+          if arm.pattern.is_a?(AST::ErrorExpr)
+            check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
+            next
+          end
+
+          if wildcard_pattern?(arm.pattern)
+            raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
+            wildcard_seen = true
+            check_block(arm.body, scopes:, return_type:, allow_return:)
+            next
+          end
+
+          unless arm.pattern.is_a?(AST::ExpressionList)
+            raise_sema_error("match arm for tuple scrutinee must be a tuple literal or _, got #{arm.pattern.class.name}")
+          end
+
+          elements = arm.pattern.elements
+          raise_sema_error("tuple match arm has #{elements.length} elements but scrutinee has #{arity}") unless elements.length == arity
+
+          values = elements.map do |elem|
+            if elem.is_a?(AST::Identifier) && elem.name == "_"
+              :wildcard
+            elsif elem.is_a?(AST::IntegerLiteral) || elem.is_a?(AST::CharLiteral) ||
+                  elem.is_a?(AST::StringLiteral) || elem.is_a?(AST::BooleanLiteral)
+              elem.value
+            else
+              raise_sema_error("tuple match arm element must be a literal or _, got #{elem.class.name}")
+            end
+          end
+
+          all_literal = values.all? { |v| v != :wildcard }
+          if all_literal
+            raise_sema_error("duplicate tuple match arm #{arm.pattern.elements.map { |e| e.respond_to?(:value) ? e.value.inspect : '_' }.join(', ')}") if covered_values.key?(values)
+            covered_values[values] = true
+          end
+
           check_block(arm.body, scopes:, return_type:, allow_return:)
         end
       end
