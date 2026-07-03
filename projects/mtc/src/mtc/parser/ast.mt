@@ -174,7 +174,7 @@ public struct AttributeApplication:
 # =============================================================================
 
 public struct MatchArm:
-    pattern: ptr[Expr]
+    pattern: ptr[Expr]?
     binding_name: Option[str]
     binding_line: ptr_uint
     binding_column: ptr_uint
@@ -182,7 +182,7 @@ public struct MatchArm:
 
 
 public struct MatchExprArm:
-    pattern: ptr[Expr]
+    pattern: ptr[Expr]?
     binding_name: Option[str]
     binding_line: ptr_uint
     binding_column: ptr_uint
@@ -280,7 +280,7 @@ public variant Expr:
     expr_if(condition: ptr[Expr], then_expr: ptr[Expr], else_expr: ptr[Expr])
     expr_match(scrutinee: ptr[Expr], arms: span[MatchExprArm], line: ptr_uint,
                column: ptr_uint)
-    expr_proc(method_params: span[Param], return_type: ptr[TypeRef], body: ptr[Stmt])
+    expr_proc(method_params: span[Param], return_type: ptr[TypeRef]?, body: ptr[Stmt])
 
     # Async / concurrency
     expr_await(expression: ptr[Expr])

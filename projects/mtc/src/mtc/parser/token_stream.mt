@@ -83,3 +83,13 @@ public function eof(s: ref[TokenStream]) -> bool:
 public function skip_newlines(s: ref[TokenStream]) -> void:
     while check(s, tk.TokenKind.newline):
         advance(s)
+
+
+public function check_next(s: ref[TokenStream], kind: tk.TokenKind) -> bool:
+    # Peek at the token after the current one.
+    if s.current + 1 >= s.tokens.len():
+        return false
+    let tok = s.tokens.get(s.current + 1) else:
+        return false
+    unsafe:
+        return read(tok).kind == kind
