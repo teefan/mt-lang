@@ -1173,6 +1173,26 @@ module MilkTea
                   end
                   string_if_chain = else_body
                   nil
+                elsif scrutinee_type.is_a?(Types::Tuple)
+                  bool_type = @ctx.types.fetch("bool")
+                  wildcard = expression.arms.find { |arm| wildcard_arm_pattern?(arm.pattern) }
+                  non_wildcard = expression.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
+                  else_body = if wildcard
+                                arm_env = duplicate_env(env)
+                                value_setup, prepared_value = prepare_expression_for_inline_lowering(wildcard.value, env: arm_env, expected_type: result_type)
+                                value_setup + [IR::Assignment.new(target: result_ref, operator: "=", value: lower_contextual_expression(prepared_value, env: arm_env, expected_type: result_type))]
+                              else
+                                []
+                              end
+                  non_wildcard.reverse_each do |arm|
+                    arm_env = duplicate_env(env)
+                    value_setup, prepared_value = prepare_expression_for_inline_lowering(arm.value, env: arm_env, expected_type: result_type)
+                    then_body = value_setup + [IR::Assignment.new(target: result_ref, operator: "=", value: lower_contextual_expression(prepared_value, env: arm_env, expected_type: result_type))]
+                    cond = tuple_arm_condition(arm, lowered_expression, scrutinee_type, bool_type, env: arm_env)
+                    else_body = [IR::IfStmt.new(condition: cond, then_body:, else_body:)]
+                  end
+                  string_if_chain = else_body
+                  nil
                 else
                   expression.arms.map do |arm|
                     arm_env = duplicate_env(env)
@@ -1191,6 +1211,22 @@ module MilkTea
         else
           [setup + [IR::SwitchStmt.new(expression: switch_expression, cases: cases, exhaustive: true)], AST::Identifier.new(name: result_name)]
         end
+      end
+
+      def tuple_arm_condition(arm, lowered_expression, scrutinee_type, bool_type, env:)
+        elements = arm.pattern.elements
+        element_types = scrutinee_type.element_types
+        field_names = scrutinee_type.field_names
+
+        conds = elements.each_with_index.filter_map do |elem, index|
+          next if elem.is_a?(AST::Identifier) && elem.name == "_"
+
+          field_expr = IR::Member.new(receiver: lowered_expression, member: field_names[index], type: element_types[index])
+          lit = lower_expression(elem, env:, expected_type: element_types[index])
+          IR::Binary.new(operator: "==", left: field_expr, right: lit, type: bool_type)
+        end
+
+        conds.reduce { |acc, cond| IR::Binary.new(operator: "and", left: acc, right: cond, type: bool_type) }
       end
 
       def materialize_prepared_expression(setup, value, env:, type:, prefix:)

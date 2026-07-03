@@ -239,6 +239,7 @@ Tuple and struct destructuring:
 ```mt
 let (a, b) = pair()
 let Vec2(x, y) = get_position()
+let (_, _, title) = triple   # _ discard may repeat
 ```
 
 Tuple destructuring binds each element by position. Struct destructuring binds each field by name against the source struct's declared field order.
@@ -567,6 +568,7 @@ Scrutinee types supported:
 - Variant: arm patterns must be arms of that variant; a payload arm may bind its fields with `as name` or destructure them inline with struct patterns.
 - Integer (`byte`, `short`, `int`, `long`, `ubyte`, `ushort`, `uint`, `ulong`, `ptr_int`, `ptr_uint`): arm patterns must be integer literals or char literals.
 - `str`: arm patterns must be string literals (e.g., `"lex": ...`). Matches via full content comparison using the `equal` builtin.
+- Tuple: arm patterns must be tuple literal patterns whose elements may be integer literals, char literals, string literals, booleans, or `_` discard.
 
 `_` is a wildcard arm that matches any value not covered by preceding arms. It maps to a C `default:` case.
 
@@ -586,6 +588,7 @@ Rules:
 - For variant scrutinee: all arms must be covered unless a `_` arm is present; `as name` binds the payload struct for arms that have fields.
 - For integer scrutinee: a `_` arm is required (integers are unbounded).
 - For `str` scrutinee: a `_` arm is required (strings are unbounded). Arm patterns must be string literals. Matches via full content comparison.
+- For tuple scrutinee: a `_` arm is required. Arm patterns must be tuple literal patterns. Each element may be an integer literal, char literal, string literal, boolean literal, or `_` discard. Arm arity must match the scrutinee tuple. A fully literal arm is checked for duplicates; arms containing `_` wildcard elements are not.
 - Duplicate arm values (or duplicate `_`) are rejected.
 - Match must be exhaustive (enum/variant without `_`) or include `_` (integer, str, or partial enum/variant).
 
@@ -631,6 +634,14 @@ match token:
     Token.number as n:
         use_value(n.value)
     Token.eof:
+        return
+
+match color:
+    (255, 0, 0):
+        set_red()
+    (0, 255, 0):
+        set_green()
+    _:
         return
 ```
 

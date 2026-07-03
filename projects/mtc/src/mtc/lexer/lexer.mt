@@ -1130,49 +1130,34 @@ function scan_format_string(
 # =============================================================================
 
 function three_char_token(ch0: char, ch1: char, ch2: char) -> tk.TokenKind:
-    if ch0 == '.' and ch1 == '.' and ch2 == '.':
-        return tk.TokenKind.ellipsis
-    if ch0 == '<' and ch1 == '<' and ch2 == '=':
-        return tk.TokenKind.shift_left_equal
-    if ch0 == '>' and ch1 == '>' and ch2 == '=':
-        return tk.TokenKind.shift_right_equal
-    return tk.TokenKind.eof
+    let t = (ch0, ch1, ch2)
+    return match t:
+        ('.', '.', '.'): tk.TokenKind.ellipsis
+        ('<', '<', '='): tk.TokenKind.shift_left_equal
+        ('>', '>', '='): tk.TokenKind.shift_right_equal
+        _:               tk.TokenKind.eof
 
 
 function two_char_token(ch0: char, ch1: char) -> tk.TokenKind:
-    if ch0 == '-' and ch1 == '>':
-        return tk.TokenKind.arrow
-    if ch0 == '.' and ch1 == '.':
-        return tk.TokenKind.dot_dot
-    if ch0 == '<' and ch1 == '<':
-        return tk.TokenKind.shift_left
-    if ch0 == '>' and ch1 == '>':
-        return tk.TokenKind.shift_right
-    if ch0 == '+' and ch1 == '=':
-        return tk.TokenKind.plus_equal
-    if ch0 == '-' and ch1 == '=':
-        return tk.TokenKind.minus_equal
-    if ch0 == '*' and ch1 == '=':
-        return tk.TokenKind.star_equal
-    if ch0 == '/' and ch1 == '=':
-        return tk.TokenKind.slash_equal
-    if ch0 == '%' and ch1 == '=':
-        return tk.TokenKind.percent_equal
-    if ch0 == '&' and ch1 == '=':
-        return tk.TokenKind.amp_equal
-    if ch0 == '|' and ch1 == '=':
-        return tk.TokenKind.pipe_equal
-    if ch0 == '^' and ch1 == '=':
-        return tk.TokenKind.caret_equal
-    if ch0 == '=' and ch1 == '=':
-        return tk.TokenKind.equal_equal
-    if ch0 == '!' and ch1 == '=':
-        return tk.TokenKind.bang_equal
-    if ch0 == '<' and ch1 == '=':
-        return tk.TokenKind.less_equal
-    if ch0 == '>' and ch1 == '=':
-        return tk.TokenKind.greater_equal
-    return tk.TokenKind.eof
+    let t = (ch0, ch1)
+    return match t:
+        ('-', '>'): tk.TokenKind.arrow
+        ('.', '.'): tk.TokenKind.dot_dot
+        ('<', '<'): tk.TokenKind.shift_left
+        ('>', '>'): tk.TokenKind.shift_right
+        ('+', '='): tk.TokenKind.plus_equal
+        ('-', '='): tk.TokenKind.minus_equal
+        ('*', '='): tk.TokenKind.star_equal
+        ('/', '='): tk.TokenKind.slash_equal
+        ('%', '='): tk.TokenKind.percent_equal
+        ('&', '='): tk.TokenKind.amp_equal
+        ('|', '='): tk.TokenKind.pipe_equal
+        ('^', '='): tk.TokenKind.caret_equal
+        ('=', '='): tk.TokenKind.equal_equal
+        ('!', '='): tk.TokenKind.bang_equal
+        ('<', '='): tk.TokenKind.less_equal
+        ('>', '='): tk.TokenKind.greater_equal
+        _:          tk.TokenKind.eof
 
 
 function one_char_token(ch: char) -> tk.TokenKind:

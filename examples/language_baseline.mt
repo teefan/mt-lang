@@ -1570,6 +1570,37 @@ function tuple_demo() -> int:
 
     return sum_pos + sum_named + sum_dest + ord + sum_struct
 
+# --- tuple match (expression and statement forms) ---
+
+function tuple_match_demo() -> int:
+    let t = (42, 7)
+    let r1 = match t:
+        (42, 7): 100
+        _: 0
+
+    # statement form
+    var result: int = 0
+    match t:
+        (42, _):
+            result = 200
+        _:
+            result = -1
+
+    # match on char tuples
+    let ch = ('a', 'b')
+    let r2 = match ch:
+        ('a', 'b'): 1
+        _: 0
+
+    return r1 + result + r2
+
+# --- _ discard may repeat in destructure patterns ---
+
+function underscore_repeat_demo() -> int:
+    let triple = (1, 2, 3)
+    let (_, _, third) = triple
+    return third
+
 function get_coords() -> (int, int):
     return (50, 60)
 
@@ -1660,6 +1691,8 @@ function main() -> int:
     total += named_args_demo()
     total += int<-(dyn_demo())
     total += tuple_demo()
+    total += tuple_match_demo()
+    total += underscore_repeat_demo()
     total += int<-(nested_struct_demo())
     total += traced_demo()
     total += atomic_demo()

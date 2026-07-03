@@ -558,6 +558,36 @@ module MilkTea
                 else_body = [IR::IfStmt.new(condition: cond, then_body: arm_body, else_body:)]
               end
               lowered.concat(else_body)
+            elsif scrutinee_type.is_a?(Types::Tuple)
+              arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
+              bool_type = @ctx.types.fetch("bool")
+              non_wildcard = statement.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
+              wildcard = statement.arms.find { |arm| wildcard_arm_pattern?(arm.pattern) }
+              else_body = if wildcard
+                            lower_block(
+                              wildcard.body,
+                              env: local_env,
+                              active_defers: active_defers + local_defers,
+                              return_type:,
+                              loop_flow: arm_loop_flow,
+                              allow_return:,
+                            )
+                          else
+                            []
+                          end
+              non_wildcard.reverse_each do |arm|
+                arm_body = lower_block(
+                  arm.body,
+                  env: local_env,
+                  active_defers: active_defers + local_defers,
+                  return_type:,
+                  loop_flow: arm_loop_flow,
+                  allow_return:,
+                )
+                cond = tuple_arm_condition(arm, expression, scrutinee_type, bool_type, env: local_env)
+                else_body = [IR::IfStmt.new(condition: cond, then_body: arm_body, else_body:)]
+              end
+              lowered.concat(else_body)
             else
               arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
               cases = statement.arms.map do |arm|
