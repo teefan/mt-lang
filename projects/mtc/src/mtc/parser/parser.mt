@@ -839,9 +839,9 @@ function parse_import(s: ref[ParserState]) -> void:
 
 
 function parse_qualified_name(s: ref[ParserState]) -> void:
-    consume_name(s, c"expected identifier")
+    consume_name_allowing_keywords(s, c"expected identifier")
     while match_kind(s, tk.TokenKind.dot):
-        consume_name(s, c"expected identifier after '.'")
+        consume_name_allowing_keywords(s, c"expected identifier after '.'")
 
 
 # =============================================================================
@@ -1040,9 +1040,17 @@ function parse_type_params_skip(s: ref[ParserState]) -> void:
 function parse_params(s: ref[ParserState]) -> void:
     consume(s, tk.TokenKind.lparen, c"expected '('")
     while not eof(s) and not check(s, tk.TokenKind.rparen):
+        if match_kind(s, tk.TokenKind.ellipsis):
+            break
+        match_kind(s, tk.TokenKind.tk_out)
+        match_kind(s, tk.TokenKind.tk_in)
+        match_kind(s, tk.TokenKind.tk_inout)
+        match_kind(s, tk.TokenKind.tk_consuming)
         consume_name(s, c"expected parameter name")
         consume(s, tk.TokenKind.colon, c"expected ':' after parameter name")
         parse_type_ref(s)
+        if match_kind(s, tk.TokenKind.tk_as):
+            parse_type_ref(s)
         if not match_kind(s, tk.TokenKind.comma):
             break
     consume(s, tk.TokenKind.rparen, c"expected ')'")
@@ -1052,6 +1060,12 @@ function parse_params_producing(s: ref[ParserState]) -> span[ast.Param]:
     var params = vec.Vec[ast.Param].create()
     consume(s, tk.TokenKind.lparen, c"expected '('")
     while not eof(s) and not check(s, tk.TokenKind.rparen):
+        if match_kind(s, tk.TokenKind.ellipsis):
+            break
+        match_kind(s, tk.TokenKind.tk_out)
+        match_kind(s, tk.TokenKind.tk_in)
+        match_kind(s, tk.TokenKind.tk_inout)
+        match_kind(s, tk.TokenKind.tk_consuming)
         let tok = peek(s) else:
             break
         var ln: ptr_uint
@@ -1063,6 +1077,8 @@ function parse_params_producing(s: ref[ParserState]) -> span[ast.Param]:
         let name_str = previous_lexeme(s)
         consume(s, tk.TokenKind.colon, c"expected ':' after parameter name")
         var ptype = parse_type_ref_producing(s)
+        if match_kind(s, tk.TokenKind.tk_as):
+            parse_type_ref(s)
         unsafe:
             var pm = ast.Param(name = name_str, param_type = read(ptype), line = ln, column = cn)
             params.push(pm)
@@ -1271,7 +1287,7 @@ function parse_named_type_ref(s: ref[ParserState], allow_nullable: bool) -> ptr[
     var part_names = vec.Vec[str].create()
     part_names.push(first_name)
     while match_kind(s, tk.TokenKind.dot):
-        consume_name(s, c"expected type name after '.'")
+        consume_name_allowing_keywords(s, c"expected type name after '.'")
         part_names.push(previous_lexeme(s))
     var type_args_vec = vec.Vec[ast.TypeRef].create()
     var lifetime: Option[str] = Option[str].none
@@ -1353,7 +1369,7 @@ function parse_type_argument(s: ref[ParserState]) -> ptr[ast.TypeRef]:
             )
         parts.release()
         return node
-    return parse_named_type_ref(s, false)
+    return parse_named_type_ref(s, true)
 
 
 function parse_block(s: ref[ParserState]) -> void:
@@ -3021,6 +3037,8 @@ function parse_enum_decl(s: ref[ParserState]) -> void:
 
 function parse_variant_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected variant name")
+    if match_kind(s, tk.TokenKind.lbracket):
+        parse_type_params_skip(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after variant name")
     consume(s, tk.TokenKind.newline, c"expected newline")
     consume(s, tk.TokenKind.indent, c"expected indented variant body")
@@ -3028,9 +3046,17 @@ function parse_variant_decl(s: ref[ParserState]) -> void:
     while not check(s, tk.TokenKind.dedent) and not eof(s):
         consume_name(s, c"expected arm name")
         if match_kind(s, tk.TokenKind.lparen):
-            while not check(s, tk.TokenKind.rparen) and not eof(s):
-                advance(s)
-            consume(s, tk.TokenKind.rparen, c"expected ')'")
+            var depth: int = 1
+            while not eof(s) and depth > 0:
+                step(s)
+                if check(s, tk.TokenKind.lparen):
+                    depth += 1
+                    advance(s)
+                else if check(s, tk.TokenKind.rparen):
+                    depth -= 1
+                    advance(s)
+                else:
+                    advance(s)
         consume_end_of_statement(s)
         skip_newlines(s)
     consume(s, tk.TokenKind.dedent, c"expected end of variant body")
@@ -3038,6 +3064,8 @@ function parse_variant_decl(s: ref[ParserState]) -> void:
 
 function parse_interface_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected interface name")
+    if match_kind(s, tk.TokenKind.lbracket):
+        parse_type_params_skip(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after interface name")
     consume(s, tk.TokenKind.newline, c"expected newline")
     consume(s, tk.TokenKind.indent, c"expected indented interface body")
@@ -3105,6 +3133,8 @@ function parse_extending_method(s: ref[ParserState]) -> void:
 
 function parse_extern_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected function name")
+    if match_kind(s, tk.TokenKind.lbracket):
+        parse_type_params_skip(s)
     parse_params(s)
     consume(s, tk.TokenKind.arrow, c"expected '->' before external return type")
     parse_type_ref(s)
@@ -3113,6 +3143,8 @@ function parse_extern_decl(s: ref[ParserState]) -> void:
 
 function parse_foreign_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected function name")
+    if match_kind(s, tk.TokenKind.lbracket):
+        parse_type_params_skip(s)
     parse_params(s)
     consume(s, tk.TokenKind.arrow, c"expected '->' before foreign return type")
     parse_type_ref(s)
