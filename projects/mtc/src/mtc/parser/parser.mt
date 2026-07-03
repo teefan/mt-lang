@@ -186,7 +186,11 @@ function synchronize_to_top_level_boundary(s: ref[ParserState]) -> void:
             advance(s)
             continue
         if seen_newline and (is_declaration_start(s) or check(s, tk.TokenKind.tk_import)):
-            return
+            let tok_ptr = peek(s) else:
+                return
+            unsafe:
+                if read(tok_ptr).column <= 1:
+                    return
         advance(s)
 
 function is_declaration_start(s: ref[ParserState]) -> bool:
@@ -223,7 +227,6 @@ function match_name(s: ref[ParserState]) -> bool:
 function consume_name(s: ref[ParserState], msg: cstr) -> void:
     let tok = peek(s) else:
         parser_error_naked(s, msg)
-        skip_to_sync_point(s)
         return
     unsafe:
         let t = read(tok)
@@ -231,7 +234,7 @@ function consume_name(s: ref[ParserState], msg: cstr) -> void:
             let lexeme = token_mod.token_lexeme(t, s.source)
             let kn = token_mod.kind_name(t.kind)
             parser_error_at(s, msg, t.line, t.column, lexeme, kn)
-            skip_to_sync_point(s)
+            advance(s)
             return
     advance(s)
 
@@ -257,8 +260,6 @@ function consume_name_allowing_keywords(s: ref[ParserState], msg: cstr) -> void:
 
 function consume_end_of_statement(s: ref[ParserState]) -> void:
     if s.in_inline_block_body:
-        return
-    if check(s, tk.TokenKind.dedent):
         return
     if not check(s, tk.TokenKind.newline):
         parser_error_naked(s, c"expected end of statement")
@@ -887,11 +888,7 @@ function skip_attribute_content(s: ref[ParserState]) -> void:
 # =============================================================================
 
 function external_file_header(s: ref[ParserState]) -> bool:
-    return check(s, tk.TokenKind.tk_external) and check_next_is_regular_declaration(s, tk.TokenKind.tk_external)
-
-function check_next_is_regular_declaration(s: ref[ParserState], expect_kind: tk.TokenKind) -> bool:
-    # false if next is newline (meaning it's the external file header)
-    return ts.check_next(ref_of(s.stream), tk.TokenKind.colon)
+    return check(s, tk.TokenKind.tk_external) and ts.check_next(ref_of(s.stream), tk.TokenKind.newline)
 
 
 function parse_raw_module_directive(s: ref[ParserState]) -> void:
@@ -1044,10 +1041,10 @@ function parse_params(s: ref[ParserState]) -> void:
     while not eof(s) and not check(s, tk.TokenKind.rparen):
         if match_kind(s, tk.TokenKind.ellipsis):
             break
-        match_kind(s, tk.TokenKind.tk_out)
-        match_kind(s, tk.TokenKind.tk_in)
-        match_kind(s, tk.TokenKind.tk_inout)
-        match_kind(s, tk.TokenKind.tk_consuming)
+        if (check(s, tk.TokenKind.tk_out) or check(s, tk.TokenKind.tk_in)
+            or check(s, tk.TokenKind.tk_inout) or check(s, tk.TokenKind.tk_consuming)):
+            if check_next(s, tk.TokenKind.identifier) or check_next(s, tk.TokenKind.tk_function):
+                advance(s)
         consume_name(s, c"expected parameter name")
         consume(s, tk.TokenKind.colon, c"expected ':' after parameter name")
         parse_type_ref(s)
@@ -1064,10 +1061,10 @@ function parse_params_producing(s: ref[ParserState]) -> span[ast.Param]:
     while not eof(s) and not check(s, tk.TokenKind.rparen):
         if match_kind(s, tk.TokenKind.ellipsis):
             break
-        match_kind(s, tk.TokenKind.tk_out)
-        match_kind(s, tk.TokenKind.tk_in)
-        match_kind(s, tk.TokenKind.tk_inout)
-        match_kind(s, tk.TokenKind.tk_consuming)
+        if (check(s, tk.TokenKind.tk_out) or check(s, tk.TokenKind.tk_in)
+            or check(s, tk.TokenKind.tk_inout) or check(s, tk.TokenKind.tk_consuming)):
+            if check_next(s, tk.TokenKind.identifier) or check_next(s, tk.TokenKind.tk_function):
+                advance(s)
         let tok = peek(s) else:
             break
         var ln: ptr_uint
@@ -1377,6 +1374,7 @@ function parse_type_argument(s: ref[ParserState]) -> ptr[ast.TypeRef]:
 function parse_block(s: ref[ParserState]) -> void:
     consume(s, tk.TokenKind.colon, c"expected ':' before block")
     consume(s, tk.TokenKind.newline, c"expected newline before block body")
+    skip_newlines(s)
     consume(s, tk.TokenKind.indent, c"expected indented block")
     parse_block_body(s)
     consume(s, tk.TokenKind.dedent, c"expected end of block")
@@ -1385,6 +1383,7 @@ function parse_block(s: ref[ParserState]) -> void:
 function parse_block_producing(s: ref[ParserState]) -> ptr[ast.Stmt]:
     consume(s, tk.TokenKind.colon, c"expected ':' before block")
     consume(s, tk.TokenKind.newline, c"expected newline before block body")
+    skip_newlines(s)
     consume(s, tk.TokenKind.indent, c"expected indented block")
     var body_span = parse_block_body_producing(s)
     consume(s, tk.TokenKind.dedent, c"expected end of block")
@@ -1544,16 +1543,13 @@ function parse_local_decl(s: ref[ParserState], is_let: bool) -> ptr[ast.Stmt]:
         destructure_type_name = Option[str].some(value = previous_lexeme(s))
         destructure_bindings = parse_destructure_bindings(s)
     else if check_name(s) and check_next(s, tk.TokenKind.dot):
-        var parts = vec.Vec[str].create()
         advance(s)
-        parts.push(previous_lexeme(s))
+        let first_part_name = previous_lexeme(s)
         while match_kind(s, tk.TokenKind.dot):
             consume_name(s, c"expected type name after '.'")
-            parts.push(previous_lexeme(s))
         consume(s, tk.TokenKind.lparen, c"expected '(' after destructure type name")
-        destructure_type_name = Option[str].some(value = "qualified")
+        destructure_type_name = Option[str].some(value = first_part_name)
         destructure_bindings = parse_destructure_bindings(s)
-        parts.release()
     else:
         consume_name(s, c"expected variable name")
         name_str = previous_lexeme(s)
@@ -2281,22 +2277,14 @@ function parse_or(s: ref[ParserState]) -> ptr[ast.Expr]:
 
 
 function parse_and(s: ref[ParserState]) -> ptr[ast.Expr]:
-    var left = parse_is(s)
+    var left = parse_not(s)
     while match_kind(s, tk.TokenKind.tk_and):
         let op = previous_lexeme(s)
-        var right = parse_is(s)
+        var right = parse_not(s)
         var node = alloc_expr(s)
         unsafe:
             read(node) = ast.Expr.expr_binary_op(operator = op, left = left, right = right)
         left = node
-    return left
-
-
-function parse_is(s: ref[ParserState]) -> ptr[ast.Expr]:
-    var left = parse_not(s)
-    if match_kind(s, tk.TokenKind.tk_is):
-        var pattern = parse_expression(s)
-        return is_desugar(s, left, pattern)
     return left
 
 
@@ -2308,7 +2296,15 @@ function parse_not(s: ref[ParserState]) -> ptr[ast.Expr]:
         unsafe:
             read(node) = ast.Expr.expr_unary_op(operator = op, operand = operand)
         return node
-    return parse_bitwise_or(s)
+    return parse_is(s)
+
+
+function parse_is(s: ref[ParserState]) -> ptr[ast.Expr]:
+    var left = parse_bitwise_or(s)
+    if match_kind(s, tk.TokenKind.tk_is):
+        var pattern = parse_expression(s)
+        return is_desugar(s, left, pattern)
+    return left
 
 
 function parse_bitwise_or(s: ref[ParserState]) -> ptr[ast.Expr]:
@@ -2559,41 +2555,27 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         return node
     else if match_kind(s, tk.TokenKind.string):
         let first_tok = previous_token(s)
-        var start_off: ptr_uint
-        var end_off: ptr_uint
+        var all_lexeme: str
         unsafe:
-            start_off = read(first_tok).start_offset
-            end_off = read(first_tok).end_offset
-        var is_all_cstring = false
+            all_lexeme = token_mod.token_lexeme(read(first_tok), s.source)
         while check(s, tk.TokenKind.string) or check(s, tk.TokenKind.cstring):
             advance(s)
-            let next_tok = previous_token(s)
-            unsafe:
-                end_off = read(next_tok).end_offset
-        var all_lexeme = unsafe: str(data = s.source.data + start_off, len = end_off - start_off)
         let val = parse_string_content(all_lexeme, false)
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_string_literal(lexeme = all_lexeme, value = val, is_cstring = is_all_cstring)
+            read(node) = ast.Expr.expr_string_literal(lexeme = all_lexeme, value = val, is_cstring = false)
         return node
     else if match_kind(s, tk.TokenKind.cstring):
         let first_tok = previous_token(s)
-        var start_off: ptr_uint
-        var end_off: ptr_uint
+        var all_lexeme: str
         unsafe:
-            start_off = read(first_tok).start_offset
-            end_off = read(first_tok).end_offset
-        var is_all_cstring = true
+            all_lexeme = token_mod.token_lexeme(read(first_tok), s.source)
         while check(s, tk.TokenKind.string) or check(s, tk.TokenKind.cstring):
             advance(s)
-            let next_tok = previous_token(s)
-            unsafe:
-                end_off = read(next_tok).end_offset
-        var all_lexeme = unsafe: str(data = s.source.data + start_off, len = end_off - start_off)
         let val = parse_string_content(all_lexeme, true)
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_string_literal(lexeme = all_lexeme, value = val, is_cstring = is_all_cstring)
+            read(node) = ast.Expr.expr_string_literal(lexeme = all_lexeme, value = val, is_cstring = true)
         return node
     else if match_kind(s, tk.TokenKind.char_literal):
         let lex = previous_lexeme(s)
@@ -2887,6 +2869,8 @@ function parse_match_expr_arm(s: ref[ParserState]) -> ast.MatchExprArm:
         binding_name = Option[str].some(value = previous_lexeme(s))
     consume(s, tk.TokenKind.colon, c"expected ':' after match pattern")
     var value = parse_expression(s)
+    if not block_expression(value):
+        consume_end_of_statement(s)
     return ast.MatchExprArm(pattern = pattern, binding_name = binding_name, value = value)
 
 
@@ -3003,11 +2987,19 @@ function try_parse_prefix_cast_expression(s: ref[ParserState]) -> Option[ptr[ast
     if not check(s, tk.TokenKind.less):
         s.stream.current = saved
         return Option[ptr[ast.Expr]].none
-    advance(s)
-    if not check(s, tk.TokenKind.minus):
+    if not check_next(s, tk.TokenKind.minus):
         s.stream.current = saved
         return Option[ptr[ast.Expr]].none
+    let lt_idx = s.stream.current
     advance(s)
+    advance(s)
+    var lt_opt = s.stream.tokens.get(lt_idx)
+    var mn_opt = s.stream.tokens.get(lt_idx + 1)
+    if lt_opt != null and mn_opt != null:
+        unsafe:
+            if read(lt_opt).end_offset != read(mn_opt).start_offset:
+                s.stream.current = saved
+                return Option[ptr[ast.Expr]].none
     var expr_val = parse_unary(s)
     var node = alloc_expr(s)
     unsafe:
@@ -3055,6 +3047,7 @@ function parse_struct_decl(s: ref[ParserState]) -> void:
         skip_implements_clause(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after struct name")
     consume(s, tk.TokenKind.newline, c"expected newline")
+    skip_newlines(s)
     consume(s, tk.TokenKind.indent, c"expected indented struct body")
     skip_newlines(s)
     while not check(s, tk.TokenKind.dedent) and not eof(s):
@@ -3094,6 +3087,7 @@ function parse_enum_decl(s: ref[ParserState]) -> void:
         if not (check(s, tk.TokenKind.newline) or check(s, tk.TokenKind.indent)):
             parse_type_ref(s)
     consume(s, tk.TokenKind.newline, c"expected newline")
+    skip_newlines(s)
     consume(s, tk.TokenKind.indent, c"expected indented enum body")
     skip_newlines(s)
     while not check(s, tk.TokenKind.dedent) and not eof(s):
@@ -3174,6 +3168,7 @@ function parse_extending_block(s: ref[ParserState]) -> void:
     parse_type_ref(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after extending type")
     consume(s, tk.TokenKind.newline, c"expected newline")
+    skip_newlines(s)
     consume(s, tk.TokenKind.indent, c"expected indented extending body")
     skip_newlines(s)
     while not check(s, tk.TokenKind.dedent) and not eof(s):
