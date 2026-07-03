@@ -7,11 +7,13 @@
 ## the parser aborts to prevent infinite loops during development.
 
 import std.vec as vec
+import std.mem.heap as heap_mod
 
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.token as token_mod
 import mtc.lexer.lexer as lexer
 import mtc.parser.token_stream as ts
+import mtc.parser.ast as ast
 
 
 ## Diagnostic with position info — survives function scope (value type).
@@ -193,9 +195,18 @@ function previous_lexeme(s: ref[ParserState]) -> str:
         return tlexeme_from_state(s, t)
 
 function tlexeme_from_state(s: ref[ParserState], tok: token_mod.Token) -> str:
-    # Tokens don't store lexemes — we'd need source. Use "" for now.
-    # The parser doesn't need lexemes for AST construction.
     return ""
+
+
+# =============================================================================
+#  AST node allocation
+# =============================================================================
+
+function alloc_expr(s: ref[ParserState]) -> ptr[ast.Expr]:
+    return heap_mod.must_alloc[ast.Expr](1)
+
+function alloc_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    return heap_mod.must_alloc[ast.Stmt](1)
 
 
 # =============================================================================
@@ -210,11 +221,11 @@ public function parse(source: str) -> bool:
         in_inline_block_body = false,
         recovery_errors = null,
     )
-    parse_source_file(ref_of(state))
-    return true
+    var decl_count = parse_source_file(ref_of(state))
+    return decl_count > 0
 
 
-public function parse_reporting(source: str, errors: ref[vec.Vec[ParseDiagnostic]]) -> bool:
+public function parse_reporting(source: str, errors: ref[vec.Vec[ParseDiagnostic]]) -> (bool, ptr_uint):
     var state = ParserState(
         stream = ts.create(lexer.lex(source)),
         source = source,
@@ -223,7 +234,7 @@ public function parse_reporting(source: str, errors: ref[vec.Vec[ParseDiagnostic
         recovery_errors = ptr_of(errors),
     )
     var nodes = parse_source_file(ref_of(state))
-    return errors.len() == 0
+    return (errors.len() == 0, nodes)
 
 
 # =============================================================================
@@ -577,6 +588,8 @@ function parse_match_arm(s: ref[ParserState]) -> void:
         pass
     else:
         parse_pattern(s)
+    if match_kind(s, tk.TokenKind.tk_as):
+        consume_name(s, c"expected binding name after as")
     consume(s, tk.TokenKind.colon, c"expected ':' after match pattern")
     if match_kind(s, tk.TokenKind.newline):
         consume(s, tk.TokenKind.indent, c"expected indented match arm body")
@@ -671,138 +684,252 @@ function parse_gather_stmt(s: ref[ParserState]) -> void:
 #  Expressions
 # =============================================================================
 
-function parse_expression(s: ref[ParserState]) -> void:
-    parse_range(s)
+function parse_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
+    return parse_range(s)
 
 
-function parse_range(s: ref[ParserState]) -> void:
-    parse_or(s)
+function parse_range(s: ref[ParserState]) -> ptr[ast.Expr]:
+    var left = parse_or(s)
     if match_kind(s, tk.TokenKind.dot_dot):
-        parse_or(s)
+        var right = parse_or(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_range(start = left, end = right)
+        return node
+    return left
 
 
-function parse_or(s: ref[ParserState]) -> void:
-    parse_and(s)
+function parse_or(s: ref[ParserState]) -> ptr[ast.Expr]:
+    var left = parse_and(s)
     while match_kind(s, tk.TokenKind.tk_or):
-        parse_and(s)
+        var right = parse_and(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_binary_op(operator = "or", left = left, right = right)
+        left = node
+    return left
 
 
-function parse_and(s: ref[ParserState]) -> void:
-    parse_comparison(s)
+function parse_and(s: ref[ParserState]) -> ptr[ast.Expr]:
+    var left = parse_comparison(s)
     while match_kind(s, tk.TokenKind.tk_and):
-        parse_comparison(s)
+        var right = parse_comparison(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_binary_op(operator = "and", left = left, right = right)
+        left = node
+    return left
 
 
-function parse_comparison(s: ref[ParserState]) -> void:
-    parse_bitwise(s)
+function parse_comparison(s: ref[ParserState]) -> ptr[ast.Expr]:
+    var left = parse_bitwise(s)
     while (
         check(s, tk.TokenKind.equal_equal) or check(s, tk.TokenKind.bang_equal)
         or check(s, tk.TokenKind.less) or check(s, tk.TokenKind.less_equal)
         or check(s, tk.TokenKind.greater) or check(s, tk.TokenKind.greater_equal)
     ):
+        var op_tok = peek(s)
         advance(s)
-        parse_bitwise(s)
+        var right = parse_bitwise(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_binary_op(operator = "", left = left, right = right)
+        left = node
+    return left
 
 
-function parse_bitwise(s: ref[ParserState]) -> void:
-    parse_term(s)
+function parse_bitwise(s: ref[ParserState]) -> ptr[ast.Expr]:
+    var left = parse_term(s)
     while (
         check(s, tk.TokenKind.pipe) or check(s, tk.TokenKind.caret) or check(s, tk.TokenKind.amp)
         or check(s, tk.TokenKind.shift_left) or check(s, tk.TokenKind.shift_right)
     ):
         advance(s)
-        parse_term(s)
+        var right = parse_term(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_binary_op(operator = "", left = left, right = right)
+        left = node
+    return left
 
 
-function parse_term(s: ref[ParserState]) -> void:
-    parse_factor(s)
+function parse_term(s: ref[ParserState]) -> ptr[ast.Expr]:
+    var left = parse_factor(s)
     while check(s, tk.TokenKind.plus) or check(s, tk.TokenKind.minus):
         advance(s)
-        parse_factor(s)
+        var right = parse_factor(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_binary_op(operator = "", left = left, right = right)
+        left = node
+    return left
 
 
-function parse_factor(s: ref[ParserState]) -> void:
-    parse_unary(s)
+function parse_factor(s: ref[ParserState]) -> ptr[ast.Expr]:
+    var left = parse_unary(s)
     while check(s, tk.TokenKind.star) or check(s, tk.TokenKind.slash) or check(s, tk.TokenKind.percent):
         advance(s)
-        parse_unary(s)
+        var right = parse_unary(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_binary_op(operator = "", left = left, right = right)
+        left = node
+    return left
 
 
-function parse_unary(s: ref[ParserState]) -> void:
+function parse_unary(s: ref[ParserState]) -> ptr[ast.Expr]:
     if (
         match_kind(s, tk.TokenKind.tk_not) or check(s, tk.TokenKind.minus)
         or check(s, tk.TokenKind.plus) or check(s, tk.TokenKind.tilde)
     ):
         advance(s)
-        parse_unary(s)
+        var operand = parse_unary(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_unary_op(operator = "", operand = operand)
+        return node
     else:
-        parse_postfix(s)
+        return parse_postfix(s)
 
 
-function parse_postfix(s: ref[ParserState]) -> void:
-    parse_primary(s)
+function parse_postfix(s: ref[ParserState]) -> ptr[ast.Expr]:
+    var left = parse_primary(s)
     while true:
         step(s)
         if match_kind(s, tk.TokenKind.dot):
             consume_name(s, c"expected member name after '.'")
+            var node = alloc_expr(s)
+            unsafe:
+                read(node) = ast.Expr.expr_member_access(receiver = left, member_name = "")
+            left = node
         else if match_kind(s, tk.TokenKind.lbracket):
-            parse_expression(s)
+            var idx = parse_expression(s)
             consume(s, tk.TokenKind.rbracket, c"expected ']'")
+            var node = alloc_expr(s)
+            unsafe:
+                read(node) = ast.Expr.expr_index_access(receiver = left, index = idx)
+            left = node
         else if match_kind(s, tk.TokenKind.lparen):
             parse_call_args(s)
             consume(s, tk.TokenKind.rparen, c"expected ')'")
+            var node = alloc_expr(s)
+            unsafe:
+                read(node) = ast.Expr.expr_call(callee = left, args = span[ast.Argument]())
+            left = node
         else:
             break
+    return left
 
 
-function parse_primary(s: ref[ParserState]) -> void:
-    if match_kind(s, tk.TokenKind.integer) or match_kind(s, tk.TokenKind.float_literal):
-        pass
-    else if match_kind(s, tk.TokenKind.string) or match_kind(s, tk.TokenKind.cstring):
-        pass
+function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
+    if match_kind(s, tk.TokenKind.integer):
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_integer_literal(value = 0)
+        return node
+    else if match_kind(s, tk.TokenKind.float_literal):
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_float_literal(value = 0.0)
+        return node
+    else if match_kind(s, tk.TokenKind.string):
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_string_literal(value = "", is_cstring = false)
+        return node
+    else if match_kind(s, tk.TokenKind.cstring):
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_string_literal(value = "", is_cstring = true)
+        return node
     else if match_kind(s, tk.TokenKind.char_literal):
-        pass
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_char_literal(value = 0)
+        return node
     else if match_kind(s, tk.TokenKind.tk_true):
-        pass
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_bool_literal(value = true)
+        return node
     else if match_kind(s, tk.TokenKind.tk_false):
-        pass
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_bool_literal(value = false)
+        return node
     else if match_kind(s, tk.TokenKind.tk_null):
-        pass
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_null_literal
+        return node
     else if match_name(s):
-        pass
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_identifier(name = "", line = 0, column = 0)
+        return node
     else if match_kind(s, tk.TokenKind.lparen):
-        parse_expression(s)
+        var inner = parse_expression(s)
         consume(s, tk.TokenKind.rparen, c"expected ')'")
+        return inner
     else if match_kind(s, tk.TokenKind.tk_if):
-        # if expression
         parse_expression(s)
         consume(s, tk.TokenKind.colon, c"expected ':' after if condition")
         parse_expression(s)
         consume(s, tk.TokenKind.tk_else, c"expected 'else' in if expression")
         consume(s, tk.TokenKind.colon, c"expected ':' after else")
         parse_expression(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_null_literal
+        return node
     else if match_kind(s, tk.TokenKind.tk_match):
         parse_match_expr(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_null_literal
+        return node
     else if match_kind(s, tk.TokenKind.tk_proc):
         parse_proc_expr(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_null_literal
+        return node
     else if match_kind(s, tk.TokenKind.tk_size_of) or match_kind(s, tk.TokenKind.tk_align_of):
         consume(s, tk.TokenKind.lparen, c"expected '('")
         parse_type_ref(s)
         consume(s, tk.TokenKind.rparen, c"expected ')'")
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_null_literal
+        return node
     else if match_kind(s, tk.TokenKind.tk_detach):
         parse_expression(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_null_literal
+        return node
     else if match_kind(s, tk.TokenKind.tk_unsafe):
         consume(s, tk.TokenKind.colon, c"expected ':' after unsafe")
         parse_expression(s)
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_null_literal
+        return node
     else if check(s, tk.TokenKind.less):
-        # prefix cast T<-expr
         advance(s)
-        advance(s)  # skip - and <
+        advance(s)
         parse_type_ref(s)
         parse_expression(s)
-        pass
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_null_literal
+        return node
     else:
         parser_error_naked(s, c"expected expression")
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_null_literal
+        return node
 
 
 function parse_call_args(s: ref[ParserState]) -> void:
@@ -811,6 +938,8 @@ function parse_call_args(s: ref[ParserState]) -> void:
     while true:
         step(s)
         parse_expression(s)
+        if match_kind(s, tk.TokenKind.equal):
+            parse_expression(s)
         if not match_kind(s, tk.TokenKind.comma):
             break
 
@@ -832,6 +961,8 @@ function parse_match_expr_arm(s: ref[ParserState]) -> void:
         pass
     else:
         parse_pattern(s)
+    if match_kind(s, tk.TokenKind.tk_as):
+        consume_name(s, c"expected binding name after as")
     consume(s, tk.TokenKind.colon, c"expected ':' after match pattern")
     parse_expression(s)
     consume_end_of_statement(s)

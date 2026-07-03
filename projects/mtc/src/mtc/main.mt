@@ -72,7 +72,7 @@ function parse_command(file_path: str) -> int:
 
             let source = content.as_str()
             var diags = vec.Vec[parser.ParseDiagnostic].create()
-            let ok = parser.parse_reporting(source, ref_of(diags))
+            let (ok, decl_count) = parser.parse_reporting(source, ref_of(diags))
 
             if diags.len() > 0:
                 var di: ptr_uint = 0
@@ -94,7 +94,7 @@ function parse_command(file_path: str) -> int:
             diags.release()
 
             if ok:
-                stdio.print_format(c"parse succeeded: %.*s\n", int<-(file_path.len), file_path.data)
+                stdio.print_format(c"parse succeeded: %.*s (%d declarations)\n", int<-(file_path.len), file_path.data, int<-(decl_count))
                 return 0
             stdio.print_format(c"parse FAILED: %.*s\n", int<-(file_path.len), file_path.data)
             return 1

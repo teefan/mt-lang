@@ -9,7 +9,7 @@ import mtc.parser.parser as parser
 function check_parse(source: str) -> t.Check:
     var diags = vec.Vec[parser.ParseDiagnostic].create()
     defer diags.release()
-    let ok = parser.parse_reporting(source, ref_of(diags))
+    let (ok, decl_count) = parser.parse_reporting(source, ref_of(diags))
     if not ok:
         return t.fail("parse errors")
     return t.ok()
