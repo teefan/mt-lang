@@ -1801,6 +1801,24 @@ function parse_for_stmt(s: ref[ParserState], threaded: bool) -> ptr[ast.Stmt]:
 function parse_match_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     var scrutinee = parse_expression(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after match expression")
+    var is_expr_form = not check(s, tk.TokenKind.newline)
+    if is_expr_form:
+        var arms = vec.Vec[ast.MatchExprArm].create()
+        while true:
+            step(s)
+            let arm = parse_match_expr_arm(s)
+            arms.push(arm)
+            if not match_kind(s, tk.TokenKind.comma) and not check(s, tk.TokenKind.newline):
+                break
+        var arms_span = arms.as_span()
+        arms.release()
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_match(scrutinee = scrutinee, arms = arms_span, line = 0, column = 0)
+        var stmt = alloc_stmt(s)
+        unsafe:
+            read(stmt) = ast.Stmt.stmt_expression(expression = node, line = 0)
+        return stmt
     consume(s, tk.TokenKind.newline, c"expected newline after match header")
     consume(s, tk.TokenKind.indent, c"expected indented match body")
     skip_newlines(s)
@@ -2480,18 +2498,27 @@ function parse_postfix(s: ref[ParserState]) -> ptr[ast.Expr]:
                 read(node) = ast.Expr.expr_member_access(receiver = left, member_name = member, line = 0, column = 0)
             left = node
         else if check(s, tk.TokenKind.lbracket):
-            var spec_result = try_parse_specialization(s, left)
-            match spec_result:
-                Option.some as spec_val:
-                    left = spec_val.value
-                Option.none:
-                    advance(s)
-                    var idx = parse_expression(s)
-                    consume(s, tk.TokenKind.rbracket, c"expected ']'")
-                    var node = alloc_expr(s)
-                    unsafe:
-                        read(node) = ast.Expr.expr_index_access(receiver = left, index = idx)
-                    left = node
+            if postfix_bracket_starts_specialization(s, left):
+                var spec_result = try_parse_specialization(s, left)
+                match spec_result:
+                    Option.some as spec_val:
+                        left = spec_val.value
+                    Option.none:
+                        advance(s)
+                        var idx = parse_expression(s)
+                        consume(s, tk.TokenKind.rbracket, c"expected ']'")
+                        var node = alloc_expr(s)
+                        unsafe:
+                            read(node) = ast.Expr.expr_index_access(receiver = left, index = idx)
+                        left = node
+            else:
+                advance(s)
+                var idx = parse_expression(s)
+                consume(s, tk.TokenKind.rbracket, c"expected ']'")
+                var node = alloc_expr(s)
+                unsafe:
+                    read(node) = ast.Expr.expr_index_access(receiver = left, index = idx)
+                left = node
         else if match_kind(s, tk.TokenKind.lparen):
             var args = parse_call_args(s)
             consume(s, tk.TokenKind.rparen, c"expected ')'")
@@ -2507,6 +2534,16 @@ function parse_postfix(s: ref[ParserState]) -> ptr[ast.Expr]:
         else:
             break
     return left
+
+
+function postfix_bracket_starts_specialization(s: ref[ParserState], left: ptr[ast.Expr]) -> bool:
+    return specialization_target(left) and matching_rbracket_index(s, s.stream.current).is_some()
+
+
+function specialization_target(left: ptr[ast.Expr]) -> bool:
+    unsafe:
+        let e = read(left)
+        return e is ast.Expr.expr_identifier or e is ast.Expr.expr_member_access
 
 
 function try_parse_specialization(s: ref[ParserState], left: ptr[ast.Expr]) -> Option[ptr[ast.Expr]]:
