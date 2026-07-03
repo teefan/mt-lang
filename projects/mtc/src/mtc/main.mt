@@ -22,13 +22,13 @@ function main(args: span[str]) -> int:
 
     let cmd = args[0]
 
-    if cmd.equal("lex"):
+    if cmd == "lex":
         if args.len < 2:
             print_help()
             return 1
         return lex_command(args[1])
 
-    if cmd.equal("help"):
+    if cmd == "help":
         print_help()
         return 0
 
