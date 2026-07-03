@@ -173,7 +173,34 @@ function match_name(s: ref[ParserState]) -> bool:
     return false
 
 function consume_name(s: ref[ParserState], msg: cstr) -> void:
-    consume(s, tk.TokenKind.identifier, msg)
+    let tok = peek(s) else:
+        parser_error_naked(s, msg)
+        skip_to_sync_point(s)
+        return
+    unsafe:
+        let t = read(tok)
+        if t.kind != tk.TokenKind.identifier or is_keyword_token(t):
+            let lexeme = token_mod.token_lexeme(t, s.source)
+            let kn = token_mod.kind_name(t.kind)
+            parser_error_at(s, msg, t.line, t.column, lexeme, kn)
+            skip_to_sync_point(s)
+            return
+    advance(s)
+
+function consume_name_allowing_keywords(s: ref[ParserState], msg: cstr) -> void:
+    let tok = peek(s) else:
+        parser_error_naked(s, msg)
+        skip_to_sync_point(s)
+        return
+    if not check_name(s):
+        unsafe:
+            let t = read(tok)
+            let lexeme = token_mod.token_lexeme(t, s.source)
+            let kn = token_mod.kind_name(t.kind)
+            parser_error_at(s, msg, t.line, t.column, lexeme, kn)
+            skip_to_sync_point(s)
+            return
+    advance(s)
 
 function consume_end_of_statement(s: ref[ParserState]) -> void:
     if s.in_inline_block_body:
@@ -183,19 +210,228 @@ function consume_end_of_statement(s: ref[ParserState]) -> void:
     consume(s, tk.TokenKind.newline, c"expected end of statement")
 
 function is_keyword_token(tok: token_mod.Token) -> bool:
-    # Tokens that ARE keywords have tk_ prefix kind values.
+    # Keyword token kinds all have the tk_ prefix (values 51-122).
     # Tokens that are truly identifiers have TokenKind.identifier.
-    return tok.kind != tk.TokenKind.identifier
+    return tok.kind >= tk.TokenKind.tk_align_of
 
 function previous_lexeme(s: ref[ParserState]) -> str:
     let tok = previous(s) else:
         return ""
     unsafe:
         let t = read(tok)
-        return tlexeme_from_state(s, t)
+        return token_mod.token_lexeme(t, s.source)
 
-function tlexeme_from_state(s: ref[ParserState], tok: token_mod.Token) -> str:
-    return ""
+# =============================================================================
+#  Literal value extraction
+# =============================================================================
+
+const ZERO_BYTE_V: ubyte = '0'
+const LOWER_X_V: ubyte = 'x'
+const UPPER_X_V: ubyte = 'X'
+const LOWER_B_V: ubyte = 'b'
+const UPPER_B_V: ubyte = 'B'
+const LOWER_E_V: ubyte = 'e'
+const UPPER_E_V: ubyte = 'E'
+const PLUS_BYTE_V: ubyte = '+'
+const MINUS_BYTE_V: ubyte = '-'
+
+function parse_int_literal(lexeme: str) -> int:
+    if lexeme.len == 0:
+        return 0
+    var pos: ptr_uint = 0
+    var negative = false
+    var value: int = 0
+
+    unsafe:
+        let first = ubyte<-read(lexeme.data)
+        if first == MINUS_BYTE_V:
+            negative = true
+            pos = 1
+
+        if pos + 2 < lexeme.len:
+            let second = ubyte<-read(lexeme.data + pos)
+            let third = ubyte<-read(lexeme.data + pos + 1)
+            if second == ZERO_BYTE_V and (third == LOWER_X_V or third == UPPER_X_V):
+                pos += 2
+                while pos < lexeme.len:
+                    let b = ubyte<-read(lexeme.data + pos)
+                    if b == '_':
+                        pos += 1
+                        continue
+                    value = value * 16
+                    if b >= '0' and b <= '9':
+                        value += int<-(b - '0')
+                    else if b >= 'a' and b <= 'f':
+                        value += int<-(b - 'a' + 10)
+                    else if b >= 'A' and b <= 'F':
+                        value += int<-(b - 'A' + 10)
+                    else:
+                        break
+                    pos += 1
+                if negative:
+                    return -value
+                return value
+
+            if second == ZERO_BYTE_V and (third == LOWER_B_V or third == UPPER_B_V):
+                pos += 2
+                while pos < lexeme.len:
+                    let b = ubyte<-read(lexeme.data + pos)
+                    if b == '_':
+                        pos += 1
+                        continue
+                    if b == '0':
+                        value = value * 2
+                    else if b == '1':
+                        value = value * 2 + 1
+                    else:
+                        break
+                    pos += 1
+                if negative:
+                    return -value
+                return value
+
+        while pos < lexeme.len:
+            let b = ubyte<-read(lexeme.data + pos)
+            if b == '_':
+                pos += 1
+                continue
+            if b >= '0' and b <= '9':
+                value = value * 10 + int<-(b - '0')
+            else:
+                break
+            pos += 1
+
+    if negative:
+        return -value
+    return value
+
+
+function parse_float_literal(lexeme: str) -> double:
+    if lexeme.len == 0:
+        return 0.0
+    var pos: ptr_uint = 0
+    var negative = false
+    var exp_negative = false
+    var int_part: int = 0
+    var dec_part: int = 0
+    var dec_div: int = 1
+    var exp_part: int = 0
+    var in_dec = false
+    var in_exp = false
+
+    unsafe:
+        let first = ubyte<-read(lexeme.data)
+        if first == MINUS_BYTE_V:
+            negative = true
+            pos = 1
+
+        while pos < lexeme.len:
+            let b = ubyte<-read(lexeme.data + pos)
+            if b == '_':
+                pos += 1
+                continue
+            if b == '.':
+                in_dec = true
+                pos += 1
+                continue
+            if b == LOWER_E_V or b == UPPER_E_V:
+                in_exp = true
+                pos += 1
+                if pos < lexeme.len:
+                    let sign = ubyte<-read(lexeme.data + pos)
+                    if sign == MINUS_BYTE_V:
+                        exp_negative = true
+                        pos += 1
+                    else if sign == PLUS_BYTE_V:
+                        pos += 1
+                continue
+            if b >= '0' and b <= '9':
+                let d = int<-(b - '0')
+                if in_exp:
+                    exp_part = exp_part * 10 + d
+                else if in_dec:
+                    dec_part = dec_part * 10 + d
+                    dec_div *= 10
+                else:
+                    int_part = int_part * 10 + d
+            else:
+                break
+            pos += 1
+
+    var result: double = double<-(int_part)
+    if dec_div > 1:
+        result += double<-(dec_part) / double<-(dec_div)
+    if exp_part != 0:
+        var remaining = exp_part
+        if exp_negative:
+            while remaining > 0:
+                result /= 10.0
+                remaining -= 1
+        else:
+            while remaining > 0:
+                result *= 10.0
+                remaining -= 1
+
+    if negative:
+        return -result
+    return result
+
+
+function parse_string_content(lexeme: str, is_cstring: bool) -> str:
+    if lexeme.len < 2:
+        return lexeme
+    if is_cstring:
+        if lexeme.len < 3:
+            return lexeme
+        return unsafe: str(data = lexeme.data + 1, len = lexeme.len - 2)
+    return unsafe: str(data = lexeme.data + 1, len = lexeme.len - 2)
+
+
+function parse_char_value(lexeme: str) -> ubyte:
+    if lexeme.len < 3:
+        return 0
+    # Skip opening '
+    var pos: ptr_uint = 1
+    var value: ubyte = 0
+    unsafe:
+        let b = ubyte<-read(lexeme.data + pos)
+        if b == '\\':
+            pos += 1
+            let esc = ubyte<-read(lexeme.data + pos)
+            if esc == 'n':
+                return 10
+            else if esc == 'r':
+                return 13
+            else if esc == 't':
+                return 9
+            else if esc == '0':
+                return 0
+            else if esc == '\\':
+                return 92
+            else if esc == '\'':
+                return 39
+            else if esc == '\"':
+                return 34
+            else if esc == 'x':
+                # \xNN — two hex digits
+                value = 0
+                var hi = ubyte<-read(lexeme.data + pos + 1)
+                var lo = ubyte<-read(lexeme.data + pos + 2)
+                if hi >= '0' and hi <= '9':
+                    value += (hi - '0') * 16
+                else if hi >= 'a' and hi <= 'f':
+                    value += (hi - 'a' + 10) * 16
+                else if hi >= 'A' and hi <= 'F':
+                    value += (hi - 'A' + 10) * 16
+                if lo >= '0' and lo <= '9':
+                    value += (lo - '0')
+                else if lo >= 'a' and lo <= 'f':
+                    value += (lo - 'a' + 10)
+                else if lo >= 'A' and lo <= 'F':
+                    value += (lo - 'A' + 10)
+                return value
+            return b
+        return b
 
 
 # =============================================================================
@@ -694,7 +930,7 @@ function parse_range(s: ref[ParserState]) -> ptr[ast.Expr]:
         var right = parse_or(s)
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_range(start = left, end = right)
+            read(node) = ast.Expr.expr_range(start_expr = left, end_expr = right, line = 0, column = 0)
         return node
     return left
 
@@ -800,7 +1036,7 @@ function parse_postfix(s: ref[ParserState]) -> ptr[ast.Expr]:
             consume_name(s, c"expected member name after '.'")
             var node = alloc_expr(s)
             unsafe:
-                read(node) = ast.Expr.expr_member_access(receiver = left, member_name = "")
+                read(node) = ast.Expr.expr_member_access(receiver = left, member_name = "", line = 0, column = 0)
             left = node
         else if match_kind(s, tk.TokenKind.lbracket):
             var idx = parse_expression(s)
@@ -825,27 +1061,27 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
     if match_kind(s, tk.TokenKind.integer):
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_integer_literal(value = 0)
+            read(node) = ast.Expr.expr_integer_literal(lexeme = "", value = 0)
         return node
     else if match_kind(s, tk.TokenKind.float_literal):
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_float_literal(value = 0.0)
+            read(node) = ast.Expr.expr_float_literal(lexeme = "", value = 0.0)
         return node
     else if match_kind(s, tk.TokenKind.string):
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_string_literal(value = "", is_cstring = false)
+            read(node) = ast.Expr.expr_string_literal(lexeme = "", value = "", is_cstring = false)
         return node
     else if match_kind(s, tk.TokenKind.cstring):
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_string_literal(value = "", is_cstring = true)
+            read(node) = ast.Expr.expr_string_literal(lexeme = "", value = "", is_cstring = true)
         return node
     else if match_kind(s, tk.TokenKind.char_literal):
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_char_literal(value = 0)
+            read(node) = ast.Expr.expr_char_literal(lexeme = "", value = 0, line = 0, column = 0)
         return node
     else if match_kind(s, tk.TokenKind.tk_true):
         var node = alloc_expr(s)
@@ -860,7 +1096,7 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
     else if match_kind(s, tk.TokenKind.tk_null):
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_null_literal
+            read(node) = ast.Expr.expr_null_literal(target_type = null, line = 0, column = 0)
         return node
     else if match_name(s):
         var node = alloc_expr(s)
@@ -880,19 +1116,19 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         parse_expression(s)
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_null_literal
+            read(node) = ast.Expr.expr_null_literal(target_type = null, line = 0, column = 0)
         return node
     else if match_kind(s, tk.TokenKind.tk_match):
         parse_match_expr(s)
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_null_literal
+            read(node) = ast.Expr.expr_null_literal(target_type = null, line = 0, column = 0)
         return node
     else if match_kind(s, tk.TokenKind.tk_proc):
         parse_proc_expr(s)
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_null_literal
+            read(node) = ast.Expr.expr_null_literal(target_type = null, line = 0, column = 0)
         return node
     else if match_kind(s, tk.TokenKind.tk_size_of) or match_kind(s, tk.TokenKind.tk_align_of):
         consume(s, tk.TokenKind.lparen, c"expected '('")
@@ -900,20 +1136,20 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         consume(s, tk.TokenKind.rparen, c"expected ')'")
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_null_literal
+            read(node) = ast.Expr.expr_null_literal(target_type = null, line = 0, column = 0)
         return node
     else if match_kind(s, tk.TokenKind.tk_detach):
         parse_expression(s)
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_null_literal
+            read(node) = ast.Expr.expr_null_literal(target_type = null, line = 0, column = 0)
         return node
     else if match_kind(s, tk.TokenKind.tk_unsafe):
         consume(s, tk.TokenKind.colon, c"expected ':' after unsafe")
         parse_expression(s)
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_null_literal
+            read(node) = ast.Expr.expr_null_literal(target_type = null, line = 0, column = 0)
         return node
     else if check(s, tk.TokenKind.less):
         advance(s)
@@ -922,13 +1158,13 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         parse_expression(s)
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_null_literal
+            read(node) = ast.Expr.expr_null_literal(target_type = null, line = 0, column = 0)
         return node
     else:
         parser_error_naked(s, c"expected expression")
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_null_literal
+            read(node) = ast.Expr.expr_null_literal(target_type = null, line = 0, column = 0)
         return node
 
 
