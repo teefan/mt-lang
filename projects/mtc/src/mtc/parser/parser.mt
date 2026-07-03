@@ -720,160 +720,295 @@ function parse_block_body(s: ref[ParserState]) -> void:
 
 
 function parse_block_body_producing(s: ref[ParserState]) -> span[ast.Stmt]:
+    var stmts = vec.Vec[ast.Stmt].create()
     skip_newlines(s)
     while not check(s, tk.TokenKind.dedent) and not eof(s):
         step(s)
-        parse_statement(s)
+        let stmt = parse_statement(s)
+        unsafe:
+            stmts.push(read(stmt))
         skip_newlines(s)
-    return span[ast.Stmt]()
+    let result = stmts.as_span()
+    stmts.release()
+    return result
 
+
+# =============================================================================
 
 # =============================================================================
 #  Statements
 # =============================================================================
 
-function parse_statement(s: ref[ParserState]) -> void:
+function parse_statement(s: ref[ParserState]) -> ptr[ast.Stmt]:
     if match_kind(s, tk.TokenKind.tk_let):
-        parse_local_decl(s)
+        return parse_local_decl(s, true)
     else if match_kind(s, tk.TokenKind.tk_var):
-        parse_local_decl(s)
+        return parse_local_decl(s, false)
     else if match_kind(s, tk.TokenKind.tk_if):
-        parse_if_stmt(s)
+        return parse_if_stmt(s)
     else if match_kind(s, tk.TokenKind.tk_while):
-        parse_while_stmt(s)
+        return parse_while_stmt(s)
     else if match_kind(s, tk.TokenKind.tk_for):
-        parse_for_stmt(s)
+        return parse_for_stmt(s, false)
     else if match_kind(s, tk.TokenKind.tk_match):
-        parse_match_stmt(s)
+        return parse_match_stmt(s)
     else if match_kind(s, tk.TokenKind.tk_return):
-        parse_return_stmt(s)
+        return parse_return_stmt(s)
     else if match_kind(s, tk.TokenKind.tk_break):
+        let tok = peek(s) else:
+            return stmt_error_sentinel(s, c"unexpected eof in break")
+        var ln: ptr_uint
+        var cn: ptr_uint
+        unsafe:
+            ln = read(tok).line
+            cn = read(tok).column
         consume_end_of_statement(s)
+        var node = alloc_stmt(s)
+        unsafe:
+            read(node) = ast.Stmt.stmt_break(line = ln, column = cn)
+        return node
     else if match_kind(s, tk.TokenKind.tk_continue):
+        let tok = peek(s) else:
+            return stmt_error_sentinel(s, c"unexpected eof in continue")
+        var ln: ptr_uint
+        var cn: ptr_uint
+        unsafe:
+            ln = read(tok).line
+            cn = read(tok).column
         consume_end_of_statement(s)
+        var node = alloc_stmt(s)
+        unsafe:
+            read(node) = ast.Stmt.stmt_continue(line = ln, column = cn)
+        return node
     else if match_kind(s, tk.TokenKind.tk_pass):
+        let tok = peek(s) else:
+            return stmt_error_sentinel(s, c"unexpected eof in pass")
+        var ln: ptr_uint
+        var cn: ptr_uint
+        unsafe:
+            ln = read(tok).line
+            cn = read(tok).column
         consume_end_of_statement(s)
+        var node = alloc_stmt(s)
+        unsafe:
+            read(node) = ast.Stmt.stmt_pass(line = ln, column = cn)
+        return node
     else if match_kind(s, tk.TokenKind.tk_defer):
-        parse_defer_stmt(s)
+        return parse_defer_stmt(s)
     else if match_kind(s, tk.TokenKind.tk_unsafe):
-        parse_unsafe_stmt(s)
+        return parse_unsafe_stmt(s)
     else if match_kind(s, tk.TokenKind.tk_static_assert):
-        parse_static_assert(s)
+        return parse_static_assert_stmt(s)
     else if match_kind(s, tk.TokenKind.tk_when):
-        parse_when_stmt(s)
+        return parse_when_stmt(s)
     else if match_kind(s, tk.TokenKind.tk_parallel):
         if check(s, tk.TokenKind.tk_for):
             advance(s)
-            parse_for_stmt(s)
+            return parse_for_stmt(s, true)
         else:
-            parse_parallel_block(s)
+            return parse_parallel_block(s)
     else if match_kind(s, tk.TokenKind.tk_gather):
-        parse_gather_stmt(s)
+        return parse_gather_stmt(s)
     else:
-        parse_expression_stmt(s)
+        return parse_expression_stmt(s)
 
 
-function parse_local_decl(s: ref[ParserState]) -> void:
+function stmt_error_sentinel(s: ref[ParserState], msg: cstr) -> ptr[ast.Stmt]:
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_error(line = 0, column = 0, message = "parse error")
+    return node
+
+
+function parse_local_decl(s: ref[ParserState], is_let: bool) -> ptr[ast.Stmt]:
+    let tok = peek(s) else:
+        return stmt_error_sentinel(s, c"unexpected eof in local decl")
+    var ln: ptr_uint
+    var cn: ptr_uint
+    unsafe:
+        ln = read(tok).line
+        cn = read(tok).column
     consume_name(s, c"expected variable name")
+    let name_str = previous_lexeme(s)
+    var stmt_type: ptr[ast.TypeRef]? = null
     if match_kind(s, tk.TokenKind.colon):
-        parse_type_ref(s)
+        stmt_type = parse_type_ref_producing(s)
+    var value: ptr[ast.Expr]? = null
     if match_kind(s, tk.TokenKind.equal):
-        parse_expression(s)
+        value = parse_expression(s)
+    var else_binding: Option[str] = Option[str].none
+    var else_body: ptr[ast.Stmt]? = null
     if match_kind(s, tk.TokenKind.tk_else):
-        # let ... else: guard block
         if match_kind(s, tk.TokenKind.tk_as):
             consume_name(s, c"expected error binding name")
+            let bind_name = previous_lexeme(s)
+            else_binding = Option[str].some(value = bind_name)
         consume(s, tk.TokenKind.colon, c"expected ':' after else")
         consume(s, tk.TokenKind.newline, c"expected newline after else:")
         consume(s, tk.TokenKind.indent, c"expected indented else body")
-        parse_block_body(s)
+        var body_span = parse_block_body_producing(s)
         consume(s, tk.TokenKind.dedent, c"expected end of else body")
-        return
+        var body_stmt = alloc_stmt(s)
+        unsafe:
+            read(body_stmt) = ast.Stmt.stmt_block(statements = body_span)
+        else_body = body_stmt
+        var node = alloc_stmt(s)
+        unsafe:
+            read(node) = ast.Stmt.stmt_local(is_let = is_let, name = name_str, stmt_type = stmt_type, value = value,
+                else_binding = else_binding, else_body = else_body,
+                destructure_bindings = Option[span[str]].none,
+                destructure_type_name = Option[str].none, line = ln, column = cn)
+        return node
     if match_kind(s, tk.TokenKind.question):
         pass
     consume_end_of_statement(s)
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_local(is_let = is_let, name = name_str, stmt_type = stmt_type, value = value,
+            else_binding = else_binding, else_body = else_body,
+            destructure_bindings = Option[span[str]].none,
+            destructure_type_name = Option[str].none, line = ln, column = cn)
+    return node
 
 
-function parse_if_stmt(s: ref[ParserState]) -> void:
-    parse_expression(s)
+function parse_if_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    let start_tok = peek(s) else:
+        return stmt_error_sentinel(s, c"unexpected eof in if")
+    var start_ln: ptr_uint
+    unsafe:
+        start_ln = read(start_tok).line
+    var condition = parse_expression(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after if condition")
-    if match_kind(s, tk.TokenKind.newline):
-        consume(s, tk.TokenKind.indent, c"expected indented if body")
-        parse_block_body(s)
-        consume(s, tk.TokenKind.dedent, c"expected end of if body")
-    else:
-        # Inline if
-        parse_statement(s)
-    if match_kind(s, tk.TokenKind.tk_else):
-        consume(s, tk.TokenKind.colon, c"expected ':' after else")
-        if match_kind(s, tk.TokenKind.newline):
-            consume(s, tk.TokenKind.indent, c"expected indented else body")
-            parse_block_body(s)
-            consume(s, tk.TokenKind.dedent, c"expected end of else body")
-        else if match_kind(s, tk.TokenKind.tk_if):
-            # else if
-            parse_if_stmt(s)
+    var then_body = parse_block_or_inline_stmt(s)
+    var branches = vec.Vec[ast.IfBranch].create()
+    var branch = ast.IfBranch(condition = condition, body = then_body, line = start_ln, column = 0)
+    branches.push(branch)
+    var else_body: ptr[ast.Stmt]? = null
+    while match_kind(s, tk.TokenKind.tk_else):
+        if match_kind(s, tk.TokenKind.tk_if):
+            condition = parse_expression(s)
+            consume(s, tk.TokenKind.colon, c"expected ':' after elif condition")
+            var elif_body = parse_block_or_inline_stmt(s)
+            var elif_branch = ast.IfBranch(condition = condition, body = elif_body, line = 0, column = 0)
+            branches.push(elif_branch)
         else:
-            # Inline else
-            parse_statement(s)
+            consume(s, tk.TokenKind.colon, c"expected ':' after else")
+            else_body = parse_block_or_inline_stmt(s)
+            break
+    var branches_span = branches.as_span()
+    branches.release()
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_if(branches = branches_span, else_body = else_body,
+            is_inline = false, line = start_ln, else_line = 0, else_column = 0)
+    return node
 
 
-function parse_while_stmt(s: ref[ParserState]) -> void:
-    parse_expression(s)
+function parse_block_or_inline_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    if match_kind(s, tk.TokenKind.newline):
+        consume(s, tk.TokenKind.indent, c"expected indented body")
+        var body_span = parse_block_body_producing(s)
+        consume(s, tk.TokenKind.dedent, c"expected end of body")
+        var node = alloc_stmt(s)
+        unsafe:
+            read(node) = ast.Stmt.stmt_block(statements = body_span)
+        return node
+    else:
+        return parse_statement(s)
+
+
+function parse_while_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    let start_tok = peek(s) else:
+        return stmt_error_sentinel(s, c"unexpected eof in while")
+    var ln: ptr_uint
+    var cn: ptr_uint
+    unsafe:
+        ln = read(start_tok).line
+        cn = read(start_tok).column
+    var condition = parse_expression(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after while condition")
+    var is_inline = false
+    var body = alloc_stmt(s)
     if match_kind(s, tk.TokenKind.newline):
         consume(s, tk.TokenKind.indent, c"expected indented while body")
-        parse_block_body(s)
+        var body_span = parse_block_body_producing(s)
         consume(s, tk.TokenKind.dedent, c"expected end of while body")
+        unsafe:
+            read(body) = ast.Stmt.stmt_block(statements = body_span)
     else:
-        parse_statement(s)
+        is_inline = true
+        body = parse_statement(s)
         consume_end_of_statement(s)
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_while(condition = condition, body = body, is_inline = is_inline, line = ln, column = cn)
+    return node
 
 
-function parse_for_stmt(s: ref[ParserState]) -> void:
+function parse_for_stmt(s: ref[ParserState], threaded: bool) -> ptr[ast.Stmt]:
+    let start_tok = peek(s) else:
+        return stmt_error_sentinel(s, c"unexpected eof in for")
+    var ln: ptr_uint
+    var cn: ptr_uint
+    unsafe:
+        ln = read(start_tok).line
+        cn = read(start_tok).column
     consume_name(s, c"expected loop variable")
-    if match_kind(s, tk.TokenKind.comma):
-        parse_loop_bindings(s)
-    consume(s, tk.TokenKind.tk_in, c"expected 'in' after for bindings")
-    parse_expression(s)
-    consume(s, tk.TokenKind.colon, c"expected ':' after for iterable")
-    if match_kind(s, tk.TokenKind.newline):
-        consume(s, tk.TokenKind.indent, c"expected indented for body")
-        parse_block_body(s)
-        consume(s, tk.TokenKind.dedent, c"expected end of for body")
-
-
-function parse_loop_bindings(s: ref[ParserState]) -> void:
-    consume_name(s, c"expected loop variable")
+    var bindings = vec.Vec[ast.ForBinding].create()
+    var first_binding = ast.ForBinding(name = previous_lexeme(s), line = ln, column = cn)
+    bindings.push(first_binding)
     while match_kind(s, tk.TokenKind.comma):
         consume_name(s, c"expected loop variable")
+        var b = ast.ForBinding(name = previous_lexeme(s), line = 0, column = 0)
+        bindings.push(b)
+    consume(s, tk.TokenKind.tk_in, c"expected 'in' after for bindings")
+    var iterables = vec.Vec[ast.Expr].create()
+    var iter = parse_expression(s)
+    unsafe:
+        iterables.push(read(iter))
+    while match_kind(s, tk.TokenKind.comma):
+        var next_iter = parse_expression(s)
+        unsafe:
+            iterables.push(read(next_iter))
+    consume(s, tk.TokenKind.colon, c"expected ':' after for iterable")
+    var body = alloc_stmt(s)
+    if match_kind(s, tk.TokenKind.newline):
+        consume(s, tk.TokenKind.indent, c"expected indented for body")
+        var body_span = parse_block_body_producing(s)
+        consume(s, tk.TokenKind.dedent, c"expected end of for body")
+        body = alloc_stmt(s)
+        unsafe:
+            read(body) = ast.Stmt.stmt_block(statements = body_span)
+    var bindings_span = bindings.as_span()
+    var iterables_span = iterables.as_span()
+    bindings.release()
+    iterables.release()
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_for(bindings = bindings_span, iterables = iterables_span,
+            body = body, is_inline = false, threaded = threaded, line = ln, column = cn)
+    return node
 
 
-function parse_match_stmt(s: ref[ParserState]) -> void:
-    parse_expression(s)
+function parse_match_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    var scrutinee = parse_expression(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after match expression")
     consume(s, tk.TokenKind.newline, c"expected newline after match header")
     consume(s, tk.TokenKind.indent, c"expected indented match body")
     skip_newlines(s)
+    var arms = vec.Vec[ast.MatchArm].create()
     while not check(s, tk.TokenKind.dedent) and not eof(s):
         skip_newlines(s)
-        parse_match_arm(s)
+        let arm = parse_match_arm_producing(s)
+        arms.push(arm)
         skip_newlines(s)
     consume(s, tk.TokenKind.dedent, c"expected end of match body")
-
-
-function is_wildcard_match(s: ref[ParserState]) -> bool:
-    if not check_name(s):
-        return false
-    let tok = peek(s) else:
-        return false
+    var arms_span = arms.as_span()
+    arms.release()
+    var node = alloc_stmt(s)
     unsafe:
-        let t = read(tok)
-        let lexeme = token_mod.token_lexeme(t, s.source)
-        if lexeme == "_":
-            advance(s)
-            return true
-        return false
+        read(node) = ast.Stmt.stmt_match(scrutinee = scrutinee, arms = arms_span, is_inline = false, line = 0, column = 0)
+    return node
 
 
 function parse_match_arm(s: ref[ParserState]) -> void:
@@ -890,58 +1025,135 @@ function parse_match_arm(s: ref[ParserState]) -> void:
         consume(s, tk.TokenKind.dedent, c"expected end of match arm body")
 
 
-function parse_pattern(s: ref[ParserState]) -> void:
-    # Consume the pattern expression — integer, string, identifier, enum/variant path.
-    # Simplification: consume at least one token, then handle dotted paths.
-    if check(s, tk.TokenKind.colon) or check(s, tk.TokenKind.newline):
-        return
-    advance(s)
-    while match_kind(s, tk.TokenKind.dot):
-        consume_name(s, c"expected member name after '.'")
+function is_wildcard_match(s: ref[ParserState]) -> bool:
+    if not check_name(s):
+        return false
+    let tok = peek(s) else:
+        return false
+    unsafe:
+        let t = read(tok)
+        let lexeme = token_mod.token_lexeme(t, s.source)
+        if lexeme == "_":
+            advance(s)
+            return true
+        return false
 
 
-function parse_return_stmt(s: ref[ParserState]) -> void:
-    if check(s, tk.TokenKind.newline) or check(s, tk.TokenKind.dedent):
-        consume_end_of_statement(s)
-        return
+function parse_match_arm_producing(s: ref[ParserState]) -> ast.MatchArm:
+    var pattern: ptr[ast.Expr]? = null
+    if is_wildcard_match(s):
+        pass
     else:
-        parse_expression(s)
-        consume_end_of_statement(s)
+        pattern = parse_pattern_producing(s)
+    var binding_name: Option[str] = Option[str].none
+    if match_kind(s, tk.TokenKind.tk_as):
+        consume_name(s, c"expected binding name after as")
+        binding_name = Option[str].some(value = previous_lexeme(s))
+    consume(s, tk.TokenKind.colon, c"expected ':' after match pattern")
+    var body = alloc_stmt(s)
+    if match_kind(s, tk.TokenKind.newline):
+        consume(s, tk.TokenKind.indent, c"expected indented match arm body")
+        var body_span = parse_block_body_producing(s)
+        consume(s, tk.TokenKind.dedent, c"expected end of match arm body")
+        body = alloc_stmt(s)
+        unsafe:
+            read(body) = ast.Stmt.stmt_block(statements = body_span)
+    return ast.MatchArm(pattern = pattern, binding_name = binding_name, binding_line = 0, binding_column = 0, body = body)
 
 
-function parse_defer_stmt(s: ref[ParserState]) -> void:
+function parse_return_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    let start_tok = peek(s) else:
+        return stmt_error_sentinel(s, c"unexpected eof in return")
+    var ln: ptr_uint
+    var cn: ptr_uint
+    unsafe:
+        ln = read(start_tok).line
+        cn = read(start_tok).column
+    var value: ptr[ast.Expr]? = null
+    if not (check(s, tk.TokenKind.newline) or check(s, tk.TokenKind.dedent)):
+        value = parse_expression(s)
+    consume_end_of_statement(s)
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_ret(value = value, line = ln, column = cn)
+    return node
+
+
+function parse_defer_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    let start_tok = peek(s) else:
+        return stmt_error_sentinel(s, c"unexpected eof in defer")
+    var ln: ptr_uint
+    var cn: ptr_uint
+    unsafe:
+        ln = read(start_tok).line
+        cn = read(start_tok).column
+    var expression: ptr[ast.Expr]? = null
+    var body = alloc_stmt(s)
     if match_kind(s, tk.TokenKind.colon):
         if match_kind(s, tk.TokenKind.newline):
             consume(s, tk.TokenKind.indent, c"expected indented defer body")
-            parse_block_body(s)
+            var body_span = parse_block_body_producing(s)
             consume(s, tk.TokenKind.dedent, c"expected end of defer body")
+            body = alloc_stmt(s)
+            unsafe:
+                read(body) = ast.Stmt.stmt_block(statements = body_span)
         else:
-            # Inline defer: statement
-            parse_statement(s)
+            body = parse_statement(s)
     else:
-        # defer expr
-        parse_expression(s)
+        expression = parse_expression(s)
         consume_end_of_statement(s)
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_defer(expression = expression, body = body, line = ln, column = cn)
+    return node
 
 
-function parse_unsafe_stmt(s: ref[ParserState]) -> void:
+function parse_unsafe_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    let start_tok = peek(s) else:
+        return stmt_error_sentinel(s, c"unexpected eof in unsafe")
+    var ln: ptr_uint
+    var cn: ptr_uint
+    unsafe:
+        ln = read(start_tok).line
+        cn = read(start_tok).column
+    var body = alloc_stmt(s)
     if match_kind(s, tk.TokenKind.colon):
         consume(s, tk.TokenKind.newline, c"expected newline after unsafe:")
         consume(s, tk.TokenKind.indent, c"expected indented unsafe body")
-        parse_block_body(s)
+        var body_span = parse_block_body_producing(s)
         consume(s, tk.TokenKind.dedent, c"expected end of unsafe body")
+        body = alloc_stmt(s)
+        unsafe:
+            read(body) = ast.Stmt.stmt_block(statements = body_span)
     else:
-        parse_unsafe_expr(s)
+        var expr_val = parse_expression(s)
         consume_end_of_statement(s)
+        body = alloc_stmt(s)
+        unsafe:
+            read(body) = ast.Stmt.stmt_expression(expression = expr_val, line = ln)
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_unsafe(body = body, line = ln, column = cn)
+    return node
 
 
-function parse_unsafe_expr(s: ref[ParserState]) -> void:
-    parse_expression(s)
+function parse_static_assert_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    consume(s, tk.TokenKind.lparen, c"expected '(' after static_assert")
+    var condition = parse_expression(s)
+    consume(s, tk.TokenKind.comma, c"expected ',' after condition")
+    consume(s, tk.TokenKind.string, c"expected string message")
+    let msg = previous_lexeme(s)
+    consume(s, tk.TokenKind.rparen, c"expected ')'")
+    var content = parse_string_content(msg, false)
+    consume_end_of_statement(s)
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_static_assert(condition = condition, message = content, line = 0)
+    return node
 
 
-function parse_expression_stmt(s: ref[ParserState]) -> void:
-    parse_expression(s)
-    # Check for compound assignment operator
+function parse_expression_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    var left = parse_expression(s)
     if (
         check(s, tk.TokenKind.equal) or check(s, tk.TokenKind.plus_equal)
         or check(s, tk.TokenKind.minus_equal) or check(s, tk.TokenKind.star_equal)
@@ -951,29 +1163,102 @@ function parse_expression_stmt(s: ref[ParserState]) -> void:
         or check(s, tk.TokenKind.shift_right_equal)
     ):
         advance(s)
-        parse_expression(s)
+        let op = previous_lexeme(s)
+        var right = parse_expression(s)
+        consume_end_of_statement(s)
+        var node = alloc_stmt(s)
+        unsafe:
+            read(node) = ast.Stmt.stmt_assignment(target = left, operator = op, value = right, line = 0, column = 0)
+        return node
     consume_end_of_statement(s)
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_expression(expression = left, line = 0)
+    return node
 
 
-function parse_parallel_block(s: ref[ParserState]) -> void:
+function parse_parallel_block(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    let start_tok = peek(s) else:
+        return stmt_error_sentinel(s, c"unexpected eof in parallel")
+    var ln: ptr_uint
+    var cn: ptr_uint
+    unsafe:
+        ln = read(start_tok).line
+        cn = read(start_tok).column
     consume(s, tk.TokenKind.colon, c"expected ':' after parallel")
     consume(s, tk.TokenKind.newline, c"expected newline")
     consume(s, tk.TokenKind.indent, c"expected indented parallel body")
     skip_newlines(s)
+    var bodies = vec.Vec[ast.Stmt].create()
     while not check(s, tk.TokenKind.dedent) and not eof(s):
-        parse_statement(s)
+        let body_stmt = parse_statement(s)
+        var wrapper = alloc_stmt(s)
+        unsafe:
+            read(wrapper) = ast.Stmt.stmt_block(statements = span[ast.Stmt]())
+            bodies.push(read(wrapper))
         skip_newlines(s)
     consume(s, tk.TokenKind.dedent, c"expected end of parallel body")
+    var bodies_span = bodies.as_span()
+    bodies.release()
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_parallel_block(bodies = bodies_span, line = ln, column = cn)
+    return node
 
 
-function parse_gather_stmt(s: ref[ParserState]) -> void:
-    parse_expression(s)
+function parse_gather_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    var handles = vec.Vec[ast.Expr].create()
+    var first = parse_expression(s)
+    unsafe:
+        handles.push(read(first))
     while match_kind(s, tk.TokenKind.comma):
-        parse_expression(s)
+        var next_handle = parse_expression(s)
+        unsafe:
+            handles.push(read(next_handle))
     consume_end_of_statement(s)
+    var handles_span = handles.as_span()
+    handles.release()
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_gather(handles = handles_span, line = 0, column = 0)
+    return node
 
 
-# =============================================================================
+function parse_pattern(s: ref[ParserState]) -> void:
+    if check(s, tk.TokenKind.colon) or check(s, tk.TokenKind.newline):
+        return
+    advance(s)
+    while match_kind(s, tk.TokenKind.dot):
+        consume_name(s, c"expected member name after '.'")
+
+
+function parse_pattern_producing(s: ref[ParserState]) -> ptr[ast.Expr]:
+    if check(s, tk.TokenKind.colon) or check(s, tk.TokenKind.newline):
+        var node = alloc_expr(s)
+        unsafe:
+            read(node) = ast.Expr.expr_error(line = 0, column = 0, message = "empty pattern")
+        return node
+    var result = parse_expression(s)
+    return result
+
+
+function parse_when_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    skip_newlines(s)
+    while not eof(s):
+        parse_expression(s)
+        consume(s, tk.TokenKind.colon, c"expected ':' after when pattern")
+        consume(s, tk.TokenKind.newline, c"expected newline")
+        consume(s, tk.TokenKind.indent, c"expected indented when body")
+        skip_newlines(s)
+        var body_span = parse_block_body_producing(s)
+        consume(s, tk.TokenKind.dedent, c"expected end of when body")
+        skip_newlines(s)
+        if not check_name(s):
+            break
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_error(line = 0, column = 0, message = "when stmt stub")
+    return node
 #  Expressions
 # =============================================================================
 
@@ -1763,21 +2048,6 @@ function parse_event_decl(s: ref[ParserState]) -> void:
 
 
 function parse_when_decl(s: ref[ParserState]) -> void:
-    skip_newlines(s)
-    while not eof(s):
-        parse_expression(s)
-        consume(s, tk.TokenKind.colon, c"expected ':' after when pattern")
-        consume(s, tk.TokenKind.newline, c"expected newline")
-        consume(s, tk.TokenKind.indent, c"expected indented when body")
-        skip_newlines(s)
-        parse_block_body(s)
-        consume(s, tk.TokenKind.dedent, c"expected end of when body")
-        skip_newlines(s)
-        if not check_name(s):
-            break
-
-
-function parse_when_stmt(s: ref[ParserState]) -> void:
     skip_newlines(s)
     while not eof(s):
         parse_expression(s)

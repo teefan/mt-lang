@@ -178,7 +178,7 @@ public struct MatchArm:
     binding_name: Option[str]
     binding_line: ptr_uint
     binding_column: ptr_uint
-    body: ptr[Stmt]
+    body: ptr[Stmt]?
 
 
 public struct MatchExprArm:
@@ -307,26 +307,26 @@ public variant Expr:
 
 public variant Stmt:
     stmt_block(statements: span[Stmt])
-    stmt_local(is_let: bool, name: str, stmt_type: ptr[TypeRef], value: ptr[Expr],
-               else_binding: Option[str], else_body: ptr[Stmt],
+    stmt_local(is_let: bool, name: str, stmt_type: ptr[TypeRef]?, value: ptr[Expr]?,
+               else_binding: Option[str], else_body: ptr[Stmt]?,
                destructure_bindings: Option[span[str]],
                destructure_type_name: Option[str], line: ptr_uint, column: ptr_uint)
     stmt_assignment(target: ptr[Expr], operator: str, value: ptr[Expr], line: ptr_uint,
                     column: ptr_uint)
-    stmt_if(branches: span[IfBranch], else_body: ptr[Stmt], is_inline: bool, line: ptr_uint,
+    stmt_if(branches: span[IfBranch], else_body: ptr[Stmt]?, is_inline: bool, line: ptr_uint,
             else_line: ptr_uint, else_column: ptr_uint)
-    stmt_while(condition: ptr[Expr], body: ptr[Stmt], is_inline: bool, line: ptr_uint,
+    stmt_while(condition: ptr[Expr], body: ptr[Stmt]?, is_inline: bool, line: ptr_uint,
                column: ptr_uint)
-    stmt_for(bindings: span[ForBinding], iterables: span[Expr], body: ptr[Stmt],
+    stmt_for(bindings: span[ForBinding], iterables: span[Expr], body: ptr[Stmt]?,
              is_inline: bool, threaded: bool, line: ptr_uint, column: ptr_uint)
     stmt_match(scrutinee: ptr[Expr], arms: span[MatchArm], is_inline: bool, line: ptr_uint,
                column: ptr_uint)
-    stmt_ret(value: ptr[Expr], line: ptr_uint, column: ptr_uint)
+    stmt_ret(value: ptr[Expr]?, line: ptr_uint, column: ptr_uint)
     stmt_break(line: ptr_uint, column: ptr_uint)
     stmt_continue(line: ptr_uint, column: ptr_uint)
     stmt_pass(line: ptr_uint, column: ptr_uint)
-    stmt_defer(expression: ptr[Expr], body: ptr[Stmt], line: ptr_uint, column: ptr_uint)
-    stmt_unsafe(body: ptr[Stmt], line: ptr_uint, column: ptr_uint)
+    stmt_defer(expression: ptr[Expr]?, body: ptr[Stmt]?, line: ptr_uint, column: ptr_uint)
+    stmt_unsafe(body: ptr[Stmt]?, line: ptr_uint, column: ptr_uint)
     stmt_expression(expression: ptr[Expr], line: ptr_uint)
     stmt_static_assert(condition: ptr[Expr], message: str, line: ptr_uint)
     stmt_emit(declaration: ptr[Decl], line: ptr_uint, column: ptr_uint)
