@@ -775,7 +775,6 @@ function skip_attribute_content(s: ref[ParserState]) -> void:
 
 
 function parse_declaration(s: ref[ParserState]) -> void:
-    # Skip @[attribute] applications
     while match_kind(s, tk.TokenKind.at):
         consume(s, tk.TokenKind.lbracket, c"expected '[' after @")
         skip_attribute_content(s)
@@ -783,20 +782,26 @@ function parse_declaration(s: ref[ParserState]) -> void:
         skip_newlines(s)
 
     if match_kind(s, tk.TokenKind.tk_const):
-        parse_const_decl(s)
+        if match_kind(s, tk.TokenKind.tk_function):
+            parse_function_def(s)
+        else:
+            parse_const_decl(s)
     else if match_kind(s, tk.TokenKind.tk_var):
         parse_var_decl(s)
     else if match_kind(s, tk.TokenKind.tk_function):
         parse_function_def(s)
     else if match_kind(s, tk.TokenKind.tk_public):
-        # public <declaration> — re-enter parse_declaration
         skip_newlines(s)
         parse_declaration(s)
     else if match_kind(s, tk.TokenKind.tk_struct):
         parse_struct_decl(s)
+    else if match_kind(s, tk.TokenKind.tk_union):
+        parse_union_decl(s)
     else if match_kind(s, tk.TokenKind.tk_type):
         parse_type_alias(s)
     else if match_kind(s, tk.TokenKind.tk_enum):
+        parse_enum_decl(s)
+    else if match_kind(s, tk.TokenKind.tk_flags):
         parse_enum_decl(s)
     else if match_kind(s, tk.TokenKind.tk_variant):
         parse_variant_decl(s)
@@ -828,6 +833,18 @@ function parse_declaration(s: ref[ParserState]) -> void:
         advance(s)
 
 
+function parse_union_decl(s: ref[ParserState]) -> void:
+    consume_name(s, c"expected union name")
+    consume(s, tk.TokenKind.colon, c"expected ':' after union name")
+    consume(s, tk.TokenKind.newline, c"expected newline")
+    consume(s, tk.TokenKind.indent, c"expected indented union body")
+    skip_newlines(s)
+    while not check(s, tk.TokenKind.dedent) and not eof(s):
+        parse_struct_member(s)
+        skip_newlines(s)
+    consume(s, tk.TokenKind.dedent, c"expected end of union body")
+
+
 # =============================================================================
 #  Declarations
 # =============================================================================
@@ -857,10 +874,26 @@ function parse_var_decl(s: ref[ParserState]) -> void:
 
 function parse_function_def(s: ref[ParserState]) -> void:
     consume_name(s, c"expected function name")
+    if match_kind(s, tk.TokenKind.lbracket):
+        parse_type_params_skip(s)
     parse_params(s)
     if match_kind(s, tk.TokenKind.arrow):
         parse_type_ref(s)
     parse_block(s)
+
+
+function parse_type_params_skip(s: ref[ParserState]) -> void:
+    var depth: int = 1
+    while not eof(s) and depth > 0:
+        step(s)
+        if check(s, tk.TokenKind.lbracket):
+            depth += 1
+            advance(s)
+        else if check(s, tk.TokenKind.rbracket):
+            depth -= 1
+            advance(s)
+        else:
+            advance(s)
 
 
 function parse_params(s: ref[ParserState]) -> void:
@@ -2794,6 +2827,10 @@ function parse_call_args(s: ref[ParserState]) -> span[ast.Argument]:
 
 function parse_struct_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected struct name")
+    if match_kind(s, tk.TokenKind.lbracket):
+        parse_type_params_skip(s)
+    if match_kind(s, tk.TokenKind.tk_implements):
+        skip_implements_clause(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after struct name")
     consume(s, tk.TokenKind.newline, c"expected newline")
     consume(s, tk.TokenKind.indent, c"expected indented struct body")
@@ -2802,6 +2839,12 @@ function parse_struct_decl(s: ref[ParserState]) -> void:
         parse_struct_member(s)
         skip_newlines(s)
     consume(s, tk.TokenKind.dedent, c"expected end of struct body")
+
+
+function skip_implements_clause(s: ref[ParserState]) -> void:
+    parse_qualified_name(s)
+    while match_kind(s, tk.TokenKind.comma):
+        parse_qualified_name(s)
 
 
 function parse_struct_member(s: ref[ParserState]) -> void:
@@ -2820,8 +2863,9 @@ function parse_type_alias(s: ref[ParserState]) -> void:
 
 function parse_enum_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected enum name")
-    consume(s, tk.TokenKind.colon, c"expected ':' after enum name")
-    parse_type_ref(s)
+    if match_kind(s, tk.TokenKind.colon):
+        if not (check(s, tk.TokenKind.newline) or check(s, tk.TokenKind.indent)):
+            parse_type_ref(s)
     consume(s, tk.TokenKind.newline, c"expected newline")
     consume(s, tk.TokenKind.indent, c"expected indented enum body")
     skip_newlines(s)
