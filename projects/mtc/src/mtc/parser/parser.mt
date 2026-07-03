@@ -2557,16 +2557,18 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         return node
     else if match_kind(s, tk.TokenKind.string):
         let first_tok = previous_token(s)
-        var all_lexeme: str
+        var start_off: ptr_uint
+        var end_off: ptr_uint
         unsafe:
-            all_lexeme = token_mod.token_lexeme(read(first_tok), s.source)
+            start_off = read(first_tok).start_offset
+            end_off = read(first_tok).end_offset
         var is_all_cstring = false
         while check(s, tk.TokenKind.string) or check(s, tk.TokenKind.cstring):
             advance(s)
             let next_tok = previous_token(s)
             unsafe:
-                all_lexeme = token_mod.token_lexeme(read(next_tok), s.source)
-        let _all = all_lexeme
+                end_off = read(next_tok).end_offset
+        var all_lexeme = unsafe: str(data = s.source.data + start_off, len = end_off - start_off)
         let val = parse_string_content(all_lexeme, false)
         var node = alloc_expr(s)
         unsafe:
@@ -2574,16 +2576,18 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         return node
     else if match_kind(s, tk.TokenKind.cstring):
         let first_tok = previous_token(s)
-        var all_lexeme: str
+        var start_off: ptr_uint
+        var end_off: ptr_uint
         unsafe:
-            all_lexeme = token_mod.token_lexeme(read(first_tok), s.source)
+            start_off = read(first_tok).start_offset
+            end_off = read(first_tok).end_offset
         var is_all_cstring = true
         while check(s, tk.TokenKind.string) or check(s, tk.TokenKind.cstring):
             advance(s)
             let next_tok = previous_token(s)
             unsafe:
-                all_lexeme = token_mod.token_lexeme(read(next_tok), s.source)
-        let _all = all_lexeme
+                end_off = read(next_tok).end_offset
+        var all_lexeme = unsafe: str(data = s.source.data + start_off, len = end_off - start_off)
         let val = parse_string_content(all_lexeme, true)
         var node = alloc_expr(s)
         unsafe:
@@ -2998,15 +3002,14 @@ function parse_struct_decl(s: ref[ParserState]) -> void:
     consume(s, tk.TokenKind.indent, c"expected indented struct body")
     skip_newlines(s)
     while not check(s, tk.TokenKind.dedent) and not eof(s):
-        parse_struct_member(s)
+        if match_kind(s, tk.TokenKind.tk_event):
+            parse_event_decl(s)
+        else if check(s, tk.TokenKind.tk_struct):
+            parse_struct_decl(s)
+        else:
+            parse_struct_member(s)
         skip_newlines(s)
     consume(s, tk.TokenKind.dedent, c"expected end of struct body")
-
-
-function skip_implements_clause(s: ref[ParserState]) -> void:
-    parse_qualified_name(s)
-    while match_kind(s, tk.TokenKind.comma):
-        parse_qualified_name(s)
 
 
 function parse_struct_member(s: ref[ParserState]) -> void:
@@ -3014,6 +3017,12 @@ function parse_struct_member(s: ref[ParserState]) -> void:
     consume(s, tk.TokenKind.colon, c"expected ':' after field name")
     parse_type_ref(s)
     consume_end_of_statement(s)
+
+
+function skip_implements_clause(s: ref[ParserState]) -> void:
+    parse_qualified_name(s)
+    while match_kind(s, tk.TokenKind.comma):
+        parse_qualified_name(s)
 
 
 function parse_type_alias(s: ref[ParserState]) -> void:
@@ -3141,8 +3150,10 @@ function parse_extern_decl(s: ref[ParserState]) -> void:
     if match_kind(s, tk.TokenKind.lbracket):
         parse_type_params_skip(s)
     parse_params(s)
-    consume(s, tk.TokenKind.arrow, c"expected '->' before external return type")
-    parse_type_ref(s)
+    if match_kind(s, tk.TokenKind.arrow):
+        parse_type_ref(s)
+    if match_kind(s, tk.TokenKind.equal):
+        parse_expression(s)
     consume_end_of_statement(s)
 
 
@@ -3162,7 +3173,7 @@ function parse_static_assert(s: ref[ParserState]) -> void:
     consume(s, tk.TokenKind.lparen, c"expected '(' after static_assert")
     parse_expression(s)
     consume(s, tk.TokenKind.comma, c"expected ',' after condition")
-    consume(s, tk.TokenKind.string, c"expected string message")
+    parse_expression(s)
     consume(s, tk.TokenKind.rparen, c"expected ')'")
     consume_end_of_statement(s)
 
