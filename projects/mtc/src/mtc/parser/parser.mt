@@ -813,6 +813,7 @@ function parse_source_file(s: ref[ParserState]) -> ptr_uint:
 
     while not eof(s):
         step(s)
+        var saved = s.stream.current
         parse_declaration(s)
         count += 1
         skip_newlines(s)
@@ -832,6 +833,7 @@ function parse_raw_module_body(s: ref[ParserState]) -> ptr_uint:
         skip_newlines(s)
     while not eof(s):
         step(s)
+        var saved_ext = s.stream.current
         parse_external_declaration(s)
         count += 1
         skip_newlines(s)
@@ -1448,6 +1450,7 @@ function parse_block_body(s: ref[ParserState]) -> void:
             advance(s)
             skip_newlines(s)
             continue
+        var saved = s.stream.current
         parse_statement(s)
         skip_newlines(s)
 
@@ -1461,6 +1464,7 @@ function parse_block_body_producing(s: ref[ParserState]) -> span[ast.Stmt]:
             advance(s)
             skip_newlines(s)
             continue
+        var saved = s.stream.current
         let stmt = parse_statement(s)
         unsafe:
             stmts.push(read(stmt))
