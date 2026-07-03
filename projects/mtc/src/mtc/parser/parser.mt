@@ -449,6 +449,9 @@ function alloc_expr(s: ref[ParserState]) -> ptr[ast.Expr]:
 function alloc_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return heap_mod.must_alloc[ast.Stmt](1)
 
+function alloc_decl(s: ref[ParserState]) -> ptr[ast.Decl]:
+    return heap_mod.must_alloc[ast.Decl](1)
+
 
 # =============================================================================
 #  Public API
@@ -637,15 +640,29 @@ function parse_params(s: ref[ParserState]) -> void:
 
 
 function parse_params_producing(s: ref[ParserState]) -> span[ast.Param]:
+    var params = vec.Vec[ast.Param].create()
     consume(s, tk.TokenKind.lparen, c"expected '('")
     while not eof(s) and not check(s, tk.TokenKind.rparen):
+        let tok = peek(s) else:
+            break
+        var ln: ptr_uint
+        var cn: ptr_uint
+        unsafe:
+            ln = read(tok).line
+            cn = read(tok).column
         consume_name(s, c"expected parameter name")
+        let name_str = previous_lexeme(s)
         consume(s, tk.TokenKind.colon, c"expected ':' after parameter name")
-        parse_type_ref(s)
+        var ptype = parse_type_ref_producing(s)
+        unsafe:
+            var pm = ast.Param(name = name_str, param_type = read(ptype), line = ln, column = cn)
+            params.push(pm)
         if not match_kind(s, tk.TokenKind.comma):
             break
     consume(s, tk.TokenKind.rparen, c"expected ')'")
-    return span[ast.Param]()
+    let result = params.as_span()
+    params.release()
+    return result
 
 
 function parse_type_ref(s: ref[ParserState]) -> void:
@@ -670,19 +687,21 @@ function parse_type_ref(s: ref[ParserState]) -> void:
 
 
 function parse_type_ref_producing(s: ref[ParserState]) -> ptr[ast.TypeRef]:
-    var tr = heap_mod.must_alloc[ast.TypeRef](1)
+    let tok = peek(s) else:
+        fatal(c"unexpected eof in type ref")
+    var ln: ptr_uint
+    var cn: ptr_uint
     unsafe:
-        read(tr) = ast.TypeRef(
-            name = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef](), line = 0, column = 0),
-            arguments = span[ast.TypeRef](),
-            nullable = false,
-            lifetime = Option[str].none,
-            line = 0,
-            column = 0,
-        )
+        ln = read(tok).line
+        cn = read(tok).column
     consume_name(s, c"expected type name")
+    let first_name = previous_lexeme(s)
+    var part_names = vec.Vec[str].create()
+    part_names.push(first_name)
     while match_kind(s, tk.TokenKind.dot):
         consume_name(s, c"expected type name after '.'")
+        part_names.push(previous_lexeme(s))
+    var type_args = span[ast.TypeRef]()
     if match_kind(s, tk.TokenKind.lbracket):
         var depth: int = 1
         while not eof(s) and depth > 0:
@@ -695,8 +714,13 @@ function parse_type_ref_producing(s: ref[ParserState]) -> ptr[ast.TypeRef]:
                 advance(s)
             else:
                 advance(s)
-    if match_kind(s, tk.TokenKind.question):
-        pass
+    var nullable = match_kind(s, tk.TokenKind.question)
+    var name_parts_span = part_names.as_span()
+    var qname = ast.QualifiedName(parts = name_parts_span, type_arguments = type_args, line = ln, column = cn)
+    var tr = heap_mod.must_alloc[ast.TypeRef](1)
+    unsafe:
+        read(tr) = ast.TypeRef(name = qname, arguments = type_args, nullable = nullable, lifetime = Option[str].none, line = ln, column = cn)
+    part_names.release()
     return tr
 
 
@@ -709,6 +733,20 @@ function parse_block(s: ref[ParserState]) -> void:
     else:
         # Inline block — single statement follows
         parse_statement(s)
+
+
+function parse_block_producing(s: ref[ParserState]) -> ptr[ast.Stmt]:
+    consume(s, tk.TokenKind.colon, c"expected ':' before block")
+    if match_kind(s, tk.TokenKind.newline):
+        consume(s, tk.TokenKind.indent, c"expected indented block")
+        var body_span = parse_block_body_producing(s)
+        consume(s, tk.TokenKind.dedent, c"expected end of block")
+        var node = alloc_stmt(s)
+        unsafe:
+            read(node) = ast.Stmt.stmt_block(statements = body_span)
+        return node
+    else:
+        return parse_statement(s)
 
 
 function parse_block_body(s: ref[ParserState]) -> void:

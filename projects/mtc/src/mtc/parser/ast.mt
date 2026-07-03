@@ -343,14 +343,14 @@ public variant Stmt:
 # =============================================================================
 
 public variant Decl:
-    decl_const(name: str, const_type: ptr[TypeRef], value: ptr[Expr],
-               block_body: ptr[Stmt], visibility: bool,
+    decl_const(name: str, const_type: ptr[TypeRef], value: ptr[Expr]?,
+               block_body: ptr[Stmt]?, visibility: bool,
                attributes: span[AttributeApplication], line: ptr_uint,
                column: ptr_uint)
-    decl_var(name: str, var_type: ptr[TypeRef], value: ptr[Expr],
+    decl_var(name: str, var_type: ptr[TypeRef]?, value: ptr[Expr]?,
              visibility: bool, line: ptr_uint, column: ptr_uint)
     decl_function(name: str, type_params: span[TypeParam], method_params: span[Param],
-                  return_type: ptr[TypeRef], body: ptr[Stmt], visibility: bool,
+                  return_type: ptr[TypeRef]?, body: ptr[Stmt]?, visibility: bool,
                   is_async: bool, is_const: bool,
                   attributes: span[AttributeApplication], line: ptr_uint,
                   column: ptr_uint)
