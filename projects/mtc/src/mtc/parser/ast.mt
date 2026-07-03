@@ -336,7 +336,7 @@ public variant Stmt:
     stmt_unsafe(body: ptr[Stmt]?, line: ptr_uint, column: ptr_uint)
     stmt_expression(expression: ptr[Expr], line: ptr_uint)
     stmt_static_assert(condition: ptr[Expr], message: str, line: ptr_uint)
-    stmt_emit(declaration: ptr[Decl], line: ptr_uint, column: ptr_uint)
+    stmt_emit(declaration: ptr[Decl]?, line: ptr_uint, column: ptr_uint)
     stmt_when(discriminant: ptr[Expr], branches: span[WhenBranch], else_body: ptr[Stmt],
               line: ptr_uint, column: ptr_uint)
     stmt_parallel_block(bodies: span[Stmt], line: ptr_uint, column: ptr_uint)
