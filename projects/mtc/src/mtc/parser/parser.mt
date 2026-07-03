@@ -132,8 +132,6 @@ function parser_error_at(s: ref[ParserState], msg: cstr, line: ptr_uint, col: pt
 
 
 function skip_to_sync_point(s: ref[ParserState]) -> void:
-    # Skip at least one token past the current position to avoid
-    # re-syncing to the same token that caused the error.
     var depth: int = 0
     if not eof(s):
         advance(s)
@@ -154,11 +152,50 @@ function skip_to_sync_point(s: ref[ParserState]) -> void:
             return
         advance(s)
 
+
+function synchronize_to_statement_boundary(s: ref[ParserState]) -> void:
+    while not eof(s):
+        if check(s, tk.TokenKind.indent):
+            advance(s)
+            skip_newlines(s)
+            while not eof(s) and not check(s, tk.TokenKind.dedent):
+                skip_to_sync_point(s)
+            advance(s)
+        if check(s, tk.TokenKind.dedent):
+            return
+        if check(s, tk.TokenKind.newline):
+            advance(s)
+            skip_newlines(s)
+            if check(s, tk.TokenKind.indent):
+                advance(s)
+                skip_newlines(s)
+                while not eof(s) and not check(s, tk.TokenKind.dedent):
+                    skip_to_sync_point(s)
+                advance(s)
+            return
+        advance(s)
+
+
+function synchronize_to_top_level_boundary(s: ref[ParserState]) -> void:
+    var seen_newline = false
+    while not eof(s):
+        if check(s, tk.TokenKind.newline):
+            seen_newline = true
+            advance(s)
+            continue
+        if check(s, tk.TokenKind.indent) or check(s, tk.TokenKind.dedent):
+            advance(s)
+            continue
+        if seen_newline and (is_declaration_start(s) or check(s, tk.TokenKind.tk_import)):
+            return
+        advance(s)
+
 function is_declaration_start(s: ref[ParserState]) -> bool:
     return (
         check(s, tk.TokenKind.tk_const) or check(s, tk.TokenKind.tk_var)
         or check(s, tk.TokenKind.tk_function) or check(s, tk.TokenKind.tk_public)
-        or check(s, tk.TokenKind.tk_struct) or check(s, tk.TokenKind.tk_enum)
+        or check(s, tk.TokenKind.tk_struct) or check(s, tk.TokenKind.tk_union)
+        or check(s, tk.TokenKind.tk_enum) or check(s, tk.TokenKind.tk_flags)
         or check(s, tk.TokenKind.tk_type) or check(s, tk.TokenKind.tk_variant)
         or check(s, tk.TokenKind.tk_interface) or check(s, tk.TokenKind.tk_opaque)
         or check(s, tk.TokenKind.tk_extending) or check(s, tk.TokenKind.tk_async)
@@ -722,6 +759,12 @@ public function parse_reporting(source: str, errors: ref[vec.Vec[ParseDiagnostic
 
 function parse_source_file(s: ref[ParserState]) -> ptr_uint:
     skip_newlines(s)
+
+    if check(s, tk.TokenKind.tk_external) and not check_next(s, tk.TokenKind.tk_function):
+        advance(s)
+        skip_newlines(s)
+        return parse_raw_module_body(s)
+
     var count: ptr_uint = 0
 
     while match_kind(s, tk.TokenKind.tk_import):
@@ -736,6 +779,52 @@ function parse_source_file(s: ref[ParserState]) -> ptr_uint:
         skip_newlines(s)
 
     return count
+
+
+function parse_raw_module_body(s: ref[ParserState]) -> ptr_uint:
+    var count: ptr_uint = 0
+    while match_kind(s, tk.TokenKind.tk_import):
+        parse_import(s)
+        count += 1
+        skip_newlines(s)
+    while check(s, tk.TokenKind.tk_link) or check(s, tk.TokenKind.tk_include) or check(s, tk.TokenKind.tk_compiler_flag):
+        parse_raw_module_directive(s)
+        count += 1
+        skip_newlines(s)
+    while not eof(s):
+        step(s)
+        parse_external_declaration(s)
+        count += 1
+        skip_newlines(s)
+    return count
+
+
+function parse_external_declaration(s: ref[ParserState]) -> void:
+    if match_kind(s, tk.TokenKind.tk_const):
+        parse_const_decl(s)
+    else if match_kind(s, tk.TokenKind.tk_type):
+        parse_type_alias(s)
+    else if match_kind(s, tk.TokenKind.tk_struct):
+        parse_struct_decl(s)
+    else if match_kind(s, tk.TokenKind.tk_union):
+        parse_union_decl(s)
+    else if match_kind(s, tk.TokenKind.tk_enum):
+        parse_enum_decl(s)
+    else if match_kind(s, tk.TokenKind.tk_flags):
+        parse_enum_decl(s)
+    else if match_kind(s, tk.TokenKind.tk_opaque):
+        parse_opaque_decl(s)
+    else if match_kind(s, tk.TokenKind.tk_external):
+        if match_kind(s, tk.TokenKind.tk_function):
+            parse_extern_decl(s)
+        else:
+            parser_error_naked(s, c"expected function after external")
+            advance(s)
+    else if match_kind(s, tk.TokenKind.tk_when):
+        parse_when_stmt(s)
+    else:
+        parser_error_naked(s, c"expected external declaration")
+        advance(s)
 
 
 # =============================================================================
@@ -759,8 +848,25 @@ function parse_qualified_name(s: ref[ParserState]) -> void:
 #  Declaration dispatch
 # =============================================================================
 
+function parse_attribute_name_and_args(s: ref[ParserState]) -> void:
+    consume_name_allowing_keywords(s, c"expected attribute name")
+    while match_kind(s, tk.TokenKind.dot):
+        consume_name_allowing_keywords(s, c"expected attribute name after '.'")
+    if match_kind(s, tk.TokenKind.lparen):
+        var depth: int = 1
+        while not eof(s) and depth > 0:
+            step(s)
+            if check(s, tk.TokenKind.lparen):
+                depth += 1
+                advance(s)
+            else if check(s, tk.TokenKind.rparen):
+                depth -= 1
+                advance(s)
+            else:
+                advance(s)
+
+
 function skip_attribute_content(s: ref[ParserState]) -> void:
-    # Consume attribute name and optional (arguments) inside @[...]
     var depth: int = 1
     while not eof(s) and depth > 0:
         step(s)
@@ -774,12 +880,47 @@ function skip_attribute_content(s: ref[ParserState]) -> void:
             advance(s)
 
 
+# =============================================================================
+#  External file support
+# =============================================================================
+
+function external_file_header(s: ref[ParserState]) -> bool:
+    return check(s, tk.TokenKind.tk_external) and check_next_is_regular_declaration(s, tk.TokenKind.tk_external)
+
+function check_next_is_regular_declaration(s: ref[ParserState], expect_kind: tk.TokenKind) -> bool:
+    # false if next is newline (meaning it's the external file header)
+    return ts.check_next(ref_of(s.stream), tk.TokenKind.colon)
+
+
+function parse_raw_module_directive(s: ref[ParserState]) -> void:
+    if match_kind(s, tk.TokenKind.tk_link):
+        consume(s, tk.TokenKind.string, c"expected string after link")
+        consume_end_of_statement(s)
+    else if match_kind(s, tk.TokenKind.tk_include):
+        consume(s, tk.TokenKind.string, c"expected string after include")
+        consume_end_of_statement(s)
+    else if match_kind(s, tk.TokenKind.tk_compiler_flag):
+        consume(s, tk.TokenKind.string, c"expected string after compiler_flag")
+        consume_end_of_statement(s)
+
+
 function parse_declaration(s: ref[ParserState]) -> void:
+    var packed = false
+    var alignment: int = 0
     while match_kind(s, tk.TokenKind.at):
         consume(s, tk.TokenKind.lbracket, c"expected '[' after @")
-        skip_attribute_content(s)
+        if not check(s, tk.TokenKind.rbracket):
+            while true:
+                step(s)
+                parse_attribute_name_and_args(s)
+                if not match_kind(s, tk.TokenKind.comma):
+                    break
+                if check(s, tk.TokenKind.rbracket):
+                    break
         consume(s, tk.TokenKind.rbracket, c"expected ']' after attribute")
         skip_newlines(s)
+    var _p = packed
+    var _a = alignment
 
     if match_kind(s, tk.TokenKind.tk_const):
         if match_kind(s, tk.TokenKind.tk_function):
@@ -2912,6 +3053,9 @@ function parse_interface_method(s: ref[ParserState]) -> void:
         pass
     else if match_kind(s, tk.TokenKind.tk_static):
         pass
+    if not check(s, tk.TokenKind.tk_function):
+        match_kind(s, tk.TokenKind.tk_editable)
+        match_kind(s, tk.TokenKind.tk_static)
     consume(s, tk.TokenKind.tk_function, c"expected function in interface")
     consume_name(s, c"expected method name")
     parse_params(s)
@@ -2938,12 +3082,21 @@ function parse_extending_block(s: ref[ParserState]) -> void:
 
 
 function parse_extending_method(s: ref[ParserState]) -> void:
-    if match_kind(s, tk.TokenKind.tk_editable):
+    if match_kind(s, tk.TokenKind.tk_public):
+        pass
+    else if match_kind(s, tk.TokenKind.tk_editable):
         pass
     else if match_kind(s, tk.TokenKind.tk_static):
         pass
+    if not check(s, tk.TokenKind.tk_function):
+        if match_kind(s, tk.TokenKind.tk_editable):
+            pass
+        else if match_kind(s, tk.TokenKind.tk_static):
+            pass
     consume(s, tk.TokenKind.tk_function, c"expected function in extending block")
     consume_name(s, c"expected method name")
+    if match_kind(s, tk.TokenKind.lbracket):
+        parse_type_params_skip(s)
     parse_params(s)
     if match_kind(s, tk.TokenKind.arrow):
         parse_type_ref(s)
