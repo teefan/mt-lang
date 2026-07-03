@@ -101,14 +101,13 @@ function consume(s: ref[ParserState], kind: tk.TokenKind, msg: cstr) -> void:
         return
     let tok = peek(s) else:
         parser_error_naked(s, msg)
-        skip_to_sync_point(s)
         return
     unsafe:
         let t = read(tok)
         let lexeme = token_mod.token_lexeme(t, s.source)
         let kn = token_mod.kind_name(t.kind)
         parser_error_at(s, msg, t.line, t.column, lexeme, kn)
-    skip_to_sync_point(s)
+    advance(s)
 
 
 function parser_error_naked(s: ref[ParserState], msg: cstr) -> void:
@@ -261,7 +260,10 @@ function consume_end_of_statement(s: ref[ParserState]) -> void:
         return
     if check(s, tk.TokenKind.dedent):
         return
-    consume(s, tk.TokenKind.newline, c"expected end of statement")
+    if not check(s, tk.TokenKind.newline):
+        parser_error_naked(s, c"expected end of statement")
+        return
+    advance(s)
 
 function is_keyword_token(tok: token_mod.Token) -> bool:
     # Keyword token kinds all have the tk_ prefix (values 51-122).
@@ -1374,33 +1376,32 @@ function parse_type_argument(s: ref[ParserState]) -> ptr[ast.TypeRef]:
 
 function parse_block(s: ref[ParserState]) -> void:
     consume(s, tk.TokenKind.colon, c"expected ':' before block")
-    if match_kind(s, tk.TokenKind.newline):
-        consume(s, tk.TokenKind.indent, c"expected indented block")
-        parse_block_body(s)
-        consume(s, tk.TokenKind.dedent, c"expected end of block")
-    else:
-        # Inline block — single statement follows
-        parse_statement(s)
+    consume(s, tk.TokenKind.newline, c"expected newline before block body")
+    consume(s, tk.TokenKind.indent, c"expected indented block")
+    parse_block_body(s)
+    consume(s, tk.TokenKind.dedent, c"expected end of block")
 
 
 function parse_block_producing(s: ref[ParserState]) -> ptr[ast.Stmt]:
     consume(s, tk.TokenKind.colon, c"expected ':' before block")
-    if match_kind(s, tk.TokenKind.newline):
-        consume(s, tk.TokenKind.indent, c"expected indented block")
-        var body_span = parse_block_body_producing(s)
-        consume(s, tk.TokenKind.dedent, c"expected end of block")
-        var node = alloc_stmt(s)
-        unsafe:
-            read(node) = ast.Stmt.stmt_block(statements = body_span)
-        return node
-    else:
-        return parse_statement(s)
+    consume(s, tk.TokenKind.newline, c"expected newline before block body")
+    consume(s, tk.TokenKind.indent, c"expected indented block")
+    var body_span = parse_block_body_producing(s)
+    consume(s, tk.TokenKind.dedent, c"expected end of block")
+    var node = alloc_stmt(s)
+    unsafe:
+        read(node) = ast.Stmt.stmt_block(statements = body_span)
+    return node
 
 
 function parse_block_body(s: ref[ParserState]) -> void:
     skip_newlines(s)
     while not check(s, tk.TokenKind.dedent) and not eof(s):
         step(s)
+        if check(s, tk.TokenKind.newline):
+            advance(s)
+            skip_newlines(s)
+            continue
         parse_statement(s)
         skip_newlines(s)
 
@@ -1410,6 +1411,10 @@ function parse_block_body_producing(s: ref[ParserState]) -> span[ast.Stmt]:
     skip_newlines(s)
     while not check(s, tk.TokenKind.dedent) and not eof(s):
         step(s)
+        if check(s, tk.TokenKind.newline):
+            advance(s)
+            skip_newlines(s)
+            continue
         let stmt = parse_statement(s)
         unsafe:
             stmts.push(read(stmt))
@@ -3174,18 +3179,37 @@ function parse_event_decl(s: ref[ParserState]) -> void:
 
 
 function parse_when_decl(s: ref[ParserState]) -> void:
+    var discriminant = parse_expression(s)
+    consume_end_of_statement(s)
     skip_newlines(s)
     while not eof(s):
+        if check(s, tk.TokenKind.dedent):
+            break
+        skip_newlines(s)
+        if match_kind(s, tk.TokenKind.tk_else):
+            consume(s, tk.TokenKind.colon, c"expected ':' after else")
+            consume(s, tk.TokenKind.newline, c"expected newline")
+            consume(s, tk.TokenKind.indent, c"expected indented else body")
+            skip_newlines(s)
+            while not check(s, tk.TokenKind.dedent) and not eof(s):
+                step(s)
+                parse_declaration(s)
+                skip_newlines(s)
+            consume(s, tk.TokenKind.dedent, c"expected end of else body")
+            break
         parse_expression(s)
+        if match_kind(s, tk.TokenKind.tk_as):
+            consume_name(s, c"expected binding name after as")
         consume(s, tk.TokenKind.colon, c"expected ':' after when pattern")
         consume(s, tk.TokenKind.newline, c"expected newline")
-        consume(s, tk.TokenKind.indent, c"expected indented when body")
+        consume(s, tk.TokenKind.indent, c"expected indented when branch body")
         skip_newlines(s)
-        parse_block_body(s)
-        consume(s, tk.TokenKind.dedent, c"expected end of when body")
+        while not check(s, tk.TokenKind.dedent) and not eof(s):
+            step(s)
+            parse_declaration(s)
+            skip_newlines(s)
+        consume(s, tk.TokenKind.dedent, c"expected end of when branch body")
         skip_newlines(s)
-        if not check_name(s):
-            break
 
 
 function parse_attribute_decl(s: ref[ParserState]) -> void:
