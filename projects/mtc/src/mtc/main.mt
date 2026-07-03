@@ -23,10 +23,15 @@ function main(args: span[str]) -> int:
     let cmd = args[0]
 
     if cmd == "lex":
-        if args.len < 2:
+        var machine = false
+        var file_index: ptr_uint = 1
+        if args.len >= 2 and args[1] == "--machine":
+            machine = true
+            file_index = 2
+        if args.len <= file_index:
             print_help()
             return 1
-        return lex_command(args[1])
+        return lex_command(args[file_index], machine)
 
     if cmd == "help":
         print_help()
@@ -50,7 +55,7 @@ function print_unknown(cmd: str) -> void:
     stdio.print_format(c"mtc: unknown command '%.*s'\n", int<-(cmd.len), cmd.data)
 
 
-function lex_command(file_path: str) -> int:
+function lex_command(file_path: str, machine: bool) -> int:
     match fs.read_text(file_path):
         Result.failure:
             stdio.print_format(c"error: cannot read '%.*s'\n", int<-(file_path.len), file_path.data)
@@ -81,25 +86,44 @@ function lex_command(file_path: str) -> int:
 
             stdio.print_format(c"── Tokens  %d  ──\n", int<-(tokens.len()))
 
-            var i: ptr_uint = 0
-            while i < tokens.len():
-                let tok = tokens.get(i) else:
-                    break
-                unsafe:
-                    let t = read(tok)
-                    let lexeme = token_mod.token_lexeme(t, source)
-                    let kn = token_mod.kind_name(t.kind)
-                    let end_col = if t.kind == tk.TokenKind.eof: t.column else: t.column + lexeme.len - 1z
-
-                    stdio.print_format(
-                        c"  %3d:%d-%-3d  %-24.*s %s\n",
-                        int<-(t.line),
-                        int<-(t.column),
-                        int<-(end_col),
-                        int<-(lexeme.len), lexeme.data,
-                        kn,
-                    )
-                i += 1
+            if machine:
+                # Machine-readable: kind line col start end
+                var j: ptr_uint = 0
+                while j < tokens.len():
+                    let tok = tokens.get(j) else:
+                        break
+                    unsafe:
+                        let t = read(tok)
+                        let kn = token_mod.kind_name(t.kind)
+                        stdio.print_format(
+                            c"%s %d %d %d %d\n",
+                            kn,
+                            int<-(t.line),
+                            int<-(t.column),
+                            int<-(t.start_offset),
+                            int<-(t.end_offset),
+                        )
+                    j += 1
+            else:
+                # Human-readable
+                var k: ptr_uint = 0
+                while k < tokens.len():
+                    let tok = tokens.get(k) else:
+                        break
+                    unsafe:
+                        let t = read(tok)
+                        let lexeme = token_mod.token_lexeme(t, source)
+                        let kn = token_mod.kind_name(t.kind)
+                        let end_col = if t.kind == tk.TokenKind.eof: t.column else: t.column + lexeme.len - 1z
+                        stdio.print_format(
+                            c"  %3d:%d-%-3d  %-24.*s %s\n",
+                            int<-(t.line),
+                            int<-(t.column),
+                            int<-(end_col),
+                            int<-(lexeme.len), lexeme.data,
+                            kn,
+                        )
+                    k += 1
 
             diags.release()
             return 0

@@ -346,8 +346,20 @@ function lex_lines(session: ref[LexSession]) -> void:
 
             pos = scan_symbol(session, pos, line_number, line_start)
 
-        let newline_offset = line_start + line_content_len
-        let newline_end_offset = if has_newline: newline_offset + 1 else: newline_offset
+        # Compute the actual end after consuming N lines (for multi-line tokens)
+        var actual_end = line_end
+        var rem = consumed_lines - 1
+        while rem > 0:
+            let (unused_a, next_end, unused_b) = find_line_bounds(source, actual_end)
+            actual_end = next_end
+            rem -= 1
+
+        # The last line consumed
+        let last_nl_start = if consumed_lines > 1: line_start_cached(source, actual_end - 1) else: line_start
+        let last_nl_content_len = actual_end - last_nl_start - 1
+
+        let newline_offset = last_nl_start + last_nl_content_len
+        let newline_end_offset = actual_end
 
         if session.grouping_depth == 0:
             if is_line_continuation(session):
@@ -357,45 +369,43 @@ function lex_lines(session: ref[LexSession]) -> void:
                     kind = tk.TokenKind.newline,
                     start_offset = newline_offset,
                     end_offset = newline_end_offset,
-                    line = line_number,
-                    column = ptr_uint<-(line_content_len) + 1,
+                    line = line_number + consumed_lines - 1,
+                    column = ptr_uint<-(last_nl_content_len) + 1,
                 )
                 session.tokens.push(nl)
 
-        var final_end = line_end
-        var rem = consumed_lines - 1
-        while rem > 0:
-            let (unused_a, next_end, unused_b) = find_line_bounds(source, final_end)
-            final_end = next_end
-            rem -= 1
-
-        offset = final_end
+        offset = actual_end
         line_number += consumed_lines
 
 
 function emit_eof(session: ref[LexSession]) -> vec.Vec[token_mod.Token]:
-    # Unclosed grouping
     if session.grouping_depth > 0:
         session_fatal(session, c"unclosed grouping delimiter", 0, 0)
 
-    # Final dedents
+    # Ruby uses @line_count (total source lines) for dedent, @line_count+1 for eof.
+    var total_lines: ptr_uint = 1
+    if session.tokens.len() > 0:
+        let last_ptr = session.tokens.last()
+        unsafe:
+            if last_ptr != null:
+                total_lines = read(last_ptr).line
+
     while session.indent_stack.len > 1:
         session.indent_stack.pop()
         let tok = token_mod.Token(
             kind = tk.TokenKind.dedent,
             start_offset = session.src_len,
             end_offset = session.src_len,
-            line = 0,
+            line = total_lines,
             column = 1,
         )
         session.tokens.push(tok)
 
-    # EOF
     let eof_tok = token_mod.Token(
         kind = tk.TokenKind.eof,
         start_offset = session.src_len,
         end_offset = session.src_len,
-        line = 0,
+        line = total_lines + 1,
         column = 1,
     )
     session.tokens.push(eof_tok)
@@ -951,7 +961,9 @@ function scan_heredoc(
 
         if heredoc_terminator_match(source, nl_start, nl_len, tag_start, tag_end - tag_start):
             found_terminator = true
-            terminator_after = nl_end
+            # Ruby: end_offset points to the END of the terminator line content
+            # (before its newline), NOT past the newline.
+            terminator_after = nl_start + nl_len
             consumed += 1
             break
 

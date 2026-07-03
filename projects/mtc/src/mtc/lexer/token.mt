@@ -35,7 +35,7 @@ public function kind_name(kind: tk.TokenKind) -> str:
         tk.TokenKind.float_literal:     "float"
         tk.TokenKind.string:            "string"
         tk.TokenKind.cstring:           "cstring"
-        tk.TokenKind.char_literal:      "char"
+        tk.TokenKind.char_literal:      "char_literal"
         tk.TokenKind.fstring:           "fstring"
         tk.TokenKind.dot:               "dot"
         tk.TokenKind.colon:             "colon"
