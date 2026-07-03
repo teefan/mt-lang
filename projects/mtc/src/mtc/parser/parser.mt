@@ -1597,6 +1597,8 @@ function parse_local_decl(s: ref[ParserState], is_let: bool) -> ptr[ast.Stmt]:
         return node
     if match_kind(s, tk.TokenKind.question):
         pass
+    if stmt_type == null and value == null:
+        parser_error_naked(s, c"local declaration requires an explicit type or initializer")
     if value != null and not block_expression(value):
         consume_end_of_statement(s)
     var node = alloc_stmt(s)
@@ -3145,10 +3147,9 @@ function parse_interface_decl(s: ref[ParserState]) -> void:
 
 
 function parse_interface_method(s: ref[ParserState]) -> void:
-    if match_kind(s, tk.TokenKind.tk_editable):
-        pass
-    else if match_kind(s, tk.TokenKind.tk_static):
-        pass
+    match_kind(s, tk.TokenKind.tk_async)
+    match_kind(s, tk.TokenKind.tk_editable)
+    match_kind(s, tk.TokenKind.tk_static)
     if not check(s, tk.TokenKind.tk_function):
         match_kind(s, tk.TokenKind.tk_editable)
         match_kind(s, tk.TokenKind.tk_static)
