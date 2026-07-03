@@ -155,23 +155,59 @@ function skip_to_sync_point(s: ref[ParserState]) -> void:
 function synchronize_to_statement_boundary(s: ref[ParserState]) -> void:
     while not eof(s):
         if check(s, tk.TokenKind.indent):
-            advance(s)
-            skip_newlines(s)
-            while not eof(s) and not check(s, tk.TokenKind.dedent):
-                skip_to_sync_point(s)
-            advance(s)
+            recover_statement_block_body(s)
+            continue
         if check(s, tk.TokenKind.dedent):
             return
         if check(s, tk.TokenKind.newline):
             advance(s)
-            skip_newlines(s)
             if check(s, tk.TokenKind.indent):
-                advance(s)
-                skip_newlines(s)
-                while not eof(s) and not check(s, tk.TokenKind.dedent):
-                    skip_to_sync_point(s)
-                advance(s)
+                recover_statement_block_body(s)
             return
+        advance(s)
+
+
+function recover_statement_block_body(s: ref[ParserState]) -> void:
+    if check(s, tk.TokenKind.indent):
+        advance(s)
+    skip_newlines(s)
+    while not eof(s) and not check(s, tk.TokenKind.dedent):
+        step(s)
+        if check(s, tk.TokenKind.newline):
+            advance(s)
+            skip_newlines(s)
+            continue
+        parse_statement(s)
+        skip_newlines(s)
+    if check(s, tk.TokenKind.dedent):
+        advance(s)
+
+
+function synchronize_to_match_arm_boundary(s: ref[ParserState]) -> void:
+    while not eof(s):
+        if check(s, tk.TokenKind.dedent):
+            return
+        if check(s, tk.TokenKind.newline):
+            advance(s)
+            if check(s, tk.TokenKind.indent):
+                recover_match_arm_block(s)
+            return
+        advance(s)
+
+
+function recover_match_arm_block(s: ref[ParserState]) -> void:
+    if check(s, tk.TokenKind.indent):
+        advance(s)
+    skip_newlines(s)
+    while not eof(s) and not check(s, tk.TokenKind.dedent):
+        step(s)
+        if check(s, tk.TokenKind.newline):
+            advance(s)
+            skip_newlines(s)
+            continue
+        parse_match_arm_producing(s)
+        skip_newlines(s)
+    if check(s, tk.TokenKind.dedent):
         advance(s)
 
 
