@@ -1015,25 +1015,36 @@ function parse_var_decl(s: ref[ParserState]) -> void:
 function parse_function_def(s: ref[ParserState]) -> void:
     consume_name(s, c"expected function name")
     if match_kind(s, tk.TokenKind.lbracket):
-        parse_type_params_skip(s)
+        parse_declaration_type_params(s)
     parse_params(s)
     if match_kind(s, tk.TokenKind.arrow):
         parse_type_ref(s)
     parse_block(s)
 
 
-function parse_type_params_skip(s: ref[ParserState]) -> void:
-    var depth: int = 1
-    while not eof(s) and depth > 0:
-        step(s)
-        if check(s, tk.TokenKind.lbracket):
-            depth += 1
-            advance(s)
-        else if check(s, tk.TokenKind.rbracket):
-            depth -= 1
-            advance(s)
+function parse_declaration_type_params(s: ref[ParserState]) -> void:
+    while not eof(s):
+        if check(s, tk.TokenKind.rbracket):
+            break
+        if match_kind(s, tk.TokenKind.at):
+            consume_name(s, c"expected lifetime name after @")
+            var lt = previous_lexeme(s)
         else:
-            advance(s)
+            consume_name(s, c"expected type parameter name")
+            var tp_name = previous_lexeme(s)
+            s.current_type_param_names.push(tp_name)
+            if match_kind(s, tk.TokenKind.colon):
+                parse_type_ref(s)
+        if not match_kind(s, tk.TokenKind.comma):
+            break
+    consume(s, tk.TokenKind.rbracket, c"expected ']' after type parameters")
+
+
+function with_type_param_scope(s: ref[ParserState], body: proc(session: ref[ParserState]) -> void) -> void:
+    var saved_count = s.current_type_param_names.len()
+    body(s)
+    while s.current_type_param_names.len() > saved_count:
+        s.current_type_param_names.pop()
 
 
 function parse_params(s: ref[ParserState]) -> void:
@@ -3042,7 +3053,7 @@ function parse_call_args(s: ref[ParserState]) -> span[ast.Argument]:
 function parse_struct_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected struct name")
     if match_kind(s, tk.TokenKind.lbracket):
-        parse_type_params_skip(s)
+        parse_declaration_type_params(s)
     if match_kind(s, tk.TokenKind.tk_implements):
         skip_implements_clause(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after struct name")
@@ -3102,7 +3113,7 @@ function parse_enum_decl(s: ref[ParserState]) -> void:
 function parse_variant_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected variant name")
     if match_kind(s, tk.TokenKind.lbracket):
-        parse_type_params_skip(s)
+        parse_declaration_type_params(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after variant name")
     consume(s, tk.TokenKind.newline, c"expected newline")
     consume(s, tk.TokenKind.indent, c"expected indented variant body")
@@ -3129,7 +3140,7 @@ function parse_variant_decl(s: ref[ParserState]) -> void:
 function parse_interface_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected interface name")
     if match_kind(s, tk.TokenKind.lbracket):
-        parse_type_params_skip(s)
+        parse_declaration_type_params(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after interface name")
     consume(s, tk.TokenKind.newline, c"expected newline")
     consume(s, tk.TokenKind.indent, c"expected indented interface body")
@@ -3192,7 +3203,7 @@ function parse_extending_method(s: ref[ParserState]) -> void:
     consume(s, tk.TokenKind.tk_function, c"expected function in extending block")
     consume_name(s, c"expected method name")
     if match_kind(s, tk.TokenKind.lbracket):
-        parse_type_params_skip(s)
+        parse_declaration_type_params(s)
     parse_params(s)
     if match_kind(s, tk.TokenKind.arrow):
         parse_type_ref(s)
@@ -3202,7 +3213,7 @@ function parse_extending_method(s: ref[ParserState]) -> void:
 function parse_extern_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected function name")
     if match_kind(s, tk.TokenKind.lbracket):
-        parse_type_params_skip(s)
+        parse_declaration_type_params(s)
     parse_params(s)
     if match_kind(s, tk.TokenKind.arrow):
         parse_type_ref(s)
@@ -3214,7 +3225,7 @@ function parse_extern_decl(s: ref[ParserState]) -> void:
 function parse_foreign_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected function name")
     if match_kind(s, tk.TokenKind.lbracket):
-        parse_type_params_skip(s)
+        parse_declaration_type_params(s)
     parse_params(s)
     consume(s, tk.TokenKind.arrow, c"expected '->' before foreign return type")
     parse_type_ref(s)
