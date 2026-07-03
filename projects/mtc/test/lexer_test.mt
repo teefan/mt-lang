@@ -255,6 +255,162 @@ function test_format_heredoc() -> t.Check:
     return t.ok()
 
 
+@[test]
+function test_float_scientific_notation() -> t.Check:
+    let source= <<-SRC
+        1e10 2E-3 3.14e2
+    SRC
+    var tokens = lexer.lex(source)
+    var fc = count_by_kind(ref_of(tokens), tk.TokenKind.float_literal)
+    t.expect(fc == 3, "should have 3 float tokens")?
+    return t.ok()
+
+
+@[test]
+function test_float_with_suffix() -> t.Check:
+    let source= <<-SRC
+        1.0f 2.0d
+    SRC
+    var tokens = lexer.lex(source)
+    var fc = count_by_kind(ref_of(tokens), tk.TokenKind.float_literal)
+    t.expect(fc == 2, "should have 2 float tokens with suffix")?
+    return t.ok()
+
+
+@[test]
+function test_integer_underscore_separator() -> t.Check:
+    let source= <<-SRC
+        1_000_000 0xff_ff
+    SRC
+    var tokens = lexer.lex(source)
+    var ic = count_by_kind(ref_of(tokens), tk.TokenKind.integer)
+    t.expect(ic == 2, "should have 2 integer tokens")?
+    return t.ok()
+
+
+@[test]
+function test_comment_skipped() -> t.Check:
+    let source= <<-SRC
+        # this is a comment
+        let x = 1
+    SRC
+    var tokens = lexer.lex(source)
+    t.expect(count_by_kind(ref_of(tokens), tk.TokenKind.tk_let) == 1, "let should be present")?
+    return t.ok()
+
+
+@[test]
+function test_doc_comment_skipped() -> t.Check:
+    let source= <<-SRC
+        ## doc comment
+        let x = 1
+    SRC
+    var tokens = lexer.lex(source)
+    t.expect(count_by_kind(ref_of(tokens), tk.TokenKind.tk_let) == 1, "doc comment should be skipped")?
+    return t.ok()
+
+
+@[test]
+function test_blank_lines_skipped() -> t.Check:
+    let source= <<-SRC
+
+        let x = 1
+
+    SRC
+    var tokens = lexer.lex(source)
+    t.expect(count_by_kind(ref_of(tokens), tk.TokenKind.tk_let) == 1, "blank lines should be skipped")?
+    return t.ok()
+
+
+@[test]
+function test_crlf_handling() -> t.Check:
+    let source = "function main() -> int:\r\n    return 0"
+    var tokens = lexer.lex(source)
+    t.expect(tokens.len() >= 5, "should handle CRLF line endings")?
+    return t.ok()
+
+
+@[test]
+function test_keyword_boundary() -> t.Check:
+    let source= <<-SRC
+        ifx while_ forx else_if
+    SRC
+    var tokens = lexer.lex(source)
+    var ic = count_by_kind(ref_of(tokens), tk.TokenKind.identifier)
+    t.expect(ic == 4, "keyword-prefixed identifiers should be identifiers")?
+    return t.ok()
+
+
+@[test]
+function test_hex_integer_mixed_case() -> t.Check:
+    let source= <<-SRC
+        0xAb 0xFF 0Xff
+    SRC
+    var tokens = lexer.lex(source)
+    var ic = count_by_kind(ref_of(tokens), tk.TokenKind.integer)
+    t.expect(ic == 3, "hex with mixed case should all be integers")?
+    return t.ok()
+
+
+@[test]
+function test_empty_source() -> t.Check:
+    var tokens = lexer.lex("")
+    t.expect(tokens.len() == 1, "empty source should produce only eof")?
+    return t.ok()
+
+
+@[test]
+function test_lex_reporting_collects_errors() -> t.Check:
+    let source = "function f() -> int:\n\t\treturn 0"
+    var diags = vec.Vec[token_mod.LexDiagnostic].create()
+    var tokens = lexer.lex_reporting(source, ref_of(diags))
+    var has_tab_error = false
+    var di: ptr_uint = 0
+    while di < diags.len():
+        let d = diags.get(di) else:
+            break
+        unsafe:
+            if read(d).message == c"tabs are not allowed; use 4 spaces for indentation":
+                has_tab_error = true
+        di += 1
+    diags.release()
+    t.expect(has_tab_error, "should report tab error")?
+    return t.ok()
+
+
+@[test]
+function test_lex_reporting_unterminated_string() -> t.Check:
+    let source = "\"hello"
+    var diags = vec.Vec[token_mod.LexDiagnostic].create()
+    var tokens = lexer.lex_reporting(source, ref_of(diags))
+    var has_error = diags.len() > 0
+    diags.release()
+    t.expect(has_error, "unterminated string should produce lex error")?
+    return t.ok()
+
+
+@[test]
+function test_lex_reporting_unexpected_char() -> t.Check:
+    let source = "`"
+    var diags = vec.Vec[token_mod.LexDiagnostic].create()
+    var tokens = lexer.lex_reporting(source, ref_of(diags))
+    var has_error = diags.len() > 0
+    diags.release()
+    t.expect(has_error, "unexpected char should produce lex error")?
+    return t.ok()
+
+
+@[test]
+function test_lex_reporting_unclosed_grouping() -> t.Check:
+    let source = "function f() -> int:\n    g("
+    var diags = vec.Vec[token_mod.LexDiagnostic].create()
+    var tokens = lexer.lex_reporting(source, ref_of(diags))
+    var has_error = diags.len() > 0
+    diags.release()
+    t.expect(has_error, "unclosed paren should produce lex error")?
+    return t.ok()
+
+
 # ── helpers ──
 
 function count_by_kind(tokens: ref[vec.Vec[token_mod.Token]], kind: tk.TokenKind) -> int:
