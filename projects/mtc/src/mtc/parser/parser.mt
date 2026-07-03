@@ -2706,7 +2706,21 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         unsafe:
             ln = start_tok.line
             cn = start_tok.column
-        var first_expr = parse_expression(s)
+        var first_expr: ptr[ast.Expr]
+        if check_name(s) and check_next(s, tk.TokenKind.equal):
+            var name_str: str
+            let nt = peek(s) else:
+                fatal(c"unexpected eof in named tuple field")
+            unsafe:
+                name_str = token_mod.token_lexeme(read(nt), s.source)
+            advance(s)
+            advance(s)
+            var val = parse_expression(s)
+            first_expr = alloc_expr(s)
+            unsafe:
+                read(first_expr) = ast.Expr.expr_identifier(name = name_str, line = 0, column = 0)
+        else:
+            first_expr = parse_expression(s)
         if match_kind(s, tk.TokenKind.comma):
             var elems = vec.Vec[ast.Expr].create()
             unsafe:
@@ -2715,9 +2729,25 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
                 step(s)
                 if check(s, tk.TokenKind.rparen):
                     break
-                var next = parse_expression(s)
-                unsafe:
-                    elems.push(read(next))
+                if check_name(s) and check_next(s, tk.TokenKind.equal):
+                    var name_str: str
+                    let nt2 = peek(s) else:
+                        break
+                    unsafe:
+                        name_str = token_mod.token_lexeme(read(nt2), s.source)
+                    advance(s)
+                    advance(s)
+                    var val2 = parse_expression(s)
+                    var ne = alloc_expr(s)
+                    unsafe:
+                        read(ne) = ast.Expr.expr_identifier(name = name_str, line = 0, column = 0)
+                    unsafe:
+                        elems.push(read(ne))
+                    let _v2 = val2
+                else:
+                    var next = parse_expression(s)
+                    unsafe:
+                        elems.push(read(next))
                 if not match_kind(s, tk.TokenKind.comma):
                     break
                 if check(s, tk.TokenKind.rparen):
@@ -2771,6 +2801,23 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
             read(node) = ast.Expr.expr_string_literal(lexeme = lex, value = lex, is_cstring = false)
         return node
     else:
+        let tok_ptr = peek(s) else:
+            parser_error_naked(s, c"expected expression")
+            var node = alloc_expr(s)
+            unsafe:
+                read(node) = ast.Expr.expr_error(line = 0, column = 0, message = "expected expression")
+            return node
+        var tok: token_mod.Token
+        unsafe:
+            tok = read(tok_ptr)
+        if is_keyword_token(tok):
+            advance(s)
+            var ln: ptr_uint = tok.line
+            var cn: ptr_uint = tok.column
+            var node = alloc_expr(s)
+            unsafe:
+                read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(tok, s.source), line = ln, column = cn)
+            return node
         parser_error_naked(s, c"expected expression")
         var node = alloc_expr(s)
         unsafe:
@@ -2813,25 +2860,32 @@ function parse_match_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
 
 
 function parse_match_expr_arms(s: ref[ParserState]) -> span[ast.MatchExprArm]:
-    # Match expression arms are temporary — we build an empty span for now.
-    # Full implementation in Phase 7 (Pattern & Match).
+    var arms = vec.Vec[ast.MatchExprArm].create()
     skip_newlines(s)
     while not check(s, tk.TokenKind.dedent) and not eof(s):
-        parse_match_expr_arm(s)
+        let arm = parse_match_expr_arm(s)
+        arms.push(arm)
         skip_newlines(s)
-    return span[ast.MatchExprArm]()
+    let result = arms.as_span()
+    arms.release()
+    return result
 
 
-function parse_match_expr_arm(s: ref[ParserState]) -> void:
-    if is_wildcard_match(s):
+function parse_match_expr_arm(s: ref[ParserState]) -> ast.MatchExprArm:
+    var pattern: ptr[ast.Expr]? = null
+    if match_kind(s, tk.TokenKind.tk_else):
+        pass
+    else if is_wildcard_match(s):
         pass
     else:
-        parse_pattern(s)
+        pattern = parse_pattern_producing(s)
+    var binding_name: Option[str] = Option[str].none
     if match_kind(s, tk.TokenKind.tk_as):
         consume_name(s, c"expected binding name after as")
+        binding_name = Option[str].some(value = previous_lexeme(s))
     consume(s, tk.TokenKind.colon, c"expected ':' after match pattern")
-    parse_expression(s)
-    consume_end_of_statement(s)
+    var value = parse_expression(s)
+    return ast.MatchExprArm(pattern = pattern, binding_name = binding_name, value = value)
 
 
 # =============================================================================
@@ -3108,6 +3162,10 @@ function parse_interface_method(s: ref[ParserState]) -> void:
 
 function parse_opaque_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected opaque type name")
+    if match_kind(s, tk.TokenKind.tk_implements):
+        skip_implements_clause(s)
+    if match_kind(s, tk.TokenKind.equal):
+        match_kind(s, tk.TokenKind.cstring)
     consume_end_of_statement(s)
 
 
@@ -3225,7 +3283,10 @@ function parse_when_decl(s: ref[ParserState]) -> void:
 
 function parse_attribute_decl(s: ref[ParserState]) -> void:
     consume(s, tk.TokenKind.lbracket, c"expected '[' after attribute")
-    consume_name(s, c"expected attribute target")
+    while true:
+        consume_name(s, c"expected attribute target")
+        if not match_kind(s, tk.TokenKind.comma):
+            break
     consume(s, tk.TokenKind.rbracket, c"expected ']'")
     consume_name(s, c"expected attribute name")
     if match_kind(s, tk.TokenKind.lparen):
