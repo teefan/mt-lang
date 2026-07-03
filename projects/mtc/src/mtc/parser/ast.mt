@@ -43,7 +43,7 @@ public struct ValueTypeParam:
 
 
 public struct TypeArgument:
-    value: Expr
+    value: ptr[TypeRef]
 
 
 public struct TypeRef:

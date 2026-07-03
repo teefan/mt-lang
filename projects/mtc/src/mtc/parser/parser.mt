@@ -1566,7 +1566,8 @@ function parse_return_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     var value: ptr[ast.Expr]? = null
     if not (check(s, tk.TokenKind.newline) or check(s, tk.TokenKind.dedent)):
         value = parse_expression(s)
-    consume_end_of_statement(s)
+    if value != null and not block_expression(value):
+        consume_end_of_statement(s)
     var node = alloc_stmt(s)
     unsafe:
         read(node) = ast.Stmt.stmt_ret(value = value, line = ln, column = cn)
@@ -1659,12 +1660,14 @@ function parse_expression_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
         advance(s)
         let op = previous_lexeme(s)
         var right = parse_expression(s)
-        consume_end_of_statement(s)
+        if not block_expression(right):
+            consume_end_of_statement(s)
         var node = alloc_stmt(s)
         unsafe:
             read(node) = ast.Stmt.stmt_assignment(target = left, operator = op, value = right, line = 0, column = 0)
         return node
-    consume_end_of_statement(s)
+    if not block_expression(left):
+        consume_end_of_statement(s)
     var node = alloc_stmt(s)
     unsafe:
         read(node) = ast.Stmt.stmt_expression(expression = left, line = 0)
@@ -1763,13 +1766,9 @@ function parse_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
         return parse_if_expression(s)
     if match_kind(s, tk.TokenKind.tk_match):
         return parse_match_expression(s)
-    if check(s, tk.TokenKind.tk_unsafe) and not check_next_is_unsafe_block(s):
+    if match_kind(s, tk.TokenKind.tk_unsafe):
         return parse_unsafe_expression(s)
     return parse_range(s)
-
-
-function check_next_is_unsafe_block(s: ref[ParserState]) -> bool:
-    return ts.check_next(ref_of(s.stream), tk.TokenKind.colon)
 
 
 function parse_range(s: ref[ParserState]) -> ptr[ast.Expr]:
@@ -1937,6 +1936,8 @@ function parse_multiplicative(s: ref[ParserState]) -> ptr[ast.Expr]:
 
 
 function parse_unary(s: ref[ParserState]) -> ptr[ast.Expr]:
+    if match_kind(s, tk.TokenKind.tk_unsafe):
+        return parse_unsafe_expression(s)
     if match_kind(s, tk.TokenKind.tk_await):
         var operand = parse_unary(s)
         var node = alloc_expr(s)
@@ -1955,7 +1956,7 @@ function parse_unary(s: ref[ParserState]) -> ptr[ast.Expr]:
         unsafe:
             read(node) = ast.Expr.expr_detach(expression = expr_val, line = detach_line, column = detach_col)
         return node
-    if check(s, tk.TokenKind.minus):
+    if check(s, tk.TokenKind.minus) or check(s, tk.TokenKind.tilde) or check(s, tk.TokenKind.plus):
         advance(s)
         let op = previous_lexeme(s)
         var operand = parse_unary(s)
@@ -1963,7 +1964,7 @@ function parse_unary(s: ref[ParserState]) -> ptr[ast.Expr]:
         unsafe:
             read(node) = ast.Expr.expr_unary_op(operator = op, operand = operand)
         return node
-    if check(s, tk.TokenKind.tilde):
+    if check(s, tk.TokenKind.tk_out) or check(s, tk.TokenKind.tk_in) or check(s, tk.TokenKind.tk_inout):
         advance(s)
         let op = previous_lexeme(s)
         var operand = parse_unary(s)
@@ -1971,11 +1972,6 @@ function parse_unary(s: ref[ParserState]) -> ptr[ast.Expr]:
         unsafe:
             read(node) = ast.Expr.expr_unary_op(operator = op, operand = operand)
         return node
-    # Unary plus is a no-op
-    if check(s, tk.TokenKind.plus):
-        advance(s)
-        return parse_unary(s)
-    # Prefix cast: T<-expr (must check before primary/symbol parsing)
     var cast_result = try_parse_prefix_cast_expression(s)
     match cast_result:
         Option.some as cast_payload:
@@ -1996,13 +1992,19 @@ function parse_postfix(s: ref[ParserState]) -> ptr[ast.Expr]:
             unsafe:
                 read(node) = ast.Expr.expr_member_access(receiver = left, member_name = member, line = 0, column = 0)
             left = node
-        else if match_kind(s, tk.TokenKind.lbracket):
-            var idx = parse_expression(s)
-            consume(s, tk.TokenKind.rbracket, c"expected ']'")
-            var node = alloc_expr(s)
-            unsafe:
-                read(node) = ast.Expr.expr_index_access(receiver = left, index = idx)
-            left = node
+        else if check(s, tk.TokenKind.lbracket):
+            var spec_result = try_parse_specialization(s, left)
+            match spec_result:
+                Option.some as spec_val:
+                    left = spec_val.value
+                Option.none:
+                    advance(s)
+                    var idx = parse_expression(s)
+                    consume(s, tk.TokenKind.rbracket, c"expected ']'")
+                    var node = alloc_expr(s)
+                    unsafe:
+                        read(node) = ast.Expr.expr_index_access(receiver = left, index = idx)
+                    left = node
         else if match_kind(s, tk.TokenKind.lparen):
             var args = parse_call_args(s)
             consume(s, tk.TokenKind.rparen, c"expected ')'")
@@ -2018,6 +2020,46 @@ function parse_postfix(s: ref[ParserState]) -> ptr[ast.Expr]:
         else:
             break
     return left
+
+
+function try_parse_specialization(s: ref[ParserState], left: ptr[ast.Expr]) -> Option[ptr[ast.Expr]]:
+    let saved = s.stream.current
+    advance(s)
+    var args_vec = vec.Vec[ast.TypeArgument].create()
+    if not check(s, tk.TokenKind.rbracket):
+        while true:
+            step(s)
+            var arg = parse_type_argument(s)
+            var ta = ast.TypeArgument(value = arg)
+            args_vec.push(ta)
+            if not match_kind(s, tk.TokenKind.comma):
+                break
+            if check(s, tk.TokenKind.rbracket):
+                break
+    let closed = match_kind(s, tk.TokenKind.rbracket)
+    if not closed:
+        s.stream.current = saved
+        args_vec.release()
+        return Option[ptr[ast.Expr]].none
+    if match_kind(s, tk.TokenKind.lparen):
+        var call_args = parse_call_args(s)
+        consume(s, tk.TokenKind.rparen, c"expected ')'")
+        var node = alloc_expr(s)
+        let args_span = args_vec.as_span()
+        var spec = alloc_expr(s)
+        unsafe:
+            read(spec) = ast.Expr.expr_specialization(callee = left, arguments = args_span)
+        args_vec.release()
+        var call = alloc_expr(s)
+        unsafe:
+            read(call) = ast.Expr.expr_call(callee = spec, args = call_args)
+        return Option[ptr[ast.Expr]].some(value = call)
+    var node = alloc_expr(s)
+    let args_span = args_vec.as_span()
+    unsafe:
+        read(node) = ast.Expr.expr_specialization(callee = left, arguments = args_span)
+    args_vec.release()
+    return Option[ptr[ast.Expr]].some(value = node)
 
 
 function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
@@ -2036,18 +2078,38 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
             read(node) = ast.Expr.expr_float_literal(lexeme = lex, value = val)
         return node
     else if match_kind(s, tk.TokenKind.string):
-        let lex = previous_lexeme(s)
-        let val = parse_string_content(lex, false)
+        let first_tok = previous_token(s)
+        var all_lexeme: str
+        unsafe:
+            all_lexeme = token_mod.token_lexeme(read(first_tok), s.source)
+        var is_all_cstring = false
+        while check(s, tk.TokenKind.string) or check(s, tk.TokenKind.cstring):
+            advance(s)
+            let next_tok = previous_token(s)
+            unsafe:
+                all_lexeme = token_mod.token_lexeme(read(next_tok), s.source)
+        let _all = all_lexeme
+        let val = parse_string_content(all_lexeme, false)
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_string_literal(lexeme = lex, value = val, is_cstring = false)
+            read(node) = ast.Expr.expr_string_literal(lexeme = all_lexeme, value = val, is_cstring = is_all_cstring)
         return node
     else if match_kind(s, tk.TokenKind.cstring):
-        let lex = previous_lexeme(s)
-        let val = parse_string_content(lex, true)
+        let first_tok = previous_token(s)
+        var all_lexeme: str
+        unsafe:
+            all_lexeme = token_mod.token_lexeme(read(first_tok), s.source)
+        var is_all_cstring = true
+        while check(s, tk.TokenKind.string) or check(s, tk.TokenKind.cstring):
+            advance(s)
+            let next_tok = previous_token(s)
+            unsafe:
+                all_lexeme = token_mod.token_lexeme(read(next_tok), s.source)
+        let _all = all_lexeme
+        let val = parse_string_content(all_lexeme, true)
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_string_literal(lexeme = lex, value = val, is_cstring = true)
+            read(node) = ast.Expr.expr_string_literal(lexeme = all_lexeme, value = val, is_cstring = is_all_cstring)
         return node
     else if match_kind(s, tk.TokenKind.char_literal):
         let lex = previous_lexeme(s)
@@ -2099,13 +2161,94 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         unsafe:
             read(node) = ast.Expr.expr_identifier(name = name_str, line = ln, column = cn)
         return node
+    else if match_kind(s, tk.TokenKind.tk_fields_of):
+        let tok = previous_token(s)
+        var node = alloc_expr(s)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        return node
+    else if match_kind(s, tk.TokenKind.tk_members_of):
+        let tok = previous_token(s)
+        var node = alloc_expr(s)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        return node
+    else if match_kind(s, tk.TokenKind.tk_attributes_of):
+        let tok = previous_token(s)
+        var node = alloc_expr(s)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        return node
+    else if match_kind(s, tk.TokenKind.tk_field_of):
+        let tok = previous_token(s)
+        var node = alloc_expr(s)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        return node
+    else if match_kind(s, tk.TokenKind.tk_callable_of):
+        let tok = previous_token(s)
+        var node = alloc_expr(s)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        return node
+    else if match_kind(s, tk.TokenKind.tk_attribute_of):
+        let tok = previous_token(s)
+        var node = alloc_expr(s)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        return node
+    else if match_kind(s, tk.TokenKind.tk_has_attribute):
+        let tok = previous_token(s)
+        var node = alloc_expr(s)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        return node
+    else if match_kind(s, tk.TokenKind.tk_attribute_arg):
+        let tok = previous_token(s)
+        var node = alloc_expr(s)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        return node
     else if match_kind(s, tk.TokenKind.lparen):
-        # Parenthesized expression or tuple literal
-        let inner = parse_expression(s)
-        if match_kind(s, tk.TokenKind.comma) or (not check(s, tk.TokenKind.rparen) and inner_is_tuple_element(inner)):
-            pass
-        consume(s, tk.TokenKind.rparen, c"expected ')'")
-        return inner
+        let start_tok = previous_token(s)
+        var ln: ptr_uint
+        var cn: ptr_uint
+        unsafe:
+            ln = start_tok.line
+            cn = start_tok.column
+        var first_expr = parse_expression(s)
+        if match_kind(s, tk.TokenKind.comma):
+            var elems = vec.Vec[ast.Expr].create()
+            unsafe:
+                elems.push(read(first_expr))
+            while true:
+                step(s)
+                if check(s, tk.TokenKind.rparen):
+                    break
+                var next = parse_expression(s)
+                unsafe:
+                    elems.push(read(next))
+                if not match_kind(s, tk.TokenKind.comma):
+                    break
+                if check(s, tk.TokenKind.rparen):
+                    break
+            consume(s, tk.TokenKind.rparen, c"expected ')' after tuple elements")
+            let elems_span = elems.as_span()
+            elems.release()
+            var node = alloc_expr(s)
+            unsafe:
+                read(node) = ast.Expr.expr_expression_list(elements = elems_span, line = ln, column = cn)
+            return node
+        consume(s, tk.TokenKind.rparen, c"expected ')' after expression")
+        return first_expr
     else if match_kind(s, tk.TokenKind.tk_if):
         return parse_if_expression(s)
     else if match_kind(s, tk.TokenKind.tk_match):
@@ -2139,19 +2282,6 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         unsafe:
             read(node) = ast.Expr.expr_offsetof(target_type = type_ref, field = field_name)
         return node
-    else if match_kind(s, tk.TokenKind.tk_unsafe):
-        consume(s, tk.TokenKind.colon, c"expected ':' after unsafe")
-        var expr_val = parse_expression(s)
-        let tok = previous_token(s)
-        var ln: ptr_uint
-        var cn: ptr_uint
-        unsafe:
-            ln = tok.line
-            cn = tok.column
-        var node = alloc_expr(s)
-        unsafe:
-            read(node) = ast.Expr.expr_unsafe(expression = expr_val, line = ln, column = cn)
-        return node
     else if match_kind(s, tk.TokenKind.fstring):
         let lex = previous_lexeme(s)
         var node = alloc_expr(s)
@@ -2164,12 +2294,6 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         unsafe:
             read(node) = ast.Expr.expr_error(line = 0, column = 0, message = "expected expression")
         return node
-
-
-function inner_is_tuple_element(inner: ptr[ast.Expr]) -> bool:
-    # Heuristic: if the inner expression is a simple identifier followed by a
-    # comma on the same line, it's likely a tuple element.
-    return false
 
 
 # =============================================================================
@@ -2272,12 +2396,17 @@ function parse_proc_body(s: ref[ParserState]) -> ptr[ast.Stmt]:
 # =============================================================================
 
 function parse_unsafe_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
-    advance(s)
+    let tok = previous_token(s)
+    var ln: ptr_uint
+    var cn: ptr_uint
+    unsafe:
+        ln = tok.line
+        cn = tok.column
     consume(s, tk.TokenKind.colon, c"expected ':' after unsafe")
     var expr_val = parse_expression(s)
     var node = alloc_expr(s)
     unsafe:
-        read(node) = ast.Expr.expr_unsafe(expression = expr_val, line = 0, column = 0)
+        read(node) = ast.Expr.expr_unsafe(expression = expr_val, line = ln, column = cn)
     return node
 
 
@@ -2322,35 +2451,30 @@ function is_desugar(s: ref[ParserState], left: ptr[ast.Expr], pattern: ptr[ast.E
 # =============================================================================
 
 function try_parse_prefix_cast_expression(s: ref[ParserState]) -> Option[ptr[ast.Expr]]:
+    if not check_name(s):
+        return Option[ptr[ast.Expr]].none
+    let name_tok = peek(s) else:
+        return Option[ptr[ast.Expr]].none
+    var name_str: str
+    unsafe:
+        name_str = token_mod.token_lexeme(read(name_tok), s.source)
+    if not known_type_like_name(s, name_str):
+        return Option[ptr[ast.Expr]].none
+    var saved = s.stream.current
+    var target_type = parse_named_type_ref(s, false)
     if not check(s, tk.TokenKind.less):
+        s.stream.current = saved
         return Option[ptr[ast.Expr]].none
-
-    # Peek ahead: known type name followed by < and -
-    var saved = save_stream(s)
-    var type_ref = parse_type_ref_producing_or_none(s)
-    if type_ref.is_none():
-        restore_stream(s, saved)
-        return Option[ptr[ast.Expr]].none
-
-    if not check(s, tk.TokenKind.less):
-        restore_stream(s, saved)
-        return Option[ptr[ast.Expr]].none
-
     advance(s)
     if not check(s, tk.TokenKind.minus):
-        restore_stream(s, saved)
+        s.stream.current = saved
         return Option[ptr[ast.Expr]].none
-
-    return Option[ptr[ast.Expr]].none
-
-function save_stream(s: ref[ParserState]) -> ptr_uint:
-    return s.stream.current
-
-function restore_stream(s: ref[ParserState], saved: ptr_uint) -> void:
-    s.stream.current = saved
-
-function parse_type_ref_producing_or_none(s: ref[ParserState]) -> Option[ptr[ast.TypeRef]]:
-    return Option[ptr[ast.TypeRef]].none
+    advance(s)
+    var expr_val = parse_unary(s)
+    var node = alloc_expr(s)
+    unsafe:
+        read(node) = ast.Expr.expr_prefix_cast(target_type = target_type, expression = expr_val, line = 0, column = 0)
+    return Option[ptr[ast.Expr]].some(value = node)
 
 
 # =============================================================================
@@ -2358,17 +2482,31 @@ function parse_type_ref_producing_or_none(s: ref[ParserState]) -> Option[ptr[ast
 # =============================================================================
 
 function parse_call_args(s: ref[ParserState]) -> span[ast.Argument]:
-    # Empty span — full implementation in Phase 7 (Pattern & Match).
+    var args = vec.Vec[ast.Argument].create()
     if check(s, tk.TokenKind.rparen):
         return span[ast.Argument]()
     while true:
         step(s)
-        parse_expression(s)
-        if match_kind(s, tk.TokenKind.equal):
-            parse_expression(s)
+        if check_name(s) and check_next(s, tk.TokenKind.equal):
+            let name_tok = peek(s) else:
+                break
+            var arg_name: str
+            unsafe:
+                arg_name = token_mod.token_lexeme(read(name_tok), s.source)
+            advance(s)
+            advance(s)
+            var val = parse_expression(s)
+            var arg = ast.Argument(arg_name = Option[str].some(value = arg_name), arg_value = val)
+            args.push(arg)
+        else:
+            var val = parse_expression(s)
+            var arg = ast.Argument(arg_name = Option[str].none, arg_value = val)
+            args.push(arg)
         if not match_kind(s, tk.TokenKind.comma):
             break
-    return span[ast.Argument]()
+    let result = args.as_span()
+    args.release()
+    return result
 
 
 function parse_struct_decl(s: ref[ParserState]) -> void:
