@@ -1080,7 +1080,21 @@ function parse_declaration_type_params(s: ref[ParserState]) -> void:
             s.current_type_param_names.push(tp_name)
             if match_kind(s, tk.TokenKind.colon):
                 parse_type_ref(s)
+            while not check(s, tk.TokenKind.comma) and not check(s, tk.TokenKind.rbracket) and not eof(s):
+                if check(s, tk.TokenKind.lbracket):
+                    advance(s)
+                    var depth: int = 1
+                    while not eof(s) and depth > 0:
+                        if check(s, tk.TokenKind.lbracket):
+                            depth += 1
+                        else if check(s, tk.TokenKind.rbracket):
+                            depth -= 1
+                        advance(s)
+                else:
+                    advance(s)
         if not match_kind(s, tk.TokenKind.comma):
+            break
+        if check(s, tk.TokenKind.rbracket):
             break
     consume(s, tk.TokenKind.rbracket, c"expected ']' after type parameters")
 
@@ -1337,7 +1351,7 @@ function parse_named_type_ref(s: ref[ParserState], allow_nullable: bool) -> ptr[
     unsafe:
         ln = read(tok).line
         cn = read(tok).column
-    consume_name(s, c"expected type name")
+    consume_name_allowing_keywords(s, c"expected type name")
     let first_name = previous_lexeme(s)
     var part_names = vec.Vec[str].create()
     part_names.push(first_name)
@@ -2151,6 +2165,7 @@ function parse_when_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
         if match_kind(s, tk.TokenKind.tk_as):
             consume_name(s, c"expected binding name after as")
             binding = Option[str].some(value = previous_lexeme(s))
+        consume(s, tk.TokenKind.colon, c"expected ':' after when pattern")
         var branch_body = parse_block_or_inline_stmt(s)
         var wb = ast.WhenBranch(pattern = pat, binding_name = binding, binding_line = 0, binding_column = 0, body = span[ast.Stmt]())
         branches.push(wb)
@@ -2538,7 +2553,7 @@ function parse_postfix(s: ref[ParserState]) -> ptr[ast.Expr]:
     while true:
         step(s)
         if match_kind(s, tk.TokenKind.dot):
-            consume_name(s, c"expected member name after '.'")
+            consume_name_allowing_keywords(s, c"expected member name after '.'")
             let member = previous_lexeme(s)
             var node = alloc_expr(s)
             unsafe:
@@ -3150,9 +3165,14 @@ function parse_struct_decl(s: ref[ParserState]) -> void:
     consume(s, tk.TokenKind.indent, c"expected indented struct body")
     skip_newlines(s)
     while not check(s, tk.TokenKind.dedent) and not eof(s):
+        while match_kind(s, tk.TokenKind.at):
+            consume(s, tk.TokenKind.lbracket, c"expected '[' after @")
+            skip_attribute_content(s)
+            consume(s, tk.TokenKind.rbracket, c"expected ']' after attribute")
+            skip_newlines(s)
         if match_kind(s, tk.TokenKind.tk_event):
             parse_event_decl(s)
-        else if check(s, tk.TokenKind.tk_struct):
+        else if match_kind(s, tk.TokenKind.tk_struct):
             parse_struct_decl(s)
         else:
             parse_struct_member(s)
@@ -3168,9 +3188,8 @@ function parse_struct_member(s: ref[ParserState]) -> void:
 
 
 function skip_implements_clause(s: ref[ParserState]) -> void:
-    parse_qualified_name(s)
-    while match_kind(s, tk.TokenKind.comma):
-        parse_qualified_name(s)
+    while not eof(s) and not check(s, tk.TokenKind.colon) and not check(s, tk.TokenKind.newline):
+        advance(s)
 
 
 function parse_type_alias(s: ref[ParserState]) -> void:
@@ -3344,46 +3363,58 @@ function parse_event_decl(s: ref[ParserState]) -> void:
 
 function parse_when_decl(s: ref[ParserState]) -> void:
     var discriminant = parse_expression(s)
-    consume_end_of_statement(s)
+    consume(s, tk.TokenKind.colon, c"expected ':' after when discriminant")
+    consume(s, tk.TokenKind.newline, c"expected newline after when header")
+    consume(s, tk.TokenKind.indent, c"expected indented when body")
     skip_newlines(s)
     while not eof(s):
         if check(s, tk.TokenKind.dedent):
             break
         skip_newlines(s)
-        if match_kind(s, tk.TokenKind.tk_else):
+        if check(s, tk.TokenKind.tk_else):
+            advance(s)
             consume(s, tk.TokenKind.colon, c"expected ':' after else")
-            consume(s, tk.TokenKind.newline, c"expected newline")
-            consume(s, tk.TokenKind.indent, c"expected indented else body")
-            skip_newlines(s)
-            while not check(s, tk.TokenKind.dedent) and not eof(s):
-                step(s)
-                parse_declaration(s)
-                skip_newlines(s)
-            consume(s, tk.TokenKind.dedent, c"expected end of else body")
+            parse_declaration_block(s)
             break
         parse_expression(s)
         if match_kind(s, tk.TokenKind.tk_as):
             consume_name(s, c"expected binding name after as")
         consume(s, tk.TokenKind.colon, c"expected ':' after when pattern")
-        consume(s, tk.TokenKind.newline, c"expected newline")
-        consume(s, tk.TokenKind.indent, c"expected indented when branch body")
+        parse_declaration_block(s)
         skip_newlines(s)
-        while not check(s, tk.TokenKind.dedent) and not eof(s):
-            step(s)
-            parse_declaration(s)
-            skip_newlines(s)
-        consume(s, tk.TokenKind.dedent, c"expected end of when branch body")
+    consume(s, tk.TokenKind.dedent, c"expected end of when body")
+
+
+function parse_declaration_block(s: ref[ParserState]) -> void:
+    consume(s, tk.TokenKind.newline, c"expected newline")
+    consume(s, tk.TokenKind.indent, c"expected indented body")
+    skip_newlines(s)
+    while not check(s, tk.TokenKind.dedent) and not eof(s):
+        step(s)
+        parse_declaration(s)
         skip_newlines(s)
+    consume(s, tk.TokenKind.dedent, c"expected end of body")
 
 
 function parse_attribute_decl(s: ref[ParserState]) -> void:
     consume(s, tk.TokenKind.lbracket, c"expected '[' after attribute")
     while true:
-        consume_name(s, c"expected attribute target")
+        consume_name_allowing_keywords(s, c"expected attribute target")
         if not match_kind(s, tk.TokenKind.comma):
             break
     consume(s, tk.TokenKind.rbracket, c"expected ']'")
-    consume_name(s, c"expected attribute name")
-    if match_kind(s, tk.TokenKind.lparen):
-        parse_params(s)
+    consume_name_allowing_keywords(s, c"expected attribute name")
+    if check(s, tk.TokenKind.lparen):
+        parse_signature(s)
     consume_end_of_statement(s)
+
+
+function parse_signature(s: ref[ParserState]) -> void:
+    consume(s, tk.TokenKind.lparen, c"expected '('")
+    while not eof(s) and not check(s, tk.TokenKind.rparen):
+        consume_name(s, c"expected parameter name")
+        consume(s, tk.TokenKind.colon, c"expected ':' after parameter name")
+        parse_type_ref(s)
+        if not match_kind(s, tk.TokenKind.comma):
+            break
+    consume(s, tk.TokenKind.rparen, c"expected ')'")
