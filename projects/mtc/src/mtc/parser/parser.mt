@@ -111,7 +111,14 @@ function consume(s: ref[ParserState], kind: tk.TokenKind, msg: cstr) -> void:
 
 
 function parser_error_naked(s: ref[ParserState], msg: cstr) -> void:
-    parser_error_at(s, msg, 0, 0, "", "")
+    let tok = peek(s) else:
+        parser_error_at(s, msg, 0, 0, "", "")
+        return
+    unsafe:
+        let t = read(tok)
+        let lexeme = token_mod.token_lexeme(t, s.source)
+        let kn = token_mod.kind_name(t.kind)
+        parser_error_at(s, msg, t.line, t.column, lexeme, kn)
 
 
 function parser_error_at(s: ref[ParserState], msg: cstr, line: ptr_uint, col: ptr_uint, lexeme: str, kind: str) -> void:
@@ -3105,6 +3112,8 @@ function parse_call_args(s: ref[ParserState]) -> span[ast.Argument]:
         return span[ast.Argument]()
     while true:
         step(s)
+        if check(s, tk.TokenKind.rparen):
+            break
         if check_name(s) and check_next(s, tk.TokenKind.equal):
             let name_tok = peek(s) else:
                 break
@@ -3121,6 +3130,8 @@ function parse_call_args(s: ref[ParserState]) -> span[ast.Argument]:
             var arg = ast.Argument(arg_name = Option[str].none, arg_value = val)
             args.push(arg)
         if not match_kind(s, tk.TokenKind.comma):
+            break
+        if check(s, tk.TokenKind.rparen):
             break
     let result = args.as_span()
     args.release()
