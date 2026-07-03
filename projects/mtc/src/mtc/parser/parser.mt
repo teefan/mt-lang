@@ -781,8 +781,9 @@ function alloc_decl(s: ref[ParserState]) -> ptr[ast.Decl]:
 # =============================================================================
 
 public function parse(source: str) -> bool:
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     var state = ParserState(
-        stream = ts.create(lexer.lex(source)),
+        stream = ts.create(lexer.lex_reporting(source, ref_of(lex_diags))),
         source = source,
         step_counter = 0,
         in_inline_block_body = false,
@@ -792,14 +793,16 @@ public function parse(source: str) -> bool:
         known_generic_callable_names = map_mod.Map[str, bool].create(),
         current_type_param_names = vec.Vec[str].create(),
     )
+    lex_diags.release()
     seed_known_names(ref_of(state))
     var decl_count = parse_source_file(ref_of(state))
     return decl_count > 0
 
 
 public function parse_reporting(source: str, errors: ref[vec.Vec[ParseDiagnostic]]) -> (bool, ptr_uint):
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     var state = ParserState(
-        stream = ts.create(lexer.lex(source)),
+        stream = ts.create(lexer.lex_reporting(source, ref_of(lex_diags))),
         source = source,
         step_counter = 0,
         in_inline_block_body = false,
@@ -809,6 +812,7 @@ public function parse_reporting(source: str, errors: ref[vec.Vec[ParseDiagnostic
         known_generic_callable_names = map_mod.Map[str, bool].create(),
         current_type_param_names = vec.Vec[str].create(),
     )
+    lex_diags.release()
     seed_known_names(ref_of(state))
     var nodes = parse_source_file(ref_of(state))
     return (errors.len() == 0, nodes)
@@ -2937,6 +2941,7 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
                 read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(tok, s.source), line = ln, column = cn)
             return node
         parser_error_naked(s, c"expected expression")
+        advance(s)
         var node = alloc_expr(s)
         unsafe:
             read(node) = ast.Expr.expr_error(line = 0, column = 0, message = "expected expression")
