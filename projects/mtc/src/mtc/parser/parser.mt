@@ -591,7 +591,7 @@ function parse_declaration(s: ref[ParserState]) -> void:
 
 
 # =============================================================================
-#  Declaration stubs
+#  Declarations
 # =============================================================================
 
 function parse_const_decl(s: ref[ParserState]) -> void:
@@ -732,8 +732,6 @@ function parse_block_body_producing(s: ref[ParserState]) -> span[ast.Stmt]:
     stmts.release()
     return result
 
-
-# =============================================================================
 
 # =============================================================================
 #  Statements
@@ -1259,6 +1257,8 @@ function parse_when_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     unsafe:
         read(node) = ast.Stmt.stmt_error(line = 0, column = 0, message = "when stmt stub")
     return node
+
+# =============================================================================
 #  Expressions
 # =============================================================================
 
@@ -1618,9 +1618,9 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         consume(s, tk.TokenKind.rparen, c"expected ')'")
         return inner
     else if match_kind(s, tk.TokenKind.tk_if):
-        return parse_if_expression_after_if(s)
+        return parse_if_expression(s)
     else if match_kind(s, tk.TokenKind.tk_match):
-        return parse_match_expression_after_match(s)
+        return parse_match_expression(s)
     else if match_kind(s, tk.TokenKind.tk_proc):
         return parse_proc_expr_after_proc(s)
     else if match_kind(s, tk.TokenKind.tk_size_of):
@@ -1700,10 +1700,6 @@ function parse_if_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
     return node
 
 
-function parse_if_expression_after_if(s: ref[ParserState]) -> ptr[ast.Expr]:
-    return parse_if_expression(s)
-
-
 # =============================================================================
 #  Match expression
 # =============================================================================
@@ -1719,10 +1715,6 @@ function parse_match_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
     unsafe:
         read(node) = ast.Expr.expr_match(scrutinee = scrutinee, arms = arms, line = 0, column = 0)
     return node
-
-
-function parse_match_expression_after_match(s: ref[ParserState]) -> ptr[ast.Expr]:
-    return parse_match_expression(s)
 
 
 function parse_match_expr_arms(s: ref[ParserState]) -> span[ast.MatchExprArm]:
@@ -1877,8 +1869,7 @@ function parse_type_ref_producing_or_none(s: ref[ParserState]) -> Option[ptr[ast
 # =============================================================================
 
 function parse_call_args(s: ref[ParserState]) -> span[ast.Argument]:
-    # For now, skip args parsing and return empty span.
-    # Full implementation in Phase 3 (Statement Parsing).
+    # Empty span — full implementation in Phase 7 (Pattern & Match).
     if check(s, tk.TokenKind.rparen):
         return span[ast.Argument]()
     while true:
@@ -1890,10 +1881,6 @@ function parse_call_args(s: ref[ParserState]) -> span[ast.Argument]:
             break
     return span[ast.Argument]()
 
-
-# =============================================================================
-#  Declaration stubs (continued)
-# =============================================================================
 
 function parse_struct_decl(s: ref[ParserState]) -> void:
     consume_name(s, c"expected struct name")
