@@ -70,6 +70,7 @@ public function check_source_file(file: ast.SourceFile) -> vec.Vec[SemanticDiagn
     collect_extending_methods(ref_of(ctx), file)
     declare_values_and_functions(ref_of(ctx), file)
     check_functions(ref_of(ctx), file)
+    check_extending_methods(ref_of(ctx), file)
     return ctx.diagnostics
 
 
@@ -387,6 +388,51 @@ function check_functions(ctx: ref[Context], file: ast.SourceFile) -> void:
             _:
                 pass
         i += 1
+
+
+## Check the bodies of methods declared in `extending` blocks.  `this` is bound
+## to the receiver type (unwrapped, so `this.field` / `this.method()` are
+## checked); static methods have no `this`.  Generic/native/imported receivers
+## resolve to permissive types, so their member accesses are not flagged.
+function check_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + i)
+        match d:
+            ast.Decl.decl_extending_block as ex:
+                var this_type: types.Type = types.Type.ty_error
+                unsafe:
+                    this_type = resolve_type_value(ctx, read(ex.type_name))
+                var j: ptr_uint = 0
+                while j < ex.methods.len:
+                    var m: ast.Method
+                    unsafe:
+                        m = read(ex.methods.data + j)
+                    check_method_body(ctx, this_type, m)
+                    j += 1
+            _:
+                pass
+        i += 1
+
+
+function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Method) -> void:
+    var scope = map_mod.Map[str, types.Type].create()
+    if m.method_kind != ast.MethodKind.mk_static:
+        scope.set("this", this_type)
+    var pi: ptr_uint = 0
+    while pi < m.method_params.len:
+        var p: ast.Param
+        unsafe:
+            p = read(m.method_params.data + pi)
+        scope.set(p.name, resolve_type_value(ctx, p.param_type))
+        pi += 1
+    var ret = types.primitive("void")
+    let rt = m.return_type
+    if rt != null:
+        ret = resolve_type(ctx, rt)
+    check_stmt(ctx, ref_of(scope), ret, m.body)
 
 
 function check_function_body(ctx: ref[Context], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?) -> void:

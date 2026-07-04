@@ -332,3 +332,67 @@ function test_builtin_with_on_struct_is_clean() -> t.Check:
             return p.with(x = 9)
     SRC
     return expect_clean(source)
+
+
+@[test]
+function test_method_body_return_mismatch_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct Counter:
+            value: int
+        extending Counter:
+            function bad() -> bool:
+                return this.value
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_method_body_unknown_field_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct Counter:
+            value: int
+        extending Counter:
+            function read() -> int:
+                return this.nope
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_valid_method_body_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct Counter:
+            value: int
+        extending Counter:
+            function read() -> int:
+                return this.value
+            editable function bump() -> void:
+                this.value = this.value + 1
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_static_method_body_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct Counter:
+            value: int
+        extending Counter:
+            static function zero() -> Counter:
+                return Counter(value = 0)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_method_calls_sibling_method_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct Counter:
+            value: int
+        extending Counter:
+            function read() -> int:
+                return this.value
+            function double() -> int:
+                return this.read() + this.read()
+    SRC
+    return expect_clean(source)
