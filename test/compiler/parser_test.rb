@@ -462,6 +462,51 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "and", return_stmt.value.left.operator
   end
 
+  def test_parses_format_string_interpolation_with_surrounding_whitespace
+    source = <<~MT
+      function main(x: int) -> int:
+          let text = f"a=\#{ x } b=\#{ x + 1 }"
+          return int<-text.len
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    local_decl = ast.declarations.first.body.first
+    format_string = local_decl.value
+
+    assert_instance_of MilkTea::AST::FormatString, format_string
+    first_expr = format_string.parts[1]
+    assert_instance_of MilkTea::AST::FormatExprPart, first_expr
+    assert_instance_of MilkTea::AST::Identifier, first_expr.expression
+    assert_equal "x", first_expr.expression.name
+
+    second_expr = format_string.parts[3]
+    assert_instance_of MilkTea::AST::FormatExprPart, second_expr
+    assert_instance_of MilkTea::AST::BinaryOp, second_expr.expression
+  end
+
+  def test_parses_enum_with_negative_and_auto_incremented_members
+    source = <<~MT
+      enum E: int
+          a = -3
+          b
+          c = 10
+          d
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    enum_decl = ast.declarations.first
+    values = enum_decl.members.map do |member|
+      value = member.value
+      if value.is_a?(MilkTea::AST::UnaryOp) && value.operator == "-"
+        -value.operand.value
+      else
+        value.value
+      end
+    end
+
+    assert_equal [-3, -2, 10, 11], values
+  end
+
   def test_parses_format_string_literal
     source = <<~MT
       import std.fmt as fmt

@@ -480,8 +480,8 @@ module MilkTea
             value = parse_expression
             if value.is_a?(AST::IntegerLiteral)
               auto_value = value.value + 1
-            elsif value.is_a?(AST::UnaryOp) && value.operator == :- && value.operand.is_a?(AST::IntegerLiteral)
-              auto_value = value.operand.value + 1
+            elsif value.is_a?(AST::UnaryOp) && value.operator == "-" && value.operand.is_a?(AST::IntegerLiteral)
+              auto_value = -value.operand.value + 1
             end
           else
             value = AST::IntegerLiteral.new(lexeme: auto_value.to_s, value: auto_value)
