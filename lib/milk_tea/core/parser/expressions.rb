@@ -498,13 +498,18 @@ module MilkTea
       end
 
       def parse_embedded_expression(source, line:, column:)
-        tokens = Lexer.lex(source, path: @path).map do |token|
+        # Interpolation source may carry surrounding whitespace (e.g. `#{ x }`);
+        # strip it so leading whitespace is not re-lexed as indentation. Shift
+        # the column by the stripped leading width to keep error positions exact.
+        leading = source.length - source.lstrip.length
+        stripped = source.strip
+        tokens = Lexer.lex(stripped, path: @path).map do |token|
           Token.new(
             type: token.type,
             lexeme: token.lexeme,
             literal: token.literal,
             line: token.line + line - 1,
-            column: token.column + column - 1,
+            column: token.column + column - 1 + leading,
             start_offset: token.start_offset,
             end_offset: token.end_offset,
             leading_trivia: token.leading_trivia,
