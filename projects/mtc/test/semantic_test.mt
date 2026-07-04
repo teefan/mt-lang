@@ -396,3 +396,62 @@ function test_method_calls_sibling_method_is_clean() -> t.Check:
                 return this.read() + this.read()
     SRC
     return expect_clean(source)
+
+
+@[test]
+function test_unknown_enum_member_is_flagged() -> t.Check:
+    var source = <<-SRC
+        enum Color: ubyte
+            red = 0
+            green = 1
+        function f() -> Color:
+            return Color.purple
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_valid_enum_member_is_clean() -> t.Check:
+    var source = <<-SRC
+        enum Color: ubyte
+            red = 0
+            green = 1
+        function f() -> Color:
+            return Color.green
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_unknown_variant_arm_is_flagged() -> t.Check:
+    var source = <<-SRC
+        variant Token:
+            ident(name: str)
+            eof
+        function f() -> Token:
+            return Token.bad
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_valid_variant_arm_construction_is_clean() -> t.Check:
+    var source = <<-SRC
+        variant Token:
+            ident(name: str)
+            eof
+        function f() -> Token:
+            return Token.ident(name = "x")
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_prelude_option_member_is_permissive() -> t.Check:
+    # Option/Result are prelude types, not locally declared, so their member
+    # access must never be flagged.
+    var source = <<-SRC
+        function f() -> Option[int]:
+            return Option[int].some(value = 5)
+    SRC
+    return expect_clean(source)

@@ -48,6 +48,7 @@ struct Context:
     alias_types: map_mod.Map[str, types.Type]
     structs: map_mod.Map[str, span[FieldEntry]]
     method_keys: map_mod.Map[str, bool]
+    static_types: map_mod.Map[str, bool]
     functions: map_mod.Map[str, FnSig]
     value_types: map_mod.Map[str, types.Type]
     diagnostics: vec.Vec[SemanticDiagnostic]
@@ -61,6 +62,7 @@ public function check_source_file(file: ast.SourceFile) -> vec.Vec[SemanticDiagn
         alias_types = map_mod.Map[str, types.Type].create(),
         structs = map_mod.Map[str, span[FieldEntry]].create(),
         method_keys = map_mod.Map[str, bool].create(),
+        static_types = map_mod.Map[str, bool].create(),
         functions = map_mod.Map[str, FnSig].create(),
         value_types = map_mod.Map[str, types.Type].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
@@ -68,6 +70,7 @@ public function check_source_file(file: ast.SourceFile) -> vec.Vec[SemanticDiagn
     declare_named_types(ref_of(ctx), file)
     collect_struct_fields(ref_of(ctx), file)
     collect_extending_methods(ref_of(ctx), file)
+    collect_enum_variant_members(ref_of(ctx), file)
     declare_values_and_functions(ref_of(ctx), file)
     check_functions(ref_of(ctx), file)
     check_extending_methods(ref_of(ctx), file)
@@ -182,6 +185,46 @@ function method_key(type_name: str, member: str) -> str:
 
 function has_method(ctx: ref[Context], type_name: str, member: str) -> bool:
     return ctx.method_keys.contains(method_key(type_name, member))
+
+
+## Register enum/flags members and variant arms as static members (keyed like
+## methods) so `Color.red` / `Token.ident(...)` on a type-name receiver can be
+## validated.  The type names are tracked as "static-checkable".
+function collect_enum_variant_members(ctx: ref[Context], file: ast.SourceFile) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + i)
+        match d:
+            ast.Decl.decl_enum as e:
+                ctx.static_types.set(e.name, true)
+                register_member_names(ctx, e.name, e.enum_members)
+            ast.Decl.decl_flags as fl:
+                ctx.static_types.set(fl.name, true)
+                register_member_names(ctx, fl.name, fl.flags_members)
+            ast.Decl.decl_variant as vr:
+                ctx.static_types.set(vr.name, true)
+                register_arm_names(ctx, vr.name, vr.variant_arms)
+            _:
+                pass
+        i += 1
+
+
+function register_member_names(ctx: ref[Context], type_name: str, members: span[ast.EnumMember]) -> void:
+    var i: ptr_uint = 0
+    while i < members.len:
+        unsafe:
+            ctx.method_keys.set(method_key(type_name, read(members.data + i).name), true)
+        i += 1
+
+
+function register_arm_names(ctx: ref[Context], type_name: str, arms: span[ast.VariantArm]) -> void:
+    var i: ptr_uint = 0
+    while i < arms.len:
+        unsafe:
+            ctx.method_keys.set(method_key(type_name, read(arms.data + i).name), true)
+        i += 1
 
 
 function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -> void:
@@ -594,8 +637,7 @@ function infer_expr(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]],
                 let _inner = infer_expr(ctx, scope, c.expression)
                 return resolve_type(ctx, c.target_type)
             ast.Expr.expr_member_access as ma:
-                let recv = infer_expr(ctx, scope, ma.receiver)
-                return check_member(ctx, recv, ma.member_name, false, ma.line, ma.column)
+                return resolve_member_access(ctx, scope, ma.receiver, ma.member_name, false, ma.line, ma.column)
             ast.Expr.expr_index_access as ix:
                 let _rx = infer_expr(ctx, scope, ix.receiver)
                 let _ix = infer_expr(ctx, scope, ix.index)
@@ -682,12 +724,45 @@ function check_method_callee(ctx: ref[Context], scope: ref[map_mod.Map[str, type
     unsafe:
         match read(callee):
             ast.Expr.expr_member_access as ma:
-                let recv = infer_expr(ctx, scope, ma.receiver)
-                let _t = check_member(ctx, recv, ma.member_name, true, ma.line, ma.column)
+                let _t = resolve_member_access(ctx, scope, ma.receiver, ma.member_name, true, ma.line, ma.column)
             ast.Expr.expr_identifier:
                 pass
             _:
                 let _c = infer_expr(ctx, scope, callee)
+
+
+## Dispatch a member access: a bare type-name receiver of an enum/flags/variant
+## is a static member access (validate against members/arms/methods); anything
+## else is an instance access (struct field/method or permissive).
+function resolve_member_access(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], receiver: ptr[ast.Expr], member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+    match static_type_receiver(ctx, scope, receiver):
+        Option.some as tn:
+            check_static_member(ctx, tn.value, member, line, column)
+            return types.Type.ty_named(name = tn.value)
+        Option.none:
+            let recv = infer_expr(ctx, scope, receiver)
+            return check_member(ctx, recv, member, is_method_call, line, column)
+
+
+## Some(type name) when `receiver` is a bare identifier naming a locally-declared
+## enum/flags/variant that is not shadowed by a local value.
+function static_type_receiver(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], receiver: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                if scope.get(id.name) != null:
+                    return Option[str].none
+                if ctx.static_types.contains(id.name):
+                    return Option[str].some(value = id.name)
+                return Option[str].none
+            _:
+                return Option[str].none
+
+
+function check_static_member(ctx: ref[Context], type_name: str, member: str, line: ptr_uint, column: ptr_uint) -> void:
+    if has_method(ctx, type_name, member):
+        return
+    report(ctx, line, column, unknown_member_message("member", type_name, member))
 
 
 ## When `callee` is a bare identifier naming a locally-declared struct (not
