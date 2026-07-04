@@ -29,7 +29,9 @@ public struct SemanticDiagnostic:
 
 
 struct FnSig:
+    name: str
     params: span[types.Type]
+    param_names: span[str]
     return_type: types.Type
     has_return_type: bool
 
@@ -114,7 +116,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                         ctx.value_types.set(v.name, resolve_type(ctx, vt))
             ast.Decl.decl_function as fun:
                 if declare_value(ctx, fun.name, fun.line, fun.column):
-                    ctx.functions.set(fun.name, build_fn_sig(ctx, fun.method_params, fun.return_type))
+                    ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type))
             ast.Decl.decl_extern_function as ef:
                 declare_value(ctx, ef.name, ef.line, 1)
             ast.Decl.decl_foreign_function as ff:
@@ -141,19 +143,23 @@ function dup_message(kind: str, name: str) -> str:
     return buf.as_str()
 
 
-function build_fn_sig(ctx: ref[Context], params: span[ast.Param], return_type: ptr[ast.TypeRef]?) -> FnSig:
+function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?) -> FnSig:
     var param_types = vec.Vec[types.Type].create()
+    var param_names = vec.Vec[str].create()
     var i: ptr_uint = 0
     while i < params.len:
         var p: ast.Param
         unsafe:
             p = read(params.data + i)
         param_types.push(resolve_type_value(ctx, p.param_type))
+        param_names.push(p.name)
         i += 1
     let rt = return_type
     if rt != null:
-        return FnSig(params = param_types.as_span(), return_type = resolve_type(ctx, rt), has_return_type = true)
-    return FnSig(params = param_types.as_span(), return_type = types.primitive("void"), has_return_type = false)
+        return FnSig(name = name, params = param_types.as_span(), param_names = param_names.as_span(),
+            return_type = resolve_type(ctx, rt), has_return_type = true)
+    return FnSig(name = name, params = param_types.as_span(), param_names = param_names.as_span(),
+        return_type = types.primitive("void"), has_return_type = false)
 
 
 # =============================================================================
@@ -313,10 +319,12 @@ function check_stmt(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]],
                 while bi < i.branches.len:
                     var br: ast.IfBranch
                     br = read(i.branches.data + bi)
+                    check_condition(ctx, scope, br.condition, "if", br.line, br.column)
                     check_body(ctx, scope, ret, br.body)
                     bi += 1
                 check_body(ctx, scope, ret, i.else_body)
             ast.Stmt.stmt_while as w:
+                check_condition(ctx, scope, w.condition, "while", w.line, w.column)
                 check_body(ctx, scope, ret, w.body)
             ast.Stmt.stmt_for as fr:
                 bind_for_names(scope, fr.bindings)
@@ -332,8 +340,19 @@ function check_stmt(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]],
                 check_body(ctx, scope, ret, u.body)
             ast.Stmt.stmt_defer as d:
                 check_body(ctx, scope, ret, d.body)
+            ast.Stmt.stmt_expression as e:
+                let _ignored = infer_expr(ctx, scope, e.expression)
+            ast.Stmt.stmt_assignment as a:
+                let _target = infer_expr(ctx, scope, a.target)
+                let _value = infer_expr(ctx, scope, a.value)
             _:
                 pass
+
+
+function check_condition(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], cond: ptr[ast.Expr], keyword: str, line: ptr_uint, column: ptr_uint) -> void:
+    let ct = infer_expr(ctx, scope, cond)
+    if types.is_definitely_non_bool(ct):
+        report(ctx, line, column, condition_message(keyword, ct))
 
 
 function check_stmt_span(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], ret: types.Type, stmts: span[ast.Stmt]) -> void:
@@ -414,9 +433,17 @@ function infer_expr(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]],
             ast.Expr.expr_unary_op as u:
                 return infer_unary(ctx, scope, u.operator, u.operand)
             ast.Expr.expr_prefix_cast as c:
+                let _inner = infer_expr(ctx, scope, c.expression)
                 return resolve_type(ctx, c.target_type)
+            ast.Expr.expr_member_access as ma:
+                let _recv = infer_expr(ctx, scope, ma.receiver)
+                return types.Type.ty_error
+            ast.Expr.expr_index_access as ix:
+                let _rx = infer_expr(ctx, scope, ix.receiver)
+                let _ix = infer_expr(ctx, scope, ix.index)
+                return types.Type.ty_error
             ast.Expr.expr_call as call:
-                return infer_call(ctx, call.callee)
+                return infer_and_check_call(ctx, scope, call.callee, call.args)
             _:
                 return types.Type.ty_error
 
@@ -434,11 +461,11 @@ function infer_identifier(ctx: ref[Context], scope: ref[map_mod.Map[str, types.T
 
 
 function infer_binary(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> types.Type:
-    if is_comparison_op(op) or op.equal("and") or op.equal("or"):
-        return types.primitive("bool")
-    # Arithmetic / bitwise: only concrete when both operands are numeric.
+    # Always infer both operands so nested calls in either side are checked.
     let lt = infer_expr(ctx, scope, left)
     let rt = infer_expr(ctx, scope, right)
+    if is_comparison_op(op) or op.equal("and") or op.equal("or"):
+        return types.primitive("bool")
     if types.is_numeric(lt) and types.is_numeric(rt):
         return lt
     return types.Type.ty_error
@@ -452,20 +479,74 @@ function is_comparison_op(op: str) -> bool:
 
 
 function infer_unary(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], op: str, operand: ptr[ast.Expr]) -> types.Type:
+    let ot = infer_expr(ctx, scope, operand)
     if op.equal("not"):
         return types.primitive("bool")
     if op.equal("-"):
-        return infer_expr(ctx, scope, operand)
+        return ot
     return types.Type.ty_error
 
 
-function infer_call(ctx: ref[Context], callee: ptr[ast.Expr]) -> types.Type:
+## Infer a call's result type and, when the callee is a local top-level
+## function, check argument count and (positional) argument types.
+function infer_and_check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr], args: span[ast.Argument]) -> types.Type:
+    var arg_types = vec.Vec[types.Type].create()
+    var any_named = false
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        arg_types.push(infer_expr(ctx, scope, arg.arg_value))
+        match arg.arg_name:
+            Option.some:
+                any_named = true
+            Option.none:
+                pass
+        i += 1
+    check_call(ctx, scope, callee, arg_types.as_span(), any_named)
+    return callee_return_type(ctx, scope, callee)
+
+
+function check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr], arg_types: span[types.Type], any_named: bool) -> void:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
-                let sig = ctx.functions.get(id.name)
-                if sig != null:
-                    return read(sig).return_type
+                # A local value (e.g. a proc) of the same name shadows the
+                # function; its arity/parameter types are not statically known.
+                if scope.get(id.name) != null:
+                    return
+                let sigp = ctx.functions.get(id.name)
+                if sigp == null:
+                    return
+                let sig = read(sigp)
+                if arg_types.len != sig.params.len:
+                    report(ctx, id.line, id.column, arity_message(id.name, sig.params.len, arg_types.len))
+                    return
+                # Named arguments may be reordered; positional type checking is
+                # only sound for all-positional calls.
+                if any_named:
+                    return
+                var i: ptr_uint = 0
+                while i < arg_types.len:
+                    let atype = read(arg_types.data + i)
+                    let ptype = read(sig.params.data + i)
+                    if types.definitely_incompatible(ptype, atype):
+                        report(ctx, id.line, id.column, argument_message(read(sig.param_names.data + i), id.name, ptype, atype))
+                    i += 1
+            _:
+                pass
+
+
+function callee_return_type(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr]) -> types.Type:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                if scope.get(id.name) != null:
+                    return types.Type.ty_error
+                let sigp = ctx.functions.get(id.name)
+                if sigp != null:
+                    return read(sigp).return_type
                 return types.Type.ty_error
             _:
                 return types.Type.ty_error
@@ -491,3 +572,53 @@ function local_mismatch_message(expected: types.Type, got: types.Type) -> str:
     buf.append(" to ")
     buf.append(types.type_to_string(expected))
     return buf.as_str()
+
+
+function condition_message(keyword: str, got: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append(keyword)
+    buf.append(" condition must be bool, got ")
+    buf.append(types.type_to_string(got))
+    return buf.as_str()
+
+
+function arity_message(name: str, expected: ptr_uint, got: ptr_uint) -> str:
+    var buf = string.String.create()
+    buf.append("function ")
+    buf.append(name)
+    buf.append(" expects ")
+    buf.append(uint_to_str(expected))
+    buf.append(" arguments, got ")
+    buf.append(uint_to_str(got))
+    return buf.as_str()
+
+
+function argument_message(param_name: str, fn_name: str, expected: types.Type, got: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("argument ")
+    buf.append(param_name)
+    buf.append(" to ")
+    buf.append(fn_name)
+    buf.append(" expects ")
+    buf.append(types.type_to_string(expected))
+    buf.append(", got ")
+    buf.append(types.type_to_string(got))
+    return buf.as_str()
+
+
+function uint_to_str(value: ptr_uint) -> str:
+    if value == 0:
+        return "0"
+    var digits = string.String.create()
+    var n = value
+    while n > 0:
+        let d = n % 10
+        digits.push_byte(ubyte<-(int<-d + 48))
+        n = n / 10
+    var rev = string.String.create()
+    let raw = digits.as_str()
+    var i = raw.len
+    while i > 0:
+        i -= 1
+        rev.push_byte(raw.byte_at(i))
+    return rev.as_str()

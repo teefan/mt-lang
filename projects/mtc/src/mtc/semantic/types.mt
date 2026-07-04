@@ -171,3 +171,17 @@ public function definitely_incompatible(target: Type, source: Type) -> bool:
     if tc == cat_other or sc == cat_other:
         return false
     return tc != sc
+
+
+## True when `t` is a concretely-known type that is definitely not `bool`
+## (a non-bool primitive or str).  Condition checking flags a non-bool
+## `if`/`while` condition only when the type is concrete; unknown types
+## (`ty_error`, named, generic, …) stay permissive.
+public function is_definitely_non_bool(t: Type) -> bool:
+    match t:
+        Type.ty_primitive as p:
+            return not p.name.equal("bool")
+        Type.ty_str:
+            return true
+        _:
+            return false

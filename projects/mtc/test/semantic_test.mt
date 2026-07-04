@@ -128,3 +128,88 @@ function test_return_local_variable_is_checked() -> t.Check:
             return flag
     SRC
     return expect_flagged(source)
+
+
+@[test]
+function test_non_bool_if_condition_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            if 5:
+                pass
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_non_bool_while_condition_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            while 3:
+                pass
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_comparison_condition_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f(n: int) -> void:
+            if n > 0:
+                pass
+            while n < 10:
+                pass
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_call_arity_mismatch_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function add(a: int, b: int) -> int:
+            return a + b
+        function g() -> int:
+            return add(1)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_call_correct_arity_is_clean() -> t.Check:
+    var source = <<-SRC
+        function add(a: int, b: int) -> int:
+            return a + b
+        function g() -> int:
+            return add(1, 2)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_call_argument_type_mismatch_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function add(a: int, b: int) -> int:
+            return a + b
+        function g() -> int:
+            return add(true, 1)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_call_to_unknown_function_is_permissive() -> t.Check:
+    var source = <<-SRC
+        function g(w: Widget) -> int:
+            return w.compute(1, 2, 3)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_named_arguments_call_is_clean() -> t.Check:
+    var source = <<-SRC
+        function configure(host: str, port: int) -> void:
+            pass
+        function g() -> void:
+            configure(host = "localhost", port = 8080)
+    SRC
+    return expect_clean(source)
