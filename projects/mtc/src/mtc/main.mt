@@ -164,11 +164,11 @@ function print_program_diagnostics(program: ref[loader.Program]) -> void:
         unsafe:
             let rd = read(d)
             let message = rd.message.as_str()
-            let module_name = rd.module_name.as_str()
+            let location = rd.path.as_str()
             stdio.print_format(
                 c"error[sema/error]: %.*s\n  --> %.*s:%d:%d\n",
                 int<-(message.len), message.data,
-                int<-(module_name.len), module_name.data,
+                int<-(location.len), location.data,
                 int<-(rd.line), int<-(rd.column),
             )
         i += 1

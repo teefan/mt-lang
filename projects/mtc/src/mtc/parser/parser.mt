@@ -2864,9 +2864,16 @@ function parse_postfix(s: ref[ParserState]) -> ptr[ast.Expr]:
         if match_kind(s, tk.TokenKind.dot):
             consume_name_allowing_keywords(s, c"expected member name after '.'")
             let member = previous_lexeme(s)
+            let member_tok = previous_token(s)
             var node = alloc_expr(s)
             unsafe:
-                read(node) = ast.Expr.expr_member_access(receiver = left, member_name = member, line = 0, column = 0)
+                let mt = read(member_tok)
+                read(node) = ast.Expr.expr_member_access(
+                    receiver = left,
+                    member_name = member,
+                    line = mt.line,
+                    column = mt.column,
+                )
             left = node
         else if check(s, tk.TokenKind.lbracket):
             if postfix_bracket_starts_specialization(s, left):

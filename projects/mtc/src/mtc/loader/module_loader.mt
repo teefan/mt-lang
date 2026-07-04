@@ -35,10 +35,11 @@ public struct LoadedModule:
     parse_diagnostics: vec.Vec[parser.ParseDiagnostic]
 
 
-## A diagnostic aggregated across the whole program, tagged with the owning
-## module so parse, load, and semantic errors can be reported uniformly.
+## A diagnostic aggregated across the whole program, tagged with the source-file
+## path it occurs in so parse, load, and semantic errors can be reported
+## uniformly.
 public struct LoadDiagnostic:
-    module_name: string.String
+    path: string.String
     line: ptr_uint
     column: ptr_uint
     message: string.String
@@ -62,7 +63,7 @@ extending LoadedModule:
 
 extending LoadDiagnostic:
     public editable function release() -> void:
-        this.module_name.release()
+        this.path.release()
         this.message.release()
 
 
@@ -185,7 +186,7 @@ function parse_all(
 
     if on_stack.contains(key):
         diagnostics.push(LoadDiagnostic(
-            module_name = string.String.from_str(key),
+            path = string.String.from_str(key),
             line = 0,
             column = 0,
             message = string.String.from_str("cyclic import detected"),
@@ -197,7 +198,7 @@ function parse_all(
         Result.failure as failure:
             var error = failure.error
             diagnostics.push(LoadDiagnostic(
-                module_name = string.String.from_str(key),
+                path = string.String.from_str(key),
                 line = 0,
                 column = 0,
                 message = string.String.from_str("source file not found"),
@@ -221,7 +222,7 @@ function parse_all(
             ))
             let index = modules.len() - 1
 
-            recurse_imports(source_file, roots, platform, modules, visited, on_stack, order, diagnostics)
+            recurse_imports(source_file, key, roots, platform, modules, visited, on_stack, order, diagnostics)
 
             let _dropped = on_stack.remove(key)
             visited.set(key, index)
@@ -232,6 +233,7 @@ function parse_all(
 ## that cannot be resolved is recorded as a diagnostic rather than aborting.
 function recurse_imports(
     source_file: ast.SourceFile,
+    importer_path: str,
     roots: span[str],
     platform: resolver.Platform,
     modules: ref[vec.Vec[LoadedModule]],
@@ -262,11 +264,13 @@ function recurse_imports(
                         )
                     Result.failure as resolve_failure:
                         var error = resolve_failure.error
+                        var message = string.String.from_str("module not found: ")
+                        message.append(module_name.as_str())
                         diagnostics.push(LoadDiagnostic(
-                            module_name = string.String.from_str(module_name.as_str()),
+                            path = string.String.from_str(importer_path),
                             line = imported.line,
                             column = imported.column,
-                            message = string.String.from_str("module not found"),
+                            message = message,
                         ))
                         error.release()
                 module_name.release()
@@ -293,7 +297,7 @@ function check_and_bind_module(
                 break
             let parse_diag = read(parse_ptr)
             diagnostics.push(LoadDiagnostic(
-                module_name = string.String.from_str(loaded.module_name.as_str()),
+                path = string.String.from_str(loaded.path.as_str()),
                 line = parse_diag.line,
                 column = parse_diag.column,
                 message = string.String.from_str(text.cstr_as_str(parse_diag.message)),
@@ -310,7 +314,7 @@ function check_and_bind_module(
                 break
             let sema_diag = read(sema_ptr)
             diagnostics.push(LoadDiagnostic(
-                module_name = string.String.from_str(loaded.module_name.as_str()),
+                path = string.String.from_str(loaded.path.as_str()),
                 line = sema_diag.line,
                 column = sema_diag.column,
                 message = string.String.from_str(sema_diag.message),
