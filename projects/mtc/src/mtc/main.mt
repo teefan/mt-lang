@@ -13,6 +13,7 @@ import mtc.lexer.token as token_mod
 import mtc.lexer.lexer as lexer
 import mtc.parser.parser as parser
 import mtc.pretty_printer.ast_formatter as ast_formatter
+import mtc.semantic.analyzer as analyzer
 
 
 function main(args: span[str]) -> int:
@@ -39,6 +40,12 @@ function main(args: span[str]) -> int:
             return 1
         return parse_command(args[1])
 
+    if cmd == "check":
+        if args.len < 2:
+            print_help()
+            return 1
+        return check_command(args[1])
+
     if cmd == "help":
         print_help()
         return 0
@@ -55,6 +62,7 @@ function print_help() -> void:
     stdio.print_line("commands:")
     stdio.print_line("  lex   <file>  print the lexer token stream")
     stdio.print_line("  parse <file>  parse source and print AST")
+    stdio.print_line("  check <file>  parse and semantically analyze source")
     stdio.print_line("  help          print this help")
 
 
@@ -99,6 +107,71 @@ function parse_command(file_path: str) -> int:
             let text = rendered.as_str()
             stdio.print_format(c"%.*s", int<-(text.len), text.data)
             return 0
+
+
+function check_command(file_path: str) -> int:
+    match fs.read_text(file_path):
+        Result.failure:
+            stdio.print_format(c"error: cannot read '%.*s'\n", int<-(file_path.len), file_path.data)
+            return 1
+        Result.success as payload:
+            var content = payload.value
+            defer content.release()
+
+            let source = content.as_str()
+            var parse_diags = vec.Vec[parser.ParseDiagnostic].create()
+            defer parse_diags.release()
+            let file = parser.parse_source(source, ref_of(parse_diags))
+
+            if parse_diags.len() > 0:
+                var di: ptr_uint = 0
+                while di < parse_diags.len():
+                    let d = parse_diags.get(di) else:
+                        break
+                    unsafe:
+                        let rd = read(d)
+                        stdio.print_format(
+                            c"parse error: L%d:%d lexeme='%.*s' kind=%.*s: %s\n",
+                            int<-(rd.line),
+                            int<-(rd.column),
+                            int<-(rd.lexeme.len), rd.lexeme.data,
+                            int<-(rd.kind.len), rd.kind.data,
+                            rd.message,
+                        )
+                    di += 1
+                report_check_summary(parse_diags.len())
+                return 1
+
+            var sema_diags = analyzer.check_source_file(file)
+            defer sema_diags.release()
+
+            if sema_diags.len() == 0:
+                stdio.print_format(c"checked %.*s as good\n", int<-(file_path.len), file_path.data)
+                return 0
+
+            var i: ptr_uint = 0
+            while i < sema_diags.len():
+                let d = sema_diags.get(i) else:
+                    break
+                unsafe:
+                    let rd = read(d)
+                    stdio.print_format(
+                        c"error[sema/error]: %.*s\n  --> %.*s:%d:%d\n",
+                        int<-(rd.message.len), rd.message.data,
+                        int<-(file_path.len), file_path.data,
+                        int<-(rd.line), int<-(rd.column),
+                    )
+                i += 1
+            report_check_summary(sema_diags.len())
+            return 1
+
+
+function report_check_summary(count: ptr_uint) -> void:
+    stdio.print_line("")
+    if count == 1:
+        stdio.print_line("error: could not check due to 1 error")
+    else:
+        stdio.print_format(c"error: could not check due to %d errors\n", int<-(count))
 
 
 function lex_command(file_path: str, machine: bool) -> int:

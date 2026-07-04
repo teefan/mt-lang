@@ -2295,15 +2295,16 @@ function parse_defer_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
         ln = read(start_tok).line
         cn = read(start_tok).column
     var expression: ptr[ast.Expr]? = null
-    var body = alloc_stmt(s)
+    var body: ptr[ast.Stmt]? = null
     if match_kind(s, tk.TokenKind.colon):
         if match_kind(s, tk.TokenKind.newline):
             consume(s, tk.TokenKind.indent, c"expected indented defer body")
             var body_span = parse_block_body(s)
             consume(s, tk.TokenKind.dedent, c"expected end of defer body")
-            body = alloc_stmt(s)
+            var block_node = alloc_stmt(s)
             unsafe:
-                read(body) = ast.Stmt.stmt_block(statements = body_span)
+                read(block_node) = ast.Stmt.stmt_block(statements = body_span)
+            body = block_node
         else:
             body = parse_statement(s)
     else:
