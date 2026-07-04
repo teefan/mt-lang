@@ -867,3 +867,18 @@ function test_unknown_static_method_is_flagged() -> t.Check:
             return 0
     SRC
     return expect_flagged(source)
+
+
+@[test]
+function test_block_local_does_not_leak_past_loop() -> t.Check:
+    # A loop-local shadowing a parameter must not leak: after the loop, `flag`
+    # is the bool parameter again, so returning it from a bool function is clean.
+    var source = <<-SRC
+        function f(flag: bool) -> bool:
+            var i: int = 0
+            while i < 3:
+                let flag = i
+                i += 1
+            return flag
+    SRC
+    return expect_clean(source)

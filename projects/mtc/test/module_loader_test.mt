@@ -714,3 +714,23 @@ function test_cross_module_unknown_static_method_is_flagged() -> t.Check:
     defer program.release()
 
     return t.expect_true(program.has_diagnostic_containing("unknown method"))
+
+
+@[test]
+function test_loop_local_shadowing_import_alias_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    # A loop-local `lib` shadows the import alias inside the loop; after the loop
+    # the alias must be visible again so lib.Thing(...) is a construction, not a
+    # method call on a leaked Thing value. Regression test for block scoping.
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public struct Thing:\n    n: int\n",
+        "import lib\n\nfunction f() -> int:\n    var i: int = 0\n    while i < 3:\n        let lib = lib.Thing(n = i)\n        i += 1\n    let after = lib.Thing(n = 9)\n    return 0\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
