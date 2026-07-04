@@ -5,7 +5,8 @@
 ## `public` declarations, while raw (external) modules export everything.  The
 ## ModuleBinding type itself lives in the analyzer to avoid an import cycle; this
 ## module supplies the construction/visibility-filtering logic.  Exports
-## functions (call checks), structs (construction field checks), and value types.
+## functions (call checks), structs (construction field checks), value types, and
+## methods with signatures (method-call checks).
 
 import std.map as map_mod
 
@@ -20,6 +21,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     var value_types = map_mod.Map[str, types.Type].create()
     var static_member_types = map_mod.Map[str, bool].create()
     var member_keys = map_mod.Map[str, bool].create()
+    var method_sigs = map_mod.Map[str, analyzer.FnSig].create()
     let exports_all = analysis.source_file.module_kind == ast.ModuleKind.module_raw
 
     var i: ptr_uint = 0
@@ -65,7 +67,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                     static_member_types.set(vr.name, true)
                     export_arm_keys(ref_of(member_keys), vr.name, vr.variant_arms)
             ast.Decl.decl_extending_block as ex:
-                export_method_keys(ref_of(member_keys), ex.type_name, ex.methods, exports_all)
+                export_methods(ref_of(member_keys), ref_of(method_sigs), analysis.method_sigs, ex.type_name, ex.methods, exports_all)
             _:
                 pass
         i += 1
@@ -76,6 +78,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         value_types = value_types,
         static_member_types = static_member_types,
         member_keys = member_keys,
+        method_sigs = method_sigs,
     )
 
 
@@ -95,11 +98,12 @@ function export_arm_keys(member_keys: ref[map_mod.Map[str, bool]], type_name: st
         i += 1
 
 
-## Export the public methods of an extending block, keyed by the extended type
-## name, so `value.method()` calls on imported-typed values resolve.  A method on
-## a non-exported struct produces harmless dead keys (no importer can hold such a
+## Export the public methods of an extending block: their names into member_keys
+## (existence, for member access) and their signatures into method_sigs (for
+## method-call argument checks), keyed by the extended type name.  A method on a
+## non-exported struct produces harmless dead keys (no importer can hold such a
 ## value), so only method visibility is gated.
-function export_method_keys(member_keys: ref[map_mod.Map[str, bool]], type_ref: ptr[ast.TypeRef], methods: span[ast.Method], exports_all: bool) -> void:
+function export_methods(member_keys: ref[map_mod.Map[str, bool]], method_sigs: ref[map_mod.Map[str, analyzer.FnSig]], source_sigs: map_mod.Map[str, analyzer.FnSig], type_ref: ptr[ast.TypeRef], methods: span[ast.Method], exports_all: bool) -> void:
     let type_name = unsafe: analyzer.qname_to_str(read(type_ref).name)
     var i: ptr_uint = 0
     while i < methods.len:
@@ -107,5 +111,10 @@ function export_method_keys(member_keys: ref[map_mod.Map[str, bool]], type_ref: 
         unsafe:
             method = read(methods.data + i)
         if exports_all or method.visibility:
-            member_keys.set(analyzer.method_key(type_name, method.name), true)
+            let key = analyzer.method_key(type_name, method.name)
+            member_keys.set(key, true)
+            let sig_ptr = source_sigs.get(key)
+            if sig_ptr != null:
+                unsafe:
+                    method_sigs.set(key, read(sig_ptr))
         i += 1

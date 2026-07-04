@@ -57,6 +57,7 @@ public struct ModuleBinding:
     value_types: map_mod.Map[str, types.Type]
     static_member_types: map_mod.Map[str, bool]
     member_keys: map_mod.Map[str, bool]
+    method_sigs: map_mod.Map[str, FnSig]
 
 
 struct Context:
@@ -66,6 +67,7 @@ struct Context:
     alias_types: map_mod.Map[str, types.Type]
     structs: map_mod.Map[str, span[FieldEntry]]
     method_keys: map_mod.Map[str, bool]
+    method_sigs: map_mod.Map[str, FnSig]
     static_member_types: map_mod.Map[str, bool]
     match_case_types: map_mod.Map[str, bool]
     match_case_names: map_mod.Map[str, span[str]]
@@ -84,6 +86,7 @@ public struct Analysis:
     functions: map_mod.Map[str, FnSig]
     value_types: map_mod.Map[str, types.Type]
     method_keys: map_mod.Map[str, bool]
+    method_sigs: map_mod.Map[str, FnSig]
     static_member_types: map_mod.Map[str, bool]
     match_case_names: map_mod.Map[str, span[str]]
 
@@ -103,6 +106,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         alias_types = map_mod.Map[str, types.Type].create(),
         structs = map_mod.Map[str, span[FieldEntry]].create(),
         method_keys = map_mod.Map[str, bool].create(),
+        method_sigs = map_mod.Map[str, FnSig].create(),
         static_member_types = map_mod.Map[str, bool].create(),
         match_case_types = map_mod.Map[str, bool].create(),
         match_case_names = map_mod.Map[str, span[str]].create(),
@@ -128,6 +132,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         functions = ctx.functions,
         value_types = ctx.value_types,
         method_keys = ctx.method_keys,
+        method_sigs = ctx.method_sigs,
         static_member_types = ctx.static_member_types,
         match_case_names = ctx.match_case_names,
     )
@@ -253,7 +258,9 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                     var m: ast.Method
                     unsafe:
                         m = read(ex.methods.data + j)
-                    ctx.method_keys.set(method_key(base, m.name), true)
+                    let key = method_key(base, m.name)
+                    ctx.method_keys.set(key, true)
+                    ctx.method_sigs.set(key, build_fn_sig(ctx, m.name, m.method_params, m.return_type))
                     j += 1
             _:
                 pass
@@ -1083,9 +1090,16 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, typ
         Option.some as ct:
             return ct.value
         Option.none:
-            check_method_callee(ctx, scope, callee)
-            check_call(ctx, scope, callee, arg_types.as_span(), any_named)
-            return callee_return_type(ctx, scope, callee)
+            unsafe:
+                match read(callee):
+                    ast.Expr.expr_member_access as ma:
+                        return check_member_call(ctx, scope, ma.receiver, ma.member_name, arg_types.as_span(), any_named, ma.line, ma.column)
+                    ast.Expr.expr_identifier:
+                        check_call(ctx, scope, callee, arg_types.as_span(), any_named)
+                        return callee_return_type(ctx, scope, callee)
+                    _:
+                        let _ignored = infer_expr(ctx, scope, callee)
+                        return types.Type.ty_error
 
 
 ## A call whose callee is `alias.member(...)` where `alias` names an imported
@@ -1156,19 +1170,55 @@ function lookup_binding(ctx: ref[Context], module_name: str) -> ptr[ModuleBindin
         return read(imported).get(module_name)
 
 
-## When a call's callee is member access on a local struct instance
-## (`value.method(...)`), validate the method exists; unknown members are
-## reported as "unknown method".  Non-member callees are recursed for nested
-## call checks.
-function check_method_callee(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr]) -> void:
-    unsafe:
-        match read(callee):
-            ast.Expr.expr_member_access as ma:
-                let _t = resolve_member_access(ctx, scope, ma.receiver, ma.member_name, true, ma.line, ma.column)
-            ast.Expr.expr_identifier:
-                pass
-            _:
-                let _c = infer_expr(ctx, scope, callee)
+## Check a call whose callee is `receiver.method(...)`.  Static/imported-static
+## receivers (`Color.red(...)`, `lib.Token.ident(...)`, `NPC.static()`) are
+## validated for member existence only.  For a value receiver of struct type
+## (local or imported), the method's signature is resolved and the arguments are
+## checked, with the method's return type flowing to the caller; a method with no
+## known signature falls back to an existence check.
+function check_member_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], receiver: ptr[ast.Expr], method_name: str, arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+    match imported_static_member(ctx, scope, receiver, method_name, line, column):
+        Option.some as imported_static:
+            return imported_static.value
+        Option.none:
+            pass
+
+    match static_type_receiver(ctx, scope, receiver):
+        Option.some as tn:
+            check_static_member(ctx, tn.value, method_name, line, column)
+            return types.Type.ty_named(name = tn.value)
+        Option.none:
+            pass
+
+    let recv = infer_expr(ctx, scope, receiver)
+    match resolve_method_sig(ctx, recv, method_name):
+        Option.some as sig:
+            check_signature_call(ctx, method_name, sig.value, arg_types, any_named, line, column)
+            return sig.value.return_type
+        Option.none:
+            return check_member(ctx, recv, method_name, true, line, column)
+
+
+## The signature of `method_name` on a receiver of struct type, whether the type
+## is local (ctx.method_sigs) or imported (the module's binding).  None for any
+## other receiver type or an unknown method.
+function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name: str) -> Option[FnSig]:
+    match receiver:
+        types.Type.ty_named as n:
+            let sig_ptr = ctx.method_sigs.get(method_key(n.name, method_name))
+            if sig_ptr != null:
+                return Option[FnSig].some(value = unsafe: read(sig_ptr))
+            return Option[FnSig].none
+        types.Type.ty_imported as im:
+            let binding_ptr = lookup_binding(ctx, im.module_name) else:
+                return Option[FnSig].none
+            unsafe:
+                let sig_ptr = read(binding_ptr).method_sigs.get(method_key(im.name, method_name))
+                if sig_ptr != null:
+                    return Option[FnSig].some(value = read(sig_ptr))
+            return Option[FnSig].none
+        _:
+            return Option[FnSig].none
 
 
 ## Dispatch a member access: a bare type-name receiver of an enum/flags/variant

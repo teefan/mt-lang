@@ -765,3 +765,60 @@ function test_variant_match_with_payload_pattern_is_permissive() -> t.Check:
                     return 1
     SRC
     return expect_clean(source)
+
+
+@[test]
+function test_method_call_arity_mismatch_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct Counter:
+            value: int
+        extending Counter:
+            function add(a: int, b: int) -> int:
+                return this.value + a + b
+        function f(c: Counter) -> int:
+            return c.add(1)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_method_call_correct_arity_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct Counter:
+            value: int
+        extending Counter:
+            function add(a: int, b: int) -> int:
+                return this.value + a + b
+        function f(c: Counter) -> int:
+            return c.add(1, 2)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_method_call_argument_type_mismatch_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct Counter:
+            value: int
+        extending Counter:
+            function add(a: int, b: int) -> int:
+                return this.value + a + b
+        function f(c: Counter) -> int:
+            return c.add(true, 2)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_method_return_type_flows_to_caller() -> t.Check:
+    # count() returns int; returning it from a bool function must be flagged.
+    var source = <<-SRC
+        struct Box:
+            n: int
+        extending Box:
+            function count() -> int:
+                return this.n
+        function f(b: Box) -> bool:
+            return b.count()
+    SRC
+    return expect_flagged(source)

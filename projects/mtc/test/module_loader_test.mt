@@ -578,3 +578,85 @@ function test_cross_module_private_method_is_flagged() -> t.Check:
     defer program.release()
 
     return t.expect_true(program.has_diagnostic_containing("unknown method"))
+
+
+const ADDER_LIB: str = <<-SRC
+public struct Adder:
+    base: int
+
+extending Adder:
+    public function add(a: int, b: int) -> int:
+        return this.base + a + b
+
+    public function total() -> int:
+        return this.base
+SRC
+
+
+@[test]
+function test_cross_module_method_arity_mismatch_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        ADDER_LIB,
+        "import lib\n\nfunction f() -> int:\n    let x = lib.Adder(base = 0)\n    return x.add(1)\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("expects"))
+
+
+@[test]
+function test_cross_module_method_arg_type_mismatch_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        ADDER_LIB,
+        "import lib\n\nfunction f() -> int:\n    let x = lib.Adder(base = 0)\n    return x.add(true, 2)\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("got bool"))
+
+
+@[test]
+function test_cross_module_method_correct_call_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        ADDER_LIB,
+        "import lib\n\nfunction f() -> int:\n    let x = lib.Adder(base = 0)\n    return x.add(1, 2)\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_method_return_type_flows() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    # total() returns int; returning it from a bool function must be flagged.
+    var program = load_lib_and_main(
+        ref_of(root),
+        ADDER_LIB,
+        "import lib\n\nfunction f() -> bool:\n    let x = lib.Adder(base = 0)\n    return x.total()\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("mismatch"))
