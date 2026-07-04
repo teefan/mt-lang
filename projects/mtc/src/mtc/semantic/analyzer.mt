@@ -47,6 +47,7 @@ struct Context:
     type_aliases: map_mod.Map[str, ptr[ast.TypeRef]]
     alias_types: map_mod.Map[str, types.Type]
     structs: map_mod.Map[str, span[FieldEntry]]
+    method_keys: map_mod.Map[str, bool]
     functions: map_mod.Map[str, FnSig]
     value_types: map_mod.Map[str, types.Type]
     diagnostics: vec.Vec[SemanticDiagnostic]
@@ -59,12 +60,14 @@ public function check_source_file(file: ast.SourceFile) -> vec.Vec[SemanticDiagn
         type_aliases = map_mod.Map[str, ptr[ast.TypeRef]].create(),
         alias_types = map_mod.Map[str, types.Type].create(),
         structs = map_mod.Map[str, span[FieldEntry]].create(),
+        method_keys = map_mod.Map[str, bool].create(),
         functions = map_mod.Map[str, FnSig].create(),
         value_types = map_mod.Map[str, types.Type].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
     )
     declare_named_types(ref_of(ctx), file)
     collect_struct_fields(ref_of(ctx), file)
+    collect_extending_methods(ref_of(ctx), file)
     declare_values_and_functions(ref_of(ctx), file)
     check_functions(ref_of(ctx), file)
     return ctx.diagnostics
@@ -138,6 +141,46 @@ function resolve_field_entries(ctx: ref[Context], fields: span[ast.Field]) -> sp
         entries.push(FieldEntry(name = f.name, ty = resolve_type_value(ctx, f.field_type)))
         i += 1
     return entries.as_span()
+
+
+## Collect method names from `extending` blocks keyed as "TypeName.method", so
+## member/method reads on locally-declared struct instances can distinguish a
+## valid method from an unknown member.  A struct and its `extending` blocks
+## live in the same module, so within a single file the method set for a local
+## struct is complete.
+function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + i)
+        match d:
+            ast.Decl.decl_extending_block as ex:
+                var base: str = ""
+                unsafe:
+                    base = qname_to_str(read(ex.type_name).name)
+                var j: ptr_uint = 0
+                while j < ex.methods.len:
+                    var m: ast.Method
+                    unsafe:
+                        m = read(ex.methods.data + j)
+                    ctx.method_keys.set(method_key(base, m.name), true)
+                    j += 1
+            _:
+                pass
+        i += 1
+
+
+function method_key(type_name: str, member: str) -> str:
+    var buf = string.String.create()
+    buf.append(type_name)
+    buf.append(".")
+    buf.append(member)
+    return buf.as_str()
+
+
+function has_method(ctx: ref[Context], type_name: str, member: str) -> bool:
+    return ctx.method_keys.contains(method_key(type_name, member))
 
 
 function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -> void:
@@ -506,7 +549,7 @@ function infer_expr(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]],
                 return resolve_type(ctx, c.target_type)
             ast.Expr.expr_member_access as ma:
                 let recv = infer_expr(ctx, scope, ma.receiver)
-                return struct_field_type(ctx, recv, ma.member_name)
+                return check_member(ctx, recv, ma.member_name, false, ma.line, ma.column)
             ast.Expr.expr_index_access as ix:
                 let _rx = infer_expr(ctx, scope, ix.receiver)
                 let _ix = infer_expr(ctx, scope, ix.index)
@@ -580,8 +623,25 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, typ
         Option.some as ct:
             return ct.value
         Option.none:
+            check_method_callee(ctx, scope, callee)
             check_call(ctx, scope, callee, arg_types.as_span(), any_named)
             return callee_return_type(ctx, scope, callee)
+
+
+## When a call's callee is member access on a local struct instance
+## (`value.method(...)`), validate the method exists; unknown members are
+## reported as "unknown method".  Non-member callees are recursed for nested
+## call checks.
+function check_method_callee(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr]) -> void:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_member_access as ma:
+                let recv = infer_expr(ctx, scope, ma.receiver)
+                let _t = check_member(ctx, recv, ma.member_name, true, ma.line, ma.column)
+            ast.Expr.expr_identifier:
+                pass
+            _:
+                let _c = infer_expr(ctx, scope, callee)
 
 
 ## When `callee` is a bare identifier naming a locally-declared struct (not
@@ -611,7 +671,7 @@ function check_construction(ctx: ref[Context], struct_name: str, fields: span[Fi
         match arg.arg_name:
             Option.some as nm:
                 if not field_exists(fields, nm.value):
-                    report(ctx, line, column, unknown_field_message(struct_name, nm.value))
+                    report(ctx, line, column, unknown_member_message("field", struct_name, nm.value))
             Option.none:
                 pass
         i += 1
@@ -627,14 +687,17 @@ function field_exists(fields: span[FieldEntry], name: str) -> bool:
     return false
 
 
-## Look up a field's type on a concretely-known local struct receiver.  Unknown
-## members degrade to the permissive error type (they may be `extending`
-## methods, which are not modeled yet), so member reads are never flagged.
-function struct_field_type(ctx: ref[Context], receiver: types.Type, member: str) -> types.Type:
+## Resolve a member access on a receiver.  For a locally-declared struct
+## instance, a member must be a field, an `extending` method, or the builtin
+## `with`; anything else is reported ("unknown field" for a read, "unknown
+## method" when the member is the callee of a call).  Field reads yield the
+## field type; everything else (methods, non-struct receivers) is permissive.
+function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
     match receiver:
         types.Type.ty_named as n:
             let fieldsp = ctx.structs.get(n.name)
             if fieldsp == null:
+                # Not a locally-declared struct (enum/variant/opaque/imported).
                 return types.Type.ty_error
             unsafe:
                 let fields = read(fieldsp)
@@ -644,6 +707,12 @@ function struct_field_type(ctx: ref[Context], receiver: types.Type, member: str)
                     if fe.name.equal(member):
                         return fe.ty
                     i += 1
+            if member.equal("with") or has_method(ctx, n.name, member):
+                return types.Type.ty_error
+            if is_method_call:
+                report(ctx, line, column, unknown_member_message("method", n.name, member))
+            else:
+                report(ctx, line, column, unknown_member_message("field", n.name, member))
             return types.Type.ty_error
         _:
             return types.Type.ty_error
@@ -734,12 +803,14 @@ function arity_message(name: str, expected: ptr_uint, got: ptr_uint) -> str:
     return buf.as_str()
 
 
-function unknown_field_message(struct_name: str, field_name: str) -> str:
+function unknown_member_message(kind: str, type_name: str, member: str) -> str:
     var buf = string.String.create()
-    buf.append("unknown field ")
-    buf.append(struct_name)
+    buf.append("unknown ")
+    buf.append(kind)
+    buf.append(" ")
+    buf.append(type_name)
     buf.append(".")
-    buf.append(field_name)
+    buf.append(member)
     return buf.as_str()
 
 

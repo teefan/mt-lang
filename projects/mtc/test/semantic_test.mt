@@ -272,13 +272,63 @@ function test_type_alias_resolves_to_target() -> t.Check:
 
 
 @[test]
-function test_unknown_field_read_is_permissive() -> t.Check:
-    # A member that is not a field may be an `extending` method; reads must not
-    # be flagged in phase 3.
+function test_unknown_method_call_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct Box:
+            x: int
+        extending Box:
+            function get() -> int:
+                return this.x
+        function f(b: Box) -> int:
+            return b.missing()
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_valid_extending_method_call_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct Box:
+            x: int
+        extending Box:
+            function get() -> int:
+                return this.x
+        function f(b: Box) -> int:
+            return b.get()
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_unknown_field_read_is_flagged() -> t.Check:
     var source = <<-SRC
         struct Box:
             x: int
         function f(b: Box) -> int:
-            return b.compute()
+            return b.nope
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_member_on_non_local_type_is_permissive() -> t.Check:
+    # Receivers of imported / ref-wrapped / generic types are not locally-known
+    # structs, so their member accesses must never be flagged.
+    var source = <<-SRC
+        function f(w: Widget, p: ref[Gadget]) -> int:
+            let a = w.anything()
+            return p.whatever + a
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_builtin_with_on_struct_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct Point:
+            x: int
+            y: int
+        function shift(p: Point) -> Point:
+            return p.with(x = 9)
     SRC
     return expect_clean(source)
