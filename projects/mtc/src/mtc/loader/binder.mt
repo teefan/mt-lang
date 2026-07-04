@@ -22,6 +22,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     var static_member_types = map_mod.Map[str, bool].create()
     var member_keys = map_mod.Map[str, bool].create()
     var method_sigs = map_mod.Map[str, analyzer.FnSig].create()
+    var interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create()
     let exports_all = analysis.source_file.module_kind == ast.ModuleKind.module_raw
 
     var i: ptr_uint = 0
@@ -68,6 +69,9 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                     export_arm_keys(ref_of(member_keys), vr.name, vr.variant_arms)
             ast.Decl.decl_extending_block as ex:
                 export_methods(ref_of(member_keys), ref_of(method_sigs), analysis.method_sigs, ex.type_name, ex.methods, exports_all)
+            ast.Decl.decl_interface as iface:
+                if exports_all or iface.visibility:
+                    interfaces.set(iface.name, iface.interface_methods)
             _:
                 pass
         i += 1
@@ -79,6 +83,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         static_member_types = static_member_types,
         member_keys = member_keys,
         method_sigs = method_sigs,
+        interfaces = interfaces,
     )
 
 

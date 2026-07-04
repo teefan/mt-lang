@@ -58,6 +58,7 @@ public struct ModuleBinding:
     static_member_types: map_mod.Map[str, bool]
     member_keys: map_mod.Map[str, bool]
     method_sigs: map_mod.Map[str, FnSig]
+    interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
 
 
 struct Context:
@@ -90,6 +91,7 @@ public struct Analysis:
     method_sigs: map_mod.Map[str, FnSig]
     static_member_types: map_mod.Map[str, bool]
     match_case_names: map_mod.Map[str, span[str]]
+    interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
 
 
 public function check_source_file(file: ast.SourceFile) -> Analysis:
@@ -139,6 +141,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         method_sigs = ctx.method_sigs,
         static_member_types = ctx.static_member_types,
         match_case_names = ctx.match_case_names,
+        interfaces = ctx.interfaces,
     )
 
 
@@ -616,19 +619,45 @@ function check_interface_conformances(ctx: ref[Context], file: ast.SourceFile) -
 
 
 ## Verify a type satisfies each interface in its `implements` list.  Interfaces
-## that are not locally declared (imported or unknown) are skipped permissively.
+## that cannot be resolved (unknown, or imported without a binding) are skipped
+## permissively.
 function check_conformance(ctx: ref[Context], type_name: str, impl_list: span[ast.QualifiedName], line: ptr_uint, column: ptr_uint) -> void:
     var i: ptr_uint = 0
     while i < impl_list.len:
         var iface_qname: ast.QualifiedName
         unsafe:
             iface_qname = read(impl_list.data + i)
-        let iface_name = qname_to_str(iface_qname)
-        let methods_ptr = ctx.interfaces.get(iface_name)
-        if methods_ptr != null:
-            unsafe:
-                check_conformance_methods(ctx, type_name, iface_name, read(methods_ptr), line, column)
+        match resolve_interface_methods(ctx, iface_qname):
+            Option.some as methods:
+                check_conformance_methods(ctx, type_name, qname_to_str(iface_qname), methods.value, line, column)
+            Option.none:
+                pass
         i += 1
+
+
+## The required methods of an interface named in an `implements` clause: a local
+## interface (`I`) from ctx, or an imported one (`alias.I`) from the alias's
+## module binding.  None when it cannot be resolved.
+function resolve_interface_methods(ctx: ref[Context], qname: ast.QualifiedName) -> Option[span[ast.InterfaceMethod]]:
+    if qname.parts.len == 1:
+        let name = unsafe: read(qname.parts.data + 0)
+        let methods_ptr = ctx.interfaces.get(name)
+        if methods_ptr != null:
+            return Option[span[ast.InterfaceMethod]].some(value = unsafe: read(methods_ptr))
+        return Option[span[ast.InterfaceMethod]].none
+    if qname.parts.len == 2:
+        let alias = unsafe: read(qname.parts.data + 0)
+        let iface = unsafe: read(qname.parts.data + 1)
+        let module_name_ptr = ctx.import_aliases.get(alias) else:
+            return Option[span[ast.InterfaceMethod]].none
+        let binding_ptr = lookup_binding(ctx, unsafe: read(module_name_ptr)) else:
+            return Option[span[ast.InterfaceMethod]].none
+        unsafe:
+            let methods_ptr = read(binding_ptr).interfaces.get(iface)
+            if methods_ptr != null:
+                return Option[span[ast.InterfaceMethod]].some(value = read(methods_ptr))
+        return Option[span[ast.InterfaceMethod]].none
+    return Option[span[ast.InterfaceMethod]].none
 
 
 function check_conformance_methods(ctx: ref[Context], type_name: str, iface_name: str, methods: span[ast.InterfaceMethod], line: ptr_uint, column: ptr_uint) -> void:

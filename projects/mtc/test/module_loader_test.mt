@@ -734,3 +734,37 @@ function test_loop_local_shadowing_import_alias_is_clean() -> t.Check:
     defer program.release()
 
     return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_interface_conformance_valid_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public interface Drawable:\n    function draw() -> int\n",
+        "import lib\n\nstruct Sprite implements lib.Drawable:\n    x: int\n\nextending Sprite:\n    function draw() -> int:\n        return this.x\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_interface_missing_method_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public interface Drawable:\n    function draw() -> int\n",
+        "import lib\n\nstruct Sprite implements lib.Drawable:\n    x: int\n\nextending Sprite:\n    function other() -> int:\n        return this.x\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("does not implement"))
