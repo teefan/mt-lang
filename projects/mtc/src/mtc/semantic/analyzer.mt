@@ -269,7 +269,12 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                         m = read(ex.methods.data + j)
                     let key = method_key(base, m.name)
                     ctx.method_keys.set(key, true)
-                    ctx.method_sigs.set(key, build_fn_sig(ctx, m.name, m.method_params, m.return_type))
+                    # Instance methods win the signature key over a same-named
+                    # static method (e.g. str's instance `equal(right)` vs the
+                    # static `equal(left, right)` hook), so instance calls resolve
+                    # to the instance signature.
+                    if m.method_kind != ast.MethodKind.mk_static or not ctx.method_sigs.contains(key):
+                        ctx.method_sigs.set(key, build_fn_sig(ctx, m.name, m.method_params, m.return_type))
                     j += 1
             _:
                 pass
@@ -1470,8 +1475,34 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
             return Option[FnSig].none
         types.Type.ty_var as v:
             return resolve_constraint_method(ctx, v.name, method_name)
+        types.Type.ty_str:
+            return lookup_method_anywhere(ctx, "str", method_name)
+        types.Type.ty_primitive as p:
+            return lookup_method_anywhere(ctx, p.name, method_name)
         _:
             return Option[FnSig].none
+
+
+## Resolve `Type.method` by searching the local method table, then every
+## reachable imported binding.  Underpins method calls on str and primitive
+## receivers, whose methods live in whichever module extended the type (e.g.
+## `str` methods in std.str).  Missing -> none (permissive; not flagged).
+function lookup_method_anywhere(ctx: ref[Context], type_name: str, method_name: str) -> Option[FnSig]:
+    let key = method_key(type_name, method_name)
+    let local_ptr = ctx.method_sigs.get(key)
+    if local_ptr != null:
+        return Option[FnSig].some(value = unsafe: read(local_ptr))
+
+    let imported = ctx.imported_modules else:
+        return Option[FnSig].none
+    unsafe:
+        var bindings = read(imported).values()
+        while true:
+            let binding_ptr = bindings.next() else:
+                return Option[FnSig].none
+            let sig_ptr = read(binding_ptr).method_sigs.get(key)
+            if sig_ptr != null:
+                return Option[FnSig].some(value = read(sig_ptr))
 
 
 ## The signature a type variable's constraints make available for `method_name`:

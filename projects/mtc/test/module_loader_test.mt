@@ -768,3 +768,47 @@ function test_cross_module_interface_missing_method_is_flagged() -> t.Check:
     defer program.release()
 
     return t.expect_true(program.has_diagnostic_containing("does not implement"))
+
+
+# =============================================================================
+#  S3b-1: str / primitive method resolution across all reachable bindings.
+#  A str method lives in whichever module extended str; it is found only by the
+#  whole-program binding search, so its argument types and return type flow.
+# =============================================================================
+
+@[test]
+function test_str_method_return_type_flows_cross_module() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    # `strext` extends str with first_byte() -> ubyte; main misuses that ubyte
+    # result as a bool. Resolving first_byte requires searching strext's binding.
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public function unused() -> int:\n    return 0\n\nextending str:\n    public function first_byte() -> ubyte:\n        return 0\n",
+        "import lib\n\nfunction f(s: str) -> bool:\n    return s.first_byte()\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("got ubyte"))
+
+
+@[test]
+function test_unknown_str_method_is_permissive() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    # No module provides str.mystery, and str's method set is not fully owned, so
+    # the call stays permissive rather than being flagged.
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public function unused() -> int:\n    return 0\n",
+        "import lib\n\nfunction f(s: str) -> void:\n    s.mystery()\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
