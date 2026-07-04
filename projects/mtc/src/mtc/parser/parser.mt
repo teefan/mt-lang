@@ -3492,22 +3492,16 @@ function make_int_literal(s: ref[ParserState], value: int) -> ptr[ast.Expr]:
     return node
 
 
-## Advance the enum auto-increment counter after an explicit member value,
-## matching the Ruby parser: integer literals (and negated integer literals)
-## set the counter to value+1; any other expression leaves it unchanged.
+## Advance the enum auto-increment counter after an explicit member value.
+## Matches the Ruby parser's *observed* behavior: only a plain integer literal
+## sets the counter to value+1; every other expression (including a negated
+## literal like `-3`, whose unary-minus branch is dead code in the Ruby parser)
+## leaves the counter unchanged.
 function enum_auto_after(value: ptr[ast.Expr], current: int) -> int:
     unsafe:
         match read(value):
             ast.Expr.expr_integer_literal as lit:
                 return lit.value + 1
-            ast.Expr.expr_unary_op as un:
-                if un.operator == "-":
-                    match read(un.operand):
-                        ast.Expr.expr_integer_literal as lit2:
-                            return lit2.value + 1
-                        _:
-                            return current
-                return current
             _:
                 return current
 
