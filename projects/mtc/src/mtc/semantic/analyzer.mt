@@ -490,7 +490,7 @@ function resolve_alias(ctx: ref[Context], name: str, depth: int) -> types.Type:
     return resolved
 
 
-function qname_to_str(q: ast.QualifiedName) -> str:
+public function qname_to_str(q: ast.QualifiedName) -> str:
     var buf = string.String.create()
     var i: ptr_uint = 0
     while i < q.parts.len:
@@ -1116,7 +1116,10 @@ function try_imported_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.
                         let fields_ptr = read(binding_ptr).structs.get(ma.member_name)
                         if fields_ptr != null:
                             check_construction(ctx, ma.member_name, read(fields_ptr), args, ma.line, ma.column)
-                            return Option[types.Type].some(value = types.Type.ty_error)
+                            return Option[types.Type].some(value = types.Type.ty_imported(
+                                module_name = read(module_name_ptr),
+                                name = ma.member_name,
+                            ))
 
                         return Option[types.Type].none
                     _:
@@ -1310,8 +1313,39 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             else:
                 report(ctx, line, column, unknown_member_message("field", n.name, member))
             return types.Type.ty_error
+        types.Type.ty_imported as im:
+            return check_imported_member(ctx, im.module_name, im.name, member, is_method_call, line, column)
         _:
             return types.Type.ty_error
+
+
+## Field or method access on a value of an imported struct type.  A field yields
+## its (exporter-resolved) type; a public method or the builtin `with` is
+## permissive; anything else is reported as unknown.  Permissive if the module is
+## no longer bound.
+function check_imported_member(ctx: ref[Context], module_name: str, type_name: str, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+    let binding_ptr = lookup_binding(ctx, module_name) else:
+        return types.Type.ty_error
+
+    unsafe:
+        let fields_ptr = read(binding_ptr).structs.get(type_name)
+        if fields_ptr != null:
+            let fields = read(fields_ptr)
+            var i: ptr_uint = 0
+            while i < fields.len:
+                let fe = read(fields.data + i)
+                if fe.name.equal(member):
+                    return fe.ty
+                i += 1
+
+        if member.equal("with") or binding_has_member(read(binding_ptr), type_name, member):
+            return types.Type.ty_error
+
+    if is_method_call:
+        report(ctx, line, column, unknown_member_message("method", type_name, member))
+    else:
+        report(ctx, line, column, unknown_member_message("field", type_name, member))
+    return types.Type.ty_error
 
 
 function check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr], arg_types: span[types.Type], any_named: bool) -> void:

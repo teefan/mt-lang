@@ -21,6 +21,7 @@ public variant Type:
     ty_type_meta
     ty_nullable(base: ptr[Type])
     ty_named(name: str)
+    ty_imported(module_name: str, name: str)
     ty_generic(name: str, args: span[Type])
     ty_function(params: span[Type], return_type: ptr[Type], variadic: bool)
 
@@ -96,6 +97,8 @@ public function type_to_string(t: Type) -> str:
             return "type"
         Type.ty_named as n:
             return n.name
+        Type.ty_imported as im:
+            return im.name
         Type.ty_nullable as nl:
             var buf = string.String.create()
             unsafe:

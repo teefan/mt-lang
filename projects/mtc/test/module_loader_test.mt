@@ -458,3 +458,123 @@ function test_cross_module_private_enum_member_is_permissive() -> t.Check:
     defer program.release()
 
     return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+# =============================================================================
+#  Imported methods and imported-typed field access
+# =============================================================================
+
+const POINT_LIB: str = <<-SRC
+public struct Point:
+    x: int
+    y: int
+
+extending Point:
+    public function magnitude() -> int:
+        return this.x + this.y
+SRC
+
+
+@[test]
+function test_cross_module_method_call_valid_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        POINT_LIB,
+        "import lib\n\nfunction f() -> int:\n    let p = lib.Point(x = 1, y = 2)\n    return p.magnitude()\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_unknown_method_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        POINT_LIB,
+        "import lib\n\nfunction f() -> int:\n    let p = lib.Point(x = 1, y = 2)\n    return p.bogus()\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("unknown method"))
+
+
+@[test]
+function test_cross_module_field_access_valid_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        POINT_LIB,
+        "import lib\n\nfunction f() -> int:\n    let p = lib.Point(x = 1, y = 2)\n    return p.x\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_field_type_flows_to_caller() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    # p.x is int; returning it from a bool function must be flagged.
+    var program = load_lib_and_main(
+        ref_of(root),
+        POINT_LIB,
+        "import lib\n\nfunction f() -> bool:\n    let p = lib.Point(x = 1, y = 2)\n    return p.x\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("mismatch"))
+
+
+@[test]
+function test_cross_module_unknown_field_access_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        POINT_LIB,
+        "import lib\n\nfunction f() -> int:\n    let p = lib.Point(x = 1, y = 2)\n    return p.z\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("unknown field"))
+
+
+@[test]
+function test_cross_module_private_method_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    # `secret` is not public, so it is not exported and cannot be called from
+    # another module: the call must be flagged as an unknown method.
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public struct Point:\n    x: int\n\nextending Point:\n    function secret() -> int:\n        return this.x\n",
+        "import lib\n\nfunction f() -> int:\n    let p = lib.Point(x = 1)\n    return p.secret()\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("unknown method"))

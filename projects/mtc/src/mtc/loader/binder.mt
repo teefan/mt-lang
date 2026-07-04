@@ -64,6 +64,8 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                 if exports_all or vr.visibility:
                     static_member_types.set(vr.name, true)
                     export_arm_keys(ref_of(member_keys), vr.name, vr.variant_arms)
+            ast.Decl.decl_extending_block as ex:
+                export_method_keys(ref_of(member_keys), ex.type_name, ex.methods, exports_all)
             _:
                 pass
         i += 1
@@ -90,4 +92,20 @@ function export_arm_keys(member_keys: ref[map_mod.Map[str, bool]], type_name: st
     while i < arms.len:
         unsafe:
             member_keys.set(analyzer.method_key(type_name, read(arms.data + i).name), true)
+        i += 1
+
+
+## Export the public methods of an extending block, keyed by the extended type
+## name, so `value.method()` calls on imported-typed values resolve.  A method on
+## a non-exported struct produces harmless dead keys (no importer can hold such a
+## value), so only method visibility is gated.
+function export_method_keys(member_keys: ref[map_mod.Map[str, bool]], type_ref: ptr[ast.TypeRef], methods: span[ast.Method], exports_all: bool) -> void:
+    let type_name = unsafe: analyzer.qname_to_str(read(type_ref).name)
+    var i: ptr_uint = 0
+    while i < methods.len:
+        var method: ast.Method
+        unsafe:
+            method = read(methods.data + i)
+        if exports_all or method.visibility:
+            member_keys.set(analyzer.method_key(type_name, method.name), true)
         i += 1
