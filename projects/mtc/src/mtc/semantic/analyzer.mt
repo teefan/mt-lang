@@ -28,10 +28,14 @@ public struct SemanticDiagnostic:
     message: str
 
 
+struct ParamEntry:
+    name: str
+    ty: types.Type
+
+
 struct FnSig:
     name: str
-    params: span[types.Type]
-    param_names: span[str]
+    params: span[ParamEntry]
     return_type: types.Type
     has_return_type: bool
 
@@ -48,7 +52,7 @@ struct Context:
     alias_types: map_mod.Map[str, types.Type]
     structs: map_mod.Map[str, span[FieldEntry]]
     method_keys: map_mod.Map[str, bool]
-    static_types: map_mod.Map[str, bool]
+    static_member_types: map_mod.Map[str, bool]
     match_case_types: map_mod.Map[str, bool]
     match_case_names: map_mod.Map[str, span[str]]
     functions: map_mod.Map[str, FnSig]
@@ -64,7 +68,7 @@ public function check_source_file(file: ast.SourceFile) -> vec.Vec[SemanticDiagn
         alias_types = map_mod.Map[str, types.Type].create(),
         structs = map_mod.Map[str, span[FieldEntry]].create(),
         method_keys = map_mod.Map[str, bool].create(),
-        static_types = map_mod.Map[str, bool].create(),
+        static_member_types = map_mod.Map[str, bool].create(),
         match_case_types = map_mod.Map[str, bool].create(),
         match_case_names = map_mod.Map[str, span[str]].create(),
         functions = map_mod.Map[str, FnSig].create(),
@@ -202,15 +206,15 @@ function collect_enum_variant_members(ctx: ref[Context], file: ast.SourceFile) -
             d = read(file.declarations.data + i)
         match d:
             ast.Decl.decl_enum as e:
-                ctx.static_types.set(e.name, true)
+                ctx.static_member_types.set(e.name, true)
                 ctx.match_case_types.set(e.name, true)
                 ctx.match_case_names.set(e.name, enum_member_names(e.enum_members))
                 register_member_names(ctx, e.name, e.enum_members)
             ast.Decl.decl_flags as fl:
-                ctx.static_types.set(fl.name, true)
+                ctx.static_member_types.set(fl.name, true)
                 register_member_names(ctx, fl.name, fl.flags_members)
             ast.Decl.decl_variant as vr:
-                ctx.static_types.set(vr.name, true)
+                ctx.static_member_types.set(vr.name, true)
                 ctx.match_case_types.set(vr.name, true)
                 ctx.match_case_names.set(vr.name, variant_arm_names(vr.variant_arms))
                 register_arm_names(ctx, vr.name, vr.variant_arms)
@@ -300,21 +304,19 @@ function dup_message(kind: str, name: str) -> str:
 
 
 function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?) -> FnSig:
-    var param_types = vec.Vec[types.Type].create()
-    var param_names = vec.Vec[str].create()
+    var param_entries = vec.Vec[ParamEntry].create()
     var i: ptr_uint = 0
     while i < params.len:
         var p: ast.Param
         unsafe:
             p = read(params.data + i)
-        param_types.push(resolve_type_value(ctx, p.param_type))
-        param_names.push(p.name)
+        param_entries.push(ParamEntry(name = p.name, ty = resolve_type_value(ctx, p.param_type)))
         i += 1
     let rt = return_type
     if rt != null:
-        return FnSig(name = name, params = param_types.as_span(), param_names = param_names.as_span(),
+        return FnSig(name = name, params = param_entries.as_span(),
             return_type = resolve_type(ctx, rt), has_return_type = true)
-    return FnSig(name = name, params = param_types.as_span(), param_names = param_names.as_span(),
+    return FnSig(name = name, params = param_entries.as_span(),
         return_type = types.primitive("void"), has_return_type = false)
 
 
@@ -747,7 +749,7 @@ function check_case_match(ctx: ref[Context], type_name: str, arms: span[ast.Matc
         else:
             match case_name_of(p):
                 Option.some as nm:
-                    if str_in_vec(covered, nm.value):
+                    if vec_contains_str(covered, nm.value):
                         report(ctx, line, column, dup_case_message(type_name, nm.value))
                     covered.push(nm.value)
                 Option.none:
@@ -762,7 +764,7 @@ function check_case_match(ctx: ref[Context], type_name: str, arms: span[ast.Matc
         var j: ptr_uint = 0
         while j < members.len:
             let mn = read(members.data + j)
-            if not str_in_vec(covered, mn):
+            if not vec_contains_str(covered, mn):
                 if any_missing:
                     buf.append(", ")
                 buf.append(mn)
@@ -786,7 +788,7 @@ function check_scalar_match(ctx: ref[Context], arms: span[ast.MatchArm], line: p
         else if check_duplicate_int:
             match int_literal_value(p):
                 Option.some as v:
-                    if int_in_vec(seen, v.value):
+                    if vec_contains_int(seen, v.value):
                         report(ctx, line, column, dup_value_message(v.value))
                     seen.push(v.value)
                 Option.none:
@@ -827,7 +829,7 @@ function is_integer_name(name: str) -> bool:
     )
 
 
-function str_in_vec(v: ref[vec.Vec[str]], s: str) -> bool:
+function vec_contains_str(v: ref[vec.Vec[str]], s: str) -> bool:
     var i: ptr_uint = 0
     while i < v.len():
         let p = v.get(i) else:
@@ -839,7 +841,7 @@ function str_in_vec(v: ref[vec.Vec[str]], s: str) -> bool:
     return false
 
 
-function int_in_vec(v: ref[vec.Vec[int]], value: int) -> bool:
+function vec_contains_int(v: ref[vec.Vec[int]], value: int) -> bool:
     var i: ptr_uint = 0
     while i < v.len():
         let p = v.get(i) else:
@@ -1039,7 +1041,7 @@ function static_type_receiver(ctx: ref[Context], scope: ref[map_mod.Map[str, typ
             ast.Expr.expr_identifier as id:
                 if scope.get(id.name) != null:
                     return Option[str].none
-                if ctx.static_types.contains(id.name):
+                if ctx.static_member_types.contains(id.name):
                     return Option[str].some(value = id.name)
                 return Option[str].none
             _:
@@ -1078,14 +1080,14 @@ function check_construction(ctx: ref[Context], struct_name: str, fields: span[Fi
             arg = read(args.data + i)
         match arg.arg_name:
             Option.some as nm:
-                if not field_exists(fields, nm.value):
+                if not has_field(fields, nm.value):
                     report(ctx, line, column, unknown_member_message("field", struct_name, nm.value))
             Option.none:
                 pass
         i += 1
 
 
-function field_exists(fields: span[FieldEntry], name: str) -> bool:
+function has_field(fields: span[FieldEntry], name: str) -> bool:
     var i: ptr_uint = 0
     while i < fields.len:
         unsafe:
@@ -1148,9 +1150,9 @@ function check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]],
                 var i: ptr_uint = 0
                 while i < arg_types.len:
                     let atype = read(arg_types.data + i)
-                    let ptype = read(sig.params.data + i)
-                    if types.definitely_incompatible(ptype, atype):
-                        report(ctx, id.line, id.column, argument_message(read(sig.param_names.data + i), id.name, ptype, atype))
+                    let pe = read(sig.params.data + i)
+                    if types.definitely_incompatible(pe.ty, atype):
+                        report(ctx, id.line, id.column, argument_message(pe.name, id.name, pe.ty, atype))
                     i += 1
             _:
                 pass
@@ -1244,11 +1246,11 @@ function dup_value_message(value: int) -> str:
 
 function int_to_str(value: int) -> str:
     if value < 0:
-        return j_neg(value)
+        return neg_int_to_str(value)
     return uint_to_str(ptr_uint<-value)
 
 
-function j_neg(value: int) -> str:
+function neg_int_to_str(value: int) -> str:
     var buf = string.String.create()
     buf.append("-")
     buf.append(uint_to_str(ptr_uint<-(-value)))

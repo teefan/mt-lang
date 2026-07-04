@@ -11,10 +11,7 @@
 
 import std.string as string
 import std.str
-import std.vec as vec
 import std.mem.heap as heap
-
-import mtc.parser.ast as ast
 
 
 public variant Type:
