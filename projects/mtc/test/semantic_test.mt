@@ -970,3 +970,53 @@ function test_generic_interface_conformance_is_permissive() -> t.Check:
                 return x * 2
     SRC
     return expect_clean(source)
+
+
+# =============================================================================
+#  Generics — handled permissively (type parameters resolve to the error type),
+#  so generic bodies never false-positive, while concrete errors inside them are
+#  still caught. Deep generic checking (constraints, specialization) is future.
+# =============================================================================
+
+@[test]
+function test_generic_function_call_is_permissive() -> t.Check:
+    var source = <<-SRC
+        function id[T](x: T) -> T:
+            return x
+        function f() -> int:
+            return id(5)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_generic_struct_declaration_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct Box[T]:
+            value: T
+        function f() -> int:
+            return 0
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_constrained_generic_function_is_clean() -> t.Check:
+    var source = <<-SRC
+        interface Named:
+            function name() -> str
+        function label[T implements Named](target: ref[T]) -> str:
+            return target.name()
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_concrete_error_in_generic_body_is_flagged() -> t.Check:
+    # A generic body is not blanket-permissive: a concrete-typed mismatch (bool
+    # returned from an int function) is still flagged.
+    var source = <<-SRC
+        function wrong[T](x: T) -> int:
+            return true
+    SRC
+    return expect_flagged(source)
