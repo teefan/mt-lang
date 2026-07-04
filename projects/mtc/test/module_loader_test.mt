@@ -585,6 +585,9 @@ public struct Adder:
     base: int
 
 extending Adder:
+    public static function make(start: int) -> Adder:
+        return Adder(base = start)
+
     public function add(a: int, b: int) -> int:
         return this.base + a + b
 
@@ -660,3 +663,54 @@ function test_cross_module_method_return_type_flows() -> t.Check:
     defer program.release()
 
     return t.expect_true(program.has_diagnostic_containing("mismatch"))
+
+
+@[test]
+function test_cross_module_static_method_valid_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        ADDER_LIB,
+        "import lib\n\nfunction f() -> int:\n    let a = lib.Adder.make(5)\n    return 0\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_static_method_arity_mismatch_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        ADDER_LIB,
+        "import lib\n\nfunction f() -> int:\n    let a = lib.Adder.make()\n    return 0\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("expects"))
+
+
+@[test]
+function test_cross_module_unknown_static_method_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        ADDER_LIB,
+        "import lib\n\nfunction f() -> int:\n    let a = lib.Adder.bogus()\n    return 0\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("unknown method"))

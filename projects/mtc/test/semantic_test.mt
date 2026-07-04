@@ -822,3 +822,48 @@ function test_method_return_type_flows_to_caller() -> t.Check:
             return b.count()
     SRC
     return expect_flagged(source)
+
+
+@[test]
+function test_static_method_call_correct_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct Counter:
+            value: int
+        extending Counter:
+            static function make(start: int) -> Counter:
+                return Counter(value = start)
+        function f() -> int:
+            let c = Counter.make(5)
+            return 0
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_static_method_call_arity_mismatch_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct Counter:
+            value: int
+        extending Counter:
+            static function make(start: int) -> Counter:
+                return Counter(value = start)
+        function f() -> int:
+            let c = Counter.make()
+            return 0
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_unknown_static_method_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct Counter:
+            value: int
+        extending Counter:
+            static function make(start: int) -> Counter:
+                return Counter(value = start)
+        function f() -> int:
+            let c = Counter.bogus()
+            return 0
+    SRC
+    return expect_flagged(source)

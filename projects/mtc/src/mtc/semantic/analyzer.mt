@@ -1170,12 +1170,11 @@ function lookup_binding(ctx: ref[Context], module_name: str) -> ptr[ModuleBindin
         return read(imported).get(module_name)
 
 
-## Check a call whose callee is `receiver.method(...)`.  Static/imported-static
-## receivers (`Color.red(...)`, `lib.Token.ident(...)`, `NPC.static()`) are
-## validated for member existence only.  For a value receiver of struct type
-## (local or imported), the method's signature is resolved and the arguments are
-## checked, with the method's return type flowing to the caller; a method with no
-## known signature falls back to an existence check.
+## Check a call whose callee is `receiver.method(...)`.  Enum/variant static
+## members (`Color.red(...)`, `lib.Token.ident(...)`) are validated for existence
+## only.  Struct static methods (`Counter.make(...)`, `lib.Adder.make(...)`) and
+## value-receiver instance methods (`p.method(...)`) are resolved to a signature
+## and argument-checked, with the method's return type flowing to the caller.
 function check_member_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], receiver: ptr[ast.Expr], method_name: str, arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
     match imported_static_member(ctx, scope, receiver, method_name, line, column):
         Option.some as imported_static:
@@ -1190,13 +1189,59 @@ function check_member_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.
         Option.none:
             pass
 
+    match static_struct_receiver_type(ctx, scope, receiver):
+        Option.some as static_type:
+            return check_typed_method_call(ctx, static_type.value, method_name, arg_types, any_named, line, column)
+        Option.none:
+            pass
+
     let recv = infer_expr(ctx, scope, receiver)
-    match resolve_method_sig(ctx, recv, method_name):
+    return check_typed_method_call(ctx, recv, method_name, arg_types, any_named, line, column)
+
+
+## Resolve and check a method call against a known receiver type (local or
+## imported): argument-check the signature and flow its return type, or fall back
+## to a member-existence check when no signature is known.
+function check_typed_method_call(ctx: ref[Context], receiver_type: types.Type, method_name: str, arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+    match resolve_method_sig(ctx, receiver_type, method_name):
         Option.some as sig:
             check_signature_call(ctx, method_name, sig.value, arg_types, any_named, line, column)
             return sig.value.return_type
         Option.none:
-            return check_member(ctx, recv, method_name, true, line, column)
+            return check_member(ctx, receiver_type, method_name, true, line, column)
+
+
+## The struct type named by a static-method receiver: a bare local struct name
+## (`Counter`) or an imported `alias.Struct`.  None for values, enum/variant type
+## names (handled as static members), or unknown names.
+function static_struct_receiver_type(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], receiver: ptr[ast.Expr]) -> Option[types.Type]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                if scope.get(id.name) != null:
+                    return Option[types.Type].none
+                if ctx.structs.contains(id.name):
+                    return Option[types.Type].some(value = types.Type.ty_named(name = id.name))
+                return Option[types.Type].none
+            ast.Expr.expr_member_access as inner:
+                match read(inner.receiver):
+                    ast.Expr.expr_identifier as alias_id:
+                        if scope.get(alias_id.name) != null:
+                            return Option[types.Type].none
+                        let module_name_ptr = ctx.import_aliases.get(alias_id.name) else:
+                            return Option[types.Type].none
+                        let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                            return Option[types.Type].none
+                        if read(binding_ptr).structs.contains(inner.member_name):
+                            return Option[types.Type].some(value = types.Type.ty_imported(
+                                module_name = read(module_name_ptr),
+                                name = inner.member_name,
+                            ))
+                        return Option[types.Type].none
+                    _:
+                        return Option[types.Type].none
+            _:
+                return Option[types.Type].none
 
 
 ## The signature of `method_name` on a receiver of struct type, whether the type
