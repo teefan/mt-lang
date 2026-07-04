@@ -213,3 +213,72 @@ function test_named_arguments_call_is_clean() -> t.Check:
             configure(host = "localhost", port = 8080)
     SRC
     return expect_clean(source)
+
+
+@[test]
+function test_unknown_field_in_construction_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct Point:
+            x: int
+            y: int
+        function make() -> Point:
+            return Point(x = 1, z = 2)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_valid_construction_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct Point:
+            x: int
+            y: int
+        function make() -> Point:
+            return Point(x = 1, y = 2)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_field_access_type_is_inferred() -> t.Check:
+    var source = <<-SRC
+        struct Box:
+            flag: bool
+        function f(b: Box) -> int:
+            return b.flag
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_field_access_correct_type_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct Box:
+            count: int
+        function f(b: Box) -> int:
+            return b.count
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_type_alias_resolves_to_target() -> t.Check:
+    var source = <<-SRC
+        type Meters = int
+        function f() -> Meters:
+            return true
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_unknown_field_read_is_permissive() -> t.Check:
+    # A member that is not a field may be an `extending` method; reads must not
+    # be flagged in phase 3.
+    var source = <<-SRC
+        struct Box:
+            x: int
+        function f(b: Box) -> int:
+            return b.compute()
+    SRC
+    return expect_clean(source)

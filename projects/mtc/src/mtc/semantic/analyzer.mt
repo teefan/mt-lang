@@ -36,9 +36,17 @@ struct FnSig:
     has_return_type: bool
 
 
+struct FieldEntry:
+    name: str
+    ty: types.Type
+
+
 struct Context:
     value_names: map_mod.Map[str, bool]
     type_names: map_mod.Map[str, bool]
+    type_aliases: map_mod.Map[str, ptr[ast.TypeRef]]
+    alias_types: map_mod.Map[str, types.Type]
+    structs: map_mod.Map[str, span[FieldEntry]]
     functions: map_mod.Map[str, FnSig]
     value_types: map_mod.Map[str, types.Type]
     diagnostics: vec.Vec[SemanticDiagnostic]
@@ -48,11 +56,15 @@ public function check_source_file(file: ast.SourceFile) -> vec.Vec[SemanticDiagn
     var ctx = Context(
         value_names = map_mod.Map[str, bool].create(),
         type_names = map_mod.Map[str, bool].create(),
+        type_aliases = map_mod.Map[str, ptr[ast.TypeRef]].create(),
+        alias_types = map_mod.Map[str, types.Type].create(),
+        structs = map_mod.Map[str, span[FieldEntry]].create(),
         functions = map_mod.Map[str, FnSig].create(),
         value_types = map_mod.Map[str, types.Type].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
     )
     declare_named_types(ref_of(ctx), file)
+    collect_struct_fields(ref_of(ctx), file)
     declare_values_and_functions(ref_of(ctx), file)
     check_functions(ref_of(ctx), file)
     return ctx.diagnostics
@@ -87,6 +99,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 declare_type(ctx, op.name, op.line, op.column)
             ast.Decl.decl_type_alias as ta:
                 declare_type(ctx, ta.name, ta.line, ta.column)
+                ctx.type_aliases.set(ta.name, ta.target)
             _:
                 pass
         i += 1
@@ -97,6 +110,34 @@ function declare_type(ctx: ref[Context], name: str, line: ptr_uint, column: ptr_
         report(ctx, line, column, dup_message("type", name))
         return
     ctx.type_names.set(name, true)
+
+
+## Resolve each struct's declared fields into the type model, after all type
+## names and aliases are known so field types resolve correctly.
+function collect_struct_fields(ctx: ref[Context], file: ast.SourceFile) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + i)
+        match d:
+            ast.Decl.decl_struct as s:
+                ctx.structs.set(s.name, resolve_field_entries(ctx, s.struct_fields))
+            _:
+                pass
+        i += 1
+
+
+function resolve_field_entries(ctx: ref[Context], fields: span[ast.Field]) -> span[FieldEntry]:
+    var entries = vec.Vec[FieldEntry].create()
+    var i: ptr_uint = 0
+    while i < fields.len:
+        var f: ast.Field
+        unsafe:
+            f = read(fields.data + i)
+        entries.push(FieldEntry(name = f.name, ty = resolve_type_value(ctx, f.field_type)))
+        i += 1
+    return entries.as_span()
 
 
 function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -> void:
@@ -168,10 +209,17 @@ function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], ret
 
 function resolve_type(ctx: ref[Context], tref: ptr[ast.TypeRef]) -> types.Type:
     unsafe:
-        return resolve_type_value(ctx, read(tref))
+        return resolve_type_at(ctx, read(tref), 0)
 
 
 function resolve_type_value(ctx: ref[Context], t: ast.TypeRef) -> types.Type:
+    return resolve_type_at(ctx, t, 0)
+
+
+## `depth` guards against cyclic type aliases (`type A = B; type B = A`).
+function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types.Type:
+    if depth > 200:
+        return types.Type.ty_error
     if t.is_fn or t.is_proc:
         var param_types = vec.Vec[types.Type].create()
         var i: ptr_uint = 0
@@ -179,12 +227,13 @@ function resolve_type_value(ctx: ref[Context], t: ast.TypeRef) -> types.Type:
             var p: ast.Param
             unsafe:
                 p = read(t.fn_params.data + i)
-            param_types.push(resolve_type_value(ctx, p.param_type))
+            param_types.push(resolve_type_at(ctx, p.param_type, depth + 1))
             i += 1
         var ret = types.primitive("void")
         let fr = t.fn_return
         if fr != null:
-            ret = resolve_type(ctx, fr)
+            unsafe:
+                ret = resolve_type_at(ctx, read(fr), depth + 1)
         let base = types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false)
         return wrap_nullable(base, t.nullable)
 
@@ -192,11 +241,10 @@ function resolve_type_value(ctx: ref[Context], t: ast.TypeRef) -> types.Type:
         return wrap_nullable(types.Type.ty_named(name = "dyn"), t.nullable)
 
     if t.is_tuple:
-        # Tuples are permissive in phase 1.
         return types.Type.ty_error
 
     let name = qname_to_str(t.name)
-    let base = resolve_named(ctx, name, t.arguments)
+    let base = resolve_named(ctx, name, t.arguments, depth)
     return wrap_nullable(base, t.nullable)
 
 
@@ -206,7 +254,10 @@ function wrap_nullable(base: types.Type, nullable: bool) -> types.Type:
     return base
 
 
-function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef]) -> types.Type:
+function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef], depth: int) -> types.Type:
+    # Type aliases resolve to their (transitively resolved) target.
+    if ctx.type_aliases.contains(name):
+        return resolve_alias(ctx, name, depth)
     if name.equal("str"):
         return types.Type.ty_str
     if is_primitive_type_name(name):
@@ -218,13 +269,31 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
             var a: ast.TypeRef
             unsafe:
                 a = read(arguments.data + i)
-            args.push(resolve_type_value(ctx, a))
+            args.push(resolve_type_at(ctx, a, depth + 1))
             i += 1
         return types.Type.ty_generic(name = name, args = args.as_span())
     if ctx.type_names.contains(name):
         return types.Type.ty_named(name = name)
     # Unknown / imported / type-parameter names are permissive.
     return types.Type.ty_error
+
+
+## Resolve an alias name to a concrete type, memoized.  A temporary error entry
+## is installed before recursing so a cyclic alias resolves to the permissive
+## error type rather than looping.
+function resolve_alias(ctx: ref[Context], name: str, depth: int) -> types.Type:
+    let memo = ctx.alias_types.get(name)
+    if memo != null:
+        unsafe:
+            return read(memo)
+    let targetp = ctx.type_aliases.get(name) else:
+        return types.Type.ty_error
+    ctx.alias_types.set(name, types.Type.ty_error)
+    var resolved: types.Type = types.Type.ty_error
+    unsafe:
+        resolved = resolve_type_at(ctx, read(read(targetp)), depth + 1)
+    ctx.alias_types.set(name, resolved)
+    return resolved
 
 
 function qname_to_str(q: ast.QualifiedName) -> str:
@@ -436,8 +505,8 @@ function infer_expr(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]],
                 let _inner = infer_expr(ctx, scope, c.expression)
                 return resolve_type(ctx, c.target_type)
             ast.Expr.expr_member_access as ma:
-                let _recv = infer_expr(ctx, scope, ma.receiver)
-                return types.Type.ty_error
+                let recv = infer_expr(ctx, scope, ma.receiver)
+                return struct_field_type(ctx, recv, ma.member_name)
             ast.Expr.expr_index_access as ix:
                 let _rx = infer_expr(ctx, scope, ix.receiver)
                 let _ix = infer_expr(ctx, scope, ix.index)
@@ -488,7 +557,9 @@ function infer_unary(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]]
 
 
 ## Infer a call's result type and, when the callee is a local top-level
-## function, check argument count and (positional) argument types.
+## function, check argument count and (positional) argument types.  When the
+## callee names a local struct, treat it as a struct construction and validate
+## named-field references instead.
 function infer_and_check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr], args: span[ast.Argument]) -> types.Type:
     var arg_types = vec.Vec[types.Type].create()
     var any_named = false
@@ -504,8 +575,78 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, typ
             Option.none:
                 pass
         i += 1
-    check_call(ctx, scope, callee, arg_types.as_span(), any_named)
-    return callee_return_type(ctx, scope, callee)
+
+    match try_construction(ctx, scope, callee, args):
+        Option.some as ct:
+            return ct.value
+        Option.none:
+            check_call(ctx, scope, callee, arg_types.as_span(), any_named)
+            return callee_return_type(ctx, scope, callee)
+
+
+## When `callee` is a bare identifier naming a locally-declared struct (not
+## shadowed by a local value), validate each named-field argument and return
+## the constructed struct type.  Returns none for ordinary function calls.
+function try_construction(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr], args: span[ast.Argument]) -> Option[types.Type]:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                if scope.get(id.name) != null:
+                    return Option[types.Type].none
+                let fieldsp = ctx.structs.get(id.name)
+                if fieldsp == null:
+                    return Option[types.Type].none
+                check_construction(ctx, id.name, read(fieldsp), args, id.line, id.column)
+                return Option[types.Type].some(value = types.Type.ty_named(name = id.name))
+            _:
+                return Option[types.Type].none
+
+
+function check_construction(ctx: ref[Context], struct_name: str, fields: span[FieldEntry], args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> void:
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        match arg.arg_name:
+            Option.some as nm:
+                if not field_exists(fields, nm.value):
+                    report(ctx, line, column, unknown_field_message(struct_name, nm.value))
+            Option.none:
+                pass
+        i += 1
+
+
+function field_exists(fields: span[FieldEntry], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < fields.len:
+        unsafe:
+            if read(fields.data + i).name.equal(name):
+                return true
+        i += 1
+    return false
+
+
+## Look up a field's type on a concretely-known local struct receiver.  Unknown
+## members degrade to the permissive error type (they may be `extending`
+## methods, which are not modeled yet), so member reads are never flagged.
+function struct_field_type(ctx: ref[Context], receiver: types.Type, member: str) -> types.Type:
+    match receiver:
+        types.Type.ty_named as n:
+            let fieldsp = ctx.structs.get(n.name)
+            if fieldsp == null:
+                return types.Type.ty_error
+            unsafe:
+                let fields = read(fieldsp)
+                var i: ptr_uint = 0
+                while i < fields.len:
+                    let fe = read(fields.data + i)
+                    if fe.name.equal(member):
+                        return fe.ty
+                    i += 1
+            return types.Type.ty_error
+        _:
+            return types.Type.ty_error
 
 
 function check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr], arg_types: span[types.Type], any_named: bool) -> void:
@@ -590,6 +731,15 @@ function arity_message(name: str, expected: ptr_uint, got: ptr_uint) -> str:
     buf.append(uint_to_str(expected))
     buf.append(" arguments, got ")
     buf.append(uint_to_str(got))
+    return buf.as_str()
+
+
+function unknown_field_message(struct_name: str, field_name: str) -> str:
+    var buf = string.String.create()
+    buf.append("unknown field ")
+    buf.append(struct_name)
+    buf.append(".")
+    buf.append(field_name)
     return buf.as_str()
 
 
