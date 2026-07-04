@@ -73,6 +73,7 @@ struct Context:
     match_case_names: map_mod.Map[str, span[str]]
     functions: map_mod.Map[str, FnSig]
     value_types: map_mod.Map[str, types.Type]
+    interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     import_aliases: map_mod.Map[str, str]
     imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?
     diagnostics: vec.Vec[SemanticDiagnostic]
@@ -112,6 +113,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         match_case_names = map_mod.Map[str, span[str]].create(),
         functions = map_mod.Map[str, FnSig].create(),
         value_types = map_mod.Map[str, types.Type].create(),
+        interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create(),
         import_aliases = map_mod.Map[str, str].create(),
         imported_modules = imported_modules,
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
@@ -121,9 +123,11 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
     collect_struct_fields(ref_of(ctx), file)
     collect_extending_methods(ref_of(ctx), file)
     collect_enum_variant_members(ref_of(ctx), file)
+    collect_interfaces(ref_of(ctx), file)
     declare_values_and_functions(ref_of(ctx), file)
     check_functions(ref_of(ctx), file)
     check_extending_methods(ref_of(ctx), file)
+    check_interface_conformances(ref_of(ctx), file)
     return Analysis(
         source_file = file,
         diagnostics = ctx.diagnostics,
@@ -575,9 +579,90 @@ function check_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> voi
 
 
 # =============================================================================
-#  Lexical scope — a stack of frames so that block-local bindings do not leak
-#  out of the loop / branch / arm that introduced them.
+#  Interface conformance — a struct/opaque `implements` list is satisfied when
+#  the type provides a method matching each of the interface's required methods.
+#  Mirrors Ruby's SemanticAnalyzer interface_conformance pass, scoped to local
+#  interfaces (imported interfaces resolve permissively for now).
 # =============================================================================
+
+function collect_interfaces(ctx: ref[Context], file: ast.SourceFile) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + i)
+        match d:
+            ast.Decl.decl_interface as iface:
+                ctx.interfaces.set(iface.name, iface.interface_methods)
+            _:
+                pass
+        i += 1
+
+
+function check_interface_conformances(ctx: ref[Context], file: ast.SourceFile) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + i)
+        match d:
+            ast.Decl.decl_struct as s:
+                check_conformance(ctx, s.name, s.impl_list, s.line, s.column)
+            ast.Decl.decl_opaque as op:
+                check_conformance(ctx, op.name, op.opaque_implements, op.line, op.column)
+            _:
+                pass
+        i += 1
+
+
+## Verify a type satisfies each interface in its `implements` list.  Interfaces
+## that are not locally declared (imported or unknown) are skipped permissively.
+function check_conformance(ctx: ref[Context], type_name: str, impl_list: span[ast.QualifiedName], line: ptr_uint, column: ptr_uint) -> void:
+    var i: ptr_uint = 0
+    while i < impl_list.len:
+        var iface_qname: ast.QualifiedName
+        unsafe:
+            iface_qname = read(impl_list.data + i)
+        let iface_name = qname_to_str(iface_qname)
+        let methods_ptr = ctx.interfaces.get(iface_name)
+        if methods_ptr != null:
+            unsafe:
+                check_conformance_methods(ctx, type_name, iface_name, read(methods_ptr), line, column)
+        i += 1
+
+
+function check_conformance_methods(ctx: ref[Context], type_name: str, iface_name: str, methods: span[ast.InterfaceMethod], line: ptr_uint, column: ptr_uint) -> void:
+    var i: ptr_uint = 0
+    while i < methods.len:
+        var m: ast.InterfaceMethod
+        unsafe:
+            m = read(methods.data + i)
+        let actual_ptr = ctx.method_sigs.get(method_key(type_name, m.name))
+        if actual_ptr == null:
+            report(ctx, line, column, missing_method_message(type_name, iface_name, m.name))
+        else:
+            let required = build_fn_sig(ctx, m.name, m.method_params, m.return_type)
+            unsafe:
+                if not sigs_compatible(required, read(actual_ptr)):
+                    report(ctx, line, column, method_mismatch_message(type_name, iface_name, m.name))
+        i += 1
+
+
+## Signatures match when arity is equal and no parameter or the return type is a
+## definite (scalar-category) mismatch.  Named / generic / error types stay
+## permissive, so only concrete mismatches are reported.
+function sigs_compatible(required: FnSig, actual: FnSig) -> bool:
+    if required.params.len != actual.params.len:
+        return false
+    var i: ptr_uint = 0
+    while i < required.params.len:
+        unsafe:
+            let required_param = read(required.params.data + i)
+            let actual_param = read(actual.params.data + i)
+            if types.definitely_incompatible(required_param.ty, actual_param.ty):
+                return false
+        i += 1
+    return not types.definitely_incompatible(required.return_type, actual.return_type)
 
 struct Scope:
     frames: vec.Vec[map_mod.Map[str, types.Type]]
@@ -1660,6 +1745,26 @@ function unknown_member_message(kind: str, type_name: str, member: str) -> str:
     buf.append(type_name)
     buf.append(".")
     buf.append(member)
+    return buf.as_str()
+
+
+function missing_method_message(type_name: str, iface_name: str, method: str) -> str:
+    var buf = string.String.create()
+    buf.append(type_name)
+    buf.append(" does not implement ")
+    buf.append(iface_name)
+    buf.append(": missing method ")
+    buf.append(method)
+    return buf.as_str()
+
+
+function method_mismatch_message(type_name: str, iface_name: str, method: str) -> str:
+    var buf = string.String.create()
+    buf.append(type_name)
+    buf.append(".")
+    buf.append(method)
+    buf.append(" does not match interface ")
+    buf.append(iface_name)
     return buf.as_str()
 
 

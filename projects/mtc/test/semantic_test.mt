@@ -882,3 +882,91 @@ function test_block_local_does_not_leak_past_loop() -> t.Check:
             return flag
     SRC
     return expect_clean(source)
+
+
+@[test]
+function test_interface_conformance_valid_is_clean() -> t.Check:
+    var source = <<-SRC
+        interface Damageable:
+            function is_alive() -> bool
+            editable function take_damage(amount: int) -> void
+        struct NPC implements Damageable:
+            hp: int
+        extending NPC:
+            function is_alive() -> bool:
+                return this.hp > 0
+            editable function take_damage(amount: int) -> void:
+                this.hp = this.hp - amount
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_interface_missing_method_is_flagged() -> t.Check:
+    var source = <<-SRC
+        interface Named:
+            function name() -> str
+        struct Widget implements Named:
+            id: int
+        extending Widget:
+            function other() -> int:
+                return this.id
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_interface_arity_mismatch_is_flagged() -> t.Check:
+    var source = <<-SRC
+        interface Bumper:
+            function bump(amount: int) -> int
+        struct C implements Bumper:
+            n: int
+        extending C:
+            function bump() -> int:
+                return this.n
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_interface_return_type_mismatch_is_flagged() -> t.Check:
+    var source = <<-SRC
+        interface Producer:
+            function produce() -> int
+        struct P implements Producer:
+            v: int
+        extending P:
+            function produce() -> bool:
+                return true
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_opaque_interface_conformance_is_clean() -> t.Check:
+    var source = <<-SRC
+        interface Closable:
+            function close() -> void
+        opaque Handle implements Closable
+        extending Handle:
+            function close() -> void:
+                pass
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_generic_interface_conformance_is_permissive() -> t.Check:
+    # Substituted type parameters resolve permissively, so a correct generic
+    # implementation is clean (method exists, arity matches).
+    var source = <<-SRC
+        interface Converter[T, U]:
+            function convert(x: T) -> U
+        struct Doubler implements Converter[int, int]:
+            value: int
+        extending Doubler:
+            function convert(x: int) -> int:
+                return x * 2
+    SRC
+    return expect_clean(source)
