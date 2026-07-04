@@ -1174,3 +1174,94 @@ function test_hook_on_type_parameter_is_permissive() -> t.Check:
             return hash[T](value)
     SRC
     return expect_clean(source)
+
+
+# =============================================================================
+#  Generic constraint satisfaction (S3b-3). A concrete local-struct type
+#  argument to a generic function must satisfy the parameter's local-interface
+#  constraint, whether given explicitly (foo[T]) or inferred from the arguments.
+# =============================================================================
+
+@[test]
+function test_explicit_type_arg_unsatisfied_constraint_is_flagged() -> t.Check:
+    var source = <<-SRC
+        interface Damageable:
+            function is_alive() -> bool
+        struct Rock:
+            weight: int
+        function hurt[T implements Damageable](target: ref[T]) -> void:
+            pass
+        function f() -> void:
+            var r: Rock
+            hurt[Rock](ref_of(r))
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_explicit_type_arg_satisfied_constraint_is_clean() -> t.Check:
+    var source = <<-SRC
+        interface Damageable:
+            function is_alive() -> bool
+        struct NPC implements Damageable:
+            hp: int
+        extending NPC:
+            function is_alive() -> bool:
+                return this.hp > 0
+        function hurt[T implements Damageable](target: ref[T]) -> void:
+            pass
+        function f() -> void:
+            var n: NPC
+            hurt[NPC](ref_of(n))
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_inferred_type_arg_unsatisfied_constraint_is_flagged() -> t.Check:
+    var source = <<-SRC
+        interface Damageable:
+            function is_alive() -> bool
+        struct Rock:
+            weight: int
+        function hurt[T implements Damageable](target: ref[T]) -> void:
+            pass
+        function f() -> void:
+            var r: Rock
+            hurt(r)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_inferred_type_arg_satisfied_constraint_is_clean() -> t.Check:
+    var source = <<-SRC
+        interface Damageable:
+            function is_alive() -> bool
+        struct NPC implements Damageable:
+            hp: int
+        extending NPC:
+            function is_alive() -> bool:
+                return this.hp > 0
+        function hurt[T implements Damageable](target: ref[T]) -> void:
+            pass
+        function f() -> void:
+            var n: NPC
+            hurt(n)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_abstract_type_arg_constraint_is_permissive() -> t.Check:
+    # Forwarding an abstract U to a constrained parameter cannot be checked, so
+    # it stays permissive rather than being flagged.
+    var source = <<-SRC
+        interface Damageable:
+            function is_alive() -> bool
+        function hurt[T implements Damageable](target: ref[T]) -> void:
+            pass
+        function forward[U](thing: ref[U]) -> void:
+            hurt(thing)
+    SRC
+    return expect_clean(source)

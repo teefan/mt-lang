@@ -76,6 +76,8 @@ struct Context:
     value_types: map_mod.Map[str, types.Type]
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     type_params: map_mod.Map[str, span[ast.TypeParamConstraint]]
+    function_type_params: map_mod.Map[str, span[ast.TypeParam]]
+    implemented: map_mod.Map[str, span[ast.QualifiedName]]
     import_aliases: map_mod.Map[str, str]
     imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?
     diagnostics: vec.Vec[SemanticDiagnostic]
@@ -118,6 +120,8 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         value_types = map_mod.Map[str, types.Type].create(),
         interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create(),
         type_params = map_mod.Map[str, span[ast.TypeParamConstraint]].create(),
+        function_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
+        implemented = map_mod.Map[str, span[ast.QualifiedName]].create(),
         import_aliases = map_mod.Map[str, str].create(),
         imported_modules = imported_modules,
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
@@ -193,6 +197,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
         match d:
             ast.Decl.decl_struct as s:
                 declare_type(ctx, s.name, s.line, s.column)
+                ctx.implemented.set(s.name, s.impl_list)
             ast.Decl.decl_union as u:
                 declare_type(ctx, u.name, u.line, u.column)
             ast.Decl.decl_enum as e:
@@ -203,6 +208,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 declare_type(ctx, vr.name, vr.line, vr.column)
             ast.Decl.decl_opaque as op:
                 declare_type(ctx, op.name, op.line, op.column)
+                ctx.implemented.set(op.name, op.opaque_implements)
             ast.Decl.decl_type_alias as ta:
                 declare_type(ctx, ta.name, ta.line, ta.column)
                 ctx.type_aliases.set(ta.name, ta.target)
@@ -374,7 +380,14 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                         ctx.value_types.set(v.name, resolve_type(ctx, vt))
             ast.Decl.decl_function as fun:
                 if declare_value(ctx, fun.name, fun.line, fun.column):
+                    # Build the signature with the function's own type parameters
+                    # in scope, so parameter/return patterns carry ty_var(T) for
+                    # call-site unification. Record the constraints for validation.
+                    enter_type_params(ctx, fun.type_params)
                     ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type))
+                    ctx.type_params.clear()
+                    if fun.type_params.len > 0:
+                        ctx.function_type_params.set(fun.name, fun.type_params)
             ast.Decl.decl_extern_function as ef:
                 declare_value(ctx, ef.name, ef.line, 1)
             ast.Decl.decl_foreign_function as ff:
@@ -1316,9 +1329,142 @@ function check_specialization_call(ctx: ref[Context], scope: ref[Scope], spec_ca
             ast.Expr.expr_identifier as id:
                 if is_hook_name(id.name) and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
                     return check_hook_call(ctx, id.name, type_args, id.line, id.column)
+                let tps_ptr = ctx.function_type_params.get(id.name)
+                if tps_ptr != null and scope_get(scope, id.name) == null:
+                    validate_explicit_type_args(ctx, read(tps_ptr), type_args, id.line, id.column)
                 return types.Type.ty_error
             _:
                 return types.Type.ty_error
+
+
+## Validate the constraints of an explicit `foo[A, B](...)` call: resolve each
+## type argument and check it satisfies its parameter's constraints.  Skipped
+## unless the parameters are all plain type variables and the counts line up
+## (avoids misaligning value/lifetime parameters).
+function validate_explicit_type_args(ctx: ref[Context], type_params: span[ast.TypeParam], type_args: span[ast.TypeArgument], line: ptr_uint, column: ptr_uint) -> void:
+    if type_args.len != type_params.len or not all_plain_type_params(type_params):
+        return
+    var i: ptr_uint = 0
+    while i < type_params.len:
+        var tp: ast.TypeParam
+        var arg_ref: ptr[ast.TypeRef]
+        unsafe:
+            tp = read(type_params.data + i)
+            arg_ref = read(type_args.data + i).value
+        check_type_arg_constraints(ctx, resolve_type(ctx, arg_ref), tp.constraints, line, column)
+        i += 1
+
+
+## Validate constraints against an inferred substitution map (from a bare
+## `foo(...)` call).  A type parameter with no inferred binding is skipped.
+function validate_inferred_type_args(ctx: ref[Context], type_params: span[ast.TypeParam], subs: ref[map_mod.Map[str, types.Type]], line: ptr_uint, column: ptr_uint) -> void:
+    var i: ptr_uint = 0
+    while i < type_params.len:
+        var tp: ast.TypeParam
+        unsafe:
+            tp = read(type_params.data + i)
+        if not tp.is_value and not tp.is_lifetime:
+            let actual_ptr = subs.get(tp.name)
+            if actual_ptr != null:
+                check_type_arg_constraints(ctx, unsafe: read(actual_ptr), tp.constraints, line, column)
+        i += 1
+
+
+function check_type_arg_constraints(ctx: ref[Context], actual: types.Type, constraints: span[ast.TypeParamConstraint], line: ptr_uint, column: ptr_uint) -> void:
+    var i: ptr_uint = 0
+    while i < constraints.len:
+        var constraint: ast.TypeParamConstraint
+        unsafe:
+            constraint = read(constraints.data + i)
+        check_constraint_satisfied(ctx, actual, constraint, line, column)
+        i += 1
+
+
+## Flag only when a fully-known local-struct/opaque type argument definitely does
+## not implement a locally-declared interface constraint.  Imported types,
+## primitives, type variables, and imported/unknown interfaces stay permissive.
+function check_constraint_satisfied(ctx: ref[Context], actual: types.Type, constraint: ast.TypeParamConstraint, line: ptr_uint, column: ptr_uint) -> void:
+    if constraint.interface_ref.parts.len != 1:
+        return
+    let iface_name = unsafe: read(constraint.interface_ref.parts.data + 0)
+    if not ctx.interfaces.contains(iface_name):
+        return
+    match actual:
+        types.Type.ty_named as n:
+            let impl_ptr = ctx.implemented.get(n.name)
+            if impl_ptr == null:
+                return
+            unsafe:
+                if not impl_list_contains(read(impl_ptr), iface_name):
+                    report(ctx, line, column, constraint_unsatisfied_message(n.name, iface_name))
+        _:
+            pass
+
+
+function impl_list_contains(impl_list: span[ast.QualifiedName], iface_name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < impl_list.len:
+        var q: ast.QualifiedName
+        unsafe:
+            q = read(impl_list.data + i)
+        if qname_to_str(q).equal(iface_name):
+            return true
+        i += 1
+    return false
+
+
+function all_plain_type_params(type_params: span[ast.TypeParam]) -> bool:
+    var i: ptr_uint = 0
+    while i < type_params.len:
+        var tp: ast.TypeParam
+        unsafe:
+            tp = read(type_params.data + i)
+        if tp.is_value or tp.is_lifetime:
+            return false
+        i += 1
+    return true
+
+
+## Best-effort unification of a call's parameter patterns against its argument
+## types, recording type-variable bindings.  Never fails: unresolvable positions
+## simply leave a type parameter unbound (and thus unchecked).
+function unify_call_args(params: span[ParamEntry], arg_types: span[types.Type], subs: ref[map_mod.Map[str, types.Type]]) -> void:
+    var i: ptr_uint = 0
+    while i < params.len and i < arg_types.len:
+        unsafe:
+            unify(read(params.data + i).ty, read(arg_types.data + i), subs)
+        i += 1
+
+
+function unify(pattern: types.Type, actual: types.Type, subs: ref[map_mod.Map[str, types.Type]]) -> void:
+    match pattern:
+        types.Type.ty_var as v:
+            if subs.get(v.name) == null:
+                subs.set(v.name, actual)
+        types.Type.ty_nullable as pn:
+            var inner_actual = actual
+            match actual:
+                types.Type.ty_nullable as an:
+                    inner_actual = unsafe: read(an.base)
+                _:
+                    pass
+            unify(unsafe: read(pn.base), inner_actual, subs)
+        types.Type.ty_generic as pg:
+            if pg.name.equal("ref") and pg.args.len == 1:
+                unify(unsafe: read(pg.args.data + 0), unwrap_ref(actual), subs)
+            else:
+                match actual:
+                    types.Type.ty_generic as ag:
+                        if pg.name.equal(ag.name) and pg.args.len == ag.args.len:
+                            var i: ptr_uint = 0
+                            while i < pg.args.len:
+                                unsafe:
+                                    unify(read(pg.args.data + i), read(ag.args.data + i), subs)
+                                i += 1
+                    _:
+                        pass
+        _:
+            pass
 
 
 function is_hook_name(name: str) -> bool:
@@ -1821,7 +1967,15 @@ function check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr],
                 let sigp = ctx.functions.get(id.name)
                 if sigp == null:
                     return
-                check_signature_call(ctx, id.name, read(sigp), arg_types, any_named, id.line, id.column)
+                let sig = read(sigp)
+                check_signature_call(ctx, id.name, sig, arg_types, any_named, id.line, id.column)
+                # For a generic function, infer type arguments from the call and
+                # validate that each satisfies its constraints.
+                let tps_ptr = ctx.function_type_params.get(id.name)
+                if tps_ptr != null:
+                    var subs = map_mod.Map[str, types.Type].create()
+                    unify_call_args(sig.params, arg_types, ref_of(subs))
+                    validate_inferred_type_args(ctx, read(tps_ptr), ref_of(subs), id.line, id.column)
             _:
                 pass
 
@@ -2003,6 +2157,15 @@ function hook_missing_message(hook_name: str, type_name: str) -> str:
     buf.append(type_name)
     buf.append(".")
     buf.append(hook_name)
+    return buf.as_str()
+
+
+function constraint_unsatisfied_message(type_name: str, iface_name: str) -> str:
+    var buf = string.String.create()
+    buf.append("type argument ")
+    buf.append(type_name)
+    buf.append(" does not implement ")
+    buf.append(iface_name)
     return buf.as_str()
 
 
