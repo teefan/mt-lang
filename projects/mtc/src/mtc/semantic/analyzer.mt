@@ -48,10 +48,12 @@ public struct FieldEntry:
 ## The public export surface of a module, consumed by importers for cross-module
 ## name resolution.  Built from an Analysis by the loader's binder
 ## (mtc.loader.binder); the type lives here to keep the analyzer free of a
-## dependency on the loader.  Currently exposes public functions; type, value,
-## and member exports will be added as their cross-module resolution is wired.
+## dependency on the loader.  Exposes public functions (for call checks), structs
+## (for construction field checks), and value types (const/var).
 public struct ModuleBinding:
     functions: map_mod.Map[str, FnSig]
+    structs: map_mod.Map[str, span[FieldEntry]]
+    value_types: map_mod.Map[str, types.Type]
 
 
 struct Context:
@@ -1068,7 +1070,7 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, typ
                 pass
         i += 1
 
-    match try_imported_call(ctx, scope, callee, arg_types.as_span(), any_named):
+    match try_imported_call(ctx, scope, callee, args, arg_types.as_span(), any_named):
         Option.some as imported:
             return imported.value
         Option.none:
@@ -1084,10 +1086,11 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, typ
 
 
 ## A call whose callee is `alias.member(...)` where `alias` names an imported
-## module that exports function `member`: check the arguments against the
-## imported signature and yield its return type.  Anything else (local calls,
-## unresolved aliases, non-exported members) is left to the local paths.
-function try_imported_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr], arg_types: span[types.Type], any_named: bool) -> Option[types.Type]:
+## module: check against the imported function signature (yielding its return
+## type), or against an imported struct's fields (a cross-module construction).
+## Anything else (local calls, unresolved aliases, non-exported members) is left
+## to the local paths.
+function try_imported_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr], args: span[ast.Argument], arg_types: span[types.Type], any_named: bool) -> Option[types.Type]:
     unsafe:
         match read(callee):
             ast.Expr.expr_member_access as ma:
@@ -1100,13 +1103,41 @@ function try_imported_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.
                             return Option[types.Type].none
                         let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
                             return Option[types.Type].none
-                        let sig_ptr = read(binding_ptr).functions.get(ma.member_name) else:
-                            return Option[types.Type].none
-                        let sig = read(sig_ptr)
-                        check_signature_call(ctx, ma.member_name, sig, arg_types, any_named, ma.line, ma.column)
-                        return Option[types.Type].some(value = sig.return_type)
+
+                        let sig_ptr = read(binding_ptr).functions.get(ma.member_name)
+                        if sig_ptr != null:
+                            let sig = read(sig_ptr)
+                            check_signature_call(ctx, ma.member_name, sig, arg_types, any_named, ma.line, ma.column)
+                            return Option[types.Type].some(value = sig.return_type)
+
+                        let fields_ptr = read(binding_ptr).structs.get(ma.member_name)
+                        if fields_ptr != null:
+                            check_construction(ctx, ma.member_name, read(fields_ptr), args, ma.line, ma.column)
+                            return Option[types.Type].some(value = types.Type.ty_error)
+
+                        return Option[types.Type].none
                     _:
                         return Option[types.Type].none
+            _:
+                return Option[types.Type].none
+
+
+## Resolve `alias.member` where `alias` is an imported module and `member` is one
+## of its exported values, yielding the value's type.  None for anything else.
+function try_imported_member(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], receiver: ptr[ast.Expr], member: str) -> Option[types.Type]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                if scope.get(id.name) != null:
+                    return Option[types.Type].none
+                let module_name_ptr = ctx.import_aliases.get(id.name) else:
+                    return Option[types.Type].none
+                let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                    return Option[types.Type].none
+                let value_ptr = read(binding_ptr).value_types.get(member)
+                if value_ptr != null:
+                    return Option[types.Type].some(value = read(value_ptr))
+                return Option[types.Type].none
             _:
                 return Option[types.Type].none
 
@@ -1138,13 +1169,17 @@ function check_method_callee(ctx: ref[Context], scope: ref[map_mod.Map[str, type
 ## is a static member access (validate against members/arms/methods); anything
 ## else is an instance access (struct field/method or permissive).
 function resolve_member_access(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], receiver: ptr[ast.Expr], member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
-    match static_type_receiver(ctx, scope, receiver):
-        Option.some as tn:
-            check_static_member(ctx, tn.value, member, line, column)
-            return types.Type.ty_named(name = tn.value)
+    match try_imported_member(ctx, scope, receiver, member):
+        Option.some as imported:
+            return imported.value
         Option.none:
-            let recv = infer_expr(ctx, scope, receiver)
-            return check_member(ctx, recv, member, is_method_call, line, column)
+            match static_type_receiver(ctx, scope, receiver):
+                Option.some as tn:
+                    check_static_member(ctx, tn.value, member, line, column)
+                    return types.Type.ty_named(name = tn.value)
+                Option.none:
+                    let recv = infer_expr(ctx, scope, receiver)
+                    return check_member(ctx, recv, member, is_method_call, line, column)
 
 
 ## Some(type name) when `receiver` is a bare identifier naming a locally-declared

@@ -284,3 +284,90 @@ function test_cross_module_call_to_private_is_permissive() -> t.Check:
     defer program.release()
 
     return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_construction_unknown_field_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public struct Point:\n    x: int\n    y: int\n",
+        "import lib\n\nfunction make() -> int:\n    let p = lib.Point(x = 1, z = 2)\n    return 0\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("unknown field"))
+
+
+@[test]
+function test_cross_module_construction_valid_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public struct Point:\n    x: int\n    y: int\n",
+        "import lib\n\nfunction make() -> int:\n    let p = lib.Point(x = 1, y = 2)\n    return 0\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_value_type_mismatch_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public const LIMIT: int = 10\n",
+        "import lib\n\nfunction f() -> void:\n    let flag: bool = lib.LIMIT\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("cannot assign"))
+
+
+@[test]
+function test_cross_module_value_correct_type_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public const LIMIT: int = 10\n",
+        "import lib\n\nfunction f() -> void:\n    let n: int = lib.LIMIT\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_private_value_is_permissive() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    # SECRET is not public, so it is not exported: a mismatched assignment from
+    # it must stay permissive rather than be flagged.
+    var program = load_lib_and_main(
+        ref_of(root),
+        "const SECRET: int = 42\n",
+        "import lib\n\nfunction f() -> void:\n    let flag: bool = lib.SECRET\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
