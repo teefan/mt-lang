@@ -1020,3 +1020,80 @@ function test_concrete_error_in_generic_body_is_flagged() -> t.Check:
             return true
     SRC
     return expect_flagged(source)
+
+
+# =============================================================================
+#  Generic constraint checking — a `[T implements I]` type parameter is a type
+#  variable whose only members are its constraint interfaces' methods, checked
+#  with full signatures (arity, args, return-type flow). Unconstrained type
+#  parameters stay permissive.
+# =============================================================================
+
+@[test]
+function test_generic_constraint_method_call_is_clean() -> t.Check:
+    var source = <<-SRC
+        interface Damageable:
+            function is_alive() -> bool
+            editable function take_damage(amount: int) -> void
+        function hurt[T implements Damageable](target: ref[T], amount: int) -> void:
+            target.take_damage(amount)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_generic_constraint_unknown_method_is_flagged() -> t.Check:
+    var source = <<-SRC
+        interface Damageable:
+            function is_alive() -> bool
+            editable function take_damage(amount: int) -> void
+        function hurt[T implements Damageable](target: ref[T]) -> void:
+            target.bogus()
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_generic_constraint_argument_type_is_flagged() -> t.Check:
+    var source = <<-SRC
+        interface Damageable:
+            editable function take_damage(amount: int) -> void
+        function hurt[T implements Damageable](target: ref[T]) -> void:
+            target.take_damage(true)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_generic_constraint_return_type_flows() -> t.Check:
+    var source = <<-SRC
+        interface Named:
+            function name() -> str
+        function label[T implements Named](target: ref[T]) -> int:
+            return target.name()
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_generic_multi_constraint_is_clean() -> t.Check:
+    var source = <<-SRC
+        interface Damageable:
+            function is_alive() -> bool
+        interface Named:
+            function name() -> str
+        function describe[T implements Damageable and Named](target: ref[T]) -> str:
+            if target.is_alive():
+                return target.name()
+            return "dead"
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_unconstrained_generic_member_is_permissive() -> t.Check:
+    var source = <<-SRC
+        function use[T](x: T) -> void:
+            x.anything()
+    SRC
+    return expect_clean(source)

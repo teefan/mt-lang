@@ -75,6 +75,7 @@ struct Context:
     functions: map_mod.Map[str, FnSig]
     value_types: map_mod.Map[str, types.Type]
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
+    type_params: map_mod.Map[str, span[ast.TypeParamConstraint]]
     import_aliases: map_mod.Map[str, str]
     imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?
     diagnostics: vec.Vec[SemanticDiagnostic]
@@ -116,6 +117,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         functions = map_mod.Map[str, FnSig].create(),
         value_types = map_mod.Map[str, types.Type].create(),
         interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create(),
+        type_params = map_mod.Map[str, span[ast.TypeParamConstraint]].create(),
         import_aliases = map_mod.Map[str, str].create(),
         imported_modules = imported_modules,
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
@@ -463,6 +465,10 @@ function wrap_nullable(base: types.Type, nullable: bool) -> types.Type:
 
 
 function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef], depth: int) -> types.Type:
+    # An in-scope generic type parameter is a type variable, carrying whatever
+    # `implements` constraints its declaration gave it.
+    if ctx.type_params.contains(name):
+        return types.Type.ty_var(name = name)
     # Type aliases resolve to their (transitively resolved) target.
     if ctx.type_aliases.contains(name):
         return resolve_alias(ctx, name, depth)
@@ -548,7 +554,7 @@ function check_functions(ctx: ref[Context], file: ast.SourceFile) -> void:
             d = read(file.declarations.data + i)
         match d:
             ast.Decl.decl_function as fun:
-                check_function_body(ctx, fun.name, fun.line, fun.method_params, fun.return_type, fun.body)
+                check_function_body(ctx, fun.name, fun.line, fun.type_params, fun.method_params, fun.return_type, fun.body)
             _:
                 pass
         i += 1
@@ -739,6 +745,7 @@ function scope_get(scope: ref[Scope], name: str) -> ptr[types.Type]?:
 
 
 function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Method) -> void:
+    enter_type_params(ctx, m.type_params)
     var scope = scope_create()
     scope_enter(ref_of(scope))
     if m.method_kind != ast.MethodKind.mk_static:
@@ -758,11 +765,13 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     if rt != null and not types.is_void(ret):
         if not terminates_ptr(ctx, m.body):
             report(ctx, m.line, m.column, missing_return_message(m.name))
+    ctx.type_params.clear()
 
 
-function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?) -> void:
+function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_params: span[ast.TypeParam], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?) -> void:
     let b = body else:
         return
+    enter_type_params(ctx, type_params)
     var scope = scope_create()
     scope_enter(ref_of(scope))
     var pi: ptr_uint = 0
@@ -780,6 +789,21 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, param
     if rt != null and not types.is_void(ret):
         if not terminates_ptr(ctx, b):
             report(ctx, line, 1, missing_return_message(name))
+    ctx.type_params.clear()
+
+
+## Register a generic body's type parameters so references to them resolve to
+## type variables carrying their `implements` constraints.  Value and lifetime
+## parameters are not type variables and are skipped.  Cleared after the body.
+function enter_type_params(ctx: ref[Context], type_params: span[ast.TypeParam]) -> void:
+    var i: ptr_uint = 0
+    while i < type_params.len:
+        var tp: ast.TypeParam
+        unsafe:
+            tp = read(type_params.data + i)
+        if not tp.is_value and not tp.is_lifetime:
+            ctx.type_params.set(tp.name, tp.constraints)
+        i += 1
 
 
 # =============================================================================
@@ -1365,8 +1389,20 @@ function check_member_call(ctx: ref[Context], scope: ref[Scope], receiver: ptr[a
         Option.none:
             pass
 
-    let recv = infer_expr(ctx, scope, receiver)
+    let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
     return check_typed_method_call(ctx, recv, method_name, arg_types, any_named, line, column)
+
+
+## See through a `ref[T]` receiver to `T` for member access and method calls,
+## matching the language's auto-dereference of `ref` receivers.
+function unwrap_ref(t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_generic as g:
+            if g.name.equal("ref") and g.args.len == 1:
+                return unsafe: read(g.args.data + 0)
+            return t
+        _:
+            return t
 
 
 ## Resolve and check a method call against a known receiver type (local or
@@ -1432,8 +1468,46 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
                 if sig_ptr != null:
                     return Option[FnSig].some(value = read(sig_ptr))
             return Option[FnSig].none
+        types.Type.ty_var as v:
+            return resolve_constraint_method(ctx, v.name, method_name)
         _:
             return Option[FnSig].none
+
+
+## The signature a type variable's constraints make available for `method_name`:
+## the matching method of the first constraint interface that declares it.
+function resolve_constraint_method(ctx: ref[Context], var_name: str, method_name: str) -> Option[FnSig]:
+    let constraints_ptr = ctx.type_params.get(var_name)
+    if constraints_ptr == null:
+        return Option[FnSig].none
+    unsafe:
+        let constraints = read(constraints_ptr)
+        var i: ptr_uint = 0
+        while i < constraints.len:
+            let constraint = read(constraints.data + i)
+            match resolve_interface_methods(ctx, constraint.interface_ref):
+                Option.some as methods:
+                    match interface_method_named(methods.value, method_name):
+                        Option.some as m:
+                            return Option[FnSig].some(value = build_fn_sig(ctx, m.value.name, m.value.method_params, m.value.return_type))
+                        Option.none:
+                            pass
+                Option.none:
+                    pass
+            i += 1
+    return Option[FnSig].none
+
+
+function interface_method_named(methods: span[ast.InterfaceMethod], name: str) -> Option[ast.InterfaceMethod]:
+    var i: ptr_uint = 0
+    while i < methods.len:
+        var m: ast.InterfaceMethod
+        unsafe:
+            m = read(methods.data + i)
+        if m.name.equal(name):
+            return Option[ast.InterfaceMethod].some(value = m)
+        i += 1
+    return Option[ast.InterfaceMethod].none
 
 
 ## Dispatch a member access: a bare type-name receiver of an enum/flags/variant
@@ -1453,7 +1527,7 @@ function resolve_member_access(ctx: ref[Context], scope: ref[Scope], receiver: p
                             check_static_member(ctx, tn.value, member, line, column)
                             return types.Type.ty_named(name = tn.value)
                         Option.none:
-                            let recv = infer_expr(ctx, scope, receiver)
+                            let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
                             return check_member(ctx, recv, member, is_method_call, line, column)
 
 
@@ -1580,8 +1654,46 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             return types.Type.ty_error
         types.Type.ty_imported as im:
             return check_imported_member(ctx, im.module_name, im.name, member, is_method_call, line, column)
+        types.Type.ty_var as v:
+            return check_type_var_member(ctx, v.name, member, is_method_call, line, column)
         _:
             return types.Type.ty_error
+
+
+## Member access on a value of type variable `T`.  A `T` value's only members are
+## the methods of its `implements` constraints.  When every constraint interface
+## resolves, a member not declared by any of them is reported; if a constraint is
+## unresolvable, or `T` is unconstrained, access stays permissive.
+function check_type_var_member(ctx: ref[Context], var_name: str, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+    let constraints_ptr = ctx.type_params.get(var_name)
+    if constraints_ptr == null:
+        return types.Type.ty_error
+
+    var all_resolvable = true
+    unsafe:
+        let constraints = read(constraints_ptr)
+        if constraints.len == 0:
+            return types.Type.ty_error
+        var i: ptr_uint = 0
+        while i < constraints.len:
+            let constraint = read(constraints.data + i)
+            match resolve_interface_methods(ctx, constraint.interface_ref):
+                Option.some as methods:
+                    match interface_method_named(methods.value, member):
+                        Option.some:
+                            return types.Type.ty_error
+                        Option.none:
+                            pass
+                Option.none:
+                    all_resolvable = false
+            i += 1
+
+    if all_resolvable:
+        if is_method_call:
+            report(ctx, line, column, unknown_member_message("method", var_name, member))
+        else:
+            report(ctx, line, column, unknown_member_message("field", var_name, member))
+    return types.Type.ty_error
 
 
 ## Field or method access on a value of an imported struct type.  A field yields
