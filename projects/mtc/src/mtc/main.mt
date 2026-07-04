@@ -12,6 +12,7 @@ import mtc.lexer.token_kinds as tk
 import mtc.lexer.token as token_mod
 import mtc.lexer.lexer as lexer
 import mtc.parser.parser as parser
+import mtc.pretty_printer.ast_formatter as ast_formatter
 
 
 function main(args: span[str]) -> int:
@@ -72,7 +73,8 @@ function parse_command(file_path: str) -> int:
 
             let source = content.as_str()
             var diags = vec.Vec[parser.ParseDiagnostic].create()
-            let (ok, decl_count) = parser.parse_reporting(source, ref_of(diags))
+            defer diags.release()
+            let file = parser.parse_source(source, ref_of(diags))
 
             if diags.len() > 0:
                 var di: ptr_uint = 0
@@ -90,14 +92,13 @@ function parse_command(file_path: str) -> int:
                             rd.message,
                         )
                     di += 1
+                return 1
 
-            diags.release()
-
-            if ok:
-                stdio.print_format(c"parse succeeded: %.*s (%d declarations)\n", int<-(file_path.len), file_path.data, int<-(decl_count))
-                return 0
-            stdio.print_format(c"parse FAILED: %.*s\n", int<-(file_path.len), file_path.data)
-            return 1
+            var rendered = ast_formatter.format_source_file(file)
+            defer rendered.release()
+            let text = rendered.as_str()
+            stdio.print_format(c"%.*s", int<-(text.len), text.data)
+            return 0
 
 
 function lex_command(file_path: str, machine: bool) -> int:

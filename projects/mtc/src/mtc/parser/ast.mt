@@ -31,6 +31,9 @@ public enum TypeParamConstraintKind: ubyte
 public struct TypeParam:
     name: str
     constraints: span[TypeParamConstraint]
+    is_value: bool
+    value_type: ptr[TypeRef]?
+    is_lifetime: bool
     line: ptr_uint
     column: ptr_uint
 
@@ -124,7 +127,7 @@ public struct Field:
 
 public struct EnumMember:
     name: str
-    value: ptr[Expr]
+    value: ptr[Expr]?
     line: ptr_uint
     column: ptr_uint
 
@@ -137,7 +140,7 @@ public struct VariantArm:
 public struct InterfaceMethod:
     name: str
     method_params: span[Param]
-    return_type: TypeRef
+    return_type: ptr[TypeRef]?
     method_kind: MethodKind
     is_async: bool
     attributes: span[AttributeApplication]
@@ -149,7 +152,7 @@ public struct Method:
     name: str
     type_params: span[TypeParam]
     method_params: span[Param]
-    return_type: TypeRef
+    return_type: ptr[TypeRef]?
     body: ptr[Stmt]
     method_kind: MethodKind
     visibility: bool
@@ -202,6 +205,16 @@ public struct WhenBranch:
     binding_line: ptr_uint
     binding_column: ptr_uint
     body: span[Stmt]
+
+
+## Declaration-bodied `when` branch (module-level `when`); its body holds
+## declarations rather than statements.
+public struct WhenDeclBranch:
+    pattern: ptr[Expr]
+    binding_name: Option[str]
+    binding_line: ptr_uint
+    binding_column: ptr_uint
+    body: span[Decl]
 
 
 # =============================================================================
@@ -295,6 +308,7 @@ public variant Expr:
 
     # Misc
     expr_expression_list(elements: span[Expr], line: ptr_uint, column: ptr_uint)
+    expr_named(name: str, value: ptr[Expr])
     expr_range(start_expr: ptr[Expr], end_expr: ptr[Expr], line: ptr_uint,
                column: ptr_uint)
     expr_prefix_cast(target_type: ptr[TypeRef], expression: ptr[Expr], line: ptr_uint,
@@ -335,9 +349,9 @@ public variant Stmt:
     stmt_defer(expression: ptr[Expr]?, body: ptr[Stmt]?, line: ptr_uint, column: ptr_uint)
     stmt_unsafe(body: ptr[Stmt]?, line: ptr_uint, column: ptr_uint)
     stmt_expression(expression: ptr[Expr], line: ptr_uint)
-    stmt_static_assert(condition: ptr[Expr], message: str, line: ptr_uint)
+    stmt_static_assert(condition: ptr[Expr], message: ptr[Expr]?, line: ptr_uint)
     stmt_emit(declaration: ptr[Decl]?, line: ptr_uint, column: ptr_uint)
-    stmt_when(discriminant: ptr[Expr], branches: span[WhenBranch], else_body: ptr[Stmt],
+    stmt_when(discriminant: ptr[Expr], branches: span[WhenBranch], else_body: ptr[Stmt]?,
               line: ptr_uint, column: ptr_uint)
     stmt_parallel_block(bodies: span[Stmt], line: ptr_uint, column: ptr_uint)
     stmt_gather(handles: span[Expr], line: ptr_uint, column: ptr_uint)
@@ -369,10 +383,10 @@ public variant Decl:
                 column: ptr_uint)
     decl_union(name: str, c_name: Option[str], union_fields: span[Field], visibility: bool,
                union_attrs: span[AttributeApplication], line: ptr_uint, column: ptr_uint)
-    decl_enum(name: str, backing_type: ptr[TypeRef], enum_members: span[EnumMember],
+    decl_enum(name: str, backing_type: ptr[TypeRef]?, enum_members: span[EnumMember],
               visibility: bool, enum_attrs: span[AttributeApplication], line: ptr_uint,
               column: ptr_uint)
-    decl_flags(name: str, backing_type: ptr[TypeRef], flags_members: span[EnumMember],
+    decl_flags(name: str, backing_type: ptr[TypeRef]?, flags_members: span[EnumMember],
                visibility: bool, flags_attrs: span[AttributeApplication], line: ptr_uint,
                column: ptr_uint)
     decl_variant(name: str, type_params: span[TypeParam], variant_arms: span[VariantArm],
@@ -388,20 +402,44 @@ public variant Decl:
     decl_extending_block(type_name: ptr[TypeRef], methods: span[Method], line: ptr_uint,
                          column: ptr_uint)
     decl_extern_function(name: str, type_params: span[TypeParam],
-                         method_params: span[Param], return_type: ptr[TypeRef],
+                         extern_params: span[ForeignParam], return_type: ptr[TypeRef]?,
                          variadic: bool, attrs: span[AttributeApplication],
-                         line: ptr_uint, mapping: Option[str])
+                         line: ptr_uint, mapping: ptr[Expr]?)
     decl_foreign_function(name: str, type_params: span[TypeParam],
                           foreign_params: span[ForeignParam],
-                          return_type: ptr[TypeRef], variadic: bool, mapping: str,
+                          return_type: ptr[TypeRef], variadic: bool, mapping: ptr[Expr],
                           visibility: bool, attrs: span[AttributeApplication],
                           line: ptr_uint)
-    decl_event(name: str, capacity: int, payload_type: ptr[TypeRef], visibility: bool,
+    decl_event(name: str, capacity: int, payload_type: ptr[TypeRef]?, visibility: bool,
                attrs: span[AttributeApplication], line: ptr_uint, column: ptr_uint)
-    decl_static_assert(condition: ptr[Expr], message: str, line: ptr_uint)
-    decl_when(discriminant: ptr[Expr], branches: span[WhenBranch],
-              else_body: ptr[Stmt], line: ptr_uint, column: ptr_uint)
+    decl_static_assert(condition: ptr[Expr], message: ptr[Expr]?, line: ptr_uint)
+    decl_when(discriminant: ptr[Expr], branches: span[WhenDeclBranch],
+              else_body: span[Decl], has_else: bool, line: ptr_uint, column: ptr_uint)
     decl_attribute(name: str, targets: span[str], attr_params: span[Param],
                    visibility: bool, line: ptr_uint, column: ptr_uint)
     decl_import(path: QualifiedName, alias_name: Option[str], line: ptr_uint,
                 column: ptr_uint)
+    decl_link(value: str, line: ptr_uint, column: ptr_uint)
+    decl_include(value: str, line: ptr_uint, column: ptr_uint)
+    decl_compiler_flag(value: str, line: ptr_uint, column: ptr_uint)
+
+
+# =============================================================================
+#  Source file root
+# =============================================================================
+
+public enum ModuleKind: ubyte
+    module_ordinary = 0
+    module_raw      = 1
+
+
+## Root AST node produced by the parser.  Mirrors Ruby AST::SourceFile:
+## imports and directives are held separately from ordinary declarations so
+## the pretty printer can emit them in the canonical order (imports, then
+## directives, then declarations) with the correct blank-line separation.
+public struct SourceFile:
+    module_kind: ModuleKind
+    imports: span[Decl]
+    directives: span[Decl]
+    declarations: span[Decl]
+    line: ptr_uint
