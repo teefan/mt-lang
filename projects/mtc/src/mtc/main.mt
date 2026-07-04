@@ -5,6 +5,7 @@
 ##   mtc help             Print help
 
 import std.fs as fs
+import std.path as path_ops
 import std.vec as vec
 import std.stdio as stdio
 
@@ -13,7 +14,8 @@ import mtc.lexer.token as token_mod
 import mtc.lexer.lexer as lexer
 import mtc.parser.parser as parser
 import mtc.pretty_printer.ast_formatter as ast_formatter
-import mtc.semantic.analyzer as analyzer
+import mtc.loader.path_resolver as resolver
+import mtc.loader.module_loader as loader
 
 
 function main(args: span[str]) -> int:
@@ -44,7 +46,7 @@ function main(args: span[str]) -> int:
         if args.len < 2:
             print_help()
             return 1
-        return check_command(args[1])
+        return check_command(args)
 
     if cmd == "help":
         print_help()
@@ -62,7 +64,7 @@ function print_help() -> void:
     stdio.print_line("commands:")
     stdio.print_line("  lex   <file>  print the lexer token stream")
     stdio.print_line("  parse <file>  parse source and print AST")
-    stdio.print_line("  check <file>  parse and semantically analyze source")
+    stdio.print_line("  check <file> [--root DIR]...  type-check a file and its imports")
     stdio.print_line("  help          print this help")
 
 
@@ -109,61 +111,67 @@ function parse_command(file_path: str) -> int:
             return 0
 
 
-function check_command(file_path: str) -> int:
-    match fs.read_text(file_path):
-        Result.failure:
-            stdio.print_format(c"error: cannot read '%.*s'\n", int<-(file_path.len), file_path.data)
-            return 1
-        Result.success as payload:
-            var content = payload.value
-            defer content.release()
+## Type-check a source file and its transitive imports.  Imports are resolved
+## against `--root DIR` module roots (repeatable); when none are given the root
+## defaults to the entry file's directory.
+function check_command(args: span[str]) -> int:
+    var roots = vec.Vec[str].create()
+    defer roots.release()
+    var file_path: Option[str] = Option[str].none
 
-            let source = content.as_str()
-            var parse_diags = vec.Vec[parser.ParseDiagnostic].create()
-            defer parse_diags.release()
-            let file = parser.parse_source(source, ref_of(parse_diags))
-
-            if parse_diags.len() > 0:
-                var di: ptr_uint = 0
-                while di < parse_diags.len():
-                    let d = parse_diags.get(di) else:
-                        break
-                    unsafe:
-                        let rd = read(d)
-                        stdio.print_format(
-                            c"parse error: L%d:%d lexeme='%.*s' kind=%.*s: %s\n",
-                            int<-(rd.line),
-                            int<-(rd.column),
-                            int<-(rd.lexeme.len), rd.lexeme.data,
-                            int<-(rd.kind.len), rd.kind.data,
-                            rd.message,
-                        )
-                    di += 1
-                report_check_summary(parse_diags.len())
+    var i: ptr_uint = 1
+    while i < args.len:
+        let arg = args[i]
+        if arg == "--root":
+            if i + 1 >= args.len:
+                stdio.print_line("error: --root requires a directory")
                 return 1
+            roots.push(args[i + 1])
+            i += 2
+            continue
+        match file_path:
+            Option.some:
+                stdio.print_line("error: check accepts a single source path")
+                return 1
+            Option.none:
+                file_path = Option[str].some(value = arg)
+        i += 1
 
-            var analysis = analyzer.check_source_file(file)
-            defer analysis.diagnostics.release()
+    let path = file_path else:
+        print_help()
+        return 1
 
-            if analysis.diagnostics.len() == 0:
-                stdio.print_format(c"checked %.*s as good\n", int<-(file_path.len), file_path.data)
-                return 0
+    if roots.is_empty():
+        roots.push(path_ops.dirname(path))
 
-            var i: ptr_uint = 0
-            while i < analysis.diagnostics.len():
-                let d = analysis.diagnostics.get(i) else:
-                    break
-                unsafe:
-                    let rd = read(d)
-                    stdio.print_format(
-                        c"error[sema/error]: %.*s\n  --> %.*s:%d:%d\n",
-                        int<-(rd.message.len), rd.message.data,
-                        int<-(file_path.len), file_path.data,
-                        int<-(rd.line), int<-(rd.column),
-                    )
-                i += 1
-            report_check_summary(analysis.diagnostics.len())
-            return 1
+    var program = loader.check_program(path, roots.as_span(), resolver.Platform.linux)
+    defer program.release()
+
+    if program.diagnostic_count() == 0:
+        stdio.print_format(c"checked %.*s: ok\n", int<-(path.len), path.data)
+        return 0
+
+    print_program_diagnostics(ref_of(program))
+    report_check_summary(program.diagnostic_count())
+    return 1
+
+
+function print_program_diagnostics(program: ref[loader.Program]) -> void:
+    var i: ptr_uint = 0
+    while i < program.diagnostics.len():
+        let d = program.diagnostics.get(i) else:
+            break
+        unsafe:
+            let rd = read(d)
+            let message = rd.message.as_str()
+            let module_name = rd.module_name.as_str()
+            stdio.print_format(
+                c"error[sema/error]: %.*s\n  --> %.*s:%d:%d\n",
+                int<-(message.len), message.data,
+                int<-(module_name.len), module_name.data,
+                int<-(rd.line), int<-(rd.column),
+            )
+        i += 1
 
 
 function report_check_summary(count: ptr_uint) -> void:
