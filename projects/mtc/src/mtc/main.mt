@@ -142,16 +142,16 @@ function check_command(file_path: str) -> int:
                 report_check_summary(parse_diags.len())
                 return 1
 
-            var sema_diags = analyzer.check_source_file(file)
-            defer sema_diags.release()
+            var analysis = analyzer.check_source_file(file)
+            defer analysis.diagnostics.release()
 
-            if sema_diags.len() == 0:
+            if analysis.diagnostics.len() == 0:
                 stdio.print_format(c"checked %.*s as good\n", int<-(file_path.len), file_path.data)
                 return 0
 
             var i: ptr_uint = 0
-            while i < sema_diags.len():
-                let d = sema_diags.get(i) else:
+            while i < analysis.diagnostics.len():
+                let d = analysis.diagnostics.get(i) else:
                     break
                 unsafe:
                     let rd = read(d)
@@ -162,7 +162,7 @@ function check_command(file_path: str) -> int:
                         int<-(rd.line), int<-(rd.column),
                     )
                 i += 1
-            report_check_summary(sema_diags.len())
+            report_check_summary(analysis.diagnostics.len())
             return 1
 
 

@@ -28,19 +28,19 @@ public struct SemanticDiagnostic:
     message: str
 
 
-struct ParamEntry:
+public struct ParamEntry:
     name: str
     ty: types.Type
 
 
-struct FnSig:
+public struct FnSig:
     name: str
     params: span[ParamEntry]
     return_type: types.Type
     has_return_type: bool
 
 
-struct FieldEntry:
+public struct FieldEntry:
     name: str
     ty: types.Type
 
@@ -60,7 +60,19 @@ struct Context:
     diagnostics: vec.Vec[SemanticDiagnostic]
 
 
-public function check_source_file(file: ast.SourceFile) -> vec.Vec[SemanticDiagnostic]:
+public struct Analysis:
+    source_file: ast.SourceFile
+    diagnostics: vec.Vec[SemanticDiagnostic]
+    type_names: map_mod.Map[str, bool]
+    structs: map_mod.Map[str, span[FieldEntry]]
+    functions: map_mod.Map[str, FnSig]
+    value_types: map_mod.Map[str, types.Type]
+    method_keys: map_mod.Map[str, bool]
+    static_member_types: map_mod.Map[str, bool]
+    match_case_names: map_mod.Map[str, span[str]]
+
+
+public function check_source_file(file: ast.SourceFile) -> Analysis:
     var ctx = Context(
         value_names = map_mod.Map[str, bool].create(),
         type_names = map_mod.Map[str, bool].create(),
@@ -82,7 +94,17 @@ public function check_source_file(file: ast.SourceFile) -> vec.Vec[SemanticDiagn
     declare_values_and_functions(ref_of(ctx), file)
     check_functions(ref_of(ctx), file)
     check_extending_methods(ref_of(ctx), file)
-    return ctx.diagnostics
+    return Analysis(
+        source_file = file,
+        diagnostics = ctx.diagnostics,
+        type_names = ctx.type_names,
+        structs = ctx.structs,
+        functions = ctx.functions,
+        value_types = ctx.value_types,
+        method_keys = ctx.method_keys,
+        static_member_types = ctx.static_member_types,
+        match_case_names = ctx.match_case_names,
+    )
 
 
 function report(ctx: ref[Context], line: ptr_uint, column: ptr_uint, message: str) -> void:

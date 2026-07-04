@@ -16,9 +16,9 @@ function diagnostic_count(source: str) -> ptr_uint:
     let file = parser.parse_source(source, ref_of(pdiags))
     if pdiags.len() > 0:
         return pdiags.len()
-    var sdiags = analyzer.check_source_file(file)
-    defer sdiags.release()
-    return sdiags.len()
+    var analysis = analyzer.check_source_file(file)
+    defer analysis.diagnostics.release()
+    return analysis.diagnostics.len()
 
 
 function expect_clean(source: str) -> t.Check:
