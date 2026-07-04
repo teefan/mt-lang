@@ -49,6 +49,8 @@ struct Context:
     structs: map_mod.Map[str, span[FieldEntry]]
     method_keys: map_mod.Map[str, bool]
     static_types: map_mod.Map[str, bool]
+    enum_names: map_mod.Map[str, bool]
+    enum_member_list: map_mod.Map[str, span[str]]
     functions: map_mod.Map[str, FnSig]
     value_types: map_mod.Map[str, types.Type]
     diagnostics: vec.Vec[SemanticDiagnostic]
@@ -63,6 +65,8 @@ public function check_source_file(file: ast.SourceFile) -> vec.Vec[SemanticDiagn
         structs = map_mod.Map[str, span[FieldEntry]].create(),
         method_keys = map_mod.Map[str, bool].create(),
         static_types = map_mod.Map[str, bool].create(),
+        enum_names = map_mod.Map[str, bool].create(),
+        enum_member_list = map_mod.Map[str, span[str]].create(),
         functions = map_mod.Map[str, FnSig].create(),
         value_types = map_mod.Map[str, types.Type].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
@@ -199,6 +203,8 @@ function collect_enum_variant_members(ctx: ref[Context], file: ast.SourceFile) -
         match d:
             ast.Decl.decl_enum as e:
                 ctx.static_types.set(e.name, true)
+                ctx.enum_names.set(e.name, true)
+                ctx.enum_member_list.set(e.name, enum_member_names(e.enum_members))
                 register_member_names(ctx, e.name, e.enum_members)
             ast.Decl.decl_flags as fl:
                 ctx.static_types.set(fl.name, true)
@@ -217,6 +223,16 @@ function register_member_names(ctx: ref[Context], type_name: str, members: span[
         unsafe:
             ctx.method_keys.set(method_key(type_name, read(members.data + i).name), true)
         i += 1
+
+
+function enum_member_names(members: span[ast.EnumMember]) -> span[str]:
+    var names = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < members.len:
+        unsafe:
+            names.push(read(members.data + i).name)
+        i += 1
+    return names.as_span()
 
 
 function register_arm_names(ctx: ref[Context], type_name: str, arms: span[ast.VariantArm]) -> void:
@@ -475,7 +491,7 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     let rt = m.return_type
     if rt != null:
         ret = resolve_type(ctx, rt)
-    check_stmt(ctx, ref_of(scope), ret, m.body)
+    check_stmt(ctx, ref_of(scope), ret, false, m.body)
     if rt != null and not types.is_void(ret):
         if not terminates_ptr(ctx, m.body):
             report(ctx, m.line, m.column, missing_return_message(m.name))
@@ -496,7 +512,7 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, param
     let rt = return_type
     if rt != null:
         ret = resolve_type(ctx, rt)
-    check_stmt(ctx, ref_of(scope), ret, b)
+    check_stmt(ctx, ref_of(scope), ret, false, b)
     if rt != null and not types.is_void(ret):
         if not terminates_ptr(ctx, b):
             report(ctx, line, 1, missing_return_message(name))
@@ -605,17 +621,17 @@ function is_fatal_call(ep: ptr[ast.Expr]) -> bool:
                 return false
 
 
-function check_body(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], ret: types.Type, body: ptr[ast.Stmt]?) -> void:
+function check_body(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], ret: types.Type, in_loop: bool, body: ptr[ast.Stmt]?) -> void:
     let b = body else:
         return
-    check_stmt(ctx, scope, ret, b)
+    check_stmt(ctx, scope, ret, in_loop, b)
 
 
-function check_stmt(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], ret: types.Type, sp: ptr[ast.Stmt]) -> void:
+function check_stmt(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], ret: types.Type, in_loop: bool, sp: ptr[ast.Stmt]) -> void:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_block as blk:
-                check_stmt_span(ctx, scope, ret, blk.statements)
+                check_stmt_span(ctx, scope, ret, in_loop, blk.statements)
             ast.Stmt.stmt_ret as r:
                 let rv = r.value
                 if rv != null:
@@ -630,26 +646,33 @@ function check_stmt(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]],
                     var br: ast.IfBranch
                     br = read(i.branches.data + bi)
                     check_condition(ctx, scope, br.condition, "if", br.line, br.column)
-                    check_body(ctx, scope, ret, br.body)
+                    check_body(ctx, scope, ret, in_loop, br.body)
                     bi += 1
-                check_body(ctx, scope, ret, i.else_body)
+                check_body(ctx, scope, ret, in_loop, i.else_body)
             ast.Stmt.stmt_while as w:
                 check_condition(ctx, scope, w.condition, "while", w.line, w.column)
-                check_body(ctx, scope, ret, w.body)
+                check_body(ctx, scope, ret, true, w.body)
             ast.Stmt.stmt_for as fr:
                 bind_for_names(scope, fr.bindings)
-                check_body(ctx, scope, ret, fr.body)
+                check_body(ctx, scope, ret, true, fr.body)
             ast.Stmt.stmt_match as m:
                 var ai: ptr_uint = 0
                 while ai < m.arms.len:
                     var arm: ast.MatchArm
                     arm = read(m.arms.data + ai)
-                    check_body(ctx, scope, ret, arm.body)
+                    check_body(ctx, scope, ret, in_loop, arm.body)
                     ai += 1
+                check_match_exhaustiveness(ctx, scope, m.scrutinee, m.arms, m.line, m.column)
             ast.Stmt.stmt_unsafe as u:
-                check_body(ctx, scope, ret, u.body)
+                check_body(ctx, scope, ret, in_loop, u.body)
             ast.Stmt.stmt_defer as d:
-                check_body(ctx, scope, ret, d.body)
+                check_body(ctx, scope, ret, in_loop, d.body)
+            ast.Stmt.stmt_break as br:
+                if not in_loop:
+                    report(ctx, br.line, br.column, "break must be inside a loop")
+            ast.Stmt.stmt_continue as cont:
+                if not in_loop:
+                    report(ctx, cont.line, cont.column, "continue must be inside a loop")
             ast.Stmt.stmt_expression as e:
                 let _ignored = infer_expr(ctx, scope, e.expression)
             ast.Stmt.stmt_assignment as a:
@@ -667,12 +690,82 @@ function check_condition(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Ty
         report(ctx, line, column, condition_message(keyword, ct))
 
 
-function check_stmt_span(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], ret: types.Type, stmts: span[ast.Stmt]) -> void:
+function check_stmt_span(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], ret: types.Type, in_loop: bool, stmts: span[ast.Stmt]) -> void:
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
-            check_stmt(ctx, scope, ret, stmts.data + i)
+            check_stmt(ctx, scope, ret, in_loop, stmts.data + i)
         i += 1
+
+
+## Flag a missing-case enum `match`: only when the scrutinee is a locally-declared
+## enum, no wildcard `_` arm is present, and every arm is a recognizable
+## `Enum.member` pattern.  Any unrecognized arm bails out (permissive).
+function check_match_exhaustiveness(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
+    let st = infer_expr(ctx, scope, scrutinee)
+    match st:
+        types.Type.ty_named as n:
+            if not ctx.enum_names.contains(n.name):
+                return
+            let membersp = ctx.enum_member_list.get(n.name) else:
+                return
+            var covered = vec.Vec[str].create()
+            var has_wild = false
+            var i: ptr_uint = 0
+            while i < arms.len:
+                var arm: ast.MatchArm
+                unsafe:
+                    arm = read(arms.data + i)
+                let p = arm.pattern
+                if p == null:
+                    has_wild = true
+                else:
+                    match enum_case_name(p):
+                        Option.some as nm:
+                            covered.push(nm.value)
+                        Option.none:
+                            return
+                i += 1
+            if has_wild:
+                return
+            unsafe:
+                let members = read(membersp)
+                var buf = string.String.create()
+                var any_missing = false
+                var j: ptr_uint = 0
+                while j < members.len:
+                    let mn = read(members.data + j)
+                    if not str_in_vec(covered, mn):
+                        if any_missing:
+                            buf.append(", ")
+                        buf.append(mn)
+                        any_missing = true
+                    j += 1
+                if any_missing:
+                    report(ctx, line, column, missing_cases_message(n.name, buf.as_str()))
+        _:
+            pass
+
+
+function enum_case_name(p: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(p):
+            ast.Expr.expr_member_access as ma:
+                return Option[str].some(value = ma.member_name)
+            _:
+                return Option[str].none
+
+
+function str_in_vec(v: ref[vec.Vec[str]], s: str) -> bool:
+    var i: ptr_uint = 0
+    while i < v.len():
+        let p = v.get(i) else:
+            break
+        unsafe:
+            if read(p).equal(s):
+                return true
+        i += 1
+    return false
 
 
 function bind_for_names(scope: ref[map_mod.Map[str, types.Type]], bindings: span[ast.ForBinding]) -> void:
@@ -1030,6 +1123,15 @@ function missing_return_message(name: str) -> str:
     buf.append("function '")
     buf.append(name)
     buf.append("' does not always return a value")
+    return buf.as_str()
+
+
+function missing_cases_message(type_name: str, cases: str) -> str:
+    var buf = string.String.create()
+    buf.append("match on ")
+    buf.append(type_name)
+    buf.append(" is missing cases: ")
+    buf.append(cases)
     return buf.as_str()
 
 

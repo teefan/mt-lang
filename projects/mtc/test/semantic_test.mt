@@ -557,3 +557,92 @@ function test_assignment_compatible_is_clean() -> t.Check:
             x = 5
     SRC
     return expect_clean(source)
+
+
+@[test]
+function test_break_outside_loop_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            break
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_continue_outside_loop_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            continue
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_break_inside_loop_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            while true:
+                break
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_break_in_nested_if_in_loop_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f(n: int) -> void:
+            for i in 0..n:
+                if i > 2:
+                    break
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_non_exhaustive_enum_match_is_flagged() -> t.Check:
+    var source = <<-SRC
+        enum Color: ubyte
+            red = 0
+            green = 1
+            blue = 2
+        function f(c: Color) -> int:
+            match c:
+                Color.red:
+                    return 1
+                Color.green:
+                    return 2
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_exhaustive_enum_match_is_clean() -> t.Check:
+    var source = <<-SRC
+        enum Color: ubyte
+            red = 0
+            green = 1
+        function f(c: Color) -> int:
+            match c:
+                Color.red:
+                    return 1
+                Color.green:
+                    return 2
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_enum_match_with_wildcard_is_clean() -> t.Check:
+    var source = <<-SRC
+        enum Color: ubyte
+            red = 0
+            green = 1
+            blue = 2
+        function f(c: Color) -> int:
+            match c:
+                Color.red:
+                    return 1
+                _:
+                    return 0
+    SRC
+    return expect_clean(source)
