@@ -45,6 +45,15 @@ public struct FieldEntry:
     ty: types.Type
 
 
+## The public export surface of a module, consumed by importers for cross-module
+## name resolution.  Built from an Analysis by the loader's binder
+## (mtc.loader.binder); the type lives here to keep the analyzer free of a
+## dependency on the loader.  Currently exposes public functions; type, value,
+## and member exports will be added as their cross-module resolution is wired.
+public struct ModuleBinding:
+    functions: map_mod.Map[str, FnSig]
+
+
 struct Context:
     value_names: map_mod.Map[str, bool]
     type_names: map_mod.Map[str, bool]
@@ -57,6 +66,8 @@ struct Context:
     match_case_names: map_mod.Map[str, span[str]]
     functions: map_mod.Map[str, FnSig]
     value_types: map_mod.Map[str, types.Type]
+    import_aliases: map_mod.Map[str, str]
+    imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?
     diagnostics: vec.Vec[SemanticDiagnostic]
 
 
@@ -73,6 +84,13 @@ public struct Analysis:
 
 
 public function check_source_file(file: ast.SourceFile) -> Analysis:
+    return check_module(file, null)
+
+
+## Semantically check a module, resolving cross-module references against the
+## given import bindings (keyed by module name; may be null for single-file
+## checks).  `imported_modules` is borrowed, not owned.
+public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?) -> Analysis:
     var ctx = Context(
         value_names = map_mod.Map[str, bool].create(),
         type_names = map_mod.Map[str, bool].create(),
@@ -85,8 +103,11 @@ public function check_source_file(file: ast.SourceFile) -> Analysis:
         match_case_names = map_mod.Map[str, span[str]].create(),
         functions = map_mod.Map[str, FnSig].create(),
         value_types = map_mod.Map[str, types.Type].create(),
+        import_aliases = map_mod.Map[str, str].create(),
+        imported_modules = imported_modules,
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
     )
+    collect_import_aliases(ref_of(ctx), file)
     declare_named_types(ref_of(ctx), file)
     collect_struct_fields(ref_of(ctx), file)
     collect_extending_methods(ref_of(ctx), file)
@@ -109,6 +130,35 @@ public function check_source_file(file: ast.SourceFile) -> Analysis:
 
 function report(ctx: ref[Context], line: ptr_uint, column: ptr_uint, message: str) -> void:
     ctx.diagnostics.push(SemanticDiagnostic(line = line, column = column, message = message))
+
+
+## Record each import's alias -> module name so member access on an alias
+## (`alias.func(...)`) can be resolved against the imported module's bindings.
+function collect_import_aliases(ctx: ref[Context], file: ast.SourceFile) -> void:
+    var i: ptr_uint = 0
+    while i < file.imports.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.imports.data + i)
+        match d:
+            ast.Decl.decl_import as imp:
+                ctx.import_aliases.set(import_alias_name(imp.path, imp.alias_name), qname_to_str(imp.path))
+            _:
+                pass
+        i += 1
+
+
+## The local name an import is bound to: the explicit alias, or the last path
+## segment when none is given (`import a.b.c` binds `c`).
+function import_alias_name(path: ast.QualifiedName, alias_name: Option[str]) -> str:
+    match alias_name:
+        Option.some as given:
+            return given.value
+        Option.none:
+            if path.parts.len == 0:
+                return ""
+            unsafe:
+                return read(path.parts.data + (path.parts.len - 1))
 
 
 # =============================================================================
@@ -1018,6 +1068,12 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, typ
                 pass
         i += 1
 
+    match try_imported_call(ctx, scope, callee, arg_types.as_span(), any_named):
+        Option.some as imported:
+            return imported.value
+        Option.none:
+            pass
+
     match try_construction(ctx, scope, callee, args):
         Option.some as ct:
             return ct.value
@@ -1025,6 +1081,42 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, typ
             check_method_callee(ctx, scope, callee)
             check_call(ctx, scope, callee, arg_types.as_span(), any_named)
             return callee_return_type(ctx, scope, callee)
+
+
+## A call whose callee is `alias.member(...)` where `alias` names an imported
+## module that exports function `member`: check the arguments against the
+## imported signature and yield its return type.  Anything else (local calls,
+## unresolved aliases, non-exported members) is left to the local paths.
+function try_imported_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr], arg_types: span[types.Type], any_named: bool) -> Option[types.Type]:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as id:
+                        # A local value shadowing the name is not a module alias.
+                        if scope.get(id.name) != null:
+                            return Option[types.Type].none
+                        let module_name_ptr = ctx.import_aliases.get(id.name) else:
+                            return Option[types.Type].none
+                        let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                            return Option[types.Type].none
+                        let sig_ptr = read(binding_ptr).functions.get(ma.member_name) else:
+                            return Option[types.Type].none
+                        let sig = read(sig_ptr)
+                        check_signature_call(ctx, ma.member_name, sig, arg_types, any_named, ma.line, ma.column)
+                        return Option[types.Type].some(value = sig.return_type)
+                    _:
+                        return Option[types.Type].none
+            _:
+                return Option[types.Type].none
+
+
+## Resolve a module name to its import binding, if bindings were provided.
+function lookup_binding(ctx: ref[Context], module_name: str) -> ptr[ModuleBinding]?:
+    let imported = ctx.imported_modules else:
+        return null
+    unsafe:
+        return read(imported).get(module_name)
 
 
 ## When a call's callee is member access on a local struct instance
@@ -1161,23 +1253,28 @@ function check_call(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]],
                 let sigp = ctx.functions.get(id.name)
                 if sigp == null:
                     return
-                let sig = read(sigp)
-                if arg_types.len != sig.params.len:
-                    report(ctx, id.line, id.column, arity_message(id.name, sig.params.len, arg_types.len))
-                    return
-                # Named arguments may be reordered; positional type checking is
-                # only sound for all-positional calls.
-                if any_named:
-                    return
-                var i: ptr_uint = 0
-                while i < arg_types.len:
-                    let atype = read(arg_types.data + i)
-                    let pe = read(sig.params.data + i)
-                    if types.definitely_incompatible(pe.ty, atype):
-                        report(ctx, id.line, id.column, argument_message(pe.name, id.name, pe.ty, atype))
-                    i += 1
+                check_signature_call(ctx, id.name, read(sigp), arg_types, any_named, id.line, id.column)
             _:
                 pass
+
+
+## Check an argument list against a resolved function signature: arity always,
+## and positional argument types when the call is all-positional (named
+## arguments may be reordered, so positional type checking is unsound there).
+function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> void:
+    if arg_types.len != sig.params.len:
+        report(ctx, line, column, arity_message(display_name, sig.params.len, arg_types.len))
+        return
+    if any_named:
+        return
+    var i: ptr_uint = 0
+    while i < arg_types.len:
+        unsafe:
+            let atype = read(arg_types.data + i)
+            let pe = read(sig.params.data + i)
+            if types.definitely_incompatible(pe.ty, atype):
+                report(ctx, line, column, argument_message(pe.name, display_name, pe.ty, atype))
+        i += 1
 
 
 function callee_return_type(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], callee: ptr[ast.Expr]) -> types.Type:

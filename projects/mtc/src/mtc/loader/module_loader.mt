@@ -20,6 +20,7 @@ import std.vec as vec
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.semantic.analyzer as analyzer
+import mtc.loader.binder as binder
 import mtc.loader.path_resolver as resolver
 
 
@@ -143,6 +144,11 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
     on_stack.release()
     visited.release()
 
+    # Check each module in dependency-first order, accumulating export bindings
+    # so a module's imports are already bound before it is checked.
+    var bindings = map_mod.Map[str, analyzer.ModuleBinding].create()
+    let bindings_ptr = ptr_of(bindings)
+
     var oi: ptr_uint = 0
     while oi < order.len():
         let index_ptr = order.get(oi) else:
@@ -150,7 +156,7 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
         let index = unsafe: read(index_ptr)
         let module_ptr = modules.get(index) else:
             break
-        collect_module_diagnostics(module_ptr, ref_of(diagnostics))
+        check_and_bind_module(module_ptr, bindings_ptr, ref_of(diagnostics))
         oi += 1
 
     return Program(modules = modules, order = order, diagnostics = diagnostics)
@@ -269,10 +275,15 @@ function recurse_imports(
         i += 1
 
 
-## Semantically check one parsed module and append its parse and semantic
-## diagnostics (as owned copies) to the program-wide list.  Parse errors block
-## semantic analysis, mirroring the CLI's single-file behaviour.
-function collect_module_diagnostics(module_ptr: ptr[LoadedModule], diagnostics: ref[vec.Vec[LoadDiagnostic]]) -> void:
+## Semantically check one parsed module against the accumulated import bindings,
+## append its parse and semantic diagnostics (as owned copies) to the
+## program-wide list, and register the module's own export binding.  Parse errors
+## block semantic analysis, mirroring the CLI's single-file behaviour.
+function check_and_bind_module(
+    module_ptr: ptr[LoadedModule],
+    bindings_ptr: ptr[map_mod.Map[str, analyzer.ModuleBinding]],
+    diagnostics: ref[vec.Vec[LoadDiagnostic]],
+) -> void:
     unsafe:
         let loaded = read(module_ptr)
 
@@ -292,7 +303,7 @@ function collect_module_diagnostics(module_ptr: ptr[LoadedModule], diagnostics: 
         if loaded.parse_diagnostics.len() > 0:
             return
 
-        var analysis = analyzer.check_source_file(loaded.source_file)
+        var analysis = analyzer.check_module(loaded.source_file, bindings_ptr)
         var si: ptr_uint = 0
         while si < analysis.diagnostics.len():
             let sema_ptr = analysis.diagnostics.get(si) else:
@@ -306,6 +317,8 @@ function collect_module_diagnostics(module_ptr: ptr[LoadedModule], diagnostics: 
             ))
             si += 1
         analysis.diagnostics.release()
+
+        read(bindings_ptr).set(loaded.module_name.as_str(), binder.bind_module(analysis))
 
 
 function qname_to_module_name(name: ast.QualifiedName) -> string.String:

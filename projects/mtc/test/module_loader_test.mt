@@ -178,3 +178,109 @@ function test_clean_program_has_no_diagnostics() -> t.Check:
     if program.module_count() != 1:
         return t.fail("expected 1 module")
     return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+# =============================================================================
+#  Cross-module resolution (L3 + S1)
+# =============================================================================
+
+## Build a two-module program (lib + main importing it) and return its Program.
+## The caller owns the returned Program and the temp dir handle.
+function load_lib_and_main(root: ref[string.String], lib_src: str, main_src: str) -> Option[loader.Program]:
+    if not write_file(root.as_str(), "lib.mt", lib_src):
+        return Option[loader.Program].none
+    if not write_file(root.as_str(), "main.mt", main_src):
+        return Option[loader.Program].none
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer main_path.release()
+    var roots = array[str, 1](root.as_str())
+    return Option[loader.Program].some(value= loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux))
+
+
+@[test]
+function test_cross_module_call_arity_mismatch_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public function add(a: int, b: int) -> int:\n    return a + b\n",
+        "import lib\n\nfunction run() -> int:\n    return lib.add(1)\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("expects"))
+
+
+@[test]
+function test_cross_module_call_correct_arity_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public function add(a: int, b: int) -> int:\n    return a + b\n",
+        "import lib\n\nfunction run() -> int:\n    return lib.add(1, 2)\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_argument_type_mismatch_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public function add(a: int, b: int) -> int:\n    return a + b\n",
+        "import lib\n\nfunction run() -> int:\n    return lib.add(true, 2)\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("got bool"))
+
+
+@[test]
+function test_cross_module_return_type_flows_to_caller() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    # lib.flag() returns bool; returning it from an int function must be flagged.
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public function flag() -> bool:\n    return true\n",
+        "import lib\n\nfunction run() -> int:\n    return lib.flag()\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("mismatch"))
+
+
+@[test]
+function test_cross_module_call_to_private_is_permissive() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    # `secret` is not public, so it is not exported: the mismatched-arity call
+    # must stay permissive rather than be flagged.
+    var program = load_lib_and_main(
+        ref_of(root),
+        "function secret(a: int) -> int:\n    return a\n",
+        "import lib\n\nfunction run() -> int:\n    return lib.secret(1, 2, 3)\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
