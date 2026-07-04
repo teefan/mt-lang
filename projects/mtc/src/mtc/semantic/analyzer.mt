@@ -49,8 +49,8 @@ struct Context:
     structs: map_mod.Map[str, span[FieldEntry]]
     method_keys: map_mod.Map[str, bool]
     static_types: map_mod.Map[str, bool]
-    enum_names: map_mod.Map[str, bool]
-    enum_member_list: map_mod.Map[str, span[str]]
+    match_case_types: map_mod.Map[str, bool]
+    match_case_names: map_mod.Map[str, span[str]]
     functions: map_mod.Map[str, FnSig]
     value_types: map_mod.Map[str, types.Type]
     diagnostics: vec.Vec[SemanticDiagnostic]
@@ -65,8 +65,8 @@ public function check_source_file(file: ast.SourceFile) -> vec.Vec[SemanticDiagn
         structs = map_mod.Map[str, span[FieldEntry]].create(),
         method_keys = map_mod.Map[str, bool].create(),
         static_types = map_mod.Map[str, bool].create(),
-        enum_names = map_mod.Map[str, bool].create(),
-        enum_member_list = map_mod.Map[str, span[str]].create(),
+        match_case_types = map_mod.Map[str, bool].create(),
+        match_case_names = map_mod.Map[str, span[str]].create(),
         functions = map_mod.Map[str, FnSig].create(),
         value_types = map_mod.Map[str, types.Type].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
@@ -203,14 +203,16 @@ function collect_enum_variant_members(ctx: ref[Context], file: ast.SourceFile) -
         match d:
             ast.Decl.decl_enum as e:
                 ctx.static_types.set(e.name, true)
-                ctx.enum_names.set(e.name, true)
-                ctx.enum_member_list.set(e.name, enum_member_names(e.enum_members))
+                ctx.match_case_types.set(e.name, true)
+                ctx.match_case_names.set(e.name, enum_member_names(e.enum_members))
                 register_member_names(ctx, e.name, e.enum_members)
             ast.Decl.decl_flags as fl:
                 ctx.static_types.set(fl.name, true)
                 register_member_names(ctx, fl.name, fl.flags_members)
             ast.Decl.decl_variant as vr:
                 ctx.static_types.set(vr.name, true)
+                ctx.match_case_types.set(vr.name, true)
+                ctx.match_case_names.set(vr.name, variant_arm_names(vr.variant_arms))
                 register_arm_names(ctx, vr.name, vr.variant_arms)
             _:
                 pass
@@ -231,6 +233,16 @@ function enum_member_names(members: span[ast.EnumMember]) -> span[str]:
     while i < members.len:
         unsafe:
             names.push(read(members.data + i).name)
+        i += 1
+    return names.as_span()
+
+
+function variant_arm_names(arms: span[ast.VariantArm]) -> span[str]:
+    var names = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < arms.len:
+        unsafe:
+            names.push(read(arms.data + i).name)
         i += 1
     return names.as_span()
 
@@ -662,7 +674,7 @@ function check_stmt(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]],
                     arm = read(m.arms.data + ai)
                     check_body(ctx, scope, ret, in_loop, arm.body)
                     ai += 1
-                check_match_exhaustiveness(ctx, scope, m.scrutinee, m.arms, m.line, m.column)
+                check_match(ctx, scope, m.scrutinee, m.arms, m.line, m.column)
             ast.Stmt.stmt_unsafe as u:
                 check_body(ctx, scope, ret, in_loop, u.body)
             ast.Stmt.stmt_defer as d:
@@ -698,62 +710,121 @@ function check_stmt_span(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Ty
         i += 1
 
 
-## Flag a missing-case enum `match`: only when the scrutinee is a locally-declared
-## enum, no wildcard `_` arm is present, and every arm is a recognizable
-## `Enum.member` pattern.  Any unrecognized arm bails out (permissive).
-function check_match_exhaustiveness(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
+## Match validation dispatched on the scrutinee type:
+##  * enum/variant   -> exhaustiveness ("missing cases") + duplicate-arm
+##  * integer/str    -> requires a wildcard `_` arm + duplicate integer value
+##  * anything else  -> permissive
+## Enum/variant checks bail out if any arm is not a plain `Type.case` pattern
+## (e.g. payload destructuring), so guarded/complex matches never false-positive.
+function check_match(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
     let st = infer_expr(ctx, scope, scrutinee)
     match st:
         types.Type.ty_named as n:
-            if not ctx.enum_names.contains(n.name):
-                return
-            let membersp = ctx.enum_member_list.get(n.name) else:
-                return
-            var covered = vec.Vec[str].create()
-            var has_wild = false
-            var i: ptr_uint = 0
-            while i < arms.len:
-                var arm: ast.MatchArm
-                unsafe:
-                    arm = read(arms.data + i)
-                let p = arm.pattern
-                if p == null:
-                    has_wild = true
-                else:
-                    match enum_case_name(p):
-                        Option.some as nm:
-                            covered.push(nm.value)
-                        Option.none:
-                            return
-                i += 1
-            if has_wild:
-                return
-            unsafe:
-                let members = read(membersp)
-                var buf = string.String.create()
-                var any_missing = false
-                var j: ptr_uint = 0
-                while j < members.len:
-                    let mn = read(members.data + j)
-                    if not str_in_vec(covered, mn):
-                        if any_missing:
-                            buf.append(", ")
-                        buf.append(mn)
-                        any_missing = true
-                    j += 1
-                if any_missing:
-                    report(ctx, line, column, missing_cases_message(n.name, buf.as_str()))
+            if ctx.match_case_types.contains(n.name):
+                check_case_match(ctx, n.name, arms, line, column)
+        types.Type.ty_str:
+            check_scalar_match(ctx, arms, line, column, "match on str requires a wildcard arm (_:)", false)
+        types.Type.ty_primitive as p:
+            if is_integer_name(p.name):
+                check_scalar_match(ctx, arms, line, column, integer_wildcard_message(p.name), true)
         _:
             pass
 
 
-function enum_case_name(p: ptr[ast.Expr]) -> Option[str]:
+function check_case_match(ctx: ref[Context], type_name: str, arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
+    let namesp = ctx.match_case_names.get(type_name) else:
+        return
+    var covered = vec.Vec[str].create()
+    var has_wild = false
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.MatchArm
+        unsafe:
+            arm = read(arms.data + i)
+        let p = arm.pattern
+        if p == null:
+            has_wild = true
+        else:
+            match case_name_of(p):
+                Option.some as nm:
+                    if str_in_vec(covered, nm.value):
+                        report(ctx, line, column, dup_case_message(type_name, nm.value))
+                    covered.push(nm.value)
+                Option.none:
+                    return
+        i += 1
+    if has_wild:
+        return
+    unsafe:
+        let members = read(namesp)
+        var buf = string.String.create()
+        var any_missing = false
+        var j: ptr_uint = 0
+        while j < members.len:
+            let mn = read(members.data + j)
+            if not str_in_vec(covered, mn):
+                if any_missing:
+                    buf.append(", ")
+                buf.append(mn)
+                any_missing = true
+            j += 1
+        if any_missing:
+            report(ctx, line, column, missing_cases_message(type_name, buf.as_str()))
+
+
+function check_scalar_match(ctx: ref[Context], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint, wildcard_message: str, check_duplicate_int: bool) -> void:
+    var has_wild = false
+    var seen = vec.Vec[int].create()
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.MatchArm
+        unsafe:
+            arm = read(arms.data + i)
+        let p = arm.pattern
+        if p == null:
+            has_wild = true
+        else if check_duplicate_int:
+            match int_literal_value(p):
+                Option.some as v:
+                    if int_in_vec(seen, v.value):
+                        report(ctx, line, column, dup_value_message(v.value))
+                    seen.push(v.value)
+                Option.none:
+                    pass
+        i += 1
+    if not has_wild:
+        report(ctx, line, column, wildcard_message)
+
+
+## The case name of a plain `Type.case` (or `Type.case as x`) pattern.  Returns
+## none for anything else (payload destructuring, guards, literals), signalling
+## the caller to skip exhaustiveness/duplicate checks.
+function case_name_of(p: ptr[ast.Expr]) -> Option[str]:
     unsafe:
         match read(p):
             ast.Expr.expr_member_access as ma:
                 return Option[str].some(value = ma.member_name)
             _:
                 return Option[str].none
+
+
+function int_literal_value(p: ptr[ast.Expr]) -> Option[int]:
+    unsafe:
+        match read(p):
+            ast.Expr.expr_integer_literal as lit:
+                return Option[int].some(value = lit.value)
+            ast.Expr.expr_char_literal as ch:
+                return Option[int].some(value = int<-ch.value)
+            _:
+                return Option[int].none
+
+
+function is_integer_name(name: str) -> bool:
+    return (
+        name.equal("byte") or name.equal("short") or name.equal("int") or name.equal("long")
+        or name.equal("ubyte") or name.equal("ushort") or name.equal("uint") or name.equal("ulong")
+        or name.equal("ptr_int") or name.equal("ptr_uint")
+    )
 
 
 function str_in_vec(v: ref[vec.Vec[str]], s: str) -> bool:
@@ -763,6 +834,18 @@ function str_in_vec(v: ref[vec.Vec[str]], s: str) -> bool:
             break
         unsafe:
             if read(p).equal(s):
+                return true
+        i += 1
+    return false
+
+
+function int_in_vec(v: ref[vec.Vec[int]], value: int) -> bool:
+    var i: ptr_uint = 0
+    while i < v.len():
+        let p = v.get(i) else:
+            break
+        unsafe:
+            if read(p) == value:
                 return true
         i += 1
     return false
@@ -1132,6 +1215,43 @@ function missing_cases_message(type_name: str, cases: str) -> str:
     buf.append(type_name)
     buf.append(" is missing cases: ")
     buf.append(cases)
+    return buf.as_str()
+
+
+function integer_wildcard_message(type_name: str) -> str:
+    var buf = string.String.create()
+    buf.append("match on integer type ")
+    buf.append(type_name)
+    buf.append(" requires a wildcard arm (_:)")
+    return buf.as_str()
+
+
+function dup_case_message(type_name: str, member: str) -> str:
+    var buf = string.String.create()
+    buf.append("duplicate match arm ")
+    buf.append(type_name)
+    buf.append(".")
+    buf.append(member)
+    return buf.as_str()
+
+
+function dup_value_message(value: int) -> str:
+    var buf = string.String.create()
+    buf.append("duplicate match arm value ")
+    buf.append(int_to_str(value))
+    return buf.as_str()
+
+
+function int_to_str(value: int) -> str:
+    if value < 0:
+        return j_neg(value)
+    return uint_to_str(ptr_uint<-value)
+
+
+function j_neg(value: int) -> str:
+    var buf = string.String.create()
+    buf.append("-")
+    buf.append(uint_to_str(ptr_uint<-(-value)))
     return buf.as_str()
 
 

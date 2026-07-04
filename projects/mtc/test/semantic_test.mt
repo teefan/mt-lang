@@ -646,3 +646,122 @@ function test_enum_match_with_wildcard_is_clean() -> t.Check:
                     return 0
     SRC
     return expect_clean(source)
+
+
+@[test]
+function test_integer_match_without_wildcard_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f(n: int) -> int:
+            match n:
+                1:
+                    return 1
+                2:
+                    return 2
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_integer_match_with_wildcard_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f(n: int) -> int:
+            match n:
+                1:
+                    return 1
+                _:
+                    return 0
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_str_match_without_wildcard_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f(s: str) -> int:
+            match s:
+                "a":
+                    return 1
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_duplicate_integer_arm_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f(n: int) -> int:
+            match n:
+                1:
+                    return 1
+                1:
+                    return 2
+                _:
+                    return 0
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_duplicate_enum_arm_is_flagged() -> t.Check:
+    var source = <<-SRC
+        enum Color: ubyte
+            red = 0
+            green = 1
+        function f(c: Color) -> int:
+            match c:
+                Color.red:
+                    return 1
+                Color.red:
+                    return 2
+                _:
+                    return 0
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_variant_match_non_exhaustive_is_flagged() -> t.Check:
+    var source = <<-SRC
+        variant Tok:
+            a
+            b
+            c
+        function f(t: Tok) -> int:
+            match t:
+                Tok.a:
+                    return 1
+                Tok.b:
+                    return 2
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_variant_match_exhaustive_is_clean() -> t.Check:
+    var source = <<-SRC
+        variant Tok:
+            a
+            b
+        function f(t: Tok) -> int:
+            match t:
+                Tok.a:
+                    return 1
+                Tok.b:
+                    return 2
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_variant_match_with_payload_pattern_is_permissive() -> t.Check:
+    # Payload destructuring patterns are not classified, so exhaustiveness is
+    # skipped (permissive) rather than risk a false positive.
+    var source = <<-SRC
+        variant Tok:
+            ident(name: str)
+            eof
+        function f(t: Tok) -> int:
+            match t:
+                Tok.ident(name):
+                    return 1
+    SRC
+    return expect_clean(source)
