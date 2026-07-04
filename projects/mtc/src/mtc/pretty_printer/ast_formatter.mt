@@ -292,15 +292,6 @@ function render_param_list(params: span[ast.Param]) -> str:
     return buf.as_str()
 
 
-function render_plain_param_list(params: span[ast.Param], variadic: bool) -> str:
-    let body = render_param_list(params)
-    if not variadic:
-        return body
-    if params.len > 0:
-        return j2(body, ", ...")
-    return "..."
-
-
 function render_foreign_param_list(params: span[ast.ForeignParam], variadic: bool) -> str:
     var buf = string.String.create()
     var i: ptr_uint = 0

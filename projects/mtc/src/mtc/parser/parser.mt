@@ -725,6 +725,132 @@ function parse_string_content(lexeme: str, is_cstring: bool) -> str:
     return unsafe: str(data = lexeme.data + 1, len = lexeme.len - 2)
 
 
+## True when an fstring lexeme is the heredoc form `f<<-TAG ... TAG` rather
+## than the inline form `f"..."`.
+function is_format_heredoc(lexeme: str) -> bool:
+    if lexeme.len < 4:
+        return false
+    return lexeme.byte_at(0) == 102 and lexeme.byte_at(1) == 60 and lexeme.byte_at(2) == 60 and lexeme.byte_at(3) == 45
+
+
+## Normalize a format-string heredoc into the inline `f"..."` form that the
+## Ruby parser produces: strip the `f<<-TAG` header and terminator, dedent the
+## body by its shared leading whitespace, escape text runs (passing `#{...}`
+## interpolations through verbatim), join lines with `\n`, and preserve the
+## trailing newline before the terminator.
+function normalize_format_heredoc(lexeme: str) -> str:
+    var header_nl: ptr_uint = 0
+    var found_header = false
+    while header_nl < lexeme.len:
+        if lexeme.byte_at(header_nl) == 10:
+            found_header = true
+            break
+        header_nl += 1
+    if not found_header:
+        return lexeme
+    let body_start = header_nl + 1
+
+    var last_nl = lexeme.len
+    var found_last = false
+    var k = lexeme.len
+    while k > body_start:
+        k -= 1
+        if lexeme.byte_at(k) == 10:
+            last_nl = k
+            found_last = true
+            break
+    if not found_last:
+        return lexeme
+
+    var line_starts = vec.Vec[ptr_uint].create()
+    var line_ends = vec.Vec[ptr_uint].create()
+    var ls = body_start
+    var p = body_start
+    while p < last_nl:
+        if lexeme.byte_at(p) == 10:
+            line_starts.push(ls)
+            line_ends.push(p)
+            ls = p + 1
+        p += 1
+    line_starts.push(ls)
+    line_ends.push(last_nl)
+
+    var min_indent = heap_mod.ptr_uint_max
+    var mi_set = false
+    var li: ptr_uint = 0
+    while li < line_starts.len():
+        let a_ptr = line_starts.get(li) else:
+            break
+        let b_ptr = line_ends.get(li) else:
+            break
+        let a = unsafe: read(a_ptr)
+        let b = unsafe: read(b_ptr)
+        var sp = a
+        while sp < b and lexeme.byte_at(sp) == 32:
+            sp += 1
+        if sp < b:
+            let indent = sp - a
+            if not mi_set or indent < min_indent:
+                min_indent = indent
+                mi_set = true
+        li += 1
+    if not mi_set:
+        min_indent = 0
+
+    var buf = string.String.create()
+    buf.append("f\"")
+    var idx: ptr_uint = 0
+    while idx < line_starts.len():
+        let a_ptr = line_starts.get(idx) else:
+            break
+        let b_ptr = line_ends.get(idx) else:
+            break
+        let a = unsafe: read(a_ptr)
+        let b = unsafe: read(b_ptr)
+        var cur = a
+        var removed: ptr_uint = 0
+        while cur < b and removed < min_indent and lexeme.byte_at(cur) == 32:
+            cur += 1
+            removed += 1
+        while cur < b:
+            let ch = lexeme.byte_at(cur)
+            if ch == 35 and cur + 1 < b and lexeme.byte_at(cur + 1) == 123:
+                buf.push_byte(35)
+                buf.push_byte(123)
+                cur += 2
+                var depth: int = 1
+                while cur < b and depth > 0:
+                    let c2 = lexeme.byte_at(cur)
+                    if c2 == 123:
+                        depth += 1
+                    else if c2 == 125:
+                        depth -= 1
+                    buf.push_byte(c2)
+                    cur += 1
+            else:
+                append_escaped_byte(ref_of(buf), ch)
+                cur += 1
+        buf.append("\\n")
+        idx += 1
+    buf.append("\"")
+    return buf.as_str()
+
+
+function append_escaped_byte(buf: ref[string.String], ch: ubyte) -> void:
+    if ch == 34:
+        buf.append("\\\"")
+    else if ch == 92:
+        buf.append("\\\\")
+    else if ch == 9:
+        buf.append("\\t")
+    else if ch == 13:
+        buf.append("\\r")
+    else if ch == 0:
+        buf.append("\\0")
+    else:
+        buf.push_byte(ch)
+
+
 function parse_char_value(lexeme: str) -> ubyte:
     if lexeme.len < 3:
         return 0
@@ -3081,9 +3207,12 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
         return node
     else if match_kind(s, tk.TokenKind.fstring):
         let lex = previous_lexeme(s)
+        var value = lex
+        if is_format_heredoc(lex):
+            value = normalize_format_heredoc(lex)
         var node = alloc_expr(s)
         unsafe:
-            read(node) = ast.Expr.expr_string_literal(lexeme = lex, value = lex, is_cstring = false)
+            read(node) = ast.Expr.expr_string_literal(lexeme = value, value = value, is_cstring = false)
         return node
     else if match_kind(s, tk.TokenKind.at):
         consume(s, tk.TokenKind.lbracket, c"expected '[' after @")
