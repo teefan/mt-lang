@@ -1097,3 +1097,80 @@ function test_unconstrained_generic_member_is_permissive() -> t.Check:
             x.anything()
     SRC
     return expect_clean(source)
+
+
+# =============================================================================
+#  Associated-function hook checking (S3b-2). hash/equal/order/default require
+#  the type argument to provide the hook. Flagged only for a fully-known local
+#  struct; primitives, imports, and abstract type parameters stay permissive.
+# =============================================================================
+
+@[test]
+function test_hook_missing_on_local_struct_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct Widget:
+            id: int
+        function f() -> uint:
+            var w: Widget
+            return hash[Widget](ref_of(w))
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_bare_default_hook_missing_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct Widget:
+            id: int
+        function f() -> Widget:
+            return default[Widget]
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_hook_present_on_local_struct_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct Widget:
+            id: int
+        extending Widget:
+            static function hash(value: const_ptr[Widget]) -> uint:
+                return 0
+        function f() -> uint:
+            var w: Widget
+            return hash[Widget](ref_of(w))
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_default_hook_present_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct Widget:
+            id: int
+        extending Widget:
+            static function default() -> Widget:
+                return Widget(id = 0)
+        function f() -> Widget:
+            return default[Widget]
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_hook_on_primitive_is_permissive() -> t.Check:
+    var source = <<-SRC
+        function f() -> uint:
+            var n: int = 5
+            return hash[int](ref_of(n))
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_hook_on_type_parameter_is_permissive() -> t.Check:
+    var source = <<-SRC
+        function keyed[T](value: ref[T]) -> uint:
+            return hash[T](value)
+    SRC
+    return expect_clean(source)

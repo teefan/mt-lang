@@ -1216,6 +1216,8 @@ function infer_expr(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr]) -> 
                 return types.Type.ty_error
             ast.Expr.expr_call as call:
                 return infer_and_check_call(ctx, scope, call.callee, call.args)
+            ast.Expr.expr_specialization as spec:
+                return check_specialization_call(ctx, scope, spec.callee, spec.arguments)
             _:
                 return types.Type.ty_error
 
@@ -1293,12 +1295,64 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[
                 match read(callee):
                     ast.Expr.expr_member_access as ma:
                         return check_member_call(ctx, scope, ma.receiver, ma.member_name, arg_types.as_span(), any_named, ma.line, ma.column)
+                    ast.Expr.expr_specialization as spec:
+                        return check_specialization_call(ctx, scope, spec.callee, spec.arguments)
                     ast.Expr.expr_identifier:
                         check_call(ctx, scope, callee, arg_types.as_span(), any_named)
                         return callee_return_type(ctx, scope, callee)
                     _:
                         let _ignored = infer_expr(ctx, scope, callee)
                         return types.Type.ty_error
+
+
+## A call whose callee is a specialization `name[Type](...)`.  Associated-function
+## hook builtins (hash/equal/order/default) are checked: when the type argument
+## is a fully-known local struct, the required hook must exist.  Everything else
+## (primitives, imported types, type variables, user generic functions) stays
+## permissive.
+function check_specialization_call(ctx: ref[Context], scope: ref[Scope], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument]) -> types.Type:
+    unsafe:
+        match read(spec_callee):
+            ast.Expr.expr_identifier as id:
+                if is_hook_name(id.name) and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
+                    return check_hook_call(ctx, id.name, type_args, id.line, id.column)
+                return types.Type.ty_error
+            _:
+                return types.Type.ty_error
+
+
+function is_hook_name(name: str) -> bool:
+    return name.equal("hash") or name.equal("equal") or name.equal("order") or name.equal("default")
+
+
+## Check an associated-function hook call `hook[T](...)`.  Flags a missing hook
+## only when T is a fully-known local struct; yields the hook's result type.
+function check_hook_call(ctx: ref[Context], hook_name: str, type_args: span[ast.TypeArgument], line: ptr_uint, column: ptr_uint) -> types.Type:
+    if type_args.len != 1:
+        return types.Type.ty_error
+    var arg_ref: ptr[ast.TypeRef]
+    unsafe:
+        arg_ref = read(type_args.data + 0).value
+    let arg_type = resolve_type(ctx, arg_ref)
+
+    match arg_type:
+        types.Type.ty_named as n:
+            if ctx.structs.contains(n.name):
+                match lookup_method_anywhere(ctx, n.name, hook_name):
+                    Option.some:
+                        pass
+                    Option.none:
+                        report(ctx, line, column, hook_missing_message(hook_name, n.name))
+        _:
+            pass
+
+    if hook_name.equal("hash"):
+        return types.primitive("uint")
+    if hook_name.equal("equal"):
+        return types.primitive("bool")
+    if hook_name.equal("order"):
+        return types.primitive("int")
+    return arg_type
 
 
 ## A call whose callee is `alias.member(...)` where `alias` names an imported
@@ -1937,6 +1991,18 @@ function method_mismatch_message(type_name: str, iface_name: str, method: str) -
     buf.append(method)
     buf.append(" does not match interface ")
     buf.append(iface_name)
+    return buf.as_str()
+
+
+function hook_missing_message(hook_name: str, type_name: str) -> str:
+    var buf = string.String.create()
+    buf.append(hook_name)
+    buf.append("[")
+    buf.append(type_name)
+    buf.append("] requires ")
+    buf.append(type_name)
+    buf.append(".")
+    buf.append(hook_name)
     return buf.as_str()
 
 
