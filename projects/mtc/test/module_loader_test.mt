@@ -371,3 +371,90 @@ function test_cross_module_private_value_is_permissive() -> t.Check:
     defer program.release()
 
     return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_enum_member_valid_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public enum Color: ubyte\n    red = 0\n    green = 1\n",
+        "import lib\n\nfunction f() -> void:\n    let c = lib.Color.green\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_enum_unknown_member_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public enum Color: ubyte\n    red = 0\n    green = 1\n",
+        "import lib\n\nfunction f() -> void:\n    let c = lib.Color.purple\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("unknown member"))
+
+
+@[test]
+function test_cross_module_variant_arm_valid_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public variant Token:\n    ident(name: str)\n    eof\n",
+        "import lib\n\nfunction f() -> void:\n    let t = lib.Token.ident(name = \"x\")\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_variant_unknown_arm_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public variant Token:\n    ident(name: str)\n    eof\n",
+        "import lib\n\nfunction f() -> void:\n    let t = lib.Token.bad\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("unknown member"))
+
+
+@[test]
+function test_cross_module_private_enum_member_is_permissive() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    # Color is not public, so its members are not exported: unknown-member access
+    # must stay permissive rather than be flagged.
+    var program = load_lib_and_main(
+        ref_of(root),
+        "enum Color: ubyte\n    red = 0\n",
+        "import lib\n\nfunction f() -> void:\n    let c = lib.Color.purple\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)

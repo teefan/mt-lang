@@ -48,12 +48,15 @@ public struct FieldEntry:
 ## The public export surface of a module, consumed by importers for cross-module
 ## name resolution.  Built from an Analysis by the loader's binder
 ## (mtc.loader.binder); the type lives here to keep the analyzer free of a
-## dependency on the loader.  Exposes public functions (for call checks), structs
-## (for construction field checks), and value types (const/var).
+## dependency on the loader.  Exposes public functions (call checks), structs
+## (construction field checks), value types (const/var), and enum/variant static
+## members (member-access validation).
 public struct ModuleBinding:
     functions: map_mod.Map[str, FnSig]
     structs: map_mod.Map[str, span[FieldEntry]]
     value_types: map_mod.Map[str, types.Type]
+    static_member_types: map_mod.Map[str, bool]
+    member_keys: map_mod.Map[str, bool]
 
 
 struct Context:
@@ -257,7 +260,7 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
         i += 1
 
 
-function method_key(type_name: str, member: str) -> str:
+public function method_key(type_name: str, member: str) -> str:
     var buf = string.String.create()
     buf.append(type_name)
     buf.append(".")
@@ -1170,16 +1173,50 @@ function check_method_callee(ctx: ref[Context], scope: ref[map_mod.Map[str, type
 ## else is an instance access (struct field/method or permissive).
 function resolve_member_access(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], receiver: ptr[ast.Expr], member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
     match try_imported_member(ctx, scope, receiver, member):
-        Option.some as imported:
-            return imported.value
+        Option.some as imported_value:
+            return imported_value.value
         Option.none:
-            match static_type_receiver(ctx, scope, receiver):
-                Option.some as tn:
-                    check_static_member(ctx, tn.value, member, line, column)
-                    return types.Type.ty_named(name = tn.value)
+            match imported_static_member(ctx, scope, receiver, member, line, column):
+                Option.some as imported_static:
+                    return imported_static.value
                 Option.none:
-                    let recv = infer_expr(ctx, scope, receiver)
-                    return check_member(ctx, recv, member, is_method_call, line, column)
+                    match static_type_receiver(ctx, scope, receiver):
+                        Option.some as tn:
+                            check_static_member(ctx, tn.value, member, line, column)
+                            return types.Type.ty_named(name = tn.value)
+                        Option.none:
+                            let recv = infer_expr(ctx, scope, receiver)
+                            return check_member(ctx, recv, member, is_method_call, line, column)
+
+
+## Resolve `alias.Type.member` where `alias` is an imported module and `Type` is
+## one of its exported enums/flags/variants: validate that `member` is a member
+## of that type, flagging it otherwise.  None for anything else.
+function imported_static_member(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], receiver: ptr[ast.Expr], member: str, line: ptr_uint, column: ptr_uint) -> Option[types.Type]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_member_access as inner:
+                match read(inner.receiver):
+                    ast.Expr.expr_identifier as id:
+                        if scope.get(id.name) != null:
+                            return Option[types.Type].none
+                        let module_name_ptr = ctx.import_aliases.get(id.name) else:
+                            return Option[types.Type].none
+                        let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                            return Option[types.Type].none
+                        if not read(binding_ptr).static_member_types.contains(inner.member_name):
+                            return Option[types.Type].none
+                        if not binding_has_member(read(binding_ptr), inner.member_name, member):
+                            report(ctx, line, column, unknown_member_message("member", inner.member_name, member))
+                        return Option[types.Type].some(value = types.Type.ty_error)
+                    _:
+                        return Option[types.Type].none
+            _:
+                return Option[types.Type].none
+
+
+function binding_has_member(binding: ModuleBinding, type_name: str, member: str) -> bool:
+    return binding.member_keys.contains(method_key(type_name, member))
 
 
 ## Some(type name) when `receiver` is a bare identifier naming a locally-declared

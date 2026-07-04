@@ -18,6 +18,8 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     var functions = map_mod.Map[str, analyzer.FnSig].create()
     var structs = map_mod.Map[str, span[analyzer.FieldEntry]].create()
     var value_types = map_mod.Map[str, types.Type].create()
+    var static_member_types = map_mod.Map[str, bool].create()
+    var member_keys = map_mod.Map[str, bool].create()
     let exports_all = analysis.source_file.module_kind == ast.ModuleKind.module_raw
 
     var i: ptr_uint = 0
@@ -50,8 +52,42 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                     if type_ptr != null:
                         unsafe:
                             value_types.set(v.name, read(type_ptr))
+            ast.Decl.decl_enum as e:
+                if exports_all or e.visibility:
+                    static_member_types.set(e.name, true)
+                    export_member_keys(ref_of(member_keys), e.name, e.enum_members)
+            ast.Decl.decl_flags as fl:
+                if exports_all or fl.visibility:
+                    static_member_types.set(fl.name, true)
+                    export_member_keys(ref_of(member_keys), fl.name, fl.flags_members)
+            ast.Decl.decl_variant as vr:
+                if exports_all or vr.visibility:
+                    static_member_types.set(vr.name, true)
+                    export_arm_keys(ref_of(member_keys), vr.name, vr.variant_arms)
             _:
                 pass
         i += 1
 
-    return analyzer.ModuleBinding(functions = functions, structs = structs, value_types = value_types)
+    return analyzer.ModuleBinding(
+        functions = functions,
+        structs = structs,
+        value_types = value_types,
+        static_member_types = static_member_types,
+        member_keys = member_keys,
+    )
+
+
+function export_member_keys(member_keys: ref[map_mod.Map[str, bool]], type_name: str, members: span[ast.EnumMember]) -> void:
+    var i: ptr_uint = 0
+    while i < members.len:
+        unsafe:
+            member_keys.set(analyzer.method_key(type_name, read(members.data + i).name), true)
+        i += 1
+
+
+function export_arm_keys(member_keys: ref[map_mod.Map[str, bool]], type_name: str, arms: span[ast.VariantArm]) -> void:
+    var i: ptr_uint = 0
+    while i < arms.len:
+        unsafe:
+            member_keys.set(analyzer.method_key(type_name, read(arms.data + i).name), true)
+        i += 1
