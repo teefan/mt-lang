@@ -427,7 +427,7 @@ function check_functions(ctx: ref[Context], file: ast.SourceFile) -> void:
             d = read(file.declarations.data + i)
         match d:
             ast.Decl.decl_function as fun:
-                check_function_body(ctx, fun.method_params, fun.return_type, fun.body)
+                check_function_body(ctx, fun.name, fun.line, fun.method_params, fun.return_type, fun.body)
             _:
                 pass
         i += 1
@@ -476,9 +476,12 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     if rt != null:
         ret = resolve_type(ctx, rt)
     check_stmt(ctx, ref_of(scope), ret, m.body)
+    if rt != null and not types.is_void(ret):
+        if not terminates_ptr(ctx, m.body):
+            report(ctx, m.line, m.column, missing_return_message(m.name))
 
 
-function check_function_body(ctx: ref[Context], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?) -> void:
+function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?) -> void:
     let b = body else:
         return
     var scope = map_mod.Map[str, types.Type].create()
@@ -494,6 +497,112 @@ function check_function_body(ctx: ref[Context], params: span[ast.Param], return_
     if rt != null:
         ret = resolve_type(ctx, rt)
     check_stmt(ctx, ref_of(scope), ret, b)
+    if rt != null and not types.is_void(ret):
+        if not terminates_ptr(ctx, b):
+            report(ctx, line, 1, missing_return_message(name))
+
+
+# =============================================================================
+#  Structural termination — does control always leave via a value-return path?
+#  Mirrors Ruby's ControlFlow::Termination as used for the missing-return
+#  diagnostic: return / fatal(...) / while true / if-with-else / exhaustive
+#  when / all-arm match / unsafe block all terminate.
+# =============================================================================
+
+function terminates_ptr(ctx: ref[Context], sp: ptr[ast.Stmt]) -> bool:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_ret:
+                return true
+            ast.Stmt.stmt_block as b:
+                return terminates_span(ctx, b.statements)
+            ast.Stmt.stmt_if as i:
+                let eb = i.else_body
+                if eb == null:
+                    return false
+                if not terminates_body(ctx, eb):
+                    return false
+                var k: ptr_uint = 0
+                while k < i.branches.len:
+                    if not terminates_body(ctx, read(i.branches.data + k).body):
+                        return false
+                    k += 1
+                return true
+            ast.Stmt.stmt_while as w:
+                return is_true_literal(w.condition)
+            ast.Stmt.stmt_match as m:
+                if m.arms.len == 0:
+                    return false
+                var k: ptr_uint = 0
+                while k < m.arms.len:
+                    if not terminates_body(ctx, read(m.arms.data + k).body):
+                        return false
+                    k += 1
+                return true
+            ast.Stmt.stmt_when as wn:
+                var k: ptr_uint = 0
+                while k < wn.branches.len:
+                    if not terminates_span(ctx, read(wn.branches.data + k).body):
+                        return false
+                    k += 1
+                let eb = wn.else_body
+                if eb != null:
+                    return terminates_ptr(ctx, eb)
+                return wn.branches.len > 0
+            ast.Stmt.stmt_unsafe as u:
+                return terminates_body(ctx, u.body)
+            ast.Stmt.stmt_expression as e:
+                return is_fatal_call(e.expression)
+            ast.Stmt.stmt_static_assert as sa:
+                # `static_assert(false, ...)` aborts compilation on this path
+                # (used to mark unreachable code); a passing assert does not.
+                return is_false_literal(sa.condition)
+            _:
+                return false
+
+
+function terminates_body(ctx: ref[Context], body: ptr[ast.Stmt]?) -> bool:
+    let b = body else:
+        return false
+    return terminates_ptr(ctx, b)
+
+
+function terminates_span(ctx: ref[Context], stmts: span[ast.Stmt]) -> bool:
+    if stmts.len == 0:
+        return false
+    unsafe:
+        return terminates_ptr(ctx, stmts.data + (stmts.len - 1))
+
+
+function is_true_literal(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_bool_literal as b:
+                return b.value
+            _:
+                return false
+
+
+function is_false_literal(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_bool_literal as b:
+                return not b.value
+            _:
+                return false
+
+
+function is_fatal_call(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_identifier as id:
+                        return id.name.equal("fatal")
+                    _:
+                        return false
+            _:
+                return false
 
 
 function check_body(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]], ret: types.Type, body: ptr[ast.Stmt]?) -> void:
@@ -544,8 +653,10 @@ function check_stmt(ctx: ref[Context], scope: ref[map_mod.Map[str, types.Type]],
             ast.Stmt.stmt_expression as e:
                 let _ignored = infer_expr(ctx, scope, e.expression)
             ast.Stmt.stmt_assignment as a:
-                let _target = infer_expr(ctx, scope, a.target)
-                let _value = infer_expr(ctx, scope, a.value)
+                let tt = infer_expr(ctx, scope, a.target)
+                let vt = infer_expr(ctx, scope, a.value)
+                if a.operator.equal("=") and types.definitely_incompatible(tt, vt):
+                    report(ctx, a.line, a.column, assign_message(tt, vt))
             _:
                 pass
 
@@ -902,6 +1013,23 @@ function local_mismatch_message(expected: types.Type, got: types.Type) -> str:
     buf.append(types.type_to_string(got))
     buf.append(" to ")
     buf.append(types.type_to_string(expected))
+    return buf.as_str()
+
+
+function assign_message(target: types.Type, value: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("cannot assign ")
+    buf.append(types.type_to_string(value))
+    buf.append(" to ")
+    buf.append(types.type_to_string(target))
+    return buf.as_str()
+
+
+function missing_return_message(name: str) -> str:
+    var buf = string.String.create()
+    buf.append("function '")
+    buf.append(name)
+    buf.append("' does not always return a value")
     return buf.as_str()
 
 

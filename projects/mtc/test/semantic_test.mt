@@ -455,3 +455,105 @@ function test_prelude_option_member_is_permissive() -> t.Check:
             return Option[int].some(value = 5)
     SRC
     return expect_clean(source)
+
+
+@[test]
+function test_missing_return_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            let x = 5
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_if_without_else_missing_return_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f(n: int) -> int:
+            if n > 0:
+                return 1
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_if_else_both_return_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f(n: int) -> int:
+            if n > 0:
+                return 1
+            else:
+                return 2
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_fatal_ending_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            fatal(c"boom")
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_while_true_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            while true:
+                pass
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_void_function_needs_no_return() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            let x = 5
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_static_assert_false_terminator_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f(n: int) -> int:
+            if n == 8:
+                return 1
+            static_assert(false, "unsupported")
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_method_missing_return_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct C:
+            v: int
+        extending C:
+            function read() -> int:
+                let x = this.v
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_assignment_type_mismatch_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            var x: int = 0
+            x = true
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_assignment_compatible_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            var x: int = 0
+            x = 5
+    SRC
+    return expect_clean(source)
