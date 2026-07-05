@@ -3,17 +3,19 @@
 ## internals.
 ##
 ## Mirrors the Ruby CBackend (lib/milk_tea/core/c_backend.rb `generate_c` and the
-## type_system / type_declaration / statements / expressions modules).
+## type_system / type_declaration / statements / expressions / feature_detection
+## modules).
 ##
-## PHASE 1 scope: base includes, function forward declarations, and function
-## bodies over scalar primitives — `return`, local declarations, expression
-## statements, integer/bool literals, identifiers, unary/binary operators, and
-## direct calls.  Runtime helpers, aggregates, control flow, and reachability
-## pruning arrive in later phases.
+## Scope (through Phase 2b): includes (+ conditional `mt_str` string-view type and
+## `mt_str_equal` helper), enum/flags declarations, function forward declarations,
+## deduplicated `mt_str` string-literal constants, and function bodies over
+## scalars, `str`/`cstr`, control flow, and enum `match`→`switch`.
 
 import std.string as string
 import std.str
 import std.fmt as fmt
+import std.map as map_mod
+import std.vec as vec
 
 import mtc.ir as ir
 import mtc.semantic.types as types
@@ -27,12 +29,31 @@ public struct CBackendError:
     path: str
 
 
+## The C emitter: an output buffer plus the program-global string-literal map
+## (`str` content -> `mt_str_lit_N`) threaded through expression emission.
 struct Emitter:
     buffer: string.String
+    str_lit_map: map_mod.Map[str, str]
 
 
 public function generate_c(program: ir.Program) -> string.String:
-    var e = Emitter(buffer = string.String.create())
+    var e = Emitter(
+        buffer = string.String.create(),
+        str_lit_map = map_mod.Map[str, str].create(),
+    )
+
+    var str_lits = collect_str_literals(program)
+    var li: ptr_uint = 0
+    while li < str_lits.len():
+        let value_ptr = str_lits.get(li) else:
+            break
+        unsafe:
+            e.str_lit_map.set(read(value_ptr), str_literal_name(li))
+        li += 1
+
+    let has_str_literals = str_lits.len() > 0
+    let use_string_view = uses_string_view(program, has_str_literals)
+    let use_str_equality = uses_str_equality(program)
 
     var i: ptr_uint = 0
     while i < program.includes.len:
@@ -40,6 +61,14 @@ public function generate_c(program: ir.Program) -> string.String:
             emit_line(ref_of(e), j2("#include ", read(program.includes.data + i).header))
         i += 1
     emit_line(ref_of(e), "")
+
+    if use_string_view:
+        emit_string_type(ref_of(e))
+        emit_line(ref_of(e), "")
+
+    if use_str_equality:
+        emit_str_equality_helper(ref_of(e))
+        emit_line(ref_of(e), "")
 
     i = 0
     while i < program.enums.len:
@@ -53,6 +82,16 @@ public function generate_c(program: ir.Program) -> string.String:
         while i < program.functions.len:
             unsafe:
                 emit_line(ref_of(e), j2(function_signature(read(program.functions.data + i)), ";"))
+            i += 1
+        emit_line(ref_of(e), "")
+
+    if has_str_literals:
+        i = 0
+        while i < str_lits.len():
+            let value_ptr = str_lits.get(i) else:
+                break
+            unsafe:
+                emit_line(ref_of(e), emit_str_literal_constant(read(value_ptr), i))
             i += 1
         emit_line(ref_of(e), "")
 
@@ -132,6 +171,311 @@ function long_to_str(value: long) -> str:
     return buf.as_str()
 
 
+function ptr_uint_to_str(value: ptr_uint) -> str:
+    var buf = string.String.create()
+    fmt.append_ptr_uint(ref_of(buf), value)
+    return buf.as_str()
+
+
+# =============================================================================
+#  String runtime (mirrors c_backend/type_declaration.rb + runtime_helpers.rb)
+# =============================================================================
+
+function emit_string_type(e: ref[Emitter]) -> void:
+    emit_line(e, "typedef struct mt_str {")
+    emit_line(e, "  char* data;")
+    emit_line(e, "  uintptr_t len;")
+    emit_line(e, "} mt_str;")
+
+
+function emit_str_equality_helper(e: ref[Emitter]) -> void:
+    emit_line(e, "static bool mt_str_equal(mt_str left, mt_str right) {")
+    emit_line(e, "  if (left.len != right.len) return false;")
+    emit_line(e, "  for (uintptr_t index = 0; index < left.len; index++) {")
+    emit_line(e, "    if (left.data[index] != right.data[index]) return false;")
+    emit_line(e, "  }")
+    emit_line(e, "  return true;")
+    emit_line(e, "}")
+
+
+function str_literal_name(index: ptr_uint) -> str:
+    return j2("mt_str_lit_", ptr_uint_to_str(index))
+
+
+function emit_str_literal_constant(value: str, index: ptr_uint) -> str:
+    return j6(
+        "static const mt_str ",
+        str_literal_name(index),
+        " = { .data = ",
+        c_string_literal(value),
+        j3(", .len = ", ptr_uint_to_str(value.len), " };"),
+        "",
+    )
+
+
+## A C double-quoted string literal for `value`, escaping the C-significant
+## bytes.  UTF-8 text bytes (>= 0x80) pass through unescaped, matching Ruby's
+## String#inspect for ordinary text.
+function c_string_literal(value: str) -> str:
+    var buf = string.String.create()
+    buf.append("\"")
+    var i: ptr_uint = 0
+    while i < value.len:
+        let b = value.byte_at(i)
+        if b == 34:
+            buf.append("\\\"")
+        else if b == 92:
+            buf.append("\\\\")
+        else if b == 10:
+            buf.append("\\n")
+        else if b == 13:
+            buf.append("\\r")
+        else if b == 9:
+            buf.append("\\t")
+        else if b == 0:
+            buf.append("\\0")
+        else:
+            buf.push_byte(b)
+        i += 1
+    buf.append("\"")
+    return buf.as_str()
+
+
+# =============================================================================
+#  Feature detection (mirrors c_backend/feature_detection.rb)
+# =============================================================================
+
+function uses_string_view(program: ir.Program, has_str_literals: bool) -> bool:
+    if has_str_literals:
+        return true
+    if uses_str_equality(program):
+        return true
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            let f = read(program.functions.data + i)
+            if is_str_type(f.return_type):
+                return true
+            var j: ptr_uint = 0
+            while j < f.params.len:
+                if is_str_type(read(f.params.data + j).ty):
+                    return true
+                j += 1
+        i += 1
+    return false
+
+
+function uses_str_equality(program: ir.Program) -> bool:
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            if body_has_str_equality(read(program.functions.data + i).body):
+                return true
+        i += 1
+    return false
+
+
+# =============================================================================
+#  String-literal collection (mirrors c_backend collect_str_literals)
+# =============================================================================
+
+## Every unique non-cstr string-literal value in the program, sorted by byte
+## length then byte value (matching Ruby's `sort_by { [bytesize, k] }`), so the
+## assigned `mt_str_lit_N` indices are deterministic.
+function collect_str_literals(program: ir.Program) -> vec.Vec[str]:
+    var seen = map_mod.Map[str, bool].create()
+    var collected = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            collect_from_stmts(read(program.functions.data + i).body, ref_of(seen), ref_of(collected))
+        i += 1
+    sort_str_literals(ref_of(collected))
+    return collected
+
+
+## Insertion sort by (byte length, then byte value).  Implemented locally rather
+## than via `vec.Vec.sort_by` because that helper's comparator is declared
+## `proc(ptr[T], ptr[T])` but invoked with `ref_of(...)` (`ref[T]`), which fails
+## to specialize (a latent std.vec bug to fix separately).
+function sort_str_literals(values: ref[vec.Vec[str]]) -> void:
+    let n = values.len()
+    var a: ptr_uint = 1
+    while a < n:
+        var b = a
+        while b > 0:
+            let left = values.get(b - 1) else:
+                break
+            let right = values.get(b) else:
+                break
+            if str_literal_order(left, right) > 0:
+                values.swap(b - 1, b)
+            else:
+                break
+            b -= 1
+        a += 1
+
+
+function str_literal_order(a: ptr[str], b: ptr[str]) -> int:
+    unsafe:
+        let la = read(a).len
+        let lb = read(b).len
+        if la < lb:
+            return -1
+        if la > lb:
+            return 1
+        return read(a).compare(read(b))
+
+
+function collect_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[str]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            collect_from_stmt(body.data + i, seen, collected)
+        i += 1
+
+
+function collect_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[str]]) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_return as r:
+                let value = r.value else:
+                    return
+                collect_from_expr(value, seen, collected)
+            ir.Stmt.stmt_local as loc:
+                collect_from_expr(loc.value, seen, collected)
+            ir.Stmt.stmt_assignment as asg:
+                collect_from_expr(asg.target, seen, collected)
+                collect_from_expr(asg.value, seen, collected)
+            ir.Stmt.stmt_expression as ex:
+                collect_from_expr(ex.expression, seen, collected)
+            ir.Stmt.stmt_block as blk:
+                collect_from_stmts(blk.body, seen, collected)
+            ir.Stmt.stmt_if as iff:
+                collect_from_expr(iff.condition, seen, collected)
+                collect_from_stmts(iff.then_body, seen, collected)
+                collect_from_stmts(iff.else_body, seen, collected)
+            ir.Stmt.stmt_while as w:
+                collect_from_expr(w.condition, seen, collected)
+                collect_from_stmts(w.body, seen, collected)
+            ir.Stmt.stmt_for as f:
+                collect_from_stmt(f.init, seen, collected)
+                collect_from_expr(f.condition, seen, collected)
+                collect_from_stmt(f.post, seen, collected)
+                collect_from_stmts(f.body, seen, collected)
+            ir.Stmt.stmt_switch as sw:
+                collect_from_expr(sw.expression, seen, collected)
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    let sc = read(sw.cases.data + ci)
+                    collect_from_stmts(sc.body, seen, collected)
+                    ci += 1
+            _:
+                pass
+
+
+function collect_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[str]]) -> void:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_string_literal as lit:
+                if not lit.cstring:
+                    if not seen.contains(lit.value):
+                        seen.set(lit.value, true)
+                        collected.push(lit.value)
+            ir.Expr.expr_binary as bin:
+                collect_from_expr(bin.left, seen, collected)
+                collect_from_expr(bin.right, seen, collected)
+            ir.Expr.expr_unary as un:
+                collect_from_expr(un.operand, seen, collected)
+            ir.Expr.expr_call as call:
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    collect_from_expr(call.arguments.data + i, seen, collected)
+                    i += 1
+            ir.Expr.expr_conditional as cond:
+                collect_from_expr(cond.condition, seen, collected)
+                collect_from_expr(cond.then_expression, seen, collected)
+                collect_from_expr(cond.else_expression, seen, collected)
+            ir.Expr.expr_cast as cast:
+                collect_from_expr(cast.expression, seen, collected)
+            ir.Expr.expr_address_of as addr:
+                collect_from_expr(addr.expression, seen, collected)
+            ir.Expr.expr_member as member:
+                collect_from_expr(member.receiver, seen, collected)
+            ir.Expr.expr_index as index:
+                collect_from_expr(index.receiver, seen, collected)
+                collect_from_expr(index.index, seen, collected)
+            _:
+                pass
+
+
+function body_has_str_equality(body: span[ir.Stmt]) -> bool:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            if stmt_has_str_equality(body.data + i):
+                return true
+        i += 1
+    return false
+
+
+function stmt_has_str_equality(sp: ptr[ir.Stmt]) -> bool:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_return as r:
+                let value = r.value else:
+                    return false
+                return expr_has_str_equality(value)
+            ir.Stmt.stmt_local as loc:
+                return expr_has_str_equality(loc.value)
+            ir.Stmt.stmt_assignment as asg:
+                return expr_has_str_equality(asg.target) or expr_has_str_equality(asg.value)
+            ir.Stmt.stmt_expression as ex:
+                return expr_has_str_equality(ex.expression)
+            ir.Stmt.stmt_block as blk:
+                return body_has_str_equality(blk.body)
+            ir.Stmt.stmt_if as iff:
+                return expr_has_str_equality(iff.condition) or body_has_str_equality(iff.then_body) or body_has_str_equality(iff.else_body)
+            ir.Stmt.stmt_while as w:
+                return expr_has_str_equality(w.condition) or body_has_str_equality(w.body)
+            ir.Stmt.stmt_for as f:
+                return expr_has_str_equality(f.condition) or body_has_str_equality(f.body)
+            ir.Stmt.stmt_switch as sw:
+                if expr_has_str_equality(sw.expression):
+                    return true
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    let sc = read(sw.cases.data + ci)
+                    if body_has_str_equality(sc.body):
+                        return true
+                    ci += 1
+                return false
+            _:
+                return false
+
+
+function expr_has_str_equality(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_binary as bin:
+                if is_str_equality(bin.operator, bin.left, bin.right):
+                    return true
+                return expr_has_str_equality(bin.left) or expr_has_str_equality(bin.right)
+            ir.Expr.expr_unary as un:
+                return expr_has_str_equality(un.operand)
+            ir.Expr.expr_call as call:
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    if expr_has_str_equality(call.arguments.data + i):
+                        return true
+                    i += 1
+                return false
+            ir.Expr.expr_conditional as cond:
+                return expr_has_str_equality(cond.condition) or expr_has_str_equality(cond.then_expression) or expr_has_str_equality(cond.else_expression)
+            _:
+                return false
+
+
 # =============================================================================
 #  Type mapping (mirrors c_backend/type_system.rb)
 # =============================================================================
@@ -146,6 +490,14 @@ function c_type(t: types.Type) -> str:
             return named_type_c_name(im.module_name, im.name)
         _:
             fatal(c"c_backend Phase 2: unsupported C type")
+
+
+function is_str_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_str:
+            return true
+        _:
+            return false
 
 
 ## The C name of a module-qualified named type (`en` + `State` -> `en_State`).
@@ -221,10 +573,10 @@ function primitive_c_type(name: str) -> str:
         return "void"
     if name.equal("cstr"):
         return "const char*"
-    fatal(c"c_backend Phase 1: unsupported primitive type")
+    fatal(c"c_backend Phase 2: unsupported primitive type")
 
 
-## A scalar declaration `TYPE NAME` (Phase 1 has no arrays/pointers/functions).
+## A scalar declaration `TYPE NAME` (Phase 2 has no arrays/pointers/functions).
 function c_declaration(t: types.Type, name: str) -> str:
     return j3(c_type(t), " ", name)
 
@@ -243,7 +595,7 @@ function emit_enum(e: ref[Emitter], enum_decl: ir.EnumDecl) -> void:
         unsafe:
             let m = read(enum_decl.members.data + i)
             let suffix = if i == enum_decl.members.len - 1: "" else: ","
-            emit_line(e, j6("  ", m.linkage_name, " = ", emit_expression(m.value), suffix, ""))
+            emit_line(e, j6("  ", m.linkage_name, " = ", emit_expression(e, m.value), suffix, ""))
         i += 1
     emit_line(e, "};")
 
@@ -306,13 +658,13 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 let value = r.value else:
                     emit_line(e, j2(indent, "return;"))
                     return
-                emit_line(e, j4(indent, "return ", emit_expression(value), ";"))
+                emit_line(e, j4(indent, "return ", emit_expression(e, value), ";"))
             ir.Stmt.stmt_local as loc:
-                emit_line(e, j5(indent, c_declaration(loc.ty, loc.linkage_name), " = ", emit_expression(loc.value), ";"))
+                emit_line(e, j5(indent, c_declaration(loc.ty, loc.linkage_name), " = ", emit_expression(e, loc.value), ";"))
             ir.Stmt.stmt_assignment as asg:
-                emit_line(e, j6(indent, emit_expression(asg.target), " ", asg.operator, " ", j2(emit_expression(asg.value), ";")))
+                emit_line(e, j6(indent, emit_expression(e, asg.target), " ", asg.operator, " ", j2(emit_expression(e, asg.value), ";")))
             ir.Stmt.stmt_expression as ex:
-                emit_line(e, j3(indent, emit_expression(ex.expression), ";"))
+                emit_line(e, j3(indent, emit_expression(e, ex.expression), ";"))
             ir.Stmt.stmt_block as blk:
                 if block_requires_scope(blk.body):
                     emit_line(e, j2(indent, "{"))
@@ -323,18 +675,18 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
             ir.Stmt.stmt_if as iff:
                 emit_if(e, iff.condition, iff.then_body, iff.else_body, level)
             ir.Stmt.stmt_while as w:
-                emit_line(e, j4(indent, "while (", emit_expression(w.condition), ") {"))
+                emit_line(e, j4(indent, "while (", emit_expression(e, w.condition), ") {"))
                 emit_stmts(e, w.body, level + 1)
                 emit_line(e, j2(indent, "}"))
             ir.Stmt.stmt_for as f:
                 var header = string.String.create()
                 header.append(indent)
                 header.append("for (")
-                header.append(emit_for_clause(f.init))
+                header.append(emit_for_clause(e, f.init))
                 header.append("; ")
-                header.append(emit_expression(f.condition))
+                header.append(emit_expression(e, f.condition))
                 header.append("; ")
-                header.append(emit_for_clause(f.post))
+                header.append(emit_for_clause(e, f.post))
                 header.append(") {")
                 emit_line(e, header.as_str())
                 emit_stmts(e, f.body, level + 1)
@@ -352,7 +704,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
 function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.SwitchCase], exhaustive: bool, level: ptr_uint) -> void:
     let indent = indent_c(level)
     let case_indent = indent_c(level + 1)
-    emit_line(e, j4(indent, "switch (", emit_expression(expression), ") {"))
+    emit_line(e, j4(indent, "switch (", emit_expression(e, expression), ") {"))
     var has_default = false
     var i: ptr_uint = 0
     while i < cases.len:
@@ -364,7 +716,7 @@ function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.S
             else:
                 let value = sc.value else:
                     fatal(c"c_backend Phase 2: non-default switch case missing value")
-                emit_line(e, j4(case_indent, "case ", emit_expression(value), ": {"))
+                emit_line(e, j4(case_indent, "case ", emit_expression(e, value), ": {"))
             emit_stmts(e, sc.body, level + 2)
             if not body_terminates(sc.body):
                 emit_line(e, j2(indent_c(level + 2), "break;"))
@@ -424,7 +776,7 @@ function block_requires_scope(body: span[ir.Stmt]) -> bool:
 ## into `else if` (mirrors control_flow_emission.rb emit_if_statement).
 function emit_if(e: ref[Emitter], condition: ptr[ir.Expr], then_body: span[ir.Stmt], else_body: span[ir.Stmt], level: ptr_uint) -> void:
     let indent = indent_c(level)
-    emit_line(e, j4(indent, "if (", emit_expression(condition), ") {"))
+    emit_line(e, j4(indent, "if (", emit_expression(e, condition), ") {"))
     emit_stmts(e, then_body, level + 1)
     emit_else(e, else_body, level)
 
@@ -435,7 +787,7 @@ function emit_else(e: ref[Emitter], else_body: span[ir.Stmt], level: ptr_uint) -
         unsafe:
             match read(else_body.data + 0):
                 ir.Stmt.stmt_if as nested:
-                    emit_line(e, j4(indent, "} else if (", emit_expression(nested.condition), ") {"))
+                    emit_line(e, j4(indent, "} else if (", emit_expression(e, nested.condition), ") {"))
                     emit_stmts(e, nested.then_body, level + 1)
                     emit_else(e, nested.else_body, level)
                     return
@@ -451,15 +803,15 @@ function emit_else(e: ref[Emitter], else_body: span[ir.Stmt], level: ptr_uint) -
 
 ## Render a `for` init/post clause (no indent, no trailing `;`) — mirrors
 ## c_backend/statements.rb emit_for_clause_statement.
-function emit_for_clause(sp: ptr[ir.Stmt]) -> str:
+function emit_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
-                return j5(c_declaration(loc.ty, loc.linkage_name), " = ", emit_expression(loc.value), "", "")
+                return j5(c_declaration(loc.ty, loc.linkage_name), " = ", emit_expression(e, loc.value), "", "")
             ir.Stmt.stmt_assignment as asg:
-                return j5(emit_expression(asg.target), " ", asg.operator, " ", emit_expression(asg.value))
+                return j5(emit_expression(e, asg.target), " ", asg.operator, " ", emit_expression(e, asg.value))
             ir.Stmt.stmt_expression as ex:
-                return emit_expression(ex.expression)
+                return emit_expression(e, ex.expression)
             _:
                 fatal(c"c_backend Phase 2: unsupported for-loop clause")
 
@@ -468,7 +820,7 @@ function emit_for_clause(sp: ptr[ir.Stmt]) -> str:
 #  Expression emission (mirrors c_backend/expressions.rb)
 # =============================================================================
 
-function emit_expression(ep: ptr[ir.Expr]) -> str:
+function emit_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_name as n:
@@ -477,19 +829,42 @@ function emit_expression(ep: ptr[ir.Expr]) -> str:
                 return long_to_str(lit.value)
             ir.Expr.expr_boolean_literal as b:
                 return if b.value: "true" else: "false"
+            ir.Expr.expr_string_literal as s:
+                return emit_string_literal(e, s.value, s.cstring)
             ir.Expr.expr_unary as un:
                 if un.operator == "not":
-                    return j2("!", wrap_expression(un.operand))
-                return j2(un.operator, wrap_expression(un.operand))
+                    return j2("!", wrap_expression(e, un.operand))
+                return j2(un.operator, wrap_expression(e, un.operand))
             ir.Expr.expr_binary as bin:
-                return emit_binary(bin.operator, bin.left, bin.right)
+                if is_str_equality(bin.operator, bin.left, bin.right):
+                    let call = j5("mt_str_equal(", emit_expression(e, bin.left), ", ", emit_expression(e, bin.right), ")")
+                    if bin.operator == "!=":
+                        return j2("!", call)
+                    return call
+                return emit_binary(e, bin.operator, bin.left, bin.right)
             ir.Expr.expr_call as call:
-                return emit_call(call.callee, call.arguments)
+                return emit_call(e, call.callee, call.arguments)
             _:
-                fatal(c"c_backend Phase 1: unsupported expression")
+                fatal(c"c_backend Phase 2: unsupported expression")
 
 
-function emit_call(callee: str, arguments: span[ir.Expr]) -> str:
+function emit_string_literal(e: ref[Emitter], value: str, cstring: bool) -> str:
+    if cstring:
+        return c_string_literal(value)
+    let name_ptr = e.str_lit_map.get(value)
+    if name_ptr != null:
+        unsafe:
+            return read(name_ptr)
+    return j5("(mt_str){ .data = ", c_string_literal(value), ", .len = ", ptr_uint_to_str(value.len), " }")
+
+
+function is_str_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> bool:
+    if not (operator == "==" or operator == "!="):
+        return false
+    return is_str_type(expr_result_type(left)) and is_str_type(expr_result_type(right))
+
+
+function emit_call(e: ref[Emitter], callee: str, arguments: span[ir.Expr]) -> str:
     var buf = string.String.create()
     buf.append(callee)
     buf.append("(")
@@ -498,21 +873,21 @@ function emit_call(callee: str, arguments: span[ir.Expr]) -> str:
         if i > 0:
             buf.append(", ")
         unsafe:
-            buf.append(emit_expression(arguments.data + i))
+            buf.append(emit_expression(e, arguments.data + i))
         i += 1
     buf.append(")")
     return buf.as_str()
 
 
-function emit_binary(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
+function emit_binary(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
     let parent = binary_precedence(operator)
-    let left_text = emit_binary_operand(left, parent, false)
-    let right_text = emit_binary_operand(right, parent, true)
+    let left_text = emit_binary_operand(e, left, parent, false)
+    let right_text = emit_binary_operand(e, right, parent, true)
     return j5(left_text, " ", c_operator(operator), " ", right_text)
 
 
-function emit_binary_operand(ep: ptr[ir.Expr], parent_precedence: int, is_right: bool) -> str:
-    let text = emit_expression(ep)
+function emit_binary_operand(e: ref[Emitter], ep: ptr[ir.Expr], parent_precedence: int, is_right: bool) -> str:
+    let text = emit_expression(e, ep)
     unsafe:
         match read(ep):
             ir.Expr.expr_conditional:
@@ -526,8 +901,8 @@ function emit_binary_operand(ep: ptr[ir.Expr], parent_precedence: int, is_right:
                 return text
 
 
-function wrap_expression(ep: ptr[ir.Expr]) -> str:
-    let text = emit_expression(ep)
+function wrap_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+    let text = emit_expression(e, ep)
     unsafe:
         match read(ep):
             ir.Expr.expr_name:
@@ -535,6 +910,8 @@ function wrap_expression(ep: ptr[ir.Expr]) -> str:
             ir.Expr.expr_integer_literal:
                 return text
             ir.Expr.expr_boolean_literal:
+                return text
+            ir.Expr.expr_string_literal:
                 return text
             ir.Expr.expr_call:
                 return text
@@ -571,4 +948,65 @@ function binary_precedence(operator: str) -> int:
         return 9
     if operator == "*" or operator == "/" or operator == "%":
         return 10
-    fatal(c"c_backend Phase 1: unsupported binary operator")
+    fatal(c"c_backend Phase 2: unsupported binary operator")
+
+
+# =============================================================================
+#  IR expression result type (for str-equality detection)
+# =============================================================================
+
+function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name as x:
+                return x.ty
+            ir.Expr.expr_member as x:
+                return x.ty
+            ir.Expr.expr_index as x:
+                return x.ty
+            ir.Expr.expr_checked_index as x:
+                return x.ty
+            ir.Expr.expr_checked_span_index as x:
+                return x.ty
+            ir.Expr.expr_nullable_index as x:
+                return x.ty
+            ir.Expr.expr_nullable_span_index as x:
+                return x.ty
+            ir.Expr.expr_call as x:
+                return x.ty
+            ir.Expr.expr_unary as x:
+                return x.ty
+            ir.Expr.expr_binary as x:
+                return x.ty
+            ir.Expr.expr_conditional as x:
+                return x.ty
+            ir.Expr.expr_reinterpret as x:
+                return x.ty
+            ir.Expr.expr_sizeof as x:
+                return x.ty
+            ir.Expr.expr_alignof as x:
+                return x.ty
+            ir.Expr.expr_offsetof as x:
+                return x.ty
+            ir.Expr.expr_integer_literal as x:
+                return x.ty
+            ir.Expr.expr_float_literal as x:
+                return x.ty
+            ir.Expr.expr_string_literal as x:
+                return x.ty
+            ir.Expr.expr_boolean_literal as x:
+                return x.ty
+            ir.Expr.expr_null_literal as x:
+                return x.ty
+            ir.Expr.expr_zero_init as x:
+                return x.ty
+            ir.Expr.expr_address_of as x:
+                return x.ty
+            ir.Expr.expr_cast as x:
+                return x.ty
+            ir.Expr.expr_aggregate_literal as x:
+                return x.ty
+            ir.Expr.expr_variant_literal as x:
+                return x.ty
+            ir.Expr.expr_array_literal as x:
+                return x.ty

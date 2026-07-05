@@ -423,6 +423,9 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 return alloc_expr(ir.Expr.expr_integer_literal(value = long<-lit.value, ty = expr_type(ctx, ep)))
             ast.Expr.expr_bool_literal as b:
                 return alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = types.primitive("bool")))
+            ast.Expr.expr_string_literal as lit:
+                let ty = if lit.is_cstring: types.primitive("cstr") else: types.Type.ty_str
+                return alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = ty, cstring = lit.is_cstring))
             ast.Expr.expr_identifier as id:
                 match lookup_local(ctx, id.name):
                     Option.some as lb:
