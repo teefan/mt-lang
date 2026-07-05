@@ -135,11 +135,15 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
     )
     collect_import_aliases(ref_of(ctx), file)
     declare_named_types(ref_of(ctx), file)
+    install_prelude_types(ref_of(ctx))
+    var when_extra = expand_module_when(ref_of(ctx), file)
     collect_struct_fields(ref_of(ctx), file)
+    collect_struct_fields_extra(ref_of(ctx), when_extra)
     collect_extending_methods(ref_of(ctx), file)
     collect_enum_variant_members(ref_of(ctx), file)
     collect_interfaces(ref_of(ctx), file)
     declare_values_and_functions(ref_of(ctx), file)
+    declare_values_and_functions_extra(ref_of(ctx), when_extra)
     check_functions(ref_of(ctx), file)
     check_extending_methods(ref_of(ctx), file)
     check_interface_conformances(ref_of(ctx), file)
@@ -230,6 +234,204 @@ function declare_type(ctx: ref[Context], name: str, line: ptr_uint, column: ptr_
         report(ctx, line, column, dup_message("type", name))
         return
     ctx.type_names.set(name, true)
+
+
+## Expand module-level `when` blocks: for each `when CONST:`, resolve the
+## discriminant against its const value, pick the matching branch, and return the
+## branch's declarations as additional top-level items.  Complex discriminants
+## that cannot be resolved return an empty span (permissive — keeps all branches
+## in the original AST).
+function expand_module_when(ctx: ref[Context], file: ast.SourceFile) -> span[ast.Decl]:
+    var extra = vec.Vec[ast.Decl].create()
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + i)
+        match d:
+            ast.Decl.decl_when as w:
+                match evaluate_when_discriminant(ctx, w.discriminant, file.declarations):
+                    Option.some as chosen:
+                        collect_when_branch_decls(w.branches, chosen.value, ref_of(extra))
+                    Option.none:
+                        pass
+            _:
+                pass
+        i += 1
+    return extra.as_span()
+
+
+## Evaluate a when-discriminant expression into the enum member name it
+## represents.  Handles `const_name` (looks up the const's value) and
+## `EnumType.member` (direct enum member reference).  Returns none when the
+## discriminant cannot be resolved.
+function evaluate_when_discriminant(ctx: ref[Context], discriminant: ptr[ast.Expr], decls: span[ast.Decl]) -> Option[str]:
+    unsafe:
+        match read(discriminant):
+            ast.Expr.expr_identifier as id:
+                match find_const_value_in_decls(decls, id.name):
+                    Option.some as val_expr:
+                        return evaluate_when_discriminant(ctx, val_expr.value, decls)
+                    Option.none:
+                        return Option[str].none
+            ast.Expr.expr_member_access as ma:
+                return resolve_when_enum_member(ma.receiver, ma.member_name)
+            _:
+                return Option[str].none
+
+
+## Extract the const value expression referenced by a when discriminant.
+## Returns the initializer of the const declaration with the given name.
+function find_const_value_in_decls(decls: span[ast.Decl], const_name: str) -> Option[ptr[ast.Expr]]:
+    var i: ptr_uint = 0
+    while i < decls.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(decls.data + i)
+        match d:
+            ast.Decl.decl_const as c:
+                if c.name.equal(const_name):
+                    let val = c.value else:
+                        return Option[ptr[ast.Expr]].none
+                    return Option[ptr[ast.Expr]].some(value = val)
+            _:
+                pass
+        i += 1
+    return Option[ptr[ast.Expr]].none
+
+
+## Resolve `EnumType.member` in a when discriminant.  Returns the member name
+## when `receiver` is a known enum type.
+function resolve_when_enum_member(receiver: ptr[ast.Expr], member: str) -> Option[str]:
+    var recv: ast.Expr
+    unsafe:
+        recv = read(receiver)
+    match recv:
+        ast.Expr.expr_identifier as id:
+            if is_primitive_type_name(id.name):
+                return Option[str].none
+            return Option[str].some(value = member)
+        _:
+            return Option[str].none
+
+
+## Copy the chosen when-branch's declarations into the output vector.
+function collect_when_branch_decls(branches: span[ast.WhenDeclBranch], chosen: str, output: ref[vec.Vec[ast.Decl]]) -> void:
+    var i: ptr_uint = 0
+    while i < branches.len:
+        var br: ast.WhenDeclBranch
+        unsafe:
+            br = read(branches.data + i)
+        match extract_when_member_name(br.pattern):
+            Option.some as nm:
+                if nm.value.equal(chosen):
+                    copy_when_body_decls(br.body, output)
+            Option.none:
+                pass
+        i += 1
+
+
+## Extract `EnumType.member` from a when-branch pattern.  Returns the member
+## name when the pattern is a qualifield member access on an enum type.
+function extract_when_member_name(pattern: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(pattern):
+            ast.Expr.expr_member_access as ma:
+                return Option[str].some(value = ma.member_name)
+            _:
+                return Option[str].none
+
+
+## Copy declarations (not imports) from a when-branch body into `output`.
+function copy_when_body_decls(body: span[ast.Decl], output: ref[vec.Vec[ast.Decl]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            output.push(read(body.data + i))
+        i += 1
+
+
+function collect_struct_fields_extra(ctx: ref[Context], extra: span[ast.Decl]) -> void:
+    var i: ptr_uint = 0
+    while i < extra.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(extra.data + i)
+        match d:
+            ast.Decl.decl_struct as s:
+                ctx.structs.set(s.name, resolve_field_entries(ctx, s.struct_fields))
+            _:
+                pass
+        i += 1
+
+
+function declare_values_and_functions_extra(ctx: ref[Context], extra: span[ast.Decl]) -> void:
+    var i: ptr_uint = 0
+    while i < extra.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(extra.data + i)
+        match d:
+            ast.Decl.decl_const as c:
+                if declare_value(ctx, c.name, c.line, c.column):
+                    ctx.value_types.set(c.name, resolve_type(ctx, c.const_type))
+            ast.Decl.decl_function as fun:
+                if declare_value(ctx, fun.name, fun.line, fun.column):
+                    ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type, ast.MethodKind.mk_plain))
+            _:
+                pass
+        i += 1
+
+
+## Register the prelude types (Option[T], Result[T,E]) so their variant arms
+## are match-exhaustive, their arm constructors (Option.some(...)) are validated,
+## and common methods (is_some, unwrap, etc.) pass the member-existence check.
+## Runs after declare_named_types so user-declared types of the same name take
+## priority (the prelude never overrides a local declaration).
+function install_prelude_types(ctx: ref[Context]) -> void:
+    register_prelude_type(ctx, "Option", "some", "none")
+    register_prelude_type(ctx, "Result", "success", "failure")
+
+
+function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: str) -> void:
+    if ctx.type_names.contains(name):
+        return
+    ctx.static_member_types.set(name, true)
+    ctx.match_case_types.set(name, true)
+    ctx.method_keys.set(method_key(name, arm_a), true)
+    ctx.method_keys.set(method_key(name, arm_b), true)
+    var arms = vec.Vec[str].create()
+    arms.push(arm_a)
+    arms.push(arm_b)
+    ctx.match_case_names.set(name, arms.as_span())
+    # Method keys for common prelude methods (existence-only, no type-check).
+    if arm_a.equal("some"):
+        ctx.method_keys.set(method_key(name, "is_some"), true)
+        ctx.method_keys.set(method_key(name, "is_none"), true)
+        ctx.method_keys.set(method_key(name, "unwrap"), true)
+        ctx.method_keys.set(method_key(name, "unwrap_or"), true)
+        ctx.method_keys.set(method_key(name, "unwrap_or_else"), true)
+        ctx.method_keys.set(method_key(name, "ok"), true)
+        # Typed: is_some() -> bool, is_none() -> bool.
+        let bool_ty = types.primitive("bool")
+        ctx.method_sigs.set(method_key(name, "is_some"), fn_sig_no_params(name, "is_some", bool_ty))
+        ctx.method_sigs.set(method_key(name, "is_none"), fn_sig_no_params(name, "is_none", bool_ty))
+    else if arm_a.equal("success"):
+        ctx.method_keys.set(method_key(name, "is_success"), true)
+        ctx.method_keys.set(method_key(name, "is_failure"), true)
+        ctx.method_keys.set(method_key(name, "unwrap"), true)
+        ctx.method_keys.set(method_key(name, "unwrap_error"), true)
+        ctx.method_keys.set(method_key(name, "unwrap_or"), true)
+        ctx.method_keys.set(method_key(name, "ok"), true)
+        ctx.method_keys.set(method_key(name, "error"), true)
+        ctx.method_keys.set(method_key(name, "map_error"), true)
+        let bool_ty = types.primitive("bool")
+        ctx.method_sigs.set(method_key(name, "is_success"), fn_sig_no_params(name, "is_success", bool_ty))
+        ctx.method_sigs.set(method_key(name, "is_failure"), fn_sig_no_params(name, "is_failure", bool_ty))
+
+
+function fn_sig_no_params(type_name: str, method_name: str, return_type: types.Type) -> FnSig:
+    return FnSig(name = method_name, params = span[ParamEntry](), return_type = return_type, has_return_type = true, method_kind = ast.MethodKind.mk_plain)
 
 
 ## Resolve each struct's declared fields into the type model, after all type
@@ -1121,6 +1323,19 @@ function check_body(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, body:
     scope_leave(scope)
 
 
+## When `narrowed_name` is set, wrap the body check with a scope frame that
+## shadows the variable with its non-nullable type.
+function apply_narrow_by_name(ctx: ref[Context], scope: ref[Scope], narrowed_name: Option[str], narrowed_ty: types.Type, chk: CheckFlags, body: ptr[ast.Stmt]?) -> void:
+    match narrowed_name:
+        Option.some as nnm:
+            scope_enter(scope)
+            scope_set(scope, nnm.value, narrowed_ty)
+            check_body(ctx, scope, chk, body)
+            scope_leave(scope)
+        Option.none:
+            check_body(ctx, scope, chk, body)
+
+
 function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: ptr[ast.Stmt]) -> void:
     unsafe:
         match read(sp):
@@ -1143,6 +1358,7 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: p
             ast.Stmt.stmt_if as i:
                 var narrowed_name: Option[str] = Option[str].none
                 var narrowed_ty: types.Type = types.Type.ty_error
+                var narrow_in_else = false
                 if i.branches.len > 0:
                     var br: ast.IfBranch = read(i.branches.data + 0)
                     check_condition(ctx, scope, br.condition, "if", br.line, br.column)
@@ -1155,23 +1371,23 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: p
                                 if not types.type_equals(unnarrowed, raw_ty):
                                     narrowed_name = Option[str].some(value = nm.value)
                                     narrowed_ty = unnarrowed
+                                    narrow_in_else = not is_not_equal_null_condition(br.condition)
                         Option.none:
                             pass
-                    match narrowed_name:
-                        Option.some as nnm:
-                            scope_enter(scope)
-                            scope_set(scope, nnm.value, narrowed_ty)
-                            check_body(ctx, scope, chk, br.body)
-                            scope_leave(scope)
-                        Option.none:
-                            check_body(ctx, scope, chk, br.body)
+                    if not narrow_in_else:
+                        apply_narrow_by_name(ctx, scope, narrowed_name, narrowed_ty, chk, br.body)
+                    else:
+                        check_body(ctx, scope, chk, br.body)
                     var bi: ptr_uint = 1
                     while bi < i.branches.len:
                         br = read(i.branches.data + bi)
                         check_condition(ctx, scope, br.condition, "if", br.line, br.column)
                         check_body(ctx, scope, chk, br.body)
                         bi += 1
-                check_body(ctx, scope, chk, i.else_body)
+                if narrow_in_else:
+                    apply_narrow_by_name(ctx, scope, narrowed_name, narrowed_ty, chk, i.else_body)
+                else:
+                    check_body(ctx, scope, chk, i.else_body)
             ast.Stmt.stmt_while as w:
                 check_condition(ctx, scope, w.condition, "while", w.line, w.column)
                 check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, chk.inside_parallel), w.body)
@@ -1233,30 +1449,39 @@ function check_condition(ctx: ref[Context], scope: ref[Scope], cond: ptr[ast.Exp
         report(ctx, line, column, condition_message(keyword, ct))
 
 
-## Return the identifier name when `cond` is `name != null` (or `null != name`).
-## Returns none for anything else.  The if-body gets the narrowed (non-nullable)
-## type of `name`.
+## Return the identifier name when `cond` is `name != null` or `name == null`
+## (or reversed).  Returns none for anything else.
 function detect_null_comparison(cond: ptr[ast.Expr]) -> Option[str]:
     unsafe:
         match read(cond):
             ast.Expr.expr_binary_op as b:
-                if not b.operator.equal("!="):
-                    return Option[str].none
-                match read(b.left):
-                    ast.Expr.expr_identifier as id:
-                        if read(b.right) is ast.Expr.expr_null_literal:
-                            return Option[str].some(value = id.name)
-                    _:
-                        pass
-                match read(b.right):
-                    ast.Expr.expr_identifier as id:
-                        if read(b.left) is ast.Expr.expr_null_literal:
-                            return Option[str].some(value = id.name)
-                    _:
-                        pass
+                if b.operator.equal("!=") or b.operator.equal("=="):
+                    match read(b.left):
+                        ast.Expr.expr_identifier as id:
+                            if read(b.right) is ast.Expr.expr_null_literal:
+                                return Option[str].some(value = id.name)
+                        _:
+                            pass
+                    match read(b.right):
+                        ast.Expr.expr_identifier as id:
+                            if read(b.left) is ast.Expr.expr_null_literal:
+                                return Option[str].some(value = id.name)
+                        _:
+                            pass
             _:
                 pass
     return Option[str].none
+
+
+## True when `cond` is `name != null` (narrow in if-body). False for `== null`.
+function is_not_equal_null_condition(cond: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(cond):
+            ast.Expr.expr_binary_op as b:
+                return b.operator.equal("!=")
+            _:
+                pass
+    return false
 
 
 function check_stmt_span(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, stmts: span[ast.Stmt]) -> void:
@@ -2389,6 +2614,14 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             return check_imported_member(ctx, im.module_name, im.name, member, is_method_call, line, column)
         types.Type.ty_var as v:
             return check_type_var_member(ctx, v.name, member, is_method_call, line, column)
+        types.Type.ty_generic as g:
+            if has_method(ctx, g.name, member):
+                return types.Type.ty_error
+            if is_method_call:
+                report(ctx, line, column, unknown_member_message("method", g.name, member))
+            else:
+                report(ctx, line, column, unknown_member_message("field", g.name, member))
+            return types.Type.ty_error
         _:
             return types.Type.ty_error
 

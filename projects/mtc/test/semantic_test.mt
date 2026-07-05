@@ -2075,3 +2075,29 @@ function test_negative_literal_return_to_byte_is_clean() -> t.Check:
             return -42
     SRC
     return expect_clean(source)
+
+
+# =============================================================================
+#  == null narrowing (else-body)
+# =============================================================================
+
+@[test]
+function test_not_equal_null_narrows_if_body_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f(p: ptr[int]?) -> int:
+            if p != null:
+                return unsafe: read(p)
+            return 0
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_equal_null_narrows_else_body_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f(p: ptr[int]?) -> int:
+            if p == null:
+                return 0
+            return unsafe: read(p)
+    SRC
+    return expect_clean(source)
