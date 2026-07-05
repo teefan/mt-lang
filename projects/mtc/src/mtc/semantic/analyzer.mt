@@ -472,9 +472,39 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
     if t.is_tuple:
         return types.Type.ty_error
 
+    # An `alias.Type` naming a type exported by an imported module resolves to a
+    # concrete imported type (so its members are checkable); otherwise fall back
+    # to the permissive named/error resolution.
+    match resolve_imported_type(ctx, t.name):
+        Option.some as imported:
+            return wrap_nullable(imported.value, t.nullable)
+        Option.none:
+            pass
+
     let name = qname_to_str(t.name)
     let base = resolve_named(ctx, name, t.arguments, depth)
     return wrap_nullable(base, t.nullable)
+
+
+## An `alias.Type` type reference resolving to an imported struct, enum/variant,
+## or interface exported by the aliased module.  None for anything else.
+function resolve_imported_type(ctx: ref[Context], name: ast.QualifiedName) -> Option[types.Type]:
+    if name.parts.len != 2:
+        return Option[types.Type].none
+    var alias: str = ""
+    var type_name: str = ""
+    unsafe:
+        alias = read(name.parts.data + 0)
+        type_name = read(name.parts.data + 1)
+    let module_name_ptr = ctx.import_aliases.get(alias) else:
+        return Option[types.Type].none
+    let binding_ptr = lookup_binding(ctx, unsafe: read(module_name_ptr)) else:
+        return Option[types.Type].none
+    unsafe:
+        let binding = read(binding_ptr)
+        if binding.structs.contains(type_name) or binding.static_member_types.contains(type_name) or binding.interfaces.contains(type_name):
+            return Option[types.Type].some(value = types.Type.ty_imported(module_name = read(module_name_ptr), name = type_name))
+    return Option[types.Type].none
 
 
 function wrap_nullable(base: types.Type, nullable: bool) -> types.Type:

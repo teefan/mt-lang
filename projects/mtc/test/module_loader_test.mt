@@ -886,3 +886,62 @@ function test_imported_struct_arg_satisfied_constraint_is_clean() -> t.Check:
     defer program.release()
 
     return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+# =============================================================================
+#  Phase 1 item A: cross-module type-position resolution. `lib.Type` in a type
+#  annotation or explicit type argument resolves to the concrete imported type,
+#  so its members are checkable and explicit-arg constraints apply.
+# =============================================================================
+
+@[test]
+function test_explicit_imported_type_arg_constraint_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    # render[lib.Plain] resolves the type argument; Plain does not implement
+    # lib.Drawable, so the explicit constraint is flagged.
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public interface Drawable:\n    function draw() -> int\n\npublic struct Plain:\n    p: int\n",
+        "import lib\n\nfunction render[T implements lib.Drawable](x: ref[T]) -> void:\n    pass\n\nfunction f() -> void:\n    var plain = lib.Plain(p = 0)\n    render[lib.Plain](ref_of(plain))\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("does not implement"))
+
+
+@[test]
+function test_annotated_imported_type_unknown_member_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public struct Widget:\n    w: int\n\nextending Widget:\n    public function draw() -> int:\n        return this.w\n",
+        "import lib\n\nfunction use(w: lib.Widget) -> int:\n    return w.no_such_method()\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("unknown method"))
+
+
+@[test]
+function test_annotated_imported_type_valid_member_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public struct Widget:\n    w: int\n\nextending Widget:\n    public function draw() -> int:\n        return this.w\n",
+        "import lib\n\nfunction use(w: lib.Widget) -> int:\n    return w.draw()\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
