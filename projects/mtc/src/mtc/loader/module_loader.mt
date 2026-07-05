@@ -1,15 +1,13 @@
 ## Multi-file program loader — resolves a root source file and its transitive
-## imports into an ordered set of parsed, semantically-checked modules.
+## imports into an ordered set of parsed, semantically-checked modules with
+## cross-module bindings.
 ##
 ## Mirrors the orchestration of Ruby's ModuleLoader (module_loader.rb): a
 ## transitive parse pass with cycle detection, a dependency-first ordering, and
-## per-module semantic checking.  Each module is wrapped in a LoadedModule that
-## retains its source text so the AST's borrowed slices stay valid for the
-## lifetime of the Program (the self-host has no GC).
-##
-## Scope for L2: single-root path resolution, DFS-based dependency ordering, and
-## independent per-module analysis.  Cross-module binding (feeding a module's
-## exported Analysis into its importers) is L3 and not yet threaded here.
+## per-module semantic checking with accumulated import bindings so each module's
+## imports are bound before it is checked.  Each module is wrapped in a
+## LoadedModule that retains its source text so the AST's borrowed slices stay
+## valid for the lifetime of the Program (the self-host has no GC).
 
 import std.fs as fs
 import std.map as map_mod
@@ -146,7 +144,9 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
     visited.release()
 
     # Check each module in dependency-first order, accumulating export bindings
-    # so a module's imports are already bound before it is checked.
+    # so a module's imports are already bound before it is checked.  (Per the
+    # analyzer's arena-leak convention, transient bindings are intentionally
+    # not released at program end.)
     var bindings = map_mod.Map[str, analyzer.ModuleBinding].create()
     let bindings_ptr = ptr_of(bindings)
 
@@ -249,8 +249,8 @@ function recurse_imports(
             import_decl = read(source_file.imports.data + i)
         match import_decl:
             ast.Decl.decl_import as imported:
-                var module_name = qname_to_module_name(imported.path)
-                match resolver.resolve_module_path(module_name.as_str(), roots, platform):
+                var module_name = analyzer.qname_to_str(imported.path)
+                match resolver.resolve_module_path(module_name, roots, platform):
                     Result.success as resolved_ok:
                         parse_all(
                             resolved_ok.value,
@@ -265,7 +265,7 @@ function recurse_imports(
                     Result.failure as resolve_failure:
                         var error = resolve_failure.error
                         var message = string.String.from_str("module not found: ")
-                        message.append(module_name.as_str())
+                        message.append(module_name)
                         diagnostics.push(LoadDiagnostic(
                             path = string.String.from_str(importer_path),
                             line = imported.line,
@@ -273,7 +273,6 @@ function recurse_imports(
                             message = message,
                         ))
                         error.release()
-                module_name.release()
             _:
                 pass
         i += 1
@@ -323,15 +322,3 @@ function check_and_bind_module(
         analysis.diagnostics.release()
 
         read(bindings_ptr).set(loaded.module_name.as_str(), binder.bind_module(analysis))
-
-
-function qname_to_module_name(name: ast.QualifiedName) -> string.String:
-    var result = string.String.create()
-    var i: ptr_uint = 0
-    while i < name.parts.len:
-        if i > 0:
-            result.append(".")
-        unsafe:
-            result.append(read(name.parts.data + i))
-        i += 1
-    return result
