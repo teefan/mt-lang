@@ -48,22 +48,6 @@ public function build_cfg(params: span[ast.Param], body: ptr[ast.Stmt]) -> Cfg:
 
     scan_body_decls(body, ref_of(cfg))
 
-    var entry = must_alloc_node(ref_of(cfg))
-    cfg.entry = entry
-    unsafe:
-        var pe: ptr_uint = 0
-        while pe < params.len:
-            let p = read(params.data + pe)
-            let id_ptr = cfg.binding_map.get(p.name) else:
-                fatal(c"cfg.builder missing param binding")
-            entry.writes.push(read(id_ptr))
-            pe += 1
-
-    var exit_node = must_alloc_node(ref_of(cfg))
-    cfg.exit = exit_node
-
-    build_stmt(ref_of(cfg), body, exit_node, false)
-
     return cfg
 
 
@@ -128,15 +112,12 @@ function scan_stmt_decls(stmt_ptr: ptr[ast.Stmt]?, cfg: ref[Cfg]) -> void:
         match read(ptr[ast.Stmt]<-stmt_ptr):
             ast.Stmt.stmt_local as l:
                 ensure_id(cfg, l.name)
-                scan_expr_ids(l.value, cfg)
             ast.Stmt.stmt_assignment as a:
                 match read(a.target):
                     ast.Expr.expr_identifier as id:
                         ensure_id(cfg, id.name)
                     _:
                         pass
-                scan_expr_ids(a.target, cfg)
-                scan_expr_ids(a.value, cfg)
             ast.Stmt.stmt_block as b:
                 var i: ptr_uint = 0
                 while i < b.statements.len:
@@ -146,33 +127,21 @@ function scan_stmt_decls(stmt_ptr: ptr[ast.Stmt]?, cfg: ref[Cfg]) -> void:
                 var bi: ptr_uint = 0
                 while bi < i.branches.len:
                     let br = read(i.branches.data + bi)
-                    scan_expr_ids(br.condition, cfg)
                     scan_stmt_decls(br.body, cfg)
                     bi += 1
                 scan_stmt_decls(i.else_body, cfg)
             ast.Stmt.stmt_while as w:
-                scan_expr_ids(w.condition, cfg)
                 scan_stmt_decls(w.body, cfg)
             ast.Stmt.stmt_for as fr:
-                var fi: ptr_uint = 0
-                while fi < fr.iterables.len:
-                    scan_expr_ids(fr.iterables.data + fi, cfg)
-                    fi += 1
                 scan_stmt_decls(fr.body, cfg)
             ast.Stmt.stmt_match as m:
-                scan_expr_ids(m.scrutinee, cfg)
                 var ai: ptr_uint = 0
                 while ai < m.arms.len:
                     let arm = read(m.arms.data + ai)
                     scan_stmt_decls(arm.body, cfg)
                     ai += 1
-            ast.Stmt.stmt_ret as r:
-                scan_expr_ids(r.value, cfg)
             ast.Stmt.stmt_defer as d:
-                scan_expr_ids(d.expression, cfg)
                 scan_stmt_decls(d.body, cfg)
-            ast.Stmt.stmt_expression as e:
-                scan_expr_ids(e.expression, cfg)
             ast.Stmt.stmt_unsafe as u:
                 scan_stmt_decls(u.body, cfg)
             _:
@@ -277,7 +246,9 @@ function build_stmt(cfg: ref[Cfg], stmt_ptr: ptr[ast.Stmt]?, exit_node: ptr[CfgN
                 while bi < i.branches.len:
                     let br = read(i.branches.data + bi)
                     var cond_node = must_alloc_node(cfg)
-                    collect_expr_reads(br.condition, ref_of(cond_node.reads), ref_of(cfg.binding_map))
+                    var cond_reads = vec.Vec[ptr_uint].create()
+                    collect_expr_reads(br.condition, ref_of(cond_reads), ref_of(cfg.binding_map))
+                    unsafe: read(cond_node).reads = cond_reads
                     var term = build_stmt(cfg, br.body, exit_node, in_loop)
                     if not term:
                         all_term = false
@@ -287,20 +258,26 @@ function build_stmt(cfg: ref[Cfg], stmt_ptr: ptr[ast.Stmt]?, exit_node: ptr[CfgN
                 return all_term
             ast.Stmt.stmt_while as w:
                 var cond_node = must_alloc_node(cfg)
-                collect_expr_reads(w.condition, ref_of(cond_node.reads), ref_of(cfg.binding_map))
+                var cond_reads = vec.Vec[ptr_uint].create()
+                collect_expr_reads(w.condition, ref_of(cond_reads), ref_of(cfg.binding_map))
+                unsafe: read(cond_node).reads = cond_reads
                 var _ignored = build_stmt(cfg, w.body, exit_node, true)
                 return false
             ast.Stmt.stmt_for as fr:
                 var cond_node = must_alloc_node(cfg)
+                var cond_reads = vec.Vec[ptr_uint].create()
                 var fi: ptr_uint = 0
                 while fi < fr.iterables.len:
-                    collect_expr_reads(fr.iterables.data + fi, ref_of(cond_node.reads), ref_of(cfg.binding_map))
+                    collect_expr_reads(fr.iterables.data + fi, ref_of(cond_reads), ref_of(cfg.binding_map))
                     fi += 1
+                unsafe: read(cond_node).reads = cond_reads
                 var _ignored = build_stmt(cfg, fr.body, exit_node, true)
                 return false
             ast.Stmt.stmt_match as m:
                 var scrut_node = must_alloc_node(cfg)
-                collect_expr_reads(m.scrutinee, ref_of(scrut_node.reads), ref_of(cfg.binding_map))
+                var scrut_reads = vec.Vec[ptr_uint].create()
+                collect_expr_reads(m.scrutinee, ref_of(scrut_reads), ref_of(cfg.binding_map))
+                unsafe: read(scrut_node).reads = scrut_reads
                 var all_term = true
                 var ai: ptr_uint = 0
                 while ai < m.arms.len:
@@ -311,7 +288,9 @@ function build_stmt(cfg: ref[Cfg], stmt_ptr: ptr[ast.Stmt]?, exit_node: ptr[CfgN
                 return all_term
             ast.Stmt.stmt_ret as r:
                 var node = must_alloc_node(cfg)
-                collect_expr_reads(r.value, ref_of(node.reads), ref_of(cfg.binding_map))
+                var ret_reads = vec.Vec[ptr_uint].create()
+                collect_expr_reads(r.value, ref_of(ret_reads), ref_of(cfg.binding_map))
+                unsafe: read(node).reads = ret_reads
                 node.successors.push(exit_node)
                 return true
             ast.Stmt.stmt_local as l:
@@ -320,7 +299,9 @@ function build_stmt(cfg: ref[Cfg], stmt_ptr: ptr[ast.Stmt]?, exit_node: ptr[CfgN
                     let id_ptr = cfg.binding_map.get(l.name) else:
                         fatal(c"cfg.builder missing local binding")
                     node.writes.push(read(id_ptr))
-                collect_expr_reads(l.value, ref_of(node.reads), ref_of(cfg.binding_map))
+                var local_reads = vec.Vec[ptr_uint].create()
+                collect_expr_reads(l.value, ref_of(local_reads), ref_of(cfg.binding_map))
+                unsafe: read(node).reads = local_reads
                 return false
             ast.Stmt.stmt_assignment as a:
                 var node = must_alloc_node(cfg)
@@ -331,12 +312,16 @@ function build_stmt(cfg: ref[Cfg], stmt_ptr: ptr[ast.Stmt]?, exit_node: ptr[CfgN
                             node.writes.push(read(id_ptr))
                     _:
                         pass
-                collect_expr_reads(a.target, ref_of(node.reads), ref_of(cfg.binding_map))
-                collect_expr_reads(a.value, ref_of(node.reads), ref_of(cfg.binding_map))
+                var assign_reads = vec.Vec[ptr_uint].create()
+                collect_expr_reads(a.target, ref_of(assign_reads), ref_of(cfg.binding_map))
+                collect_expr_reads(a.value, ref_of(assign_reads), ref_of(cfg.binding_map))
+                unsafe: read(node).reads = assign_reads
                 return false
             ast.Stmt.stmt_expression as e:
                 var node = must_alloc_node(cfg)
-                collect_expr_reads(e.expression, ref_of(node.reads), ref_of(cfg.binding_map))
+                var expr_reads = vec.Vec[ptr_uint].create()
+                collect_expr_reads(e.expression, ref_of(expr_reads), ref_of(cfg.binding_map))
+                unsafe: read(node).reads = expr_reads
                 return false
             ast.Stmt.stmt_unsafe as u:
                 return build_stmt(cfg, u.body, exit_node, in_loop)

@@ -22,6 +22,7 @@ import mtc.parser.ast as ast
 import mtc.semantic.types as types
 import mtc.semantic.type_compatibility as compat
 import mtc.semantic.expressions as exprs
+import mtc.semantic.control_flow.definite_assignment as da
 
 
 public struct SemanticDiagnostic:
@@ -1315,6 +1316,16 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_
     ctx.inside_async = is_async
     check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), b)
     ctx.inside_async = false
+    var da_diags = da.check(params, b)
+    var di: ptr_uint = 0
+    while di < da_diags.len():
+        let d = da_diags.get(di) else:
+            break
+        unsafe:
+            let dd = read(d)
+            report(ctx, dd.line, dd.column, def_assign_message(dd.name))
+        di += 1
+    da_diags.release()
     if rt != null and not types.is_void(ret):
         if not terminates_ptr(ctx, b):
             report(ctx, line, 1, missing_return_message(name))
@@ -3305,6 +3316,14 @@ function missing_return_message(name: str) -> str:
     buf.append("function '")
     buf.append(name)
     buf.append("' does not always return a value")
+    return buf.as_str()
+
+
+function def_assign_message(name: str) -> str:
+    var buf = string.String.create()
+    buf.append("variable '")
+    buf.append(name)
+    buf.append("' is read before definite assignment")
     return buf.as_str()
 
 
