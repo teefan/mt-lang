@@ -6,6 +6,8 @@
 
 import std.fs as fs
 import std.path as path_ops
+import std.str
+import std.string as string
 import std.vec as vec
 import std.stdio as stdio
 
@@ -19,6 +21,7 @@ import mtc.loader.path_resolver as resolver
 import mtc.loader.module_loader as loader
 import mtc.lowering.lowering as lowering
 import mtc.c_backend.c_backend as c_backend
+import mtc.build as build_driver
 
 
 function main(args: span[str]) -> int:
@@ -286,9 +289,8 @@ function emit_c_command(args: span[str]) -> int:
     return 0
 
 
-## Build a program (`mtc build`).  Phase 0: threads the pipeline through the
-## lowering and C-backend stubs; the native build driver (write C, invoke cc)
-## lands in Phase 1.
+## Build a program (`mtc build`).  Phase 1: lower to IR, generate C, and invoke
+## the C compiler to produce a native binary (no cache / packages yet).
 function build_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
@@ -303,12 +305,38 @@ function build_command(args: span[str]) -> int:
         report_check_summary(program.diagnostic_count())
         return 1
 
-    let ir_program = lowering.lower(program)
-    var c_source = c_backend.generate_c(ir_program)
-    defer c_source.release()
-    stdio.print_line("mtc build: front-end, IR lowering, and C-backend stubs ran successfully")
-    stdio.print_line("note: native build driver (emit C, invoke cc) arrives in Phase 1")
-    return 1
+    let output_path = default_output_path(path)
+    match build_driver.build(program, output_path, "cc"):
+        Result.success as built:
+            var output = built.value
+            defer output.release()
+            stdio.print_format(
+                c"built %.*s -> %.*s\n",
+                int<-(path.len), path.data,
+                int<-(output.as_str().len), output.as_str().data,
+            )
+            return 0
+        Result.failure as failure:
+            var message = failure.error
+            defer message.release()
+            let text = message.as_str()
+            stdio.print_format(c"error: %.*s\n", int<-(text.len), text.data)
+            return 1
+
+
+## The default output path for a source build: the source path with its `.mt`
+## extension removed (matching the Ruby CLI's direct-source-build behaviour).
+function default_output_path(path: str) -> str:
+    if path.ends_with(".mt"):
+        return path.slice(0, path.len - 3)
+    return j2_path(path, ".out")
+
+
+function j2_path(a: str, b: str) -> str:
+    var buf = string.String.create()
+    buf.append(a)
+    buf.append(b)
+    return buf.as_str()
 
 
 function lex_command(file_path: str, machine: bool) -> int:

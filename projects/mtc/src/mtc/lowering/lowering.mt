@@ -1,19 +1,33 @@
 ## Lowering stage — transforms the semantically-checked `Program` into an
 ## `ir.Program`.  This is the decoupled middle-end: it reads only the loader's
-## retained per-module `Analysis` values (plus their bindings) and emits `ir`,
-## never reaching into the C backend.
+## retained per-module `Analysis` values and emits `ir`, never reaching into the
+## C backend.
 ##
-## Mirrors the Ruby Lowering entry (lib/milk_tea/core/lowering.rb `Lowering.lower`).
+## Mirrors the Ruby Lowering entry (lib/milk_tea/core/lowering.rb `Lowering.lower`),
+## its C-name mangling (lowering/utils.rb), and root-main entry-point synthesis
+## (lowering/async.rb `build_root_main_entrypoint`).
 ##
-## PHASE 0: this is a stub.  It threads the pipeline end-to-end and produces an
-## empty `ir.Program` carrying the root module's name so `mtc lower` / `mtc emit-c`
-## wiring can be verified.  Real declaration/function lowering arrives in Phase 1+.
+## PHASE 1 scope: a single (root) module of plain, non-generic, non-async
+## functions over scalar types — enough to lower `function main() -> int:
+## return <expr>` with integer/bool literals, identifiers, unary/binary
+## operators, local `let`/`var` bindings, and direct function calls.  Structs,
+## generics, control flow, and multi-module assembly arrive in later phases.
+##
+## Because the self-host analyzer does not yet produce Ruby's rich
+## FunctionBinding objects (plan prerequisite #3), lowering here walks the AST
+## directly and resolves types from the retained `Analysis` (`functions` sigs and
+## `resolved_expr_types`).
 
 import std.vec as vec
+import std.str
+import std.string as string
+import std.mem.heap as heap_mod
 
 import mtc.ir as ir
 import mtc.loader.module_loader as loader
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.types as types
+import mtc.parser.ast as ast
 
 
 ## A lowering-stage error.  Placeholder for Phase 1+, where lowering will fail
@@ -25,21 +39,468 @@ public struct LoweringError:
     path: str
 
 
+## A local/parameter binding in scope during function-body lowering: the source
+## name, its C linkage name, resolved type, and whether it is held by pointer.
+struct LocalBinding:
+    name: str
+    c_name: str
+    ty: types.Type
+    pointer: bool
+
+
+struct LowerCtx:
+    module_name: str
+    analysis: analyzer.Analysis
+    locals: vec.Vec[LocalBinding]
+
+
+# =============================================================================
+#  Public API
+# =============================================================================
+
 ## Lower a checked program to IR.  In dependency-first order the root module is
-## the last retained analysis; its name becomes the assembled program's name.
+## the last retained analysis; Phase 1 lowers that single module.
 public function lower(program: loader.Program) -> ir.Program:
-    match root_analysis(program):
-        Option.some as root:
-            return ir.empty_program(root.value.module_name, "")
-        Option.none:
-            return ir.empty_program("(anonymous)", "")
-
-
-function root_analysis(program: loader.Program) -> Option[analyzer.Analysis]:
     let count = program.analyses.len()
     if count == 0:
-        return Option[analyzer.Analysis].none
+        return ir.empty_program("(anonymous)", "")
     let root_ptr = program.analyses.get(count - 1) else:
-        return Option[analyzer.Analysis].none
+        return ir.empty_program("(anonymous)", "")
+    var root = unsafe: read(root_ptr)
+    return lower_module(root)
+
+
+function lower_module(analysis: analyzer.Analysis) -> ir.Program:
+    var ctx = LowerCtx(
+        module_name = analysis.module_name,
+        analysis = analysis,
+        locals = vec.Vec[LocalBinding].create(),
+    )
+    var functions = vec.Vec[ir.Function].create()
+
+    var i: ptr_uint = 0
+    while i < analysis.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(analysis.source_file.declarations.data + i)
+        match d:
+            ast.Decl.decl_function as fun:
+                if lowerable_function(fun.is_async, fun.is_const, fun.type_params, fun.body):
+                    functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body))
+                    if fun.name.equal("main"):
+                        match build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
+                            Option.some as entry:
+                                functions.push(entry.value)
+                            Option.none:
+                                pass
+            _:
+                pass
+        i += 1
+
+    return ir.Program(
+        module_name = analysis.module_name,
+        includes = base_includes(),
+        constants = span[ir.Constant](),
+        globals = span[ir.Global](),
+        opaques = span[ir.OpaqueDecl](),
+        structs = span[ir.StructDecl](),
+        unions = span[ir.UnionDecl](),
+        enums = span[ir.EnumDecl](),
+        variants = span[ir.VariantDecl](),
+        static_asserts = span[ir.StaticAssert](),
+        functions = functions.as_span(),
+        source_path = "",
+    )
+
+
+## Phase 1 lowers only plain, non-generic, non-async functions that have a body.
+function lowerable_function(is_async: bool, is_const: bool, type_params: span[ast.TypeParam], body: ptr[ast.Stmt]?) -> bool:
+    if is_async:
+        return false
+    if type_params.len > 0:
+        return false
+    if body == null:
+        return false
+    return true
+
+
+## The base C runtime includes for an ordinary module.  `<stdio.h>` is always
+## present because the Ruby compiler's prelude (Option/Result) references
+## `fatal`, making it universal there; the self-host matches that for byte
+## parity.  Conditional `<stddef.h>` (offsetof) / `<stdlib.h>` (fatal) arrive in
+## later phases.
+function base_includes() -> span[ir.Include]:
+    var includes = vec.Vec[ir.Include].create()
+    includes.push(ir.Include(header = "<stdbool.h>"))
+    includes.push(ir.Include(header = "<stdint.h>"))
+    includes.push(ir.Include(header = "<string.h>"))
+    includes.push(ir.Include(header = "<stdio.h>"))
+    return includes.as_span()
+
+
+# =============================================================================
+#  Function lowering
+# =============================================================================
+
+function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?) -> ir.Function:
+    ctx.locals.clear()
+    let sig = lookup_fn_sig(ctx, name)
+
+    var ir_params = vec.Vec[ir.Param].create()
+    var pi: ptr_uint = 0
+    while pi < params.len:
+        var p: ast.Param
+        unsafe:
+            p = read(params.data + pi)
+        let param_ty = fn_sig_param_type(sig, pi)
+        let c_name = c_local_name(p.name)
+        ir_params.push(ir.Param(name = p.name, linkage_name = c_name, ty = param_ty, pointer = false))
+        ctx.locals.push(LocalBinding(name = p.name, c_name = c_name, ty = param_ty, pointer = false))
+        pi += 1
+
+    let ret_ty = fn_sig_return_type(sig)
+    let body_stmts = lower_block(ctx, body)
+
+    return ir.Function(
+        name = name,
+        linkage_name = module_function_c_name(ctx.module_name, name),
+        params = ir_params.as_span(),
+        return_type = ret_ty,
+        body = body_stmts,
+        entry_point = false,
+        method_receiver_param = false,
+    )
+
+
+## Synthesize the C entry point `int main(void)` that calls the user's root
+## `main`.  Phase 1 supports only a no-parameter `main` returning `int` or
+## `void` (the `:none` bridge in Ruby's build_root_main_entrypoint).
+function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[ast.Param]) -> Option[ir.Function]:
+    if params.len != 0:
+        return Option[ir.Function].none
+
+    let sig = lookup_fn_sig(ctx, name)
+    let user_return = fn_sig_return_type(sig)
+    if not (types.is_void(user_return) or is_int_type(user_return)):
+        return Option[ir.Function].none
+
+    let int_ty = types.primitive("int")
+    let user_linkage = module_function_c_name(ctx.module_name, name)
+    let call = alloc_expr(ir.Expr.expr_call(callee = user_linkage, arguments = span[ir.Expr](), ty = user_return))
+
+    var body = vec.Vec[ir.Stmt].create()
+    if types.is_void(user_return):
+        body.push(ir.Stmt.stmt_expression(expression = call, line = 0, source_path = ""))
+        let zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = int_ty))
+        body.push(ir.Stmt.stmt_return(value = zero, line = 0, source_path = ""))
+    else:
+        body.push(ir.Stmt.stmt_return(value = call, line = 0, source_path = ""))
+
+    return Option[ir.Function].some(value = ir.Function(
+        name = name,
+        linkage_name = "main",
+        params = span[ir.Param](),
+        return_type = int_ty,
+        body = body.as_span(),
+        entry_point = true,
+        method_receiver_param = false,
+    ))
+
+
+# =============================================================================
+#  Statement lowering
+# =============================================================================
+
+function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
+    var stmts = vec.Vec[ir.Stmt].create()
+    let bp = body_ptr else:
+        return stmts.as_span()
     unsafe:
-        return Option[analyzer.Analysis].some(value = read(root_ptr))
+        match read(bp):
+            ast.Stmt.stmt_block as blk:
+                var i: ptr_uint = 0
+                while i < blk.statements.len:
+                    lower_stmt(ctx, ref_of(stmts), blk.statements.data + i)
+                    i += 1
+            _:
+                lower_stmt(ctx, ref_of(stmts), bp)
+    return stmts.as_span()
+
+
+function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_ret as r:
+                let value = r.value else:
+                    output.push(ir.Stmt.stmt_return(value = null, line = r.line, source_path = ""))
+                    return
+                let lowered = lower_expr(ctx, value)
+                output.push(ir.Stmt.stmt_return(value = lowered, line = r.line, source_path = ""))
+            ast.Stmt.stmt_local as loc:
+                let value = loc.value else:
+                    fatal(c"lowering Phase 1: local declaration without initializer is unsupported")
+                let lowered_value = lower_expr(ctx, value)
+                let ty = expr_type(ctx, value)
+                let c_name = c_local_name(loc.name)
+                output.push(ir.Stmt.stmt_local(
+                    name = loc.name,
+                    linkage_name = c_name,
+                    ty = ty,
+                    value = lowered_value,
+                    line = loc.line,
+                    source_path = "",
+                ))
+                ctx.locals.push(LocalBinding(name = loc.name, c_name = c_name, ty = ty, pointer = false))
+            ast.Stmt.stmt_expression as ex:
+                let lowered = lower_expr(ctx, ex.expression)
+                output.push(ir.Stmt.stmt_expression(expression = lowered, line = ex.line, source_path = ""))
+            _:
+                fatal(c"lowering Phase 1: unsupported statement")
+
+
+# =============================================================================
+#  Expression lowering
+# =============================================================================
+
+function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal as lit:
+                return alloc_expr(ir.Expr.expr_integer_literal(value = long<-lit.value, ty = expr_type(ctx, ep)))
+            ast.Expr.expr_bool_literal as b:
+                return alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = types.primitive("bool")))
+            ast.Expr.expr_identifier as id:
+                match lookup_local(ctx, id.name):
+                    Option.some as lb:
+                        return alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = lb.value.ty, pointer = lb.value.pointer))
+                    Option.none:
+                        return alloc_expr(ir.Expr.expr_name(name = id.name, ty = expr_type(ctx, ep), pointer = false))
+            ast.Expr.expr_binary_op as bin:
+                let left = lower_expr(ctx, bin.left)
+                let right = lower_expr(ctx, bin.right)
+                return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = expr_type(ctx, ep)))
+            ast.Expr.expr_unary_op as un:
+                let operand = lower_expr(ctx, un.operand)
+                return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = expr_type(ctx, ep)))
+            ast.Expr.expr_call as call:
+                return lower_call(ctx, call.callee, call.args, ep)
+            _:
+                fatal(c"lowering Phase 1: unsupported expression")
+
+
+function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                var ir_args = vec.Vec[ir.Expr].create()
+                var i: ptr_uint = 0
+                while i < args.len:
+                    let arg = read(args.data + i)
+                    let lowered = lower_expr(ctx, arg.arg_value)
+                    ir_args.push(read(lowered))
+                    i += 1
+                return alloc_expr(ir.Expr.expr_call(
+                    callee = module_function_c_name(ctx.module_name, id.name),
+                    arguments = ir_args.as_span(),
+                    ty = expr_type(ctx, call_ep),
+                ))
+            _:
+                fatal(c"lowering Phase 1: only direct function calls are supported")
+
+
+# =============================================================================
+#  Type resolution helpers
+# =============================================================================
+
+function lookup_fn_sig(ctx: ref[LowerCtx], name: str) -> Option[analyzer.FnSig]:
+    let sig_ptr = ctx.analysis.functions.get(name)
+    if sig_ptr == null:
+        return Option[analyzer.FnSig].none
+    unsafe:
+        return Option[analyzer.FnSig].some(value = read(sig_ptr))
+
+
+function fn_sig_param_type(sig: Option[analyzer.FnSig], index: ptr_uint) -> types.Type:
+    match sig:
+        Option.some as s:
+            if index < s.value.params.len:
+                unsafe:
+                    return read(s.value.params.data + index).ty
+            return types.Type.ty_error
+        Option.none:
+            return types.Type.ty_error
+
+
+function fn_sig_return_type(sig: Option[analyzer.FnSig]) -> types.Type:
+    match sig:
+        Option.some as s:
+            if s.value.has_return_type:
+                return s.value.return_type
+            return types.primitive("void")
+        Option.none:
+            return types.primitive("void")
+
+
+## The resolved type of an AST expression: the analyzer's recorded type (keyed by
+## node pointer identity, matching `record_expr_type`), or a structural fallback.
+function expr_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
+    let key = unsafe: reinterpret[ptr_uint](ep)
+    let tp = ctx.analysis.resolved_expr_types.get(key)
+    if tp != null:
+        unsafe:
+            return read(tp)
+    return fallback_type(ctx, ep)
+
+
+function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal:
+                return types.primitive("int")
+            ast.Expr.expr_bool_literal:
+                return types.primitive("bool")
+            ast.Expr.expr_identifier as id:
+                match lookup_local(ctx, id.name):
+                    Option.some as lb:
+                        return lb.value.ty
+                    Option.none:
+                        return types.Type.ty_error
+            ast.Expr.expr_binary_op as bin:
+                if is_comparison_operator(bin.operator):
+                    return types.primitive("bool")
+                return fallback_type(ctx, bin.left)
+            ast.Expr.expr_unary_op as un:
+                return fallback_type(ctx, un.operand)
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_identifier as id:
+                        return fn_sig_return_type(lookup_fn_sig(ctx, id.name))
+                    _:
+                        return types.Type.ty_error
+            _:
+                return types.Type.ty_error
+
+
+function is_comparison_operator(op: str) -> bool:
+    return (
+        op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
+        or op == "and" or op == "or"
+    )
+
+
+function is_int_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_primitive as p:
+            return p.name.equal("int")
+        _:
+            return false
+
+
+function lookup_local(ctx: ref[LowerCtx], name: str) -> Option[LocalBinding]:
+    if ctx.locals.len() == 0:
+        return Option[LocalBinding].none
+    var i = ctx.locals.len()
+    while i > 0:
+        i -= 1
+        let lb_ptr = ctx.locals.get(i) else:
+            break
+        unsafe:
+            if read(lb_ptr).name.equal(name):
+                return Option[LocalBinding].some(value = read(lb_ptr))
+    return Option[LocalBinding].none
+
+
+# =============================================================================
+#  C-name mangling (mirrors lowering/utils.rb)
+# =============================================================================
+
+function module_function_c_name(module_name: str, name: str) -> str:
+    var buf = string.String.create()
+    buf.append(module_c_prefix(module_name))
+    buf.append("_")
+    buf.append(name)
+    return buf.as_str()
+
+
+function module_c_prefix(module_name: str) -> str:
+    return sanitize_identifier(module_name)
+
+
+## C-safe local/parameter name: sanitized, with a trailing `_` when it collides
+## with a C reserved word.
+function c_local_name(name: str) -> str:
+    let identifier = sanitize_identifier(name)
+    if c_reserved_identifier(identifier):
+        var buf = string.String.create()
+        buf.append(identifier)
+        buf.append("_")
+        return buf.as_str()
+    return identifier
+
+
+## Replace every maximal run of non-alphanumeric characters (and underscores)
+## with a single `_`, strip a trailing `_`, and map the empty result to
+## `value` — matching Ruby's sanitize_identifier.
+function sanitize_identifier(text: str) -> str:
+    var buf = string.String.create()
+    var prev_underscore = false
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if is_alnum_byte(b):
+            buf.push_byte(b)
+            prev_underscore = false
+        else:
+            if not prev_underscore:
+                buf.push_byte('_')
+                prev_underscore = true
+        i += 1
+
+    var result = buf.as_str()
+    if result.len > 0 and result.byte_at(result.len - 1) == '_':
+        result = result.slice(0, result.len - 1)
+    if result.len == 0:
+        return "value"
+    return result
+
+
+function is_alnum_byte(b: ubyte) -> bool:
+    return (b >= '0' and b <= '9') or (b >= 'A' and b <= 'Z') or (b >= 'a' and b <= 'z')
+
+
+function c_reserved_identifier(identifier: str) -> bool:
+    let words = reserved_words()
+    var i: ptr_uint = 0
+    while i < words.len:
+        unsafe:
+            if read(words.data + i).equal(identifier):
+                return true
+        i += 1
+    return false
+
+
+const RESERVED_WORD_COUNT: ptr_uint = 44
+const RESERVED_WORDS: array[str, 44] = array[str, 44](
+    "auto", "break", "case", "char", "const", "continue", "default", "do",
+    "double", "else", "enum", "extern", "float", "for", "goto", "if", "inline",
+    "int", "long", "register", "restrict", "return", "short", "signed",
+    "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned",
+    "void", "volatile", "while", "_Alignas", "_Alignof", "_Atomic", "_Bool",
+    "_Complex", "_Generic", "_Imaginary", "_Noreturn", "_Static_assert",
+    "_Thread_local"
+)
+
+
+function reserved_words() -> span[str]:
+    return RESERVED_WORDS.as_span()
+
+
+# =============================================================================
+#  IR allocation
+# =============================================================================
+
+function alloc_expr(value: ir.Expr) -> ptr[ir.Expr]:
+    var node = heap_mod.must_alloc[ir.Expr](1)
+    unsafe:
+        read(node) = value
+    return node
