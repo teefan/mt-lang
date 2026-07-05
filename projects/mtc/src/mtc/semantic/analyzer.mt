@@ -89,6 +89,7 @@ struct Context:
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     type_params: map_mod.Map[str, span[ast.TypeParamConstraint]]
     function_type_params: map_mod.Map[str, span[ast.TypeParam]]
+    method_type_params: map_mod.Map[str, span[ast.TypeParam]]
     implemented: map_mod.Map[str, span[ast.QualifiedName]]
     import_aliases: map_mod.Map[str, str]
     imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?
@@ -148,6 +149,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create(),
         type_params = map_mod.Map[str, span[ast.TypeParamConstraint]].create(),
         function_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
+        method_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
         implemented = map_mod.Map[str, span[ast.QualifiedName]].create(),
         import_aliases = map_mod.Map[str, str].create(),
         imported_modules = imported_modules,
@@ -607,12 +609,12 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                         m = read(ex.methods.data + j)
                     let key = method_key(base, m.name)
                     ctx.method_keys.set(key, true)
-                    # Instance methods win the signature key over a same-named
-                    # static method (e.g. str's instance `equal(right)` vs the
-                    # static `equal(left, right)` hook), so instance calls resolve
-                    # to the instance signature.
+                    enter_type_params(ctx, m.type_params)
                     if m.method_kind != ast.MethodKind.mk_static or not ctx.method_sigs.contains(key):
                         ctx.method_sigs.set(key, build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind))
+                    ctx.type_params.clear()
+                    if m.type_params.len > 0:
+                        ctx.method_type_params.set(key, m.type_params)
                     j += 1
             _:
                 pass
@@ -2621,6 +2623,23 @@ function check_typed_method_call(ctx: ref[Context], receiver_type: types.Type, m
     match resolve_method_sig(ctx, receiver_type, method_name):
         Option.some as sig:
             check_signature_call(ctx, method_name, sig.value, args, arg_types, any_named, line, column)
+            var type_name: Option[str] = Option[str].none
+            match receiver_type:
+                types.Type.ty_named as n:
+                    type_name = Option[str].some(value = n.name)
+                _:
+                    pass
+            match type_name:
+                Option.some as tn:
+                    let key = method_key(tn.value, method_name)
+                    let tps_ptr = ctx.method_type_params.get(key)
+                    if tps_ptr != null:
+                        var subs = map_mod.Map[str, types.Type].create()
+                        unify_call_args(sig.value.params, arg_types, ref_of(subs))
+                        unsafe: validate_inferred_type_args(ctx, read(tps_ptr), ref_of(subs), line, column)
+                        return substitute_type(sig.value.return_type, ref_of(subs))
+                Option.none:
+                    pass
             return sig.value.return_type
         Option.none:
             return check_member(ctx, receiver_type, method_name, true, line, column)
