@@ -138,6 +138,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
     check_functions(ref_of(ctx), file)
     check_extending_methods(ref_of(ctx), file)
     check_interface_conformances(ref_of(ctx), file)
+    check_top_level_static_asserts(ref_of(ctx), file)
     return Analysis(
         source_file = file,
         diagnostics = ctx.diagnostics,
@@ -766,6 +767,31 @@ function sigs_compatible(required: FnSig, actual: FnSig) -> bool:
                 return false
         i += 1
     return not types.definitely_incompatible(required.return_type, actual.return_type)
+
+
+function check_top_level_static_asserts(ctx: ref[Context], file: ast.SourceFile) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + i)
+        match d:
+            ast.Decl.decl_static_assert as sa:
+                let ct = infer_expr_noscope(ctx, sa.condition)
+                if types.is_definitely_non_bool(ct):
+                    report(ctx, sa.line, 1, "static_assert condition must be bool")
+            _:
+                pass
+        i += 1
+
+
+function infer_expr_noscope(ctx: ref[Context], ep: ptr[ast.Expr]) -> types.Type:
+    var empty_scope = scope_create()
+    scope_enter(ref_of(empty_scope))
+    let result = infer_expr(ctx, ref_of(empty_scope), ep)
+    scope_leave(ref_of(empty_scope))
+    return result
+
 
 struct Scope:
     frames: vec.Vec[map_mod.Map[str, types.Type]]

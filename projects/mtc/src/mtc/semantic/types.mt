@@ -188,3 +188,13 @@ public function is_definitely_non_bool(t: Type) -> bool:
             return true
         _:
             return false
+
+
+public function is_definitely_non_str(t: Type) -> bool:
+    match t:
+        Type.ty_str:
+            return false
+        Type.ty_primitive:
+            return true
+        _:
+            return false
