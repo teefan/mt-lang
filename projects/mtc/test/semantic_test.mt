@@ -2101,3 +2101,27 @@ function test_equal_null_narrows_else_body_is_clean() -> t.Check:
             return unsafe: read(p)
     SRC
     return expect_clean(source)
+
+
+# =============================================================================
+#  Attribute target validation
+# =============================================================================
+
+@[test]
+function test_packed_on_struct_is_clean() -> t.Check:
+    var source = <<-SRC
+        @[packed]
+        struct A:
+            x: int
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_packed_on_function_is_flagged() -> t.Check:
+    var source = <<-SRC
+        @[packed]
+        function f() -> int:
+            return 0
+    SRC
+    return expect_flagged(source)

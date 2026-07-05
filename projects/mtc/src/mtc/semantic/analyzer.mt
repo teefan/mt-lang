@@ -139,6 +139,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
     var when_extra = expand_module_when(ref_of(ctx), file)
     collect_struct_fields(ref_of(ctx), file)
     collect_struct_fields_extra(ref_of(ctx), when_extra)
+    check_attribute_applications(ref_of(ctx), file)
     collect_extending_methods(ref_of(ctx), file)
     collect_enum_variant_members(ref_of(ctx), file)
     collect_interfaces(ref_of(ctx), file)
@@ -432,6 +433,67 @@ function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: 
 
 function fn_sig_no_params(type_name: str, method_name: str, return_type: types.Type) -> FnSig:
     return FnSig(name = method_name, params = span[ParamEntry](), return_type = return_type, has_return_type = true, method_kind = ast.MethodKind.mk_plain)
+
+
+function check_attribute_applications(ctx: ref[Context], file: ast.SourceFile) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + i)
+        match d:
+            ast.Decl.decl_struct as s:
+                check_attr_span(ctx, s.struct_attrs, "struct", s.line, s.column)
+            ast.Decl.decl_function as f:
+                check_attr_span(ctx, f.attributes, "function", f.line, f.column)
+            ast.Decl.decl_const as c:
+                check_attr_span(ctx, c.attributes, "const", c.line, c.column)
+            ast.Decl.decl_enum as e:
+                check_attr_span(ctx, e.enum_attrs, "enum", e.line, e.column)
+            ast.Decl.decl_flags as fl:
+                check_attr_span(ctx, fl.flags_attrs, "flags", fl.line, fl.column)
+            ast.Decl.decl_union as u:
+                check_attr_span(ctx, u.union_attrs, "union", u.line, u.column)
+            ast.Decl.decl_variant as vr:
+                check_attr_span(ctx, vr.variant_attrs, "variant", vr.line, vr.column)
+            ast.Decl.decl_event as ev:
+                check_attr_span(ctx, ev.attrs, "event", ev.line, ev.column)
+            _:
+                pass
+        i += 1
+
+
+function check_attr_span(ctx: ref[Context], attrs: span[ast.AttributeApplication], target: str, line: ptr_uint, column: ptr_uint) -> void:
+    var i: ptr_uint = 0
+    while i < attrs.len:
+        var a: ast.AttributeApplication
+        unsafe:
+            a = read(attrs.data + i)
+        if a.name.parts.len == 1:
+            let attr_name = unsafe: read(a.name.parts.data + 0)
+            if not is_valid_attr_target(attr_name, target):
+                report(ctx, line, column, attr_target_message(attr_name, target))
+        i += 1
+
+
+function is_valid_attr_target(attr_name: str, target: str) -> bool:
+    if attr_name.equal("packed") or attr_name.equal("align"):
+        return target.equal("struct")
+    if attr_name.equal("deprecated"):
+        return target.equal("function") or target.equal("struct") or target.equal("const") or target.equal("enum") or target.equal("flags") or target.equal("union") or target.equal("variant") or target.equal("event")
+    if attr_name.equal("test") or attr_name.equal("expect_fatal"):
+        return target.equal("function")
+    return true
+
+
+function attr_target_message(attr_name: str, target: str) -> str:
+    var buf = string.String.create()
+    buf.append("attribute @[")
+    buf.append(attr_name)
+    buf.append("] is not valid on ")
+    buf.append(target)
+    buf.append(" declarations")
+    return buf.as_str()
 
 
 ## Resolve each struct's declared fields into the type model, after all type
