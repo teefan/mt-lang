@@ -14,8 +14,11 @@ import mtc.lexer.token as token_mod
 import mtc.lexer.lexer as lexer
 import mtc.parser.parser as parser
 import mtc.pretty_printer.ast_formatter as ast_formatter
+import mtc.pretty_printer.ir_formatter as ir_formatter
 import mtc.loader.path_resolver as resolver
 import mtc.loader.module_loader as loader
+import mtc.lowering.lowering as lowering
+import mtc.c_backend.c_backend as c_backend
 
 
 function main(args: span[str]) -> int:
@@ -48,6 +51,24 @@ function main(args: span[str]) -> int:
             return 1
         return check_command(args)
 
+    if cmd == "lower":
+        if args.len < 2:
+            print_help()
+            return 1
+        return lower_command(args)
+
+    if cmd == "emit-c":
+        if args.len < 2:
+            print_help()
+            return 1
+        return emit_c_command(args)
+
+    if cmd == "build":
+        if args.len < 2:
+            print_help()
+            return 1
+        return build_command(args)
+
     if cmd == "help":
         print_help()
         return 0
@@ -65,6 +86,9 @@ function print_help() -> void:
     stdio.print_line("  lex   <file>  print the lexer token stream")
     stdio.print_line("  parse <file>  parse source and print AST")
     stdio.print_line("  check <file> [--root DIR]...  type-check a file and its imports")
+    stdio.print_line("  lower <file> [--root DIR]...  lower to IR and print it")
+    stdio.print_line("  emit-c <file> [--root DIR]...  compile to C and print it")
+    stdio.print_line("  build <file> [--root DIR]...  build a program (Phase 0: stubbed)")
     stdio.print_line("  help          print this help")
 
 
@@ -180,6 +204,111 @@ function report_check_summary(count: ptr_uint) -> void:
         stdio.print_line("error: could not check due to 1 error")
     else:
         stdio.print_format(c"error: could not check due to %d errors\n", int<-(count))
+
+
+## Parse the `[--root DIR]... <source>` argument tail shared by the lower,
+## emit-c, and build commands.  Fills `roots` (defaulting to the source
+## directory when none is given) and returns the source path, or none after
+## printing an error / usage.
+function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]]) -> Option[str]:
+    var file_path: Option[str] = Option[str].none
+    var i: ptr_uint = 1
+    while i < args.len:
+        let arg = args[i]
+        if arg == "--root":
+            if i + 1 >= args.len:
+                stdio.print_line("error: --root requires a directory")
+                return Option[str].none
+            roots.push(args[i + 1])
+            i += 2
+            continue
+        match file_path:
+            Option.some:
+                stdio.print_line("error: command accepts a single source path")
+                return Option[str].none
+            Option.none:
+                file_path = Option[str].some(value = arg)
+        i += 1
+
+    match file_path:
+        Option.some as p:
+            if roots.is_empty():
+                roots.push(path_ops.dirname(p.value))
+            return Option[str].some(value = p.value)
+        Option.none:
+            print_help()
+            return Option[str].none
+
+
+## Lower a checked program to IR and print it (`mtc lower`).
+function lower_command(args: span[str]) -> int:
+    var roots = vec.Vec[str].create()
+    defer roots.release()
+    let path = parse_source_operand(args, ref_of(roots)) else:
+        return 1
+
+    var program = loader.check_program(path, roots.as_span(), resolver.Platform.linux)
+    defer program.release()
+
+    if program.diagnostic_count() > 0:
+        print_program_diagnostics(ref_of(program))
+        report_check_summary(program.diagnostic_count())
+        return 1
+
+    let ir_program = lowering.lower(program)
+    var rendered = ir_formatter.format_program(ir_program)
+    defer rendered.release()
+    let text = rendered.as_str()
+    stdio.print_format(c"%.*s", int<-(text.len), text.data)
+    return 0
+
+
+## Compile a checked program to C and print it (`mtc emit-c`).
+function emit_c_command(args: span[str]) -> int:
+    var roots = vec.Vec[str].create()
+    defer roots.release()
+    let path = parse_source_operand(args, ref_of(roots)) else:
+        return 1
+
+    var program = loader.check_program(path, roots.as_span(), resolver.Platform.linux)
+    defer program.release()
+
+    if program.diagnostic_count() > 0:
+        print_program_diagnostics(ref_of(program))
+        report_check_summary(program.diagnostic_count())
+        return 1
+
+    let ir_program = lowering.lower(program)
+    var c_source = c_backend.generate_c(ir_program)
+    defer c_source.release()
+    let text = c_source.as_str()
+    stdio.print_format(c"%.*s", int<-(text.len), text.data)
+    return 0
+
+
+## Build a program (`mtc build`).  Phase 0: threads the pipeline through the
+## lowering and C-backend stubs; the native build driver (write C, invoke cc)
+## lands in Phase 1.
+function build_command(args: span[str]) -> int:
+    var roots = vec.Vec[str].create()
+    defer roots.release()
+    let path = parse_source_operand(args, ref_of(roots)) else:
+        return 1
+
+    var program = loader.check_program(path, roots.as_span(), resolver.Platform.linux)
+    defer program.release()
+
+    if program.diagnostic_count() > 0:
+        print_program_diagnostics(ref_of(program))
+        report_check_summary(program.diagnostic_count())
+        return 1
+
+    let ir_program = lowering.lower(program)
+    var c_source = c_backend.generate_c(ir_program)
+    defer c_source.release()
+    stdio.print_line("mtc build: front-end, IR lowering, and C-backend stubs ran successfully")
+    stdio.print_line("note: native build driver (emit C, invoke cc) arrives in Phase 1")
+    return 1
 
 
 function lex_command(file_path: str, machine: bool) -> int:

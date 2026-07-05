@@ -44,10 +44,13 @@ public struct LoadDiagnostic:
 
 
 ## The result of loading and checking a program: every parsed module, a
-## dependency-first ordering (indices into `modules`), and all diagnostics.
+## dependency-first ordering (indices into `modules`), the per-module semantic
+## `Analysis` values (retained in dependency-first order — the root module is the
+## last entry, consumed by the Lowering stage), and all diagnostics.
 public struct Program:
     modules: vec.Vec[LoadedModule]
     order: vec.Vec[ptr_uint]
+    analyses: vec.Vec[analyzer.Analysis]
     diagnostics: vec.Vec[LoadDiagnostic]
 
 
@@ -150,6 +153,11 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
     var bindings = map_mod.Map[str, analyzer.ModuleBinding].create()
     let bindings_ptr = ptr_of(bindings)
 
+    # Retained per-module analyses, pushed in dependency-first order so the root
+    # module is the last entry.  Consumed by the Lowering stage; intentionally
+    # leaked at program end like the transient bindings above.
+    var analyses = vec.Vec[analyzer.Analysis].create()
+
     var oi: ptr_uint = 0
     while oi < order.len():
         let index_ptr = order.get(oi) else:
@@ -157,10 +165,10 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
         let index = unsafe: read(index_ptr)
         let module_ptr = modules.get(index) else:
             break
-        check_and_bind_module(module_ptr, bindings_ptr, ref_of(diagnostics))
+        check_and_bind_module(module_ptr, bindings_ptr, ref_of(analyses), ref_of(diagnostics))
         oi += 1
 
-    return Program(modules = modules, order = order, diagnostics = diagnostics)
+    return Program(modules = modules, order = order, analyses = analyses, diagnostics = diagnostics)
 
 
 ## Depth-first transitive parse.  Uses three-colour marking: `on_stack` (gray,
@@ -280,11 +288,13 @@ function recurse_imports(
 
 ## Semantically check one parsed module against the accumulated import bindings,
 ## append its parse and semantic diagnostics (as owned copies) to the
-## program-wide list, and register the module's own export binding.  Parse errors
-## block semantic analysis, mirroring the CLI's single-file behaviour.
+## program-wide list, register the module's own export binding, and retain its
+## `Analysis` for the Lowering stage.  Parse errors block semantic analysis,
+## mirroring the CLI's single-file behaviour.
 function check_and_bind_module(
     module_ptr: ptr[LoadedModule],
     bindings_ptr: ptr[map_mod.Map[str, analyzer.ModuleBinding]],
+    analyses: ref[vec.Vec[analyzer.Analysis]],
     diagnostics: ref[vec.Vec[LoadDiagnostic]],
 ) -> void:
     unsafe:
@@ -322,3 +332,4 @@ function check_and_bind_module(
         analysis.diagnostics.release()
 
         read(bindings_ptr).set(loaded.module_name.as_str(), binder.bind_module(analysis))
+        analyses.push(analysis)
