@@ -2308,6 +2308,15 @@ function substitute_type(t: types.Type, subs: ref[map_mod.Map[str, types.Type]])
                     new_args.push(substitute_type(read(g.args.data + i), subs))
                 i += 1
             return types.Type.ty_generic(name = g.name, args = new_args.as_span())
+        types.Type.ty_function as f:
+            var new_params = vec.Vec[types.Type].create()
+            var pi2: ptr_uint = 0
+            while pi2 < f.params.len:
+                unsafe:
+                    new_params.push(substitute_type(read(f.params.data + pi2), subs))
+                pi2 += 1
+            let new_ret = substitute_type(unsafe: read(f.return_type), subs)
+            return types.Type.ty_function(params = new_params.as_span(), return_type = types.alloc_type(new_ret), variadic = f.variadic)
         _:
             return t
 
@@ -2468,6 +2477,19 @@ function unify(pattern: types.Type, actual: types.Type, subs: ref[map_mod.Map[st
                                 i += 1
                     _:
                         pass
+        types.Type.ty_function as pf:
+            match actual:
+                types.Type.ty_function as af:
+                    if pf.params.len == af.params.len:
+                        var pi2: ptr_uint = 0
+                        while pi2 < pf.params.len:
+                            unsafe:
+                                unify(read(pf.params.data + pi2), read(af.params.data + pi2), subs)
+                            pi2 += 1
+                        unsafe:
+                            unify(read(pf.return_type), read(af.return_type), subs)
+                _:
+                    pass
         _:
             pass
 
