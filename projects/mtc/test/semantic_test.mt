@@ -1879,3 +1879,115 @@ function test_parallel_block_accepts_two_stmts_is_clean() -> t.Check:
                 b = 2
     SRC
     return expect_clean(source)
+
+
+# =============================================================================
+#  Unsafe context enforcement
+# =============================================================================
+
+@[test]
+function test_read_ptr_without_unsafe_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f(p: ptr[int]) -> int:
+            return read(p)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_read_ptr_inside_unsafe_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f(p: ptr[int]) -> int:
+            unsafe:
+                return read(p)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_pointer_arithmetic_without_unsafe_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f(p: ptr[int]) -> ptr[int]:
+            return p + 1
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_pointer_cast_without_unsafe_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> ptr[int]:
+            return ptr[int]<-0
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_pointer_cast_inside_unsafe_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> ptr[int]:
+            unsafe:
+                return ptr[int]<-0
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_reinterpret_without_unsafe_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f(x: float) -> uint:
+            return reinterpret[uint](x)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_reinterpret_inside_unsafe_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f(x: float) -> uint:
+            unsafe:
+                return reinterpret[uint](x)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_ptr_of_without_unsafe_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> ptr[int]:
+            var x: int = 5
+            return ptr_of(x)
+    SRC
+    return expect_clean(source)
+
+
+# =============================================================================
+#  Builtin call result types
+# =============================================================================
+
+@[test]
+function test_zero_returns_specified_type_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            return zero[int]
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_size_of_returns_ptr_uint_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> ptr_uint:
+            return size_of(int)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_read_ptr_returns_element_type_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f(p: ptr[int]) -> int:
+            unsafe:
+                return read(p)
+    SRC
+    return expect_clean(source)

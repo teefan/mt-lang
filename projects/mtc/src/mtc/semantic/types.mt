@@ -208,6 +208,37 @@ public function is_signed_integer_name(name: str) -> bool:
     )
 
 
+## True when `t` is a raw pointer (ptr[T] or const_ptr[T]), excluding ref,
+## span, and array.
+public function is_raw_pointer(t: Type) -> bool:
+    match t:
+        Type.ty_generic as g:
+            return g.name.equal("ptr") or g.name.equal("const_ptr")
+        _:
+            return false
+
+
+## The element type of a pointer or array-like type.  Returns ty_error for
+## anything that is not ptr / const_ptr / ref / span / array.
+public function pointer_element(t: Type) -> Type:
+    match t:
+        Type.ty_generic as g:
+            if g.args.len >= 1:
+                return unsafe: read(g.args.data + 0)
+            return Type.ty_error
+        _:
+            return Type.ty_error
+
+
+## True when `t` is a ref type (ref[T] or ref[@a, T]).
+public function is_ref_type(t: Type) -> bool:
+    match t:
+        Type.ty_generic as g:
+            return g.name.equal("ref")
+        _:
+            return false
+
+
 ## True when `t` is a primitive integer (fixed-width or pointer-sized).
 public function is_integer_type(t: Type) -> bool:
     match t:

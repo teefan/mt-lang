@@ -83,6 +83,7 @@ struct Context:
     implemented: map_mod.Map[str, span[ast.QualifiedName]]
     import_aliases: map_mod.Map[str, str]
     imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?
+    unsafe_depth: int
     diagnostics: vec.Vec[SemanticDiagnostic]
 
 
@@ -127,6 +128,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         implemented = map_mod.Map[str, span[ast.QualifiedName]].create(),
         import_aliases = map_mod.Map[str, str].create(),
         imported_modules = imported_modules,
+        unsafe_depth = 0,
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
     )
     collect_import_aliases(ref_of(ctx), file)
@@ -1139,7 +1141,9 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: p
                     ai += 1
                 check_match(ctx, scope, m.scrutinee, m.arms, m.line, m.column)
             ast.Stmt.stmt_unsafe as u:
+                ctx.unsafe_depth += 1
                 check_body(ctx, scope, chk, u.body)
+                ctx.unsafe_depth -= 1
             ast.Stmt.stmt_defer as d:
                 check_body(ctx, scope, check_flags(chk.ret, chk.inside_loop, true, chk.inside_parallel), d.body)
             ast.Stmt.stmt_parallel_block as pb:
@@ -1431,13 +1435,26 @@ function infer_expr(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr]) -> 
                 return infer_unary(ctx, scope, u.operator, u.operand)
             ast.Expr.expr_prefix_cast as c:
                 let _inner = infer_expr(ctx, scope, c.expression)
-                return resolve_type(ctx, c.target_type)
+                let target = resolve_type(ctx, c.target_type)
+                if types.is_raw_pointer(target) and ctx.unsafe_depth == 0:
+                    report(ctx, c.line, c.column, "pointer cast requires unsafe")
+                return target
             ast.Expr.expr_member_access as ma:
                 return resolve_member_access(ctx, scope, ma.receiver, ma.member_name, false, ma.line, ma.column)
             ast.Expr.expr_index_access as ix:
-                let _rx = infer_expr(ctx, scope, ix.receiver)
+                let rt = infer_expr(ctx, scope, ix.receiver)
                 let _ix = infer_expr(ctx, scope, ix.index)
+                if types.is_raw_pointer(rt) and ctx.unsafe_depth == 0:
+                    report(ctx, 0, 0, "pointer indexing requires unsafe")
+                let elem = types.pointer_element(rt)
+                if not types.is_error(elem):
+                    return elem
                 return types.Type.ty_error
+            ast.Expr.expr_unsafe as u:
+                ctx.unsafe_depth += 1
+                let result = infer_expr(ctx, scope, u.expression)
+                ctx.unsafe_depth -= 1
+                return result
             ast.Expr.expr_call as call:
                 return infer_and_check_call(ctx, scope, call.callee, call.args)
             ast.Expr.expr_specialization as spec:
@@ -1464,8 +1481,14 @@ function infer_binary(ctx: ref[Context], scope: ref[Scope], op: str, left: ptr[a
     let rt = infer_expr(ctx, scope, right)
     if is_comparison_op(op) or op.equal("and") or op.equal("or"):
         return types.primitive("bool")
+    if (types.is_raw_pointer(lt) or types.is_raw_pointer(rt)) and ctx.unsafe_depth == 0:
+        report(ctx, 0, 0, "pointer arithmetic requires unsafe")
     if types.is_numeric(lt) and types.is_numeric(rt):
         return lt
+    if types.is_raw_pointer(lt) and not types.is_raw_pointer(rt):
+        return lt
+    if types.is_raw_pointer(rt) and not types.is_raw_pointer(lt):
+        return rt
     return types.Type.ty_error
 
 
@@ -1539,6 +1562,10 @@ function check_specialization_call(ctx: ref[Context], scope: ref[Scope], spec_ca
     unsafe:
         match read(spec_callee):
             ast.Expr.expr_identifier as id:
+                if id.name.equal("zero") and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
+                    return check_zero_call(ctx, type_args, id.line, id.column)
+                if id.name.equal("reinterpret") and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
+                    return check_reinterpret_call(ctx, type_args, id.line, id.column)
                 if is_hook_name(id.name) and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
                     return check_hook_call(ctx, id.name, type_args, id.line, id.column)
                 if id.name.equal("adapt") and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
@@ -1553,6 +1580,28 @@ function check_specialization_call(ctx: ref[Context], scope: ref[Scope], spec_ca
                 return types.Type.ty_error
             _:
                 return types.Type.ty_error
+
+
+## `reinterpret[T](v)` returns T; requires unsafe context.
+function check_reinterpret_call(ctx: ref[Context], type_args: span[ast.TypeArgument], line: ptr_uint, column: ptr_uint) -> types.Type:
+    if type_args.len != 1:
+        return types.Type.ty_error
+    if ctx.unsafe_depth == 0:
+        report(ctx, line, column, "reinterpret requires unsafe")
+    var arg_ref: ptr[ast.TypeRef]
+    unsafe:
+        arg_ref = read(type_args.data + 0).value
+    return resolve_type(ctx, arg_ref)
+
+
+## `zero[T]` returns T (zero-initialized value type).
+function check_zero_call(ctx: ref[Context], type_args: span[ast.TypeArgument], line: ptr_uint, column: ptr_uint) -> types.Type:
+    if type_args.len != 1:
+        return types.Type.ty_error
+    var arg_ref: ptr[ast.TypeRef]
+    unsafe:
+        arg_ref = read(type_args.data + 0).value
+    return resolve_type(ctx, arg_ref)
 
 
 ## `adapt[I](ref_of(value))` constructs a dyn[I] value.  Verify I resolves to a
@@ -2322,6 +2371,43 @@ function check_imported_member(ctx: ref[Context], module_name: str, type_name: s
     return types.Type.ty_error
 
 
+## Return the result type of a known builtin call (read, ptr_of, const_ptr_of,
+## size_of, align_of).  Returns `none` for anything else, so the call falls
+## through to regular function/method dispatch.  `read(ptr)` and `ptr_of(x)` are
+## side-effectful: they report an unsafe-context requirement when applicable.
+function try_builtin_call(ctx: ref[Context], scope: ref[Scope], callee_name: str, args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> Option[types.Type]:
+    if callee_name.equal("read"):
+        if args.len != 1:
+            return Option[types.Type].none
+        var arg: ast.Argument = unsafe: read(args.data + 0)
+        let at = infer_expr(ctx, scope, arg.arg_value)
+        if types.is_raw_pointer(at) and ctx.unsafe_depth == 0:
+            report(ctx, line, column, "pointer dereference requires unsafe")
+        if types.is_raw_pointer(at) or types.is_ref_type(at):
+            return Option[types.Type].some(value = types.pointer_element(at))
+        return Option[types.Type].none
+    if callee_name.equal("ptr_of") or callee_name.equal("const_ptr_of"):
+        if args.len != 1:
+            return Option[types.Type].none
+        var arg: ast.Argument = unsafe: read(args.data + 0)
+        let at = infer_expr(ctx, scope, arg.arg_value)
+        let kind = if callee_name.equal("ptr_of"): "ptr" else: "const_ptr"
+        return Option[types.Type].some(value = types.Type.ty_generic(name = string.String.from_str(kind).as_str(), args = alloc_one_type_arg(at)))
+    if callee_name.equal("size_of") or callee_name.equal("align_of"):
+        if args.len != 1:
+            return Option[types.Type].none
+        return Option[types.Type].some(value = types.primitive("ptr_uint"))
+    if callee_name.equal("fatal"):
+        return Option[types.Type].some(value = types.Type.ty_error)
+    return Option[types.Type].none
+
+
+function alloc_one_type_arg(ty: types.Type) -> span[types.Type]:
+    var v = vec.Vec[types.Type].create()
+    v.push(ty)
+    return v.as_span()
+
+
 ## Check a call to a top-level function by identifier and yield its result type.
 ## For a generic function, type arguments are inferred from the call, validated
 ## against their constraints, and substituted into the return type.
@@ -2329,6 +2415,12 @@ function check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr],
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
+                # Builtin calls (read, ptr_of, ...) handled before name lookup.
+                match try_builtin_call(ctx, scope, id.name, args, id.line, id.column):
+                    Option.some as ty:
+                        return ty.value
+                    Option.none:
+                        pass
                 # A local value (e.g. a proc) of the same name shadows the
                 # function; its arity/parameter types are not statically known.
                 if scope_get(scope, id.name) != null:
