@@ -80,6 +80,7 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
         temp_counter = 0,
     )
     var functions = vec.Vec[ir.Function].create()
+    var enums = vec.Vec[ir.EnumDecl].create()
 
     var i: ptr_uint = 0
     while i < analysis.source_file.declarations.len:
@@ -96,6 +97,10 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
                                 functions.push(entry.value)
                             Option.none:
                                 pass
+            ast.Decl.decl_enum as en:
+                enums.push(lower_enum_decl(ref_of(ctx), en.name, en.backing_type, en.enum_members, false))
+            ast.Decl.decl_flags as fl:
+                enums.push(lower_enum_decl(ref_of(ctx), fl.name, fl.backing_type, fl.flags_members, true))
             _:
                 pass
         i += 1
@@ -108,7 +113,7 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
         opaques = span[ir.OpaqueDecl](),
         structs = span[ir.StructDecl](),
         unions = span[ir.UnionDecl](),
-        enums = span[ir.EnumDecl](),
+        enums = enums.as_span(),
         variants = span[ir.VariantDecl](),
         static_asserts = span[ir.StaticAssert](),
         functions = functions.as_span(),
@@ -156,13 +161,13 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
         var p: ast.Param
         unsafe:
             p = read(params.data + pi)
-        let param_ty = fn_sig_param_type(sig, pi)
+        let param_ty = qualify_type(ctx, fn_sig_param_type(sig, pi))
         let c_name = c_local_name(p.name)
         ir_params.push(ir.Param(name = p.name, linkage_name = c_name, ty = param_ty, pointer = false))
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_name, ty = param_ty, pointer = false))
         pi += 1
 
-    let ret_ty = fn_sig_return_type(sig)
+    let ret_ty = qualify_type(ctx, fn_sig_return_type(sig))
     let body_stmts = lower_block(ctx, body)
 
     return ir.Function(
@@ -268,6 +273,8 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 output.push(ir.Stmt.stmt_while(condition = cond, body = body))
             ast.Stmt.stmt_for as f:
                 lower_for_range(ctx, output, f.bindings, f.iterables, f.body)
+            ast.Stmt.stmt_match as m:
+                lower_match(ctx, output, m.scrutinee, m.arms)
             ast.Stmt.stmt_expression as ex:
                 let lowered = lower_expr(ctx, ex.expression)
                 output.push(ir.Stmt.stmt_expression(expression = lowered, line = ex.line, source_path = ""))
@@ -279,11 +286,22 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
 ## scalar), else the inferred type of its initializer.
 function local_decl_type(ctx: ref[LowerCtx], declared: ptr[ast.TypeRef]?, value: ptr[ast.Expr]) -> types.Type:
     let annotation = declared else:
-        return expr_type(ctx, value)
+        return qualify_type(ctx, expr_type(ctx, value))
     let resolved = resolve_scalar_type_ref(annotation)
     if types.is_error(resolved):
-        return expr_type(ctx, value)
+        return qualify_type(ctx, expr_type(ctx, value))
     return resolved
+
+
+## Qualify a bare local named type (`ty_named`) with the current module so the
+## backend can produce its module-prefixed C name (`State` -> `en_State`).
+## Primitives, `str`, and already-qualified imported types pass through.
+function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_named as n:
+            return types.Type.ty_imported(module_name = ctx.module_name, name = n.name)
+        _:
+            return t
 
 
 ## Lower an `if`/`else if`/`else` chain (mtc's multi-branch AST) into nested
@@ -420,8 +438,10 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = expr_type(ctx, ep)))
             ast.Expr.expr_call as call:
                 return lower_call(ctx, call.callee, call.args, ep)
+            ast.Expr.expr_member_access as ma:
+                return lower_member_access(ctx, ma.receiver, ma.member_name, ep)
             _:
-                fatal(c"lowering Phase 1: unsupported expression")
+                fatal(c"lowering Phase 2: unsupported expression")
 
 
 function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
@@ -441,7 +461,180 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     ty = expr_type(ctx, call_ep),
                 ))
             _:
-                fatal(c"lowering Phase 1: only direct function calls are supported")
+                fatal(c"lowering Phase 2: only direct function calls are supported")
+
+
+## Phase 2 member access: enum / flags member constants on a type-name receiver
+## (`State.running` -> `en_State_running`).  Struct field access and other member
+## forms arrive in Phase 3.
+function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str, ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                if ctx.analysis.static_member_types.contains(id.name):
+                    return alloc_expr(ir.Expr.expr_name(
+                        name = enum_member_c_name(ctx.module_name, id.name, member),
+                        ty = expr_type(ctx, ep),
+                        pointer = false,
+                    ))
+            _:
+                pass
+    fatal(c"lowering Phase 2: unsupported member access")
+
+
+# =============================================================================
+#  Enum / flags declarations
+# =============================================================================
+
+function lower_enum_decl(ctx: ref[LowerCtx], name: str, backing_type: ptr[ast.TypeRef]?, members: span[ast.EnumMember], is_flags: bool) -> ir.EnumDecl:
+    var backing = types.primitive("int")
+    let annotation = backing_type
+    if annotation != null:
+        let resolved = resolve_scalar_type_ref(annotation)
+        if not types.is_error(resolved):
+            backing = resolved
+
+    let enum_linkage = module_function_c_name(ctx.module_name, name)
+    var ir_members = vec.Vec[ir.EnumMember].create()
+    var next_auto: long = 0
+
+    var i: ptr_uint = 0
+    while i < members.len:
+        var m: ast.EnumMember
+        unsafe:
+            m = read(members.data + i)
+        let member_linkage = enum_member_c_name(ctx.module_name, name, m.name)
+        var value_expr: ptr[ir.Expr]
+        let explicit = m.value
+        if explicit != null:
+            value_expr = lower_expr(ctx, explicit)
+            next_auto = const_eval_int(explicit) + 1
+        else:
+            value_expr = alloc_expr(ir.Expr.expr_integer_literal(value = next_auto, ty = backing))
+            next_auto += 1
+        ir_members.push(ir.EnumMember(name = m.name, linkage_name = member_linkage, value = value_expr))
+        i += 1
+
+    return ir.EnumDecl(
+        name = name,
+        linkage_name = enum_linkage,
+        backing_type = backing,
+        members = ir_members.as_span(),
+        is_flags = is_flags,
+    )
+
+
+function enum_member_c_name(module_name: str, type_name: str, member: str) -> str:
+    var buf = string.String.create()
+    buf.append(module_c_prefix(module_name))
+    buf.append("_")
+    buf.append(type_name)
+    buf.append("_")
+    buf.append(member)
+    return buf.as_str()
+
+
+## Compile-time integer evaluation for enum/flags member values (literals plus
+## the arithmetic/bitwise/shift operators used in flag definitions).  Used only
+## to advance the auto-increment counter after an explicit member value.
+function const_eval_int(ep: ptr[ast.Expr]) -> long:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal as lit:
+                return long<-lit.value
+            ast.Expr.expr_char_literal as ch:
+                return long<-ch.value
+            ast.Expr.expr_unary_op as un:
+                let v = const_eval_int(un.operand)
+                if un.operator == "-":
+                    return -v
+                if un.operator == "~":
+                    return ~v
+                return v
+            ast.Expr.expr_binary_op as bin:
+                let l = const_eval_int(bin.left)
+                let r = const_eval_int(bin.right)
+                if bin.operator == "+":
+                    return l + r
+                if bin.operator == "-":
+                    return l - r
+                if bin.operator == "*":
+                    return l * r
+                if bin.operator == "/":
+                    return l / r
+                if bin.operator == "%":
+                    return l % r
+                if bin.operator == "<<":
+                    return l << r
+                if bin.operator == ">>":
+                    return l >> r
+                if bin.operator == "|":
+                    return l | r
+                if bin.operator == "&":
+                    return l & r
+                if bin.operator == "^":
+                    return l ^ r
+                return 0
+            _:
+                return 0
+
+
+# =============================================================================
+#  Match (enum scrutinee) -> switch
+# =============================================================================
+
+## Lower a `match` over an enum/flags scrutinee into an IR `stmt_switch`.  Each
+## `EnumType.member` arm becomes a `case`; a `_` arm becomes the `default`.  With
+## no `_` arm the switch is exhaustive (the backend adds `__builtin_unreachable`).
+## Integer/str/variant/tuple scrutinees arrive in later phases.
+function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
+    let scrutinee_expr = lower_expr(ctx, scrutinee)
+    let enum_name = named_type_name(expr_type(ctx, scrutinee)) else:
+        fatal(c"lowering Phase 2: match is only supported over enum/flags scrutinees")
+
+    var cases = vec.Vec[ir.SwitchCase].create()
+    var has_wildcard = false
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.MatchArm
+        unsafe:
+            arm = read(arms.data + i)
+        let body = lower_block(ctx, arm.body)
+        let pattern = arm.pattern
+        if pattern == null:
+            has_wildcard = true
+            cases.push(ir.SwitchCase(is_default = true, value = null, body = body))
+        else:
+            let member = match_member_name(pattern) else:
+                fatal(c"lowering Phase 2: unsupported match pattern")
+            let value = alloc_expr(ir.Expr.expr_name(
+                name = enum_member_c_name(ctx.module_name, enum_name, member),
+                ty = expr_type(ctx, scrutinee),
+                pointer = false,
+            ))
+            cases.push(ir.SwitchCase(is_default = false, value = value, body = body))
+        i += 1
+
+    output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
+
+
+function match_member_name(pattern: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(pattern):
+            ast.Expr.expr_member_access as ma:
+                return Option[str].some(value = ma.member_name)
+            _:
+                return Option[str].none
+
+
+function named_type_name(t: types.Type) -> Option[str]:
+    match t:
+        types.Type.ty_named as n:
+            return Option[str].some(value = n.name)
+        types.Type.ty_imported as im:
+            return Option[str].some(value = im.name)
+        _:
+            return Option[str].none
 
 
 # =============================================================================

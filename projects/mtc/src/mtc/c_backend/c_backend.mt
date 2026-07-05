@@ -41,6 +41,13 @@ public function generate_c(program: ir.Program) -> string.String:
         i += 1
     emit_line(ref_of(e), "")
 
+    i = 0
+    while i < program.enums.len:
+        unsafe:
+            emit_enum(ref_of(e), read(program.enums.data + i))
+        emit_line(ref_of(e), "")
+        i += 1
+
     if program.functions.len > 0:
         i = 0
         while i < program.functions.len:
@@ -135,8 +142,50 @@ function c_type(t: types.Type) -> str:
             return primitive_c_type(p.name)
         types.Type.ty_str:
             return "mt_str"
+        types.Type.ty_imported as im:
+            return named_type_c_name(im.module_name, im.name)
         _:
-            fatal(c"c_backend Phase 1: unsupported C type")
+            fatal(c"c_backend Phase 2: unsupported C type")
+
+
+## The C name of a module-qualified named type (`en` + `State` -> `en_State`).
+## Mirrors c_backend/type_system.rb named_type_c_name for the ordinary-module case.
+function named_type_c_name(module_name: str, name: str) -> str:
+    var buf = string.String.create()
+    buf.append(module_c_prefix(module_name))
+    buf.append("_")
+    buf.append(name)
+    return buf.as_str()
+
+
+function module_c_prefix(module_name: str) -> str:
+    return sanitize_identifier(module_name)
+
+
+function sanitize_identifier(text: str) -> str:
+    var buf = string.String.create()
+    var prev_underscore = false
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if is_alnum_byte(b):
+            buf.push_byte(b)
+            prev_underscore = false
+        else:
+            if not prev_underscore:
+                buf.push_byte('_')
+                prev_underscore = true
+        i += 1
+    var result = buf.as_str()
+    if result.len > 0 and result.byte_at(result.len - 1) == '_':
+        result = result.slice(0, result.len - 1)
+    if result.len == 0:
+        return "value"
+    return result
+
+
+function is_alnum_byte(b: ubyte) -> bool:
+    return (b >= '0' and b <= '9') or (b >= 'A' and b <= 'Z') or (b >= 'a' and b <= 'z')
 
 
 function primitive_c_type(name: str) -> str:
@@ -178,6 +227,25 @@ function primitive_c_type(name: str) -> str:
 ## A scalar declaration `TYPE NAME` (Phase 1 has no arrays/pointers/functions).
 function c_declaration(t: types.Type, name: str) -> str:
     return j3(c_type(t), " ", name)
+
+
+# =============================================================================
+#  Enum emission (mirrors c_backend/type_declaration.rb emit_enum)
+# =============================================================================
+
+function emit_enum(e: ref[Emitter], enum_decl: ir.EnumDecl) -> void:
+    emit_line(e, j4("typedef ", c_type(enum_decl.backing_type), " ", j2(enum_decl.linkage_name, ";")))
+    if enum_decl.members.len == 0:
+        return
+    emit_line(e, "enum {")
+    var i: ptr_uint = 0
+    while i < enum_decl.members.len:
+        unsafe:
+            let m = read(enum_decl.members.data + i)
+            let suffix = if i == enum_decl.members.len - 1: "" else: ","
+            emit_line(e, j6("  ", m.linkage_name, " = ", emit_expression(m.value), suffix, ""))
+        i += 1
+    emit_line(e, "};")
 
 
 # =============================================================================
@@ -271,8 +339,70 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 emit_line(e, header.as_str())
                 emit_stmts(e, f.body, level + 1)
                 emit_line(e, j2(indent, "}"))
+            ir.Stmt.stmt_switch as sw:
+                emit_switch(e, sw.expression, sw.cases, sw.exhaustive, level)
             _:
                 fatal(c"c_backend Phase 2: unsupported statement")
+
+
+## Emit a `switch`.  Non-default cases are `case VALUE: { body [break;] }`; a `_`
+## arm is `default: { body [break;] }`; and an exhaustive switch with no explicit
+## default gets `default: __builtin_unreachable();`.  Mirrors the switch path in
+## c_backend/statements.rb.
+function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.SwitchCase], exhaustive: bool, level: ptr_uint) -> void:
+    let indent = indent_c(level)
+    let case_indent = indent_c(level + 1)
+    emit_line(e, j4(indent, "switch (", emit_expression(expression), ") {"))
+    var has_default = false
+    var i: ptr_uint = 0
+    while i < cases.len:
+        unsafe:
+            let sc = read(cases.data + i)
+            if sc.is_default:
+                has_default = true
+                emit_line(e, j2(case_indent, "default: {"))
+            else:
+                let value = sc.value else:
+                    fatal(c"c_backend Phase 2: non-default switch case missing value")
+                emit_line(e, j4(case_indent, "case ", emit_expression(value), ": {"))
+            emit_stmts(e, sc.body, level + 2)
+            if not body_terminates(sc.body):
+                emit_line(e, j2(indent_c(level + 2), "break;"))
+            emit_line(e, j2(case_indent, "}"))
+        i += 1
+    if exhaustive and not has_default:
+        emit_line(e, j2(case_indent, "default: __builtin_unreachable();"))
+    emit_line(e, j2(indent, "}"))
+
+
+## True when a statement sequence always transfers control (mirrors
+## control_flow_emission.rb body_terminates? / statement_terminates?).
+function body_terminates(body: span[ir.Stmt]) -> bool:
+    if body.len == 0:
+        return false
+    unsafe:
+        return statement_terminates(body.data + (body.len - 1))
+
+
+function statement_terminates(sp: ptr[ir.Stmt]) -> bool:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_return:
+                return true
+            ir.Stmt.stmt_break:
+                return true
+            ir.Stmt.stmt_continue:
+                return true
+            ir.Stmt.stmt_goto:
+                return true
+            ir.Stmt.stmt_block as blk:
+                return body_terminates(blk.body)
+            ir.Stmt.stmt_if as iff:
+                if iff.else_body.len == 0:
+                    return false
+                return body_terminates(iff.then_body) and body_terminates(iff.else_body)
+            _:
+                return false
 
 
 ## True when a block introduces a local declaration and therefore needs its own
