@@ -160,7 +160,7 @@ function main() -> int:
       File.write(source_path, "function main() -> int:\n    return 99\n")
 
       frontend = Object.new
-      frontend.define_singleton_method(:compile) do |path:, module_roots:, package_graph:, platform:, emit_line_directives:, binary_path:|
+      frontend.define_singleton_method(:compile) do |path:, module_roots:, package_graph:, platform:, emit_line_directives:, binary_path:, debug_guards: nil, **|
         calls << {
           path:,
           module_roots: module_roots.dup,

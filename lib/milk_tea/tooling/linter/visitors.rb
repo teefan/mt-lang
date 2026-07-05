@@ -116,6 +116,7 @@ module MilkTea
             profile_phase("rule.constant_condition") { emit_constant_condition_warnings(function.body) }
             profile_phase("rule.redundant_null_check") { emit_redundant_null_check_warnings(function.body) }
             profile_phase("rule.loop_single_iteration") { emit_loop_single_iteration_warnings(function.body) }
+            profile_phase("rule.owning_release") { emit_owning_release_warnings(function) }
           end
           profile_phase("rule.prefer_let_else") { emit_prefer_let_else_warnings(function.body) }
           profile_phase("rule.prefer_var_else") { emit_prefer_var_else_warnings(function.body) }
@@ -302,6 +303,7 @@ module MilkTea
               emit_constant_condition_warnings(expression.body)
               emit_redundant_null_check_warnings(expression.body)
               emit_loop_single_iteration_warnings(expression.body)
+              emit_owning_release_warnings(expression.body)
             end
             emit_prefer_let_else_warnings(expression.body)
             emit_prefer_var_else_warnings(expression.body)

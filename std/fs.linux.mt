@@ -334,16 +334,14 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
                             ].failure(error= static_error("fs copy entry missing source entry"))
                         Option.some as entry_payload:
                             var child_source = path_ops.join(source_path, entry_payload.value)
+                            defer child_source.release()
                             var child_target = path_ops.join(target_path, entry_payload.value)
+                            defer child_target.release()
                             match copy_entry(child_source.as_str(), child_target.as_str()):
                                 Result.failure as child_payload:
-                                    child_source.release()
-                                    child_target.release()
                                     return Result[bool, Error].failure(error= child_payload.error)
                                 Result.success:
                                     pass
-                            child_source.release()
-                            child_target.release()
                     index += 1
 
                 return Result[bool, Error].success(value= true)
@@ -385,13 +383,12 @@ public function remove_tree(path: str) -> Result[bool, Error]:
                             return Result[bool, Error].failure(error= static_error("fs remove tree missing entry"))
                         Option.some as entry_payload:
                             var child_path = path_ops.join(path, entry_payload.value)
+                            defer child_path.release()
                             match remove_tree(child_path.as_str()):
                                 Result.failure as child_payload:
-                                    child_path.release()
                                     return Result[bool, Error].failure(error= child_payload.error)
                                 Result.success:
                                     pass
-                            child_path.release()
                     index += 1
 
         return remove(path)
@@ -441,8 +438,8 @@ public function find_ancestor_containing(path: str, entry_name: str) -> Option[s
 
     while true:
         var candidate = path_ops.join(current.as_str(), entry_name)
+        defer candidate.release()
         let found = exists(candidate.as_str())
-        candidate.release()
         if found:
             return Option[string.String].some(value= current)
 

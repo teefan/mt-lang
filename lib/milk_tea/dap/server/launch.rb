@@ -132,7 +132,7 @@ module MilkTea
             output_path = File.join(tmp_dir, File.basename(expanded, ".mt"))
 
             begin
-              Build.build(expanded, output_path:, debug: true)
+              Build.build(expanded, output_path:, debug: true, debug_guards: false)
             rescue BuildError => e
               return { ok: false, error: e.message }
             end

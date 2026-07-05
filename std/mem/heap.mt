@@ -128,6 +128,11 @@ public function must_resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> p
     return resized
 
 
+## Frees a raw memory allocation. The caller's binding is NOT nulled after
+## this call — a second `release_bytes` on the same pointer is a double-free.
+## This is inherent to by-value pointer parameters: the function cannot reach
+## the caller's binding to null it. For idempotent safe-release syntax, see
+## `release_and_null[T]` or use a scope-bound allocator such as `arena.Arena`.
 public function release_bytes(memory: ptr[void]?) -> void:
     libc.free(memory)
 
@@ -256,5 +261,21 @@ public function must_resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]:
     return unsafe: ptr[T]<-resized
 
 
+## Frees a typed heap allocation. The caller's binding is NOT nulled — a
+## second `release` on the same pointer is a double-free. Prefer
+## `release_and_null[T]` when you need the binding nulled after freeing,
+## or use a scope-bound allocator such as `arena.Arena` for bulk free.
 public function release[T](memory: ptr[T]?) -> void:
     unsafe: release_bytes(ptr[void]<-memory)
+
+
+## Frees a typed heap allocation and nulls the caller's binding so a second
+## release is a no-op. The binding is passed by `ref[ptr[T]?]` so the helper
+## can write `null` back into the caller's variable.
+##
+##     var mem = heap.must_alloc[MyStruct](1)
+##     heap.release_and_null(ref_of(mem))       # mem is now null
+##     heap.release_and_null(ref_of(mem))       # safe — no-op
+public function release_and_null[T](memory: ref[ptr[T]?]) -> void:
+    unsafe: release_bytes(ptr[void]<-read(memory))
+    read(memory) = null
