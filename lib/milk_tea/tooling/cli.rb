@@ -1358,6 +1358,8 @@ module MilkTea
 
       File.write(runner_path, runner_source)
       begin
+        build_opts = options.except(:timings, :output_path, :bundle, :archive)
+        build_opts[:debug_guards] = false
         Build.build(
           runner_path,
           output_path: binary_path,
@@ -1365,7 +1367,7 @@ module MilkTea
           package_graph: package_graph_for(source_path, locked:),
           frontend: @build_frontend,
           sanitize: @test_sanitize,
-          **options.except(:timings, :output_path, :bundle, :archive),
+          **build_opts,
         )
         yield binary_path
       ensure

@@ -42,7 +42,6 @@ module MilkTea
 
     def initialize(program, emit_line_directives: true, debug_guards: false)
       @program = program
-      @source_path = program.source_path
       @emit_line_directives = emit_line_directives
       @debug_guards = debug_guards
       @checked_index_alias_stack = []

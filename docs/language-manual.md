@@ -753,7 +753,7 @@ gather a, b
 Rules:
 
 - `detach` is an expression returning a `Handle` — must be bound with `let` or `var`.
-- Currently supports global function calls with no captured local variables.
+- By design, `detach` accepts only global function calls with no captured local variables. This is a deliberate boundary — it avoids lifetime concerns on detached work without ownership annotations. For passing data to a detached call, use explicit heap-allocated storage or shared-state primitives such as `std.sync`.
 - `gather` takes one or more `Handle` values, joined in order.
 - Captured `ref[T]` values are rejected at compile time.
 - `detach` and `gather` are keywords. The compiler automatically links libuv for thread dispatch.

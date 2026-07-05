@@ -7,6 +7,7 @@ require_relative "linter/doc_tags.rb"
 require_relative "linter/fix_engine.rb"
 require_relative "linter/flow_rules.rb"
 require_relative "linter/imports_platform.rb"
+require_relative "linter/release_rules.rb"
 require_relative "linter/reserved_names.rb"
 require_relative "linter/rules.rb"
 require_relative "linter/source_helpers.rb"
@@ -30,6 +31,8 @@ module MilkTea
       missing-return
       noop-compound-assignment
       platform-api-drift
+      owning-release-leak
+      owning-release-double
       prefer-conditional-expression
       prefer-inline-if
       prefer-is-variant
@@ -781,6 +784,7 @@ module MilkTea
     include LinterDocTags
     include LinterFlowRules
     include LinterImportsPlatform
+    include LinterReleaseRules
     include LinterReservedNames
     include LinterRules
     include LinterSourceHelpers
