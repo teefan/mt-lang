@@ -94,6 +94,8 @@ struct Context:
     implemented: map_mod.Map[str, span[ast.QualifiedName]]
     import_aliases: map_mod.Map[str, str]
     imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?
+    types: map_mod.Map[str, types.Type]
+    attribute_apps: map_mod.Map[str, vec.Vec[ast.AttributeApplication]]
     unsafe_depth: int
     inside_async: bool
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
@@ -126,6 +128,9 @@ public struct Analysis:
     declared_attributes: map_mod.Map[str, span[str]]
     imports: map_mod.Map[str, str]
     implemented_interfaces: map_mod.Map[str, span[ast.QualifiedName]]
+    directives: span[ast.Decl]
+    types: map_mod.Map[str, types.Type]
+    attribute_applications: map_mod.Map[str, span[ast.AttributeApplication]]
 
 
 public function check_source_file(file: ast.SourceFile) -> Analysis:
@@ -156,6 +161,8 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         implemented = map_mod.Map[str, span[ast.QualifiedName]].create(),
         import_aliases = map_mod.Map[str, str].create(),
         imported_modules = imported_modules,
+        types = map_mod.Map[str, types.Type].create(),
+        attribute_apps = map_mod.Map[str, vec.Vec[ast.AttributeApplication]].create(),
         unsafe_depth = 0,
         inside_async = false,
         resolved_expr_types = map_mod.Map[ptr_uint, types.Type].create(),
@@ -205,6 +212,9 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         declared_attributes = ctx.declared_attributes,
         imports = ctx.import_aliases,
         implemented_interfaces = ctx.implemented,
+        directives = file.directives,
+        types = ctx.types,
+        attribute_applications = build_attr_app_spans(ref_of(ctx)),
     )
 
 
@@ -254,17 +264,23 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
         match d:
             ast.Decl.decl_struct as s:
                 declare_type(ctx, s.name, s.line, s.column)
+                ctx.types.set(s.name, types.Type.ty_named(name = s.name))
                 ctx.implemented.set(s.name, s.impl_list)
             ast.Decl.decl_union as u:
                 declare_type(ctx, u.name, u.line, u.column)
+                ctx.types.set(u.name, types.Type.ty_named(name = u.name))
             ast.Decl.decl_enum as e:
                 declare_type(ctx, e.name, e.line, e.column)
+                ctx.types.set(e.name, types.Type.ty_named(name = e.name))
             ast.Decl.decl_flags as fl:
                 declare_type(ctx, fl.name, fl.line, fl.column)
+                ctx.types.set(fl.name, types.Type.ty_named(name = fl.name))
             ast.Decl.decl_variant as vr:
                 declare_type(ctx, vr.name, vr.line, vr.column)
+                ctx.types.set(vr.name, types.Type.ty_named(name = vr.name))
             ast.Decl.decl_opaque as op:
                 declare_type(ctx, op.name, op.line, op.column)
+                ctx.types.set(op.name, types.Type.ty_named(name = op.name))
                 ctx.implemented.set(op.name, op.opaque_implements)
             ast.Decl.decl_type_alias as ta:
                 declare_type(ctx, ta.name, ta.line, ta.column)
@@ -450,6 +466,7 @@ function install_prelude_types(ctx: ref[Context]) -> void:
 function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: str) -> void:
     if ctx.type_names.contains(name):
         return
+    ctx.types.set(name, types.Type.ty_named(name = name))
     ctx.static_member_types.set(name, true)
     ctx.match_case_types.set(name, true)
     ctx.method_keys.set(method_key(name, arm_a), true)
@@ -497,20 +514,28 @@ function check_attribute_applications(ctx: ref[Context], file: ast.SourceFile) -
         match d:
             ast.Decl.decl_struct as s:
                 check_attr_span(ctx, s.struct_attrs, "struct", s.line, s.column)
+                record_attr_apps(ctx, s.name, s.struct_attrs)
             ast.Decl.decl_function as f:
                 check_attr_span(ctx, f.attributes, "function", f.line, f.column)
+                record_attr_apps(ctx, f.name, f.attributes)
             ast.Decl.decl_const as c:
                 check_attr_span(ctx, c.attributes, "const", c.line, c.column)
+                record_attr_apps(ctx, c.name, c.attributes)
             ast.Decl.decl_enum as e:
                 check_attr_span(ctx, e.enum_attrs, "enum", e.line, e.column)
+                record_attr_apps(ctx, e.name, e.enum_attrs)
             ast.Decl.decl_flags as fl:
                 check_attr_span(ctx, fl.flags_attrs, "flags", fl.line, fl.column)
+                record_attr_apps(ctx, fl.name, fl.flags_attrs)
             ast.Decl.decl_union as u:
                 check_attr_span(ctx, u.union_attrs, "union", u.line, u.column)
+                record_attr_apps(ctx, u.name, u.union_attrs)
             ast.Decl.decl_variant as vr:
                 check_attr_span(ctx, vr.variant_attrs, "variant", vr.line, vr.column)
+                record_attr_apps(ctx, vr.name, vr.variant_attrs)
             ast.Decl.decl_event as ev:
                 check_attr_span(ctx, ev.attrs, "event", ev.line, ev.column)
+                record_attr_apps(ctx, ev.name, ev.attrs)
             _:
                 pass
         i += 1
@@ -527,6 +552,26 @@ function check_attr_span(ctx: ref[Context], attrs: span[ast.AttributeApplication
             if not is_valid_attr_target(attr_name, target):
                 report(ctx, line, column, attr_target_message(attr_name, target))
         i += 1
+
+
+function record_attr_apps(ctx: ref[Context], name: str, attrs: span[ast.AttributeApplication]) -> void:
+    var existing_ptr = ctx.attribute_apps.get(name)
+    if existing_ptr == null:
+        var v = vec.Vec[ast.AttributeApplication].create()
+        var ai: ptr_uint = 0
+        while ai < attrs.len:
+            unsafe:
+                v.push(read(attrs.data + ai))
+            ai += 1
+        ctx.attribute_apps.set(name, v)
+    else:
+        unsafe:
+            var v = read(existing_ptr)
+            var ai: ptr_uint = 0
+            while ai < attrs.len:
+                v.push(read(attrs.data + ai))
+                ai += 1
+            ctx.attribute_apps.set(name, v)
 
 
 function is_valid_attr_target(attr_name: str, target: str) -> bool:
@@ -547,6 +592,19 @@ function attr_target_message(attr_name: str, target: str) -> str:
     buf.append(target)
     buf.append(" declarations")
     return buf.as_str()
+
+
+function build_attr_app_spans(ctx: ref[Context]) -> map_mod.Map[str, span[ast.AttributeApplication]]:
+    var result = map_mod.Map[str, span[ast.AttributeApplication]].create()
+    var entries = ctx.attribute_apps.entries()
+    while true:
+        if not entries.next():
+            break
+        unsafe:
+            let key = read(entries.current().key)
+            let vec_ptr = read(entries.current().value)
+            result.set(key, vec_ptr.as_span())
+    return result
 
 
 function declare_attributes(ctx: ref[Context], file: ast.SourceFile) -> void:
@@ -1020,6 +1078,7 @@ function collect_interfaces(ctx: ref[Context], file: ast.SourceFile) -> void:
         match d:
             ast.Decl.decl_interface as iface:
                 ctx.interfaces.set(iface.name, iface.interface_methods)
+                ctx.types.set(iface.name, types.Type.ty_named(name = iface.name))
             _:
                 pass
         i += 1
