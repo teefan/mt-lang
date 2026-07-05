@@ -95,6 +95,7 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     var functions = vec.Vec[ir.Function].create()
     var enums = vec.Vec[ir.EnumDecl].create()
+    var structs = vec.Vec[ir.StructDecl].create()
 
     var i: ptr_uint = 0
     while i < analysis.source_file.declarations.len:
@@ -115,6 +116,12 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
                 enums.push(lower_enum_decl(ref_of(ctx), en.name, en.backing_type, en.enum_members, false))
             ast.Decl.decl_flags as fl:
                 enums.push(lower_enum_decl(ref_of(ctx), fl.name, fl.backing_type, fl.flags_members, true))
+            ast.Decl.decl_struct as s:
+                match lower_struct_decl(ref_of(ctx), s.name):
+                    Option.some as sd:
+                        structs.push(sd.value)
+                    Option.none:
+                        pass
             _:
                 pass
         i += 1
@@ -125,7 +132,7 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
         constants = span[ir.Constant](),
         globals = span[ir.Global](),
         opaques = span[ir.OpaqueDecl](),
-        structs = span[ir.StructDecl](),
+        structs = structs.as_span(),
         unions = span[ir.UnionDecl](),
         enums = enums.as_span(),
         variants = span[ir.VariantDecl](),
@@ -465,6 +472,8 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
+                if ctx.analysis.structs.contains(id.name):
+                    return lower_aggregate_literal(ctx, id.name, args)
                 let foreign_ptr = ctx.foreign_map.get(id.name)
                 if foreign_ptr != null:
                     return lower_foreign_call(ctx, read(foreign_ptr), args, call_ep)
@@ -474,6 +483,26 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 return lower_plain_call(ctx, module_function_c_name(ctx.module_name, id.name), args, call_ep)
             _:
                 fatal(c"lowering Phase 2: only direct function calls are supported")
+
+
+## Lower a struct constructor `Name(field = value, ...)` to an IR aggregate
+## literal, preserving the constructor's field order.
+function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: span[ast.Argument]) -> ptr[ir.Expr]:
+    var fields = vec.Vec[ir.AggregateField].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        let field_name = arg.arg_name else:
+            fatal(c"lowering Phase 3: struct construction requires named fields")
+        let value = lower_expr(ctx, arg.arg_value)
+        fields.push(ir.AggregateField(name = field_name, value = value))
+        i += 1
+    return alloc_expr(ir.Expr.expr_aggregate_literal(
+        ty = types.Type.ty_imported(module_name = ctx.module_name, name = struct_name),
+        fields = fields.as_span(),
+    ))
 
 
 ## Lower a call with no boundary projections: every argument lowered as-is.
@@ -610,9 +639,9 @@ function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> s
                 fatal(c"lowering Phase 2d: unsupported foreign function mapping")
 
 
-## Phase 2 member access: enum / flags member constants on a type-name receiver
-## (`State.running` -> `en_State_running`).  Struct field access and other member
-## forms arrive in Phase 3.
+## Member access: enum / flags member constants on a type-name receiver
+## (`State.running` -> `en_State_running`), otherwise a struct field access
+## (`p.x`).  Method calls and other member forms arrive in later phases.
 function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str, ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(receiver):
@@ -625,7 +654,37 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                     ))
             _:
                 pass
-    fatal(c"lowering Phase 2: unsupported member access")
+    let recv = lower_expr(ctx, receiver)
+    return alloc_expr(ir.Expr.expr_member(
+        receiver = recv,
+        member = member,
+        ty = qualify_type(ctx, expr_type(ctx, ep)),
+    ))
+
+
+## Lower a struct declaration to an IR StructDecl, resolving its fields from the
+## analyzer's struct table (which carries resolved field types) and qualifying
+## named field types with the current module for backend C-naming.
+function lower_struct_decl(ctx: ref[LowerCtx], name: str) -> Option[ir.StructDecl]:
+    let fields_ptr = ctx.analysis.structs.get(name) else:
+        return Option[ir.StructDecl].none
+    let entries = unsafe: read(fields_ptr)
+    var ir_fields = vec.Vec[ir.Field].create()
+    var i: ptr_uint = 0
+    while i < entries.len:
+        var entry: analyzer.FieldEntry
+        unsafe:
+            entry = read(entries.data + i)
+        ir_fields.push(ir.Field(name = entry.name, ty = qualify_type(ctx, entry.ty)))
+        i += 1
+    return Option[ir.StructDecl].some(value = ir.StructDecl(
+        name = name,
+        linkage_name = module_function_c_name(ctx.module_name, name),
+        fields = ir_fields.as_span(),
+        packed = false,
+        alignment = 0,
+        source_module = Option[str].none,
+    ))
 
 
 # =============================================================================

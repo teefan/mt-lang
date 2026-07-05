@@ -42,7 +42,12 @@ public function generate_c(program: ir.Program) -> string.String:
         str_lit_map = map_mod.Map[str, str].create(),
     )
 
-    var str_lits = collect_str_literals(program)
+    # Reachability pruning: emit only functions reachable from the entry points,
+    # in source order (mirrors c_backend/reachability.rb emitted_functions).
+    var emitted = emitted_functions(program)
+    let funcs = emitted.as_span()
+
+    var str_lits = collect_str_literals(funcs)
     var li: ptr_uint = 0
     while li < str_lits.len():
         let value_ptr = str_lits.get(li) else:
@@ -52,8 +57,8 @@ public function generate_c(program: ir.Program) -> string.String:
         li += 1
 
     let has_str_literals = str_lits.len() > 0
-    let use_string_view = uses_string_view(program, has_str_literals)
-    let use_str_equality = uses_str_equality(program)
+    let use_string_view = uses_string_view(funcs, has_str_literals)
+    let use_str_equality = uses_str_equality(funcs)
 
     var i: ptr_uint = 0
     while i < program.includes.len:
@@ -70,18 +75,34 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_str_equality_helper(ref_of(e))
         emit_line(ref_of(e), "")
 
-    i = 0
-    while i < program.enums.len:
-        unsafe:
-            emit_enum(ref_of(e), read(program.enums.data + i))
-        emit_line(ref_of(e), "")
-        i += 1
+    if program.structs.len > 0:
+        var sorted_structs = topo_sort_structs(program.structs)
+        let sorted = sorted_structs.as_span()
 
-    if program.functions.len > 0:
         i = 0
-        while i < program.functions.len:
+        while i < sorted.len:
             unsafe:
-                emit_line(ref_of(e), j2(function_signature(read(program.functions.data + i)), ";"))
+                let s = read(sorted.data + i)
+                emit_line(ref_of(e), j3("typedef struct ", s.linkage_name, j2(" ", j2(s.linkage_name, ";"))))
+            i += 1
+        emit_line(ref_of(e), "")
+
+        emit_enums_block(ref_of(e), program)
+
+        i = 0
+        while i < sorted.len:
+            unsafe:
+                emit_struct(ref_of(e), read(sorted.data + i))
+            emit_line(ref_of(e), "")
+            i += 1
+    else:
+        emit_enums_block(ref_of(e), program)
+
+    if funcs.len > 0:
+        i = 0
+        while i < funcs.len:
+            unsafe:
+                emit_line(ref_of(e), j2(function_signature(read(funcs.data + i)), ";"))
             i += 1
         emit_line(ref_of(e), "")
 
@@ -96,14 +117,168 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_line(ref_of(e), "")
 
     i = 0
-    while i < program.functions.len:
+    while i < funcs.len:
         unsafe:
-            emit_function(ref_of(e), read(program.functions.data + i))
-        if i < program.functions.len - 1:
+            emit_function(ref_of(e), read(funcs.data + i))
+        if i < funcs.len - 1:
             emit_line(ref_of(e), "")
         i += 1
 
     return e.buffer
+
+
+# =============================================================================
+#  Reachability (mirrors c_backend/reachability.rb emitted_functions)
+# =============================================================================
+
+## Functions reachable from the entry points (or, absent entry points, from the
+## root module's own functions), returned in source order.  Prunes unused
+## functions so the output matches the Ruby backend.
+function emitted_functions(program: ir.Program) -> vec.Vec[ir.Function]:
+    var func_names = map_mod.Map[str, bool].create()
+    var index_by_name = map_mod.Map[str, ptr_uint].create()
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            let f = read(program.functions.data + i)
+            func_names.set(f.linkage_name, true)
+            index_by_name.set(f.linkage_name, i)
+        i += 1
+
+    var reachable = map_mod.Map[str, bool].create()
+    var worklist = vec.Vec[str].create()
+
+    var any_seed = false
+    i = 0
+    while i < program.functions.len:
+        unsafe:
+            let f = read(program.functions.data + i)
+            if f.entry_point:
+                worklist.push(f.linkage_name)
+                any_seed = true
+        i += 1
+    if not any_seed:
+        var prefix = string.String.create()
+        prefix.append(module_c_prefix(program.module_name))
+        prefix.append("_")
+        i = 0
+        while i < program.functions.len:
+            unsafe:
+                let f = read(program.functions.data + i)
+                if f.linkage_name.starts_with(prefix.as_str()):
+                    worklist.push(f.linkage_name)
+            i += 1
+
+    while true:
+        let name = worklist.pop() else:
+            break
+        if reachable.contains(name):
+            continue
+        reachable.set(name, true)
+        let idx_ptr = index_by_name.get(name)
+        if idx_ptr != null:
+            unsafe:
+                let f = read(program.functions.data + read(idx_ptr))
+                reach_from_stmts(f.body, ref_of(func_names), ref_of(reachable), ref_of(worklist))
+
+    var result = vec.Vec[ir.Function].create()
+    i = 0
+    while i < program.functions.len:
+        unsafe:
+            let f = read(program.functions.data + i)
+            if reachable.contains(f.linkage_name):
+                result.push(f)
+        i += 1
+    return result
+
+
+function reach_from_stmts(body: span[ir.Stmt], func_names: ref[map_mod.Map[str, bool]], reachable: ref[map_mod.Map[str, bool]], worklist: ref[vec.Vec[str]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            reach_from_stmt(body.data + i, func_names, reachable, worklist)
+        i += 1
+
+
+function reach_from_stmt(sp: ptr[ir.Stmt], func_names: ref[map_mod.Map[str, bool]], reachable: ref[map_mod.Map[str, bool]], worklist: ref[vec.Vec[str]]) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_return as r:
+                let value = r.value else:
+                    return
+                reach_from_expr(value, func_names, reachable, worklist)
+            ir.Stmt.stmt_local as loc:
+                reach_from_expr(loc.value, func_names, reachable, worklist)
+            ir.Stmt.stmt_assignment as asg:
+                reach_from_expr(asg.target, func_names, reachable, worklist)
+                reach_from_expr(asg.value, func_names, reachable, worklist)
+            ir.Stmt.stmt_expression as ex:
+                reach_from_expr(ex.expression, func_names, reachable, worklist)
+            ir.Stmt.stmt_block as blk:
+                reach_from_stmts(blk.body, func_names, reachable, worklist)
+            ir.Stmt.stmt_if as iff:
+                reach_from_expr(iff.condition, func_names, reachable, worklist)
+                reach_from_stmts(iff.then_body, func_names, reachable, worklist)
+                reach_from_stmts(iff.else_body, func_names, reachable, worklist)
+            ir.Stmt.stmt_while as w:
+                reach_from_expr(w.condition, func_names, reachable, worklist)
+                reach_from_stmts(w.body, func_names, reachable, worklist)
+            ir.Stmt.stmt_for as f:
+                reach_from_stmt(f.init, func_names, reachable, worklist)
+                reach_from_expr(f.condition, func_names, reachable, worklist)
+                reach_from_stmt(f.post, func_names, reachable, worklist)
+                reach_from_stmts(f.body, func_names, reachable, worklist)
+            ir.Stmt.stmt_switch as sw:
+                reach_from_expr(sw.expression, func_names, reachable, worklist)
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    let sc = read(sw.cases.data + ci)
+                    reach_from_stmts(sc.body, func_names, reachable, worklist)
+                    ci += 1
+            _:
+                pass
+
+
+function reach_from_expr(ep: ptr[ir.Expr], func_names: ref[map_mod.Map[str, bool]], reachable: ref[map_mod.Map[str, bool]], worklist: ref[vec.Vec[str]]) -> void:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_call as call:
+                if func_names.contains(call.callee) and not reachable.contains(call.callee):
+                    worklist.push(call.callee)
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    reach_from_expr(call.arguments.data + i, func_names, reachable, worklist)
+                    i += 1
+            ir.Expr.expr_name as n:
+                if func_names.contains(n.name) and not reachable.contains(n.name):
+                    worklist.push(n.name)
+            ir.Expr.expr_binary as bin:
+                reach_from_expr(bin.left, func_names, reachable, worklist)
+                reach_from_expr(bin.right, func_names, reachable, worklist)
+            ir.Expr.expr_unary as un:
+                reach_from_expr(un.operand, func_names, reachable, worklist)
+            ir.Expr.expr_conditional as cond:
+                reach_from_expr(cond.condition, func_names, reachable, worklist)
+                reach_from_expr(cond.then_expression, func_names, reachable, worklist)
+                reach_from_expr(cond.else_expression, func_names, reachable, worklist)
+            ir.Expr.expr_member as member:
+                reach_from_expr(member.receiver, func_names, reachable, worklist)
+            ir.Expr.expr_index as index:
+                reach_from_expr(index.receiver, func_names, reachable, worklist)
+                reach_from_expr(index.index, func_names, reachable, worklist)
+            ir.Expr.expr_cast as cast:
+                reach_from_expr(cast.expression, func_names, reachable, worklist)
+            ir.Expr.expr_address_of as addr:
+                reach_from_expr(addr.expression, func_names, reachable, worklist)
+            ir.Expr.expr_aggregate_literal as agg:
+                var i: ptr_uint = 0
+                while i < agg.fields.len:
+                    reach_from_expr(read(agg.fields.data + i).value, func_names, reachable, worklist)
+                    i += 1
+            _:
+                pass
+
+
 
 
 # =============================================================================
@@ -245,15 +420,15 @@ function c_string_literal(value: str) -> str:
 #  Feature detection (mirrors c_backend/feature_detection.rb)
 # =============================================================================
 
-function uses_string_view(program: ir.Program, has_str_literals: bool) -> bool:
+function uses_string_view(functions: span[ir.Function], has_str_literals: bool) -> bool:
     if has_str_literals:
         return true
-    if uses_str_equality(program):
+    if uses_str_equality(functions):
         return true
     var i: ptr_uint = 0
-    while i < program.functions.len:
+    while i < functions.len:
         unsafe:
-            let f = read(program.functions.data + i)
+            let f = read(functions.data + i)
             if is_str_type(f.return_type):
                 return true
             var j: ptr_uint = 0
@@ -265,11 +440,11 @@ function uses_string_view(program: ir.Program, has_str_literals: bool) -> bool:
     return false
 
 
-function uses_str_equality(program: ir.Program) -> bool:
+function uses_str_equality(functions: span[ir.Function]) -> bool:
     var i: ptr_uint = 0
-    while i < program.functions.len:
+    while i < functions.len:
         unsafe:
-            if body_has_str_equality(read(program.functions.data + i).body):
+            if body_has_str_equality(read(functions.data + i).body):
                 return true
         i += 1
     return false
@@ -282,13 +457,13 @@ function uses_str_equality(program: ir.Program) -> bool:
 ## Every unique non-cstr string-literal value in the program, sorted by byte
 ## length then byte value (matching Ruby's `sort_by { [bytesize, k] }`), so the
 ## assigned `mt_str_lit_N` indices are deterministic.
-function collect_str_literals(program: ir.Program) -> vec.Vec[str]:
+function collect_str_literals(functions: span[ir.Function]) -> vec.Vec[str]:
     var seen = map_mod.Map[str, bool].create()
     var collected = vec.Vec[str].create()
     var i: ptr_uint = 0
-    while i < program.functions.len:
+    while i < functions.len:
         unsafe:
-            collect_from_stmts(read(program.functions.data + i).body, ref_of(seen), ref_of(collected))
+            collect_from_stmts(read(functions.data + i).body, ref_of(seen), ref_of(collected))
         i += 1
     var it = collected.iter()
     it.sort_by(str_literal_order)
@@ -564,6 +739,15 @@ function c_declaration(t: types.Type, name: str) -> str:
 #  Enum emission (mirrors c_backend/type_declaration.rb emit_enum)
 # =============================================================================
 
+function emit_enums_block(e: ref[Emitter], program: ir.Program) -> void:
+    var i: ptr_uint = 0
+    while i < program.enums.len:
+        unsafe:
+            emit_enum(e, read(program.enums.data + i))
+        emit_line(e, "")
+        i += 1
+
+
 function emit_enum(e: ref[Emitter], enum_decl: ir.EnumDecl) -> void:
     emit_line(e, j4("typedef ", c_type(enum_decl.backing_type), " ", j2(enum_decl.linkage_name, ";")))
     if enum_decl.members.len == 0:
@@ -580,8 +764,66 @@ function emit_enum(e: ref[Emitter], enum_decl: ir.EnumDecl) -> void:
 
 
 # =============================================================================
-#  Function emission (mirrors c_backend/type_declaration.rb)
+#  Struct emission (mirrors c_backend/type_declaration.rb emit_struct)
 # =============================================================================
+
+function emit_struct(e: ref[Emitter], s: ir.StructDecl) -> void:
+    emit_line(e, j3("struct ", s.linkage_name, " {"))
+    var i: ptr_uint = 0
+    while i < s.fields.len:
+        unsafe:
+            let f = read(s.fields.data + i)
+            emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
+        i += 1
+    emit_line(e, "};")
+
+
+## Order struct definitions so a struct that embeds another (by value) is emitted
+## after its dependency.  Depth-first post-order over struct-typed fields.
+function topo_sort_structs(structs: span[ir.StructDecl]) -> vec.Vec[ir.StructDecl]:
+    var by_linkage = map_mod.Map[str, ptr_uint].create()
+    var i: ptr_uint = 0
+    while i < structs.len:
+        unsafe:
+            by_linkage.set(read(structs.data + i).linkage_name, i)
+        i += 1
+    var visited = map_mod.Map[str, bool].create()
+    var result = vec.Vec[ir.StructDecl].create()
+    i = 0
+    while i < structs.len:
+        topo_visit_struct(structs, i, ref_of(by_linkage), ref_of(visited), ref_of(result))
+        i += 1
+    return result
+
+
+function topo_visit_struct(structs: span[ir.StructDecl], index: ptr_uint, by_linkage: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.StructDecl]]) -> void:
+    var s: ir.StructDecl
+    unsafe:
+        s = read(structs.data + index)
+    if visited.contains(s.linkage_name):
+        return
+    visited.set(s.linkage_name, true)
+    var i: ptr_uint = 0
+    while i < s.fields.len:
+        unsafe:
+            let f = read(s.fields.data + i)
+            match struct_field_linkage(f.ty):
+                Option.some as dep:
+                    let dep_idx = by_linkage.get(dep.value)
+                    if dep_idx != null:
+                        topo_visit_struct(structs, read(dep_idx), by_linkage, visited, result)
+                Option.none:
+                    pass
+        i += 1
+    result.push(s)
+
+
+function struct_field_linkage(ty: types.Type) -> Option[str]:
+    match ty:
+        types.Type.ty_imported as im:
+            return Option[str].some(value = named_type_c_name(im.module_name, im.name))
+        _:
+            return Option[str].none
 
 function function_signature(func: ir.Function) -> str:
     let prefix = if func.entry_point: "" else: "static "
@@ -639,7 +881,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     return
                 emit_line(e, j4(indent, "return ", emit_expression(e, value), ";"))
             ir.Stmt.stmt_local as loc:
-                emit_line(e, j5(indent, c_declaration(loc.ty, loc.linkage_name), " = ", emit_expression(e, loc.value), ";"))
+                emit_line(e, j5(indent, c_declaration(loc.ty, loc.linkage_name), " = ", emit_initializer(e, loc.value), ";"))
             ir.Stmt.stmt_assignment as asg:
                 emit_line(e, j6(indent, emit_expression(e, asg.target), " ", asg.operator, " ", j2(emit_expression(e, asg.value), ";")))
             ir.Stmt.stmt_expression as ex:
@@ -786,7 +1028,7 @@ function emit_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
-                return j5(c_declaration(loc.ty, loc.linkage_name), " = ", emit_expression(e, loc.value), "", "")
+                return j5(c_declaration(loc.ty, loc.linkage_name), " = ", emit_initializer(e, loc.value), "", "")
             ir.Stmt.stmt_assignment as asg:
                 return j5(emit_expression(e, asg.target), " ", asg.operator, " ", emit_expression(e, asg.value))
             ir.Stmt.stmt_expression as ex:
@@ -823,8 +1065,89 @@ function emit_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return emit_binary(e, bin.operator, bin.left, bin.right)
             ir.Expr.expr_call as call:
                 return emit_call(e, call.callee, call.arguments)
+            ir.Expr.expr_member as member:
+                let operator = if pointer_member_receiver(member.receiver): "->" else: "."
+                return j3(wrap_member_receiver(e, member.receiver), operator, member.member)
+            ir.Expr.expr_aggregate_literal as agg:
+                return emit_aggregate_literal(e, agg.ty, agg.fields)
             _:
-                fatal(c"c_backend Phase 2: unsupported expression")
+                fatal(c"c_backend Phase 3: unsupported expression")
+
+
+## The initializer form of a value (aggregate literals use `{ ... }` without a
+## compound-literal cast); everything else is an ordinary expression.  Mirrors
+## c_backend/expressions.rb emit_initializer.
+function emit_initializer(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_aggregate_literal as agg:
+                return emit_aggregate_initializer(e, agg.fields)
+            _:
+                return emit_expression(e, ep)
+
+
+function emit_aggregate_initializer(e: ref[Emitter], fields: span[ir.AggregateField]) -> str:
+    var buf = string.String.create()
+    buf.append("{ ")
+    var i: ptr_uint = 0
+    while i < fields.len:
+        if i > 0:
+            buf.append(", ")
+        unsafe:
+            let f = read(fields.data + i)
+            buf.append(".")
+            buf.append(f.name)
+            buf.append(" = ")
+            buf.append(emit_initializer(e, f.value))
+        i += 1
+    buf.append(" }")
+    return buf.as_str()
+
+
+function emit_aggregate_literal(e: ref[Emitter], ty: types.Type, fields: span[ir.AggregateField]) -> str:
+    return j4("(", c_type(ty), ")", emit_aggregate_initializer(e, fields))
+
+
+## `receiver.field` receivers that are postfix (name/member/index/call) need no
+## parentheses; anything else is wrapped.  Mirrors wrap_member_receiver.
+function wrap_member_receiver(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+    if is_postfix_expr(ep):
+        return emit_expression(e, ep)
+    return j3("(", emit_expression(e, ep), ")")
+
+
+function is_postfix_expr(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name:
+                return true
+            ir.Expr.expr_member:
+                return true
+            ir.Expr.expr_index:
+                return true
+            ir.Expr.expr_call:
+                return true
+            _:
+                return false
+
+
+function pointer_member_receiver(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name as n:
+                if n.pointer:
+                    return true
+                return is_ptr_type(n.ty)
+            _:
+                return is_ptr_type(expr_result_type(ep))
+
+
+function is_ptr_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name.equal("ptr") and g.args.len == 1
+        _:
+            return false
 
 
 function emit_string_literal(e: ref[Emitter], value: str, cstring: bool) -> str:
