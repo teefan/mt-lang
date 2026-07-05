@@ -1135,13 +1135,36 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: p
             ast.Stmt.stmt_local as l:
                 check_local(ctx, scope, l.is_let, l.name, l.stmt_type, l.value, l.else_body != null, l.destructure_bindings, l.line, l.column)
             ast.Stmt.stmt_if as i:
-                var bi: ptr_uint = 0
-                while bi < i.branches.len:
-                    var br: ast.IfBranch
-                    br = read(i.branches.data + bi)
+                var narrowed_name: Option[str] = Option[str].none
+                var narrowed_ty: types.Type = types.Type.ty_error
+                if i.branches.len > 0:
+                    var br: ast.IfBranch = read(i.branches.data + 0)
                     check_condition(ctx, scope, br.condition, "if", br.line, br.column)
-                    check_body(ctx, scope, chk, br.body)
-                    bi += 1
+                    match detect_null_comparison(br.condition):
+                        Option.some as nm:
+                            let raw = scope_get(scope, nm.value)
+                            if raw != null:
+                                let raw_ty = read(raw)
+                                let unnarrowed = unwrap_nullable_type(raw_ty)
+                                if not types.type_equals(unnarrowed, raw_ty):
+                                    narrowed_name = Option[str].some(value = nm.value)
+                                    narrowed_ty = unnarrowed
+                        Option.none:
+                            pass
+                    match narrowed_name:
+                        Option.some as nnm:
+                            scope_enter(scope)
+                            scope_set(scope, nnm.value, narrowed_ty)
+                            check_body(ctx, scope, chk, br.body)
+                            scope_leave(scope)
+                        Option.none:
+                            check_body(ctx, scope, chk, br.body)
+                    var bi: ptr_uint = 1
+                    while bi < i.branches.len:
+                        br = read(i.branches.data + bi)
+                        check_condition(ctx, scope, br.condition, "if", br.line, br.column)
+                        check_body(ctx, scope, chk, br.body)
+                        bi += 1
                 check_body(ctx, scope, chk, i.else_body)
             ast.Stmt.stmt_while as w:
                 check_condition(ctx, scope, w.condition, "while", w.line, w.column)
@@ -1200,6 +1223,32 @@ function check_condition(ctx: ref[Context], scope: ref[Scope], cond: ptr[ast.Exp
     let ct = infer_expr(ctx, scope, cond)
     if types.is_definitely_non_bool(ct):
         report(ctx, line, column, condition_message(keyword, ct))
+
+
+## Return the identifier name when `cond` is `name != null` (or `null != name`).
+## Returns none for anything else.  The if-body gets the narrowed (non-nullable)
+## type of `name`.
+function detect_null_comparison(cond: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(cond):
+            ast.Expr.expr_binary_op as b:
+                if not b.operator.equal("!="):
+                    return Option[str].none
+                match read(b.left):
+                    ast.Expr.expr_identifier as id:
+                        if read(b.right) is ast.Expr.expr_null_literal:
+                            return Option[str].some(value = id.name)
+                    _:
+                        pass
+                match read(b.right):
+                    ast.Expr.expr_identifier as id:
+                        if read(b.left) is ast.Expr.expr_null_literal:
+                            return Option[str].some(value = id.name)
+                    _:
+                        pass
+            _:
+                pass
+    return Option[str].none
 
 
 function check_stmt_span(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, stmts: span[ast.Stmt]) -> void:

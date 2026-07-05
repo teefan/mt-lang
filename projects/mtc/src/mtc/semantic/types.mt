@@ -208,6 +208,101 @@ public function is_signed_integer_name(name: str) -> bool:
     )
 
 
+## Structural equality of two types.  Needed because variant == is not
+## supported in the self-host C backend; this function pattern-matches
+## both sides and compares fields manually.
+public function type_equals(a: Type, b: Type) -> bool:
+    match a:
+        Type.ty_str:
+            match b:
+                Type.ty_str:
+                    return true
+                _:
+                    return false
+        Type.ty_error:
+            match b:
+                Type.ty_error:
+                    return true
+                _:
+                    return false
+        Type.ty_type_meta:
+            match b:
+                Type.ty_type_meta:
+                    return true
+                _:
+                    return false
+        Type.ty_primitive as pa:
+            match b:
+                Type.ty_primitive as pb:
+                    return pa.name.equal(pb.name)
+                _:
+                    return false
+        Type.ty_nullable as na:
+            match b:
+                Type.ty_nullable as nb:
+                    return type_equals(unsafe: read(na.base), unsafe: read(nb.base))
+                _:
+                    return false
+        Type.ty_named as na:
+            match b:
+                Type.ty_named as nb:
+                    return na.name.equal(nb.name)
+                _:
+                    return false
+        Type.ty_imported as ia:
+            match b:
+                Type.ty_imported as ib:
+                    return ia.module_name.equal(ib.module_name) and ia.name.equal(ib.name)
+                _:
+                    return false
+        Type.ty_var as va:
+            match b:
+                Type.ty_var as vb:
+                    return va.name.equal(vb.name)
+                _:
+                    return false
+        Type.ty_dyn as da:
+            match b:
+                Type.ty_dyn as db:
+                    return da.iface.equal(db.iface)
+                _:
+                    return false
+        Type.ty_generic as ga:
+            match b:
+                Type.ty_generic as gb:
+                    if not ga.name.equal(gb.name):
+                        return false
+                    if ga.args.len != gb.args.len:
+                        return false
+                    var i: ptr_uint = 0
+                    while i < ga.args.len:
+                        unsafe:
+                            if not type_equals(read(ga.args.data + i), read(gb.args.data + i)):
+                                return false
+                        i += 1
+                    return true
+                _:
+                    return false
+        Type.ty_function as fa:
+            match b:
+                Type.ty_function as fb:
+                    if fa.variadic != fb.variadic:
+                        return false
+                    if fa.params.len != fb.params.len:
+                        return false
+                    if not type_equals(unsafe: read(fa.return_type), unsafe: read(fb.return_type)):
+                        return false
+                    var i: ptr_uint = 0
+                    while i < fa.params.len:
+                        unsafe:
+                            if not type_equals(read(fa.params.data + i), read(fb.params.data + i)):
+                                return false
+                        i += 1
+                    return true
+                _:
+                    return false
+
+
 ## True when `t` is a raw pointer (ptr[T] or const_ptr[T]), excluding ref,
 ## span, and array.
 public function is_raw_pointer(t: Type) -> bool:
