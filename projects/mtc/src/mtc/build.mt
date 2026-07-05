@@ -51,6 +51,11 @@ public function build(program: loader.Program, output_path: str, c_compiler: str
     defer command.release()
     command.push(c_compiler)
     command.push("-std=c11")
+    # Phase 2 emits emit-c "preview" C: external/foreign functions are called
+    # without libc declarations (matching `mtc emit-c`).  Ruby's build mode adds
+    # `<stdlib.h>` etc.; until the self-host has that build-mode codegen, tolerate
+    # the implicit declarations so libc-backed foreign calls still link.
+    command.push("-Wno-implicit-function-declaration")
     command.push("-o")
     command.push(output_path)
     command.push(c_path.as_str())

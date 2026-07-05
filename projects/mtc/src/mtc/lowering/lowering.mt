@@ -19,6 +19,7 @@
 ## `resolved_expr_types`).
 
 import std.vec as vec
+import std.map as map_mod
 import std.str
 import std.string as string
 import std.fmt as fmt
@@ -49,11 +50,21 @@ struct LocalBinding:
     pointer: bool
 
 
+## A foreign function's lowering info: the C function it maps to, its return
+## type, and its declared parameters (carrying `as cstr` boundary projections).
+struct ForeignInfo:
+    c_name: str
+    return_ty: types.Type
+    params: span[ast.ForeignParam]
+
+
 struct LowerCtx:
     module_name: str
     analysis: analyzer.Analysis
     locals: vec.Vec[LocalBinding]
     temp_counter: ptr_uint
+    foreign_map: map_mod.Map[str, ForeignInfo]
+    extern_map: map_mod.Map[str, str]
 
 
 # =============================================================================
@@ -78,7 +89,10 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
         analysis = analysis,
         locals = vec.Vec[LocalBinding].create(),
         temp_counter = 0,
+        foreign_map = map_mod.Map[str, ForeignInfo].create(),
+        extern_map = map_mod.Map[str, str].create(),
     )
+    collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     var functions = vec.Vec[ir.Function].create()
     var enums = vec.Vec[ir.EnumDecl].create()
 
@@ -451,20 +465,149 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
-                var ir_args = vec.Vec[ir.Expr].create()
-                var i: ptr_uint = 0
-                while i < args.len:
-                    let arg = read(args.data + i)
-                    let lowered = lower_expr(ctx, arg.arg_value)
-                    ir_args.push(read(lowered))
-                    i += 1
-                return alloc_expr(ir.Expr.expr_call(
-                    callee = module_function_c_name(ctx.module_name, id.name),
-                    arguments = ir_args.as_span(),
-                    ty = expr_type(ctx, call_ep),
-                ))
+                let foreign_ptr = ctx.foreign_map.get(id.name)
+                if foreign_ptr != null:
+                    return lower_foreign_call(ctx, read(foreign_ptr), args, call_ep)
+                let extern_ptr = ctx.extern_map.get(id.name)
+                if extern_ptr != null:
+                    return lower_plain_call(ctx, read(extern_ptr), args, call_ep)
+                return lower_plain_call(ctx, module_function_c_name(ctx.module_name, id.name), args, call_ep)
             _:
                 fatal(c"lowering Phase 2: only direct function calls are supported")
+
+
+## Lower a call with no boundary projections: every argument lowered as-is.
+function lower_plain_call(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    var ir_args = vec.Vec[ir.Expr].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        let lowered = lower_expr(ctx, arg.arg_value)
+        unsafe:
+            ir_args.push(read(lowered))
+        i += 1
+    return alloc_expr(ir.Expr.expr_call(callee = c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
+
+
+## Lower a foreign function call to a direct call on its mapped C function,
+## applying `as cstr` boundary projections to arguments.  Phase 2d supports
+## string-literal arguments at an `as cstr` boundary (emitted as a C string
+## literal); str-variable projection (runtime str->cstr) and in/out/inout/
+## consuming modes arrive later.
+function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    var ir_args = vec.Vec[ir.Expr].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        var lowered: ptr[ir.Expr]
+        if i < info.params.len:
+            var param: ast.ForeignParam
+            unsafe:
+                param = read(info.params.data + i)
+            lowered = lower_foreign_arg(ctx, param, arg.arg_value)
+        else:
+            lowered = lower_expr(ctx, arg.arg_value)
+        unsafe:
+            ir_args.push(read(lowered))
+        i += 1
+    return alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
+
+
+function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    match param.boundary_type:
+        Option.some as boundary:
+            if boundary_is_cstr(boundary.value):
+                unsafe:
+                    match read(arg):
+                        ast.Expr.expr_string_literal as lit:
+                            return alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = types.primitive("cstr"), cstring = true))
+                        _:
+                            fatal(c"lowering Phase 2d: only string-literal arguments are supported at an 'as cstr' boundary")
+            return lower_expr(ctx, arg)
+        Option.none:
+            return lower_expr(ctx, arg)
+
+
+function boundary_is_cstr(boundary: ast.TypeRef) -> bool:
+    if boundary.name.parts.len != 1:
+        return false
+    unsafe:
+        return read(boundary.name.parts.data + 0).equal("cstr")
+
+
+# =============================================================================
+#  Foreign / external function registry
+# =============================================================================
+
+## Pre-scan declarations to map each external function to its C name and each
+## foreign function to its mapped C function and boundary parameters, so calls
+## can be lowered to direct C calls.
+function collect_foreign_functions(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
+    var i: ptr_uint = 0
+    while i < decls.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(decls.data + i)
+        match d:
+            ast.Decl.decl_extern_function as ef:
+                ctx.extern_map.set(ef.name, extern_c_name(ef.name, ef.mapping))
+            _:
+                pass
+        i += 1
+
+    i = 0
+    while i < decls.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(decls.data + i)
+        match d:
+            ast.Decl.decl_foreign_function as ff:
+                ctx.foreign_map.set(ff.name, ForeignInfo(
+                    c_name = resolve_foreign_c_name(ctx, ff.mapping),
+                    return_ty = qualify_type(ctx, resolve_scalar_type_ref(ff.return_type)),
+                    params = ff.foreign_params,
+                ))
+            _:
+                pass
+        i += 1
+
+
+## The C name an external function maps to: its explicit `= c.name` mapping value
+## when present, else the declaration name itself.
+function extern_c_name(name: str, mapping: ptr[ast.Expr]?) -> str:
+    let m = mapping else:
+        return name
+    unsafe:
+        match read(m):
+            ast.Expr.expr_identifier as id:
+                return id.name
+            ast.Expr.expr_member_access as ma:
+                return ma.member_name
+            ast.Expr.expr_string_literal as s:
+                return s.value
+            _:
+                return name
+
+
+## The C name a foreign function maps to: resolve its `= target` identifier
+## through the external registry (so `= atoi` yields the external's C name),
+## falling back to the target name.
+function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> str:
+    unsafe:
+        match read(mapping):
+            ast.Expr.expr_identifier as id:
+                let ext = ctx.extern_map.get(id.name)
+                if ext != null:
+                    return read(ext)
+                return id.name
+            ast.Expr.expr_member_access as ma:
+                return ma.member_name
+            _:
+                fatal(c"lowering Phase 2d: unsupported foreign function mapping")
 
 
 ## Phase 2 member access: enum / flags member constants on a type-name receiver
@@ -675,12 +818,15 @@ function fn_sig_return_type(sig: Option[analyzer.FnSig]) -> types.Type:
 
 ## The resolved type of an AST expression: the analyzer's recorded type (keyed by
 ## node pointer identity, matching `record_expr_type`), or a structural fallback.
+## A recorded `ty_error` is treated as unresolved so lowering can recover it
+## (e.g. foreign-function call return types the analyzer does not track).
 function expr_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
     let key = unsafe: reinterpret[ptr_uint](ep)
     let tp = ctx.analysis.resolved_expr_types.get(key)
     if tp != null:
-        unsafe:
-            return read(tp)
+        let recorded = unsafe: read(tp)
+        if not types.is_error(recorded):
+            return recorded
     return fallback_type(ctx, ep)
 
 
@@ -706,6 +852,9 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
             ast.Expr.expr_call as call:
                 match read(call.callee):
                     ast.Expr.expr_identifier as id:
+                        let foreign_ptr = ctx.foreign_map.get(id.name)
+                        if foreign_ptr != null:
+                            return read(foreign_ptr).return_ty
                         return fn_sig_return_type(lookup_fn_sig(ctx, id.name))
                     _:
                         return types.Type.ty_error

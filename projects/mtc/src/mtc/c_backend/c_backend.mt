@@ -290,30 +290,9 @@ function collect_str_literals(program: ir.Program) -> vec.Vec[str]:
         unsafe:
             collect_from_stmts(read(program.functions.data + i).body, ref_of(seen), ref_of(collected))
         i += 1
-    sort_str_literals(ref_of(collected))
+    var it = collected.iter()
+    it.sort_by(str_literal_order)
     return collected
-
-
-## Insertion sort by (byte length, then byte value).  Implemented locally rather
-## than via `vec.Vec.sort_by` because that helper's comparator is declared
-## `proc(ptr[T], ptr[T])` but invoked with `ref_of(...)` (`ref[T]`), which fails
-## to specialize (a latent std.vec bug to fix separately).
-function sort_str_literals(values: ref[vec.Vec[str]]) -> void:
-    let n = values.len()
-    var a: ptr_uint = 1
-    while a < n:
-        var b = a
-        while b > 0:
-            let left = values.get(b - 1) else:
-                break
-            let right = values.get(b) else:
-                break
-            if str_literal_order(left, right) > 0:
-                values.swap(b - 1, b)
-            else:
-                break
-            b -= 1
-        a += 1
 
 
 function str_literal_order(a: ptr[str], b: ptr[str]) -> int:
