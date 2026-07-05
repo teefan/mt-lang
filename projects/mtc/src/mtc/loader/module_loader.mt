@@ -306,7 +306,7 @@ function check_and_bind_module(
         if loaded.parse_diagnostics.len() > 0:
             return
 
-        var analysis = analyzer.check_module(loaded.source_file, bindings_ptr)
+        var analysis = analyzer.check_module(loaded.source_file, bindings_ptr, loaded.module_name.as_str())
         var si: ptr_uint = 0
         while si < analysis.diagnostics.len():
             let sema_ptr = analysis.diagnostics.get(si) else:

@@ -124,16 +124,18 @@ public struct Analysis:
     unsafe_statement_lines: vec.Vec[ptr_uint]
     uses_parallel_for: bool
     declared_attributes: map_mod.Map[str, span[str]]
+    imports: map_mod.Map[str, str]
+    implemented_interfaces: map_mod.Map[str, span[ast.QualifiedName]]
 
 
 public function check_source_file(file: ast.SourceFile) -> Analysis:
-    return check_module(file, null)
+    return check_module(file, null, "")
 
 
 ## Semantically check a module, resolving cross-module references against the
 ## given import bindings (keyed by module name; may be null for single-file
 ## checks).  `imported_modules` is borrowed, not owned.
-public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?) -> Analysis:
+public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?, module_name: str) -> Analysis:
     var ctx = Context(
         value_names = map_mod.Map[str, bool].create(),
         type_names = map_mod.Map[str, bool].create(),
@@ -196,11 +198,13 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         resolved_expr_types = ctx.resolved_expr_types,
         resolved_call_kinds = ctx.resolved_call_kinds,
         const_values = ctx.const_values,
-        module_name = "",
+        module_name = module_name,
         module_kind = file.module_kind,
         unsafe_statement_lines = vec.Vec[ptr_uint].create(),
         uses_parallel_for = ctx.uses_parallel_for,
         declared_attributes = ctx.declared_attributes,
+        imports = ctx.import_aliases,
+        implemented_interfaces = ctx.implemented,
     )
 
 
