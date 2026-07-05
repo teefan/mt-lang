@@ -84,6 +84,7 @@ struct Context:
     import_aliases: map_mod.Map[str, str]
     imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?
     unsafe_depth: int
+    inside_async: bool
     diagnostics: vec.Vec[SemanticDiagnostic]
 
 
@@ -129,6 +130,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         import_aliases = map_mod.Map[str, str].create(),
         imported_modules = imported_modules,
         unsafe_depth = 0,
+        inside_async = false,
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
     )
     collect_import_aliases(ref_of(ctx), file)
@@ -606,6 +608,10 @@ function is_primitive_type_name(name: str) -> bool:
     )
 
 
+function is_reserved_name(name: str) -> bool:
+    return is_primitive_type_name(name) or name.equal("str")
+
+
 function is_generic_constructor_name(name: str) -> bool:
     return (
         name.equal("ptr") or name.equal("const_ptr") or name.equal("ref") or name.equal("span")
@@ -626,7 +632,7 @@ function check_functions(ctx: ref[Context], file: ast.SourceFile) -> void:
             d = read(file.declarations.data + i)
         match d:
             ast.Decl.decl_function as fun:
-                check_function_body(ctx, fun.name, fun.line, fun.type_params, fun.method_params, fun.return_type, fun.body)
+                check_function_body(ctx, fun.name, fun.line, fun.type_params, fun.method_params, fun.return_type, fun.body, fun.is_async)
             _:
                 pass
         i += 1
@@ -884,42 +890,58 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     scope_enter(ref_of(scope))
     if m.method_kind != ast.MethodKind.mk_static:
         scope_set(ref_of(scope), "this", this_type)
+    var seen = map_mod.Map[str, bool].create()
     var pi: ptr_uint = 0
     while pi < m.method_params.len:
         var p: ast.Param
         unsafe:
             p = read(m.method_params.data + pi)
+        if seen.contains(p.name):
+            report(ctx, m.line, m.column, dup_param_message(m.name, p.name))
+        seen.set(p.name, true)
+        if is_reserved_name(p.name):
+            report(ctx, m.line, m.column, reserved_param_message(m.name, p.name))
         scope_set(ref_of(scope), p.name, resolve_type_value(ctx, p.param_type))
         pi += 1
     var ret = types.primitive("void")
     let rt = m.return_type
     if rt != null:
         ret = resolve_type(ctx, rt)
+    ctx.inside_async = m.is_async
     check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), m.body)
+    ctx.inside_async = false
     if rt != null and not types.is_void(ret):
         if not terminates_ptr(ctx, m.body):
             report(ctx, m.line, m.column, missing_return_message(m.name))
     ctx.type_params.clear()
 
 
-function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_params: span[ast.TypeParam], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?) -> void:
+function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_params: span[ast.TypeParam], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, is_async: bool) -> void:
     let b = body else:
         return
     enter_type_params(ctx, type_params)
     var scope = scope_create()
     scope_enter(ref_of(scope))
+    var seen = map_mod.Map[str, bool].create()
     var pi: ptr_uint = 0
     while pi < params.len:
         var p: ast.Param
         unsafe:
             p = read(params.data + pi)
+        if seen.contains(p.name):
+            report(ctx, line, 1, dup_param_message(name, p.name))
+        seen.set(p.name, true)
+        if is_reserved_name(p.name):
+            report(ctx, line, 1, reserved_param_message(name, p.name))
         scope_set(ref_of(scope), p.name, resolve_type_value(ctx, p.param_type))
         pi += 1
     var ret = types.primitive("void")
     let rt = return_type
     if rt != null:
         ret = resolve_type(ctx, rt)
+    ctx.inside_async = is_async
     check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), b)
+    ctx.inside_async = false
     if rt != null and not types.is_void(ret):
         if not terminates_ptr(ctx, b):
             report(ctx, line, 1, missing_return_message(name))
@@ -1407,6 +1429,9 @@ function check_local(ctx: ref[Context], scope: ref[Scope], is_let: bool, name: s
     if is_let:
         scope_set_let(scope, name)
 
+    if is_reserved_name(name):
+        report(ctx, line, column, reserved_local_message(name))
+
 
 # =============================================================================
 #  Expression type inference (conservative)
@@ -1459,6 +1484,10 @@ function infer_expr(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr]) -> 
                 return infer_and_check_call(ctx, scope, call.callee, call.args)
             ast.Expr.expr_specialization as spec:
                 return check_specialization_call(ctx, scope, spec.callee, spec.arguments)
+            ast.Expr.expr_await as aw:
+                if not ctx.inside_async:
+                    report(ctx, 0, 0, "await is only allowed inside async functions")
+                return infer_expr(ctx, scope, aw.expression)
             _:
                 return types.Type.ty_error
 
@@ -2698,4 +2727,31 @@ function field_type_mismatch_message(struct_name: str, field: str, expected: typ
     buf.append(types.type_to_string(expected))
     buf.append(", got ")
     buf.append(types.type_to_string(got))
+    return buf.as_str()
+
+
+function dup_param_message(func_name: str, param: str) -> str:
+    var buf = string.String.create()
+    buf.append("duplicate parameter ")
+    buf.append(param)
+    buf.append(" in function ")
+    buf.append(func_name)
+    return buf.as_str()
+
+
+function reserved_param_message(func_name: str, param: str) -> str:
+    var buf = string.String.create()
+    buf.append("parameter ")
+    buf.append(param)
+    buf.append(" in function ")
+    buf.append(func_name)
+    buf.append(" shadows a reserved type name")
+    return buf.as_str()
+
+
+function reserved_local_message(name: str) -> str:
+    var buf = string.String.create()
+    buf.append("local ")
+    buf.append(name)
+    buf.append(" shadows a reserved type name")
     return buf.as_str()

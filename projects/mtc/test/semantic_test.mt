@@ -1991,3 +1991,61 @@ function test_read_ptr_returns_element_type_is_clean() -> t.Check:
                 return read(p)
     SRC
     return expect_clean(source)
+
+
+# =============================================================================
+#  Duplicate parameter names
+# =============================================================================
+
+@[test]
+function test_duplicate_param_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f(a: int, a: int) -> int:
+            return a
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_unique_params_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f(a: int, b: int) -> int:
+            return a + b
+    SRC
+    return expect_clean(source)
+
+
+# =============================================================================
+#  Await outside async
+# =============================================================================
+
+@[test]
+function test_await_outside_async_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            return await f()
+    SRC
+    return expect_flagged(source)
+
+
+# =============================================================================
+#  Primitive / reserved name reuse
+# =============================================================================
+
+@[test]
+function test_param_named_int_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f(int: int) -> int:
+            return int
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_local_named_str_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            let str = 5
+            return str
+    SRC
+    return expect_flagged(source)
