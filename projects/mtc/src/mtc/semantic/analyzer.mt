@@ -1041,6 +1041,36 @@ function is_fatal_call(ep: ptr[ast.Expr]) -> bool:
                 return false
 
 
+## True when the expression is a compile-time numeric literal (integer, float,
+## or char).  The self-host has no compile-time evaluation, so a literal source
+## is treated as compatible with any numeric target — mirroring Ruby's
+## exact_compile_time_numeric_compatibility? without range-checking the value.
+function expr_is_numeric_literal(ep: ptr[ast.Expr]?) -> bool:
+    let p = ep else:
+        return false
+    unsafe:
+        match read(p):
+            ast.Expr.expr_integer_literal:
+                return true
+            ast.Expr.expr_float_literal:
+                return true
+            ast.Expr.expr_char_literal:
+                return true
+            _:
+                return false
+
+
+## Assignment-site incompatibility check that accounts for numeric literals.
+## A numeric-literal source assigned to a numeric/char target is always
+## permitted (the literal is assumed to fit); otherwise defer to the concrete
+## type-compatibility rule.
+function incompatible_value(target: types.Type, source_ty: types.Type, source_expr: ptr[ast.Expr]?) -> bool:
+    if expr_is_numeric_literal(source_expr):
+        if types.is_integer_type(target) or types.is_float_type(target) or types.is_char_type(target):
+            return false
+    return types.definitely_incompatible(target, source_ty)
+
+
 function check_body(ctx: ref[Context], scope: ref[Scope], ret: types.Type, in_loop: bool, body: ptr[ast.Stmt]?) -> void:
     let b = body else:
         return
@@ -1058,7 +1088,7 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], ret: types.Type, in_lo
                 let rv = r.value
                 if rv != null:
                     let vt = infer_expr(ctx, scope, rv)
-                    if types.definitely_incompatible(ret, vt):
+                    if incompatible_value(ret, vt, rv):
                         report(ctx, r.line, r.column, return_mismatch_message(ret, vt))
             ast.Stmt.stmt_local as l:
                 check_local(ctx, scope, l.is_let, l.name, l.stmt_type, l.value, l.destructure_bindings, l.line, l.column)
@@ -1102,7 +1132,7 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], ret: types.Type, in_lo
             ast.Stmt.stmt_assignment as a:
                 let tt = infer_expr(ctx, scope, a.target)
                 let vt = infer_expr(ctx, scope, a.value)
-                if a.operator.equal("=") and types.definitely_incompatible(tt, vt):
+                if a.operator.equal("=") and incompatible_value(tt, vt, a.value):
                     report(ctx, a.line, a.column, assign_message(tt, vt))
                 check_assign_target_immutable(ctx, scope, a.target, a.line, a.column)
             _:
@@ -1236,11 +1266,7 @@ function int_literal_value(p: ptr[ast.Expr]) -> Option[int]:
 
 
 function is_integer_name(name: str) -> bool:
-    return (
-        name.equal("byte") or name.equal("short") or name.equal("int") or name.equal("long")
-        or name.equal("ubyte") or name.equal("ushort") or name.equal("uint") or name.equal("ulong")
-        or name.equal("ptr_int") or name.equal("ptr_uint")
-    )
+    return types.is_integer_name(name)
 
 
 function vec_contains_str(v: ref[vec.Vec[str]], s: str) -> bool:
@@ -1323,7 +1349,7 @@ function check_local(ctx: ref[Context], scope: ref[Scope], is_let: bool, name: s
         has_value = true
 
     if has_declared and has_value:
-        if types.definitely_incompatible(declared, value_type):
+        if incompatible_value(declared, value_type, value):
             report(ctx, line, column, local_mismatch_message(declared, value_type))
 
     # A guarded let/var (let x = nullable else: ...) unwraps the value type:
@@ -1444,7 +1470,9 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[
                 pass
         i += 1
 
-    match try_imported_call(ctx, scope, callee, args, arg_types.as_span(), any_named):
+    let arg_span = arg_types.as_span()
+
+    match try_imported_call(ctx, scope, callee, args, arg_span, any_named):
         Option.some as imported:
             return imported.value
         Option.none:
@@ -1457,11 +1485,11 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[
             unsafe:
                 match read(callee):
                     ast.Expr.expr_member_access as ma:
-                        return check_member_call(ctx, scope, ma.receiver, ma.member_name, arg_types.as_span(), any_named, ma.line, ma.column)
+                        return check_member_call(ctx, scope, ma.receiver, ma.member_name, args, arg_span, any_named, ma.line, ma.column)
                     ast.Expr.expr_specialization as spec:
                         return check_specialization_call(ctx, scope, spec.callee, spec.arguments)
                     ast.Expr.expr_identifier:
-                        return check_call(ctx, scope, callee, arg_types.as_span(), any_named)
+                        return check_call(ctx, scope, callee, args, arg_span, any_named)
                     _:
                         let _ignored = infer_expr(ctx, scope, callee)
                         return types.Type.ty_error
@@ -1765,7 +1793,7 @@ function try_imported_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast
                         let sig_ptr = read(binding_ptr).functions.get(ma.member_name)
                         if sig_ptr != null:
                             let sig = read(sig_ptr)
-                            check_signature_call(ctx, ma.member_name, sig, arg_types, any_named, ma.line, ma.column)
+                            check_signature_call(ctx, ma.member_name, sig, args, arg_types, any_named, ma.line, ma.column)
                             return Option[types.Type].some(value = sig.return_type)
 
                         let fields_ptr = read(binding_ptr).structs.get(ma.member_name)
@@ -1816,7 +1844,7 @@ function lookup_binding(ctx: ref[Context], module_name: str) -> ptr[ModuleBindin
 ## only.  Struct static methods (`Counter.make(...)`, `lib.Adder.make(...)`) and
 ## value-receiver instance methods (`p.method(...)`) are resolved to a signature
 ## and argument-checked, with the method's return type flowing to the caller.
-function check_member_call(ctx: ref[Context], scope: ref[Scope], receiver: ptr[ast.Expr], method_name: str, arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_member_call(ctx: ref[Context], scope: ref[Scope], receiver: ptr[ast.Expr], method_name: str, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
     match imported_static_member(ctx, scope, receiver, method_name, line, column):
         Option.some as imported_static:
             return imported_static.value
@@ -1832,13 +1860,13 @@ function check_member_call(ctx: ref[Context], scope: ref[Scope], receiver: ptr[a
 
     match static_struct_receiver_type(ctx, scope, receiver):
         Option.some as static_type:
-            return check_typed_method_call(ctx, static_type.value, method_name, arg_types, any_named, line, column)
+            return check_typed_method_call(ctx, static_type.value, method_name, args, arg_types, any_named, line, column)
         Option.none:
             pass
 
     let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
     check_editable_receiver_immutable(ctx, scope, receiver, recv, method_name, line, column)
-    return check_typed_method_call(ctx, recv, method_name, arg_types, any_named, line, column)
+    return check_typed_method_call(ctx, recv, method_name, args, arg_types, any_named, line, column)
 
 
 ## See through a `ref[T]` receiver to `T` for member access and method calls,
@@ -1856,10 +1884,10 @@ function unwrap_ref(t: types.Type) -> types.Type:
 ## Resolve and check a method call against a known receiver type (local or
 ## imported): argument-check the signature and flow its return type, or fall back
 ## to a member-existence check when no signature is known.
-function check_typed_method_call(ctx: ref[Context], receiver_type: types.Type, method_name: str, arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_typed_method_call(ctx: ref[Context], receiver_type: types.Type, method_name: str, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
     match resolve_method_sig(ctx, receiver_type, method_name):
         Option.some as sig:
-            check_signature_call(ctx, method_name, sig.value, arg_types, any_named, line, column)
+            check_signature_call(ctx, method_name, sig.value, args, arg_types, any_named, line, column)
             return sig.value.return_type
         Option.none:
             return check_member(ctx, receiver_type, method_name, true, line, column)
@@ -2226,7 +2254,7 @@ function check_imported_member(ctx: ref[Context], module_name: str, type_name: s
 ## Check a call to a top-level function by identifier and yield its result type.
 ## For a generic function, type arguments are inferred from the call, validated
 ## against their constraints, and substituted into the return type.
-function check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr], arg_types: span[types.Type], any_named: bool) -> types.Type:
+function check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr], args: span[ast.Argument], arg_types: span[types.Type], any_named: bool) -> types.Type:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
@@ -2238,7 +2266,7 @@ function check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr],
                 if sigp == null:
                     return types.Type.ty_error
                 let sig = read(sigp)
-                check_signature_call(ctx, id.name, sig, arg_types, any_named, id.line, id.column)
+                check_signature_call(ctx, id.name, sig, args, arg_types, any_named, id.line, id.column)
                 let tps_ptr = ctx.function_type_params.get(id.name)
                 if tps_ptr != null:
                     var subs = map_mod.Map[str, types.Type].create()
@@ -2253,7 +2281,10 @@ function check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr],
 ## Check an argument list against a resolved function signature: arity always,
 ## and positional argument types when the call is all-positional (named
 ## arguments may be reordered, so positional type checking is unsound there).
-function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> void:
+## `args` is the original call argument expression list, used to gate
+## narrowing-int checks on numeric literal sources (mirroring Ruby's
+## exact_compile_time_numeric_compatibility?).
+function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> void:
     if arg_types.len != sig.params.len:
         report(ctx, line, column, arity_message(display_name, sig.params.len, arg_types.len))
         return
@@ -2264,7 +2295,10 @@ function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, 
         unsafe:
             let atype = read(arg_types.data + i)
             let pe = read(sig.params.data + i)
-            if types.definitely_incompatible(pe.ty, atype):
+            var arg_expr: ptr[ast.Expr]? = null
+            if i < args.len:
+                arg_expr = read(args.data + i).arg_value
+            if incompatible_value(pe.ty, atype, arg_expr):
                 report(ctx, line, column, argument_message(pe.name, display_name, pe.ty, atype))
         i += 1
 

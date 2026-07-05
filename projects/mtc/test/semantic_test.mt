@@ -1457,3 +1457,163 @@ function test_adapt_returns_dyn_type() -> t.Check:
             return adapt[Shape](ref_of(c))
     SRC
     return expect_clean(source)
+
+
+# =============================================================================
+#  Integer type compatibility (lossless widening / narrowing detection)
+# =============================================================================
+
+@[test]
+function test_int_narrowing_to_byte_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> byte:
+            var x: int = 999
+            return x
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_int_widening_to_long_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> long:
+            var x: int = 999
+            return int<-x
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_int_to_int_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            var x: int = 999
+            return x
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_uint_narrowing_to_ushort_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> ushort:
+            var x: uint = 999
+            return x
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_numeric_literal_assign_to_byte_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> byte:
+            return 42
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_numeric_literal_assign_to_ushort_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> ushort:
+            return 100
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_float_literal_assign_to_double_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> double:
+            return 3.14
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_int_literal_arg_to_byte_param_is_clean() -> t.Check:
+    var source = <<-SRC
+        function use(b: byte) -> void:
+            pass
+        function f() -> void:
+            use(65)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_int_variable_arg_to_byte_param_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function use(b: byte) -> void:
+            pass
+        function f() -> void:
+            var x: int = 65
+            use(x)
+    SRC
+    return expect_flagged(source)
+
+
+# =============================================================================
+#  Integer ↔ char compatibility (chars are integer-compatible)
+# =============================================================================
+
+@[test]
+function test_char_cast_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> char:
+            return char<-65
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_char_to_int_cast_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            var c: char = 'A'
+            return int<-(c)
+    SRC
+    return expect_clean(source)
+
+
+# =============================================================================
+#  Same-width sign changes require a cast (Ruby-faithful)
+# =============================================================================
+
+@[test]
+function test_int_literal_return_to_uint_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> uint:
+            return 0
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_int_variable_return_to_uint_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> uint:
+            var n: int = 0
+            return n
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_int_cast_return_to_uint_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> uint:
+            var n: int = 0
+            return uint<-(n)
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_uint_cast_return_to_int_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            var n: uint = 0
+            return int<-(n)
+    SRC
+    return expect_clean(source)
