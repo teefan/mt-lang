@@ -893,7 +893,7 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     let rt = m.return_type
     if rt != null:
         ret = resolve_type(ctx, rt)
-    check_stmt(ctx, ref_of(scope), ret, false, m.body)
+    check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), m.body)
     if rt != null and not types.is_void(ret):
         if not terminates_ptr(ctx, m.body):
             report(ctx, m.line, m.column, missing_return_message(m.name))
@@ -917,7 +917,7 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_
     let rt = return_type
     if rt != null:
         ret = resolve_type(ctx, rt)
-    check_stmt(ctx, ref_of(scope), ret, false, b)
+    check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), b)
     if rt != null and not types.is_void(ret):
         if not terminates_ptr(ctx, b):
             report(ctx, line, 1, missing_return_message(name))
@@ -1066,66 +1066,97 @@ function expr_is_numeric_literal(ep: ptr[ast.Expr]?) -> bool:
 ## type-compatibility rule.
 function incompatible_value(target: types.Type, source_ty: types.Type, source_expr: ptr[ast.Expr]?) -> bool:
     if expr_is_numeric_literal(source_expr):
-        if types.is_integer_type(target) or types.is_float_type(target) or types.is_char_type(target):
+        let bare = types.unwrap_nullable(target)
+        if types.is_integer_type(bare) or types.is_float_type(bare) or types.is_char_type(bare):
             return false
     return types.definitely_incompatible(target, source_ty)
 
 
-function check_body(ctx: ref[Context], scope: ref[Scope], ret: types.Type, in_loop: bool, body: ptr[ast.Stmt]?) -> void:
+struct CheckFlags:
+    ret: types.Type
+    inside_loop: bool
+    inside_defer: bool
+    inside_parallel: bool
+
+
+function check_flags(ret: types.Type, inside_loop: bool, inside_defer: bool, inside_parallel: bool) -> CheckFlags:
+    return CheckFlags(ret = ret, inside_loop = inside_loop, inside_defer = inside_defer, inside_parallel = inside_parallel)
+
+
+function check_body(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, body: ptr[ast.Stmt]?) -> void:
     let b = body else:
         return
     scope_enter(scope)
-    check_stmt(ctx, scope, ret, in_loop, b)
+    check_stmt(ctx, scope, chk, b)
     scope_leave(scope)
 
 
-function check_stmt(ctx: ref[Context], scope: ref[Scope], ret: types.Type, in_loop: bool, sp: ptr[ast.Stmt]) -> void:
+function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: ptr[ast.Stmt]) -> void:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_block as blk:
-                check_stmt_span(ctx, scope, ret, in_loop, blk.statements)
+                check_stmt_span(ctx, scope, chk, blk.statements)
             ast.Stmt.stmt_ret as r:
+                if chk.inside_defer:
+                    report(ctx, r.line, r.column, "return is not allowed inside a defer block")
+                else if chk.inside_parallel:
+                    report(ctx, r.line, r.column, "return is not allowed inside a parallel block")
                 let rv = r.value
                 if rv != null:
+                    if types.is_void(chk.ret):
+                        report(ctx, r.line, r.column, "void function may not return a value")
                     let vt = infer_expr(ctx, scope, rv)
-                    if incompatible_value(ret, vt, rv):
-                        report(ctx, r.line, r.column, return_mismatch_message(ret, vt))
+                    if incompatible_value(chk.ret, vt, rv):
+                        report(ctx, r.line, r.column, return_mismatch_message(chk.ret, vt))
             ast.Stmt.stmt_local as l:
-                check_local(ctx, scope, l.is_let, l.name, l.stmt_type, l.value, l.destructure_bindings, l.line, l.column)
+                check_local(ctx, scope, l.is_let, l.name, l.stmt_type, l.value, l.else_body != null, l.destructure_bindings, l.line, l.column)
             ast.Stmt.stmt_if as i:
                 var bi: ptr_uint = 0
                 while bi < i.branches.len:
                     var br: ast.IfBranch
                     br = read(i.branches.data + bi)
                     check_condition(ctx, scope, br.condition, "if", br.line, br.column)
-                    check_body(ctx, scope, ret, in_loop, br.body)
+                    check_body(ctx, scope, chk, br.body)
                     bi += 1
-                check_body(ctx, scope, ret, in_loop, i.else_body)
+                check_body(ctx, scope, chk, i.else_body)
             ast.Stmt.stmt_while as w:
                 check_condition(ctx, scope, w.condition, "while", w.line, w.column)
-                check_body(ctx, scope, ret, true, w.body)
+                check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, chk.inside_parallel), w.body)
             ast.Stmt.stmt_for as fr:
                 scope_enter(scope)
                 bind_for_names(scope, fr.bindings)
-                check_body(ctx, scope, ret, true, fr.body)
+                if fr.threaded:
+                    check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, true), fr.body)
+                else:
+                    check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, chk.inside_parallel), fr.body)
                 scope_leave(scope)
             ast.Stmt.stmt_match as m:
                 var ai: ptr_uint = 0
                 while ai < m.arms.len:
                     var arm: ast.MatchArm
                     arm = read(m.arms.data + ai)
-                    check_body(ctx, scope, ret, in_loop, arm.body)
+                    check_body(ctx, scope, chk, arm.body)
                     ai += 1
                 check_match(ctx, scope, m.scrutinee, m.arms, m.line, m.column)
             ast.Stmt.stmt_unsafe as u:
-                check_body(ctx, scope, ret, in_loop, u.body)
+                check_body(ctx, scope, chk, u.body)
             ast.Stmt.stmt_defer as d:
-                check_body(ctx, scope, ret, in_loop, d.body)
+                check_body(ctx, scope, check_flags(chk.ret, chk.inside_loop, true, chk.inside_parallel), d.body)
+            ast.Stmt.stmt_parallel_block as pb:
+                if pb.bodies.len < 2:
+                    report(ctx, pb.line, pb.column, "parallel block requires at least two statements")
+                check_stmt_span(ctx, scope, check_flags(chk.ret, chk.inside_loop, chk.inside_defer, true), pb.bodies)
+            ast.Stmt.stmt_gather:
+                pass
             ast.Stmt.stmt_break as br:
-                if not in_loop:
+                if chk.inside_parallel:
+                    report(ctx, br.line, br.column, "break is not allowed inside a parallel block")
+                else if not chk.inside_loop:
                     report(ctx, br.line, br.column, "break must be inside a loop")
             ast.Stmt.stmt_continue as cont:
-                if not in_loop:
+                if chk.inside_parallel:
+                    report(ctx, cont.line, cont.column, "continue is not allowed inside a parallel block")
+                else if not chk.inside_loop:
                     report(ctx, cont.line, cont.column, "continue must be inside a loop")
             ast.Stmt.stmt_expression as e:
                 let _ignored = infer_expr(ctx, scope, e.expression)
@@ -1145,11 +1176,11 @@ function check_condition(ctx: ref[Context], scope: ref[Scope], cond: ptr[ast.Exp
         report(ctx, line, column, condition_message(keyword, ct))
 
 
-function check_stmt_span(ctx: ref[Context], scope: ref[Scope], ret: types.Type, in_loop: bool, stmts: span[ast.Stmt]) -> void:
+function check_stmt_span(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, stmts: span[ast.Stmt]) -> void:
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
-            check_stmt(ctx, scope, ret, in_loop, stmts.data + i)
+            check_stmt(ctx, scope, chk, stmts.data + i)
         i += 1
 
 
@@ -1326,7 +1357,7 @@ function check_assign_target_immutable(ctx: ref[Context], scope: ref[Scope], tar
                 pass
 
 
-function check_local(ctx: ref[Context], scope: ref[Scope], is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, destructure_bindings: Option[span[str]], line: ptr_uint, column: ptr_uint) -> void:
+function check_local(ctx: ref[Context], scope: ref[Scope], is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, has_guard: bool, destructure_bindings: Option[span[str]], line: ptr_uint, column: ptr_uint) -> void:
     # Destructuring bindings are permissive in phase 1.
     match destructure_bindings:
         Option.some:
@@ -1348,13 +1379,17 @@ function check_local(ctx: ref[Context], scope: ref[Scope], is_let: bool, name: s
         value_type = infer_expr(ctx, scope, val)
         has_value = true
 
-    if has_declared and has_value:
-        if incompatible_value(declared, value_type, value):
-            report(ctx, line, column, local_mismatch_message(declared, value_type))
-
     # A guarded let/var (let x = nullable else: ...) unwraps the value type:
     # T?, Option[T], and Result[T,E] all narrow their success type.
     let narrowed = unwrap_nullable_type(value_type)
+
+    # Compatibility: a plain local compares its declared type against the value
+    # type directly; a guarded local's annotation names the *success* type, so
+    # it is compared against the unwrapped (narrowed) value type instead.
+    if has_declared and has_value:
+        let compared = if has_guard: narrowed else: value_type
+        if incompatible_value(declared, compared, value):
+            report(ctx, line, column, local_mismatch_message(declared, compared))
 
     # Bind the name for later inference: prefer the declared type, but narrow a
     # guard-unwrapped nullable/Option/Result to its success type.
@@ -1798,7 +1833,7 @@ function try_imported_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast
 
                         let fields_ptr = read(binding_ptr).structs.get(ma.member_name)
                         if fields_ptr != null:
-                            check_construction(ctx, ma.member_name, read(fields_ptr), args, ma.line, ma.column)
+                            check_construction(ctx, scope, ma.member_name, read(fields_ptr), args, ma.line, ma.column)
                             return Option[types.Type].some(value = types.Type.ty_imported(
                                 module_name = read(module_name_ptr),
                                 name = ma.member_name,
@@ -2120,25 +2155,61 @@ function try_construction(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.
                 let fieldsp = ctx.structs.get(id.name)
                 if fieldsp == null:
                     return Option[types.Type].none
-                check_construction(ctx, id.name, read(fieldsp), args, id.line, id.column)
+                check_construction(ctx, scope, id.name, read(fieldsp), args, id.line, id.column)
                 return Option[types.Type].some(value = types.Type.ty_named(name = id.name))
             _:
                 return Option[types.Type].none
 
 
-function check_construction(ctx: ref[Context], struct_name: str, fields: span[FieldEntry], args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> void:
+function check_construction(ctx: ref[Context], scope: ref[Scope], struct_name: str, fields: span[FieldEntry], args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> void:
+    var unnamed = false
     var i: ptr_uint = 0
     while i < args.len:
         var arg: ast.Argument
         unsafe:
             arg = read(args.data + i)
         match arg.arg_name:
-            Option.some as nm:
-                if not has_field(fields, nm.value):
-                    report(ctx, line, column, unknown_member_message("field", struct_name, nm.value))
             Option.none:
+                unnamed = true
+            _:
                 pass
         i += 1
+    if unnamed:
+        report(ctx, line, column, named_args_required_message(struct_name))
+        return
+
+    var seen = map_mod.Map[str, bool].create()
+    i = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        match arg.arg_name:
+            Option.some as nm:
+                if seen.contains(nm.value):
+                    report(ctx, line, column, duplicate_field_message(struct_name, nm.value))
+                seen.set(nm.value, true)
+                let ft = field_type(fields, nm.value)
+                if ft == null:
+                    report(ctx, line, column, unknown_member_message("field", struct_name, nm.value))
+                else:
+                    let vt = infer_expr(ctx, scope, arg.arg_value)
+                    if incompatible_value(unsafe: read(ft), vt, arg.arg_value):
+                        report(ctx, line, column, field_type_mismatch_message(struct_name, nm.value, unsafe: read(ft), vt))
+            _:
+                pass
+        i += 1
+
+
+function field_type(fields: span[FieldEntry], name: str) -> ptr[types.Type]?:
+    var i: ptr_uint = 0
+    while i < fields.len:
+        unsafe:
+            let fe = read(fields.data + i)
+            if fe.name.equal(name):
+                return ptr_of(read(fields.data + i).ty)
+        i += 1
+    return null
 
 
 function has_field(fields: span[FieldEntry], name: str) -> bool:
@@ -2506,3 +2577,33 @@ function uint_to_str(value: ptr_uint) -> str:
         i -= 1
         rev.push_byte(raw.byte_at(i))
     return rev.as_str()
+
+
+function named_args_required_message(struct_name: str) -> str:
+    var buf = string.String.create()
+    buf.append("construction of ")
+    buf.append(struct_name)
+    buf.append(" requires named arguments")
+    return buf.as_str()
+
+
+function duplicate_field_message(struct_name: str, field: str) -> str:
+    var buf = string.String.create()
+    buf.append("duplicate field ")
+    buf.append(struct_name)
+    buf.append(".")
+    buf.append(field)
+    return buf.as_str()
+
+
+function field_type_mismatch_message(struct_name: str, field: str, expected: types.Type, got: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("field ")
+    buf.append(struct_name)
+    buf.append(".")
+    buf.append(field)
+    buf.append(" expects ")
+    buf.append(types.type_to_string(expected))
+    buf.append(", got ")
+    buf.append(types.type_to_string(got))
+    return buf.as_str()

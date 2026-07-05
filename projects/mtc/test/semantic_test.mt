@@ -1617,3 +1617,265 @@ function test_uint_cast_return_to_int_is_clean() -> t.Check:
             return int<-(n)
     SRC
     return expect_clean(source)
+
+
+@[test]
+function test_float_to_int_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            var x: float = 1.0
+            return x
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_int_to_float_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> float:
+            var x: int = 1
+            return x
+    SRC
+    return expect_clean(source)
+
+
+# =============================================================================
+#  Nominal type mismatch (distinct structs / enums)
+# =============================================================================
+
+@[test]
+function test_distinct_struct_assignment_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct A:
+            x: int
+        struct B:
+            y: int
+        function f() -> A:
+            var b = B(y = 1)
+            return b
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_same_struct_assignment_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct A:
+            x: int
+        function f() -> A:
+            var a = A(x = 1)
+            return a
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_struct_returned_as_int_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct A:
+            x: int
+        function f() -> int:
+            var a = A(x = 1)
+            return a
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_struct_arg_to_int_param_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct A:
+            x: int
+        function use(n: int) -> void:
+            pass
+        function f() -> void:
+            var a = A(x = 1)
+            use(a)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_ref_param_accepts_struct_arg_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct A:
+            x: int
+        function use(a: ref[A]) -> void:
+            pass
+        function f() -> void:
+            var a = A(x = 1)
+            use(a)
+    SRC
+    return expect_clean(source)
+
+
+# =============================================================================
+#  Nullable base compatibility
+# =============================================================================
+
+@[test]
+function test_nullable_target_accepts_base_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            var x: int? = 5
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_nullable_byte_accepts_literal_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            var x: byte? = 42
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_nullable_int_rejects_str_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            var s: str = "hi"
+            var x: int? = s
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_nullable_narrowing_int_variable_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            var n: int = 5
+            var x: byte? = n
+    SRC
+    return expect_flagged(source)
+
+
+# =============================================================================
+#  Aggregate construction completeness
+# =============================================================================
+
+@[test]
+function test_construction_duplicate_field_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct A:
+            x: int
+        function f() -> A:
+            return A(x = 1, x = 2)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_construction_field_type_mismatch_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct A:
+            x: int
+        function f() -> A:
+            return A(x = true)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_construction_unnamed_arg_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct A:
+            x: int
+        function f() -> A:
+            return A(1)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_construction_narrowing_int_field_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct A:
+            x: byte
+        function f() -> A:
+            var n: int = 99
+            return A(x = n)
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_construction_literal_to_byte_field_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct A:
+            x: byte
+        function f() -> A:
+            return A(x = 42)
+    SRC
+    return expect_clean(source)
+
+
+# =============================================================================
+#  Statement body-restriction checks
+# =============================================================================
+
+@[test]
+function test_return_in_defer_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            defer:
+                return 1
+            return 2
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_void_return_value_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f():
+            return 1
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_parallel_forbids_return_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            parallel for i in 0..4:
+                if i > 2:
+                    return
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_parallel_forbids_break_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            parallel for i in 0..4:
+                if i > 2:
+                    break
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_parallel_forbids_continue_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            parallel for i in 0..4:
+                if i == 2:
+                    continue
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_parallel_block_accepts_two_stmts_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            var a: int = 0
+            var b: int = 0
+            parallel:
+                a = 1
+                b = 2
+    SRC
+    return expect_clean(source)

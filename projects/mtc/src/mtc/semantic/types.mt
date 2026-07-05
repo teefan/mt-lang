@@ -264,15 +264,186 @@ public function lossless_integer_assignable(target_name: str, source_name: str) 
     return false
 
 
+## The referent of a nullable type, or `t` itself when it is not nullable.
+public function unwrap_nullable(t: Type) -> Type:
+    match t:
+        Type.ty_nullable as n:
+            return unsafe: read(n.base)
+        _:
+            return t
+
+
+## True when `t` is a nominal type (a user-declared struct / enum / flags /
+## variant / opaque), either local (`ty_named`) or imported (`ty_imported`).
+public function is_nominal_type(t: Type) -> bool:
+    match t:
+        Type.ty_named:
+            return true
+        Type.ty_imported:
+            return true
+        _:
+            return false
+
+
+## True when `t` is a builtin generic instance (ptr / const_ptr / ref / span /
+## array / Option / Result / ...).  User generic structs resolve to ty_error, so
+## every ty_generic here is a builtin container.
+public function is_generic_type(t: Type) -> bool:
+    match t:
+        Type.ty_generic:
+            return true
+        _:
+            return false
+
+
+## A canonical identity string for a nominal type, used to decide whether two
+## nominals denote the same type.  Local names compare by bare name; imported
+## names compare by `module.name`.
+public function nominal_key(t: Type) -> str:
+    match t:
+        Type.ty_named as n:
+            return n.name
+        Type.ty_imported as im:
+            var buf = string.String.create()
+            buf.append(im.module_name)
+            buf.append(".")
+            buf.append(im.name)
+            return buf.as_str()
+        _:
+            return ""
+
+
+const kind_unknown: int = 0
+const kind_scalar: int = 1
+const kind_nominal: int = 2
+const kind_generic: int = 3
+
+
+## Coarse structural kind for definite-difference comparison.  Error, type
+## variable, nullable, dyn, function, and the type-meta all map to `unknown`
+## so they never force a mismatch.
+function type_kind(t: Type) -> int:
+    match t:
+        Type.ty_primitive:
+            return kind_scalar
+        Type.ty_str:
+            return kind_scalar
+        Type.ty_named:
+            return kind_nominal
+        Type.ty_imported:
+            return kind_nominal
+        Type.ty_generic:
+            return kind_generic
+        _:
+            return kind_unknown
+
+
+function scalar_definitely_different(a: Type, b: Type) -> bool:
+    match a:
+        Type.ty_primitive as pa:
+            match b:
+                Type.ty_primitive as pb:
+                    return not pa.name.equal(pb.name)
+                Type.ty_str:
+                    return true
+                _:
+                    return false
+        Type.ty_str:
+            match b:
+                Type.ty_str:
+                    return false
+                Type.ty_primitive:
+                    return true
+                _:
+                    return false
+        _:
+            return false
+
+
+function generic_definitely_different(a: Type, b: Type) -> bool:
+    match a:
+        Type.ty_generic as ga:
+            match b:
+                Type.ty_generic as gb:
+                    # Different constructors stay permissive: mutable→const
+                    # pointer and array→span coercions are legal, so a bare
+                    # name mismatch is not proof of incompatibility.
+                    if not ga.name.equal(gb.name):
+                        return false
+                    if ga.args.len != gb.args.len:
+                        return false
+                    var i: ptr_uint = 0
+                    while i < ga.args.len:
+                        unsafe:
+                            if definitely_different(read(ga.args.data + i), read(gb.args.data + i)):
+                                return true
+                        i += 1
+                    return false
+                _:
+                    return false
+        _:
+            return false
+
+
+## True when `a` and `b` are provably distinct types (invariant equality with a
+## permissive fallback).  Used for nominal identity and generic type arguments,
+## where Ruby requires exact `==` rather than assignability.  Any uncertainty
+## (error, type variable, mismatched nullability, differing generic
+## constructors) returns false.
+public function definitely_different(a: Type, b: Type) -> bool:
+    if is_error(a) or is_error(b):
+        return false
+    match a:
+        Type.ty_var:
+            return false
+        _:
+            pass
+    match b:
+        Type.ty_var:
+            return false
+        _:
+            pass
+    if is_nullable_type(a) and is_nullable_type(b):
+        return definitely_different(unwrap_nullable(a), unwrap_nullable(b))
+    if is_nullable_type(a) or is_nullable_type(b):
+        return false
+
+    let ka = type_kind(a)
+    let kb = type_kind(b)
+    if ka == kind_unknown or kb == kind_unknown:
+        return false
+    if ka == kind_scalar and kb == kind_scalar:
+        return scalar_definitely_different(a, b)
+    if ka == kind_nominal and kb == kind_nominal:
+        return not nominal_key(a).equal(nominal_key(b))
+    if ka == kind_generic and kb == kind_generic:
+        return generic_definitely_different(a, b)
+    # Cross-kind: only a nominal-vs-scalar pair is provably incompatible.  Any
+    # pairing that involves a generic stays permissive because of implicit
+    # coercions — a `ref[T]` parameter borrows a `T` argument, an array coerces
+    # to a span, and a mutable pointer coerces to a const pointer.
+    if ka == kind_nominal and kb == kind_scalar:
+        return true
+    if ka == kind_scalar and kb == kind_nominal:
+        return true
+    return false
+
+
 public function definitely_incompatible(target: Type, source: Type) -> bool:
     if is_error(target) or is_error(source):
         return false
 
-    # Nullable on either side stays permissive: T→T?, null→T?, and unwrap
-    # narrowing are handled elsewhere; the base-compatibility check would need
-    # more modeling, so uncertainty means "not flagged".
-    if is_nullable_type(target) or is_nullable_type(source):
+    # Nullability.  T? ← T? compares bases; T? ← T checks the base; T ← T?
+    # stays permissive because narrowing an optional to its base requires flow
+    # refinement the self-host does not model yet (gap #4).
+    let tn = is_nullable_type(target)
+    let sn = is_nullable_type(source)
+    if tn and sn:
+        return definitely_incompatible(unwrap_nullable(target), unwrap_nullable(source))
+    if sn:
         return false
+    if tn:
+        return definitely_incompatible(unwrap_nullable(target), source)
 
     # Integer ↔ char: any integer (including untagged literals) is assignable
     # to char; char is assignable to any integer.
@@ -307,7 +478,16 @@ public function definitely_incompatible(target: Type, source: Type) -> bool:
     # Integer → float: contextual coercion, always permitted.
     if is_float_type(target) and is_integer_type(source):
         return false
-    # Float → integer: scalar-category mismatch, fall through to scalar check.
+    # Float → integer: requires an explicit cast (float literals are gated at
+    # the call site via incompatible_value).
+    if is_integer_type(target) and is_float_type(source):
+        return true
+
+    # Nominal / generic mismatch: two structs, enums, or containers are
+    # compatible only when they denote the same type (invariant), and are never
+    # compatible with a scalar.
+    if is_nominal_type(target) or is_generic_type(target) or is_nominal_type(source) or is_generic_type(source):
+        return definitely_different(target, source)
 
     let tc = scalar_category(target)
     let sc = scalar_category(source)
