@@ -25,8 +25,14 @@ public struct Diag:
 public function check(params: span[ast.Param], body: ptr[ast.Stmt]) -> vec.Vec[Diag]:
     var diags = vec.Vec[Diag].create()
 
-    var cfg = cfgb.build_cfg(params, body)
-    defer cfg.release()
+    var cfg = cfgb.Cfg(
+        nodes = vec.Vec[ptr[cfgb.CfgNode]].create(),
+        entry = null,
+        exit = null,
+        binding_map = map_mod.Map[str, ptr_uint].create(),
+        next_id = 0,
+    )
+    cfgb.build_cfg_into(ref_of(cfg), params, body)
 
     var assigned = map_mod.Map[ptr_uint, bool].create()
     unsafe:
