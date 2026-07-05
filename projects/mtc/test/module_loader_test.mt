@@ -812,3 +812,77 @@ function test_unknown_str_method_is_permissive() -> t.Check:
     defer program.release()
 
     return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+# =============================================================================
+#  S3b-4: cross-module generic constraint satisfaction. A constraint interface
+#  imported as lib.Iface is matched by identity; a local struct implementing it
+#  (Case A) and an imported struct argument (Case B) are both checkable.
+# =============================================================================
+
+@[test]
+function test_cross_module_constraint_satisfied_local_struct_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public interface Damageable:\n    function is_alive() -> bool\n",
+        "import lib\n\nstruct NPC implements lib.Damageable:\n    hp: int\n\nextending NPC:\n    function is_alive() -> bool:\n        return this.hp > 0\n\nfunction hurt[T implements lib.Damageable](target: ref[T]) -> void:\n    pass\n\nfunction f() -> void:\n    var n: NPC\n    hurt(n)\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_cross_module_constraint_unsatisfied_local_struct_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public interface Damageable:\n    function is_alive() -> bool\n",
+        "import lib\n\nstruct Rock:\n    weight: int\n\nfunction hurt[T implements lib.Damageable](target: ref[T]) -> void:\n    pass\n\nfunction f() -> void:\n    var r: Rock\n    hurt(r)\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("does not implement"))
+
+
+@[test]
+function test_imported_struct_arg_unsatisfied_constraint_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public interface Drawable:\n    function draw() -> int\n\npublic struct Widget implements Drawable:\n    w: int\n\nextending Widget:\n    public function draw() -> int:\n        return this.w\n\npublic struct Plain:\n    p: int\n",
+        "import lib\n\nfunction render[T implements lib.Drawable](x: ref[T]) -> void:\n    pass\n\nfunction f() -> void:\n    var plain = lib.Plain(p = 0)\n    render(plain)\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("does not implement"))
+
+
+@[test]
+function test_imported_struct_arg_satisfied_constraint_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public interface Drawable:\n    function draw() -> int\n\npublic struct Widget implements Drawable:\n    w: int\n\nextending Widget:\n    public function draw() -> int:\n        return this.w\n",
+        "import lib\n\nfunction render[T implements lib.Drawable](x: ref[T]) -> void:\n    pass\n\nfunction f() -> void:\n    var widget = lib.Widget(w = 0)\n    render(widget)\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)

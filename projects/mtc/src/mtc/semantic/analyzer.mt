@@ -59,6 +59,7 @@ public struct ModuleBinding:
     member_keys: map_mod.Map[str, bool]
     method_sigs: map_mod.Map[str, FnSig]
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
+    implemented: map_mod.Map[str, span[ast.QualifiedName]]
 
 
 struct Context:
@@ -1381,24 +1382,57 @@ function check_type_arg_constraints(ctx: ref[Context], actual: types.Type, const
 
 
 ## Flag only when a fully-known local-struct/opaque type argument definitely does
-## not implement a locally-declared interface constraint.  Imported types,
-## primitives, type variables, and imported/unknown interfaces stay permissive.
+## not implement an interface constraint.  The constraint interface must resolve
+## (locally or via a binding); a local struct and its constraint are written in
+## the same module with the same aliases, so their qnames compare by identity.
+## Imported struct arguments, primitives, type variables, and unresolvable
+## interfaces stay permissive.
 function check_constraint_satisfied(ctx: ref[Context], actual: types.Type, constraint: ast.TypeParamConstraint, line: ptr_uint, column: ptr_uint) -> void:
-    if constraint.interface_ref.parts.len != 1:
-        return
-    let iface_name = unsafe: read(constraint.interface_ref.parts.data + 0)
-    if not ctx.interfaces.contains(iface_name):
-        return
+    match resolve_interface_methods(ctx, constraint.interface_ref):
+        Option.none:
+            return
+        Option.some:
+            pass
+    let constraint_id = qname_to_str(constraint.interface_ref)
     match actual:
         types.Type.ty_named as n:
             let impl_ptr = ctx.implemented.get(n.name)
             if impl_ptr == null:
                 return
             unsafe:
-                if not impl_list_contains(read(impl_ptr), iface_name):
-                    report(ctx, line, column, constraint_unsatisfied_message(n.name, iface_name))
+                if not impl_list_contains(read(impl_ptr), constraint_id):
+                    report(ctx, line, column, constraint_unsatisfied_message(n.name, constraint_id))
+        types.Type.ty_imported as im:
+            check_imported_constraint(ctx, im.module_name, im.name, constraint, constraint_id, line, column)
         _:
             pass
+
+
+## Constraint satisfaction for an imported struct type argument.  Safe only when
+## the constraint is `alias.Iface` and `alias` names the struct's own module: the
+## interface is then local to that module, so the struct implements it via a bare
+## `impl_list` entry.  Any other shape (local constraint, interface from a third
+## module, unexported impl_list) stays permissive.
+function check_imported_constraint(ctx: ref[Context], struct_module: str, struct_name: str, constraint: ast.TypeParamConstraint, constraint_id: str, line: ptr_uint, column: ptr_uint) -> void:
+    if constraint.interface_ref.parts.len != 2:
+        return
+    var iface_name: str = ""
+    var alias: str = ""
+    unsafe:
+        alias = read(constraint.interface_ref.parts.data + 0)
+        iface_name = read(constraint.interface_ref.parts.data + 1)
+    let alias_module_ptr = ctx.import_aliases.get(alias) else:
+        return
+    if not unsafe: read(alias_module_ptr).equal(struct_module):
+        return
+    let binding_ptr = lookup_binding(ctx, struct_module) else:
+        return
+    unsafe:
+        let impl_ptr = read(binding_ptr).implemented.get(struct_name)
+        if impl_ptr == null:
+            return
+        if not impl_list_contains_bare(read(impl_ptr), iface_name):
+            report(ctx, line, column, constraint_unsatisfied_message(struct_name, constraint_id))
 
 
 function impl_list_contains(impl_list: span[ast.QualifiedName], iface_name: str) -> bool:
@@ -1408,6 +1442,21 @@ function impl_list_contains(impl_list: span[ast.QualifiedName], iface_name: str)
         unsafe:
             q = read(impl_list.data + i)
         if qname_to_str(q).equal(iface_name):
+            return true
+        i += 1
+    return false
+
+
+## True when the impl list has a single-part (module-local) entry named
+## `iface_name`.  Used to match an imported struct against a constraint interface
+## that is local to the struct's own module.
+function impl_list_contains_bare(impl_list: span[ast.QualifiedName], iface_name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < impl_list.len:
+        var q: ast.QualifiedName
+        unsafe:
+            q = read(impl_list.data + i)
+        if q.parts.len == 1 and qname_to_str(q).equal(iface_name):
             return true
         i += 1
     return false
