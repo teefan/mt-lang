@@ -96,6 +96,7 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
     var functions = vec.Vec[ir.Function].create()
     var enums = vec.Vec[ir.EnumDecl].create()
     var structs = vec.Vec[ir.StructDecl].create()
+    var unions = vec.Vec[ir.UnionDecl].create()
 
     var i: ptr_uint = 0
     while i < analysis.source_file.declarations.len:
@@ -122,6 +123,8 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
                         structs.push(sd.value)
                     Option.none:
                         pass
+            ast.Decl.decl_union as u:
+                unions.push(lower_union_decl(ref_of(ctx), u.name, u.union_fields))
             _:
                 pass
         i += 1
@@ -133,7 +136,7 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
         globals = span[ir.Global](),
         opaques = span[ir.OpaqueDecl](),
         structs = structs.as_span(),
-        unions = span[ir.UnionDecl](),
+        unions = unions.as_span(),
         enums = enums.as_span(),
         variants = span[ir.VariantDecl](),
         static_asserts = span[ir.StaticAssert](),
@@ -267,16 +270,23 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let lowered = lower_expr(ctx, value)
                 output.push(ir.Stmt.stmt_return(value = lowered, line = r.line, source_path = ""))
             ast.Stmt.stmt_local as loc:
-                let value = loc.value else:
-                    fatal(c"lowering Phase 2: local declaration without initializer is unsupported")
-                let lowered_value = lower_expr(ctx, value)
-                let ty = local_decl_type(ctx, loc.stmt_type, value)
                 let c_name = c_local_name(loc.name)
+                var ty: types.Type
+                var value_expr: ptr[ir.Expr]
+                let init = loc.value
+                if init == null:
+                    let declared = loc.stmt_type else:
+                        fatal(c"lowering Phase 3: local without initializer requires a type")
+                    ty = resolve_field_type_ref(ctx, read(declared))
+                    value_expr = alloc_expr(ir.Expr.expr_zero_init(ty = ty))
+                else:
+                    value_expr = lower_expr(ctx, init)
+                    ty = local_decl_type(ctx, loc.stmt_type, init)
                 output.push(ir.Stmt.stmt_local(
                     name = loc.name,
                     linkage_name = c_name,
                     ty = ty,
-                    value = lowered_value,
+                    value = value_expr,
                     line = loc.line,
                     source_path = "",
                 ))
@@ -685,6 +695,44 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str) -> Option[ir.StructDec
         alignment = 0,
         source_module = Option[str].none,
     ))
+
+
+## Lower a union declaration to an IR UnionDecl, resolving field types from the
+## declaration (unions are not tracked in the analyzer's struct table).
+function lower_union_decl(ctx: ref[LowerCtx], name: str, fields: span[ast.Field]) -> ir.UnionDecl:
+    var ir_fields = vec.Vec[ir.Field].create()
+    var i: ptr_uint = 0
+    while i < fields.len:
+        var f: ast.Field
+        unsafe:
+            f = read(fields.data + i)
+        ir_fields.push(ir.Field(name = f.name, ty = resolve_field_type_ref(ctx, f.field_type)))
+        i += 1
+    return ir.UnionDecl(
+        name = name,
+        linkage_name = module_function_c_name(ctx.module_name, name),
+        fields = ir_fields.as_span(),
+        source_module = Option[str].none,
+    )
+
+
+## Resolve a field/local type annotation to a `types.Type`: scalars via
+## `resolve_scalar_type_ref`, and single-name local types (structs/unions/enums)
+## to a module-qualified `ty_imported`.  Compound types (arrays/spans/generics)
+## resolve later.
+function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.Type:
+    var local_tref = tref
+    let scalar = resolve_scalar_type_ref(ptr_of(local_tref))
+    if not types.is_error(scalar):
+        return scalar
+    if tref.is_fn or tref.is_proc or tref.is_dyn or tref.is_tuple or tref.nullable or tref.arguments.len > 0:
+        return types.Type.ty_error
+    if tref.name.parts.len != 1:
+        return types.Type.ty_error
+    let name = unsafe: read(tref.name.parts.data + 0)
+    if ctx.analysis.type_names.contains(name):
+        return types.Type.ty_imported(module_name = ctx.module_name, name = name)
+    return types.Type.ty_error
 
 
 # =============================================================================

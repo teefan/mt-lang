@@ -75,7 +75,7 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_str_equality_helper(ref_of(e))
         emit_line(ref_of(e), "")
 
-    if program.structs.len > 0:
+    if program.structs.len > 0 or program.unions.len > 0:
         var sorted_structs = topo_sort_structs(program.structs)
         let sorted = sorted_structs.as_span()
 
@@ -85,6 +85,12 @@ public function generate_c(program: ir.Program) -> string.String:
                 let s = read(sorted.data + i)
                 emit_line(ref_of(e), j3("typedef struct ", s.linkage_name, j2(" ", j2(s.linkage_name, ";"))))
             i += 1
+        i = 0
+        while i < program.unions.len:
+            unsafe:
+                let u = read(program.unions.data + i)
+                emit_line(ref_of(e), j3("typedef union ", u.linkage_name, j2(" ", j2(u.linkage_name, ";"))))
+            i += 1
         emit_line(ref_of(e), "")
 
         emit_enums_block(ref_of(e), program)
@@ -93,6 +99,12 @@ public function generate_c(program: ir.Program) -> string.String:
         while i < sorted.len:
             unsafe:
                 emit_struct(ref_of(e), read(sorted.data + i))
+            emit_line(ref_of(e), "")
+            i += 1
+        i = 0
+        while i < program.unions.len:
+            unsafe:
+                emit_union(ref_of(e), read(program.unions.data + i))
             emit_line(ref_of(e), "")
             i += 1
     else:
@@ -778,6 +790,17 @@ function emit_struct(e: ref[Emitter], s: ir.StructDecl) -> void:
     emit_line(e, "};")
 
 
+function emit_union(e: ref[Emitter], u: ir.UnionDecl) -> void:
+    emit_line(e, j3("union ", u.linkage_name, " {"))
+    var i: ptr_uint = 0
+    while i < u.fields.len:
+        unsafe:
+            let f = read(u.fields.data + i)
+            emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
+        i += 1
+    emit_line(e, "};")
+
+
 ## Order struct definitions so a struct that embeds another (by value) is emitted
 ## after its dependency.  Depth-first post-order over struct-typed fields.
 function topo_sort_structs(structs: span[ir.StructDecl]) -> vec.Vec[ir.StructDecl]:
@@ -1070,6 +1093,8 @@ function emit_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return j3(wrap_member_receiver(e, member.receiver), operator, member.member)
             ir.Expr.expr_aggregate_literal as agg:
                 return emit_aggregate_literal(e, agg.ty, agg.fields)
+            ir.Expr.expr_zero_init as z:
+                return emit_zero_expression(z.ty)
             _:
                 fatal(c"c_backend Phase 3: unsupported expression")
 
@@ -1082,8 +1107,39 @@ function emit_initializer(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
         match read(ep):
             ir.Expr.expr_aggregate_literal as agg:
                 return emit_aggregate_initializer(e, agg.fields)
+            ir.Expr.expr_zero_init as z:
+                return emit_zero_initializer(z.ty)
             _:
                 return emit_expression(e, ep)
+
+
+## The zero value of a type in initializer position (mirrors
+## c_backend/expressions.rb emit_zero_initializer).
+function emit_zero_initializer(t: types.Type) -> str:
+    match t:
+        types.Type.ty_str:
+            return "{ 0 }"
+        types.Type.ty_primitive as p:
+            if p.name.equal("bool"):
+                return "false"
+            if p.name.equal("float") or p.name.equal("double"):
+                return "0.0"
+            if p.name.equal("void"):
+                return "{ 0 }"
+            return "0"
+        _:
+            return "{ 0 }"
+
+
+## The zero value of a type in expression position.
+function emit_zero_expression(t: types.Type) -> str:
+    match t:
+        types.Type.ty_primitive:
+            return emit_zero_initializer(t)
+        types.Type.ty_str:
+            return j4("(", c_type(t), ")", " { 0 }")
+        _:
+            return j4("(", c_declaration(t, ""), ") ", emit_zero_initializer(t))
 
 
 function emit_aggregate_initializer(e: ref[Emitter], fields: span[ir.AggregateField]) -> str:
