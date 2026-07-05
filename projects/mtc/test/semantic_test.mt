@@ -1265,3 +1265,51 @@ function test_abstract_type_arg_constraint_is_permissive() -> t.Check:
             hurt(thing)
     SRC
     return expect_clean(source)
+
+
+# =============================================================================
+#  Phase 1 item B: generic-call return-type substitution. Explicit and inferred
+#  type arguments are substituted into the generic function's return type, so
+#  chained member access on the result is checkable.
+# =============================================================================
+
+@[test]
+function test_generic_explicit_return_type_is_substituted() -> t.Check:
+    var source = <<-SRC
+        struct Widget:
+            w: int
+        function make[T](x: T) -> T:
+            return x
+        function f() -> int:
+            let w = Widget(w = 7)
+            let copy = make[Widget](w)
+            return copy.w
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_generic_inferred_return_type_is_substituted() -> t.Check:
+    var source = <<-SRC
+        struct Widget:
+            w: int
+        function id[T](x: T) -> T:
+            return x
+        function f() -> int:
+            var w = Widget(w = 7)
+            let copy = id(w)
+            return copy.w
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_generic_return_type_mismatch_still_flagged() -> t.Check:
+    var source = <<-SRC
+        function id[T](x: T) -> T:
+            return x
+        function f() -> bool:
+            var n: int = 3
+            return id(n)
+    SRC
+    return expect_flagged(source)

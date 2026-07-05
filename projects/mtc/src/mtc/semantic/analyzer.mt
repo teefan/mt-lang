@@ -1342,8 +1342,7 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[
                     ast.Expr.expr_specialization as spec:
                         return check_specialization_call(ctx, scope, spec.callee, spec.arguments)
                     ast.Expr.expr_identifier:
-                        check_call(ctx, scope, callee, arg_types.as_span(), any_named)
-                        return callee_return_type(ctx, scope, callee)
+                        return check_call(ctx, scope, callee, arg_types.as_span(), any_named)
                     _:
                         let _ignored = infer_expr(ctx, scope, callee)
                         return types.Type.ty_error
@@ -1362,7 +1361,11 @@ function check_specialization_call(ctx: ref[Context], scope: ref[Scope], spec_ca
                     return check_hook_call(ctx, id.name, type_args, id.line, id.column)
                 let tps_ptr = ctx.function_type_params.get(id.name)
                 if tps_ptr != null and scope_get(scope, id.name) == null:
-                    validate_explicit_type_args(ctx, read(tps_ptr), type_args, id.line, id.column)
+                    var subs = map_mod.Map[str, types.Type].create()
+                    validate_explicit_type_args(ctx, read(tps_ptr), type_args, ref_of(subs), id.line, id.column)
+                    let sigp = ctx.functions.get(id.name)
+                    if sigp != null:
+                        return substitute_type(read(sigp).return_type, ref_of(subs))
                 return types.Type.ty_error
             _:
                 return types.Type.ty_error
@@ -1372,7 +1375,7 @@ function check_specialization_call(ctx: ref[Context], scope: ref[Scope], spec_ca
 ## type argument and check it satisfies its parameter's constraints.  Skipped
 ## unless the parameters are all plain type variables and the counts line up
 ## (avoids misaligning value/lifetime parameters).
-function validate_explicit_type_args(ctx: ref[Context], type_params: span[ast.TypeParam], type_args: span[ast.TypeArgument], line: ptr_uint, column: ptr_uint) -> void:
+function validate_explicit_type_args(ctx: ref[Context], type_params: span[ast.TypeParam], type_args: span[ast.TypeArgument], subs: ref[map_mod.Map[str, types.Type]], line: ptr_uint, column: ptr_uint) -> void:
     if type_args.len != type_params.len or not all_plain_type_params(type_params):
         return
     var i: ptr_uint = 0
@@ -1382,8 +1385,34 @@ function validate_explicit_type_args(ctx: ref[Context], type_params: span[ast.Ty
         unsafe:
             tp = read(type_params.data + i)
             arg_ref = read(type_args.data + i).value
-        check_type_arg_constraints(ctx, resolve_type(ctx, arg_ref), tp.constraints, line, column)
+        let actual = resolve_type(ctx, arg_ref)
+        subs.set(tp.name, actual)
+        check_type_arg_constraints(ctx, actual, tp.constraints, line, column)
         i += 1
+
+
+## Apply a substitution map to a type, replacing bound type variables with their
+## concrete types (used to substitute a generic call's return type).  Unbound
+## type variables are left as-is (permissive).
+function substitute_type(t: types.Type, subs: ref[map_mod.Map[str, types.Type]]) -> types.Type:
+    match t:
+        types.Type.ty_var as v:
+            let actual_ptr = subs.get(v.name)
+            if actual_ptr != null:
+                return unsafe: read(actual_ptr)
+            return t
+        types.Type.ty_nullable as n:
+            return types.Type.ty_nullable(base = types.alloc_type(substitute_type(unsafe: read(n.base), subs)))
+        types.Type.ty_generic as g:
+            var new_args = vec.Vec[types.Type].create()
+            var i: ptr_uint = 0
+            while i < g.args.len:
+                unsafe:
+                    new_args.push(substitute_type(read(g.args.data + i), subs))
+                i += 1
+            return types.Type.ty_generic(name = g.name, args = new_args.as_span())
+        _:
+            return t
 
 
 ## Validate constraints against an inferred substitution map (from a bare
@@ -2035,28 +2064,31 @@ function check_imported_member(ctx: ref[Context], module_name: str, type_name: s
     return types.Type.ty_error
 
 
-function check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr], arg_types: span[types.Type], any_named: bool) -> void:
+## Check a call to a top-level function by identifier and yield its result type.
+## For a generic function, type arguments are inferred from the call, validated
+## against their constraints, and substituted into the return type.
+function check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr], arg_types: span[types.Type], any_named: bool) -> types.Type:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
                 # A local value (e.g. a proc) of the same name shadows the
                 # function; its arity/parameter types are not statically known.
                 if scope_get(scope, id.name) != null:
-                    return
+                    return types.Type.ty_error
                 let sigp = ctx.functions.get(id.name)
                 if sigp == null:
-                    return
+                    return types.Type.ty_error
                 let sig = read(sigp)
                 check_signature_call(ctx, id.name, sig, arg_types, any_named, id.line, id.column)
-                # For a generic function, infer type arguments from the call and
-                # validate that each satisfies its constraints.
                 let tps_ptr = ctx.function_type_params.get(id.name)
                 if tps_ptr != null:
                     var subs = map_mod.Map[str, types.Type].create()
                     unify_call_args(sig.params, arg_types, ref_of(subs))
                     validate_inferred_type_args(ctx, read(tps_ptr), ref_of(subs), id.line, id.column)
+                    return substitute_type(sig.return_type, ref_of(subs))
+                return sig.return_type
             _:
-                pass
+                return types.Type.ty_error
 
 
 ## Check an argument list against a resolved function signature: arity always,
@@ -2077,19 +2109,6 @@ function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, 
                 report(ctx, line, column, argument_message(pe.name, display_name, pe.ty, atype))
         i += 1
 
-
-function callee_return_type(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr]) -> types.Type:
-    unsafe:
-        match read(callee):
-            ast.Expr.expr_identifier as id:
-                if scope_get(scope, id.name) != null:
-                    return types.Type.ty_error
-                let sigp = ctx.functions.get(id.name)
-                if sigp != null:
-                    return read(sigp).return_type
-                return types.Type.ty_error
-            _:
-                return types.Type.ty_error
 
 
 # =============================================================================
