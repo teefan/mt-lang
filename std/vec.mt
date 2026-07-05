@@ -379,8 +379,8 @@ extending Iter[T]:
                 var i = gap
                 while i < this.len:
                     var j = i
-                    let temp = read(data_ptr + j)
-                    while j >= gap and comparator(ref_of(read(data_ptr + j - gap)), ref_of(temp)) > 0:
+                    var temp = read(data_ptr + j)
+                    while j >= gap and comparator(data_ptr + j - gap, ptr_of(temp)) > 0:
                         read(data_ptr + j) = read(data_ptr + j - gap)
                         j -= gap
 
