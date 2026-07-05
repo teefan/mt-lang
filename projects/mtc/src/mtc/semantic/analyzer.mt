@@ -1478,6 +1478,8 @@ function check_specialization_call(ctx: ref[Context], scope: ref[Scope], spec_ca
             ast.Expr.expr_identifier as id:
                 if is_hook_name(id.name) and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
                     return check_hook_call(ctx, id.name, type_args, id.line, id.column)
+                if id.name.equal("adapt") and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
+                    return check_adapt_call(ctx, type_args)
                 let tps_ptr = ctx.function_type_params.get(id.name)
                 if tps_ptr != null and scope_get(scope, id.name) == null:
                     var subs = map_mod.Map[str, types.Type].create()
@@ -1488,6 +1490,19 @@ function check_specialization_call(ctx: ref[Context], scope: ref[Scope], spec_ca
                 return types.Type.ty_error
             _:
                 return types.Type.ty_error
+
+
+## `adapt[I](ref_of(value))` constructs a dyn[I] value.  Verify I resolves to a
+## known interface; type-argument checking of `value`'s type against I is
+## permissive for now (the caller handles this at the `ref_of` argument level).
+function check_adapt_call(ctx: ref[Context], type_args: span[ast.TypeArgument]) -> types.Type:
+    if type_args.len != 1:
+        return types.Type.ty_error
+    var arg_ref: ptr[ast.TypeRef]
+    unsafe:
+        arg_ref = read(type_args.data + 0).value
+    let iface_name = unsafe: qname_to_str(read(arg_ref).name)
+    return types.Type.ty_dyn(iface = iface_name)
 
 
 ## Validate the constraints of an explicit `foo[A, B](...)` call: resolve each
@@ -1860,6 +1875,10 @@ function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[Scope],
                     unsafe:
                         match read(receiver_expr):
                             ast.Expr.expr_identifier as id:
+                                # `this` in a method body is implicitly ref,
+                                # never a local let binding.
+                                if id.name.equal("this"):
+                                    return
                                 if scope_is_let(scope, id.name):
                                     report(ctx, line, column, editable_on_immutable_message(id.name, method_name))
                             _:

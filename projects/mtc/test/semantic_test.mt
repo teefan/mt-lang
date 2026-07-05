@@ -1440,3 +1440,20 @@ function test_editable_on_var_is_clean() -> t.Check:
             c.bump()
     SRC
     return expect_clean(source)
+
+
+@[test]
+function test_adapt_returns_dyn_type() -> t.Check:
+    var source = <<-SRC
+        interface Shape:
+            function area() -> float
+        struct C implements Shape:
+            r: float
+        extending C:
+            function area() -> float:
+                return this.r * 3.14
+        function f() -> dyn[Shape]:
+            var c = C(r = 1.0)
+            return adapt[Shape](ref_of(c))
+    SRC
+    return expect_clean(source)
