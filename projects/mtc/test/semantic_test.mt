@@ -2125,3 +2125,18 @@ function test_packed_on_function_is_flagged() -> t.Check:
             return 0
     SRC
     return expect_flagged(source)
+
+
+# =============================================================================
+#  Phase 1: resolved_expr_types and resolved_call_kinds tables
+# =============================================================================
+
+@[test]
+function test_resolved_types_recording_does_not_crash() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            let x = 42
+            let y = x + 1
+            return y
+    SRC
+    return expect_clean(source)

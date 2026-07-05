@@ -85,6 +85,8 @@ struct Context:
     imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?
     unsafe_depth: int
     inside_async: bool
+    resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
+    resolved_call_kinds: map_mod.Map[ptr_uint, str]
     diagnostics: vec.Vec[SemanticDiagnostic]
 
 
@@ -100,6 +102,8 @@ public struct Analysis:
     static_member_types: map_mod.Map[str, bool]
     match_case_names: map_mod.Map[str, span[str]]
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
+    resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
+    resolved_call_kinds: map_mod.Map[ptr_uint, str]
 
 
 public function check_source_file(file: ast.SourceFile) -> Analysis:
@@ -131,6 +135,8 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         imported_modules = imported_modules,
         unsafe_depth = 0,
         inside_async = false,
+        resolved_expr_types = map_mod.Map[ptr_uint, types.Type].create(),
+        resolved_call_kinds = map_mod.Map[ptr_uint, str].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
     )
     collect_import_aliases(ref_of(ctx), file)
@@ -162,6 +168,8 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         static_member_types = ctx.static_member_types,
         match_case_names = ctx.match_case_names,
         interfaces = ctx.interfaces,
+        resolved_expr_types = ctx.resolved_expr_types,
+        resolved_call_kinds = ctx.resolved_call_kinds,
     )
 
 
@@ -1820,6 +1828,65 @@ function check_local(ctx: ref[Context], scope: ref[Scope], is_let: bool, name: s
 # =============================================================================
 
 function infer_expr(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr]) -> types.Type:
+    let ty = infer_expr_inner(ctx, scope, ep)
+    record_expr_type(ctx, ep, ty)
+    return ty
+
+
+function record_expr_type(ctx: ref[Context], ep: ptr[ast.Expr], ty: types.Type) -> void:
+    let key = unsafe: reinterpret[ptr_uint](ep)
+    ctx.resolved_expr_types.set(key, ty)
+
+
+function record_call_kind(ctx: ref[Context], callee: ptr[ast.Expr], kind: str) -> void:
+    let key = unsafe: reinterpret[ptr_uint](callee)
+    ctx.resolved_call_kinds.set(key, kind)
+
+
+function call_expr_kind(ctx: ref[Context], callee: ptr[ast.Expr]) -> str:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                if is_builtin_call_name(id.name):
+                    return "builtin"
+                if ctx.functions.contains(id.name):
+                    return "function"
+                return "unknown"
+            ast.Expr.expr_member_access:
+                return "method"
+            ast.Expr.expr_specialization as spec:
+                return specialization_kind(ctx, spec.callee, spec.arguments)
+            _:
+                return "unknown"
+
+
+function specialization_kind(ctx: ref[Context], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument]) -> str:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                if is_hook_name(id.name):
+                    return "hook"
+                if id.name.equal("reinterpret"):
+                    return "reinterpret"
+                if id.name.equal("zero"):
+                    return "zero"
+                if id.name.equal("adapt"):
+                    return "adapt"
+                if ctx.functions.contains(id.name):
+                    return "function"
+                return "unknown"
+            _:
+                return "unknown"
+
+
+function is_builtin_call_name(name: str) -> bool:
+    return (
+        name.equal("read") or name.equal("ptr_of") or name.equal("const_ptr_of")
+        or name.equal("size_of") or name.equal("align_of") or name.equal("fatal")
+    )
+
+
+function infer_expr_inner(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr]) -> types.Type:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal:
@@ -1863,9 +1930,13 @@ function infer_expr(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr]) -> 
                 ctx.unsafe_depth -= 1
                 return result
             ast.Expr.expr_call as call:
-                return infer_and_check_call(ctx, scope, call.callee, call.args)
+                let ty = infer_and_check_call(ctx, scope, call.callee, call.args)
+                record_call_kind(ctx, ep, call_expr_kind(ctx, call.callee))
+                return ty
             ast.Expr.expr_specialization as spec:
-                return check_specialization_call(ctx, scope, spec.callee, spec.arguments)
+                let ty = check_specialization_call(ctx, scope, spec.callee, spec.arguments)
+                record_call_kind(ctx, ep, specialization_kind(ctx, spec.callee, spec.arguments))
+                return ty
             ast.Expr.expr_await as aw:
                 if not ctx.inside_async:
                     report(ctx, 0, 0, "await is only allowed inside async functions")
