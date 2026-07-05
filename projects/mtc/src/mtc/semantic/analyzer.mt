@@ -148,6 +148,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
     check_functions(ref_of(ctx), file)
     check_extending_methods(ref_of(ctx), file)
     check_interface_conformances(ref_of(ctx), file)
+    check_extern_and_foreign(ref_of(ctx), file)
     check_top_level_static_asserts(ref_of(ctx), file)
     return Analysis(
         source_file = file,
@@ -1042,6 +1043,43 @@ function sigs_compatible(required: FnSig, actual: FnSig) -> bool:
                 return false
         i += 1
     return not types.definitely_incompatible(required.return_type, actual.return_type)
+
+
+function check_extern_and_foreign(ctx: ref[Context], file: ast.SourceFile) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + i)
+        match d:
+            ast.Decl.decl_extern_function as ef:
+                check_foreign_params(ctx, ef.name, ef.extern_params)
+            ast.Decl.decl_foreign_function as ff:
+                check_foreign_params(ctx, ff.name, ff.foreign_params)
+            _:
+                pass
+        i += 1
+
+
+function check_foreign_params(ctx: ref[Context], name: str, params: span[ast.ForeignParam]) -> void:
+    var pi: ptr_uint = 0
+    while pi < params.len:
+        var p: ast.ForeignParam
+        unsafe:
+            p = read(params.data + pi)
+        let pt = resolve_type_value(ctx, p.param_type)
+        if types.is_ref_type(pt):
+            report(ctx, 0, 0, extern_ref_param_message(name, p.name))
+        pi += 1
+
+
+function extern_ref_param_message(func: str, param: str) -> str:
+    var buf = string.String.create()
+    buf.append("external function ")
+    buf.append(func)
+    buf.append(" cannot take ref parameter ")
+    buf.append(param)
+    return buf.as_str()
 
 
 function check_top_level_static_asserts(ctx: ref[Context], file: ast.SourceFile) -> void:
