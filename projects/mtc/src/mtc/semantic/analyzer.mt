@@ -1497,38 +1497,23 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: p
             ast.Stmt.stmt_local as l:
                 check_local(ctx, scope, l.is_let, l.name, l.stmt_type, l.value, l.else_body != null, l.destructure_bindings, l.line, l.column)
             ast.Stmt.stmt_if as i:
-                var narrowed_name: Option[str] = Option[str].none
-                var narrowed_ty: types.Type = types.Type.ty_error
-                var narrow_in_else = false
-                if i.branches.len > 0:
-                    var br: ast.IfBranch = read(i.branches.data + 0)
+                var false_refinements = map_mod.Map[str, types.Type].create()
+                var bi2: ptr_uint = 0
+                while bi2 < i.branches.len:
+                    var br: ast.IfBranch = read(i.branches.data + bi2)
                     check_condition(ctx, scope, br.condition, "if", br.line, br.column)
-                    match detect_null_comparison(br.condition):
-                        Option.some as nm:
-                            let raw = scope_get(scope, nm.value)
-                            if raw != null:
-                                let raw_ty = read(raw)
-                                let unnarrowed = unwrap_nullable_type(raw_ty)
-                                if not types.type_equals(unnarrowed, raw_ty):
-                                    narrowed_name = Option[str].some(value = nm.value)
-                                    narrowed_ty = unnarrowed
-                                    narrow_in_else = not is_not_equal_null_condition(br.condition)
-                        Option.none:
-                            pass
-                    if not narrow_in_else:
-                        apply_narrow_by_name(ctx, scope, narrowed_name, narrowed_ty, chk, br.body)
-                    else:
-                        check_body(ctx, scope, chk, br.body)
-                    var bi: ptr_uint = 1
-                    while bi < i.branches.len:
-                        br = read(i.branches.data + bi)
-                        check_condition(ctx, scope, br.condition, "if", br.line, br.column)
-                        check_body(ctx, scope, chk, br.body)
-                        bi += 1
-                if narrow_in_else:
-                    apply_narrow_by_name(ctx, scope, narrowed_name, narrowed_ty, chk, i.else_body)
-                else:
-                    check_body(ctx, scope, chk, i.else_body)
+                    var true_refs = flow_refinements(ctx, br.condition, true, scope)
+                    scope_enter(scope)
+                    apply_refinements_to_frame(scope, ref_of(true_refs))
+                    check_body(ctx, scope, chk, br.body)
+                    scope_leave(scope)
+                    var false_refs = flow_refinements(ctx, br.condition, false, scope)
+                    merge_refinements_into(ref_of(false_refinements), ref_of(false_refs))
+                    bi2 += 1
+                scope_enter(scope)
+                apply_refinements_to_frame(scope, ref_of(false_refinements))
+                check_body(ctx, scope, chk, i.else_body)
+                scope_leave(scope)
             ast.Stmt.stmt_while as w:
                 check_condition(ctx, scope, w.condition, "while", w.line, w.column)
                 check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, chk.inside_parallel), w.body)
@@ -1595,39 +1580,140 @@ function check_condition(ctx: ref[Context], scope: ref[Scope], cond: ptr[ast.Exp
         report(ctx, line, column, condition_message(keyword, ct))
 
 
-## Return the identifier name when `cond` is `name != null` or `name == null`
-## (or reversed).  Returns none for anything else.
-function detect_null_comparison(cond: ptr[ast.Expr]) -> Option[str]:
+## Compute the type refinements that flow from a condition being true or false.
+## Returns a map of variable names to their narrowed types.  Handles:
+##   * `x != null` / `x == null` — null-pointer narrowing
+##   * `not cond` — delegates with flipped truthy
+##   * `a and b` — merges when truthy, left-only when falsy (short-circuit)
+##   * `a or b` — left-only when truthy, merges when falsy (short-circuit)
+function flow_refinements(ctx: ref[Context], cond: ptr[ast.Expr], truthy: bool, scope: ref[Scope]) -> map_mod.Map[str, types.Type]:
+    var result = map_mod.Map[str, types.Type].create()
     unsafe:
         match read(cond):
+            ast.Expr.expr_unary_op as u:
+                if u.operator.equal("not"):
+                    return flow_refinements(ctx, u.operand, not truthy, scope)
             ast.Expr.expr_binary_op as b:
+                if b.operator.equal("and"):
+                    if truthy:
+                        var left = flow_refinements(ctx, b.left, true, scope)
+                        merge_refinements_into(ref_of(result), ref_of(left))
+                        apply_refinements_to_frame(scope, ref_of(left))
+                        var right = flow_refinements(ctx, b.right, true, scope)
+                        merge_refinements_into(ref_of(result), ref_of(right))
+                    else:
+                        var left = flow_refinements(ctx, b.left, false, scope)
+                        merge_refinements_into(ref_of(result), ref_of(left))
+                    return result
+                if b.operator.equal("or"):
+                    if truthy:
+                        var left = flow_refinements(ctx, b.left, true, scope)
+                        merge_refinements_into(ref_of(result), ref_of(left))
+                    else:
+                        var left = flow_refinements(ctx, b.left, false, scope)
+                        merge_refinements_into(ref_of(result), ref_of(left))
+                        apply_refinements_to_frame(scope, ref_of(left))
+                        var right = flow_refinements(ctx, b.right, false, scope)
+                        merge_refinements_into(ref_of(result), ref_of(right))
+                    return result
                 if b.operator.equal("!=") or b.operator.equal("=="):
+                    return null_test_refinements(ctx, cond, truthy, scope)
+            _:
+                pass
+    return result
+
+
+## Null-test refinements: returns {name -> unwrapped_type} when the condition
+## is `name != null` (truthy) or `name == null` (falsy), and the variable has
+## a nullable type.
+function null_test_refinements(ctx: ref[Context], condp: ptr[ast.Expr], truthy: bool, scope: ref[Scope]) -> map_mod.Map[str, types.Type]:
+    var result = map_mod.Map[str, types.Type].create()
+
+    unsafe:
+        match read(condp):
+            ast.Expr.expr_binary_op as b:
+                var is_negated = false
+                if b.operator.equal("!="):
+                    is_negated = true
+                else if b.operator.equal("=="):
+                    is_negated = false
+                else:
+                    return result
+
+                var var_name: Option[str] = Option[str].none
+                unsafe:
                     match read(b.left):
                         ast.Expr.expr_identifier as id:
                             if read(b.right) is ast.Expr.expr_null_literal:
-                                return Option[str].some(value = id.name)
+                                var_name = Option[str].some(value = id.name)
                         _:
                             pass
                     match read(b.right):
                         ast.Expr.expr_identifier as id:
                             if read(b.left) is ast.Expr.expr_null_literal:
-                                return Option[str].some(value = id.name)
+                                var_name = Option[str].some(value = id.name)
                         _:
                             pass
+
+                var name_value: str = ""
+                var found = false
+                match var_name:
+                    Option.some as nv:
+                        name_value = nv.value
+                        found = true
+                    Option.none:
+                        pass
+                if not found:
+                    return result
+
+                let narrow = if is_negated: truthy else: not truthy
+                if not narrow:
+                    return result
+
+                let type_ptr = scope_get(scope, name_value)
+                if type_ptr == null:
+                    return result
+
+                unsafe:
+                    let raw_ty = read(type_ptr)
+                    let unwrapped = unwrap_nullable_type(raw_ty)
+                    if not types.type_equals(unwrapped, raw_ty):
+                        result.set(name_value, unwrapped)
             _:
                 pass
-    return Option[str].none
+
+    return result
 
 
-## True when `cond` is `name != null` (narrow in if-body). False for `== null`.
-function is_not_equal_null_condition(cond: ptr[ast.Expr]) -> bool:
-    unsafe:
-        match read(cond):
-            ast.Expr.expr_binary_op as b:
-                return b.operator.equal("!=")
-            _:
-                pass
-    return false
+## Copy all entries from `incoming` into `existing`.  When a key is already
+## present in both and has a different type, it is removed (ambiguous state).
+function merge_refinements_into(existing: ref[map_mod.Map[str, types.Type]], incoming: ref[map_mod.Map[str, types.Type]]) -> void:
+    var entries = incoming.entries()
+    while true:
+        if not entries.next():
+            break
+        let entry = entries.current()
+        unsafe:
+            let key = read(entry.key)
+            let new_val = read(entry.value)
+            let cur_ptr = existing.get(key)
+            if cur_ptr != null:
+                if not types.type_equals(read(cur_ptr), new_val):
+                    let _removed = existing.remove(key)
+            else:
+                existing.set(key, new_val)
+
+
+## Apply refinement bindings to the top scope frame, shadowing any existing
+## bindings with the narrowed types.
+function apply_refinements_to_frame(scope: ref[Scope], refinements: ref[map_mod.Map[str, types.Type]]) -> void:
+    var entries = refinements.entries()
+    while true:
+        if not entries.next():
+            break
+        unsafe:
+            let entry = entries.current()
+            scope_set(scope, read(entry.key), read(entry.value))
 
 
 function check_when_statement(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
