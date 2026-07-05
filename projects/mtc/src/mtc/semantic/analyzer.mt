@@ -62,6 +62,13 @@ public struct ModuleBinding:
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     implemented: map_mod.Map[str, span[ast.QualifiedName]]
     match_case_names: map_mod.Map[str, span[str]]
+    private_functions: map_mod.Map[str, FnSig]
+    private_structs: map_mod.Map[str, span[FieldEntry]]
+    private_value_types: map_mod.Map[str, types.Type]
+    private_static_member_types: map_mod.Map[str, bool]
+    private_member_keys: map_mod.Map[str, bool]
+    private_method_sigs: map_mod.Map[str, FnSig]
+    private_interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
 
 
 struct Context:
@@ -88,6 +95,7 @@ struct Context:
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
     const_values: map_mod.Map[str, ptr[ast.Expr]]
+    declared_attributes: map_mod.Map[str, span[str]]
     diagnostics: vec.Vec[SemanticDiagnostic]
     uses_parallel_for: bool
 
@@ -111,6 +119,7 @@ public struct Analysis:
     module_kind: ast.ModuleKind
     unsafe_statement_lines: vec.Vec[ptr_uint]
     uses_parallel_for: bool
+    declared_attributes: map_mod.Map[str, span[str]]
 
 
 public function check_source_file(file: ast.SourceFile) -> Analysis:
@@ -145,12 +154,14 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         resolved_expr_types = map_mod.Map[ptr_uint, types.Type].create(),
         resolved_call_kinds = map_mod.Map[ptr_uint, str].create(),
         const_values = map_mod.Map[str, ptr[ast.Expr]].create(),
+        declared_attributes = map_mod.Map[str, span[str]].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
         uses_parallel_for = false,
     )
     collect_import_aliases(ref_of(ctx), file)
     declare_named_types(ref_of(ctx), file)
     install_prelude_types(ref_of(ctx))
+    declare_attributes(ref_of(ctx), file)
     var when_extra = expand_module_when(ref_of(ctx), file)
     collect_struct_fields(ref_of(ctx), file)
     collect_struct_fields_extra(ref_of(ctx), when_extra)
@@ -184,6 +195,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         module_kind = file.module_kind,
         unsafe_statement_lines = vec.Vec[ptr_uint].create(),
         uses_parallel_for = ctx.uses_parallel_for,
+        declared_attributes = ctx.declared_attributes,
     )
 
 
@@ -526,6 +538,20 @@ function attr_target_message(attr_name: str, target: str) -> str:
     buf.append(target)
     buf.append(" declarations")
     return buf.as_str()
+
+
+function declare_attributes(ctx: ref[Context], file: ast.SourceFile) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + i)
+        match d:
+            ast.Decl.decl_attribute as a:
+                ctx.declared_attributes.set(a.name, a.targets)
+            _:
+                pass
+        i += 1
 
 
 ## Resolve each struct's declared fields into the type model, after all type
