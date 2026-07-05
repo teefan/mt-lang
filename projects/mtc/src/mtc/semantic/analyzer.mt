@@ -1561,6 +1561,10 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: p
                 check_stmt_span(ctx, scope, check_flags(chk.ret, chk.inside_loop, chk.inside_defer, true), pb.bodies)
             ast.Stmt.stmt_gather:
                 pass
+            ast.Stmt.stmt_when as w:
+                check_when_statement(ctx, scope, chk, w.discriminant, w.branches, w.else_body)
+            ast.Stmt.stmt_pass:
+                pass
             ast.Stmt.stmt_break as br:
                 if chk.inside_parallel:
                     report(ctx, br.line, br.column, "break is not allowed inside a parallel block")
@@ -1622,6 +1626,27 @@ function is_not_equal_null_condition(cond: ptr[ast.Expr]) -> bool:
             _:
                 pass
     return false
+
+
+function check_when_statement(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
+    match evaluate_when_discriminant(ctx, discriminant, span[ast.Decl]()):
+        Option.some as chosen:
+            var i: ptr_uint = 0
+            while i < branches.len:
+                var br: ast.WhenBranch
+                unsafe:
+                    br = read(branches.data + i)
+                match extract_when_member_name(br.pattern):
+                    Option.some as nm:
+                        if nm.value.equal(chosen.value):
+                            check_stmt_span(ctx, scope, chk, br.body)
+                            return
+                    Option.none:
+                        pass
+                i += 1
+            check_body(ctx, scope, chk, else_body)
+        Option.none:
+            pass
 
 
 function check_stmt_span(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, stmts: span[ast.Stmt]) -> void:
@@ -2026,6 +2051,12 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr
                 if not ctx.inside_async:
                     report(ctx, 0, 0, "await is only allowed inside async functions")
                 return infer_expr(ctx, scope, aw.expression)
+            ast.Expr.expr_null_literal as nl:
+                let target = nl.target_type
+                if target != null:
+                    let t = resolve_type(ctx, target)
+                    return types.Type.ty_nullable(base = types.alloc_type(t))
+                return types.Type.ty_error
             _:
                 return types.Type.ty_error
 
