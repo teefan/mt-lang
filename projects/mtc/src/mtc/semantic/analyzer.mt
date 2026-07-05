@@ -87,6 +87,7 @@ struct Context:
     inside_async: bool
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
+    const_values: map_mod.Map[str, ptr[ast.Expr]]
     diagnostics: vec.Vec[SemanticDiagnostic]
 
 
@@ -104,6 +105,7 @@ public struct Analysis:
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
+    const_values: map_mod.Map[str, ptr[ast.Expr]]
 
 
 public function check_source_file(file: ast.SourceFile) -> Analysis:
@@ -137,6 +139,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         inside_async = false,
         resolved_expr_types = map_mod.Map[ptr_uint, types.Type].create(),
         resolved_call_kinds = map_mod.Map[ptr_uint, str].create(),
+        const_values = map_mod.Map[str, ptr[ast.Expr]].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
     )
     collect_import_aliases(ref_of(ctx), file)
@@ -170,6 +173,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         interfaces = ctx.interfaces,
         resolved_expr_types = ctx.resolved_expr_types,
         resolved_call_kinds = ctx.resolved_call_kinds,
+        const_values = ctx.const_values,
     )
 
 
@@ -279,6 +283,11 @@ function evaluate_when_discriminant(ctx: ref[Context], discriminant: ptr[ast.Exp
     unsafe:
         match read(discriminant):
             ast.Expr.expr_identifier as id:
+                # Try ctx.const_values first (populated by CT eval)
+                let chain_ptr = ctx.const_values.get(id.name)
+                if chain_ptr != null:
+                    return evaluate_when_discriminant(ctx, read(chain_ptr), decls)
+                # Fallback: search declarations in the file
                 match find_const_value_in_decls(decls, id.name):
                     Option.some as val_expr:
                         return evaluate_when_discriminant(ctx, val_expr.value, decls)
@@ -385,6 +394,10 @@ function declare_values_and_functions_extra(ctx: ref[Context], extra: span[ast.D
             ast.Decl.decl_const as c:
                 if declare_value(ctx, c.name, c.line, c.column):
                     ctx.value_types.set(c.name, resolve_type(ctx, c.const_type))
+                    let val = c.value else:
+                        i += 1
+                        continue
+                    ctx.const_values.set(c.name, val)
             ast.Decl.decl_function as fun:
                 if declare_value(ctx, fun.name, fun.line, fun.column):
                     ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type, ast.MethodKind.mk_plain))
@@ -672,6 +685,14 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
             ast.Decl.decl_const as c:
                 if declare_value(ctx, c.name, c.line, c.column):
                     ctx.value_types.set(c.name, resolve_type(ctx, c.const_type))
+                    match evaluate_const_expr(ctx, c.value):
+                        Option.some:
+                            let val = c.value else:
+                                i += 1
+                                continue
+                            ctx.const_values.set(c.name, val)
+                        Option.none:
+                            pass
             ast.Decl.decl_var as v:
                 if declare_value(ctx, v.name, v.line, v.column):
                     let vt = v.var_type
@@ -1884,6 +1905,59 @@ function is_builtin_call_name(name: str) -> bool:
         name.equal("read") or name.equal("ptr_of") or name.equal("const_ptr_of")
         or name.equal("size_of") or name.equal("align_of") or name.equal("fatal")
     )
+
+
+## Evaluate a compile-time constant expression.  Returns the type of the
+## evaluated value when the expression is a literal, a reference to another
+## const, an enum-member access, or a size_of/align_of call.  Returns none for
+## anything the self-host cannot evaluate at compile time (runtime-only).
+function evaluate_const_expr(ctx: ref[Context], ep: ptr[ast.Expr]?) -> Option[types.Type]:
+    let p = ep else:
+        return Option[types.Type].none
+    unsafe:
+        match read(p):
+            ast.Expr.expr_integer_literal:
+                return Option[types.Type].some(value = types.primitive("int"))
+            ast.Expr.expr_float_literal:
+                return Option[types.Type].some(value = types.primitive("float"))
+            ast.Expr.expr_bool_literal:
+                return Option[types.Type].some(value = types.primitive("bool"))
+            ast.Expr.expr_string_literal as s:
+                if s.is_cstring:
+                    return Option[types.Type].some(value = types.primitive("cstr"))
+                return Option[types.Type].some(value = types.Type.ty_str)
+            ast.Expr.expr_char_literal:
+                return Option[types.Type].some(value = types.primitive("ubyte"))
+            ast.Expr.expr_identifier as id:
+                let chain = ctx.const_values.get(id.name)
+                if chain != null:
+                    return evaluate_const_expr(ctx, read(chain))
+                return Option[types.Type].none
+            ast.Expr.expr_member_access as ma:
+                return Option[types.Type].some(value = types.Type.ty_error)
+            ast.Expr.expr_prefix_cast as c:
+                return Option[types.Type].some(value = resolve_type(ctx, c.target_type))
+            ast.Expr.expr_call as call:
+                match evaluate_const_builtin_call(call.callee):
+                    Option.some:
+                        return Option[types.Type].some(value = types.primitive("ptr_uint"))
+                    Option.none:
+                        return Option[types.Type].none
+            ast.Expr.expr_null_literal:
+                return Option[types.Type].some(value = types.Type.ty_error)
+            _:
+                return Option[types.Type].none
+
+
+function evaluate_const_builtin_call(callee: ptr[ast.Expr]) -> Option[bool]:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                if id.name.equal("size_of") or id.name.equal("align_of"):
+                    return Option[bool].some(value = true)
+            _:
+                pass
+    return Option[bool].none
 
 
 function infer_expr_inner(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr]) -> types.Type:
