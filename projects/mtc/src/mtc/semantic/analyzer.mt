@@ -21,6 +21,7 @@ import std.vec as vec
 import mtc.parser.ast as ast
 import mtc.semantic.types as types
 import mtc.semantic.type_compatibility as compat
+import mtc.semantic.expressions as exprs
 
 
 public struct SemanticDiagnostic:
@@ -2055,6 +2056,57 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr
                 if target != null:
                     let t = resolve_type(ctx, target)
                     return types.Type.ty_nullable(base = types.alloc_type(t))
+                return types.Type.ty_error
+            ast.Expr.expr_format_string:
+                return types.Type.ty_str
+            ast.Expr.expr_proc as pr:
+                var param_types = vec.Vec[types.Type].create()
+                var pi: ptr_uint = 0
+                while pi < pr.method_params.len:
+                    var p: ast.Param = read(pr.method_params.data + pi)
+                    param_types.push(resolve_type_value(ctx, p.param_type))
+                    pi += 1
+                var ret = types.primitive("void")
+                let rt = pr.return_type
+                if rt != null:
+                    ret = resolve_type(ctx, rt)
+                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false)
+            ast.Expr.expr_if as ife:
+                let then_ty = infer_expr(ctx, scope, ife.then_expr)
+                let else_ty = infer_expr(ctx, scope, ife.else_expr)
+                return exprs.conditional_common_type(then_ty, else_ty)
+            ast.Expr.expr_match as me:
+                var arm_types = vec.Vec[types.Type].create()
+                var ai: ptr_uint = 0
+                while ai < me.arms.len:
+                    var arm: ast.MatchExprArm = read(me.arms.data + ai)
+                    arm_types.push(infer_expr(ctx, scope, arm.value))
+                    ai += 1
+                return exprs.match_expression_common_type(arm_types.as_span())
+            ast.Expr.expr_detach as det:
+                match read(det.expression):
+                    ast.Expr.expr_call as call:
+                        match read(call.callee):
+                            ast.Expr.expr_identifier:
+                                pass
+                            _:
+                                report(ctx, det.line, det.column, "detach target must be a global function call")
+                    _:
+                        report(ctx, det.line, det.column, "detach target must be a function call")
+                return types.Type.ty_error
+            ast.Expr.expr_sizeof:
+                return types.primitive("ptr_uint")
+            ast.Expr.expr_alignof:
+                return types.primitive("ptr_uint")
+            ast.Expr.expr_offsetof:
+                return types.primitive("ptr_uint")
+            ast.Expr.expr_expression_list:
+                return types.Type.ty_error
+            ast.Expr.expr_range:
+                return types.Type.ty_error
+            ast.Expr.expr_named as nm:
+                return infer_expr(ctx, scope, nm.value)
+            ast.Expr.expr_error as err:
                 return types.Type.ty_error
             _:
                 return types.Type.ty_error
