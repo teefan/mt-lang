@@ -1509,6 +1509,8 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: p
                 check_local(ctx, scope, l.is_let, l.name, l.stmt_type, l.value, l.else_body != null, l.destructure_bindings, l.line, l.column)
             ast.Stmt.stmt_if as i:
                 var false_refinements = map_mod.Map[str, types.Type].create()
+                var post_refinements = map_mod.Map[str, types.Type].create()
+                var first_post = true
                 var bi2: ptr_uint = 0
                 while bi2 < i.branches.len:
                     var br: ast.IfBranch = read(i.branches.data + bi2)
@@ -1520,11 +1522,21 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: p
                     scope_leave(scope)
                     var false_refs = flow_refinements(ctx, br.condition, false, scope)
                     merge_refinements_into(ref_of(false_refinements), ref_of(false_refs))
+                    var branch_keepers = keep_unassigned(true_refs, br.body)
+                    intersect_post_refs(ref_of(post_refinements), ref_of(branch_keepers), ref_of(first_post))
+                    branch_keepers.release()
+                    first_post = false
                     bi2 += 1
                 scope_enter(scope)
                 apply_refinements_to_frame(scope, ref_of(false_refinements))
                 check_body(ctx, scope, chk, i.else_body)
                 scope_leave(scope)
+                if i.else_body != null:
+                    var else_keepers = keep_unassigned(false_refinements, i.else_body)
+                    intersect_post_refs(ref_of(post_refinements), ref_of(else_keepers), ref_of(first_post))
+                    else_keepers.release()
+                apply_refinements_to_scope_frame(scope, ref_of(post_refinements))
+                post_refinements.release()
             ast.Stmt.stmt_while as w:
                 check_condition(ctx, scope, w.condition, "while", w.line, w.column)
                 check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, chk.inside_parallel), w.body)
@@ -1725,6 +1737,125 @@ function apply_refinements_to_frame(scope: ref[Scope], refinements: ref[map_mod.
         unsafe:
             let entry = entries.current()
             scope_set(scope, read(entry.key), read(entry.value))
+
+
+## Apply refinements directly to the current scope frame without entering a new
+## one — for post-if refinements that persist beyond the if/else block.
+function apply_refinements_to_scope_frame(scope: ref[Scope], refinements: ref[map_mod.Map[str, types.Type]]) -> void:
+    var entries = refinements.entries()
+    while true:
+        if not entries.next():
+            break
+        unsafe:
+            let entry = entries.current()
+            scope_set(scope, read(entry.key), read(entry.value))
+
+
+## Return the subset of `refinements` whose variable names are NOT assigned
+## (via let/var/assignment) within the given statement body.  Variables that
+## are reassigned lose their narrowing.
+function keep_unassigned(refinements: map_mod.Map[str, types.Type], body_ptr: ptr[ast.Stmt]?) -> map_mod.Map[str, types.Type]:
+    var result = map_mod.Map[str, types.Type].create()
+    var assigned = collect_assigned_names(body_ptr)
+    var entries = refinements.entries()
+    while true:
+        if not entries.next():
+            break
+        unsafe:
+            let key = read(entries.current().key)
+            if not assigned.contains(key):
+                result.set(key, read(entries.current().value))
+    assigned.release()
+    return result
+
+
+## Collect all variable names that appear as targets of let/var declarations
+## or assignments within a statement body.
+function collect_assigned_names(body_ptr: ptr[ast.Stmt]?) -> map_mod.Map[str, bool]:
+    var result = map_mod.Map[str, bool].create()
+    collect_assigned_into(body_ptr, ref_of(result))
+    return result
+
+
+function collect_assigned_into(stmt_ptr: ptr[ast.Stmt]?, names: ref[map_mod.Map[str, bool]]) -> void:
+    if stmt_ptr == null:
+        return
+    unsafe:
+        match read(stmt_ptr):
+            ast.Stmt.stmt_local as l:
+                if not l.name.equal("_"):
+                    names.set(l.name, true)
+            ast.Stmt.stmt_assignment as a:
+                match read(a.target):
+                    ast.Expr.expr_identifier as id:
+                        if not id.name.equal("_"):
+                            names.set(id.name, true)
+                    _:
+                        pass
+            ast.Stmt.stmt_block as b:
+                var i: ptr_uint = 0
+                while i < b.statements.len:
+                    collect_assigned_into(b.statements.data + i, names)
+                    i += 1
+            ast.Stmt.stmt_if as i:
+                var bi: ptr_uint = 0
+                while bi < i.branches.len:
+                    let br = read(i.branches.data + bi)
+                    collect_assigned_into(br.body, names)
+                    bi += 1
+                collect_assigned_into(i.else_body, names)
+            ast.Stmt.stmt_while as w:
+                collect_assigned_into(w.body, names)
+            ast.Stmt.stmt_for as fr:
+                collect_assigned_into(fr.body, names)
+            ast.Stmt.stmt_match as m:
+                var ai: ptr_uint = 0
+                while ai < m.arms.len:
+                    let arm = read(m.arms.data + ai)
+                    collect_assigned_into(arm.body, names)
+                    ai += 1
+            ast.Stmt.stmt_defer as d:
+                collect_assigned_into(d.body, names)
+            ast.Stmt.stmt_unsafe as u:
+                collect_assigned_into(u.body, names)
+            _:
+                pass
+
+
+## Intersect `branch` into `result`.  When `first` is true, `branch` is the first
+## branch and its entries are copied directly.  Otherwise, only entries present
+## in both with the same type survive.
+function intersect_post_refs(result: ref[map_mod.Map[str, types.Type]], branch: ref[map_mod.Map[str, types.Type]], first: ref[bool]) -> void:
+    if read(first):
+        var entries = branch.entries()
+        while true:
+            if not entries.next():
+                break
+            unsafe:
+                result.set(read(entries.current().key), read(entries.current().value))
+        read(first) = false
+    else:
+        var to_remove = vec.Vec[str].create()
+        var entries = result.entries()
+        while true:
+            if not entries.next():
+                break
+            unsafe:
+                let key = read(entries.current().key)
+                if not branch.contains(key):
+                    to_remove.push(key)
+                else:
+                    let bv = branch.get(key)
+                    if bv != null and not types.type_equals(read(entries.current().value), read(bv)):
+                        to_remove.push(key)
+        var ri: ptr_uint = 0
+        while ri < to_remove.len():
+            let kr = to_remove.get(ri) else:
+                break
+            unsafe:
+                let _removed = result.remove(read(kr))
+            ri += 1
+        to_remove.release()
 
 
 function check_when_statement(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
