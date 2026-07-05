@@ -60,6 +60,7 @@ public struct ModuleBinding:
     method_sigs: map_mod.Map[str, FnSig]
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     implemented: map_mod.Map[str, span[ast.QualifiedName]]
+    match_case_names: map_mod.Map[str, span[str]]
 
 
 struct Context:
@@ -326,6 +327,24 @@ function collect_enum_variant_members(ctx: ref[Context], file: ast.SourceFile) -
             _:
                 pass
         i += 1
+    # Import enum/variant member names from bindings so cross-module match
+    # scrutinees of imported enums/variants get exhaustiveness checks.
+    let imported = ctx.imported_modules else:
+        return
+    unsafe:
+        var bindings = read(imported).values()
+        while true:
+            let binding_ptr = bindings.next() else:
+                return
+            var case_entries = read(binding_ptr).match_case_names.entries()
+            while true:
+                if not case_entries.next():
+                    break
+                let entry = case_entries.current()
+                if not ctx.match_case_names.contains(read(entry.key)):
+                    ctx.match_case_names.set(read(entry.key), read(entry.value))
+                if not ctx.match_case_types.contains(read(entry.key)):
+                    ctx.match_case_types.set(read(entry.key), true)
 
 
 function register_member_names(ctx: ref[Context], type_name: str, members: span[ast.EnumMember]) -> void:
@@ -1051,6 +1070,9 @@ function check_match(ctx: ref[Context], scope: ref[Scope], scrutinee: ptr[ast.Ex
         types.Type.ty_named as n:
             if ctx.match_case_types.contains(n.name):
                 check_case_match(ctx, n.name, arms, line, column)
+        types.Type.ty_imported as im:
+            if ctx.match_case_types.contains(im.name):
+                check_case_match(ctx, im.name, arms, line, column)
         types.Type.ty_str:
             check_scalar_match(ctx, arms, line, column, "match on str requires a wildcard arm (_:)", false)
         types.Type.ty_primitive as p:

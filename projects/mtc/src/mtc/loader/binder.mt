@@ -9,6 +9,7 @@
 ## methods with signatures (method-call checks).
 
 import std.map as map_mod
+import std.vec as vec
 
 import mtc.parser.ast as ast
 import mtc.semantic.analyzer as analyzer
@@ -24,6 +25,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     var method_sigs = map_mod.Map[str, analyzer.FnSig].create()
     var interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create()
     var implemented = map_mod.Map[str, span[ast.QualifiedName]].create()
+    var match_case_names = map_mod.Map[str, span[str]].create()
     let exports_all = analysis.source_file.module_kind == ast.ModuleKind.module_raw
 
     var i: ptr_uint = 0
@@ -61,6 +63,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                 if exports_all or e.visibility:
                     static_member_types.set(e.name, true)
                     export_member_keys(ref_of(member_keys), e.name, e.enum_members)
+                    export_case_names(ref_of(match_case_names), e.name, e.enum_members)
             ast.Decl.decl_flags as fl:
                 if exports_all or fl.visibility:
                     static_member_types.set(fl.name, true)
@@ -69,6 +72,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                 if exports_all or vr.visibility:
                     static_member_types.set(vr.name, true)
                     export_arm_keys(ref_of(member_keys), vr.name, vr.variant_arms)
+                    export_arm_case_names(ref_of(match_case_names), vr.name, vr.variant_arms)
             ast.Decl.decl_extending_block as ex:
                 export_methods(ref_of(member_keys), ref_of(method_sigs), analysis.method_sigs, ex.type_name, ex.methods, exports_all)
             ast.Decl.decl_interface as iface:
@@ -87,6 +91,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         method_sigs = method_sigs,
         interfaces = interfaces,
         implemented = implemented,
+        match_case_names = match_case_names,
     )
 
 
@@ -96,6 +101,26 @@ function export_member_keys(member_keys: ref[map_mod.Map[str, bool]], type_name:
         unsafe:
             member_keys.set(analyzer.method_key(type_name, read(members.data + i).name), true)
         i += 1
+
+
+function export_case_names(match_case_names: ref[map_mod.Map[str, span[str]]], type_name: str, members: span[ast.EnumMember]) -> void:
+    var names = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < members.len:
+        unsafe:
+            names.push(read(members.data + i).name)
+        i += 1
+    match_case_names.set(type_name, names.as_span())
+
+
+function export_arm_case_names(match_case_names: ref[map_mod.Map[str, span[str]]], type_name: str, arms: span[ast.VariantArm]) -> void:
+    var names = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < arms.len:
+        unsafe:
+            names.push(read(arms.data + i).name)
+        i += 1
+    match_case_names.set(type_name, names.as_span())
 
 
 function export_arm_keys(member_keys: ref[map_mod.Map[str, bool]], type_name: str, arms: span[ast.VariantArm]) -> void:

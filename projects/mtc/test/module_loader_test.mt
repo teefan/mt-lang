@@ -945,3 +945,43 @@ function test_annotated_imported_type_valid_member_is_clean() -> t.Check:
     defer program.release()
 
     return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+# =============================================================================
+#  Phase 1 item G: imported enum/variant match exhaustiveness. The binding now
+#  exports match_case_names; the checker imports them and checks exhaustiveness
+#  when the scrutinee is an imported ty_imported enum/variant.
+# =============================================================================
+
+@[test]
+function test_imported_enum_match_missing_case_is_flagged() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public enum Color: ubyte\n    red = 0\n    green = 1\n",
+        "import lib\n\nfunction f(c: lib.Color) -> int:\n    match c:\n        lib.Color.red:\n            return 1\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_true(program.has_diagnostic_containing("missing cases"))
+
+
+@[test]
+function test_imported_enum_match_exhaustive_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public enum Color: ubyte\n    red = 0\n    green = 1\n",
+        "import lib\n\nfunction f(c: lib.Color) -> int:\n    match c:\n        lib.Color.red:\n            return 1\n        lib.Color.green:\n            return 2\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
