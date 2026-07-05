@@ -94,6 +94,16 @@ function j5(a: str, b: str, c: str, d: str, e: str) -> str:
     buf.append(e)
     return buf.as_str()
 
+function j6(a: str, b: str, c: str, d: str, e: str, g: str) -> str:
+    var buf = string.String.create()
+    buf.append(a)
+    buf.append(b)
+    buf.append(c)
+    buf.append(d)
+    buf.append(e)
+    buf.append(g)
+    return buf.as_str()
+
 
 function emit_line(e: ref[Emitter], text: str) -> void:
     e.buffer.append(text)
@@ -204,17 +214,21 @@ function function_params(func: ir.Function) -> str:
 
 function emit_function(e: ref[Emitter], func: ir.Function) -> void:
     emit_line(e, j2(function_signature(func), " {"))
-    var i: ptr_uint = 0
-    while i < func.body.len:
-        unsafe:
-            emit_statement(e, func.body.data + i, 1)
-        i += 1
+    emit_stmts(e, func.body, 1)
     emit_line(e, "}")
 
 
 # =============================================================================
 #  Statement emission (mirrors c_backend/statements.rb)
 # =============================================================================
+
+function emit_stmts(e: ref[Emitter], body: span[ir.Stmt], level: ptr_uint) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            emit_statement(e, body.data + i, level)
+        i += 1
+
 
 function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> void:
     let indent = indent_c(level)
@@ -227,10 +241,97 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 emit_line(e, j4(indent, "return ", emit_expression(value), ";"))
             ir.Stmt.stmt_local as loc:
                 emit_line(e, j5(indent, c_declaration(loc.ty, loc.linkage_name), " = ", emit_expression(loc.value), ";"))
+            ir.Stmt.stmt_assignment as asg:
+                emit_line(e, j6(indent, emit_expression(asg.target), " ", asg.operator, " ", j2(emit_expression(asg.value), ";")))
             ir.Stmt.stmt_expression as ex:
                 emit_line(e, j3(indent, emit_expression(ex.expression), ";"))
+            ir.Stmt.stmt_block as blk:
+                if block_requires_scope(blk.body):
+                    emit_line(e, j2(indent, "{"))
+                    emit_stmts(e, blk.body, level + 1)
+                    emit_line(e, j2(indent, "}"))
+                else:
+                    emit_stmts(e, blk.body, level)
+            ir.Stmt.stmt_if as iff:
+                emit_if(e, iff.condition, iff.then_body, iff.else_body, level)
+            ir.Stmt.stmt_while as w:
+                emit_line(e, j4(indent, "while (", emit_expression(w.condition), ") {"))
+                emit_stmts(e, w.body, level + 1)
+                emit_line(e, j2(indent, "}"))
+            ir.Stmt.stmt_for as f:
+                var header = string.String.create()
+                header.append(indent)
+                header.append("for (")
+                header.append(emit_for_clause(f.init))
+                header.append("; ")
+                header.append(emit_expression(f.condition))
+                header.append("; ")
+                header.append(emit_for_clause(f.post))
+                header.append(") {")
+                emit_line(e, header.as_str())
+                emit_stmts(e, f.body, level + 1)
+                emit_line(e, j2(indent, "}"))
             _:
-                fatal(c"c_backend Phase 1: unsupported statement")
+                fatal(c"c_backend Phase 2: unsupported statement")
+
+
+## True when a block introduces a local declaration and therefore needs its own
+## C scope (`{ ... }`) — mirrors c_backend/statements.rb block_requires_scope?.
+function block_requires_scope(body: span[ir.Stmt]) -> bool:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            match read(body.data + i):
+                ir.Stmt.stmt_local:
+                    return true
+                _:
+                    pass
+        i += 1
+    return false
+
+
+## Emit an `if` and its else chain, re-flattening a single-`if` else body back
+## into `else if` (mirrors control_flow_emission.rb emit_if_statement).
+function emit_if(e: ref[Emitter], condition: ptr[ir.Expr], then_body: span[ir.Stmt], else_body: span[ir.Stmt], level: ptr_uint) -> void:
+    let indent = indent_c(level)
+    emit_line(e, j4(indent, "if (", emit_expression(condition), ") {"))
+    emit_stmts(e, then_body, level + 1)
+    emit_else(e, else_body, level)
+
+
+function emit_else(e: ref[Emitter], else_body: span[ir.Stmt], level: ptr_uint) -> void:
+    let indent = indent_c(level)
+    if else_body.len == 1:
+        unsafe:
+            match read(else_body.data + 0):
+                ir.Stmt.stmt_if as nested:
+                    emit_line(e, j4(indent, "} else if (", emit_expression(nested.condition), ") {"))
+                    emit_stmts(e, nested.then_body, level + 1)
+                    emit_else(e, nested.else_body, level)
+                    return
+                _:
+                    pass
+    if else_body.len > 0:
+        emit_line(e, j2(indent, "} else {"))
+        emit_stmts(e, else_body, level + 1)
+        emit_line(e, j2(indent, "}"))
+    else:
+        emit_line(e, j2(indent, "}"))
+
+
+## Render a `for` init/post clause (no indent, no trailing `;`) — mirrors
+## c_backend/statements.rb emit_for_clause_statement.
+function emit_for_clause(sp: ptr[ir.Stmt]) -> str:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_local as loc:
+                return j5(c_declaration(loc.ty, loc.linkage_name), " = ", emit_expression(loc.value), "", "")
+            ir.Stmt.stmt_assignment as asg:
+                return j5(emit_expression(asg.target), " ", asg.operator, " ", emit_expression(asg.value))
+            ir.Stmt.stmt_expression as ex:
+                return emit_expression(ex.expression)
+            _:
+                fatal(c"c_backend Phase 2: unsupported for-loop clause")
 
 
 # =============================================================================

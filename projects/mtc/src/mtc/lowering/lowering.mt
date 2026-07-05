@@ -21,6 +21,7 @@
 import std.vec as vec
 import std.str
 import std.string as string
+import std.fmt as fmt
 import std.mem.heap as heap_mod
 
 import mtc.ir as ir
@@ -52,6 +53,7 @@ struct LowerCtx:
     module_name: str
     analysis: analyzer.Analysis
     locals: vec.Vec[LocalBinding]
+    temp_counter: ptr_uint
 
 
 # =============================================================================
@@ -75,6 +77,7 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
         module_name = analysis.module_name,
         analysis = analysis,
         locals = vec.Vec[LocalBinding].create(),
+        temp_counter = 0,
     )
     var functions = vec.Vec[ir.Function].create()
 
@@ -144,6 +147,7 @@ function base_includes() -> span[ir.Include]:
 
 function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?) -> ir.Function:
     ctx.locals.clear()
+    ctx.temp_counter = 0
     let sig = lookup_fn_sig(ctx, name)
 
     var ir_params = vec.Vec[ir.Param].create()
@@ -238,9 +242,9 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 output.push(ir.Stmt.stmt_return(value = lowered, line = r.line, source_path = ""))
             ast.Stmt.stmt_local as loc:
                 let value = loc.value else:
-                    fatal(c"lowering Phase 1: local declaration without initializer is unsupported")
+                    fatal(c"lowering Phase 2: local declaration without initializer is unsupported")
                 let lowered_value = lower_expr(ctx, value)
-                let ty = expr_type(ctx, value)
+                let ty = local_decl_type(ctx, loc.stmt_type, value)
                 let c_name = c_local_name(loc.name)
                 output.push(ir.Stmt.stmt_local(
                     name = loc.name,
@@ -251,11 +255,143 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     source_path = "",
                 ))
                 ctx.locals.push(LocalBinding(name = loc.name, c_name = c_name, ty = ty, pointer = false))
+            ast.Stmt.stmt_assignment as asg:
+                let target = lower_expr(ctx, asg.target)
+                let value = lower_expr(ctx, asg.value)
+                output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
+            ast.Stmt.stmt_if as iff:
+                if iff.branches.len > 0:
+                    output.push(lower_if_chain(ctx, iff.branches, 0, iff.else_body))
+            ast.Stmt.stmt_while as w:
+                let cond = lower_expr(ctx, w.condition)
+                let body = lower_block(ctx, w.body)
+                output.push(ir.Stmt.stmt_while(condition = cond, body = body))
+            ast.Stmt.stmt_for as f:
+                lower_for_range(ctx, output, f.bindings, f.iterables, f.body)
             ast.Stmt.stmt_expression as ex:
                 let lowered = lower_expr(ctx, ex.expression)
                 output.push(ir.Stmt.stmt_expression(expression = lowered, line = ex.line, source_path = ""))
             _:
-                fatal(c"lowering Phase 1: unsupported statement")
+                fatal(c"lowering Phase 2: unsupported statement")
+
+
+## The declared type of a local (resolved from its annotation when present and
+## scalar), else the inferred type of its initializer.
+function local_decl_type(ctx: ref[LowerCtx], declared: ptr[ast.TypeRef]?, value: ptr[ast.Expr]) -> types.Type:
+    let annotation = declared else:
+        return expr_type(ctx, value)
+    let resolved = resolve_scalar_type_ref(annotation)
+    if types.is_error(resolved):
+        return expr_type(ctx, value)
+    return resolved
+
+
+## Lower an `if`/`else if`/`else` chain (mtc's multi-branch AST) into nested
+## single-branch IR `stmt_if` nodes; the C backend re-flattens single-`if` else
+## bodies back into `else if`.
+function lower_if_chain(ctx: ref[LowerCtx], branches: span[ast.IfBranch], index: ptr_uint, else_body: ptr[ast.Stmt]?) -> ir.Stmt:
+    var branch: ast.IfBranch
+    unsafe:
+        branch = read(branches.data + index)
+    let cond = lower_expr(ctx, branch.condition)
+    let then_body = lower_block(ctx, branch.body)
+
+    var else_span: span[ir.Stmt]
+    if index + 1 < branches.len:
+        var nested = vec.Vec[ir.Stmt].create()
+        nested.push(lower_if_chain(ctx, branches, index + 1, else_body))
+        else_span = nested.as_span()
+    else:
+        else_span = lower_block(ctx, else_body)
+
+    return ir.Stmt.stmt_if(condition = cond, then_body = then_body, else_body = else_span)
+
+
+## Lower `for i in start..stop:` into a scope block holding an optional hoisted
+## stop temporary and a C `for` loop.  Mirrors lowering/loops.rb
+## lower_range_for_stmt, including the always-allocated (here unused) continue /
+## break label temporaries so the fresh-temp counter advances identically.
+function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+    if bindings.len != 1 or iterables.len != 1:
+        fatal(c"lowering Phase 2: only single-binding range for-loops are supported")
+
+    var index_name: str
+    unsafe:
+        index_name = read(bindings.data + 0).name
+
+    var start: ptr[ast.Expr]
+    var stop: ptr[ast.Expr]
+    unsafe:
+        match read(iterables.data + 0):
+            ast.Expr.expr_range as rng:
+                start = rng.start_expr
+                stop = rng.end_expr
+            _:
+                fatal(c"lowering Phase 2: for-loop over non-range iterables is unsupported")
+
+    var loop_type = expr_type(ctx, start)
+    if types.is_error(loop_type):
+        loop_type = expr_type(ctx, stop)
+    if types.is_error(loop_type):
+        loop_type = types.primitive("int")
+
+    let index_c = c_local_name(index_name)
+    let stop_c = fresh_c_temp_name(ctx, "for_stop")
+    let _continue_label = fresh_c_temp_name(ctx, "loop_continue")
+    let _break_label = fresh_c_temp_name(ctx, "loop_break")
+
+    let inline_stop = is_integer_literal(stop)
+
+    ctx.locals.push(LocalBinding(name = index_name, c_name = index_c, ty = loop_type, pointer = false))
+    let body = lower_block(ctx, body_ptr)
+
+    let init = alloc_stmt(ir.Stmt.stmt_local(
+        name = index_name,
+        linkage_name = index_c,
+        ty = loop_type,
+        value = lower_expr(ctx, start),
+        line = 0,
+        source_path = "",
+    ))
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_c, ty = loop_type, pointer = false))
+    let stop_value = if inline_stop: lower_expr(ctx, stop) else: alloc_expr(ir.Expr.expr_name(name = stop_c, ty = loop_type, pointer = false))
+    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = stop_value, ty = types.primitive("bool")))
+    let post_target = alloc_expr(ir.Expr.expr_name(name = index_c, ty = loop_type, pointer = false))
+    let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = loop_type))
+    let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = one))
+    let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = body)
+
+    var block_stmts = vec.Vec[ir.Stmt].create()
+    if not inline_stop:
+        block_stmts.push(ir.Stmt.stmt_local(
+            name = stop_c,
+            linkage_name = stop_c,
+            ty = loop_type,
+            value = lower_expr(ctx, stop),
+            line = 0,
+            source_path = "",
+        ))
+    block_stmts.push(for_stmt)
+    output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
+
+
+function is_integer_literal(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal:
+                return true
+            _:
+                return false
+
+
+function fresh_c_temp_name(ctx: ref[LowerCtx], prefix: str) -> str:
+    ctx.temp_counter += 1
+    var buf = string.String.create()
+    buf.append("__mt_")
+    buf.append(prefix)
+    buf.append("_")
+    fmt.append_ptr_uint(ref_of(buf), ctx.temp_counter)
+    return buf.as_str()
 
 
 # =============================================================================
@@ -504,3 +640,39 @@ function alloc_expr(value: ir.Expr) -> ptr[ir.Expr]:
     unsafe:
         read(node) = value
     return node
+
+
+function alloc_stmt(value: ir.Stmt) -> ptr[ir.Stmt]:
+    var node = heap_mod.must_alloc[ir.Stmt](1)
+    unsafe:
+        read(node) = value
+    return node
+
+
+## Resolve a scalar type annotation (primitive or `str`) to a `types.Type`.
+## Returns `ty_error` for compound/nullable/callable forms not handled in the
+## current phase, signalling the caller to fall back to the initializer type.
+function resolve_scalar_type_ref(declared: ptr[ast.TypeRef]) -> types.Type:
+    unsafe:
+        let t = read(declared)
+        if t.is_fn or t.is_proc or t.is_dyn or t.is_tuple or t.nullable:
+            return types.Type.ty_error
+        if t.arguments.len > 0:
+            return types.Type.ty_error
+        if t.name.parts.len != 1:
+            return types.Type.ty_error
+        let name = read(t.name.parts.data + 0)
+        if name.equal("str"):
+            return types.Type.ty_str
+        if is_primitive_name(name):
+            return types.primitive(name)
+        return types.Type.ty_error
+
+
+function is_primitive_name(name: str) -> bool:
+    return (
+        name.equal("bool") or name.equal("byte") or name.equal("ubyte") or name.equal("char")
+        or name.equal("short") or name.equal("ushort") or name.equal("int") or name.equal("uint")
+        or name.equal("long") or name.equal("ulong") or name.equal("ptr_int") or name.equal("ptr_uint")
+        or name.equal("float") or name.equal("double") or name.equal("void") or name.equal("cstr")
+    )
