@@ -1822,6 +1822,7 @@ function check_member_call(ctx: ref[Context], scope: ref[Scope], receiver: ptr[a
             pass
 
     let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
+    check_editable_receiver_immutable(ctx, scope, receiver, recv, method_name, line, column)
     return check_typed_method_call(ctx, recv, method_name, arg_types, any_named, line, column)
 
 
@@ -1847,6 +1848,26 @@ function check_typed_method_call(ctx: ref[Context], receiver_type: types.Type, m
             return sig.value.return_type
         Option.none:
             return check_member(ctx, receiver_type, method_name, true, line, column)
+
+
+## When the receiver is a `let`-bound value and the method is `editable`, flag the
+## call.  `ref` (borrow) and `var` (mutable) receivers are fine.
+function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[Scope], receiver_expr: ptr[ast.Expr], receiver_type: types.Type, method_name: str, line: ptr_uint, column: ptr_uint) -> void:
+    match resolve_method_sig(ctx, receiver_type, method_name):
+        Option.some as sig:
+            match sig.value.method_kind:
+                ast.MethodKind.mk_editable:
+                    unsafe:
+                        match read(receiver_expr):
+                            ast.Expr.expr_identifier as id:
+                                if scope_is_let(scope, id.name):
+                                    report(ctx, line, column, editable_on_immutable_message(id.name, method_name))
+                            _:
+                                pass
+                _:
+                    pass
+        Option.none:
+            pass
 
 
 ## The struct type named by a static-method receiver: a bare local struct name
@@ -2265,6 +2286,16 @@ function assign_to_let_message(name: str) -> str:
     var buf = string.String.create()
     buf.append("cannot assign to immutable binding ")
     buf.append(name)
+    return buf.as_str()
+
+
+function editable_on_immutable_message(name: str, method: str) -> str:
+    var buf = string.String.create()
+    buf.append("cannot call editable method ")
+    buf.append(name)
+    buf.append(".")
+    buf.append(method)
+    buf.append(" on an immutable value")
     return buf.as_str()
 
 

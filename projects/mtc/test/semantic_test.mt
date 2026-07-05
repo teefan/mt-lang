@@ -1410,3 +1410,33 @@ function test_guard_unnarrows_pointer_nullable() -> t.Check:
                 return read(x)
     SRC
     return expect_clean(source)
+
+
+@[test]
+function test_editable_on_let_is_flagged() -> t.Check:
+    var source = <<-SRC
+        struct C:
+            x: int
+        extending C:
+            editable function bump() -> void:
+                this.x += 1
+        function f() -> void:
+            let c = C(x = 0)
+            c.bump()
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_editable_on_var_is_clean() -> t.Check:
+    var source = <<-SRC
+        struct C:
+            x: int
+        extending C:
+            editable function bump() -> void:
+                this.x += 1
+        function f() -> void:
+            var c = C(x = 0)
+            c.bump()
+    SRC
+    return expect_clean(source)
