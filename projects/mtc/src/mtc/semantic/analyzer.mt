@@ -903,6 +903,7 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
             report(ctx, m.line, m.column, reserved_param_message(m.name, p.name))
         scope_set(ref_of(scope), p.name, resolve_type_value(ctx, p.param_type))
         pi += 1
+    seen.release()
     var ret = types.primitive("void")
     let rt = m.return_type
     if rt != null:
@@ -935,6 +936,7 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_
             report(ctx, line, 1, reserved_param_message(name, p.name))
         scope_set(ref_of(scope), p.name, resolve_type_value(ctx, p.param_type))
         pi += 1
+    seen.release()
     var ret = types.primitive("void")
     let rt = return_type
     if rt != null:
@@ -1080,6 +1082,10 @@ function expr_is_numeric_literal(ep: ptr[ast.Expr]?) -> bool:
                 return true
             ast.Expr.expr_char_literal:
                 return true
+            ast.Expr.expr_unary_op as u:
+                if u.operator.equal("-"):
+                    return expr_is_numeric_literal(u.operand)
+                return false
             _:
                 return false
 
@@ -1190,6 +1196,8 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: p
                 check_body(ctx, scope, chk, u.body)
                 ctx.unsafe_depth -= 1
             ast.Stmt.stmt_defer as d:
+                if chk.inside_parallel:
+                    report(ctx, d.line, d.column, "defer is not allowed inside a parallel block")
                 check_body(ctx, scope, check_flags(chk.ret, chk.inside_loop, true, chk.inside_parallel), d.body)
             ast.Stmt.stmt_parallel_block as pb:
                 if pb.bodies.len < 2:
@@ -2326,6 +2334,7 @@ function check_construction(ctx: ref[Context], scope: ref[Scope], struct_name: s
             _:
                 pass
         i += 1
+    seen.release()
 
 
 function field_type(fields: span[FieldEntry], name: str) -> ptr[types.Type]?:

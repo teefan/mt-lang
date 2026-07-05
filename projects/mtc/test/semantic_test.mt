@@ -2049,3 +2049,29 @@ function test_local_named_str_is_flagged() -> t.Check:
             return str
     SRC
     return expect_flagged(source)
+
+
+# =============================================================================
+#  Review-pass fixes: defer-in-parallel, negative-literal gate
+# =============================================================================
+
+@[test]
+function test_defer_in_parallel_block_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> void:
+            var a: int = 0
+            var b: int = 0
+            parallel:
+                defer a += 1
+                b = 2
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_negative_literal_return_to_byte_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> byte:
+            return -42
+    SRC
+    return expect_clean(source)
