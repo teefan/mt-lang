@@ -1313,3 +1313,31 @@ function test_generic_return_type_mismatch_still_flagged() -> t.Check:
             return id(n)
     SRC
     return expect_flagged(source)
+
+
+@[test]
+function test_method_kind_mismatch_is_flagged() -> t.Check:
+    var source = <<-SRC
+        interface I:
+            editable function bump() -> void
+        struct S implements I:
+            x: int
+        extending S:
+            function bump() -> void:
+                this.x += 1
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_method_kind_match_is_clean() -> t.Check:
+    var source = <<-SRC
+        interface I:
+            editable function bump() -> void
+        struct S implements I:
+            x: int
+        extending S:
+            editable function bump() -> void:
+                this.x += 1
+    SRC
+    return expect_clean(source)

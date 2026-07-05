@@ -38,6 +38,7 @@ public struct FnSig:
     params: span[ParamEntry]
     return_type: types.Type
     has_return_type: bool
+    method_kind: ast.MethodKind
 
 
 public struct FieldEntry:
@@ -283,7 +284,7 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                     # static `equal(left, right)` hook), so instance calls resolve
                     # to the instance signature.
                     if m.method_kind != ast.MethodKind.mk_static or not ctx.method_sigs.contains(key):
-                        ctx.method_sigs.set(key, build_fn_sig(ctx, m.name, m.method_params, m.return_type))
+                        ctx.method_sigs.set(key, build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind))
                     j += 1
             _:
                 pass
@@ -405,7 +406,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                     # in scope, so parameter/return patterns carry ty_var(T) for
                     # call-site unification. Record the constraints for validation.
                     enter_type_params(ctx, fun.type_params)
-                    ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type))
+                    ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type, ast.MethodKind.mk_plain))
                     ctx.type_params.clear()
                     if fun.type_params.len > 0:
                         ctx.function_type_params.set(fun.name, fun.type_params)
@@ -435,7 +436,7 @@ function dup_message(kind: str, name: str) -> str:
     return buf.as_str()
 
 
-function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?) -> FnSig:
+function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, method_kind: ast.MethodKind) -> FnSig:
     var param_entries = vec.Vec[ParamEntry].create()
     var i: ptr_uint = 0
     while i < params.len:
@@ -447,9 +448,9 @@ function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], ret
     let rt = return_type
     if rt != null:
         return FnSig(name = name, params = param_entries.as_span(),
-            return_type = resolve_type(ctx, rt), has_return_type = true)
+            return_type = resolve_type(ctx, rt), has_return_type = true, method_kind = method_kind)
     return FnSig(name = name, params = param_entries.as_span(),
-        return_type = types.primitive("void"), has_return_type = false)
+        return_type = types.primitive("void"), has_return_type = false, method_kind = method_kind)
 
 
 # =============================================================================
@@ -745,7 +746,7 @@ function check_conformance_methods(ctx: ref[Context], type_name: str, iface_name
         if actual_ptr == null:
             report(ctx, line, column, missing_method_message(type_name, iface_name, m.name))
         else:
-            let required = build_fn_sig(ctx, m.name, m.method_params, m.return_type)
+            let required = build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind)
             unsafe:
                 if not sigs_compatible(required, read(actual_ptr)):
                     report(ctx, line, column, method_mismatch_message(type_name, iface_name, m.name))
@@ -756,6 +757,8 @@ function check_conformance_methods(ctx: ref[Context], type_name: str, iface_name
 ## definite (scalar-category) mismatch.  Named / generic / error types stay
 ## permissive, so only concrete mismatches are reported.
 function sigs_compatible(required: FnSig, actual: FnSig) -> bool:
+    if required.method_kind != actual.method_kind:
+        return false
     if required.params.len != actual.params.len:
         return false
     var i: ptr_uint = 0
@@ -1876,7 +1879,7 @@ function resolve_constraint_method(ctx: ref[Context], var_name: str, method_name
                 Option.some as methods:
                     match interface_method_named(methods.value, method_name):
                         Option.some as m:
-                            return Option[FnSig].some(value = build_fn_sig(ctx, m.value.name, m.value.method_params, m.value.return_type))
+                            return Option[FnSig].some(value = build_fn_sig(ctx, m.value.name, m.value.method_params, m.value.return_type, m.value.method_kind))
                         Option.none:
                             pass
                 Option.none:
