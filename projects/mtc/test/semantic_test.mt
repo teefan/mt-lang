@@ -1341,3 +1341,48 @@ function test_method_kind_match_is_clean() -> t.Check:
                 this.x += 1
     SRC
     return expect_clean(source)
+
+
+@[test]
+function test_assign_to_let_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            let x = 5
+            x = 10
+            return x
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_compound_assign_to_let_is_flagged() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            let x = 5
+            x += 1
+            return x
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_assign_to_var_is_clean() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            var x = 5
+            x = 10
+            return x
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_let_binding_stays_immutable_after_guard() -> t.Check:
+    var source = <<-SRC
+        function f() -> int:
+            let v = Option[int].some(value = 5) else:
+                return 0
+            v = 10
+            return v
+    SRC
+    return expect_flagged(source)

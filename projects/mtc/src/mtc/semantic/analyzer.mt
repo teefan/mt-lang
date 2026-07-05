@@ -798,20 +798,31 @@ function infer_expr_noscope(ctx: ref[Context], ep: ptr[ast.Expr]) -> types.Type:
 
 struct Scope:
     frames: vec.Vec[map_mod.Map[str, types.Type]]
+    let_bindings: vec.Vec[map_mod.Map[str, bool]]
 
 
 function scope_create() -> Scope:
-    return Scope(frames = vec.Vec[map_mod.Map[str, types.Type]].create())
+    return Scope(
+        frames = vec.Vec[map_mod.Map[str, types.Type]].create(),
+        let_bindings = vec.Vec[map_mod.Map[str, bool]].create(),
+    )
 
 
 function scope_enter(scope: ref[Scope]) -> void:
     scope.frames.push(map_mod.Map[str, types.Type].create())
+    scope.let_bindings.push(map_mod.Map[str, bool].create())
 
 
 function scope_leave(scope: ref[Scope]) -> void:
     match scope.frames.pop():
         Option.some as frame:
             var released = frame.value
+            released.release()
+        Option.none:
+            pass
+    match scope.let_bindings.pop():
+        Option.some as let_frame:
+            var released = let_frame.value
             released.release()
         Option.none:
             pass
@@ -839,6 +850,30 @@ function scope_get(scope: ref[Scope], name: str) -> ptr[types.Type]?:
             if found != null:
                 return found
     return null
+
+
+## True when the name is bound via `let` (immutable) anywhere in the scope
+## stack.  An immutable binding may not appear as the target of an assignment
+## (= or compound-assignment).
+function scope_is_let(scope: ref[Scope], name: str) -> bool:
+    var index = scope.let_bindings.len()
+    while index > 0:
+        index -= 1
+        let frame_ptr = scope.let_bindings.get(index) else:
+            return false
+        if unsafe: read(frame_ptr).contains(name):
+            return true
+    return false
+
+
+function scope_set_let(scope: ref[Scope], name: str) -> void:
+    let count = scope.let_bindings.len()
+    if count == 0:
+        return
+    let frame_ptr = scope.let_bindings.get(count - 1) else:
+        return
+    unsafe:
+        let _prev = read(frame_ptr).set(name, true)
 
 
 function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Method) -> void:
@@ -1069,6 +1104,7 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], ret: types.Type, in_lo
                 let vt = infer_expr(ctx, scope, a.value)
                 if a.operator.equal("=") and types.definitely_incompatible(tt, vt):
                     report(ctx, a.line, a.column, assign_message(tt, vt))
+                check_assign_target_immutable(ctx, scope, a.target, a.line, a.column)
             _:
                 pass
 
@@ -1239,8 +1275,18 @@ function bind_for_names(scope: ref[Scope], bindings: span[ast.ForBinding]) -> vo
         i += 1
 
 
+## Flag an assignment whose target is a name bound by `let`, which is immutable.
+function check_assign_target_immutable(ctx: ref[Context], scope: ref[Scope], target: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
+    unsafe:
+        match read(target):
+            ast.Expr.expr_identifier as id:
+                if scope_is_let(scope, id.name):
+                    report(ctx, line, column, assign_to_let_message(id.name))
+            _:
+                pass
+
+
 function check_local(ctx: ref[Context], scope: ref[Scope], is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, destructure_bindings: Option[span[str]], line: ptr_uint, column: ptr_uint) -> void:
-    let _unused = is_let
     # Destructuring bindings are permissive in phase 1.
     match destructure_bindings:
         Option.some:
@@ -1273,6 +1319,9 @@ function check_local(ctx: ref[Context], scope: ref[Scope], is_let: bool, name: s
         scope_set(scope, name, value_type)
     else:
         scope_set(scope, name, types.Type.ty_error)
+
+    if is_let:
+        scope_set_let(scope, name)
 
 
 # =============================================================================
@@ -2190,6 +2239,13 @@ function assign_message(target: types.Type, value: types.Type) -> str:
     buf.append(types.type_to_string(value))
     buf.append(" to ")
     buf.append(types.type_to_string(target))
+    return buf.as_str()
+
+
+function assign_to_let_message(name: str) -> str:
+    var buf = string.String.create()
+    buf.append("cannot assign to immutable binding ")
+    buf.append(name)
     return buf.as_str()
 
 
