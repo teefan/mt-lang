@@ -1386,3 +1386,27 @@ function test_let_binding_stays_immutable_after_guard() -> t.Check:
             return v
     SRC
     return expect_flagged(source)
+
+
+@[test]
+function test_guard_unnarrows_nullable_value_type() -> t.Check:
+    var source = <<-SRC
+        function f(m: int?) -> int:
+            let val = m else:
+                return 0
+            return val * 2
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_guard_unnarrows_pointer_nullable() -> t.Check:
+    var source = <<-SRC
+        function f(p: ptr[int]?) -> int:
+            let safe = p else:
+                return 0
+            unsafe:
+                var x: ptr[int] = safe
+                return read(x)
+    SRC
+    return expect_clean(source)

@@ -1275,6 +1275,20 @@ function bind_for_names(scope: ref[Scope], bindings: span[ast.ForBinding]) -> vo
         i += 1
 
 
+## If `t` is a nullable, Option, or Result wrapper, return the unwrapped
+## success/payload type (the type the guard binding exposes).  Otherwise t itself.
+function unwrap_nullable_type(t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_nullable as n:
+            return unsafe: read(n.base)
+        types.Type.ty_generic as g:
+            if (g.name.equal("Option") or g.name.equal("Result")) and g.args.len >= 1:
+                return unsafe: read(g.args.data + 0)
+            return t
+        _:
+            return t
+
+
 ## Flag an assignment whose target is a name bound by `let`, which is immutable.
 function check_assign_target_immutable(ctx: ref[Context], scope: ref[Scope], target: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
     unsafe:
@@ -1312,11 +1326,16 @@ function check_local(ctx: ref[Context], scope: ref[Scope], is_let: bool, name: s
         if types.definitely_incompatible(declared, value_type):
             report(ctx, line, column, local_mismatch_message(declared, value_type))
 
-    # Bind the name for later inference: prefer the declared type.
+    # A guarded let/var (let x = nullable else: ...) unwraps the value type:
+    # T?, Option[T], and Result[T,E] all narrow their success type.
+    let narrowed = unwrap_nullable_type(value_type)
+
+    # Bind the name for later inference: prefer the declared type, but narrow a
+    # guard-unwrapped nullable/Option/Result to its success type.
     if has_declared:
         scope_set(scope, name, declared)
     else if has_value:
-        scope_set(scope, name, value_type)
+        scope_set(scope, name, narrowed)
     else:
         scope_set(scope, name, types.Type.ty_error)
 
