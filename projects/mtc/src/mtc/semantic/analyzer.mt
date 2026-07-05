@@ -20,6 +20,7 @@ import std.vec as vec
 
 import mtc.parser.ast as ast
 import mtc.semantic.types as types
+import mtc.semantic.type_compatibility as compat
 
 
 public struct SemanticDiagnostic:
@@ -1434,39 +1435,11 @@ function is_fatal_call(ep: ptr[ast.Expr]) -> bool:
                 return false
 
 
-## True when the expression is a compile-time numeric literal (integer, float,
-## or char).  The self-host has no compile-time evaluation, so a literal source
-## is treated as compatible with any numeric target — mirroring Ruby's
-## exact_compile_time_numeric_compatibility? without range-checking the value.
-function expr_is_numeric_literal(ep: ptr[ast.Expr]?) -> bool:
-    let p = ep else:
-        return false
-    unsafe:
-        match read(p):
-            ast.Expr.expr_integer_literal:
-                return true
-            ast.Expr.expr_float_literal:
-                return true
-            ast.Expr.expr_char_literal:
-                return true
-            ast.Expr.expr_unary_op as u:
-                if u.operator.equal("-"):
-                    return expr_is_numeric_literal(u.operand)
-                return false
-            _:
-                return false
-
-
-## Assignment-site incompatibility check that accounts for numeric literals.
-## A numeric-literal source assigned to a numeric/char target is always
-## permitted (the literal is assumed to fit); otherwise defer to the concrete
-## type-compatibility rule.
+## Assignment-site incompatibility check.  Delegates to the full positive
+## type-compatibility rule (type_compatibility.mt), negating the result so this
+## function continues to return true when types are incompatible.
 function incompatible_value(target: types.Type, source_ty: types.Type, source_expr: ptr[ast.Expr]?) -> bool:
-    if expr_is_numeric_literal(source_expr):
-        let bare = types.unwrap_nullable(target)
-        if types.is_integer_type(bare) or types.is_float_type(bare) or types.is_char_type(bare):
-            return false
-    return types.definitely_incompatible(target, source_ty)
+    return not compat.types_compatible(target, source_ty, source_expr)
 
 
 struct CheckFlags:
