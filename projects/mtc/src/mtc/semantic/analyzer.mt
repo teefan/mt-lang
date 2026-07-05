@@ -89,6 +89,7 @@ struct Context:
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
     const_values: map_mod.Map[str, ptr[ast.Expr]]
     diagnostics: vec.Vec[SemanticDiagnostic]
+    uses_parallel_for: bool
 
 
 public struct Analysis:
@@ -106,6 +107,10 @@ public struct Analysis:
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
     const_values: map_mod.Map[str, ptr[ast.Expr]]
+    module_name: str
+    module_kind: ast.ModuleKind
+    unsafe_statement_lines: vec.Vec[ptr_uint]
+    uses_parallel_for: bool
 
 
 public function check_source_file(file: ast.SourceFile) -> Analysis:
@@ -141,6 +146,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         resolved_call_kinds = map_mod.Map[ptr_uint, str].create(),
         const_values = map_mod.Map[str, ptr[ast.Expr]].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
+        uses_parallel_for = false,
     )
     collect_import_aliases(ref_of(ctx), file)
     declare_named_types(ref_of(ctx), file)
@@ -174,6 +180,10 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         resolved_expr_types = ctx.resolved_expr_types,
         resolved_call_kinds = ctx.resolved_call_kinds,
         const_values = ctx.const_values,
+        module_name = "",
+        module_kind = file.module_kind,
+        unsafe_statement_lines = vec.Vec[ptr_uint].create(),
+        uses_parallel_for = ctx.uses_parallel_for,
     )
 
 
@@ -1524,6 +1534,7 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: p
                 scope_enter(scope)
                 bind_for_names(scope, fr.bindings)
                 if fr.threaded:
+                    ctx.uses_parallel_for = true
                     check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, true), fr.body)
                 else:
                     check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, chk.inside_parallel), fr.body)
