@@ -80,7 +80,7 @@ public function generate_c(program: ir.Program) -> string.String:
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
     let use_fatal = uses_fatal_helper(funcs) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0
-    let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or aggregates_use_str(program)
+    let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants))
     let use_str_equality = uses_str_equality(funcs)
 
     var i: ptr_uint = 0
@@ -567,6 +567,25 @@ function aggregates_use_str(program: ir.Program) -> bool:
     return false
 
 
+## True when any generated (synthetic) generic variant has a `str`-typed arm
+## field.  These variants are emitted by `collect_generic_variants` and are not
+## present in the program's static variant declarations.
+function gen_variants_have_str(variants: ref[vec.Vec[ir.VariantDecl]]) -> bool:
+    var i: ptr_uint = 0
+    while i < variants.len():
+        let v_ptr = variants.get(i) else:
+            break
+        unsafe:
+            let vd = read(v_ptr)
+            var ai: ptr_uint = 0
+            while ai < vd.arms.len:
+                if fields_have_str(read(vd.arms.data + ai).fields):
+                    return true
+                ai += 1
+        i += 1
+    return false
+
+
 function fields_have_str(fields: span[ir.Field]) -> bool:
     var i: ptr_uint = 0
     while i < fields.len:
@@ -646,7 +665,7 @@ function collect_gv_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]],
                 return
             seen.set(c_name, true)
             var arms = vec.Vec[ir.VariantArm].create()
-            let info = prelude_variant_arm_info(g.name)
+            let info = prelude_variant_arm_info(g.name, g.args)
             var ai: ptr_uint = 0
             while ai < info.arms.len:
                 var arm = unsafe: read(info.arms.data + ai)
@@ -670,18 +689,21 @@ function collect_gv_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]],
 
 ## Return the arm info for a prelude variant (Option / Result).  Mirrors the
 ## lowering's `install_prelude_variants`.
-function prelude_variant_arm_info(name: str) -> GVInfo:
+function prelude_variant_arm_info(name: str, args: span[types.Type]) -> GVInfo:
+    let default_ty = types.Type.ty_primitive(name = "int")
+    let first_arg = if args.len > 0: unsafe: read(args.data + 0) else: default_ty
+    let second_arg = if args.len > 1: unsafe: read(args.data + 1) else: default_ty
     var arms = vec.Vec[GVArmInfo].create()
     if name.equal("Option"):
         var sf = vec.Vec[ir.Field].create()
-        sf.push(ir.Field(name = "value", ty = types.Type.ty_primitive(name = "int")))
+        sf.push(ir.Field(name = "value", ty = first_arg))
         arms.push(GVArmInfo(name = "some", fields = sf.as_span()))
         arms.push(GVArmInfo(name = "none", fields = span[ir.Field]()))
     else if name.equal("Result"):
         var sf = vec.Vec[ir.Field].create()
-        sf.push(ir.Field(name = "value", ty = types.Type.ty_primitive(name = "int")))
+        sf.push(ir.Field(name = "value", ty = first_arg))
         var ef = vec.Vec[ir.Field].create()
-        ef.push(ir.Field(name = "error", ty = types.Type.ty_primitive(name = "int")))
+        ef.push(ir.Field(name = "error", ty = second_arg))
         arms.push(GVArmInfo(name = "success", fields = sf.as_span()))
         arms.push(GVArmInfo(name = "failure", fields = ef.as_span()))
     return GVInfo(arms = arms.as_span())

@@ -116,6 +116,12 @@ struct LowerCtx:
     # concrete struct decl (with resolved field types) is recorded here so it can
     # be appended to the module's structs span.
     generic_struct_decls: map_mod.Map[str, ir.StructDecl]
+    # All module analyses in dependency order, for cross-module lookups.
+    program_analyses: span[analyzer.Analysis]
+    # Set of specialization keys currently being lowered, used to detect cyclic
+    # generic instantiations (A[T] calls B[T] calls A[T] in monomorphized
+    # bodies).
+    spec_in_progress: map_mod.Map[str, bool]
 
 
 # =============================================================================
@@ -161,7 +167,7 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == count - 1
-        var fragment = lower_module(analysis, ref_of(program_returns), is_root)
+        var fragment = lower_module(analysis, ref_of(program_returns), is_root, program.analyses.as_span())
         constants.append_span(fragment.constants)
         globals.append_span(fragment.globals)
         opaques.append_span(fragment.opaques)
@@ -196,6 +202,21 @@ function is_raw_module(kind: ast.ModuleKind) -> bool:
             return true
         _:
             return false
+
+
+## Find an imported module's analysis by its module name.  The `program_analyses`
+## span is in dependency-first order; returns the first analysis whose
+## `module_name` matches.
+function find_imported_analysis(ctx: ref[LowerCtx], module_name: str) -> Option[analyzer.Analysis]:
+    var i: ptr_uint = 0
+    while i < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + i)
+        if a.module_name.equal(module_name):
+            return Option[analyzer.Analysis].some(value = a)
+        i += 1
+    return Option[analyzer.Analysis].none
 
 
 # =============================================================================
@@ -296,6 +317,8 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
             pending_specializations = vec.Vec[PendingSpecialization].create(),
             specialization_cache = map_mod.Map[str, ir.Function].create(),
             generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
+            program_analyses = program.analyses.as_span(),
+            spec_in_progress = map_mod.Map[str, bool].create(),
         )
         var di: ptr_uint = 0
         while di < analysis.source_file.declarations.len:
@@ -312,7 +335,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
         mi += 1
 
 
-function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], is_root: bool) -> ir.Program:
+function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis]) -> ir.Program:
     var ctx = LowerCtx(
         module_name = analysis.module_name,
         analysis = analysis,
@@ -327,6 +350,8 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         pending_specializations = vec.Vec[PendingSpecialization].create(),
         specialization_cache = map_mod.Map[str, ir.Function].create(),
         generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
+        program_analyses = program_analyses,
+        spec_in_progress = map_mod.Map[str, bool].create(),
     )
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -1208,6 +1233,13 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                 # Generic struct constructor, e.g. `Pair[int, int](first = 42, ...)`.
                 if ctx.analysis.structs.contains(id.name) and all_call_args_named(call_args):
                     return lower_generic_aggregate_literal(ctx, id.name, type_args, call_args)
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as recv_id:
+                        if ctx.analysis.imports.contains(recv_id.name) and all_call_args_named(call_args):
+                            return lower_generic_aggregate_literal(ctx, ma.member_name, type_args, call_args)
+                    _:
+                        pass
             _:
                 pass
     # Generic function call, e.g. `first[int](p)`.  Lower a monomorphized copy of
@@ -1258,29 +1290,56 @@ function ensure_generic_struct_decl(ctx: ref[LowerCtx], struct_name: str, type_a
     let g_c_name = generic_struct_c_name(struct_name, concrete_args)
     if ctx.generic_struct_decls.contains(g_c_name):
         return
-    # Find the struct's AST declaration and read its fields directly (rather
-    # than going through analysis.structs, which stores ty_error for generic
-    # fields because the analyzer resolves them before the type-param scope is
-    # active).
+    # Search the current module's AST first, then imported modules.
+    var fields_opt = extract_generic_struct_fields(ctx, ctx.analysis, struct_name, concrete_args)
+    if fields_opt.is_none():
+        # Try each imported module.
+        var import_values = ctx.analysis.imports.values()
+        while true:
+            let target_ptr = import_values.next() else:
+                break
+            let target_module = unsafe: read(target_ptr)
+            match find_imported_analysis(ctx, target_module):
+                Option.some as imported:
+                    fields_opt = extract_generic_struct_fields(ctx, imported.value, struct_name, concrete_args)
+                    if fields_opt.is_some():
+                        break
+                Option.none:
+                    pass
+    match fields_opt:
+        Option.some as f:
+            ctx.generic_struct_decls.set(g_c_name, ir.StructDecl(
+                name = g_c_name,
+                linkage_name = g_c_name,
+                fields = f.value,
+                packed = false,
+                alignment = 0,
+                source_module = Option[str].none,
+            ))
+        Option.none:
+            pass
+
+
+## Extract and type-substitute the fields of a generic struct from a given
+## module's AST.  Returns None if the struct declaration is not found.
+function extract_generic_struct_fields(ctx: ref[LowerCtx], module_analysis: analyzer.Analysis, struct_name: str, concrete_args: span[types.Type]) -> Option[span[ir.Field]]:
+    var found = false
     var ir_fields = vec.Vec[ir.Field].create()
-    var found_struct = false
     var di: ptr_uint = 0
-    while di < ctx.analysis.source_file.declarations.len and not found_struct:
+    while di < module_analysis.source_file.declarations.len and not found:
         var d: ast.Decl
         unsafe:
-            d = read(ctx.analysis.source_file.declarations.data + di)
+            d = read(module_analysis.source_file.declarations.data + di)
         match d:
             ast.Decl.decl_struct as s:
                 if s.name.equal(struct_name):
-                    found_struct = true
-                    # Build substitution map from type params.
+                    found = true
                     var sub = map_mod.Map[str, types.Type].create()
                     var spi: ptr_uint = 0
                     while spi < s.type_params.len and spi < concrete_args.len:
                         unsafe:
                             sub.set(read(s.type_params.data + spi).name, read(concrete_args.data + spi))
                         spi += 1
-                    # Resolve each field with type substitution.
                     var fi: ptr_uint = 0
                     while fi < s.struct_fields.len:
                         var f: ast.Field
@@ -1293,16 +1352,9 @@ function ensure_generic_struct_decl(ctx: ref[LowerCtx], struct_name: str, type_a
             _:
                 pass
         di += 1
-    if not found_struct:
-        return
-    ctx.generic_struct_decls.set(g_c_name, ir.StructDecl(
-        name = g_c_name,
-        linkage_name = g_c_name,
-        fields = ir_fields.as_span(),
-        packed = false,
-        alignment = 0,
-        source_module = Option[str].none,
-    ))
+    if not found:
+        return Option[span[ir.Field]].none
+    return Option[span[ir.Field]].some(value = ir_fields.as_span())
 
 
 ## The C type name for a concrete generic struct: `Pair` + `int` + `int` →
@@ -1335,19 +1387,40 @@ function lower_monomorphized_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], typ
 ## Lower an uncached generic function specialization: find the function's AST
 ## declaration, build the type substitution map, lower the body, and cache.
 function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], spec_key: str) -> void:
+    # Detect cyclic generic instantiations (A[T] → B[T] → A[T]).
+    if ctx.spec_in_progress.contains(spec_key):
+        fatal(c"lowering Phase 4c: cyclic generic instantiation")
+    ctx.spec_in_progress.set(spec_key, true)
+
     var callee_name: str
+    var search_analysis = ctx.analysis
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
                 callee_name = id.name
+            ast.Expr.expr_member_access as ma:
+                callee_name = ma.member_name
+                # Cross-module generic call: find the imported module's analysis.
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as recv_id:
+                        let target_ptr = ctx.analysis.imports.get(recv_id.name)
+                        if target_ptr != null:
+                            let target = read(target_ptr)
+                            match find_imported_analysis(ctx, target):
+                                Option.some as fa:
+                                    search_analysis = fa.value
+                                Option.none:
+                                    pass
+                    _:
+                        pass
             _:
                 fatal(c"lowering Phase 4c: unsupported generic callee")
 
-    # Find the function declaration in the module's source file.
+    # Find the function declaration in the module's source file (current or imported).
     var fun_decl: ast.Decl
     var found_decl = false
     var di: ptr_uint = 0
-    while di < ctx.analysis.source_file.declarations.len and not found_decl:
+    while di < search_analysis.source_file.declarations.len and not found_decl:
         var d: ast.Decl
         unsafe:
             d = read(ctx.analysis.source_file.declarations.data + di)
@@ -1360,7 +1433,7 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr
                 pass
         di += 1
     if not found_decl:
-        fatal(c"lowering Phase 4c: could not find generic function declaration")
+        fatal(c"lowering Phase 4c: could not find generic function decl")
 
     # Build type substitution map from the function's type params.
     match fun_decl:
@@ -1458,6 +1531,8 @@ function specialization_key(ctx: ref[LowerCtx], callee: ptr[ast.Expr], type_args
         match read(callee):
             ast.Expr.expr_identifier as id:
                 buf.append(id.name)
+            ast.Expr.expr_member_access as ma:
+                buf.append(ma.member_name)
             _:
                 fatal(c"lowering Phase 4c: unsupported generic callee")
     var i: ptr_uint = 0
@@ -1679,6 +1754,25 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                         ty = expr_type(ctx, ep),
                         pointer = false,
                     ))
+            ast.Expr.expr_specialization as spec:
+                # No-payload generic variant arm, e.g. `Option[int].none`.
+                if spec.arguments.len > 0:
+                    match read(spec.callee):
+                        ast.Expr.expr_identifier as spec_id:
+                            if ctx.variants.contains(spec_id.name):
+                                var concrete_args = vec.Vec[types.Type].create()
+                                var ai: ptr_uint = 0
+                                while ai < spec.arguments.len:
+                                    concrete_args.push(resolve_type_ref(ctx, read(spec.arguments.data + ai).value))
+                                    ai += 1
+                                let variant_ty = types.Type.ty_generic(name = spec_id.name, args = concrete_args.as_span())
+                                return alloc_expr(ir.Expr.expr_variant_literal(
+                                    ty = variant_ty,
+                                    arm_name = member,
+                                    fields = span[ir.AggregateField](),
+                                ))
+                        _:
+                            pass
             _:
                 pass
     let recv = lower_expr(ctx, receiver)
