@@ -77,7 +77,6 @@ public function generate_c(program: ir.Program) -> string.String:
     var checked_span_index_types = collect_checked_span_index_types(funcs)
     var tuple_types = collect_tuple_types(funcs)
     var gen_variants = collect_generic_variants(program)
-    var gen_structs = vec.Vec[ir.StructDecl].create()
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
     let use_fatal = uses_fatal_helper(funcs) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0
@@ -115,7 +114,7 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_line(ref_of(e), "")
         i += 1
 
-    if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0 or program.variants.len > 0 or gen_variants.len() > 0 or gen_structs.len() > 0:
+    if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0 or program.variants.len > 0 or gen_variants.len() > 0:
         var sorted_structs = topo_sort_structs(program.structs)
         let sorted = sorted_structs.as_span()
 
@@ -124,14 +123,6 @@ public function generate_c(program: ir.Program) -> string.String:
             unsafe:
                 let s = read(sorted.data + i)
                 emit_line(ref_of(e), j3("typedef struct ", s.linkage_name, j2(" ", j2(s.linkage_name, ";"))))
-            i += 1
-        i = 0
-        while i < gen_structs.len():
-            let gs_ptr = gen_structs.get(i) else:
-                break
-            unsafe:
-                let gs = read(gs_ptr)
-                emit_line(ref_of(e), j3("typedef struct ", gs.linkage_name, j2(" ", j2(gs.linkage_name, ";"))))
             i += 1
         i = 0
         while i < program.unions.len:
@@ -166,14 +157,6 @@ public function generate_c(program: ir.Program) -> string.String:
         while i < sorted.len:
             unsafe:
                 emit_struct(ref_of(e), read(sorted.data + i))
-            emit_line(ref_of(e), "")
-            i += 1
-        i = 0
-        while i < gen_structs.len():
-            let gs_ptr = gen_structs.get(i) else:
-                break
-            unsafe:
-                emit_struct(ref_of(e), read(gs_ptr))
             emit_line(ref_of(e), "")
             i += 1
         i = 0
@@ -702,53 +685,6 @@ function prelude_variant_arm_info(name: str) -> GVInfo:
         arms.push(GVArmInfo(name = "success", fields = sf.as_span()))
         arms.push(GVArmInfo(name = "failure", fields = ef.as_span()))
     return GVInfo(arms = arms.as_span())
-
-
-## Collect every unique concrete generic struct type referenced in the lowered
-## program (via function signatures, locals, or aggregate fields) so they are
-## emitted as struct declarations.  The struct decl carries fields resolved from
-## the name (currently only supporting same-module generic structs where the
-## element types are simple primitives).
-function collect_generic_structs(program: ir.Program) -> vec.Vec[ir.StructDecl]:
-    var seen = map_mod.Map[str, bool].create()
-    var result = vec.Vec[ir.StructDecl].create()
-    var i: ptr_uint = 0
-    while i < program.functions.len:
-        unsafe:
-            collect_gs_from_type(read(program.functions.data + i).return_type, ref_of(seen), ref_of(result))
-            var j: ptr_uint = 0
-            while j < read(program.functions.data + i).params.len:
-                collect_gs_from_type(read(read(program.functions.data + i).params.data + j).ty, ref_of(seen), ref_of(result))
-                j += 1
-        i += 1
-    return result
-
-
-function collect_gs_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.StructDecl]]) -> void:
-    match ty:
-        types.Type.ty_generic as g:
-            if g.name.equal("span") or g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("ref") or g.name.equal("array"):
-                return
-            let c_name = generic_c_type(g.name, g.args)
-            if seen.contains(c_name):
-                return
-            seen.set(c_name, true)
-            var fields = vec.Vec[ir.Field].create()
-            var fi: ptr_uint = 0
-            while fi < g.args.len:
-                unsafe:
-                    fields.push(ir.Field(name = types.type_to_string(read(g.args.data + fi)), ty = read(g.args.data + fi)))
-                fi += 1
-            result.push(ir.StructDecl(
-                name = c_name,
-                linkage_name = c_name,
-                fields = fields.as_span(),
-                packed = false,
-                alignment = 0,
-                source_module = Option[str].none,
-            ))
-        _:
-            pass
 
 
 function uses_string_view(functions: span[ir.Function], has_str_literals: bool) -> bool:
@@ -2238,19 +2174,6 @@ function render_variant_initializer(e: ref[Emitter], ty: types.Type, arm_name: s
         buf.append(render_aggregate_initializer(e, fields))
     buf.append(" }")
     return buf.as_str()
-
-
-## The C type name for a variant: `ty_imported` uses `qualified_c_name`, and
-## `ty_generic` (generic variants) builds `<name>_<type0>_...` without a module
-## prefix — mirroring how `c_type` dispatches.
-function variant_c_type(ty: types.Type) -> str:
-    match ty:
-        types.Type.ty_imported as im:
-            return naming.qualified_c_name(im.module_name, im.name)
-        types.Type.ty_generic as g:
-            return generic_c_type(g.name, g.args)
-        _:
-            return c_type(ty)
 
 
 ## The zero value of a type in initializer position (mirrors

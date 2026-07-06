@@ -1915,30 +1915,6 @@ function variant_base_c_name(ty: types.Type, module_name: str) -> str:
             return naming.qualified_c_name(module_name, "")
 
 
-## The type-parameter names of a struct, extracted from its AST declaration.
-## Used to build the substitution map when emitting a concrete generic struct.
-function struct_type_params(ctx: ref[LowerCtx], struct_name: str) -> span[str]:
-    var di: ptr_uint = 0
-    while di < ctx.analysis.source_file.declarations.len:
-        var d: ast.Decl
-        unsafe:
-            d = read(ctx.analysis.source_file.declarations.data + di)
-        match d:
-            ast.Decl.decl_struct as s:
-                if s.name.equal(struct_name):
-                    var names = vec.Vec[str].create()
-                    var pi: ptr_uint = 0
-                    while pi < s.type_params.len:
-                        unsafe:
-                            names.push(read(s.type_params.data + pi).name)
-                        pi += 1
-                    return names.as_span()
-            _:
-                pass
-        di += 1
-    return span[str]()
-
-
 ## Look up a variant arm's field info by arm name.
 function variant_arm_info(info: VariantInfo, arm_name: str) -> Option[VariantArmInfo]:
     var i: ptr_uint = 0
@@ -2393,9 +2369,9 @@ function append_span_stmts(dest: ref[vec.Vec[ir.Stmt]], stmts: span[ir.Stmt]) ->
 
 ## The `types.Type` name for a variant arm's payload struct so it renders as the
 ## arm C name (`Token` + `ident` -> `Token_ident`, then `<module>_Token_ident`).
-function variant_arm_type_name(variant_name: str, arm_name: str) -> str:
+function variant_arm_type_name(outer_c: str, arm_name: str) -> str:
     var buf = string.String.create()
-    buf.append(variant_name)
+    buf.append(outer_c)
     buf.append("_")
     buf.append(arm_name)
     return buf.as_str()
