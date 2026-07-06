@@ -487,6 +487,8 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             ast.Decl.decl_variant as vr:
                 if vr.type_params.len == 0:
                     variants.push(lower_variant_decl(ref_of(ctx), vr.name, vr.variant_arms))
+            ast.Decl.decl_extending_block as ex:
+                lower_extending_block(ctx, ref_of(functions), ex.type_name, ex.methods)
             _:
                 pass
         i += 1
@@ -549,6 +551,72 @@ function base_includes() -> span[ir.Include]:
 # =============================================================================
 #  Function lowering
 # =============================================================================
+
+## Lower all methods in an extending block to IR functions.  Each method becomes
+## a C function with the receiver as the first parameter (pointer for editable,
+## by value for plain, omitted for static).
+function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Function]], type_ref_ptr: ptr[ast.TypeRef], methods: span[ast.Method]) -> void:
+    var type_name: str
+    unsafe:
+        let type_ref = read(type_ref_ptr)
+        type_name = read(type_ref.name.parts.data + 0)
+    var mi: ptr_uint = 0
+    while mi < methods.len:
+        var m: ast.Method
+        unsafe:
+            m = read(methods.data + mi)
+        if m.is_async or m.type_params.len > 0:
+            mi += 1
+            continue
+        let c_name = naming.qualified_member_c_name(ctx.module_name, type_name, m.name)
+        let receiver_ty = types.Type.ty_imported(module_name = ctx.module_name, name = type_name)
+        functions.push(lower_method(ctx, c_name, receiver_ty, m))
+        mi += 1
+
+
+## Lower a single method to an IR function.  The receiver (`this`) is bound as a
+## local parameter (pointer for editable methods, value for plain).
+function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, m: ast.Method) -> ir.Function:
+    ctx.locals.clear()
+    ctx.temp_counter = 0
+    let sig = lookup_fn_sig(ctx, m.name)
+
+    var ir_params = vec.Vec[ir.Param].create()
+    if m.method_kind != ast.MethodKind.mk_static:
+        let recv_ty = if m.method_kind == ast.MethodKind.mk_editable: types.Type.ty_generic(name = "ptr", args = sp_type(receiver_ty)) else: receiver_ty
+        ir_params.push(ir.Param(name = "this", linkage_name = c_local_name("this"), ty = recv_ty, pointer = false))
+        ctx.locals.push(LocalBinding(name = "this", c_name = c_local_name("this"), ty = recv_ty, pointer = false))
+    var pi: ptr_uint = 0
+    while pi < m.method_params.len:
+        var p: ast.Param
+        unsafe:
+            p = read(m.method_params.data + pi)
+        let param_ty = resolve_param_type(ctx, sig, pi, p.param_type)
+        let c_pname = c_local_name(p.name)
+        ir_params.push(ir.Param(name = p.name, linkage_name = c_pname, ty = param_ty, pointer = false))
+        ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = param_ty, pointer = false))
+        pi += 1
+
+    let ret_ty = resolve_return_type(ctx, sig, m.return_type)
+    let body_stmts = lower_block(ctx, m.body)
+
+    return ir.Function(
+        name = c_name,
+        linkage_name = c_name,
+        params = ir_params.as_span(),
+        return_type = ret_ty,
+        body = body_stmts,
+        entry_point = false,
+        method_receiver_param = m.method_kind != ast.MethodKind.mk_static,
+    )
+
+
+## A single-element `span[types.Type]` convenience helper.
+function sp_type(t: types.Type) -> span[types.Type]:
+    var buf = vec.Vec[types.Type].create()
+    buf.push(t)
+    return buf.as_span()
+
 
 function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?) -> ir.Function:
     ctx.locals.clear()
@@ -1315,6 +1383,14 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                     pass
                     _:
                         pass
+                # Method call: receiver.method(args).  Resolve the method from the
+                # receiver's type and lower to a direct C function call.
+                let recv_ty = expr_type(ctx, ma.receiver)
+                match resolve_method_info(ctx, recv_ty, ma.member_name):
+                    Option.some as mi:
+                        return lower_method_resolved(ctx, mi.value, ma.receiver, args, call_ep)
+                    Option.none:
+                        pass
                 fatal(c"lowering Phase 4: unsupported member-access call target")
             _:
                 fatal(c"lowering Phase 3: unsupported call target")
@@ -1699,6 +1775,65 @@ function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: spa
         ty = types.Type.ty_imported(module_name = ctx.module_name, name = struct_name),
         fields = fields.as_span(),
     ))
+
+
+## Resolved method call info: the C function name and the method kind (needed to
+## decide whether to pass the receiver by pointer or by value).
+struct MethodInfo:
+    c_name: str
+    method_kind: ast.MethodKind
+
+
+## Resolve a method call `receiver.method(args)` to its C function name and kind,
+## looking up the receiver's type in the analyzer's `method_sigs` map.  Returns
+## `Option.none` when the receiver type has no such method.
+function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method_name: str) -> Option[MethodInfo]:
+    let type_name = named_type_name(receiver_ty) else:
+        let gen_var = generic_variant_name(receiver_ty)
+        match gen_var:
+            Option.some as gv:
+                let key = analyzer.method_key(gv.value, method_name)
+                if ctx.analysis.method_sigs.contains(key):
+                    let sig_ptr = ctx.analysis.method_sigs.get(key) else:
+                        return Option[MethodInfo].none
+                    let sig = unsafe: read(sig_ptr)
+                    return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, gv.value, method_name), method_kind = sig.method_kind))
+            Option.none:
+                pass
+        return Option[MethodInfo].none
+    let key = analyzer.method_key(type_name, method_name)
+    if ctx.analysis.method_sigs.contains(key):
+        let sig_ptr = ctx.analysis.method_sigs.get(key) else:
+            return Option[MethodInfo].none
+        let sig = unsafe: read(sig_ptr)
+        return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, type_name, method_name), method_kind = sig.method_kind))
+    return Option[MethodInfo].none
+
+
+## Lower a resolved method call: for editable methods, takes `&receiver`; for
+## plain/value methods, passes the receiver by value; static methods omit it.
+function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let recv = lower_expr(ctx, receiver)
+    var ir_args = vec.Vec[ir.Expr].create()
+    if mi.method_kind != ast.MethodKind.mk_static:
+        var recv_arg: ptr[ir.Expr]
+        if mi.method_kind == ast.MethodKind.mk_editable:
+            let recv_ty = ir_expr_type(recv)
+            recv_arg = alloc_expr(ir.Expr.expr_address_of(expression = recv, ty = types.Type.ty_generic(name = "ptr", args = sp_type(recv_ty))))
+        else:
+            recv_arg = recv
+        unsafe:
+            ir_args.push(read(recv_arg))
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        let lowered = lower_expr(ctx, arg.arg_value)
+        unsafe:
+            ir_args.push(read(lowered))
+        i += 1
+    return alloc_expr(ir.Expr.expr_call(callee = mi.c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
 
 
 ## Lower a call with no boundary projections: every argument lowered as-is.

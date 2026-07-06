@@ -1400,12 +1400,18 @@ function c_declaration(t: types.Type, name: str) -> str:
     if is_array_type(t):
         return j6(c_type(array_element_type(t)), " ", name, "[", long_to_str(array_length(t)), "]")
     # Function-pointer types need declarator syntax: `ret_type (*name)(...)`.
-    # Generic variants: build `name_type0_type1_...` directly, because `c_type`
-    # may be called from a code path where `ty_generic` dispatch is fragile.
+    # Pointer/reference types: `T*` instead of `ptr_T`.
+    # Generic variants: build `name_type0_type1_...` directly.
     match t:
         types.Type.ty_function:
             return c_fn_ptr_declarator(t, name)
         types.Type.ty_generic as g:
+            if g.name.equal("ptr") or g.name.equal("ref") and g.args.len >= 1:
+                let base = unsafe: c_type(read(g.args.data + (g.args.len - 1)))
+                return j3(base, "*", name)
+            if g.name.equal("const_ptr") and g.args.len == 1:
+                let base = unsafe: c_type(read(g.args.data + 0))
+                return j4("const ", base, "*", name)
             var buf = string.String.create()
             buf.append(g.name)
             var i: ptr_uint = 0
