@@ -1,11 +1,12 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phases 0–4 complete.** All generics monomorphization scenarios
-verified — same-module, cross-module struct constructors, cross-module scalar
-functions, and cross-module struct-returning functions all build and run
-correctly. Phase 5 is the next target.
+Status: **Phases 0–4 complete, Phase 5 in progress.** 5 of 7 Phase 5 items done:
+fn pointer types, method dispatch + extending blocks, proc closures
+(non-capturing, capturing with ref-counted lifecycle, fn→proc coercion,
+indirect calls), is + match-expressions.  Remaining: dyn[I], str_buffer[N],
+format strings.
 Owner: compiler team
-Last updated: 2026-07-07 (commits through HEAD)
+Last updated: 2026-07-06 (commits through cab27b68)
 
 Pipeline:
 
@@ -30,9 +31,9 @@ Self-host source layout (src ≈ 21.0k LOC):
 | Pretty printers | `src/mtc/pretty_printer/*.mt` | ~2,000 |
 | Semantic analyzer | `src/mtc/semantic/*.mt` | ~5,000 |
 | Loader | `src/mtc/loader/*.mt` | ~700 |
-| IR | `src/mtc/ir.mt` | ~100 |
-| Lowering | `src/mtc/lowering/lowering.mt` | ~2,880 |
-| C Backend | `src/mtc/c_backend/c_backend.mt` | ~2,500 |
+| IR | `src/mtc/ir.mt` | ~220 |
+| Lowering | `src/mtc/lowering/lowering.mt` | ~3,750 |
+| C Backend | `src/mtc/c_backend/c_backend.mt` | ~2,590 |
 | Build driver | `src/mtc/build.mt` | ~80 |
 | C naming (shared) | `src/mtc/c_naming.mt` | ~70 |
 
@@ -124,12 +125,12 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 
 ## 2. Deferred items
 
-- **`is` operator / match-expressions**: requires statement-hoisting infrastructure.
-  Target: Phase 5.
 - **Guards and equality patterns** in struct-pattern match arms. Target: Phase 5.
 - **Build-mode codegen parity**. Target: Phase 7.
 - **`as cstr` for non-literal values**. Target: Phase 5.
 - **Prelude module prefix** (`std_option_Option_int` vs `Option_int`). Target: Phase 7.
+- **proc selective retain** (retain on assign only for non-fresh procs). Target: Phase 5 (proc polish).
+- **proc release on scope exit** (defer-style env release). Target: Phase 5 (proc polish).
 - **SoA**: deferred indefinitely.
 
 ---
@@ -138,16 +139,16 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 
 ### Phase 5 — proc/fn, dyn, method dispatch, str_buffer, format, `is`
 
-| # | Item | Est. LOC | Ruby ref | Notes |
-|---|------|----------|----------|-------|
-| 1 | **proc closures** — capture struct, ref-counted lifecycle | ~300 | `proc.rb` 419 | Capture env struct + invoke/release/retain |
-| 2 | **fn pointer types** — full support in `c_type` | ~50 | — | Partially wired from Phase 1–3 |
-| 3 | **dyn[I] interfaces** — vtable, fat pointer, `adapt` | ~200 | `dyn.rb` 233 | Vtable struct + fat pointer emission |
-| 4 | **Method dispatch** — editable/value/static, method table | ~400 | `resolve.rb` | Also completes generics for method receivers |
-| 5 | **str_buffer[N]** — fixed-capacity UTF-8 text buffer | ~150 | `str_buffer.rb` 115 | Type decl + append/assign/as_str methods |
-| 6 | **Format strings** — `f"count=#{n}"` + `fmt` helpers | ~250 | `format.rb` | Desugaring + format-value lowering |
-| 7 | **`is` + match-expressions** — statement-hoisting | ~200 | — | Also unlocks match-expr for enums/int |
-| **Total** | | **~1,550** | | |
+| # | Item | Est. LOC | Status | Notes |
+|---|------|----------|--------|-------|
+| 1 | **proc closures** | ~800 | ✅ done | Non-capturing + capturing with ref-counted lifecycle + fn→proc coercion + `expr_call_indirect` |
+| 2 | **fn pointer types** | ~50 | ✅ done | `c_fn_ptr_declarator`, `ty_function` in `c_type`/`c_declaration` |
+| 3 | **dyn[I] interfaces** | ~200 | pending | Vtable struct + fat pointer + `adapt` |
+| 4 | **Method dispatch** | ~400 | ✅ done | Extending block lowering, `MethodInfo`, `resolve_method_info`, receiver passing (pointer/value/static) |
+| 5 | **str_buffer[N]** | ~150 | pending | Type decl + append/assign/as_str methods |
+| 6 | **Format strings** | ~250 | pending | `f"..."` desugaring + format-value lowering |
+| 7 | **`is` + match-expressions** | ~200 | ✅ done | Enum + variant `expr_match` hoisting, `lower_match_expression_local` |
+| **Total** | | **~2,050** | 5/7 done |
 
 ### Phase 6 — events, async, parallel, compile-time
 
@@ -195,7 +196,14 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
   - [x] Cycle detection (spec_in_progress)
   - [x] Cross-module struct constructors in monomorphized bodies
         (`struct_exists_in_imports` — 29 LOC in lowering.mt)
-- [ ] Phase 5 — proc/fn, dyn, method dispatch, str_buffer, format, `is`
+- [ ] Phase 5 — dyn, str_buffer, format (remaining 2/7) [see §5 for completed items]
+  - [x] proc closures (non-capturing + capturing + fn→proc coercion + indirect calls)
+  - [x] fn pointer types (c_fn_ptr_declarator, c_type/c_declaration ty_function)
+  - [x] method dispatch + extending block lowering (MethodInfo, resolve_method_info)
+  - [x] is + match-expressions (lower_match_expression_local, enum + variant)
+  - [ ] dyn[I] interfaces — vtable, fat pointer, adapt
+  - [ ] str_buffer[N] — type decl + append/assign/as_str
+  - [ ] format strings — f"..." desugaring + format-value lowering
 - [ ] Phase 6 — events, async, parallel, compile-time
 - [ ] Phase 7 — build parity + self-host bootstrap
 
@@ -203,45 +211,40 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 
 ## 5. Next session context
 
-### Phase 5 priority order
+### Phase 5 status
 
-All Phase 4c gaps are closed.  Start Phase 5:
+**Completed (5 of 7):**
 
-1. **proc closures** (capture struct, ref-counted) — ~300 LOC
-   Ruby ref: `lowering/proc.rb` (419 LOC).  Needs capture-env struct
-   synthesis, invoke/release/retain function generation, selective retain
-   logic for fresh vs reused proc values, and `fn → proc` coercion.
-2. **fn pointer types** — ~50 LOC.  Already partially wired in `c_type`.
-   Complete the `fn(...)` → C function-pointer type emission.
-3. **Method dispatch** — ~400 LOC.  `editable function` / `function` /
-   `static function` receiver lowering, method-table construction from
-   `ctx.analysis.method_sigs`, pointer-lowered receivers for
-   array-containing structs.
-4. **dyn[I] interfaces** — ~200 LOC.  Fat pointer (data + vtable),
-   `adapt[I](ref[T])` lowering, vtable emission from interface conformance.
-5. **str_buffer[N]** — ~150 LOC.  Type decl + append/assign/as_str.
-6. **Format strings** — ~250 LOC.  `f"..."` desugaring + per-field-type
-   `format_value[T]` dispatch.
-7. **`is` + match-expressions** — ~200 LOC.  Statement-hoisting for
-   match-expr and `is` desugaring.
+| # | Item | Key implementation |
+|---|------|-------------------|
+| 1 | proc closures | `lower_proc_expression`, `build_env_setup_fn`, `build_capturing_invoke`/`release`/`retain`, `lower_fn_to_proc` (fn→proc coercion), `is_proc_type`, `proc_ensure_struct_decl`, `lower_proc_call` via `expr_call_indirect` |
+| 2 | fn pointer types | `c_fn_ptr_declarator`, `resolve_function_type_ref`, `ty_function` in `c_type`/`c_declaration` |
+| 4 | method dispatch | `lower_extending_block`, `resolve_method_info`, `lower_method_resolved` (pointer/value/static receiver), `MethodInfo` struct |
+| 7 | is/match-expr | `lower_match_expression_local`, `lower_enum_match_expr`, `lower_variant_match_expr` |
 
-### Key context for Phase 5
+**Remaining (2 of 7):**
 
-- **Lowering file**: `projects/mtc/src/mtc/lowering/lowering.mt` (~2,880 LOC)
-  is the only lowering file.  Ruby splits across 16 files; the self-host has
-  not yet split.  As Phase 5 grows, consider extracting `proc`, `dyn`, `str_buffer`,
-  and `format` into separate modules under `src/mtc/lowering/`.
-- **C backend**: `projects/mtc/src/mtc/c_backend/c_backend.mt` (~2,500 LOC).
-  Similarly, split into per-feature files as Phase 5 adds capture structs,
-  vtable emission, etc.
-- **Ruby references**: `lib/milk_tea/core/lowering/proc.rb`,
-  `lib/milk_tea/core/lowering/dyn.rb`,
-  `lib/milk_tea/core/lowering/str_buffer.rb`,
-  `lib/milk_tea/core/lowering/format.rb`,
-  `lib/milk_tea/core/c_backend/*.rb`.
-- **Debugging**: Use `std.log` (unbuffered stderr via `terminal.write_stderr`)
-  for traces that must survive `fatal()`.  File-based debug (`std.fs.write_text`)
-  as a fallback when async/parallel contexts may corrupt stderr.
+| # | Item | Est. LOC | Ruby ref | Notes |
+|---|------|----------|----------|-------|
+| 3 | dyn[I] interfaces | ~200 | `dyn.rb` 233 | Vtable struct + fat pointer + `adapt` |
+| 5 | str_buffer[N] | ~150 | `str_buffer.rb` 115 | Type decl + runtime helpers for clear/assign/append/as_str |
+| 6 | format strings | ~250 | `format.rb` | `f"..."` desugaring + per-field-type `format_value[T]` dispatch |
+
+### Recommended resume order
+
+1. **Split lowering file** — `lowering.mt` is 3,750 LOC. Extract `proc`, `dyn`, `str_buffer`, and `format` into separate modules under `src/mtc/lowering/` per the self-host plan. This should happen before adding more features to keep the codebase manageable.
+2. **dyn[I] interfaces** — requires method dispatch (done) + proc infrastructure (done). The hardest remaining item.
+3. **str_buffer[N]** — type decl emission + runtime C helpers. More self-contained.
+4. **Format strings** — depends on method dispatch (done) for `format_value[T]` resolution.
+
+### Key context for resume
+
+- **IR additions**: `expr_call_indirect(callee: ptr[Expr], arguments: span[Expr], ty: types.Type)` added for function-pointer calls through proc `invoke` fields.
+- **Proc type system**: `proc_type_name_from_signature` produces shared type names like `mt_proc_int_int`. `proc_ensure_struct_decl` registers struct declarations in `pending_env_structs`. Multiple procs with the same signature share the same struct type.
+- **Proc call path**: `is_proc_type` checks `ty_named` with `__proc_` or `mt_proc_` prefix AND `ty_function`. `lower_proc_call` uses `expr_call_indirect` through `p.invoke` field.
+- **fn→proc coercion**: `lower_expr` → `expr_identifier` → when function reference detected, wraps in proc struct via `lower_fn_to_proc` with synthetic invoke.
+- **Debugging**: Use `std.log` (unbuffered stderr) for traces. File-based debug (`std.fs.write_text`) as fallback.
+- **Lowering cleanup**: 142 lines of dead code removed (old `wrap_fn_in_proc` path). Comment placement fixed for `function_return_type`.
 
 ---
 
