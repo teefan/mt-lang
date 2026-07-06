@@ -607,6 +607,8 @@ function postfix_expression(ep: ptr[ir.Expr]) -> bool:
                 return true
             ir.Expr.expr_call:
                 return true
+            ir.Expr.expr_call_indirect:
+                return true
             _:
                 return false
 
@@ -635,6 +637,8 @@ function expr_type(ep: ptr[ir.Expr]) -> types.Type:
             ir.Expr.expr_nullable_span_index as e:
                 return e.ty
             ir.Expr.expr_call as e:
+                return e.ty
+            ir.Expr.expr_call_indirect as e:
                 return e.ty
             ir.Expr.expr_unary as e:
                 return e.ty
@@ -705,6 +709,8 @@ function render_expression(ep: ptr[ir.Expr], parent_precedence: int) -> str:
                 return j6("nullable_span_index<", render_type(e.receiver_type), ">(", render_expression(e.receiver, 0), j3(", ", render_expression(e.index, 0), ")"), "")
             ir.Expr.expr_call as e:
                 return wrap(j4(e.callee, "(", render_args(e.arguments), ")"), parent_precedence, POSTFIX_PRECEDENCE)
+            ir.Expr.expr_call_indirect as e:
+                return wrap(j4("indirect(", render_expression(e.callee, 0), j2(", ", render_args(e.arguments)), ")"), parent_precedence, POSTFIX_PRECEDENCE)
             ir.Expr.expr_unary as e:
                 let operand = render_expression(e.operand, UNARY_PRECEDENCE)
                 let text = if e.operator == "not": j2("not ", operand) else: j2(e.operator, operand)

@@ -359,6 +359,11 @@ function reach_from_expr(ep: ptr[ir.Expr], func_names: ref[map_mod.Map[str, bool
                 while i < call.arguments.len:
                     reach_from_expr(call.arguments.data + i, func_names, reachable, worklist)
                     i += 1
+            ir.Expr.expr_call_indirect as call:
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    reach_from_expr(call.arguments.data + i, func_names, reachable, worklist)
+                    i += 1
             ir.Expr.expr_name as n:
                 if func_names.contains(n.name) and not reachable.contains(n.name):
                     worklist.push(n.name)
@@ -808,6 +813,13 @@ function expr_calls(ep: ptr[ir.Expr], name: str) -> bool:
                         return true
                     i += 1
                 return false
+            ir.Expr.expr_call_indirect as call:
+                var j: ptr_uint = 0
+                while j < call.arguments.len:
+                    if expr_calls(call.arguments.data + j, name):
+                        return true
+                    j += 1
+                return false
             ir.Expr.expr_binary as bin:
                 return expr_calls(bin.left, name) or expr_calls(bin.right, name)
             ir.Expr.expr_unary as un:
@@ -929,6 +941,11 @@ function collect_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], 
                 while i < call.arguments.len:
                     collect_from_expr(call.arguments.data + i, seen, collected)
                     i += 1
+            ir.Expr.expr_call_indirect as call:
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    collect_from_expr(call.arguments.data + i, seen, collected)
+                    i += 1
             ir.Expr.expr_conditional as cond:
                 collect_from_expr(cond.condition, seen, collected)
                 collect_from_expr(cond.then_expression, seen, collected)
@@ -1001,6 +1018,13 @@ function expr_has_str_equality(ep: ptr[ir.Expr]) -> bool:
             ir.Expr.expr_unary as un:
                 return expr_has_str_equality(un.operand)
             ir.Expr.expr_call as call:
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    if expr_has_str_equality(call.arguments.data + i):
+                        return true
+                    i += 1
+                return false
+            ir.Expr.expr_call_indirect as call:
                 var i: ptr_uint = 0
                 while i < call.arguments.len:
                     if expr_has_str_equality(call.arguments.data + i):
@@ -1889,6 +1913,8 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return render_binary(e, bin.operator, bin.left, bin.right)
             ir.Expr.expr_call as call:
                 return render_call(e, call.callee, call.arguments)
+            ir.Expr.expr_call_indirect as call:
+                return render_indirect_call(e, call.callee, call.arguments)
             ir.Expr.expr_member as member:
                 let operator = if pointer_member_receiver(member.receiver): "->" else: "."
                 return j3(wrap_member_receiver(e, member.receiver), operator, member.member)
@@ -2044,6 +2070,11 @@ function checked_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], 
                 while i < call.arguments.len:
                     checked_from_expr(call.arguments.data + i, seen, collected)
                     i += 1
+            ir.Expr.expr_call_indirect as call:
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    checked_from_expr(call.arguments.data + i, seen, collected)
+                    i += 1
             ir.Expr.expr_member as member:
                 checked_from_expr(member.receiver, seen, collected)
             ir.Expr.expr_address_of as addr:
@@ -2161,6 +2192,11 @@ function span_index_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]
                 span_index_from_expr(cond.then_expression, seen, collected)
                 span_index_from_expr(cond.else_expression, seen, collected)
             ir.Expr.expr_call as call:
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    span_index_from_expr(call.arguments.data + i, seen, collected)
+                    i += 1
+            ir.Expr.expr_call_indirect as call:
                 var i: ptr_uint = 0
                 while i < call.arguments.len:
                     span_index_from_expr(call.arguments.data + i, seen, collected)
@@ -2401,6 +2437,23 @@ function render_call(e: ref[Emitter], callee: str, arguments: span[ir.Expr]) -> 
     return buf.as_str()
 
 
+## Render a call through a function-pointer expression: `(*callee)(args)`.
+function render_indirect_call(e: ref[Emitter], callee: ptr[ir.Expr], arguments: span[ir.Expr]) -> str:
+    var buf = string.String.create()
+    let callee_text = unsafe: render_expression(e, callee)
+    buf.append(callee_text)
+    buf.append("(")
+    var i: ptr_uint = 0
+    while i < arguments.len:
+        if i > 0:
+            buf.append(", ")
+        unsafe:
+            buf.append(render_expression(e, arguments.data + i))
+        i += 1
+    buf.append(")")
+    return buf.as_str()
+
+
 function render_binary(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
     let parent = binary_precedence(operator)
     let left_text = render_binary_operand(e, left, parent, false)
@@ -2495,6 +2548,8 @@ function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
             ir.Expr.expr_nullable_span_index as x:
                 return x.ty
             ir.Expr.expr_call as x:
+                return x.ty
+            ir.Expr.expr_call_indirect as x:
                 return x.ty
             ir.Expr.expr_unary as x:
                 return x.ty

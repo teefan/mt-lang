@@ -70,6 +70,7 @@ public variant Expr:
     expr_nullable_index(receiver: ptr[Expr], index: ptr[Expr], receiver_type: types.Type, ty: types.Type)
     expr_nullable_span_index(receiver: ptr[Expr], index: ptr[Expr], receiver_type: types.Type, ty: types.Type)
     expr_call(callee: str, arguments: span[Expr], ty: types.Type)
+    expr_call_indirect(callee: ptr[Expr], arguments: span[Expr], ty: types.Type)
     expr_unary(operator: str, operand: ptr[Expr], ty: types.Type)
     expr_binary(operator: str, left: ptr[Expr], right: ptr[Expr], ty: types.Type)
     expr_conditional(condition: ptr[Expr], then_expression: ptr[Expr], else_expression: ptr[Expr], ty: types.Type)

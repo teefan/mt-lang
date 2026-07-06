@@ -892,6 +892,9 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
         let t = read(tp)
         if t.is_fn or t.is_proc:
             let fun = resolve_function_type_ref(ctx, tp)
+            if t.is_proc:
+                let proc_name = proc_type_name_from_signature(fun)
+                return proc_ensure_struct_decl(ctx, proc_name, fun)
             if t.nullable:
                 return types.Type.ty_nullable(base = types.alloc_type(fun))
             return fun
@@ -1201,6 +1204,15 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                     Option.some as lb:
                         return alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = lb.value.ty, pointer = lb.value.pointer))
                     Option.none:
+                        if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
+                            let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
+                            let fn_ty = expr_type(ctx, ep)
+                            match fn_ty:
+                                types.Type.ty_function:
+                                    return lower_fn_to_proc(ctx, fn_c_name, fn_ty)
+                                _:
+                                    pass
+                            return alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = fn_ty, pointer = false))
                         return alloc_expr(ir.Expr.expr_name(name = id.name, ty = expr_type(ctx, ep), pointer = false))
             ast.Expr.expr_binary_op as bin:
                 let left = lower_expr(ctx, bin.left)
@@ -1706,6 +1718,8 @@ function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
             ir.Expr.expr_checked_span_index as x:
                 return x.ty
             ir.Expr.expr_call as x:
+                return x.ty
+            ir.Expr.expr_call_indirect as x:
                 return x.ty
             ir.Expr.expr_unary as x:
                 return x.ty
@@ -2242,7 +2256,234 @@ function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr
     return alloc_expr(ir.Expr.expr_call(callee = mi.c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
 
 
-## Lower a call with no boundary projections: every argument lowered as-is.
+## Wrap a function reference in a proc struct with a synthetic invoke function
+## that calls the original function, plus no-op release/retain.
+function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type) -> ptr[ir.Expr]:
+    ctx.proc_counter += 1
+    var prefix = string.String.create()
+    prefix.append(naming.module_c_prefix(ctx.module_name))
+    prefix.append("__fn_wrap_")
+    fmt.append_ptr_uint(ref_of(prefix), ctx.proc_counter)
+
+    var invoke_c = string.String.create()
+    invoke_c.append(prefix.as_str())
+    invoke_c.append("__invoke")
+    var release_c = string.String.create()
+    release_c.append(prefix.as_str())
+    release_c.append("__release")
+    var retain_c = string.String.create()
+    retain_c.append(prefix.as_str())
+    retain_c.append("__retain")
+
+    let invoke_str = invoke_c.as_str()
+    let release_str = release_c.as_str()
+    let retain_str = retain_c.as_str()
+
+    match fn_ty:
+        types.Type.ty_function as fnt:
+            let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+            var inv_params = vec.Vec[ir.Param].create()
+            inv_params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
+            var call_args = vec.Vec[ir.Expr].create()
+            var pi: ptr_uint = 0
+            while pi < fnt.params.len:
+                var p_ty: types.Type
+                unsafe:
+                    p_ty = read(fnt.params.data + pi)
+                let pname = jstr_i("arg_", pi)
+                inv_params.push(ir.Param(name = pname, linkage_name = pname, ty = p_ty, pointer = false))
+                let arg_expr = alloc_expr(ir.Expr.expr_name(name = pname, ty = p_ty, pointer = false))
+                unsafe:
+                    call_args.push(read(arg_expr))
+                pi += 1
+            var ret_ty = types.primitive("void")
+            unsafe:
+                ret_ty = read(fnt.return_type)
+            var inv_body = vec.Vec[ir.Stmt].create()
+            if is_void_type(ret_ty):
+                let call = alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = call_args.as_span(), ty = ret_ty))
+                inv_body.push(ir.Stmt.stmt_expression(expression = call, line = 0, source_path = ""))
+                inv_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+            else:
+                let call = alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = call_args.as_span(), ty = ret_ty))
+                inv_body.push(ir.Stmt.stmt_return(value = call, line = 0, source_path = ""))
+
+            ctx.pending_synthetic_functions.push(ir.Function(name = invoke_str, linkage_name = invoke_str, params = inv_params.as_span(), return_type = ret_ty, body = inv_body.as_span(), entry_point = false, method_receiver_param = false))
+            ctx.pending_synthetic_functions.push(build_proc_noop_fn(retain_str))
+            ctx.pending_synthetic_functions.push(build_proc_noop_fn(release_str))
+
+            # Ensure the proc struct type exists for this signature.
+            let proc_name = proc_type_name_from_signature(fn_ty)
+            let proc_ty = proc_ensure_struct_decl(ctx, proc_name, fn_ty)
+
+            let lifecycle_ty = proc_lifecycle_fn_type()
+            var fields = vec.Vec[ir.AggregateField].create()
+            fields.push(ir.AggregateField(name = "env", value = alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr))))
+            fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = proc_invoke_field_type(fn_ty), pointer = false))))
+            fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = false))))
+            fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
+            return alloc_expr(ir.Expr.expr_aggregate_literal(ty = proc_ty, fields = fields.as_span()))
+        _:
+            fatal(c"lowering Phase 5: fn_to_proc requires function type")
+
+
+## Build a "arg_N" string from an integer index.
+function jstr_i(prefix: str, n: ptr_uint) -> str:
+    var buf = string.String.create()
+    buf.append(prefix)
+    fmt.append_ptr_uint(ref_of(buf), n)
+    return buf.as_str()
+## if the parameter type is a proc struct but the argument is a function pointer,
+## wrap the argument in a proc struct with a synthetic invoke function.
+function lower_plain_call_with_coercion(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
+    var ir_args = vec.Vec[ir.Expr].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        let lowered = lower_expr(ctx, arg.arg_value)
+        let lowered_ty = ir_expr_type(lowered)
+        let lowered_copy = unsafe: read(lowered)
+        let param_ty = fn_sig_param_type(sig, i)
+        # fn → proc coercion: parameter is a proc struct, argument is a fn pointer.
+        if is_proc_struct_type(param_ty) and is_function_type(lowered_ty):
+            let wrapped = wrap_fn_in_proc(ctx, lowered, lowered_ty, param_ty)
+            unsafe:
+                ir_args.push(read(wrapped))
+        else:
+            unsafe:
+                ir_args.push(read(lowered))
+        i += 1
+    var ret_ty: types.Type
+    let ov = override_ty
+    if ov != null:
+        unsafe:
+            ret_ty = read(ov)
+    else:
+        ret_ty = expr_type(ctx, call_ep)
+    return alloc_expr(ir.Expr.expr_call(callee = c_name, arguments = ir_args.as_span(), ty = ret_ty))
+
+
+## True when a type is a named proc struct (mt_proc_...) as opposed to a bare
+## function pointer or a local proc expression struct.
+function is_proc_struct_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_named as n:
+            return n.name.starts_with("mt_proc_")
+        _:
+            return false
+
+
+## True when a type is a function pointer (ty_function) as opposed to a struct.
+function is_function_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_function:
+            return true
+        _:
+            return false
+
+
+## Wrap a function pointer in a proc struct: generates a synthetic invoke
+## function, no-op release/retain, and returns a proc aggregate literal.
+function wrap_fn_in_proc(ctx: ref[LowerCtx], fn_ptr: ptr[ir.Expr], fn_ty: types.Type, proc_struct_ty: types.Type) -> ptr[ir.Expr]:
+    ctx.proc_counter += 1
+    let proc_id = ctx.proc_counter
+    var prefix_buf = string.String.create()
+    prefix_buf.append(naming.module_c_prefix(ctx.module_name))
+    prefix_buf.append("__fn_to_proc_")
+    fmt.append_ptr_uint(ref_of(prefix_buf), proc_id)
+    let prefix = prefix_buf.as_str()
+
+    var invoke_c = string.String.create()
+    invoke_c.append(prefix)
+    invoke_c.append("__invoke")
+    var release_c = string.String.create()
+    release_c.append(prefix)
+    release_c.append("__release")
+    var retain_c = string.String.create()
+    retain_c.append(prefix)
+    retain_c.append("__retain")
+
+    let invoke_str = invoke_c.as_str()
+    let release_str = release_c.as_str()
+    let retain_str = retain_c.as_str()
+
+    match fn_ty:
+        types.Type.ty_function as fnt:
+            # Build invoke: call the function pointer, passing args through.
+            let saved_locals = ctx.locals
+            let saved_counter = ctx.temp_counter
+            ctx.locals = vec.Vec[LocalBinding].create()
+            ctx.temp_counter = 0
+
+            let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+            var inv_params = vec.Vec[ir.Param].create()
+            inv_params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
+            var inv_call_args = vec.Vec[ir.Expr].create()
+            var ai: ptr_uint = 0
+            while ai < fnt.params.len:
+                var param_type: types.Type
+                unsafe:
+                    param_type = read(fnt.params.data + ai)
+                let pname = fresh_c_temp_name(ctx, "arg")
+                inv_params.push(ir.Param(name = pname, linkage_name = pname, ty = param_type, pointer = false))
+                let arg_expr = alloc_expr(ir.Expr.expr_name(name = pname, ty = param_type, pointer = false))
+                unsafe:
+                    inv_call_args.push(read(arg_expr))
+                ai += 1
+
+            var inv_ret = types.primitive("void")
+            unsafe:
+                inv_ret = read(fnt.return_type)
+            var inv_body = vec.Vec[ir.Stmt].create()
+            if is_void_type(inv_ret):
+                let call_expr = alloc_expr(ir.Expr.expr_call(callee = ir_expr_get_name(fn_ptr), arguments = inv_call_args.as_span(), ty = inv_ret))
+                inv_body.push(ir.Stmt.stmt_expression(expression = call_expr, line = 0, source_path = ""))
+                inv_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+            else:
+                let call_expr = alloc_expr(ir.Expr.expr_call(callee = ir_expr_get_name(fn_ptr), arguments = inv_call_args.as_span(), ty = inv_ret))
+                inv_body.push(ir.Stmt.stmt_return(value = call_expr, line = 0, source_path = ""))
+
+            ctx.pending_synthetic_functions.push(ir.Function(name = invoke_str, linkage_name = invoke_str, params = inv_params.as_span(), return_type = inv_ret, body = inv_body.as_span(), entry_point = false, method_receiver_param = false))
+            ctx.pending_synthetic_functions.push(build_proc_noop_fn(retain_str))
+            ctx.pending_synthetic_functions.push(build_proc_noop_fn(release_str))
+
+            ctx.locals = saved_locals
+            ctx.temp_counter = saved_counter
+
+            # Build the proc struct literal.
+            let void_ptr2 = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+            let null_env = alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr2))
+            let lifecycle_ty = proc_lifecycle_fn_type()
+            let invoke_field_ty = proc_invoke_field_type(fn_ty)
+            var fields = vec.Vec[ir.AggregateField].create()
+            fields.push(ir.AggregateField(name = "env", value = null_env))
+            fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = invoke_field_ty, pointer = false))))
+            fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = false))))
+            fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
+            return alloc_expr(ir.Expr.expr_aggregate_literal(ty = proc_struct_ty, fields = fields.as_span()))
+        _:
+            fatal(c"lowering Phase 5: fn_to_proc requires function type")
+
+
+## Extract the name from an IR expr_name, or fatal with an error.
+function ir_expr_get_name(ep: ptr[ir.Expr]) -> str:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name as n:
+                return n.name
+            _:
+                fatal(c"lowering Phase 5: fn_to_proc expected name expression")
+
+
+## True when a type is void.
+function is_void_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_primitive as p:
+            return p.name.equal("void")
+        _:
+            return false
 function lower_plain_call(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?) -> ptr[ir.Expr]:
     var ir_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
@@ -2382,9 +2623,47 @@ struct ProcCapture:
 function is_proc_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_named as n:
-            return n.name.find_substring("__proc_").is_some()
+            return n.name.find_substring("__proc_").is_some() or n.name.starts_with("mt_proc_")
+        types.Type.ty_function:
+            return true
         _:
             return false
+
+
+## Generate a shared proc struct type name for a given function type:
+## `mt_proc_R_P1_P2_...`.  Multiple proc expressions with the same signature
+## share this type, so proc-typed params, returns, and expressions unify.
+function proc_type_name_from_signature(proc_ty: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("mt_proc_")
+    match proc_ty:
+        types.Type.ty_function as fnt:
+            unsafe:
+                buf.append(naming.sanitize_identifier(types.type_to_string(read(fnt.return_type))))
+            var i: ptr_uint = 0
+            while i < fnt.params.len:
+                buf.append("_")
+                unsafe:
+                    buf.append(naming.sanitize_identifier(types.type_to_string(read(fnt.params.data + i))))
+                i += 1
+        _:
+            pass
+    return buf.as_str()
+
+
+## Ensure a proc struct declaration exists for the given signature and return a
+## `ty_named` pointing to it.  Multiple callers with the same signature share
+## the same struct type.
+function proc_ensure_struct_decl(ctx: ref[LowerCtx], struct_name: str, proc_ty: types.Type) -> types.Type:
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    var struct_fields = vec.Vec[ir.Field].create()
+    struct_fields.push(ir.Field(name = "env", ty = void_ptr))
+    struct_fields.push(ir.Field(name = "invoke", ty = proc_invoke_field_type(proc_ty)))
+    let lifecycle_ty = proc_lifecycle_fn_type()
+    struct_fields.push(ir.Field(name = "release", ty = lifecycle_ty))
+    struct_fields.push(ir.Field(name = "retain", ty = lifecycle_ty))
+    ctx.pending_env_structs.push(ir.StructDecl(name = struct_name, linkage_name = struct_name, fields = struct_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+    return types.Type.ty_named(name = struct_name)
 
 
 ## Lower a proc call `p(arg1, arg2)` to `p.invoke(p.env, arg1, arg2)`.  Since the
@@ -2396,18 +2675,7 @@ function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Ar
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     let env_member = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "env", ty = void_ptr))
 
-    # The proc struct type is ty_named(name = "<struct_name>").  The invoke
-    # function's C name is `<struct_name>__invoke`.
-    var struct_name: str = ""
-    match lb.ty:
-        types.Type.ty_named as n:
-            struct_name = n.name
-        _:
-            fatal(c"lowering Phase 5: proc call on non-proc type")
-    var invoke_name = string.String.create()
-    invoke_name.append(struct_name)
-    invoke_name.append("__invoke")
-
+    # Build arguments: env, then user args.
     var invoke_args = vec.Vec[ir.Expr].create()
     unsafe:
         invoke_args.push(read(env_member))
@@ -2420,7 +2688,11 @@ function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Ar
         unsafe:
             invoke_args.push(read(lowered))
         i += 1
-    return alloc_expr(ir.Expr.expr_call(callee = invoke_name.as_str(), arguments = invoke_args.as_span(), ty = expr_type(ctx, call_ep)))
+
+    # Call through p.invoke (function pointer field).  The C backend renders
+    # this as p.invoke(arg0, arg1, ...), a direct call through the member.
+    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "invoke", ty = expr_type(ctx, call_ep)))
+    return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = expr_type(ctx, call_ep)))
 
 
 function function_return_type(ctx: ref[LowerCtx], name: str) -> types.Type:
@@ -2764,6 +3036,9 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
         return scalar
     if tref.is_fn or tref.is_proc:
         let fun = resolve_function_type_ref(ctx, ptr_of(local_tref))
+        if tref.is_proc:
+            let proc_name = proc_type_name_from_signature(fun)
+            return proc_ensure_struct_decl(ctx, proc_name, fun)
         if tref.nullable:
             return types.Type.ty_nullable(base = types.alloc_type(fun))
         return fun
@@ -3467,6 +3742,21 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                     Option.some as lb:
                         return lb.value.ty
                     Option.none:
+                        # Function reference: return its function type.
+                        match lookup_fn_sig(ctx, id.name):
+                            Option.some as s:
+                                var ret = s.value.return_type
+                                if not s.value.has_return_type:
+                                    ret = types.primitive("void")
+                                var param_types = vec.Vec[types.Type].create()
+                                var pi: ptr_uint = 0
+                                while pi < s.value.params.len:
+                                    unsafe:
+                                        param_types.push(read(s.value.params.data + pi).ty)
+                                    pi += 1
+                                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false)
+                            Option.none:
+                                pass
                         return types.Type.ty_error
             ast.Expr.expr_binary_op as bin:
                 if is_comparison_operator(bin.operator):
