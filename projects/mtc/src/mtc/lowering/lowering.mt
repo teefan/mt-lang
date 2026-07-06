@@ -66,6 +66,7 @@ struct LowerCtx:
     temp_counter: ptr_uint
     foreign_map: map_mod.Map[str, ForeignInfo]
     extern_map: map_mod.Map[str, str]
+    function_returns: map_mod.Map[str, types.Type]
 
 
 # =============================================================================
@@ -92,8 +93,10 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
         temp_counter = 0,
         foreign_map = map_mod.Map[str, ForeignInfo].create(),
         extern_map = map_mod.Map[str, str].create(),
+        function_returns = map_mod.Map[str, types.Type].create(),
     )
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
+    collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
     var functions = vec.Vec[ir.Function].create()
     var enums = vec.Vec[ir.EnumDecl].create()
     var structs = vec.Vec[ir.StructDecl].create()
@@ -186,13 +189,13 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
         var p: ast.Param
         unsafe:
             p = read(params.data + pi)
-        let param_ty = qualify_type(ctx, fn_sig_param_type(sig, pi))
+        let param_ty = resolve_param_type(ctx, sig, pi, p.param_type)
         let c_name = c_local_name(p.name)
         ir_params.push(ir.Param(name = p.name, linkage_name = c_name, ty = param_ty, pointer = false))
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_name, ty = param_ty, pointer = false))
         pi += 1
 
-    let ret_ty = qualify_type(ctx, fn_sig_return_type(sig))
+    let ret_ty = resolve_return_type(ctx, sig, return_type)
     let body_stmts = lower_block(ctx, body)
 
     return ir.Function(
@@ -271,6 +274,12 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let lowered = lower_expr(ctx, value)
                 output.push(ir.Stmt.stmt_return(value = lowered, line = r.line, source_path = ""))
             ast.Stmt.stmt_local as loc:
+                match loc.destructure_bindings:
+                    Option.some as binds:
+                        lower_destructure(ctx, output, binds.value, loc.destructure_type_name, loc.value)
+                        return
+                    Option.none:
+                        pass
                 let c_name = c_local_name(loc.name)
                 var ty: types.Type
                 var value_expr: ptr[ir.Expr]
@@ -327,6 +336,58 @@ function local_decl_type(ctx: ref[LowerCtx], declared: ptr[ast.TypeRef]?, value:
     return resolved
 
 
+## Lower `let (a, b) = expr` (tuple) / `let Name(x, y) = expr` (struct) by
+## evaluating the source into a temp and binding each component from it.
+function lower_destructure(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bindings: span[str], type_name: Option[str], value: ptr[ast.Expr]?) -> void:
+    let val = value else:
+        fatal(c"lowering Phase 3: destructuring requires an initializer")
+    let lowered_val = lower_expr(ctx, val)
+    let val_ty = ir_expr_type(lowered_val)
+    let temp = fresh_c_temp_name(ctx, "destructure_val")
+    output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = val_ty, value = lowered_val, line = 0, source_path = ""))
+
+    var i: ptr_uint = 0
+    while i < bindings.len:
+        var binding: str
+        unsafe:
+            binding = read(bindings.data + i)
+        var member_name: str
+        var member_ty: types.Type
+        match type_name:
+            Option.some as tn:
+                member_name = struct_field_name_at(ctx, tn.value, i)
+                member_ty = struct_field_type_at(ctx, tn.value, i)
+            Option.none:
+                member_name = tuple_field_name(i)
+                member_ty = tuple_element_type(val_ty, i)
+        let receiver = alloc_expr(ir.Expr.expr_name(name = temp, ty = val_ty, pointer = false))
+        let member = alloc_expr(ir.Expr.expr_member(receiver = receiver, member = member_name, ty = member_ty))
+        let binding_c = c_local_name(binding)
+        output.push(ir.Stmt.stmt_local(name = binding, linkage_name = binding_c, ty = member_ty, value = member, line = 0, source_path = ""))
+        ctx.locals.push(LocalBinding(name = binding, c_name = binding_c, ty = member_ty, pointer = false))
+        i += 1
+
+
+function struct_field_name_at(ctx: ref[LowerCtx], struct_name: str, index: ptr_uint) -> str:
+    let fields_ptr = ctx.analysis.structs.get(struct_name) else:
+        return ""
+    let entries = unsafe: read(fields_ptr)
+    if index < entries.len:
+        unsafe:
+            return read(entries.data + index).name
+    return ""
+
+
+function struct_field_type_at(ctx: ref[LowerCtx], struct_name: str, index: ptr_uint) -> types.Type:
+    let fields_ptr = ctx.analysis.structs.get(struct_name) else:
+        return types.Type.ty_error
+    let entries = unsafe: read(fields_ptr)
+    if index < entries.len:
+        unsafe:
+            return qualify_type(ctx, read(entries.data + index).ty)
+    return types.Type.ty_error
+
+
 ## Qualify a bare local named type (`ty_named`) with the current module so the
 ## backend can produce its module-prefixed C name (`State` -> `en_State`).
 ## Primitives, `str`, and already-qualified imported types pass through.
@@ -346,8 +407,15 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
 function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Type:
     unsafe:
         let t = read(tp)
-        if t.is_fn or t.is_proc or t.is_dyn or t.is_tuple or t.nullable:
+        if t.is_fn or t.is_proc or t.is_dyn or t.nullable:
             return types.Type.ty_error
+        if t.is_tuple:
+            var elems = vec.Vec[types.Type].create()
+            var i: ptr_uint = 0
+            while i < t.arguments.len:
+                elems.push(resolve_type_ref(ctx, t.arguments.data + i))
+                i += 1
+            return types.Type.ty_tuple(elements = elems.as_span())
         if t.arguments.len > 0:
             return resolve_generic_type_ref(ctx, t)
         if t.name.parts.len != 1:
@@ -627,8 +695,45 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 return lower_member_access(ctx, ma.receiver, ma.member_name, ep)
             ast.Expr.expr_index_access as ix:
                 return lower_index_access(ctx, ix.receiver, ix.index, ep)
+            ast.Expr.expr_expression_list as lst:
+                return lower_tuple_literal(ctx, lst.elements)
             _:
                 fatal(c"lowering Phase 3: unsupported expression")
+
+
+## Lower a positional tuple literal `(a, b, ...)` to an aggregate literal with
+## fields `_0`, `_1`, ... and a `ty_tuple` type.  (Named tuples arrive later.)
+function lower_tuple_literal(ctx: ref[LowerCtx], elements: span[ast.Expr]) -> ptr[ir.Expr]:
+    var fields = vec.Vec[ir.AggregateField].create()
+    var elem_types = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < elements.len:
+        let lowered = unsafe: lower_expr(ctx, elements.data + i)
+        fields.push(ir.AggregateField(name = tuple_field_name(i), value = lowered))
+        elem_types.push(ir_expr_type(lowered))
+        i += 1
+    return alloc_expr(ir.Expr.expr_aggregate_literal(
+        ty = types.Type.ty_tuple(elements = elem_types.as_span()),
+        fields = fields.as_span(),
+    ))
+
+
+function tuple_field_name(index: ptr_uint) -> str:
+    var buf = string.String.create()
+    buf.append("_")
+    fmt.append_ptr_uint(ref_of(buf), index)
+    return buf.as_str()
+
+
+function tuple_element_type(t: types.Type, index: ptr_uint) -> types.Type:
+    match t:
+        types.Type.ty_tuple as tup:
+            if index < tup.elements.len:
+                unsafe:
+                    return read(tup.elements.data + index)
+            return types.Type.ty_error
+        _:
+            return types.Type.ty_error
 
 
 ## Lower `receiver[index]`: array receivers use a bounds-checked index, span
@@ -737,7 +842,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
         match read(callee):
             ast.Expr.expr_identifier as id:
                 if id.name.equal("fatal"):
-                    return lower_plain_call(ctx, "mt_fatal", args, call_ep)
+                    return lower_plain_call(ctx, "mt_fatal", args, call_ep, null)
                 if id.name.equal("ptr_of") or id.name.equal("ref_of") or id.name.equal("const_ptr_of"):
                     if args.len == 1:
                         let inner = lower_expr(ctx, read(args.data + 0).arg_value)
@@ -749,8 +854,10 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     return lower_foreign_call(ctx, read(foreign_ptr), args, call_ep)
                 let extern_ptr = ctx.extern_map.get(id.name)
                 if extern_ptr != null:
-                    return lower_plain_call(ctx, read(extern_ptr), args, call_ep)
-                return lower_plain_call(ctx, naming.qualified_c_name(ctx.module_name, id.name), args, call_ep)
+                    return lower_plain_call(ctx, read(extern_ptr), args, call_ep, null)
+                var ret_ty = function_return_type(ctx, id.name)
+                var ret_type_ptr = types.alloc_type(ret_ty)
+                return lower_plain_call(ctx, naming.qualified_c_name(ctx.module_name, id.name), args, call_ep, ret_type_ptr)
             ast.Expr.expr_specialization as spec:
                 return lower_specialization_call(ctx, spec.callee, spec.arguments, args, call_ep)
             _:
@@ -803,7 +910,7 @@ function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: spa
 
 
 ## Lower a call with no boundary projections: every argument lowered as-is.
-function lower_plain_call(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_plain_call(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?) -> ptr[ir.Expr]:
     var ir_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -814,7 +921,14 @@ function lower_plain_call(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argume
         unsafe:
             ir_args.push(read(lowered))
         i += 1
-    return alloc_expr(ir.Expr.expr_call(callee = c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
+    var ret_ty: types.Type
+    let ov = override_ty
+    if ov != null:
+        unsafe:
+            ret_ty = read(ov)
+    else:
+        ret_ty = expr_type(ctx, call_ep)
+    return alloc_expr(ir.Expr.expr_call(callee = c_name, arguments = ir_args.as_span(), ty = ret_ty))
 
 
 ## Lower a foreign function call to a direct call on its mapped C function,
@@ -902,6 +1016,35 @@ function collect_foreign_functions(ctx: ref[LowerCtx], decls: span[ast.Decl]) ->
         i += 1
 
 
+## Pre-scan function declarations to record each one's resolved return type in
+## ctx.function_returns, so call lowering can use the correct type even when the
+## analyzer left it unresolved (tuple returns, array returns, etc.).
+function collect_function_returns(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
+    var i: ptr_uint = 0
+    while i < decls.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(decls.data + i)
+        match d:
+            ast.Decl.decl_function as fun:
+                let ret = resolve_return_type(ctx, lookup_fn_sig(ctx, fun.name), fun.return_type)
+                ctx.function_returns.set(fun.name, ret)
+            _:
+                pass
+        i += 1
+
+
+## The resolved return type of a module function: recorded during pre-scan
+## (handles tuple/array returns the analyzer can't resolve), else the
+## analyzer's best guess.
+function function_return_type(ctx: ref[LowerCtx], name: str) -> types.Type:
+    let ret_ptr = ctx.function_returns.get(name)
+    if ret_ptr != null:
+        unsafe:
+            return read(ret_ptr)
+    return fn_sig_return_type(lookup_fn_sig(ctx, name))
+
+
 ## The C name an external function maps to: its explicit `= c.name` mapping value
 ## when present, else the declaration name itself.
 function extern_c_name(name: str, mapping: ptr[ast.Expr]?) -> str:
@@ -952,11 +1095,42 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
             _:
                 pass
     let recv = lower_expr(ctx, receiver)
+    var member_ty = expr_type(ctx, ep)
+    if types.is_error(member_ty):
+        var recv_ty = ir_expr_type(recv)
+        if is_tuple_type(recv_ty):
+            let index = parse_tuple_member_index(member)
+            member_ty = tuple_element_type(recv_ty, index)
     return alloc_expr(ir.Expr.expr_member(
         receiver = recv,
         member = member,
-        ty = qualify_type(ctx, expr_type(ctx, ep)),
+        ty = qualify_type(ctx, member_ty),
     ))
+
+
+## Extract the integer index from a tuple field name `_0`, `_1`, ...
+function parse_tuple_member_index(member: str) -> ptr_uint:
+    if member.len < 2:
+        return 0
+    if member.byte_at(0) != '_':
+        return 0
+    var result: ptr_uint = 0
+    var i: ptr_uint = 1
+    while i < member.len:
+        let b = member.byte_at(i)
+        if b < '0' or b > '9':
+            break
+        result = result * 10 + ptr_uint<-(b - '0')
+        i += 1
+    return result
+
+
+function is_tuple_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_tuple:
+            return true
+        _:
+            return false
 
 
 ## Lower a struct declaration to an IR StructDecl, resolving its fields from the
@@ -1198,6 +1372,27 @@ function fn_sig_return_type(sig: Option[analyzer.FnSig]) -> types.Type:
             return types.primitive("void")
         Option.none:
             return types.primitive("void")
+
+
+## A parameter's lowered type: resolved from the AST type ref (so tuple/array/
+## span params carry full structure), falling back to the analyzer's signature.
+function resolve_param_type(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], index: ptr_uint, param_type: ast.TypeRef) -> types.Type:
+    var local_tref = param_type
+    let resolved = resolve_type_ref(ctx, ptr_of(local_tref))
+    if not types.is_error(resolved):
+        return resolved
+    return qualify_type(ctx, fn_sig_param_type(sig, index))
+
+
+## A function's lowered return type: resolved from the AST return type ref (so
+## tuple/array/span returns carry full structure), falling back to the signature.
+function resolve_return_type(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], return_type: ptr[ast.TypeRef]?) -> types.Type:
+    let annotation = return_type else:
+        return qualify_type(ctx, fn_sig_return_type(sig))
+    let resolved = resolve_type_ref(ctx, annotation)
+    if not types.is_error(resolved):
+        return resolved
+    return qualify_type(ctx, fn_sig_return_type(sig))
 
 
 ## The resolved type of an AST expression: the analyzer's recorded type (keyed by

@@ -60,6 +60,7 @@ public function generate_c(program: ir.Program) -> string.String:
     let has_str_literals = str_lits.len() > 0
     var checked_index_types = collect_checked_index_types(funcs)
     var checked_span_index_types = collect_checked_span_index_types(funcs)
+    var tuple_types = collect_tuple_types(funcs)
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
     let use_fatal = uses_fatal_helper(funcs) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0
@@ -97,7 +98,7 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_line(ref_of(e), "")
         i += 1
 
-    if program.structs.len > 0 or program.unions.len > 0:
+    if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0:
         var sorted_structs = topo_sort_structs(program.structs)
         let sorted = sorted_structs.as_span()
 
@@ -113,6 +114,13 @@ public function generate_c(program: ir.Program) -> string.String:
                 let u = read(program.unions.data + i)
                 emit_line(ref_of(e), j3("typedef union ", u.linkage_name, j2(" ", j2(u.linkage_name, ";"))))
             i += 1
+        i = 0
+        while i < tuple_types.len():
+            let ty_ptr = tuple_types.get(i) else:
+                break
+            unsafe:
+                emit_tuple_type_forward(ref_of(e), read(ty_ptr))
+            i += 1
         emit_line(ref_of(e), "")
 
         emit_enums_block(ref_of(e), program)
@@ -127,6 +135,14 @@ public function generate_c(program: ir.Program) -> string.String:
         while i < program.unions.len:
             unsafe:
                 emit_union(ref_of(e), read(program.unions.data + i))
+            emit_line(ref_of(e), "")
+            i += 1
+        i = 0
+        while i < tuple_types.len():
+            let ty_ptr = tuple_types.get(i) else:
+                break
+            unsafe:
+                emit_tuple_type_def(ref_of(e), read(ty_ptr))
             emit_line(ref_of(e), "")
             i += 1
     else:
@@ -798,8 +814,27 @@ function c_type(t: types.Type) -> str:
             return naming.qualified_c_name(im.module_name, im.name)
         types.Type.ty_generic as g:
             return generic_c_type(g.name, g.args)
+        types.Type.ty_tuple:
+            return tuple_type_name(t)
         _:
             fatal(c"c_backend Phase 3: unsupported C type")
+
+
+## The C type name of a positional tuple (`(int, int)` -> `mt_tuple_int_int`).
+function tuple_type_name(t: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("mt_tuple")
+    match t:
+        types.Type.ty_tuple as tup:
+            var i: ptr_uint = 0
+            while i < tup.elements.len:
+                buf.append("_")
+                unsafe:
+                    buf.append(naming.sanitize_identifier(types.type_to_string(read(tup.elements.data + i))))
+                i += 1
+        _:
+            pass
+    return buf.as_str()
 
 
 ## C type for a generic instance: span -> mt_span_ELEM, ptr/const_ptr/ref ->
@@ -891,6 +926,101 @@ function emit_span_type(e: ref[Emitter], t: types.Type) -> void:
     emit_line(e, j3("  ", c_type(element), " *data;"))
     emit_line(e, "  uintptr_t len;")
     emit_line(e, j3("} ", name, ";"))
+
+
+# =============================================================================
+#  Tuple type collection + emission
+# =============================================================================
+
+function is_tuple_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_tuple:
+            return true
+        _:
+            return false
+
+
+## Distinct tuple types across the emitted functions (params, returns, locals).
+function collect_tuple_types(functions: span[ir.Function]) -> vec.Vec[types.Type]:
+    var seen = map_mod.Map[str, bool].create()
+    var collected = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < functions.len:
+        unsafe:
+            let f = read(functions.data + i)
+            maybe_add_tuple(f.return_type, ref_of(seen), ref_of(collected))
+            var j: ptr_uint = 0
+            while j < f.params.len:
+                maybe_add_tuple(read(f.params.data + j).ty, ref_of(seen), ref_of(collected))
+                j += 1
+            tuple_from_stmts(f.body, ref_of(seen), ref_of(collected))
+        i += 1
+    return collected
+
+
+function maybe_add_tuple(t: types.Type, seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    if not is_tuple_type(t):
+        return
+    let name = tuple_type_name(t)
+    if not seen.contains(name):
+        seen.set(name, true)
+        collected.push(t)
+
+
+function tuple_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            tuple_from_stmt(body.data + i, seen, collected)
+        i += 1
+
+
+function tuple_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_local as loc:
+                maybe_add_tuple(loc.ty, seen, collected)
+            ir.Stmt.stmt_block as blk:
+                tuple_from_stmts(blk.body, seen, collected)
+            ir.Stmt.stmt_if as iff:
+                tuple_from_stmts(iff.then_body, seen, collected)
+                tuple_from_stmts(iff.else_body, seen, collected)
+            ir.Stmt.stmt_while as w:
+                tuple_from_stmts(w.body, seen, collected)
+            ir.Stmt.stmt_for as f:
+                tuple_from_stmt(f.init, seen, collected)
+                tuple_from_stmts(f.body, seen, collected)
+            ir.Stmt.stmt_switch as sw:
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    tuple_from_stmts(read(sw.cases.data + ci).body, seen, collected)
+                    ci += 1
+            _:
+                pass
+
+
+function emit_tuple_type_forward(e: ref[Emitter], t: types.Type) -> void:
+    let name = tuple_type_name(t)
+    emit_line(e, j3("typedef struct ", name, j2(" ", j2(name, ";"))))
+
+
+function emit_tuple_type_def(e: ref[Emitter], t: types.Type) -> void:
+    let name = tuple_type_name(t)
+    emit_line(e, j3("struct ", name, " {"))
+    match t:
+        types.Type.ty_tuple as tup:
+            var i: ptr_uint = 0
+            while i < tup.elements.len:
+                unsafe:
+                    emit_line(e, j4("  ", c_declaration(read(tup.elements.data + i), tuple_field_name(i)), ";", ""))
+                i += 1
+        _:
+            pass
+    emit_line(e, "};")
+
+
+function tuple_field_name(index: ptr_uint) -> str:
+    return j2("_", ptr_uint_to_str(index))
 
 
 ## True when an array local has a brace-initializable value (array literal or

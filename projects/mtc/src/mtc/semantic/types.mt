@@ -28,6 +28,7 @@ public variant Type:
     ty_generic(name: str, args: span[Type])
     ty_function(params: span[Type], return_type: ptr[Type], variadic: bool)
     ty_literal_int(value: long)
+    ty_tuple(elements: span[Type])
 
 
 public function alloc_type(value: Type) -> ptr[Type]:
@@ -159,6 +160,18 @@ public function type_to_string(t: Type) -> str:
         Type.ty_literal_int as lit:
             var buf = string.String.create()
             fmt.append_long(ref_of(buf), lit.value)
+            return buf.as_str()
+        Type.ty_tuple as tup:
+            var buf = string.String.create()
+            buf.append("(")
+            var i: ptr_uint = 0
+            while i < tup.elements.len:
+                if i > 0:
+                    buf.append(", ")
+                unsafe:
+                    buf.append(type_to_string(read(tup.elements.data + i)))
+                i += 1
+            buf.append(")")
             return buf.as_str()
 
 
@@ -317,6 +330,20 @@ public function type_equals(a: Type, b: Type) -> bool:
             match b:
                 Type.ty_literal_int as lb:
                     return la.value == lb.value
+                _:
+                    return false
+        Type.ty_tuple as ta:
+            match b:
+                Type.ty_tuple as tb:
+                    if ta.elements.len != tb.elements.len:
+                        return false
+                    var i: ptr_uint = 0
+                    while i < ta.elements.len:
+                        unsafe:
+                            if not type_equals(read(ta.elements.data + i), read(tb.elements.data + i)):
+                                return false
+                        i += 1
+                    return true
                 _:
                     return false
 
