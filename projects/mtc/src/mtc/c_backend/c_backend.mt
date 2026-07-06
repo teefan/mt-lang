@@ -19,6 +19,7 @@ import std.vec as vec
 
 import mtc.ir as ir
 import mtc.semantic.types as types
+import mtc.c_naming as naming
 
 
 ## A backend-stage error.  Placeholder for Phase 1+.
@@ -178,7 +179,7 @@ function emitted_functions(program: ir.Program) -> vec.Vec[ir.Function]:
         i += 1
     if not any_seed:
         var prefix = string.String.create()
-        prefix.append(module_c_prefix(program.module_name))
+        prefix.append(naming.module_c_prefix(program.module_name))
         prefix.append("_")
         i = 0
         while i < program.functions.len:
@@ -762,7 +763,7 @@ function c_type(t: types.Type) -> str:
         types.Type.ty_str:
             return "mt_str"
         types.Type.ty_imported as im:
-            return named_type_c_name(im.module_name, im.name)
+            return naming.qualified_c_name(im.module_name, im.name)
         _:
             fatal(c"c_backend Phase 2: unsupported C type")
 
@@ -775,44 +776,10 @@ function is_str_type(t: types.Type) -> bool:
             return false
 
 
-## The C name of a module-qualified named type (`en` + `State` -> `en_State`).
-## Mirrors c_backend/type_system.rb named_type_c_name for the ordinary-module case.
-function named_type_c_name(module_name: str, name: str) -> str:
-    var buf = string.String.create()
-    buf.append(module_c_prefix(module_name))
-    buf.append("_")
-    buf.append(name)
-    return buf.as_str()
+## The C name of a module-qualified named type is `naming.qualified_c_name`.
 
 
-function module_c_prefix(module_name: str) -> str:
-    return sanitize_identifier(module_name)
 
-
-function sanitize_identifier(text: str) -> str:
-    var buf = string.String.create()
-    var prev_underscore = false
-    var i: ptr_uint = 0
-    while i < text.len:
-        let b = text.byte_at(i)
-        if is_alnum_byte(b):
-            buf.push_byte(b)
-            prev_underscore = false
-        else:
-            if not prev_underscore:
-                buf.push_byte('_')
-                prev_underscore = true
-        i += 1
-    var result = buf.as_str()
-    if result.len > 0 and result.byte_at(result.len - 1) == '_':
-        result = result.slice(0, result.len - 1)
-    if result.len == 0:
-        return "value"
-    return result
-
-
-function is_alnum_byte(b: ubyte) -> bool:
-    return (b >= '0' and b <= '9') or (b >= 'A' and b <= 'Z') or (b >= 'a' and b <= 'z')
 
 
 function primitive_c_type(name: str) -> str:
@@ -953,7 +920,7 @@ function topo_visit_struct(structs: span[ir.StructDecl], index: ptr_uint, by_lin
 function struct_field_linkage(ty: types.Type) -> Option[str]:
     match ty:
         types.Type.ty_imported as im:
-            return Option[str].some(value = named_type_c_name(im.module_name, im.name))
+            return Option[str].some(value = naming.qualified_c_name(im.module_name, im.name))
         _:
             return Option[str].none
 

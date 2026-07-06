@@ -30,6 +30,7 @@ import mtc.loader.module_loader as loader
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.parser.ast as ast
+import mtc.c_naming as naming
 
 
 ## A lowering-stage error.  Placeholder for Phase 1+, where lowering will fail
@@ -196,7 +197,7 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
 
     return ir.Function(
         name = name,
-        linkage_name = module_function_c_name(ctx.module_name, name),
+        linkage_name = naming.qualified_c_name(ctx.module_name, name),
         params = ir_params.as_span(),
         return_type = ret_ty,
         body = body_stmts,
@@ -218,7 +219,7 @@ function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[
         return Option[ir.Function].none
 
     let int_ty = types.primitive("int")
-    let user_linkage = module_function_c_name(ctx.module_name, name)
+    let user_linkage = naming.qualified_c_name(ctx.module_name, name)
     let call = alloc_expr(ir.Expr.expr_call(callee = user_linkage, arguments = span[ir.Expr](), ty = user_return))
 
     var body = vec.Vec[ir.Stmt].create()
@@ -492,7 +493,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 let extern_ptr = ctx.extern_map.get(id.name)
                 if extern_ptr != null:
                     return lower_plain_call(ctx, read(extern_ptr), args, call_ep)
-                return lower_plain_call(ctx, module_function_c_name(ctx.module_name, id.name), args, call_ep)
+                return lower_plain_call(ctx, naming.qualified_c_name(ctx.module_name, id.name), args, call_ep)
             _:
                 fatal(c"lowering Phase 2: only direct function calls are supported")
 
@@ -660,7 +661,7 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
             ast.Expr.expr_identifier as id:
                 if ctx.analysis.static_member_types.contains(id.name):
                     return alloc_expr(ir.Expr.expr_name(
-                        name = enum_member_c_name(ctx.module_name, id.name, member),
+                        name = naming.qualified_member_c_name(ctx.module_name, id.name, member),
                         ty = expr_type(ctx, ep),
                         pointer = false,
                     ))
@@ -691,7 +692,7 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str) -> Option[ir.StructDec
         i += 1
     return Option[ir.StructDecl].some(value = ir.StructDecl(
         name = name,
-        linkage_name = module_function_c_name(ctx.module_name, name),
+        linkage_name = naming.qualified_c_name(ctx.module_name, name),
         fields = ir_fields.as_span(),
         packed = false,
         alignment = 0,
@@ -712,7 +713,7 @@ function lower_union_decl(ctx: ref[LowerCtx], name: str, fields: span[ast.Field]
         i += 1
     return ir.UnionDecl(
         name = name,
-        linkage_name = module_function_c_name(ctx.module_name, name),
+        linkage_name = naming.qualified_c_name(ctx.module_name, name),
         fields = ir_fields.as_span(),
         source_module = Option[str].none,
     )
@@ -749,7 +750,7 @@ function lower_enum_decl(ctx: ref[LowerCtx], name: str, backing_type: ptr[ast.Ty
         if not types.is_error(resolved):
             backing = resolved
 
-    let enum_linkage = module_function_c_name(ctx.module_name, name)
+    let enum_linkage = naming.qualified_c_name(ctx.module_name, name)
     var ir_members = vec.Vec[ir.EnumMember].create()
     var next_auto: long = 0
 
@@ -758,7 +759,7 @@ function lower_enum_decl(ctx: ref[LowerCtx], name: str, backing_type: ptr[ast.Ty
         var m: ast.EnumMember
         unsafe:
             m = read(members.data + i)
-        let member_linkage = enum_member_c_name(ctx.module_name, name, m.name)
+        let member_linkage = naming.qualified_member_c_name(ctx.module_name, name, m.name)
         var value_expr: ptr[ir.Expr]
         let explicit = m.value
         if explicit != null:
@@ -777,16 +778,6 @@ function lower_enum_decl(ctx: ref[LowerCtx], name: str, backing_type: ptr[ast.Ty
         members = ir_members.as_span(),
         is_flags = is_flags,
     )
-
-
-function enum_member_c_name(module_name: str, type_name: str, member: str) -> str:
-    var buf = string.String.create()
-    buf.append(module_c_prefix(module_name))
-    buf.append("_")
-    buf.append(type_name)
-    buf.append("_")
-    buf.append(member)
-    return buf.as_str()
 
 
 ## Compile-time integer evaluation for enum/flags member values (literals plus
@@ -863,7 +854,7 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
             let member = match_member_name(pattern) else:
                 fatal(c"lowering Phase 2: unsupported match pattern")
             let value = alloc_expr(ir.Expr.expr_name(
-                name = enum_member_c_name(ctx.module_name, enum_name, member),
+                name = naming.qualified_member_c_name(ctx.module_name, enum_name, member),
                 ty = expr_type(ctx, scrutinee),
                 pointer = false,
             ))
@@ -1004,58 +995,16 @@ function lookup_local(ctx: ref[LowerCtx], name: str) -> Option[LocalBinding]:
 #  C-name mangling (mirrors lowering/utils.rb)
 # =============================================================================
 
-function module_function_c_name(module_name: str, name: str) -> str:
-    var buf = string.String.create()
-    buf.append(module_c_prefix(module_name))
-    buf.append("_")
-    buf.append(name)
-    return buf.as_str()
-
-
-function module_c_prefix(module_name: str) -> str:
-    return sanitize_identifier(module_name)
-
-
 ## C-safe local/parameter name: sanitized, with a trailing `_` when it collides
 ## with a C reserved word.
 function c_local_name(name: str) -> str:
-    let identifier = sanitize_identifier(name)
+    let identifier = naming.sanitize_identifier(name)
     if c_reserved_identifier(identifier):
         var buf = string.String.create()
         buf.append(identifier)
         buf.append("_")
         return buf.as_str()
     return identifier
-
-
-## Replace every maximal run of non-alphanumeric characters (and underscores)
-## with a single `_`, strip a trailing `_`, and map the empty result to
-## `value` — matching Ruby's sanitize_identifier.
-function sanitize_identifier(text: str) -> str:
-    var buf = string.String.create()
-    var prev_underscore = false
-    var i: ptr_uint = 0
-    while i < text.len:
-        let b = text.byte_at(i)
-        if is_alnum_byte(b):
-            buf.push_byte(b)
-            prev_underscore = false
-        else:
-            if not prev_underscore:
-                buf.push_byte('_')
-                prev_underscore = true
-        i += 1
-
-    var result = buf.as_str()
-    if result.len > 0 and result.byte_at(result.len - 1) == '_':
-        result = result.slice(0, result.len - 1)
-    if result.len == 0:
-        return "value"
-    return result
-
-
-function is_alnum_byte(b: ubyte) -> bool:
-    return (b >= '0' and b <= '9') or (b >= 'A' and b <= 'Z') or (b >= 'a' and b <= 'z')
 
 
 function c_reserved_identifier(identifier: str) -> bool:
