@@ -482,6 +482,8 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
+                if id.name.equal("fatal"):
+                    return lower_plain_call(ctx, "mt_fatal", args, call_ep)
                 if ctx.analysis.structs.contains(id.name):
                     return lower_aggregate_literal(ctx, id.name, args)
                 let foreign_ptr = ctx.foreign_map.get(id.name)

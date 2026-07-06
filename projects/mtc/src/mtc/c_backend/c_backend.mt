@@ -57,7 +57,8 @@ public function generate_c(program: ir.Program) -> string.String:
         li += 1
 
     let has_str_literals = str_lits.len() > 0
-    let use_string_view = uses_string_view(funcs, has_str_literals)
+    let use_fatal = uses_fatal_helper(funcs)
+    let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal
     let use_str_equality = uses_str_equality(funcs)
 
     var i: ptr_uint = 0
@@ -65,10 +66,16 @@ public function generate_c(program: ir.Program) -> string.String:
         unsafe:
             emit_line(ref_of(e), j2("#include ", read(program.includes.data + i).header))
         i += 1
+    if use_fatal:
+        emit_line(ref_of(e), "#include <stdlib.h>")
     emit_line(ref_of(e), "")
 
     if use_string_view:
         emit_string_type(ref_of(e))
+        emit_line(ref_of(e), "")
+
+    if use_fatal:
+        emit_fatal_helper(ref_of(e))
         emit_line(ref_of(e), "")
 
     if use_str_equality:
@@ -385,6 +392,14 @@ function emit_str_equality_helper(e: ref[Emitter]) -> void:
     emit_line(e, "}")
 
 
+function emit_fatal_helper(e: ref[Emitter]) -> void:
+    emit_line(e, "static _Noreturn void mt_fatal(const char* message) {")
+    emit_line(e, "  fputs(message, stderr);")
+    emit_line(e, "  fputc('\\n', stderr);")
+    emit_line(e, "  abort();")
+    emit_line(e, "}")
+
+
 function str_literal_name(index: ptr_uint) -> str:
     return j2("mt_str_lit_", ptr_uint_to_str(index))
 
@@ -460,6 +475,100 @@ function uses_str_equality(functions: span[ir.Function]) -> bool:
                 return true
         i += 1
     return false
+
+
+## True when any emitted function calls `mt_fatal` (so the helper, `<stdlib.h>`,
+## and the string-view type must be emitted).
+function uses_fatal_helper(functions: span[ir.Function]) -> bool:
+    var i: ptr_uint = 0
+    while i < functions.len:
+        unsafe:
+            if body_calls(read(functions.data + i).body, "mt_fatal"):
+                return true
+        i += 1
+    return false
+
+
+function body_calls(body: span[ir.Stmt], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            if stmt_calls(body.data + i, name):
+                return true
+        i += 1
+    return false
+
+
+function stmt_calls(sp: ptr[ir.Stmt], name: str) -> bool:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_return as r:
+                let value = r.value else:
+                    return false
+                return expr_calls(value, name)
+            ir.Stmt.stmt_local as loc:
+                return expr_calls(loc.value, name)
+            ir.Stmt.stmt_assignment as asg:
+                return expr_calls(asg.target, name) or expr_calls(asg.value, name)
+            ir.Stmt.stmt_expression as ex:
+                return expr_calls(ex.expression, name)
+            ir.Stmt.stmt_block as blk:
+                return body_calls(blk.body, name)
+            ir.Stmt.stmt_if as iff:
+                return expr_calls(iff.condition, name) or body_calls(iff.then_body, name) or body_calls(iff.else_body, name)
+            ir.Stmt.stmt_while as w:
+                return expr_calls(w.condition, name) or body_calls(w.body, name)
+            ir.Stmt.stmt_for as f:
+                return stmt_calls(f.init, name) or expr_calls(f.condition, name) or stmt_calls(f.post, name) or body_calls(f.body, name)
+            ir.Stmt.stmt_switch as sw:
+                if expr_calls(sw.expression, name):
+                    return true
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    let sc = read(sw.cases.data + ci)
+                    if body_calls(sc.body, name):
+                        return true
+                    ci += 1
+                return false
+            _:
+                return false
+
+
+function expr_calls(ep: ptr[ir.Expr], name: str) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_call as call:
+                if call.callee.equal(name):
+                    return true
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    if expr_calls(call.arguments.data + i, name):
+                        return true
+                    i += 1
+                return false
+            ir.Expr.expr_binary as bin:
+                return expr_calls(bin.left, name) or expr_calls(bin.right, name)
+            ir.Expr.expr_unary as un:
+                return expr_calls(un.operand, name)
+            ir.Expr.expr_conditional as cond:
+                return expr_calls(cond.condition, name) or expr_calls(cond.then_expression, name) or expr_calls(cond.else_expression, name)
+            ir.Expr.expr_member as member:
+                return expr_calls(member.receiver, name)
+            ir.Expr.expr_index as index:
+                return expr_calls(index.receiver, name) or expr_calls(index.index, name)
+            ir.Expr.expr_cast as cast:
+                return expr_calls(cast.expression, name)
+            ir.Expr.expr_address_of as addr:
+                return expr_calls(addr.expression, name)
+            ir.Expr.expr_aggregate_literal as agg:
+                var i: ptr_uint = 0
+                while i < agg.fields.len:
+                    if expr_calls(read(agg.fields.data + i).value, name):
+                        return true
+                    i += 1
+                return false
+            _:
+                return false
 
 
 # =============================================================================
