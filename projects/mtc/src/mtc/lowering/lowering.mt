@@ -2333,149 +2333,6 @@ function jstr_i(prefix: str, n: ptr_uint) -> str:
     buf.append(prefix)
     fmt.append_ptr_uint(ref_of(buf), n)
     return buf.as_str()
-## if the parameter type is a proc struct but the argument is a function pointer,
-## wrap the argument in a proc struct with a synthetic invoke function.
-function lower_plain_call_with_coercion(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
-    var ir_args = vec.Vec[ir.Expr].create()
-    var i: ptr_uint = 0
-    while i < args.len:
-        var arg: ast.Argument
-        unsafe:
-            arg = read(args.data + i)
-        let lowered = lower_expr(ctx, arg.arg_value)
-        let lowered_ty = ir_expr_type(lowered)
-        let lowered_copy = unsafe: read(lowered)
-        let param_ty = fn_sig_param_type(sig, i)
-        # fn → proc coercion: parameter is a proc struct, argument is a fn pointer.
-        if is_proc_struct_type(param_ty) and is_function_type(lowered_ty):
-            let wrapped = wrap_fn_in_proc(ctx, lowered, lowered_ty, param_ty)
-            unsafe:
-                ir_args.push(read(wrapped))
-        else:
-            unsafe:
-                ir_args.push(read(lowered))
-        i += 1
-    var ret_ty: types.Type
-    let ov = override_ty
-    if ov != null:
-        unsafe:
-            ret_ty = read(ov)
-    else:
-        ret_ty = expr_type(ctx, call_ep)
-    return alloc_expr(ir.Expr.expr_call(callee = c_name, arguments = ir_args.as_span(), ty = ret_ty))
-
-
-## True when a type is a named proc struct (mt_proc_...) as opposed to a bare
-## function pointer or a local proc expression struct.
-function is_proc_struct_type(t: types.Type) -> bool:
-    match t:
-        types.Type.ty_named as n:
-            return n.name.starts_with("mt_proc_")
-        _:
-            return false
-
-
-## True when a type is a function pointer (ty_function) as opposed to a struct.
-function is_function_type(t: types.Type) -> bool:
-    match t:
-        types.Type.ty_function:
-            return true
-        _:
-            return false
-
-
-## Wrap a function pointer in a proc struct: generates a synthetic invoke
-## function, no-op release/retain, and returns a proc aggregate literal.
-function wrap_fn_in_proc(ctx: ref[LowerCtx], fn_ptr: ptr[ir.Expr], fn_ty: types.Type, proc_struct_ty: types.Type) -> ptr[ir.Expr]:
-    ctx.proc_counter += 1
-    let proc_id = ctx.proc_counter
-    var prefix_buf = string.String.create()
-    prefix_buf.append(naming.module_c_prefix(ctx.module_name))
-    prefix_buf.append("__fn_to_proc_")
-    fmt.append_ptr_uint(ref_of(prefix_buf), proc_id)
-    let prefix = prefix_buf.as_str()
-
-    var invoke_c = string.String.create()
-    invoke_c.append(prefix)
-    invoke_c.append("__invoke")
-    var release_c = string.String.create()
-    release_c.append(prefix)
-    release_c.append("__release")
-    var retain_c = string.String.create()
-    retain_c.append(prefix)
-    retain_c.append("__retain")
-
-    let invoke_str = invoke_c.as_str()
-    let release_str = release_c.as_str()
-    let retain_str = retain_c.as_str()
-
-    match fn_ty:
-        types.Type.ty_function as fnt:
-            # Build invoke: call the function pointer, passing args through.
-            let saved_locals = ctx.locals
-            let saved_counter = ctx.temp_counter
-            ctx.locals = vec.Vec[LocalBinding].create()
-            ctx.temp_counter = 0
-
-            let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-            var inv_params = vec.Vec[ir.Param].create()
-            inv_params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
-            var inv_call_args = vec.Vec[ir.Expr].create()
-            var ai: ptr_uint = 0
-            while ai < fnt.params.len:
-                var param_type: types.Type
-                unsafe:
-                    param_type = read(fnt.params.data + ai)
-                let pname = fresh_c_temp_name(ctx, "arg")
-                inv_params.push(ir.Param(name = pname, linkage_name = pname, ty = param_type, pointer = false))
-                let arg_expr = alloc_expr(ir.Expr.expr_name(name = pname, ty = param_type, pointer = false))
-                unsafe:
-                    inv_call_args.push(read(arg_expr))
-                ai += 1
-
-            var inv_ret = types.primitive("void")
-            unsafe:
-                inv_ret = read(fnt.return_type)
-            var inv_body = vec.Vec[ir.Stmt].create()
-            if is_void_type(inv_ret):
-                let call_expr = alloc_expr(ir.Expr.expr_call(callee = ir_expr_get_name(fn_ptr), arguments = inv_call_args.as_span(), ty = inv_ret))
-                inv_body.push(ir.Stmt.stmt_expression(expression = call_expr, line = 0, source_path = ""))
-                inv_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-            else:
-                let call_expr = alloc_expr(ir.Expr.expr_call(callee = ir_expr_get_name(fn_ptr), arguments = inv_call_args.as_span(), ty = inv_ret))
-                inv_body.push(ir.Stmt.stmt_return(value = call_expr, line = 0, source_path = ""))
-
-            ctx.pending_synthetic_functions.push(ir.Function(name = invoke_str, linkage_name = invoke_str, params = inv_params.as_span(), return_type = inv_ret, body = inv_body.as_span(), entry_point = false, method_receiver_param = false))
-            ctx.pending_synthetic_functions.push(build_proc_noop_fn(retain_str))
-            ctx.pending_synthetic_functions.push(build_proc_noop_fn(release_str))
-
-            ctx.locals = saved_locals
-            ctx.temp_counter = saved_counter
-
-            # Build the proc struct literal.
-            let void_ptr2 = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-            let null_env = alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr2))
-            let lifecycle_ty = proc_lifecycle_fn_type()
-            let invoke_field_ty = proc_invoke_field_type(fn_ty)
-            var fields = vec.Vec[ir.AggregateField].create()
-            fields.push(ir.AggregateField(name = "env", value = null_env))
-            fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = invoke_field_ty, pointer = false))))
-            fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = false))))
-            fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
-            return alloc_expr(ir.Expr.expr_aggregate_literal(ty = proc_struct_ty, fields = fields.as_span()))
-        _:
-            fatal(c"lowering Phase 5: fn_to_proc requires function type")
-
-
-## Extract the name from an IR expr_name, or fatal with an error.
-function ir_expr_get_name(ep: ptr[ir.Expr]) -> str:
-    unsafe:
-        match read(ep):
-            ir.Expr.expr_name as n:
-                return n.name
-            _:
-                fatal(c"lowering Phase 5: fn_to_proc expected name expression")
-
 
 ## True when a type is void.
 function is_void_type(t: types.Type) -> bool:
@@ -2608,10 +2465,8 @@ function collect_function_returns(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> 
         i += 1
 
 
-## The resolved return type of a module function: recorded during pre-scan
-## (handles tuple/array returns the analyzer can't resolve), else the
-## analyzer's best guess.
-## A captured variable from the enclosing scope.
+## A captured free variable from the enclosing scope, collected for proc
+## capture-env struct generation.
 struct ProcCapture:
     name: str
     c_name: str
@@ -2695,6 +2550,9 @@ function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Ar
     return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = expr_type(ctx, call_ep)))
 
 
+## The resolved return type of a module function: recorded during pre-scan
+## (handles tuple/array returns the analyzer can't resolve), else the
+## analyzer's best guess.
 function function_return_type(ctx: ref[LowerCtx], name: str) -> types.Type:
     let ret_ptr = ctx.function_returns.get(name)
     if ret_ptr != null:
