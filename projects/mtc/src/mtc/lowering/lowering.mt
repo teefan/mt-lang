@@ -122,6 +122,10 @@ struct LowerCtx:
     # generic instantiations (A[T] calls B[T] calls A[T] in monomorphized
     # bodies).
     spec_in_progress: map_mod.Map[str, bool]
+    # Active type-parameter substitution during monomorphized body lowering.
+    # Always points to a valid map (empty during normal lowering, populated
+    # during monomorphized function lowering).
+    type_substitution: map_mod.Map[str, types.Type]
 
 
 # =============================================================================
@@ -265,7 +269,10 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[
     # names not in type_names).  Type params are added to the type scope per
     # function body, not to the global type_names map.
     let ret_ty = if return_type != null: substitute_type_params(ctx, resolve_field_type_ref(ctx, unsafe: read(return_type)), sub) else: types.primitive("void")
+    var saved_sub = ctx.type_substitution
+    ctx.type_substitution = read(sub)
     let body_ir = lower_block(ctx, body)
+    ctx.type_substitution = saved_sub
     return ir.Function(
         name = name,
         linkage_name = name,
@@ -337,6 +344,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
             generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
             program_analyses = program.analyses.as_span(),
             spec_in_progress = map_mod.Map[str, bool].create(),
+            type_substitution = map_mod.Map[str, types.Type].create(),
         )
         var di: ptr_uint = 0
         while di < analysis.source_file.declarations.len:
@@ -370,6 +378,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
         program_analyses = program_analyses,
         spec_in_progress = map_mod.Map[str, bool].create(),
+            type_substitution = map_mod.Map[str, types.Type].create(),
     )
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -736,6 +745,10 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
             return types.primitive(name)
         if ctx.analysis.type_names.contains(name):
             return types.Type.ty_imported(module_name = ctx.module_name, name = name)
+        # Active type-parameter substitution (monomorphized body lowering).
+        let concrete_ptr = ctx.type_substitution.get(name)
+        if concrete_ptr != null:
+            return unsafe: read(concrete_ptr)
         # Fallback for type parameters (e.g. `T`), resolved later via
         # type substitution during monomorphization.
         return types.Type.ty_named(name = name)
@@ -1213,6 +1226,11 @@ function cross_module_return_type(ctx: ref[LowerCtx], c_name: str, call_ep: ptr[
         let rp = pr.get(c_name)
         if rp != null:
             return read(rp)
+    # Also check per-module function_returns (monomorphized functions added here).
+    let fp = ctx.function_returns.get(c_name)
+    if fp != null:
+        unsafe:
+            return read(fp)
     return expr_type(ctx, call_ep)
 
 
@@ -1423,14 +1441,10 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr
     # Find the function declaration — search current module first, then imports.
     var fun_decl_opt = find_function_decl(callee_name, ctx.analysis)
     if fun_decl_opt.is_none():
-        var import_keys = ctx.analysis.imports.keys()
+        var import_values = ctx.analysis.imports.values()
         while true:
-            let alias_ptr = import_keys.next() else:
+            let target_ptr = import_values.next() else:
                 break
-            let alias = unsafe: read(alias_ptr)
-            let target_ptr = ctx.analysis.imports.get(alias)
-            if target_ptr == null:
-                continue
             let target_module = unsafe: read(target_ptr)
             match find_imported_analysis(ctx, target_module):
                 Option.some as imported:
@@ -1439,15 +1453,6 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr
                         break
                 Option.none:
                     pass
-    if fun_decl_opt.is_none():
-        # Fallback: scan every program analysis (bypasses import-name mapping).
-        var ai: ptr_uint = 0
-        while ai < ctx.program_analyses.len and fun_decl_opt.is_none():
-            var a: analyzer.Analysis
-            unsafe:
-                a = read(ctx.program_analyses.data + ai)
-            fun_decl_opt = find_function_decl(callee_name, a)
-            ai += 1
     let fun_decl = fun_decl_opt else:
         fatal(c"lowering Phase 4c: could not find generic function decl")
 
@@ -2056,6 +2061,10 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
     let name = unsafe: read(tref.name.parts.data + 0)
     if ctx.analysis.type_names.contains(name):
         return types.Type.ty_imported(module_name = ctx.module_name, name = name)
+    # Active type-parameter substitution during monomorphized lowering.
+    let concrete_ptr = ctx.type_substitution.get(name)
+    if concrete_ptr != null:
+        return unsafe: read(concrete_ptr)
     # Fallback: the name may be a type parameter (like `T`) which is resolved
     # later via type substitution during monomorphization.
     return types.Type.ty_named(name = name)
