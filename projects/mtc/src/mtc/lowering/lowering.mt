@@ -652,6 +652,15 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         return
                     Option.none:
                         pass
+                let init_val = loc.value
+                if init_val != null:
+                    unsafe:
+                        match read(init_val):
+                            ast.Expr.expr_match as me:
+                                lower_match_expression_local(ctx, output, loc.name, loc.stmt_type, me.scrutinee, me.arms)
+                                return
+                            _:
+                                pass
                 let c_name = c_local_name(loc.name)
                 var ty: types.Type
                 var value_expr: ptr[ir.Expr]
@@ -788,7 +797,12 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
 function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Type:
     unsafe:
         let t = read(tp)
-        if t.is_fn or t.is_proc or t.is_dyn or t.nullable:
+        if t.is_fn or t.is_proc:
+            let fun = resolve_function_type_ref(ctx, tp)
+            if t.nullable:
+                return types.Type.ty_nullable(base = types.alloc_type(fun))
+            return fun
+        if t.is_dyn or t.nullable:
             return types.Type.ty_error
         if t.is_tuple:
             var elems = vec.Vec[types.Type].create()
@@ -835,6 +849,32 @@ function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.T
             args.push(resolve_type_ref(ctx, t.arguments.data + i))
         i += 1
     return types.Type.ty_generic(name = name, args = args.as_span())
+
+
+## Resolve an `fn(...) -> T` or `proc(...) -> T` type ref to a `ty_function`
+## type.  Both `fn` and `proc` share the same runtime C representation (function
+## pointer), so they are lowered to the same `ty_function` variant.
+function resolve_function_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Type:
+    let t = unsafe: read(tp)
+    var param_types = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < t.fn_params.len:
+        var p: ast.Param
+        unsafe:
+            p = read(t.fn_params.data + i)
+        let pty = resolve_type_ref(ctx, ptr_of(p.param_type))
+        param_types.push(pty)
+        i += 1
+    var ret = types.primitive("void")
+    let fr = t.fn_return
+    if fr != null:
+        unsafe:
+            ret = resolve_type_ref(ctx, fr)
+    return types.Type.ty_function(
+        params = param_types.as_span(),
+        return_type = types.alloc_type(ret),
+        variadic = false,
+    )
 
 
 ## The compile-time length of an array type argument (`array[int, 3]` -> 3),
@@ -2128,7 +2168,12 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
     let scalar = resolve_scalar_type_ref(ptr_of(local_tref))
     if not types.is_error(scalar):
         return scalar
-    if tref.is_fn or tref.is_proc or tref.is_dyn or tref.is_tuple or tref.nullable:
+    if tref.is_fn or tref.is_proc:
+        let fun = resolve_function_type_ref(ctx, ptr_of(local_tref))
+        if tref.nullable:
+            return types.Type.ty_nullable(base = types.alloc_type(fun))
+        return fun
+    if tref.is_dyn or tref.is_tuple or tref.nullable:
         return types.Type.ty_error
     if tref.arguments.len > 0:
         return resolve_generic_type_ref(ctx, tref)
@@ -2282,6 +2327,133 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
         i += 1
 
     output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
+
+
+## Lower a match expression used as a local variable initializer (`let x = match
+## e: p1: v1; p2: v2; _: v3`).  Hoists the match into a switch that assigns to
+## the local, keeping the result in a `stmt_local` with zero-init followed by the
+## switch.  Supports enum and variant scrutinees (the same subset handled by
+## `lower_match`).  Integer and string scrutinees are deferred.
+function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, declared_type: ptr[ast.TypeRef]?, scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm]) -> void:
+    let c_name = c_local_name(name)
+    var ty: types.Type
+    let dt = declared_type
+    if dt != null:
+        ty = resolve_type_ref(ctx, dt)
+    if types.is_error(ty):
+        ty = types.primitive("int")
+
+    # Zero-init the local, then build a switch/if chain that overwrites it.
+    let zero_init = alloc_expr(ir.Expr.expr_zero_init(ty = ty))
+    output.push(ir.Stmt.stmt_local(name = name, linkage_name = c_name, ty = ty, value = zero_init, line = 0, source_path = ""))
+
+    let scrutinee_ty = expr_type(ctx, scrutinee)
+    var scrutinee_expr = lower_expr(ctx, scrutinee)
+    if not ir_expr_is_name(scrutinee_expr):
+        let temp = fresh_c_temp_name(ctx, "match_scrut")
+        output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrutinee_ty, value = scrutinee_expr, line = 0, source_path = ""))
+        scrutinee_expr = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrutinee_ty, pointer = false))
+
+    let result_ref = alloc_expr(ir.Expr.expr_name(name = c_name, ty = ty, pointer = false))
+
+    let type_name = named_type_name(scrutinee_ty)
+    if type_name.is_some() and ctx.variants.contains(type_name.unwrap()):
+        lower_variant_match_expr(ctx, output, scrutinee_expr, type_name.unwrap(), scrutinee_ty, arms, result_ref)
+    else:
+        lower_enum_match_expr(ctx, output, scrutinee_expr, type_name, arms, result_ref)
+
+    ctx.locals.push(LocalBinding(name = name, c_name = c_name, ty = ty, pointer = false))
+
+
+## Lower a match expression over an enum scrutinee: emit a switch whose cases
+## assign the result and break, plus a default case for the wildcard arm.
+function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], type_name: Option[str], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+    var cases = vec.Vec[ir.SwitchCase].create()
+    var has_wildcard = false
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.MatchExprArm
+        unsafe:
+            arm = read(arms.data + i)
+        let lowered_val = lower_expr(ctx, arm.value)
+        var body = vec.Vec[ir.Stmt].create()
+        body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = lowered_val))
+        let pattern = arm.pattern
+        if pattern == null:
+            has_wildcard = true
+            cases.push(ir.SwitchCase(is_default = true, value = null, body = body.as_span()))
+        else:
+            let member = match_member_name(pattern) else:
+                # Non-enum pattern (integer literal, char literal, etc.)
+                let lowered_pat = lower_expr(ctx, pattern)
+                cases.push(ir.SwitchCase(is_default = false, value = lowered_pat, body = body.as_span()))
+                continue
+            match type_name:
+                Option.some as tn:
+                    let value = alloc_expr(ir.Expr.expr_name(
+                        name = naming.qualified_member_c_name(ctx.module_name, tn.value, member),
+                        ty = ir_expr_type(scrutinee_expr),
+                        pointer = false,
+                    ))
+                    cases.push(ir.SwitchCase(is_default = false, value = value, body = body.as_span()))
+                Option.none:
+                    fatal(c"lowering Phase 5: match expression on non-enum scrutinee")
+        i += 1
+
+    output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
+
+
+## Lower a match expression over a variant scrutinee: emit a switch on the variant
+## kind, with each arm assigning its value to the result reference.
+function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+    let info_ptr = ctx.variants.get(variant_name) else:
+        fatal(c"lowering Phase 5: variant match expr on unknown variant")
+    let info = unsafe: read(info_ptr)
+    let outer_c = variant_base_c_name(scrutinee_ty, ctx.module_name)
+    let int_ty = types.primitive("int")
+    let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "kind", ty = int_ty))
+
+    var cases = vec.Vec[ir.SwitchCase].create()
+    var has_wildcard = false
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.MatchExprArm
+        unsafe:
+            arm = read(arms.data + i)
+        var body = vec.Vec[ir.Stmt].create()
+        let pattern = arm.pattern
+        if pattern == null:
+            has_wildcard = true
+        else:
+            match arm.binding_name:
+                Option.some as bn:
+                    let arm_name = variant_match_arm_name_from_pattern(pattern) else:
+                        fatal(c"lowering Phase 5: unsupported variant match expression pattern")
+                    let binding_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
+                    let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = binding_ty))
+                    let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
+                    let bc = c_local_name(bn.value)
+                    body.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
+                    ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
+                Option.none:
+                    pass
+        let lowered_val = lower_expr(ctx, arm.value)
+        body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = lowered_val))
+
+        if pattern == null:
+            cases.push(ir.SwitchCase(is_default = true, value = null, body = body.as_span()))
+        else:
+            let arm_name = variant_match_arm_name_from_pattern(pattern) else:
+                fatal(c"lowering Phase 5: unsupported variant match expression pattern")
+            let kind_const = alloc_expr(ir.Expr.expr_name(
+                name = variant_kind_const_name(outer_c, arm_name),
+                ty = int_ty,
+                pointer = false,
+            ))
+            cases.push(ir.SwitchCase(is_default = false, value = kind_const, body = body.as_span()))
+        i += 1
+
+    output.push(ir.Stmt.stmt_switch(expression = kind_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
 
 
 ## Lower a `match` over a variant scrutinee into a `switch (scrut.kind)`.  Each

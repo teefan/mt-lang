@@ -1023,6 +1023,9 @@ function c_type(t: types.Type) -> str:
             return primitive_c_type(p.name)
         types.Type.ty_str:
             return "mt_str"
+        types.Type.ty_function:
+            # Function types are declarators: `ret_type (*)(param_types)`.
+            return c_fn_ptr_declarator(t, "")
         types.Type.ty_imported as im:
             return naming.qualified_c_name(im.module_name, im.name)
         types.Type.ty_named as n:
@@ -1357,14 +1360,51 @@ function primitive_c_type(name: str) -> str:
     fatal(c"c_backend Phase 2: unsupported primitive type")
 
 
+## Render a function-pointer declarator: `ret_type (*noname)(int32_t, int32_t)` or
+## `ret_type (*name)(int32_t, int32_t)`.  When `name` is empty, produces the
+## "type only" form used by `c_type`; otherwise produces the full declaration.
+function c_fn_ptr_declarator(t: types.Type, name: str) -> str:
+    match t:
+        types.Type.ty_function as fnt:
+            var buf = string.String.create()
+            unsafe:
+                buf.append(c_type(read(fnt.return_type)))
+            if name.len == 0:
+                buf.append(" (*)(")
+            else:
+                buf.append(" (*")
+                buf.append(name)
+                buf.append(")(")
+            var i: ptr_uint = 0
+            while i < fnt.params.len:
+                if i > 0:
+                    buf.append(", ")
+                unsafe:
+                    buf.append(c_type(read(fnt.params.data + i)))
+                i += 1
+            if fnt.variadic:
+                if fnt.params.len > 0:
+                    buf.append(", ")
+                buf.append("...")
+            if fnt.params.len == 0 and not fnt.variadic:
+                buf.append("void")
+            buf.append(")")
+            return buf.as_str()
+        _:
+            fatal(c"c_backend: c_fn_ptr_declarator called on non-function type")
+
+
 ## A C declaration `TYPE NAME`.  Array types place the length after the name
 ## (`int32_t xs[3]`); everything else in Phase 3 is a plain `TYPE NAME`.
 function c_declaration(t: types.Type, name: str) -> str:
     if is_array_type(t):
         return j6(c_type(array_element_type(t)), " ", name, "[", long_to_str(array_length(t)), "]")
+    # Function-pointer types need declarator syntax: `ret_type (*name)(...)`.
     # Generic variants: build `name_type0_type1_...` directly, because `c_type`
     # may be called from a code path where `ty_generic` dispatch is fragile.
     match t:
+        types.Type.ty_function:
+            return c_fn_ptr_declarator(t, name)
         types.Type.ty_generic as g:
             var buf = string.String.create()
             buf.append(g.name)
