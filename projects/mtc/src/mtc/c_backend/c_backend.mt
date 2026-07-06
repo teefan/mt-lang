@@ -1915,6 +1915,12 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return j4(wrap_member_receiver(e, ix.receiver), "[", render_expression(e, ix.index), "]")
             ir.Expr.expr_address_of as addr:
                 return render_address_of(e, addr.expression)
+            ir.Expr.expr_sizeof as sz:
+                var buf = string.String.create()
+                buf.append("sizeof(")
+                buf.append(c_type(sz.target_type))
+                buf.append(")")
+                return buf.as_str()
             _:
                 fatal(c"c_backend Phase 3: unsupported expression")
 

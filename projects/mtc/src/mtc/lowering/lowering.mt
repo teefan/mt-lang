@@ -1225,8 +1225,8 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
 
 ## Lower a proc expression `proc(x: int) -> int: x + 1` to a proc struct literal
 ## with invoke/release/retain function pointers and a capture env pointer.  No-
-## capture procs use null env; capturing procs (deferred) use a heap-allocated
-## env struct with ref-counting.
+## capture procs use null env; capturing procs use a heap-allocated env struct
+## with ref-counting.
 function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body_ptr: ptr[ast.Stmt], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     ctx.proc_counter += 1
     let proc_id = ctx.proc_counter
@@ -1238,7 +1238,11 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
 
     let proc_ty = expr_type(ctx, ep)
 
-    # Build a synthetic struct for this proc type: { env, invoke, release, retain }.
+    # Collect all in-scope locals as captures (excluding "this" receiver).
+    let captures = collect_locals_for_capture(ctx, method_params)
+    let has_captures = captures.len > 0
+
+    # Proc struct type: { env, invoke, release, retain }.
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     let struct_name = proc_prefix
 
@@ -1250,7 +1254,6 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
     struct_fields.push(ir.Field(name = "retain", ty = lifecycle_ty))
     ctx.pending_env_structs.push(ir.StructDecl(name = struct_name, linkage_name = struct_name, fields = struct_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
 
-    # Build invoke/release/retain functions.
     var invoke_c = string.String.create()
     invoke_c.append(proc_prefix)
     invoke_c.append("__invoke")
@@ -1265,11 +1268,61 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
     let release_str = release_c.as_str()
     let retain_str = retain_c.as_str()
 
+    if has_captures:
+        # Build capture-env struct: { __mt_ref_count, cap1, cap2, ... }.
+        var env_struct_name = string.String.create()
+        env_struct_name.append(proc_prefix)
+        env_struct_name.append("__env")
+        let env_type_name = env_struct_name.as_str()
+        let uint_ty = types.primitive("ptr_uint")
+        var env_fields = vec.Vec[ir.Field].create()
+        env_fields.push(ir.Field(name = "__mt_ref_count", ty = uint_ty))
+        var ci: ptr_uint = 0
+        while ci < captures.len:
+            let cap = unsafe: read(captures.data + ci)
+            env_fields.push(ir.Field(name = cap.name, ty = cap.ty))
+            ci += 1
+        ctx.pending_env_structs.push(ir.StructDecl(name = env_type_name, linkage_name = env_type_name, fields = env_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+
+        # Build a synthetic init function that allocates + populates the env.
+        var setup_c = string.String.create()
+        setup_c.append(proc_prefix)
+        setup_c.append("__setup_env")
+        ctx.pending_synthetic_functions.push(build_env_setup_fn(ctx, setup_c.as_str(), env_type_name, captures))
+
+        # Build capturing invoke: unpacks env→locals, then body.
+        ctx.pending_synthetic_functions.push(build_capturing_invoke(ctx, method_params, return_type, body_ptr, invoke_str, env_type_name, captures))
+
+        # Build release: decrement ref_count, free if zero.
+        ctx.pending_synthetic_functions.push(build_capturing_release(release_str, env_type_name, captures))
+
+        # Build retain: increment ref_count.
+        ctx.pending_synthetic_functions.push(build_capturing_retain(retain_str, env_type_name))
+
+        # Call the setup function with captured locals as arguments.
+        let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(name = env_type_name)))
+        var setup_args = vec.Vec[ir.Expr].create()
+        var si: ptr_uint = 0
+        while si < captures.len:
+            let cap = unsafe: read(captures.data + si)
+            unsafe:
+                setup_args.push(read(alloc_expr(ir.Expr.expr_name(name = cap.c_name, ty = cap.ty, pointer = false))))
+            si += 1
+        let setup_call = alloc_expr(ir.Expr.expr_call(callee = setup_c.as_str(), arguments = setup_args.as_span(), ty = env_ptr_ty))
+
+        # Build proc struct literal with env pointer.
+        var fields = vec.Vec[ir.AggregateField].create()
+        fields.push(ir.AggregateField(name = "env", value = alloc_expr(ir.Expr.expr_cast(target_type = void_ptr, expression = setup_call, ty = void_ptr))))
+        fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = proc_invoke_field_type(proc_ty), pointer = false))))
+        fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = false))))
+        fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
+        return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(name = struct_name), fields = fields.as_span()))
+
+    # No-capture path.
     ctx.pending_synthetic_functions.push(build_proc_invoke_fn(ctx, method_params, return_type, body_ptr, invoke_str))
     ctx.pending_synthetic_functions.push(build_proc_noop_fn(retain_str))
     ctx.pending_synthetic_functions.push(build_proc_noop_fn(release_str))
 
-    # Build the proc struct literal.
     let null_env = alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr))
     var fields = vec.Vec[ir.AggregateField].create()
     fields.push(ir.AggregateField(name = "env", value = null_env))
@@ -1278,6 +1331,196 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
     fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
 
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(name = struct_name), fields = fields.as_span()))
+
+
+## Pack a single expression into a span.
+function pack_single(expr: ptr[ir.Expr]) -> span[ir.Expr]:
+    var buf = vec.Vec[ir.Expr].create()
+    unsafe:
+        buf.push(read(expr))
+    return buf.as_span()
+
+
+## Collect all locals in the current scope that can be captured (excluding "this"
+## and function parameters declared in the proc).
+function collect_locals_for_capture(ctx: ref[LowerCtx], method_params: span[ast.Param]) -> span[ProcCapture]:
+    var result = vec.Vec[ProcCapture].create()
+    var param_names = map_mod.Map[str, bool].create()
+    var pi: ptr_uint = 0
+    while pi < method_params.len:
+        unsafe:
+            param_names.set(read(method_params.data + pi).name, true)
+        pi += 1
+
+    var li: ptr_uint = 0
+    while li < ctx.locals.len():
+        let lb_ptr = ctx.locals.get(li) else:
+            break
+        unsafe:
+            let lb = read(lb_ptr)
+            if lb.name == "this" or param_names.contains(lb.name):
+                li += 1
+                continue
+            result.push(ProcCapture(name = lb.name, c_name = lb.c_name, ty = lb.ty))
+        li += 1
+    return result.as_span()
+
+
+## Build a setup function that allocates + populates the capture-env struct.
+## Takes captured values as parameters and returns a pointer to the initialized env.
+function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let env_ty_named = types.Type.ty_named(name = env_type_name)
+    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(env_ty_named))
+    let uint_ty = types.primitive("ptr_uint")
+
+    var params = vec.Vec[ir.Param].create()
+    # Each capture becomes a parameter of the setup function.
+    var ci: ptr_uint = 0
+    while ci < captures.len:
+        let cap = unsafe: read(captures.data + ci)
+        params.push(ir.Param(name = cap.name, linkage_name = cap.c_name, ty = cap.ty, pointer = false))
+        ci += 1
+
+    var body = vec.Vec[ir.Stmt].create()
+
+    # env = (env_type*) malloc(sizeof(env_type))
+    let sizeof_call = alloc_expr(ir.Expr.expr_call(callee = "malloc", arguments = pack_single(alloc_expr(ir.Expr.expr_sizeof(target_type = env_ty_named, ty = uint_ty))), ty = void_ptr))
+    let cast_env = alloc_expr(ir.Expr.expr_cast(target_type = env_ptr_ty, expression = sizeof_call, ty = env_ptr_ty))
+    body.push(ir.Stmt.stmt_local(name = "env", linkage_name = "env", ty = env_ptr_ty, value = cast_env, line = 0, source_path = ""))
+
+    # env->__mt_ref_count = 1
+    let env_ref = alloc_expr(ir.Expr.expr_name(name = "env", ty = env_ptr_ty, pointer = false))
+    let ref_field = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = "__mt_ref_count", ty = uint_ty))
+    let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = uint_ty))
+    body.push(ir.Stmt.stmt_assignment(target = ref_field, operator = "=", value = one))
+
+    # Populate capture fields from parameters.
+    var ci2: ptr_uint = 0
+    while ci2 < captures.len:
+        let cap = unsafe: read(captures.data + ci2)
+        let field = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty))
+        let cap_val = alloc_expr(ir.Expr.expr_name(name = cap.c_name, ty = cap.ty, pointer = false))
+        body.push(ir.Stmt.stmt_assignment(target = field, operator = "=", value = cap_val))
+        ci2 += 1
+
+    # return env
+    body.push(ir.Stmt.stmt_return(value = env_ref, line = 0, source_path = ""))
+
+    return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = env_ptr_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+
+
+## Build an invoke function for a capturing proc: unpacks env struct fields into
+## locals, then runs the body.
+function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt], invoke_c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
+    let saved_locals = ctx.locals
+    let saved_counter = ctx.temp_counter
+    ctx.locals = vec.Vec[LocalBinding].create()
+    ctx.temp_counter = 0
+
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(name = env_type_name)))
+
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
+
+    var pi: ptr_uint = 0
+    while pi < method_params.len:
+        var p: ast.Param
+        unsafe:
+            p = read(method_params.data + pi)
+        let p_ty = resolve_field_type_ref(ctx, p.param_type)
+        let pc = c_local_name(p.name)
+        params.push(ir.Param(name = p.name, linkage_name = pc, ty = p_ty, pointer = false))
+        ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = false))
+        pi += 1
+
+    var ret_ty = types.primitive("void")
+    if return_type != null:
+        ret_ty = resolve_type_ref(ctx, return_type)
+
+    # Build body: first cast env to typed pointer, then unpack captures.
+    var body_stmts = vec.Vec[ir.Stmt].create()
+    let env_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env", ty = void_ptr, pointer = false))
+    let cast_env = alloc_expr(ir.Expr.expr_cast(target_type = env_ptr_ty, expression = env_expr, ty = env_ptr_ty))
+    let env_local_name = fresh_c_temp_name(ctx, "env")
+    body_stmts.push(ir.Stmt.stmt_local(name = env_local_name, linkage_name = env_local_name, ty = env_ptr_ty, value = cast_env, line = 0, source_path = ""))
+
+    # Unpack each capture from env.
+    var ci: ptr_uint = 0
+    while ci < captures.len:
+        let cap = unsafe: read(captures.data + ci)
+        let env_ref = alloc_expr(ir.Expr.expr_name(name = env_local_name, ty = env_ptr_ty, pointer = false))
+        let member = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty))
+        let bc = c_local_name(cap.name)
+        body_stmts.push(ir.Stmt.stmt_local(name = cap.name, linkage_name = bc, ty = cap.ty, value = member, line = 0, source_path = ""))
+        ctx.locals.push(LocalBinding(name = cap.name, c_name = bc, ty = cap.ty, pointer = false))
+        ci += 1
+
+    # Append the original body.
+    let orig_body = lower_block(ctx, body)
+    var bi: ptr_uint = 0
+    while bi < orig_body.len:
+        unsafe:
+            body_stmts.push(read(orig_body.data + bi))
+        bi += 1
+
+    ctx.locals = saved_locals
+    ctx.temp_counter = saved_counter
+    return ir.Function(
+        name = invoke_c_name,
+        linkage_name = invoke_c_name,
+        params = params.as_span(),
+        return_type = ret_ty,
+        body = body_stmts.as_span(),
+        entry_point = false,
+        method_receiver_param = false,
+    )
+
+
+## Build a release function for capturing procs with ref-counting.
+function build_capturing_release(c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(name = env_type_name)))
+    let uint_ty = types.primitive("ptr_uint")
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
+    var body = vec.Vec[ir.Stmt].create()
+
+    let env_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env", ty = void_ptr, pointer = false))
+    let cast_env = alloc_expr(ir.Expr.expr_cast(target_type = env_ptr_ty, expression = env_expr, ty = env_ptr_ty))
+    body.push(ir.Stmt.stmt_local(name = "env", linkage_name = "env", ty = env_ptr_ty, value = cast_env, line = 0, source_path = ""))
+    let env_ref = alloc_expr(ir.Expr.expr_name(name = "env", ty = env_ptr_ty, pointer = false))
+    let ref_field = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = "__mt_ref_count", ty = uint_ty))
+    let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = uint_ty))
+    body.push(ir.Stmt.stmt_assignment(target = ref_field, operator = "-=", value = one))
+    let zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = uint_ty))
+    let cond = alloc_expr(ir.Expr.expr_binary(operator = "==", left = ref_field, right = zero, ty = types.primitive("bool")))
+    var then_body = vec.Vec[ir.Stmt].create()
+    let free_call = alloc_expr(ir.Expr.expr_call(callee = "free", arguments = pack_single(alloc_expr(ir.Expr.expr_cast(target_type = void_ptr, expression = env_ref, ty = void_ptr))), ty = types.primitive("void")))
+    then_body.push(ir.Stmt.stmt_expression(expression = free_call, line = 0, source_path = ""))
+    body.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = span[ir.Stmt]()))
+    body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+    return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = types.primitive("void"), body = body.as_span(), entry_point = false, method_receiver_param = false)
+
+
+## Build a retain function for capturing procs (increments ref_count).
+function build_capturing_retain(c_name: str, env_type_name: str) -> ir.Function:
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(name = env_type_name)))
+    let uint_ty = types.primitive("ptr_uint")
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
+    var body = vec.Vec[ir.Stmt].create()
+    let env_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env", ty = void_ptr, pointer = false))
+    let cast_env = alloc_expr(ir.Expr.expr_cast(target_type = env_ptr_ty, expression = env_expr, ty = env_ptr_ty))
+    body.push(ir.Stmt.stmt_local(name = "env", linkage_name = "env", ty = env_ptr_ty, value = cast_env, line = 0, source_path = ""))
+    let env_ref = alloc_expr(ir.Expr.expr_name(name = "env", ty = env_ptr_ty, pointer = false))
+    let ref_field = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = "__mt_ref_count", ty = uint_ty))
+    let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = uint_ty))
+    body.push(ir.Stmt.stmt_assignment(target = ref_field, operator = "+=", value = one))
+    body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+    return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = types.primitive("void"), body = body.as_span(), entry_point = false, method_receiver_param = false)
 
 
 ## Build a non-capturing proc invoke function: unpacks env (unused), lowers the
@@ -2127,6 +2370,13 @@ function collect_function_returns(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> 
 ## The resolved return type of a module function: recorded during pre-scan
 ## (handles tuple/array returns the analyzer can't resolve), else the
 ## analyzer's best guess.
+## A captured variable from the enclosing scope.
+struct ProcCapture:
+    name: str
+    c_name: str
+    ty: types.Type
+
+
 ## True when a lowered type represents a proc struct (has invoke/release/retain
 ## fields), as opposed to a bare fn pointer or a regular struct.
 function is_proc_type(t: types.Type) -> bool:
