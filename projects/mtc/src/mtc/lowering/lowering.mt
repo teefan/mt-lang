@@ -226,6 +226,24 @@ function find_function_decl(name: str, module_analysis: analyzer.Analysis) -> Op
     return Option[ast.Decl].none
 
 
+## Search a module analysis for a function by name (used by the cross-module
+## specialization fallback).  Mirrors `find_function_decl`.
+function search_func_in_analysis(name: str, a: analyzer.Analysis) -> Option[ast.Decl]:
+    var di: ptr_uint = 0
+    while di < a.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(a.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_function as f:
+                if f.name.equal(name):
+                    return Option[ast.Decl].some(value = d)
+            _:
+                pass
+        di += 1
+    return Option[ast.Decl].none
+
+
 ## Find an imported module's analysis by its module name.  The `program_analyses`
 ## span is in dependency-first order; returns the first analysis whose
 ## `module_name` matches.
@@ -1438,21 +1456,16 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr
             _:
                 fatal(c"lowering Phase 4c: unsupported generic callee")
 
-    # Find the function declaration — search current module first, then imports.
-    var fun_decl_opt = find_function_decl(callee_name, ctx.analysis)
-    if fun_decl_opt.is_none():
-        var import_values = ctx.analysis.imports.values()
-        while true:
-            let target_ptr = import_values.next() else:
-                break
-            let target_module = unsafe: read(target_ptr)
-            match find_imported_analysis(ctx, target_module):
-                Option.some as imported:
-                    fun_decl_opt = find_function_decl(callee_name, imported.value)
-                    if fun_decl_opt.is_some():
-                        break
-                Option.none:
-                    pass
+    # Find the function declaration — search all source-file spans across all
+    # program analyses (same pattern as ensure_generic_struct_decl).
+    var fun_decl_opt = Option[ast.Decl].none
+    var ai: ptr_uint = 0
+    while ai < ctx.program_analyses.len and fun_decl_opt.is_none():
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + ai)
+        fun_decl_opt = search_func_in_analysis(callee_name, a)
+        ai += 1
     let fun_decl = fun_decl_opt else:
         fatal(c"lowering Phase 4c: could not find generic function decl")
 
