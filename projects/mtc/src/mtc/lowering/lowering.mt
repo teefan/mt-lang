@@ -137,6 +137,12 @@ struct LowerCtx:
     pending_synthetic_functions: vec.Vec[ir.Function]
     # Pending capture-env structs for capturing procs.
     pending_env_structs: vec.Vec[ir.StructDecl]
+    # Pending dyn struct types (mt_dyn_{iface}) and vtable artifacts.
+    pending_dyn_structs: vec.Vec[ir.StructDecl]
+    pending_dyn_vtable_structs: vec.Vec[ir.StructDecl]
+    pending_dyn_wrappers: vec.Vec[ir.Function]
+    pending_dyn_constants: vec.Vec[ir.Constant]
+    dyn_generated_vtables: map_mod.Map[str, bool]
 
 
 # =============================================================================
@@ -183,7 +189,6 @@ public function lower(program: loader.Program) -> ir.Program:
             continue
         let is_root = i == count - 1
         var fragment = lower_module(analysis, ref_of(program_returns), is_root, program.analyses.as_span(), program.modules.as_span())
-        constants.append_span(fragment.constants)
         globals.append_span(fragment.globals)
         opaques.append_span(fragment.opaques)
         structs.append_span(fragment.structs)
@@ -191,6 +196,7 @@ public function lower(program: loader.Program) -> ir.Program:
         enums.append_span(fragment.enums)
         variants.append_span(fragment.variants)
         static_asserts.append_span(fragment.static_asserts)
+        constants.append_span(fragment.constants)
         functions.append_span(fragment.functions)
         i += 1
 
@@ -455,6 +461,11 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         proc_counter = 0,
         pending_synthetic_functions = vec.Vec[ir.Function].create(),
         pending_env_structs = vec.Vec[ir.StructDecl].create(),
+        pending_dyn_structs = vec.Vec[ir.StructDecl].create(),
+        pending_dyn_vtable_structs = vec.Vec[ir.StructDecl].create(),
+        pending_dyn_wrappers = vec.Vec[ir.Function].create(),
+        pending_dyn_constants = vec.Vec[ir.Constant].create(),
+        dyn_generated_vtables = map_mod.Map[str, bool].create(),
     )
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -532,10 +543,35 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             break
         structs.push(unsafe: read(es_ptr))
 
+    var ds_iter = ctx.pending_dyn_structs.iter()
+    while true:
+        let ds_ptr = ds_iter.next() else:
+            break
+        structs.push(unsafe: read(ds_ptr))
+    var dvs_iter = ctx.pending_dyn_vtable_structs.iter()
+    while true:
+        let dvs_ptr = dvs_iter.next() else:
+            break
+        structs.push(unsafe: read(dvs_ptr))
+    var dw_index: ptr_uint = 0
+    while dw_index < ctx.pending_dyn_wrappers.len():
+        let dw_ptr = ctx.pending_dyn_wrappers.get(dw_index) else:
+            break
+        functions.push(unsafe: read(dw_ptr))
+        dw_index += 1
+
+    var dyn_constants = vec.Vec[ir.Constant].create()
+    var dci: ptr_uint = 0
+    while dci < ctx.pending_dyn_constants.len():
+        let dc_ptr = ctx.pending_dyn_constants.get(dci) else:
+            break
+        dyn_constants.push(unsafe: read(dc_ptr))
+        dci += 1
+
     return ir.Program(
         module_name = analysis.module_name,
         includes = span[ir.Include](),
-        constants = span[ir.Constant](),
+        constants = dyn_constants.as_span(),
         globals = span[ir.Global](),
         opaques = span[ir.OpaqueDecl](),
         structs = structs.as_span(),
@@ -643,6 +679,60 @@ function sp_type(t: types.Type) -> span[types.Type]:
     return buf.as_span()
 
 
+## Sibling helpers for one-element spans of other common types.
+function sp_fields(field1: ir.AggregateField) -> span[ir.AggregateField]:
+    var buf = vec.Vec[ir.AggregateField].create()
+    buf.push(field1)
+    return buf.as_span()
+
+
+function sp_fields2(f1: ir.AggregateField, f2: ir.AggregateField) -> span[ir.AggregateField]:
+    var buf = vec.Vec[ir.AggregateField].create()
+    buf.push(f1)
+    buf.push(f2)
+    return buf.as_span()
+
+
+function sp_expr(expr: ptr[ir.Expr]) -> span[ir.Expr]:
+    var buf = vec.Vec[ir.Expr].create()
+    unsafe:
+        buf.push(read(expr))
+    return buf.as_span()
+
+
+## A canonical string name for a concrete type, used as a vtable identifier suffix.
+function canonical_type_name(module_name: str, t: types.Type) -> str:
+    match t:
+        types.Type.ty_primitive as p:
+            return p.name
+        types.Type.ty_named as n:
+            var buf = string.String.create()
+            buf.append(naming.module_c_prefix(module_name))
+            buf.append("_")
+            buf.append(n.name)
+            return buf.as_str()
+        types.Type.ty_imported as im:
+            var buf = string.String.create()
+            buf.append(naming.module_c_prefix(im.module_name))
+            buf.append("_")
+            buf.append(im.name)
+            return buf.as_str()
+        types.Type.ty_generic as g:
+            var buf = string.String.create()
+            buf.append(g.name)
+            var i: ptr_uint = 0
+            while i < g.args.len:
+                buf.append("_")
+                buf.append(canonical_type_name(module_name, unsafe: read(g.args.data + i)))
+                i += 1
+            return naming.sanitize_identifier(buf.as_str())
+        types.Type.ty_str:
+            return "str"
+        _:
+            return "unknown"
+
+
+## Multi-string join helpers (mirror c_backend j2, j6).
 function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?) -> ir.Function:
     ctx.locals.clear()
     ctx.temp_counter = 0
@@ -898,7 +988,9 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
             if t.nullable:
                 return types.Type.ty_nullable(base = types.alloc_type(fun))
             return fun
-        if t.is_dyn or t.nullable:
+        if t.is_dyn:
+            return types.Type.ty_dyn(iface = unsafe: analyzer.qname_to_str(t.dyn_interface))
+        if t.nullable:
             return types.Type.ty_error
         if t.is_tuple:
             var elems = vec.Vec[types.Type].create()
@@ -1811,6 +1903,12 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         return lower_method_resolved(ctx, mi.value, ma.receiver, args, call_ep)
                     Option.none:
                         pass
+                # dyn[I] dispatch: extract data + vtable, call through function pointer.
+                # The type may be ty_named("dyn") or ty_dyn(iface) — try both.
+                let ts = types.type_to_string(recv_ty)
+                if ts.equal("dyn") or is_dyn_type(recv_ty):
+                    let recv_ir = lower_expr(ctx, ma.receiver)
+                    return lower_dyn_method_call(ctx, recv_ir, ma.member_name, args, call_ep)
                 fatal(c"lowering Phase 4: unsupported member-access call target")
             _:
                 fatal(c"lowering Phase 3: unsupported call target")
@@ -1853,6 +1951,8 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
                         i += 1
                     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = span_ty, fields = fields.as_span()))
+                if id.name.equal("adapt") and type_args.len == 1:
+                    return lower_adapt_call(ctx, read(type_args.data + 0).value, call_args)
                 if id.name.equal("array") and type_args.len == 2:
                     var array_args = vec.Vec[types.Type].create()
                     array_args.push(resolve_type_ref(ctx, read(type_args.data + 0).value))
@@ -2197,6 +2297,374 @@ function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: spa
     ))
 
 
+# =============================================================================
+#  dyn[I] interface lowering (mirrors Ruby's lowerer_dyn)
+# =============================================================================
+
+## Lower `adapt[I](value)`: construct a dyn[I] fat pointer `{ data: void*, vtable: void* }`.
+## The concrete type is extracted from the argument (unwrapping ref[T] to T).  A vtable
+## struct type, wrapper functions, and a vtable global constant are generated on first use.
+function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], args: span[ast.Argument]) -> ptr[ir.Expr]:
+    if args.len != 1:
+        fatal(c"dyn lowering: adapt requires exactly one argument")
+    var arg = unsafe: read(args.data + 0)
+    let arg_value = lower_expr(ctx, arg.arg_value)
+    let arg_type = expr_type(ctx, arg.arg_value)
+    let concrete_type = if types.is_ref_type(arg_type): types.pointer_element(arg_type) else: arg_type
+    let iface_name = unsafe: analyzer.qname_to_str(read(iface_type_ref).name)
+    match find_interface_analysis(ctx, iface_name):
+        Option.some as ia:
+            let methods = ia.value.methods
+            let concrete_name = canonical_type_name(ctx.module_name, concrete_type)
+            let vtable_name = ensure_dyn_vtable(ctx, concrete_name, concrete_type, iface_name, methods, ia.value.module_name)
+            var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+            let vtable_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+            return alloc_expr(ir.Expr.expr_aggregate_literal(
+                ty = types.Type.ty_dyn(iface = iface_name),
+                fields = sp_fields2(
+                    ir.AggregateField(name = "data", value = alloc_expr(ir.Expr.expr_cast(target_type = void_ptr, expression = arg_value, ty = void_ptr))),
+                    ir.AggregateField(name = "vtable", value = alloc_expr(ir.Expr.expr_cast(
+                        target_type = void_ptr,
+                        expression = alloc_expr(ir.Expr.expr_address_of(
+                            expression = alloc_expr(ir.Expr.expr_name(name = vtable_name, ty = void_ptr, pointer = false)),
+                            ty = void_ptr,
+                        )),
+                        ty = void_ptr,
+                    ))),
+                ),
+            ))
+        Option.none:
+            fatal(c"dyn lowering: interface not found")
+
+
+## Interface analysis: the owning module name and the methods declared by the interface.
+struct InterfaceAnalysis:
+    module_name: str
+    methods: span[ast.InterfaceMethod]
+
+
+## Find an interface's definition across all loaded modules.  Searches the current
+## module first, then imported modules.
+function find_interface_analysis(ctx: ref[LowerCtx], iface_name: str) -> Option[InterfaceAnalysis]:
+    # Short qualified name: `mod.Interface`.
+    if iface_name.find_byte(46).is_some():  # '.'
+        var parts_buf = string.String.create()
+        var idx: ptr_uint = 0
+        while idx < iface_name.len:
+            let b = iface_name.byte_at(idx)
+            if b == 46:
+                let mod_name = parts_buf.as_str()
+                let rest = iface_name.slice(idx + 1, iface_name.len - idx - 1)
+                if not rest.is_valid_utf8():
+                    break
+                match find_imported_analysis(ctx, mod_name):
+                    Option.some as imported:
+                        let m_ptr = imported.value.interfaces.get(rest)
+                        if m_ptr != null:
+                            return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(module_name = mod_name, methods = unsafe: read(m_ptr)))
+                    Option.none:
+                        pass
+                return Option[InterfaceAnalysis].none
+            parts_buf.push_byte(b)
+            idx += 1
+        return Option[InterfaceAnalysis].none
+    # Bare name: search current module then all imported modules.
+    let m_ptr = ctx.analysis.interfaces.get(iface_name)
+    if m_ptr != null:
+        return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(module_name = ctx.module_name, methods = unsafe: read(m_ptr)))
+    var import_values = ctx.analysis.imports.values()
+    while true:
+        let target_ptr = import_values.next() else:
+            break
+        let target_module = unsafe: read(target_ptr)
+        match find_imported_analysis(ctx, target_module):
+            Option.some as imported:
+                let i_ptr = imported.value.interfaces.get(iface_name)
+                if i_ptr != null:
+                    # Is the interface public in that module?
+                    if not module_has_private_interface(imported.value.source_file, iface_name):
+                        return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(module_name = target_module, methods = unsafe: read(i_ptr)))
+            Option.none:
+                pass
+    return Option[InterfaceAnalysis].none
+
+
+function module_has_private_interface(file: ast.SourceFile, iface_name: str) -> bool:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + di)
+        match d:
+            ast.Decl.decl_interface as iface:
+                if iface.name.equal(iface_name) and not iface.visibility:
+                    return true
+            _:
+                pass
+        di += 1
+    return false
+
+
+## Ensure a vtable for the given concrete type and interface exists.  Generates the
+## vtable struct type declaration once per interface, and the wrapper functions +
+## global vtable constant once per (type, interface) pair.  Returns the vtable global name.
+function ensure_dyn_vtable(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], iface_module_name: str) -> str:
+    let vtable_c_name = j5("mt_vtable_", concrete_name, "_", iface_name, "")
+    if ctx.dyn_generated_vtables.contains(vtable_c_name):
+        return vtable_c_name
+
+    # Ensure the vtable struct type exists (once per interface).
+    let vtable_type_c_name = j3("mt_vtable_", iface_name, "")
+    ensure_dyn_vtable_struct(ctx, vtable_type_c_name, methods)
+
+    # Generate wrapper functions and vtable constant.
+    var wrappers = gen_dyn_vtable_wrappers(ctx, concrete_name, concrete_type, iface_name, methods, iface_module_name)
+    gen_dyn_vtable_constant(ctx, iface_name, vtable_type_c_name, vtable_c_name, ref_of(wrappers), methods)
+
+    # Ensure the dyn struct type exists (once per interface).
+    ensure_dyn_struct_type(ctx, iface_name)
+
+    ctx.dyn_generated_vtables.set(vtable_c_name, true)
+    return vtable_c_name
+
+
+## Ensure the dyn struct type `mt_dyn_{iface}` exists.
+function ensure_dyn_struct_type(ctx: ref[LowerCtx], iface_name: str) -> void:
+    let name = j3("mt_dyn_", iface_name, "")
+    var iter = ctx.pending_dyn_structs.iter()
+    while true:
+        let s_ptr = iter.next() else:
+            break
+        if unsafe: read(s_ptr).linkage_name.equal(name):
+            return
+    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    var fields = vec.Vec[ir.Field].create()
+    fields.push(ir.Field(name = "data", ty = void_ptr))
+    fields.push(ir.Field(name = "vtable", ty = void_ptr))
+    ctx.pending_dyn_structs.push(ir.StructDecl(name = name, linkage_name = name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+
+
+## Ensure the vtable struct type `mt_vtable_{iface}` exists.  Fields are function
+## pointer types so the C backend can render calls through them directly.
+function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, methods: span[ast.InterfaceMethod]) -> void:
+    var iter = ctx.pending_dyn_vtable_structs.iter()
+    while true:
+        let s_ptr = iter.next() else:
+            break
+        if unsafe: read(s_ptr).linkage_name.equal(vtable_type_c_name):
+            return
+    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    var fields = vec.Vec[ir.Field].create()
+    var mi: ptr_uint = 0
+    while mi < methods.len:
+        var m: ast.InterfaceMethod
+        unsafe:
+            m = read(methods.data + mi)
+        var fn_params = vec.Vec[types.Type].create()
+        fn_params.push(void_ptr)
+        var pi: ptr_uint = 0
+        while pi < m.method_params.len:
+            var p: ast.Param
+            unsafe:
+                p = read(m.method_params.data + pi)
+            fn_params.push(resolve_field_type_ref(ctx, p.param_type))
+            pi += 1
+        let ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: types.primitive("void")
+        let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false)
+        fields.push(ir.Field(name = m.name, ty = fn_ty))
+        mi += 1
+    ctx.pending_dyn_vtable_structs.push(ir.StructDecl(name = vtable_type_c_name, linkage_name = vtable_type_c_name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+
+
+## Generate wrapper functions for each interface method, calling through to the
+## concrete type's method implementation.  Returns a map from method name to wrapper C name.
+function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], iface_module_name: str) -> map_mod.Map[str, str]:
+    var wrappers = map_mod.Map[str, str].create()
+    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let concrete_type_name = named_type_name(concrete_type) else:
+        fatal(c"dyn lowering: concrete type must be nominal")
+    # Use a module-qualified type so c_type renders the correct C struct name.
+    var c_ty = types.Type.ty_imported(module_name = ctx.module_name, name = concrete_type_name)
+    var mi: ptr_uint = 0
+    while mi < methods.len:
+        var m: ast.InterfaceMethod
+        unsafe:
+            m = read(methods.data + mi)
+        let wrapper_c_name = j5("__dyn_", concrete_name, "_", iface_name, j2("_", m.name))
+        var wrapper_params = vec.Vec[ir.Param].create()
+        wrapper_params.push(ir.Param(name = "data", linkage_name = "data", ty = void_ptr, pointer = false))
+        var pi: ptr_uint = 0
+        while pi < m.method_params.len:
+            var p: ast.Param
+            unsafe:
+                p = read(m.method_params.data + pi)
+            let p_ty = resolve_field_type_ref(ctx, p.param_type)
+            wrapper_params.push(ir.Param(name = p.name, linkage_name = c_local_name(p.name), ty = p_ty, pointer = false))
+            pi += 1
+        let ret_ty = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: types.primitive("void")
+        # Find the method info for the concrete type's method (search all modules).
+        var method_info_opt: Option[DynMethodLookup]
+        match concrete_type:
+            types.Type.ty_named as n:
+                method_info_opt = find_dyn_method(ctx, n.name, m.name, concrete_type)
+            types.Type.ty_imported as im:
+                method_info_opt = find_dyn_method(ctx, im.name, m.name, concrete_type)
+            _:
+                pass
+        match method_info_opt:
+            Option.some as dm:
+                var real_c_name = string.String.create()
+                real_c_name.append(naming.module_c_prefix(dm.value.module_name))
+                real_c_name.append("_")
+                real_c_name.append(dm.value.type_name)
+                real_c_name.append("_")
+                real_c_name.append(m.name)
+                let call_name = real_c_name.as_str()
+                # Build body: cast data, call real method, return.
+                var body_stmts = vec.Vec[ir.Stmt].create()
+                var call_args = vec.Vec[ir.Expr].create()
+                if dm.value.method_kind != ast.MethodKind.mk_static:
+                    let is_editable = dm.value.method_kind == ast.MethodKind.mk_editable
+                    let inner_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(c_ty))
+                    if is_editable:
+                        unsafe:
+                            call_args.push(read(alloc_expr(ir.Expr.expr_cast(target_type = inner_ptr_ty, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr, pointer = false)), ty = inner_ptr_ty))))
+                    else:
+                        unsafe:
+                            call_args.push(read(alloc_expr(ir.Expr.expr_unary(operator = "*", operand = alloc_expr(ir.Expr.expr_cast(target_type = inner_ptr_ty, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr, pointer = false)), ty = inner_ptr_ty)), ty = c_ty))))
+                pi = 0
+                while pi < m.method_params.len:
+                    var p: ast.Param
+                    unsafe:
+                        p = read(m.method_params.data + pi)
+                    unsafe:
+                        call_args.push(read(alloc_expr(ir.Expr.expr_name(name = c_local_name(p.name), ty = resolve_field_type_ref(ctx, p.param_type), pointer = false))))
+                    pi += 1
+                let call_ret_ty = if types.is_void(ret_ty): types.primitive("void") else: ret_ty
+                body_stmts.push(ir.Stmt.stmt_return(
+                    value = alloc_expr(ir.Expr.expr_call(callee = call_name, arguments = call_args.as_span(), ty = call_ret_ty)),
+                    line = 0,
+                    source_path = "",
+                ))
+                ctx.pending_dyn_wrappers.push(ir.Function(
+                    name = wrapper_c_name,
+                    linkage_name = wrapper_c_name,
+                    params = wrapper_params.as_span(),
+                    return_type = ret_ty,
+                    body = body_stmts.as_span(),
+                    entry_point = false,
+                    method_receiver_param = false,
+                ))
+                wrappers.set(m.name, wrapper_c_name)
+            Option.none:
+                fatal(c"dyn lowering: could not find method implementation")
+        mi += 1
+    return wrappers
+
+
+struct DynMethodLookup:
+    module_name: str
+    type_name: str
+    method_kind: ast.MethodKind
+
+
+function find_dyn_method(ctx: ref[LowerCtx], type_name: str, method_name: str, concrete_type: types.Type) -> Option[DynMethodLookup]:
+    let key = analyzer.method_key(type_name, method_name)
+    if ctx.analysis.method_sigs.contains(key):
+        let sig_ptr = ctx.analysis.method_sigs.get(key) else:
+            return Option[DynMethodLookup].none
+        return Option[DynMethodLookup].some(value = DynMethodLookup(module_name = ctx.module_name, type_name = type_name, method_kind = unsafe: read(sig_ptr).method_kind))
+    var import_values = ctx.analysis.imports.values()
+    while true:
+        let target_ptr = import_values.next() else:
+            break
+        let target_module = unsafe: read(target_ptr)
+        match find_imported_analysis(ctx, target_module):
+            Option.some as imported:
+                if imported.value.method_keys.contains(key):
+                    let sig_ptr = imported.value.method_sigs.get(key) else:
+                        return Option[DynMethodLookup].none
+                    return Option[DynMethodLookup].some(value = DynMethodLookup(module_name = target_module, type_name = type_name, method_kind = unsafe: read(sig_ptr).method_kind))
+            Option.none:
+                pass
+    return Option[DynMethodLookup].none
+
+
+## Generate a vtable global constant of type `mt_vtable_{iface}`, holding pointers
+## to the wrapper functions.
+function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_type_name: str, vtable_c_name: str, wrappers: ref[map_mod.Map[str, str]], methods: span[ast.InterfaceMethod]) -> void:
+    let const_ty = types.Type.ty_named(name = vtable_type_name)
+    var fields = vec.Vec[ir.AggregateField].create()
+    var mi: ptr_uint = 0
+    while mi < methods.len:
+        var m: ast.InterfaceMethod
+        unsafe:
+            m = read(methods.data + mi)
+        let wrapper_ptr = unsafe: read(wrappers).get(m.name) else:
+            fatal(c"dyn lowering: missing wrapper for method")
+        let wrapper_c_name = unsafe: read(wrapper_ptr)
+        # Use the function type for the field so the constant matches the struct decl.
+        var fn_params = vec.Vec[types.Type].create()
+        fn_params.push(types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))))
+        var pi: ptr_uint = 0
+        while pi < m.method_params.len:
+            var p: ast.Param
+            unsafe:
+                p = read(m.method_params.data + pi)
+            fn_params.push(resolve_field_type_ref(ctx, p.param_type))
+            pi += 1
+        let ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: types.primitive("void")
+        let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false)
+        fields.push(ir.AggregateField(name = m.name, value = alloc_expr(ir.Expr.expr_name(name = wrapper_c_name, ty = fn_ty, pointer = false))))
+        mi += 1
+    ctx.pending_dyn_constants.push(ir.Constant(
+        name = vtable_c_name,
+        linkage_name = vtable_c_name,
+        ty = const_ty,
+        value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = const_ty, fields = fields.as_span())),
+    ))
+
+
+## Lower a dyn method call `receiver.method(args)` where receiver has ty_dyn.
+## Extracts data and vtable members, casts vtable to its struct type, and calls
+## through the method function pointer.
+function lower_dyn_method_call(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let data = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "data", ty = void_ptr))
+    let vtable_raw = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "vtable", ty = void_ptr))
+    # Cast vtable void* to the vtable struct pointer type (mt_vtable_{iface}*).
+    # The iface name is embedded in the ty_dyn type: use ty_named to match c_type.
+    let recv_ty = ir_expr_type(recv)
+    let vtable_c_type = dyn_vtable_c_type(recv_ty)
+    var vtable_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(name = vtable_c_type)))
+    let vtable_cast = alloc_expr(ir.Expr.expr_cast(target_type = vtable_ptr_ty, expression = vtable_raw, ty = vtable_ptr_ty))
+    let method_fn = alloc_expr(ir.Expr.expr_member(receiver = vtable_cast, member = method_name, ty = void_ptr))
+    var call_args = vec.Vec[ir.Expr].create()
+    unsafe:
+        call_args.push(read(data))
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        let lowered = lower_expr(ctx, arg.arg_value)
+        unsafe:
+            call_args.push(read(lowered))
+        i += 1
+    return alloc_expr(ir.Expr.expr_call_indirect(callee = method_fn, arguments = call_args.as_span(), ty = expr_type(ctx, call_ep)))
+
+
+## The C type name for a dyn[I] vtable struct: "mt_vtable_" + iface_name.
+function dyn_vtable_c_type(t: types.Type) -> str:
+    let ts = types.type_to_string(t)
+    # The type string could be "dyn" for ty_named or the iface name for ty_dyn.
+    # For ty_dyn(iface = "Shape"), the string is "Shape".
+    # If ts is "dyn", we can't determine the iface — use a fallback.
+    if ts.equal("dyn"):
+        return "mt_vtable_unknown"
+    return j3("mt_vtable_", ts, "")
+
+
 ## Resolved method call info: the C function name and the method kind (needed to
 ## decide whether to pass the receiver by pointer or by value).
 struct MethodInfo:
@@ -2327,6 +2795,52 @@ function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type)
             fatal(c"lowering Phase 5: fn_to_proc requires function type")
 
 
+## String concatenation helpers.
+function j2(a: str, b: str) -> str:
+    var buf = string.String.create()
+    buf.append(a)
+    buf.append(b)
+    return buf.as_str()
+
+
+function j3(a: str, b: str, c: str) -> str:
+    var buf = string.String.create()
+    buf.append(a)
+    buf.append(b)
+    buf.append(c)
+    return buf.as_str()
+
+
+function j4(a: str, b: str, c: str, d: str) -> str:
+    var buf = string.String.create()
+    buf.append(a)
+    buf.append(b)
+    buf.append(c)
+    buf.append(d)
+    return buf.as_str()
+
+
+function j5(a: str, b: str, c: str, d: str, e: str) -> str:
+    var buf = string.String.create()
+    buf.append(a)
+    buf.append(b)
+    buf.append(c)
+    buf.append(d)
+    buf.append(e)
+    return buf.as_str()
+
+
+function j6(a: str, b: str, c: str, d: str, e: str, f: str) -> str:
+    var buf = string.String.create()
+    buf.append(a)
+    buf.append(b)
+    buf.append(c)
+    buf.append(d)
+    buf.append(e)
+    buf.append(f)
+    return buf.as_str()
+
+
 ## Build a "arg_N" string from an integer index.
 function jstr_i(prefix: str, n: ptr_uint) -> str:
     var buf = string.String.create()
@@ -2341,6 +2855,17 @@ function is_void_type(t: types.Type) -> bool:
             return p.name.equal("void")
         _:
             return false
+
+
+## True when a type is a dyn[I] type.
+function is_dyn_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_dyn:
+            return true
+        _:
+            return false
+
+
 function lower_plain_call(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?) -> ptr[ir.Expr]:
     var ir_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
@@ -2900,7 +3425,9 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
         if tref.nullable:
             return types.Type.ty_nullable(base = types.alloc_type(fun))
         return fun
-    if tref.is_dyn or tref.is_tuple or tref.nullable:
+    if tref.is_dyn:
+        return types.Type.ty_dyn(iface = unsafe: analyzer.qname_to_str(tref.dyn_interface))
+    if tref.is_tuple or tref.nullable:
         return types.Type.ty_error
     if tref.arguments.len > 0:
         return resolve_generic_type_ref(ctx, tref)
@@ -3731,7 +4258,9 @@ function alloc_stmt(value: ir.Stmt) -> ptr[ir.Stmt]:
 function resolve_scalar_type_ref(declared: ptr[ast.TypeRef]) -> types.Type:
     unsafe:
         let t = read(declared)
-        if t.is_fn or t.is_proc or t.is_dyn or t.is_tuple or t.nullable:
+        if t.is_dyn:
+            return types.Type.ty_dyn(iface = unsafe: analyzer.qname_to_str(t.dyn_interface))
+        if t.is_fn or t.is_proc or t.is_tuple or t.nullable:
             return types.Type.ty_error
         if t.arguments.len > 0:
             return types.Type.ty_error

@@ -2231,7 +2231,7 @@ function specialization_kind(ctx: ref[Context], callee: ptr[ast.Expr], type_args
 
 function is_builtin_call_name(name: str) -> bool:
     return (
-        name.equal("read") or name.equal("ptr_of") or name.equal("const_ptr_of")
+        name.equal("read") or name.equal("ptr_of") or name.equal("const_ptr_of") or name.equal("ref_of")
         or name.equal("size_of") or name.equal("align_of") or name.equal("fatal")
     )
 
@@ -3376,12 +3376,12 @@ function try_builtin_call(ctx: ref[Context], scope: ref[Scope], callee_name: str
         if types.is_raw_pointer(at) or types.is_ref_type(at):
             return Option[types.Type].some(value = types.pointer_element(at))
         return Option[types.Type].none
-    if callee_name.equal("ptr_of") or callee_name.equal("const_ptr_of"):
+    if callee_name.equal("ptr_of") or callee_name.equal("const_ptr_of") or callee_name.equal("ref_of"):
         if args.len != 1:
             return Option[types.Type].none
         var arg: ast.Argument = unsafe: read(args.data + 0)
         let at = infer_expr(ctx, scope, arg.arg_value)
-        let kind = if callee_name.equal("ptr_of"): "ptr" else: "const_ptr"
+        let kind = if callee_name.equal("ptr_of"): "ptr" else: if callee_name.equal("ref_of"): "ref" else: "const_ptr"
         return Option[types.Type].some(value = types.Type.ty_generic(name = string.String.from_str(kind).as_str(), args = alloc_one_type_arg(at)))
     if callee_name.equal("size_of") or callee_name.equal("align_of"):
         if args.len != 1:

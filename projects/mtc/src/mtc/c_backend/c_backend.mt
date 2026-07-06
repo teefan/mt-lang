@@ -16,6 +16,7 @@ import std.str
 import std.fmt as fmt
 import std.map as map_mod
 import std.vec as vec
+import std.mem.heap as heap
 
 import mtc.ir as ir
 import mtc.semantic.types as types
@@ -226,6 +227,15 @@ public function generate_c(program: ir.Program) -> string.String:
             i += 1
         emit_line(ref_of(e), "")
 
+    if program.constants.len > 0:
+        var ci: ptr_uint = 0
+        while ci < program.constants.len:
+            unsafe:
+                let c = read(program.constants.data + ci)
+                emit_line(ref_of(e), render_constant(ref_of(e), c))
+            ci += 1
+        emit_line(ref_of(e), "")
+
     i = 0
     while i < funcs.len:
         unsafe:
@@ -278,6 +288,15 @@ function emitted_functions(program: ir.Program) -> vec.Vec[ir.Function]:
                 if f.linkage_name.starts_with(prefix.as_str()):
                     worklist.push(f.linkage_name)
             i += 1
+
+    # Seed reachability from global vtable constants: they hold function pointers
+    # (expr_name references) to wrapper functions that are otherwise unreachable.
+    var ci: ptr_uint = 0
+    while ci < program.constants.len:
+        unsafe:
+            let c = read(program.constants.data + ci)
+            reach_from_expr(c.value, ref_of(func_names), ref_of(reachable), ref_of(worklist))
+        ci += 1
 
     while true:
         let name = worklist.pop() else:
@@ -1047,6 +1066,8 @@ function c_type(t: types.Type) -> str:
             return primitive_c_type(p.name)
         types.Type.ty_str:
             return "mt_str"
+        types.Type.ty_dyn as d:
+            return j3("mt_dyn_", d.iface, "")
         types.Type.ty_function:
             # Function types are declarators: `ret_type (*)(param_types)`.
             return c_fn_ptr_declarator(t, "")
@@ -2587,3 +2608,31 @@ function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
                 return x.ty
             ir.Expr.expr_array_literal as x:
                 return x.ty
+
+
+# =============================================================================
+#  Constant emission
+# =============================================================================
+
+## Emit a global constant (vtable, etc.) as a static const variable.
+function render_constant(e: ref[Emitter], c: ir.Constant) -> str:
+    var buf = string.String.create()
+    buf.append("static const ")
+    buf.append(c_type(c.ty))
+    buf.append(" ")
+    buf.append(c.linkage_name)
+    buf.append(" = ")
+    unsafe:
+        buf.append(render_initializer_exp(e, c.value))
+    buf.append(";")
+    return buf.as_str()
+
+
+## Render an expression in initializer position (no cast wrapper).
+function render_initializer_exp(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_aggregate_literal as agg:
+                return render_aggregate_initializer(e, agg.fields)
+            _:
+                return render_expression(e, ep)

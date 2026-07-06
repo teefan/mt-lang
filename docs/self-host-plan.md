@@ -232,10 +232,9 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 
 ### Recommended resume order
 
-1. **Split lowering file** — `lowering.mt` is 3,750 LOC. Extract `proc`, `dyn`, `str_buffer`, and `format` into separate modules under `src/mtc/lowering/` per the self-host plan. This should happen before adding more features to keep the codebase manageable.
-2. **dyn[I] interfaces** — requires method dispatch (done) + proc infrastructure (done). The hardest remaining item.
-3. **str_buffer[N]** — type decl emission + runtime C helpers. More self-contained.
-4. **Format strings** — depends on method dispatch (done) for `format_value[T]` resolution.
+1. **dyn[I] interfaces** — requires method dispatch (done) + proc infrastructure (done). The hardest remaining item.
+2. **str_buffer[N]** — type decl emission + runtime C helpers. More self-contained.
+3. **Format strings** — depends on method dispatch (done) for `format_value[T]` resolution.
 
 ### Key context for resume
 
@@ -252,7 +251,7 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 
 - **IR is the frozen seam.** Backend reads only `IR`; Lowering reads only `Analysis`.
 - **Byte-identical C as the correctness oracle.**
-- **Mirror Ruby's file split**, never grow monoliths.
+- **Follow Ruby's algorithmic structure.** The Ruby compiler's logic and algorithms are the reference; mirror the approach even when the file layout differs.
 - **Fail loud on substrate gaps** (`LoweringError` on `ty_error` for emittable nodes).
 - **Sandbox every built binary** (`timeout` + `ulimit -v`).
 
