@@ -35,12 +35,27 @@ public struct CBackendError:
 struct Emitter:
     buffer: string.String
     str_lit_map: map_mod.Map[str, str]
+    # Labels targeted by a `goto` in the current function; a `stmt_label` whose
+    # name is absent is unused and skipped (mirrors Ruby's used_labels set).
+    used_labels: map_mod.Map[str, bool]
+
+
+## Local variant-arm metadata for prelude type collection (mirrors lowering's
+## VariantArmInfo / VariantInfo, scoped small for the backend).
+struct GVArmInfo:
+    name: str
+    fields: span[ir.Field]
+
+
+struct GVInfo:
+    arms: span[GVArmInfo]
 
 
 public function generate_c(program: ir.Program) -> string.String:
     var e = Emitter(
         buffer = string.String.create(),
         str_lit_map = map_mod.Map[str, str].create(),
+        used_labels = map_mod.Map[str, bool].create(),
     )
 
     # Reachability pruning: emit only functions reachable from the entry points,
@@ -61,10 +76,12 @@ public function generate_c(program: ir.Program) -> string.String:
     var checked_index_types = collect_checked_index_types(funcs)
     var checked_span_index_types = collect_checked_span_index_types(funcs)
     var tuple_types = collect_tuple_types(funcs)
+    var gen_variants = collect_generic_variants(program)
+    var gen_structs = vec.Vec[ir.StructDecl].create()
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
     let use_fatal = uses_fatal_helper(funcs) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0
-    let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal
+    let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or aggregates_use_str(program)
     let use_str_equality = uses_str_equality(funcs)
 
     var i: ptr_uint = 0
@@ -98,7 +115,7 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_line(ref_of(e), "")
         i += 1
 
-    if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0:
+    if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0 or program.variants.len > 0 or gen_variants.len() > 0 or gen_structs.len() > 0:
         var sorted_structs = topo_sort_structs(program.structs)
         let sorted = sorted_structs.as_span()
 
@@ -107,6 +124,14 @@ public function generate_c(program: ir.Program) -> string.String:
             unsafe:
                 let s = read(sorted.data + i)
                 emit_line(ref_of(e), j3("typedef struct ", s.linkage_name, j2(" ", j2(s.linkage_name, ";"))))
+            i += 1
+        i = 0
+        while i < gen_structs.len():
+            let gs_ptr = gen_structs.get(i) else:
+                break
+            unsafe:
+                let gs = read(gs_ptr)
+                emit_line(ref_of(e), j3("typedef struct ", gs.linkage_name, j2(" ", j2(gs.linkage_name, ";"))))
             i += 1
         i = 0
         while i < program.unions.len:
@@ -121,6 +146,18 @@ public function generate_c(program: ir.Program) -> string.String:
             unsafe:
                 emit_tuple_type_forward(ref_of(e), read(ty_ptr))
             i += 1
+        i = 0
+        while i < program.variants.len:
+            unsafe:
+                emit_variant_forward(ref_of(e), read(program.variants.data + i))
+            i += 1
+        i = 0
+        while i < gen_variants.len():
+            let v_ptr = gen_variants.get(i) else:
+                break
+            unsafe:
+                emit_variant_forward(ref_of(e), read(v_ptr))
+            i += 1
         emit_line(ref_of(e), "")
 
         emit_enums_block(ref_of(e), program)
@@ -129,6 +166,14 @@ public function generate_c(program: ir.Program) -> string.String:
         while i < sorted.len:
             unsafe:
                 emit_struct(ref_of(e), read(sorted.data + i))
+            emit_line(ref_of(e), "")
+            i += 1
+        i = 0
+        while i < gen_structs.len():
+            let gs_ptr = gen_structs.get(i) else:
+                break
+            unsafe:
+                emit_struct(ref_of(e), read(gs_ptr))
             emit_line(ref_of(e), "")
             i += 1
         i = 0
@@ -143,6 +188,20 @@ public function generate_c(program: ir.Program) -> string.String:
                 break
             unsafe:
                 emit_tuple_type_def(ref_of(e), read(ty_ptr))
+            emit_line(ref_of(e), "")
+            i += 1
+        i = 0
+        while i < program.variants.len:
+            unsafe:
+                emit_variant(ref_of(e), read(program.variants.data + i))
+            emit_line(ref_of(e), "")
+            i += 1
+        i = 0
+        while i < gen_variants.len():
+            let v_ptr = gen_variants.get(i) else:
+                break
+            unsafe:
+                emit_variant(ref_of(e), read(v_ptr))
             emit_line(ref_of(e), "")
             i += 1
     else:
@@ -496,6 +555,202 @@ function c_string_literal(value: str) -> str:
 #  Feature detection (mirrors c_backend/feature_detection.rb)
 # =============================================================================
 
+## True when any struct, union, or variant declaration has a `str`-typed field,
+## so the `mt_str` view type must be emitted even if no function signature or
+## literal references `str` directly.
+function aggregates_use_str(program: ir.Program) -> bool:
+    var i: ptr_uint = 0
+    while i < program.structs.len:
+        unsafe:
+            if fields_have_str(read(program.structs.data + i).fields):
+                return true
+        i += 1
+    i = 0
+    while i < program.unions.len:
+        unsafe:
+            if fields_have_str(read(program.unions.data + i).fields):
+                return true
+        i += 1
+    i = 0
+    while i < program.variants.len:
+        unsafe:
+            let vd = read(program.variants.data + i)
+            var ai: ptr_uint = 0
+            while ai < vd.arms.len:
+                if fields_have_str(read(vd.arms.data + ai).fields):
+                    return true
+                ai += 1
+        i += 1
+    return false
+
+
+function fields_have_str(fields: span[ir.Field]) -> bool:
+    var i: ptr_uint = 0
+    while i < fields.len:
+        unsafe:
+            if is_str_type(read(fields.data + i).ty):
+                return true
+        i += 1
+    return false
+
+
+# =============================================================================
+#  Generic variant collection (mirrors c_backend/type_collectors.rb)
+# =============================================================================
+
+## Collect every unique concrete generic variant type referenced in the lowered
+## program so the backend can emit their payload structs, kind enums, data unions,
+## and outer tagged structs.  Prelude types (Option/Result) are synthetic and not
+## present as AST decls, so this is the only way they reach the backend.
+function collect_generic_variants(program: ir.Program) -> vec.Vec[ir.VariantDecl]:
+    var seen = map_mod.Map[str, bool].create()
+    var result = vec.Vec[ir.VariantDecl].create()
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            collect_gv_from_func(read(program.functions.data + i), ref_of(seen), ref_of(result))
+        i += 1
+    return result
+
+
+function collect_gv_from_func(func: ir.Function, seen: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.VariantDecl]]) -> void:
+    collect_gv_from_type(func.return_type, seen, result)
+    var pi: ptr_uint = 0
+    while pi < func.params.len:
+        unsafe:
+            collect_gv_from_type(read(func.params.data + pi).ty, seen, result)
+        pi += 1
+    collect_gv_from_stmts(func.body, seen, result)
+
+
+function collect_gv_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.VariantDecl]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            match read(body.data + i):
+                ir.Stmt.stmt_local as loc:
+                    collect_gv_from_type(loc.ty, seen, result)
+                ir.Stmt.stmt_block as blk:
+                    collect_gv_from_stmts(blk.body, seen, result)
+                ir.Stmt.stmt_if as iff:
+                    collect_gv_from_stmts(iff.then_body, seen, result)
+                    collect_gv_from_stmts(iff.else_body, seen, result)
+                ir.Stmt.stmt_while as w:
+                    collect_gv_from_stmts(w.body, seen, result)
+                ir.Stmt.stmt_for as fr:
+                    collect_gv_from_stmts(fr.body, seen, result)
+                ir.Stmt.stmt_switch as sw:
+                    var ci: ptr_uint = 0
+                    while ci < sw.cases.len:
+                        collect_gv_from_stmts(read(sw.cases.data + ci).body, seen, result)
+                        ci += 1
+                _:
+                    pass
+        i += 1
+
+
+function collect_gv_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.VariantDecl]]) -> void:
+    match ty:
+        types.Type.ty_generic as g:
+            if g.name.equal("span") or g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("ref") or g.name.equal("array"):
+                return
+            # Only emit variant decls for prelude types; user-generic structs
+            # are handled by the lowering's `ensure_generic_struct_decl`.
+            if not g.name.equal("Option") and not g.name.equal("Result"):
+                return
+            let c_name = generic_c_type(g.name, g.args)
+            if seen.contains(c_name):
+                return
+            seen.set(c_name, true)
+            var arms = vec.Vec[ir.VariantArm].create()
+            let info = prelude_variant_arm_info(g.name)
+            var ai: ptr_uint = 0
+            while ai < info.arms.len:
+                var arm = unsafe: read(info.arms.data + ai)
+                var fields = vec.Vec[ir.Field].create()
+                var fi: ptr_uint = 0
+                while fi < arm.fields.len:
+                    let f = unsafe: read(arm.fields.data + fi)
+                    fields.push(f)
+                    fi += 1
+                arms.push(ir.VariantArm(name = arm.name, linkage_name = j3(c_name, "_", arm.name), fields = fields.as_span()))
+                ai += 1
+            result.push(ir.VariantDecl(
+                name = c_name,
+                linkage_name = c_name,
+                arms = arms.as_span(),
+                source_module = Option[str].none,
+            ))
+        _:
+            pass
+
+
+## Return the arm info for a prelude variant (Option / Result).  Mirrors the
+## lowering's `install_prelude_variants`.
+function prelude_variant_arm_info(name: str) -> GVInfo:
+    var arms = vec.Vec[GVArmInfo].create()
+    if name.equal("Option"):
+        var sf = vec.Vec[ir.Field].create()
+        sf.push(ir.Field(name = "value", ty = types.Type.ty_primitive(name = "int")))
+        arms.push(GVArmInfo(name = "some", fields = sf.as_span()))
+        arms.push(GVArmInfo(name = "none", fields = span[ir.Field]()))
+    else if name.equal("Result"):
+        var sf = vec.Vec[ir.Field].create()
+        sf.push(ir.Field(name = "value", ty = types.Type.ty_primitive(name = "int")))
+        var ef = vec.Vec[ir.Field].create()
+        ef.push(ir.Field(name = "error", ty = types.Type.ty_primitive(name = "int")))
+        arms.push(GVArmInfo(name = "success", fields = sf.as_span()))
+        arms.push(GVArmInfo(name = "failure", fields = ef.as_span()))
+    return GVInfo(arms = arms.as_span())
+
+
+## Collect every unique concrete generic struct type referenced in the lowered
+## program (via function signatures, locals, or aggregate fields) so they are
+## emitted as struct declarations.  The struct decl carries fields resolved from
+## the name (currently only supporting same-module generic structs where the
+## element types are simple primitives).
+function collect_generic_structs(program: ir.Program) -> vec.Vec[ir.StructDecl]:
+    var seen = map_mod.Map[str, bool].create()
+    var result = vec.Vec[ir.StructDecl].create()
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            collect_gs_from_type(read(program.functions.data + i).return_type, ref_of(seen), ref_of(result))
+            var j: ptr_uint = 0
+            while j < read(program.functions.data + i).params.len:
+                collect_gs_from_type(read(read(program.functions.data + i).params.data + j).ty, ref_of(seen), ref_of(result))
+                j += 1
+        i += 1
+    return result
+
+
+function collect_gs_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.StructDecl]]) -> void:
+    match ty:
+        types.Type.ty_generic as g:
+            if g.name.equal("span") or g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("ref") or g.name.equal("array"):
+                return
+            let c_name = generic_c_type(g.name, g.args)
+            if seen.contains(c_name):
+                return
+            seen.set(c_name, true)
+            var fields = vec.Vec[ir.Field].create()
+            var fi: ptr_uint = 0
+            while fi < g.args.len:
+                unsafe:
+                    fields.push(ir.Field(name = types.type_to_string(read(g.args.data + fi)), ty = read(g.args.data + fi)))
+                fi += 1
+            result.push(ir.StructDecl(
+                name = c_name,
+                linkage_name = c_name,
+                fields = fields.as_span(),
+                packed = false,
+                alignment = 0,
+                source_module = Option[str].none,
+            ))
+        _:
+            pass
+
+
 function uses_string_view(functions: span[ir.Function], has_str_literals: bool) -> bool:
     if has_str_literals:
         return true
@@ -812,12 +1067,20 @@ function c_type(t: types.Type) -> str:
             return "mt_str"
         types.Type.ty_imported as im:
             return naming.qualified_c_name(im.module_name, im.name)
+        types.Type.ty_named as n:
+            # Bare named types (prelude, local), mirrored as-is.
+            return n.name
+        types.Type.ty_var as v:
+            # Unresolved type parameter — should have been substituted during
+            # monomorphization.  Emit the raw name; if it reaches C it will
+            # produce a compiler error rather than a Milk Tea crash.
+            return v.name
         types.Type.ty_generic as g:
             return generic_c_type(g.name, g.args)
         types.Type.ty_tuple:
             return tuple_type_name(t)
         _:
-            fatal(c"c_backend Phase 3: unsupported C type")
+            fatal(j2("c_backend Phase 3: unsupported C type: ", types.type_to_string(t)))
 
 
 ## The C type name of a positional tuple (`(int, int)` -> `mt_tuple_int_int`).
@@ -848,6 +1111,18 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
         return j3("const ", c_type(unsafe: read(args.data + 0)), "*")
     if name.equal("ref") and args.len >= 1:
         return j2(c_type(unsafe: read(args.data + (args.len - 1))), "*")
+    # Generic variant: `<name>_<type0>_<type1>_...`.  The caller module prefix
+    # is added by `qualified_c_name` when the type is `ty_imported`.
+    if args.len > 0:
+        var buf = string.String.create()
+        buf.append(name)
+        var i: ptr_uint = 0
+        while i < args.len:
+            buf.append("_")
+            unsafe:
+                buf.append(naming.sanitize_identifier(types.type_to_string(read(args.data + i))))
+            i += 1
+        return buf.as_str()
     fatal(c"c_backend Phase 3: unsupported generic C type")
 
 
@@ -1129,6 +1404,21 @@ function primitive_c_type(name: str) -> str:
 function c_declaration(t: types.Type, name: str) -> str:
     if is_array_type(t):
         return j6(c_type(array_element_type(t)), " ", name, "[", long_to_str(array_length(t)), "]")
+    # Generic variants: build `name_type0_type1_...` directly, because `c_type`
+    # may be called from a code path where `ty_generic` dispatch is fragile.
+    match t:
+        types.Type.ty_generic as g:
+            var buf = string.String.create()
+            buf.append(g.name)
+            var i: ptr_uint = 0
+            while i < g.args.len:
+                buf.append("_")
+                unsafe:
+                    buf.append(naming.sanitize_identifier(types.type_to_string(read(g.args.data + i))))
+                i += 1
+            return j3(buf.as_str(), " ", name)
+        _:
+            pass
     return j3(c_type(t), " ", name)
 
 
@@ -1183,6 +1473,88 @@ function emit_union(e: ref[Emitter], u: ir.UnionDecl) -> void:
             let f = read(u.fields.data + i)
             emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
         i += 1
+    emit_line(e, "};")
+
+
+## True when any arm of a variant carries payload fields (so a `__data` union and
+## a `.data` member are needed).
+function variant_has_payload(vd: ir.VariantDecl) -> bool:
+    var i: ptr_uint = 0
+    while i < vd.arms.len:
+        unsafe:
+            if read(vd.arms.data + i).fields.len > 0:
+                return true
+        i += 1
+    return false
+
+
+## Forward typedefs for a variant: the outer tagged struct plus one per payload
+## arm (no-payload arms have no payload struct).  Mirrors emit_forward_declarations.
+function emit_variant_forward(e: ref[Emitter], vd: ir.VariantDecl) -> void:
+    emit_line(e, j3("typedef struct ", vd.linkage_name, j2(" ", j2(vd.linkage_name, ";"))))
+    var i: ptr_uint = 0
+    while i < vd.arms.len:
+        unsafe:
+            let arm = read(vd.arms.data + i)
+            if arm.fields.len > 0:
+                emit_line(e, j3("typedef struct ", arm.linkage_name, j2(" ", j2(arm.linkage_name, ";"))))
+        i += 1
+
+
+## Emit a variant type: per-arm payload structs, the `_kind` discriminant enum,
+## the `__data` union, and the outer tagged struct.  Mirrors Ruby's emit_variant.
+function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
+    let outer_c = vd.linkage_name
+
+    # Per-arm payload structs
+    var i: ptr_uint = 0
+    while i < vd.arms.len:
+        unsafe:
+            let arm = read(vd.arms.data + i)
+            if arm.fields.len > 0:
+                emit_line(e, j3("struct ", arm.linkage_name, " {"))
+                var fi: ptr_uint = 0
+                while fi < arm.fields.len:
+                    let f = read(arm.fields.data + fi)
+                    if c_type(f.ty).equal(outer_c):
+                        emit_line(e, j4("  ", c_declaration(f.ty, j2("*", f.name)), ";", ""))
+                    else:
+                        emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
+                    fi += 1
+                emit_line(e, "};")
+                emit_line(e, j3("typedef struct ", arm.linkage_name, j2(" ", j2(arm.linkage_name, ";"))))
+        i += 1
+
+    # Kind enum
+    emit_line(e, j3("typedef int32_t ", outer_c, "_kind;"))
+    if vd.arms.len > 0:
+        emit_line(e, "enum {")
+        i = 0
+        while i < vd.arms.len:
+            unsafe:
+                let arm = read(vd.arms.data + i)
+                let suffix = if i == vd.arms.len - 1: "" else: ","
+                emit_line(e, j6("  ", outer_c, "_kind_", arm.name, j3(" = ", ptr_uint_to_str(i), suffix), ""))
+            i += 1
+        emit_line(e, "};")
+
+    # Data union (only if at least one arm has payload)
+    if variant_has_payload(vd):
+        emit_line(e, j3("union ", outer_c, "__data {"))
+        i = 0
+        while i < vd.arms.len:
+            unsafe:
+                let arm = read(vd.arms.data + i)
+                if arm.fields.len > 0:
+                    emit_line(e, j6("  struct ", arm.linkage_name, " ", arm.name, ";", ""))
+            i += 1
+        emit_line(e, "};")
+
+    # Outer tagged struct
+    emit_line(e, j3("struct ", outer_c, " {"))
+    emit_line(e, j3("  ", outer_c, "_kind kind;"))
+    if variant_has_payload(vd):
+        emit_line(e, j3("  union ", outer_c, "__data data;"))
     emit_line(e, "};")
 
 
@@ -1262,9 +1634,40 @@ function function_params(func: ir.Function) -> str:
 
 
 function emit_function(e: ref[Emitter], func: ir.Function) -> void:
+    e.used_labels.clear()
+    collect_used_labels(func.body, ref_of(e.used_labels))
     emit_line(e, j2(function_signature(func), " {"))
     emit_stmts(e, func.body, 1)
     emit_line(e, "}")
+
+
+## Collect every label targeted by a `goto` anywhere in a statement body, so an
+## emitted `stmt_label` that no `goto` references can be skipped.  Mirrors Ruby's
+## collect_used_labels.
+function collect_used_labels(body: span[ir.Stmt], labels: ref[map_mod.Map[str, bool]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            match read(body.data + i):
+                ir.Stmt.stmt_goto as g:
+                    labels.set(g.label, true)
+                ir.Stmt.stmt_block as blk:
+                    collect_used_labels(blk.body, labels)
+                ir.Stmt.stmt_if as iff:
+                    collect_used_labels(iff.then_body, labels)
+                    collect_used_labels(iff.else_body, labels)
+                ir.Stmt.stmt_while as w:
+                    collect_used_labels(w.body, labels)
+                ir.Stmt.stmt_for as fr:
+                    collect_used_labels(fr.body, labels)
+                ir.Stmt.stmt_switch as sw:
+                    var ci: ptr_uint = 0
+                    while ci < sw.cases.len:
+                        collect_used_labels(read(sw.cases.data + ci).body, labels)
+                        ci += 1
+                _:
+                    pass
+        i += 1
 
 
 # =============================================================================
@@ -1326,6 +1729,11 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 emit_line(e, j2(indent, "}"))
             ir.Stmt.stmt_switch as sw:
                 emit_switch(e, sw.expression, sw.cases, sw.exhaustive, level)
+            ir.Stmt.stmt_goto as g:
+                emit_line(e, j4(indent, "goto ", g.label, ";"))
+            ir.Stmt.stmt_label as lbl:
+                if e.used_labels.contains(lbl.name):
+                    emit_line(e, j3(indent, lbl.name, ":;"))
             _:
                 fatal(c"c_backend Phase 2: unsupported statement")
 
@@ -1482,6 +1890,8 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return j3(wrap_member_receiver(e, member.receiver), operator, member.member)
             ir.Expr.expr_aggregate_literal as agg:
                 return render_aggregate_literal(e, agg.ty, agg.fields)
+            ir.Expr.expr_variant_literal as vl:
+                return j4("(", c_type(vl.ty), ")", render_variant_initializer(e, vl.ty, vl.arm_name, vl.fields, true))
             ir.Expr.expr_zero_init as z:
                 return render_zero_expression(z.ty)
             ir.Expr.expr_checked_index as ci:
@@ -1775,10 +2185,72 @@ function render_initializer(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
         match read(ep):
             ir.Expr.expr_aggregate_literal as agg:
                 return render_aggregate_initializer(e, agg.fields)
+            ir.Expr.expr_array_literal as arr:
+                return render_array_literal_initializer(e, arr.elements)
+            ir.Expr.expr_variant_literal as vl:
+                return render_variant_initializer(e, vl.ty, vl.arm_name, vl.fields, false)
             ir.Expr.expr_zero_init as z:
                 return render_zero_initializer(z.ty)
             _:
                 return render_expression(e, ep)
+
+
+## Render a variant literal in initializer position:
+##   `{ .kind = <outer_c>_kind_<arm>, .data.<arm> = { .f = v, ... } }` (payload)
+##   `{ .kind = <outer_c>_kind_<arm> }`                                (no payload)
+## In expression context the payload aggregate is a compound literal
+## `(struct <arm_c>){ ... }`, matching how a variant literal is used as a value.
+function render_variant_initializer(e: ref[Emitter], ty: types.Type, arm_name: str, fields: span[ir.AggregateField], as_expression: bool) -> str:
+    # Resolve the outer C type name directly: `ty_generic` builds `<name>_<type0>_...`,
+    # `ty_imported` uses `qualified_c_name`, everything else delegates to `c_type`.
+    var outer_c: str
+    match ty:
+        types.Type.ty_generic as g:
+            var buf = string.String.create()
+            buf.append(g.name)
+            var i: ptr_uint = 0
+            while i < g.args.len:
+                buf.append("_")
+                unsafe:
+                    buf.append(naming.sanitize_identifier(types.type_to_string(read(g.args.data + i))))
+                i += 1
+            outer_c = buf.as_str()
+        types.Type.ty_imported as im:
+            outer_c = naming.qualified_c_name(im.module_name, im.name)
+        _:
+            outer_c = c_type(ty)
+
+    var buf = string.String.create()
+    buf.append("{ .kind = ")
+    buf.append(outer_c)
+    buf.append("_kind_")
+    buf.append(arm_name)
+    if fields.len > 0:
+        buf.append(", .data.")
+        buf.append(arm_name)
+        buf.append(" = ")
+        if as_expression:
+            buf.append("(struct ")
+            buf.append(outer_c)
+            buf.append("_")
+            buf.append(arm_name)
+            buf.append(")")
+        buf.append(render_aggregate_initializer(e, fields))
+    buf.append(" }")
+    return buf.as_str()
+
+
+## The C type name for a variant: `ty_imported` uses `qualified_c_name`, and
+## `ty_generic` (generic variants) builds `<name>_<type0>_...` without a module
+## prefix — mirroring how `c_type` dispatches.
+function variant_c_type(ty: types.Type) -> str:
+    match ty:
+        types.Type.ty_imported as im:
+            return naming.qualified_c_name(im.module_name, im.name)
+        types.Type.ty_generic as g:
+            return generic_c_type(g.name, g.args)
+        _:
+            return c_type(ty)
 
 
 ## The zero value of a type in initializer position (mirrors
@@ -1830,6 +2302,24 @@ function render_aggregate_initializer(e: ref[Emitter], fields: span[ir.Aggregate
 
 function render_aggregate_literal(e: ref[Emitter], ty: types.Type, fields: span[ir.AggregateField]) -> str:
     return j4("(", c_type(ty), ")", render_aggregate_initializer(e, fields))
+
+
+## Render an array literal in initializer position: `{ e0, e1, ... }`.  An empty
+## array literal degenerates to `{ 0 }`.  Mirrors the aggregate initializer form.
+function render_array_literal_initializer(e: ref[Emitter], elements: span[ir.Expr]) -> str:
+    if elements.len == 0:
+        return "{ 0 }"
+    var buf = string.String.create()
+    buf.append("{ ")
+    var i: ptr_uint = 0
+    while i < elements.len:
+        if i > 0:
+            buf.append(", ")
+        unsafe:
+            buf.append(render_initializer(e, elements.data + i))
+        i += 1
+    buf.append(" }")
+    return buf.as_str()
 
 
 ## `receiver.field` receivers that are postfix (name/member/index/call) need no

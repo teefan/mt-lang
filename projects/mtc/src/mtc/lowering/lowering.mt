@@ -59,6 +59,34 @@ struct ForeignInfo:
     params: span[ast.ForeignParam]
 
 
+## One arm of a variant, as needed by lowering: its name, payload field names and
+## resolved types (empty for a no-payload arm).  The discriminant index is the
+## arm's position in the owning `VariantInfo.arms`.
+struct VariantArmInfo:
+    name: str
+    field_names: span[str]
+    field_types: span[types.Type]
+
+
+## Lowering-time info for a declared variant: its arms in declaration order (so a
+## match/`is` can map an arm name to its discriminant index) plus the owning
+## module (for cross-module resolution).
+struct VariantInfo:
+    module_name: str
+    arms: span[VariantArmInfo]
+
+
+## lower the expressions eagerly, deferring monomorphization to the worklist pass.
+struct PendingSpecialization:
+    module_name: str
+    callee_name: str
+    type_params: span[ast.TypeParam]
+    type_args: span[ast.TypeArgument]
+    args: span[ast.Argument]
+    call_ep: ptr[ast.Expr]
+    ast_function_decl: ptr[ast.Decl]
+
+
 struct LowerCtx:
     module_name: str
     analysis: analyzer.Analysis
@@ -67,14 +95,37 @@ struct LowerCtx:
     foreign_map: map_mod.Map[str, ForeignInfo]
     extern_map: map_mod.Map[str, str]
     function_returns: map_mod.Map[str, types.Type]
+    # Same-module variant declarations, keyed by variant name, so arm
+    # constructors and match arms can resolve discriminants and payload fields.
+    variants: map_mod.Map[str, VariantInfo]
+    # Shared across all modules: function return types keyed by C linkage name,
+    # so cross-module calls (`mod.func(...)`) can resolve their result type.
+    # Borrowed pointer into the map owned by `lower`.
+    # Per-module counter for `__mt_match_N` labels in struct-pattern (if/goto)
+    # variant matches; mirrors Ruby's @match_label_counter.
+    match_label_counter: ptr_uint
+    program_returns: ptr[map_mod.Map[str, types.Type]]
+    # Specialization worklist: entries for generic function calls encountered
+    # during lowering, processed after all root modules are lowered.
+    pending_specializations: vec.Vec[PendingSpecialization]
+    # Cache of already-monomorphized generic function bodies, keyed by the
+    # specialization's qualified C name (e.g. "lib_first_int").
+    specialization_cache: map_mod.Map[str, ir.Function]
+    # Concrete generic struct declarations emitted during lowering, keyed by C
+    # type name.  When a `Pair[int, int](...)` constructor is lowered, the
+    # concrete struct decl (with resolved field types) is recorded here so it can
+    # be appended to the module's structs span.
+    generic_struct_decls: map_mod.Map[str, ir.StructDecl]
 
 
 # =============================================================================
 #  Public API
 # =============================================================================
 
-## Lower a checked program to IR.  In dependency-first order the root module is
-## the last retained analysis; Phase 1 lowers that single module.
+## Lower a checked program to IR.  Every non-external module is lowered in
+## dependency-first order (the root module is the last retained analysis) and the
+## fragments are concatenated into one program — mirroring Ruby's
+## `lower_modules` / `assemble_modules`.
 public function lower(program: loader.Program) -> ir.Program:
     let count = program.analyses.len()
     if count == 0:
@@ -82,10 +133,186 @@ public function lower(program: loader.Program) -> ir.Program:
     let root_ptr = program.analyses.get(count - 1) else:
         return ir.empty_program("(anonymous)", "")
     var root = unsafe: read(root_ptr)
-    return lower_module(root)
+    let root_name = root.module_name
+
+    # Shared cross-module function return types, keyed by C linkage name, so a
+    # `mod.func(...)` call in one module can resolve the result type of a
+    # function defined in another.
+    var program_returns = map_mod.Map[str, types.Type].create()
+    collect_program_returns(program, ref_of(program_returns))
+
+    var constants = vec.Vec[ir.Constant].create()
+    var globals = vec.Vec[ir.Global].create()
+    var opaques = vec.Vec[ir.OpaqueDecl].create()
+    var structs = vec.Vec[ir.StructDecl].create()
+    var unions = vec.Vec[ir.UnionDecl].create()
+    var enums = vec.Vec[ir.EnumDecl].create()
+    var variants = vec.Vec[ir.VariantDecl].create()
+    var static_asserts = vec.Vec[ir.StaticAssert].create()
+    var functions = vec.Vec[ir.Function].create()
+
+    var i: ptr_uint = 0
+    while i < count:
+        let a_ptr = program.analyses.get(i) else:
+            i += 1
+            continue
+        var analysis = unsafe: read(a_ptr)
+        if is_raw_module(analysis.module_kind):
+            i += 1
+            continue
+        let is_root = i == count - 1
+        var fragment = lower_module(analysis, ref_of(program_returns), is_root)
+        constants.append_span(fragment.constants)
+        globals.append_span(fragment.globals)
+        opaques.append_span(fragment.opaques)
+        structs.append_span(fragment.structs)
+        unions.append_span(fragment.unions)
+        enums.append_span(fragment.enums)
+        variants.append_span(fragment.variants)
+        static_asserts.append_span(fragment.static_asserts)
+        functions.append_span(fragment.functions)
+        i += 1
+
+    return ir.Program(
+        module_name = root_name,
+        includes = base_includes(),
+        constants = constants.as_span(),
+        globals = globals.as_span(),
+        opaques = opaques.as_span(),
+        structs = structs.as_span(),
+        unions = unions.as_span(),
+        enums = enums.as_span(),
+        variants = variants.as_span(),
+        static_asserts = static_asserts.as_span(),
+        functions = functions.as_span(),
+        source_path = "",
+    )
 
 
-function lower_module(analysis: analyzer.Analysis) -> ir.Program:
+## True when a module is an external (`raw`) file, which has no lowerable body.
+function is_raw_module(kind: ast.ModuleKind) -> bool:
+    match kind:
+        ast.ModuleKind.module_raw:
+            return true
+        _:
+            return false
+
+
+# =============================================================================
+#  Monomorphized function lowering
+# =============================================================================
+
+## Lower a function body with type-parameter substitution applied: every reference
+## to a type param (e.g. `T`) in locals, expressions, and the return type is
+## replaced by the corresponding concrete type from `sub`.
+function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, sub: ref[map_mod.Map[str, types.Type]]) -> ir.Function:
+    # Reset function-level state
+    ctx.locals.clear()
+    ctx.temp_counter = 0
+    ctx.function_returns.clear()
+    var ir_params = vec.Vec[ir.Param].create()
+    var pi: ptr_uint = 0
+    while pi < params.len:
+        var p: ast.Param
+        unsafe:
+            p = read(params.data + pi)
+        let p_ty = substitute_type_params(ctx, resolve_field_type_ref(ctx, p.param_type), sub)
+        let p_c = c_local_name(p.name)
+        ir_params.push(ir.Param(name = p.name, linkage_name = p_c, ty = p_ty))
+        ctx.locals.push(LocalBinding(name = p.name, c_name = p_c, ty = p_ty, pointer = false))
+        pi += 1
+    # For return type, use `resolve_field_type_ref` (which returns ty_named for
+    # type params) rather than `resolve_type_ref` (which returns ty_error for
+    # names not in type_names).  Type params are added to the type scope per
+    # function body, not to the global type_names map.
+    let ret_ty = if return_type != null: substitute_type_params(ctx, resolve_field_type_ref(ctx, unsafe: read(return_type)), sub) else: types.primitive("void")
+    let body_ir = lower_block(ctx, body)
+    return ir.Function(
+        name = name,
+        linkage_name = name,
+        params = ir_params.as_span(),
+        return_type = ret_ty,
+        body = body_ir,
+        entry_point = false,
+        method_receiver_param = false,
+    )
+
+
+## Replace type-parameter references (`ty_var`) in a type with their concrete
+## values from the substitution map.  Other type variants pass through unchanged.
+function substitute_type_params(ctx: ref[LowerCtx], ty: types.Type, sub: ref[map_mod.Map[str, types.Type]]) -> types.Type:
+    match ty:
+        types.Type.ty_var as v:
+            let concrete = sub.get(v.name)
+            if concrete != null:
+                return unsafe: read(concrete)
+            return ty
+        types.Type.ty_imported as im:
+            let concrete = sub.get(im.name)
+            if concrete != null:
+                return unsafe: read(concrete)
+            return ty
+        types.Type.ty_named as n:
+            let concrete = sub.get(n.name)
+            if concrete != null:
+                return unsafe: read(concrete)
+            return ty
+        types.Type.ty_generic as g:
+            var args = vec.Vec[types.Type].create()
+            var i: ptr_uint = 0
+            while i < g.args.len:
+                unsafe:
+                    args.push(substitute_type_params(ctx, read(g.args.data + i), sub))
+                i += 1
+            return types.Type.ty_generic(name = g.name, args = args.as_span())
+        _:
+            return ty
+
+
+## Pre-scan every module's function declarations and record each one's resolved
+## return type keyed by its C linkage name, so cross-module calls can look them
+## up regardless of lowering order.
+function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[str, types.Type]]) -> void:
+    var mi: ptr_uint = 0
+    while mi < program.analyses.len():
+        let a_ptr = program.analyses.get(mi) else:
+            mi += 1
+            continue
+        var analysis = unsafe: read(a_ptr)
+        if is_raw_module(analysis.module_kind):
+            mi += 1
+            continue
+        var ctx = LowerCtx(
+            module_name = analysis.module_name,
+            analysis = analysis,
+            locals = vec.Vec[LocalBinding].create(),
+            temp_counter = 0,
+            foreign_map = map_mod.Map[str, ForeignInfo].create(),
+            extern_map = map_mod.Map[str, str].create(),
+            function_returns = map_mod.Map[str, types.Type].create(),
+            variants = map_mod.Map[str, VariantInfo].create(),
+            match_label_counter = 0,
+            program_returns = ptr_of(read(sink)),
+            pending_specializations = vec.Vec[PendingSpecialization].create(),
+            specialization_cache = map_mod.Map[str, ir.Function].create(),
+            generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
+        )
+        var di: ptr_uint = 0
+        while di < analysis.source_file.declarations.len:
+            var d: ast.Decl
+            unsafe:
+                d = read(analysis.source_file.declarations.data + di)
+            match d:
+                ast.Decl.decl_function as fun:
+                    let ret = resolve_return_type(ref_of(ctx), lookup_fn_sig(ref_of(ctx), fun.name), fun.return_type)
+                    sink.set(naming.qualified_c_name(analysis.module_name, fun.name), ret)
+                _:
+                    pass
+            di += 1
+        mi += 1
+
+
+function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], is_root: bool) -> ir.Program:
     var ctx = LowerCtx(
         module_name = analysis.module_name,
         analysis = analysis,
@@ -94,13 +321,22 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
         foreign_map = map_mod.Map[str, ForeignInfo].create(),
         extern_map = map_mod.Map[str, str].create(),
         function_returns = map_mod.Map[str, types.Type].create(),
+        variants = map_mod.Map[str, VariantInfo].create(),
+        match_label_counter = 0,
+        program_returns = ptr_of(read(program_returns)),
+        pending_specializations = vec.Vec[PendingSpecialization].create(),
+        specialization_cache = map_mod.Map[str, ir.Function].create(),
+        generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
     )
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
+    collect_variants(ref_of(ctx), analysis.source_file.declarations)
+    install_prelude_variants(ref_of(ctx))
     var functions = vec.Vec[ir.Function].create()
     var enums = vec.Vec[ir.EnumDecl].create()
     var structs = vec.Vec[ir.StructDecl].create()
     var unions = vec.Vec[ir.UnionDecl].create()
+    var variants = vec.Vec[ir.VariantDecl].create()
 
     var i: ptr_uint = 0
     while i < analysis.source_file.declarations.len:
@@ -111,7 +347,7 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
             ast.Decl.decl_function as fun:
                 if lowerable_function(fun.is_async, fun.is_const, fun.type_params, fun.body):
                     functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body))
-                    if fun.name.equal("main"):
+                    if is_root and fun.name.equal("main"):
                         match build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
                             Option.some as entry:
                                 functions.push(entry.value)
@@ -122,27 +358,48 @@ function lower_module(analysis: analyzer.Analysis) -> ir.Program:
             ast.Decl.decl_flags as fl:
                 enums.push(lower_enum_decl(ref_of(ctx), fl.name, fl.backing_type, fl.flags_members, true))
             ast.Decl.decl_struct as s:
-                match lower_struct_decl(ref_of(ctx), s.name):
-                    Option.some as sd:
-                        structs.push(sd.value)
-                    Option.none:
-                        pass
+                # Skip generic structs — only their concrete specializations
+                # (emitted by `ensure_generic_struct_decl`) carry resolved
+                # field types.
+                if s.type_params.len == 0:
+                    match lower_struct_decl(ref_of(ctx), s.name):
+                        Option.some as sd:
+                            structs.push(sd.value)
+                        Option.none:
+                            pass
             ast.Decl.decl_union as u:
                 unions.push(lower_union_decl(ref_of(ctx), u.name, u.union_fields))
+            ast.Decl.decl_variant as vr:
+                if vr.type_params.len == 0:
+                    variants.push(lower_variant_decl(ref_of(ctx), vr.name, vr.variant_arms))
             _:
                 pass
         i += 1
 
+    # Append any generic struct declarations emitted during specialization.
+    var gs_iter = ctx.generic_struct_decls.values()
+    while true:
+        let gs_ptr = gs_iter.next() else:
+            break
+        structs.push(unsafe: read(gs_ptr))
+
+    # Append any monomorphized generic functions from the specialization cache.
+    var spec_iter = ctx.specialization_cache.values()
+    while true:
+        let spec_ptr = spec_iter.next() else:
+            break
+        functions.push(unsafe: read(spec_ptr))
+
     return ir.Program(
         module_name = analysis.module_name,
-        includes = base_includes(),
+        includes = span[ir.Include](),
         constants = span[ir.Constant](),
         globals = span[ir.Global](),
         opaques = span[ir.OpaqueDecl](),
         structs = structs.as_span(),
         unions = unions.as_span(),
         enums = enums.as_span(),
-        variants = span[ir.VariantDecl](),
+        variants = variants.as_span(),
         static_asserts = span[ir.StaticAssert](),
         functions = functions.as_span(),
         source_path = "",
@@ -291,9 +548,18 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     value_expr = alloc_expr(ir.Expr.expr_zero_init(ty = ty))
                 else:
                     value_expr = lower_expr(ctx, init)
-                    ty = local_decl_type(ctx, loc.stmt_type, init)
-                    if types.is_error(ty):
+                    if loc.stmt_type != null:
+                        ty = local_decl_type(ctx, loc.stmt_type, init)
+                        if types.is_error(ty):
+                            ty = ir_expr_type(value_expr)
+                    else:
+                        # No annotation: the lowered initializer's IR type is the
+                        # authority (it already carries correct cross-module
+                        # qualification), avoiding re-qualifying an imported type
+                        # against the current module.
                         ty = ir_expr_type(value_expr)
+                        if types.is_error(ty):
+                            ty = local_decl_type(ctx, loc.stmt_type, init)
                 output.push(ir.Stmt.stmt_local(
                     name = loc.name,
                     linkage_name = c_name,
@@ -427,7 +693,9 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
             return types.primitive(name)
         if ctx.analysis.type_names.contains(name):
             return types.Type.ty_imported(module_name = ctx.module_name, name = name)
-        return types.Type.ty_error
+        # Fallback for type parameters (e.g. `T`), resolved later via
+        # type substitution during monomorphization.
+        return types.Type.ty_named(name = name)
 
 
 function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.Type:
@@ -831,6 +1099,10 @@ function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
                 return x.ty
             ir.Expr.expr_aggregate_literal as x:
                 return x.ty
+            ir.Expr.expr_variant_literal as x:
+                return x.ty
+            ir.Expr.expr_array_literal as x:
+                return x.ty
             ir.Expr.expr_zero_init as x:
                 return x.ty
             _:
@@ -860,8 +1132,45 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 return lower_plain_call(ctx, naming.qualified_c_name(ctx.module_name, id.name), args, call_ep, ret_type_ptr)
             ast.Expr.expr_specialization as spec:
                 return lower_specialization_call(ctx, spec.callee, spec.arguments, args, call_ep)
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as recv_id:
+                        # A non-generic variant arm constructor, e.g. `Token.number(value = 41)`.
+                        if ctx.variants.contains(recv_id.name):
+                            return lower_variant_literal(ctx, recv_id.name, ma.member_name, args)
+                        let mod_ptr = ctx.analysis.imports.get(recv_id.name)
+                        if mod_ptr != null:
+                            let target_module = read(mod_ptr)
+                            let c_name = naming.qualified_c_name(target_module, ma.member_name)
+                            var ret_ty = cross_module_return_type(ctx, c_name, call_ep)
+                            var ret_type_ptr = types.alloc_type(ret_ty)
+                            return lower_plain_call(ctx, c_name, args, call_ep, ret_type_ptr)
+                    ast.Expr.expr_specialization as spec:
+                        # A generic variant arm constructor, e.g. `Option[int].some(value = 42)`.
+                        if spec.arguments.len > 0:
+                            match read(spec.callee):
+                                ast.Expr.expr_identifier as spec_id:
+                                    if ctx.variants.contains(spec_id.name):
+                                        return lower_generic_variant_literal(ctx, spec_id.name, spec.arguments, ma.member_name, args)
+                                _:
+                                    pass
+                    _:
+                        pass
+                fatal(c"lowering Phase 4: unsupported member-access call target")
             _:
                 fatal(c"lowering Phase 3: unsupported call target")
+
+
+## The result type of a cross-module call, resolved from the shared program-wide
+## return map (keyed by C linkage name), falling back to the analyzer's recorded
+## type for the call expression.
+function cross_module_return_type(ctx: ref[LowerCtx], c_name: str, call_ep: ptr[ast.Expr]) -> types.Type:
+    unsafe:
+        var pr = read(ctx.program_returns)
+        let rp = pr.get(c_name)
+        if rp != null:
+            return read(rp)
+    return expr_type(ctx, call_ep)
 
 
 ## Lower a specialized call `Name[TypeArgs](args)`.  Phase 3 handles the builtin
@@ -884,9 +1193,280 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
                         i += 1
                     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = span_ty, fields = fields.as_span()))
+                if id.name.equal("array") and type_args.len == 2:
+                    var array_args = vec.Vec[types.Type].create()
+                    array_args.push(resolve_type_ref(ctx, read(type_args.data + 0).value))
+                    array_args.push(types.literal_int(resolve_array_length(read(type_args.data + 1).value)))
+                    let array_ty = types.Type.ty_generic(name = "array", args = array_args.as_span())
+                    var elements = vec.Vec[ir.Expr].create()
+                    var ai: ptr_uint = 0
+                    while ai < call_args.len:
+                        let arg = read(call_args.data + ai)
+                        elements.push(read(lower_expr(ctx, arg.arg_value)))
+                        ai += 1
+                    return alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span()))
+                # Generic struct constructor, e.g. `Pair[int, int](first = 42, ...)`.
+                if ctx.analysis.structs.contains(id.name) and all_call_args_named(call_args):
+                    return lower_generic_aggregate_literal(ctx, id.name, type_args, call_args)
             _:
                 pass
-    fatal(c"lowering Phase 3: unsupported specialized call")
+    # Generic function call, e.g. `first[int](p)`.  Lower a monomorphized copy of
+    # the generic function body with concrete type arguments and emit a call to it.
+    return lower_monomorphized_call(ctx, spec_callee, type_args, call_args, call_ep)
+
+
+## True when every call argument has a name (field/keyword argument).
+function all_call_args_named(args: span[ast.Argument]) -> bool:
+    var i: ptr_uint = 0
+    while i < args.len:
+        let arg = unsafe: read(args.data + i)
+        if arg.arg_name.is_none():
+            return false
+        i += 1
+    return true
+
+
+## Lower a generic struct constructor `Name[TypeArgs](field = value, ...)` to an IR
+## aggregate literal with the concrete type arguments resolved.
+function lower_generic_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, type_args: span[ast.TypeArgument], call_args: span[ast.Argument]) -> ptr[ir.Expr]:
+    var concrete_args = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < type_args.len:
+        unsafe:
+            concrete_args.push(resolve_type_ref(ctx, read(type_args.data + i).value))
+        i += 1
+    let ty = types.Type.ty_generic(name = struct_name, args = concrete_args.as_span())
+    var fields = vec.Vec[ir.AggregateField].create()
+    i = 0
+    while i < call_args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(call_args.data + i)
+        let field_name = arg.arg_name else:
+            fatal(c"lowering Phase 4c: generic struct construction requires named fields")
+        fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
+        i += 1
+    let result_ty = types.Type.ty_generic(name = struct_name, args = concrete_args.as_span())
+    ensure_generic_struct_decl(ctx, struct_name, type_args, concrete_args.as_span())
+    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = result_ty, fields = fields.as_span()))
+
+
+## Ensure a concrete struct declaration exists for a generic struct specialized
+## with concrete type arguments.  If not yet registered, build one by resolving
+## the original struct's fields with type substitution.
+function ensure_generic_struct_decl(ctx: ref[LowerCtx], struct_name: str, type_args: span[ast.TypeArgument], concrete_args: span[types.Type]) -> void:
+    let g_c_name = generic_struct_c_name(struct_name, concrete_args)
+    if ctx.generic_struct_decls.contains(g_c_name):
+        return
+    # Find the struct's AST declaration and read its fields directly (rather
+    # than going through analysis.structs, which stores ty_error for generic
+    # fields because the analyzer resolves them before the type-param scope is
+    # active).
+    var ir_fields = vec.Vec[ir.Field].create()
+    var found_struct = false
+    var di: ptr_uint = 0
+    while di < ctx.analysis.source_file.declarations.len and not found_struct:
+        var d: ast.Decl
+        unsafe:
+            d = read(ctx.analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_struct as s:
+                if s.name.equal(struct_name):
+                    found_struct = true
+                    # Build substitution map from type params.
+                    var sub = map_mod.Map[str, types.Type].create()
+                    var spi: ptr_uint = 0
+                    while spi < s.type_params.len and spi < concrete_args.len:
+                        unsafe:
+                            sub.set(read(s.type_params.data + spi).name, read(concrete_args.data + spi))
+                        spi += 1
+                    # Resolve each field with type substitution.
+                    var fi: ptr_uint = 0
+                    while fi < s.struct_fields.len:
+                        var f: ast.Field
+                        unsafe:
+                            f = read(s.struct_fields.data + fi)
+                        let raw_ty = resolve_field_type_ref(ctx, f.field_type)
+                        let field_ty = substitute_type_params(ctx, raw_ty, ref_of(sub))
+                        ir_fields.push(ir.Field(name = f.name, ty = field_ty))
+                        fi += 1
+            _:
+                pass
+        di += 1
+    if not found_struct:
+        return
+    ctx.generic_struct_decls.set(g_c_name, ir.StructDecl(
+        name = g_c_name,
+        linkage_name = g_c_name,
+        fields = ir_fields.as_span(),
+        packed = false,
+        alignment = 0,
+        source_module = Option[str].none,
+    ))
+
+
+## The C type name for a concrete generic struct: `Pair` + `int` + `int` →
+## `Pair_int_int`.  Mirrors `generic_c_type`.
+function generic_struct_c_name(name: str, args: span[types.Type]) -> str:
+    var buf = string.String.create()
+    buf.append(name)
+    var i: ptr_uint = 0
+    while i < args.len:
+        buf.append("_")
+        unsafe:
+            buf.append(naming.sanitize_identifier(types.type_to_string(read(args.data + i))))
+        i += 1
+    return buf.as_str()
+
+
+## Lower a call to a generic function with concrete type arguments.  The generic
+## function body is found in the module's declarations, type-substituted, and
+## lowered.  The monomorphized copy is cached so subsequent calls to the same
+## specialization reuse the already-lowered function.
+function lower_monomorphized_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], call_args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let spec_key = specialization_key(ctx, callee, type_args)
+    if not ctx.specialization_cache.contains(spec_key):
+        lower_and_cache_specialization(ctx, callee, type_args, spec_key)
+    let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
+    var ret_type_ptr = types.alloc_type(ret_ty)
+    return lower_plain_call(ctx, spec_key, call_args, call_ep, ret_type_ptr)
+
+
+## Lower an uncached generic function specialization: find the function's AST
+## declaration, build the type substitution map, lower the body, and cache.
+function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], spec_key: str) -> void:
+    var callee_name: str
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                callee_name = id.name
+            _:
+                fatal(c"lowering Phase 4c: unsupported generic callee")
+
+    # Find the function declaration in the module's source file.
+    var fun_decl: ast.Decl
+    var found_decl = false
+    var di: ptr_uint = 0
+    while di < ctx.analysis.source_file.declarations.len and not found_decl:
+        var d: ast.Decl
+        unsafe:
+            d = read(ctx.analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_function as f:
+                if f.name.equal(callee_name):
+                    fun_decl = d
+                    found_decl = true
+            _:
+                pass
+        di += 1
+    if not found_decl:
+        fatal(c"lowering Phase 4c: could not find generic function declaration")
+
+    # Build type substitution map from the function's type params.
+    match fun_decl:
+        ast.Decl.decl_function as fun:
+            var sub = map_mod.Map[str, types.Type].create()
+            var tpi: ptr_uint = 0
+            while tpi < fun.type_params.len:
+                var tp: ast.TypeParam
+                unsafe:
+                    tp = read(fun.type_params.data + tpi)
+                if tpi < type_args.len:
+                    let concrete = resolve_type_ref(ctx, unsafe: read(type_args.data + tpi).value)
+                    sub.set(tp.name, concrete)
+                tpi += 1
+
+            # Save the current context (locals, temp counter, function_returns)
+            # and lower the specialized copy.
+            var saved_locals = ctx.locals
+            var saved_counter = ctx.temp_counter
+            var saved_returns = ctx.function_returns
+            ctx.locals = vec.Vec[LocalBinding].create()
+            ctx.temp_counter = 0
+            ctx.function_returns = map_mod.Map[str, types.Type].create()
+
+            var spec_fun = lower_specialized_function(ctx, fun.name, fun.method_params, fun.return_type, fun.body, ref_of(sub))
+            spec_fun.linkage_name = spec_key
+            spec_fun.name = spec_key
+
+            ctx.specialization_cache.set(spec_key, spec_fun)
+
+            # Record the monomorphized function's return type on the ORIGINAL
+            # (saved) function_returns so that subsequent lookups in the same
+            # module find it after the context is restored.
+            saved_returns.set(spec_key, spec_fun.return_type)
+
+            # Restore the original lowering context.
+            ctx.locals = saved_locals
+            ctx.temp_counter = saved_counter
+            ctx.function_returns = saved_returns
+        _:
+            fatal(c"lowering Phase 4c: expected function decl")
+
+
+## Lower a payload variant arm constructor `Variant.arm(field = value, ...)` to an
+## IR variant literal.  No-payload arms are handled in `lower_member_access`.
+function lower_variant_literal(ctx: ref[LowerCtx], variant_name: str, arm_name: str, args: span[ast.Argument]) -> ptr[ir.Expr]:
+    return alloc_expr(ir.Expr.expr_variant_literal(
+        ty = types.Type.ty_imported(module_name = ctx.module_name, name = variant_name),
+        arm_name = arm_name,
+        fields = collect_variant_literal_fields(ctx, args),
+    ))
+
+
+## Lower a generic variant arm constructor `Option[int].some(value = 42)`.  The
+## type arguments resolve to concrete types; the call arguments map to field
+## values.  The resulting type is `ty_generic("Option", [ty_int])`.
+function lower_generic_variant_literal(ctx: ref[LowerCtx], variant_name: str, type_args: span[ast.TypeArgument], arm_name: str, call_args: span[ast.Argument]) -> ptr[ir.Expr]:
+    var concrete_args = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < type_args.len:
+        unsafe:
+            concrete_args.push(resolve_type_ref(ctx, read(type_args.data + i).value))
+        i += 1
+    let ty = types.Type.ty_generic(name = variant_name, args = concrete_args.as_span())
+    return alloc_expr(ir.Expr.expr_variant_literal(
+        ty = ty,
+        arm_name = arm_name,
+        fields = collect_variant_literal_fields(ctx, call_args),
+    ))
+
+
+## Collect named field values from call arguments into variant literal fields.
+function collect_variant_literal_fields(ctx: ref[LowerCtx], args: span[ast.Argument]) -> span[ir.AggregateField]:
+    var fields = vec.Vec[ir.AggregateField].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        let field_name = arg.arg_name else:
+            fatal(c"lowering Phase 4b: variant arm construction requires named fields")
+        fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
+        i += 1
+    return fields.as_span()
+
+
+## Build a specialization key from the callee name + concrete type args.  For a
+## same-module function `first[int]`, the key is `<module_prefix>_first_int`.  The
+## key doubles as the monomorphized C linkage name.
+function specialization_key(ctx: ref[LowerCtx], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument]) -> str:
+    var buf = string.String.create()
+    buf.append(naming.module_c_prefix(ctx.module_name))
+    buf.append("_")
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                buf.append(id.name)
+            _:
+                fatal(c"lowering Phase 4c: unsupported generic callee")
+    var i: ptr_uint = 0
+    while i < type_args.len:
+        buf.append("_")
+        let ty = resolve_type_ref(ctx, unsafe: read(type_args.data + i).value)
+        buf.append(naming.sanitize_identifier(types.type_to_string(ty)))
+        i += 1
+    return buf.as_str()
 
 
 ## Lower a struct constructor `Name(field = value, ...)` to an IR aggregate
@@ -1086,6 +1666,13 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
+                # A no-payload variant arm constructor, e.g. `Token.eof`.
+                if ctx.variants.contains(id.name):
+                    return alloc_expr(ir.Expr.expr_variant_literal(
+                        ty = types.Type.ty_imported(module_name = ctx.module_name, name = id.name),
+                        arm_name = member,
+                        fields = span[ir.AggregateField](),
+                    ))
                 if ctx.analysis.static_member_types.contains(id.name):
                     return alloc_expr(ir.Expr.expr_name(
                         name = naming.qualified_member_c_name(ctx.module_name, id.name, member),
@@ -1177,6 +1764,194 @@ function lower_union_decl(ctx: ref[LowerCtx], name: str, fields: span[ast.Field]
     )
 
 
+# =============================================================================
+#  Variant declarations (mirrors lowering/declarations.rb lower_variants)
+# =============================================================================
+
+## Register the prelude types (Option[T], Result[T,E]) in the variant registry so
+## arm constructors `Option.some(value = ...)` and match on Option/Result
+## scrutinees can resolve arm names and payload fields.  User-declared variants
+## of the same name take priority (matching the analyzer's policy).
+function install_prelude_variants(ctx: ref[LowerCtx]) -> void:
+    if not ctx.variants.contains("Option"):
+        ctx.variants.set("Option", prelude_option_info())
+    if not ctx.variants.contains("Result"):
+        ctx.variants.set("Result", prelude_result_info())
+
+
+function prelude_option_info() -> VariantInfo:
+    var arms = vec.Vec[VariantArmInfo].create()
+    arms.push(VariantArmInfo(
+        name = "some",
+        field_names = sp_str("value"),
+        field_types = sp_str_type("_phantom"),
+    ))
+    arms.push(VariantArmInfo(name = "none", field_names = span[str](), field_types = span[types.Type]()))
+    return VariantInfo(module_name = "", arms = arms.as_span())
+
+
+function prelude_result_info() -> VariantInfo:
+    var arms = vec.Vec[VariantArmInfo].create()
+    arms.push(VariantArmInfo(
+        name = "success",
+        field_names = sp_str("value"),
+        field_types = sp_str_type("_phantom"),
+    ))
+    arms.push(VariantArmInfo(
+        name = "failure",
+        field_names = sp_str("error"),
+        field_types = sp_str_type("_phantom"),
+    ))
+    return VariantInfo(module_name = "", arms = arms.as_span())
+
+
+## A single-element `span[str]` — used for prelude arm payload field names.
+function sp_str(value: str) -> span[str]:
+    var buf = vec.Vec[str].create()
+    buf.push(value)
+    return buf.as_span()
+
+
+## A single-element `span[types.Type]` carrying a primitive `ty_named` — used as a
+## prelude-arm field-type placeholder until the specialization pass resolves the
+## concrete type from the generic call site.
+function sp_str_type(name: str) -> span[types.Type]:
+    var buf = vec.Vec[types.Type].create()
+    buf.push(types.Type.ty_named(name = name))
+    return buf.as_span()
+
+
+## Pre-scan variant declarations into the registry so arm constructors and match
+## arms can resolve discriminant indices and payload fields.  Generic variants
+## (Option/Result and user generics) are deferred to Phase 4c.
+function collect_variants(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
+    var i: ptr_uint = 0
+    while i < decls.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(decls.data + i)
+        match d:
+            ast.Decl.decl_variant as vr:
+                if vr.type_params.len == 0:
+                    ctx.variants.set(vr.name, build_variant_info(ctx, vr.variant_arms))
+            _:
+                pass
+        i += 1
+
+
+function build_variant_info(ctx: ref[LowerCtx], arms: span[ast.VariantArm]) -> VariantInfo:
+    var arm_infos = vec.Vec[VariantArmInfo].create()
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.VariantArm
+        unsafe:
+            arm = read(arms.data + i)
+        var names = vec.Vec[str].create()
+        var tys = vec.Vec[types.Type].create()
+        var fi: ptr_uint = 0
+        while fi < arm.arm_fields.len:
+            var f: ast.Field
+            unsafe:
+                f = read(arm.arm_fields.data + fi)
+            names.push(f.name)
+            tys.push(resolve_field_type_ref(ctx, f.field_type))
+            fi += 1
+        arm_infos.push(VariantArmInfo(name = arm.name, field_names = names.as_span(), field_types = tys.as_span()))
+        i += 1
+    return VariantInfo(module_name = ctx.module_name, arms = arm_infos.as_span())
+
+
+## Lower a variant declaration to an `ir.VariantDecl`, mirroring Ruby's
+## `lower_variants`: the outer C name is `<module>_<name>` and each arm's payload
+## struct C name is `<outer_c>_<arm>`.
+function lower_variant_decl(ctx: ref[LowerCtx], name: str, arms: span[ast.VariantArm]) -> ir.VariantDecl:
+    let outer_c = naming.qualified_c_name(ctx.module_name, name)
+    var ir_arms = vec.Vec[ir.VariantArm].create()
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.VariantArm
+        unsafe:
+            arm = read(arms.data + i)
+        var fields = vec.Vec[ir.Field].create()
+        var fi: ptr_uint = 0
+        while fi < arm.arm_fields.len:
+            var f: ast.Field
+            unsafe:
+                f = read(arm.arm_fields.data + fi)
+            fields.push(ir.Field(name = f.name, ty = resolve_field_type_ref(ctx, f.field_type)))
+            fi += 1
+        ir_arms.push(ir.VariantArm(name = arm.name, linkage_name = variant_arm_c_name(outer_c, arm.name), fields = fields.as_span()))
+        i += 1
+    return ir.VariantDecl(name = name, linkage_name = outer_c, arms = ir_arms.as_span(), source_module = Option[str].none)
+
+
+## The C name of a variant arm's payload struct: `<outer_c>_<arm>`.
+function variant_arm_c_name(outer_c: str, arm_name: str) -> str:
+    var buf = string.String.create()
+    buf.append(outer_c)
+    buf.append("_")
+    buf.append(arm_name)
+    return buf.as_str()
+
+
+## The C base name for a variant type: `ty_generic("Option", [ty_int])` →
+## `"Option_int"`; `ty_imported` uses `qualified_c_name`; non-generic variants
+## fall back to `qualified_c_name(module_name, variant_name)`.
+function variant_base_c_name(ty: types.Type, module_name: str) -> str:
+    match ty:
+        types.Type.ty_generic as g:
+            var buf = string.String.create()
+            buf.append(g.name)
+            var i: ptr_uint = 0
+            while i < g.args.len:
+                buf.append("_")
+                unsafe:
+                    buf.append(naming.sanitize_identifier(types.type_to_string(read(g.args.data + i))))
+                i += 1
+            return buf.as_str()
+        types.Type.ty_imported as im:
+            return naming.qualified_c_name(im.module_name, im.name)
+        _:
+            return naming.qualified_c_name(module_name, "")
+
+
+## The type-parameter names of a struct, extracted from its AST declaration.
+## Used to build the substitution map when emitting a concrete generic struct.
+function struct_type_params(ctx: ref[LowerCtx], struct_name: str) -> span[str]:
+    var di: ptr_uint = 0
+    while di < ctx.analysis.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(ctx.analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_struct as s:
+                if s.name.equal(struct_name):
+                    var names = vec.Vec[str].create()
+                    var pi: ptr_uint = 0
+                    while pi < s.type_params.len:
+                        unsafe:
+                            names.push(read(s.type_params.data + pi).name)
+                        pi += 1
+                    return names.as_span()
+            _:
+                pass
+        di += 1
+    return span[str]()
+
+
+## Look up a variant arm's field info by arm name.
+function variant_arm_info(info: VariantInfo, arm_name: str) -> Option[VariantArmInfo]:
+    var i: ptr_uint = 0
+    while i < info.arms.len:
+        var arm: VariantArmInfo
+        unsafe:
+            arm = read(info.arms.data + i)
+        if arm.name.equal(arm_name):
+            return Option[VariantArmInfo].some(value = arm)
+        i += 1
+    return Option[VariantArmInfo].none
+
+
 ## Resolve a field/local type annotation to a `types.Type`: scalars via
 ## `resolve_scalar_type_ref`, and single-name local types (structs/unions/enums)
 ## to a module-qualified `ty_imported`.  Compound types (arrays/spans/generics)
@@ -1186,14 +1961,18 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
     let scalar = resolve_scalar_type_ref(ptr_of(local_tref))
     if not types.is_error(scalar):
         return scalar
-    if tref.is_fn or tref.is_proc or tref.is_dyn or tref.is_tuple or tref.nullable or tref.arguments.len > 0:
+    if tref.is_fn or tref.is_proc or tref.is_dyn or tref.is_tuple or tref.nullable:
         return types.Type.ty_error
+    if tref.arguments.len > 0:
+        return resolve_generic_type_ref(ctx, tref)
     if tref.name.parts.len != 1:
         return types.Type.ty_error
     let name = unsafe: read(tref.name.parts.data + 0)
     if ctx.analysis.type_names.contains(name):
         return types.Type.ty_imported(module_name = ctx.module_name, name = name)
-    return types.Type.ty_error
+    # Fallback: the name may be a type parameter (like `T`) which is resolved
+    # later via type substitution during monomorphization.
+    return types.Type.ty_named(name = name)
 
 
 # =============================================================================
@@ -1292,10 +2071,22 @@ function const_eval_int(ep: ptr[ast.Expr]) -> long:
 ## no `_` arm the switch is exhaustive (the backend adds `__builtin_unreachable`).
 ## Integer/str/variant/tuple scrutinees arrive in later phases.
 function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
-    let scrutinee_expr = lower_expr(ctx, scrutinee)
-    let enum_name = named_type_name(expr_type(ctx, scrutinee)) else:
-        fatal(c"lowering Phase 2: match is only supported over enum/flags scrutinees")
+    let scrutinee_ty = expr_type(ctx, scrutinee)
+    let type_name = named_type_name(scrutinee_ty)
 
+    if type_name.is_some() and ctx.variants.contains(type_name.unwrap()):
+        lower_variant_match(ctx, output, scrutinee, type_name.unwrap(), scrutinee_ty, arms)
+        return
+
+    let gen_var = generic_variant_name(scrutinee_ty)
+    if gen_var.is_some() and ctx.variants.contains(gen_var.unwrap()):
+        lower_variant_match(ctx, output, scrutinee, gen_var.unwrap(), scrutinee_ty, arms)
+        return
+
+    let enum_name = type_name else:
+        fatal(c"lowering Phase 2: match is only supported over enum/flags/variant scrutinees")
+
+    let scrutinee_expr = lower_expr(ctx, scrutinee)
     var cases = vec.Vec[ir.SwitchCase].create()
     var has_wildcard = false
     var i: ptr_uint = 0
@@ -1313,13 +2104,321 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
                 fatal(c"lowering Phase 2: unsupported match pattern")
             let value = alloc_expr(ir.Expr.expr_name(
                 name = naming.qualified_member_c_name(ctx.module_name, enum_name, member),
-                ty = expr_type(ctx, scrutinee),
+                ty = scrutinee_ty,
                 pointer = false,
             ))
             cases.push(ir.SwitchCase(is_default = false, value = value, body = body))
         i += 1
 
     output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
+
+
+## Lower a `match` over a variant scrutinee into a `switch (scrut.kind)`.  Each
+## payload arm may bind the whole payload struct via `as name`
+## (`<arm_c> name = scrut.data.<arm>;`); no-payload arms carry no binding.  A
+## non-name scrutinee is hoisted into a temp so it is evaluated once.
+## Dispatch a variant match to the switch strategy (member / `as name` /
+## no-payload / wildcard arms) or the if/goto strategy (any struct-pattern arm,
+## i.e. `Variant.arm(field, ...)`), mirroring Ruby's block.rb decision.
+function lower_variant_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+    if arms_have_call_pattern(arms):
+        lower_variant_match_goto(ctx, output, scrutinee, variant_name, scrutinee_ty, arms)
+    else:
+        lower_variant_match_switch(ctx, output, scrutinee, variant_name, scrutinee_ty, arms)
+
+
+## True when any arm's pattern is a call (a struct-destructure pattern such as
+## `Shape.circle(r)`), which forces the if/goto lowering strategy.
+function arms_have_call_pattern(arms: span[ast.MatchArm]) -> bool:
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.MatchArm
+        unsafe:
+            arm = read(arms.data + i)
+        let pattern = arm.pattern
+        if pattern != null:
+            unsafe:
+                match read(pattern):
+                    ast.Expr.expr_call:
+                        return true
+                    _:
+                        pass
+        i += 1
+    return false
+
+
+function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+    let info_ptr = ctx.variants.get(variant_name) else:
+        fatal(c"lowering Phase 4b: variant match on unknown variant")
+    let info = unsafe: read(info_ptr)
+    let outer_c = variant_base_c_name(scrutinee_ty, ctx.module_name)
+    let int_ty = types.primitive("int")
+
+    var scrut_base = lower_expr(ctx, scrutinee)
+    if not ir_expr_is_name(scrut_base):
+        let temp = fresh_c_temp_name(ctx, "match_scrutinee")
+        let scrut_ty = ir_expr_type(scrut_base)
+        output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrut_ty, value = scrut_base, line = 0, source_path = ""))
+        scrut_base = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrut_ty, pointer = false))
+
+    let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "kind", ty = int_ty))
+    var cases = vec.Vec[ir.SwitchCase].create()
+    var has_wildcard = false
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.MatchArm
+        unsafe:
+            arm = read(arms.data + i)
+        let pattern = arm.pattern
+        if pattern == null:
+            has_wildcard = true
+            cases.push(ir.SwitchCase(is_default = true, value = null, body = lower_block(ctx, arm.body)))
+        else:
+            let arm_name = match_member_name(pattern) else:
+                fatal(c"lowering Phase 4b: unsupported variant match pattern")
+            var stmts = vec.Vec[ir.Stmt].create()
+            match arm.binding_name:
+                Option.some as bn:
+                    let binding_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
+                    let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = binding_ty))
+                    let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
+                    let bc = c_local_name(bn.value)
+                    stmts.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
+                    ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
+                Option.none:
+                    pass
+            let body = lower_block(ctx, arm.body)
+            var bi: ptr_uint = 0
+            while bi < body.len:
+                unsafe:
+                    stmts.push(read(body.data + bi))
+                bi += 1
+            let kind_const = alloc_expr(ir.Expr.expr_name(
+                name = variant_kind_const_name(outer_c, arm_name),
+                ty = int_ty,
+                pointer = false,
+            ))
+            cases.push(ir.SwitchCase(is_default = false, value = kind_const, body = stmts.as_span()))
+        i += 1
+
+    output.push(ir.Stmt.stmt_switch(expression = kind_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
+
+
+## Lower a variant match with struct-pattern arms into an if/goto chain: each arm
+## tests `scrut.kind`, jumps to the next arm's label on mismatch, otherwise binds
+## the payload into a temp, destructures its fields, and falls through to the arm
+## body then `goto <end>`.  Mirrors Ruby's block.rb struct-pattern match path.
+function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+    let info_ptr = ctx.variants.get(variant_name) else:
+        fatal(c"lowering Phase 4b: variant match on unknown variant")
+    let info = unsafe: read(info_ptr)
+    let outer_c = variant_base_c_name(scrutinee_ty, ctx.module_name)
+    let int_ty = types.primitive("int")
+    let bool_ty = types.primitive("bool")
+
+    var scrut_base = lower_expr(ctx, scrutinee)
+    if not ir_expr_is_name(scrut_base):
+        let temp = fresh_c_temp_name(ctx, "match_value")
+        let scrut_ty = ir_expr_type(scrut_base)
+        output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrut_ty, value = scrut_base, line = 0, source_path = ""))
+        scrut_base = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrut_ty, pointer = false))
+
+    ctx.match_label_counter += 1
+    let m = ctx.match_label_counter
+    let end_label = match_label_name(m, "end")
+    let next_label = match_label_name(m, "arm_next")
+
+    var arm_index: ptr_uint = 0
+    while arm_index < arms.len:
+        var arm: ast.MatchArm
+        unsafe:
+            arm = read(arms.data + arm_index)
+        if arm_index > 0:
+            output.push(ir.Stmt.stmt_label(name = match_arm_label(m, arm_index)))
+
+        let pattern = arm.pattern
+        if pattern == null:
+            var blk = vec.Vec[ir.Stmt].create()
+            append_span_stmts(ref_of(blk), lower_block(ctx, arm.body))
+            if not stmts_terminate(blk.as_span()):
+                blk.push(ir.Stmt.stmt_goto(label = end_label))
+            output.push(ir.Stmt.stmt_block(body = blk.as_span()))
+        else:
+            let arm_name = variant_match_arm_name_from_pattern(pattern) else:
+                fatal(c"lowering Phase 4b: unsupported variant match pattern")
+            let goto_label = if arm_index < arms.len - 1: match_arm_label(m, arm_index + 1) else: next_label
+
+            let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "kind", ty = int_ty))
+            let tag_value = alloc_expr(ir.Expr.expr_name(name = variant_kind_const_name(outer_c, arm_name), ty = int_ty, pointer = false))
+            let tag_check = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = kind_expr, right = tag_value, ty = bool_ty))
+            var then_body = vec.Vec[ir.Stmt].create()
+            then_body.push(ir.Stmt.stmt_goto(label = goto_label))
+            output.push(ir.Stmt.stmt_if(condition = tag_check, then_body = then_body.as_span(), else_body = span[ir.Stmt]()))
+
+            var blk = vec.Vec[ir.Stmt].create()
+            let payload_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
+            match variant_arm_info(info, arm_name):
+                Option.some as ai:
+                    if ai.value.field_names.len > 0:
+                        let payload_c = fresh_c_temp_name(ctx, "match_payload")
+                        let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = payload_ty))
+                        let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = payload_ty))
+                        blk.push(ir.Stmt.stmt_local(name = payload_c, linkage_name = payload_c, ty = payload_ty, value = arm_data, line = 0, source_path = ""))
+                        ctx.locals.push(LocalBinding(name = payload_c, c_name = payload_c, ty = payload_ty, pointer = false))
+                        lower_variant_field_bindings(ctx, ref_of(blk), pattern, ai.value, payload_c, payload_ty)
+                        match arm.binding_name:
+                            Option.some as bn:
+                                let bc = c_local_name(bn.value)
+                                let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
+                                blk.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = payload_ty, value = payload_ref, line = 0, source_path = ""))
+                                ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = payload_ty, pointer = false))
+                            Option.none:
+                                pass
+                Option.none:
+                    pass
+            append_span_stmts(ref_of(blk), lower_block(ctx, arm.body))
+            if not stmts_terminate(blk.as_span()):
+                blk.push(ir.Stmt.stmt_goto(label = end_label))
+            output.push(ir.Stmt.stmt_block(body = blk.as_span()))
+        arm_index += 1
+
+    output.push(ir.Stmt.stmt_label(name = next_label))
+    output.push(ir.Stmt.stmt_label(name = end_label))
+
+
+## Emit `<field_type> <field> = <payload>.<field>;` bindings for each bare
+## identifier in a struct pattern's argument list, skipping `_` discards.  Guards
+## and equality patterns are not yet supported.
+function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.Stmt]], pattern: ptr[ast.Expr], arm_info: VariantArmInfo, payload_c: str, payload_ty: types.Type) -> void:
+    unsafe:
+        match read(pattern):
+            ast.Expr.expr_call as cl:
+                var i: ptr_uint = 0
+                while i < cl.args.len:
+                    var arg: ast.Argument
+                    arg = read(cl.args.data + i)
+                    match arg.arg_name:
+                        Option.some:
+                            fatal(c"lowering Phase 4b: variant match equality patterns not yet supported")
+                        Option.none:
+                            pass
+                    match read(arg.arg_value):
+                        ast.Expr.expr_identifier as id:
+                            if not id.name.equal("_"):
+                                let field_ty = variant_arm_field_type(arm_info, id.name)
+                                let bc = c_local_name(id.name)
+                                let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
+                                let field_expr = alloc_expr(ir.Expr.expr_member(receiver = payload_ref, member = id.name, ty = field_ty))
+                                blk.push(ir.Stmt.stmt_local(name = id.name, linkage_name = bc, ty = field_ty, value = field_expr, line = 0, source_path = ""))
+                                ctx.locals.push(LocalBinding(name = id.name, c_name = bc, ty = field_ty, pointer = false))
+                        _:
+                            fatal(c"lowering Phase 4b: variant match guard patterns not yet supported")
+                    i += 1
+            _:
+                pass
+
+
+## The arm name of a variant match pattern: `Variant.arm` (member access) or
+## `Variant.arm(...)` (call whose callee is that member access).
+function variant_match_arm_name_from_pattern(pattern: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(pattern):
+            ast.Expr.expr_member_access as ma:
+                return Option[str].some(value = ma.member_name)
+            ast.Expr.expr_call as cl:
+                return match_member_name(cl.callee)
+            _:
+                return Option[str].none
+
+
+## The type of a named field within a variant arm, or `ty_error` when absent.
+function variant_arm_field_type(arm_info: VariantArmInfo, field_name: str) -> types.Type:
+    var i: ptr_uint = 0
+    while i < arm_info.field_names.len:
+        unsafe:
+            if read(arm_info.field_names.data + i).equal(field_name):
+                return read(arm_info.field_types.data + i)
+        i += 1
+    return types.Type.ty_error
+
+
+## `__mt_match_<m>_<suffix>` label name.
+function match_label_name(m: ptr_uint, suffix: str) -> str:
+    var buf = string.String.create()
+    buf.append("__mt_match_")
+    fmt.append_ptr_uint(ref_of(buf), m)
+    buf.append("_")
+    buf.append(suffix)
+    return buf.as_str()
+
+
+## `__mt_match_<m>_arm_<index>` label name.
+function match_arm_label(m: ptr_uint, index: ptr_uint) -> str:
+    var buf = string.String.create()
+    buf.append("__mt_match_")
+    fmt.append_ptr_uint(ref_of(buf), m)
+    buf.append("_arm_")
+    fmt.append_ptr_uint(ref_of(buf), index)
+    return buf.as_str()
+
+
+## True when a lowered statement sequence ends in a terminator (return / goto /
+## break / continue), so a following `goto` would be unreachable and is omitted —
+## keeping the `end` label unused so the backend can drop it, matching Ruby.
+function stmts_terminate(stmts: span[ir.Stmt]) -> bool:
+    if stmts.len == 0:
+        return false
+    unsafe:
+        match read(stmts.data + stmts.len - 1):
+            ir.Stmt.stmt_return:
+                return true
+            ir.Stmt.stmt_goto:
+                return true
+            ir.Stmt.stmt_break:
+                return true
+            ir.Stmt.stmt_continue:
+                return true
+            _:
+                return false
+
+
+## Append every statement of a lowered block span into an output vector.
+function append_span_stmts(dest: ref[vec.Vec[ir.Stmt]], stmts: span[ir.Stmt]) -> void:
+    var i: ptr_uint = 0
+    while i < stmts.len:
+        unsafe:
+            dest.push(read(stmts.data + i))
+        i += 1
+
+
+## The `types.Type` name for a variant arm's payload struct so it renders as the
+## arm C name (`Token` + `ident` -> `Token_ident`, then `<module>_Token_ident`).
+function variant_arm_type_name(variant_name: str, arm_name: str) -> str:
+    var buf = string.String.create()
+    buf.append(variant_name)
+    buf.append("_")
+    buf.append(arm_name)
+    return buf.as_str()
+
+
+## The discriminant constant name for an arm: `<outer_c>_kind_<arm>`.
+function variant_kind_const_name(outer_c: str, arm_name: str) -> str:
+    var buf = string.String.create()
+    buf.append(outer_c)
+    buf.append("_kind_")
+    buf.append(arm_name)
+    return buf.as_str()
+
+
+## True when a lowered expression is a bare name reference (safe to reuse without
+## hoisting, since re-rendering it has no side effects).
+function ir_expr_is_name(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name:
+                return true
+            _:
+                return false
 
 
 function match_member_name(pattern: ptr[ast.Expr]) -> Option[str]:
@@ -1337,6 +2436,16 @@ function named_type_name(t: types.Type) -> Option[str]:
             return Option[str].some(value = n.name)
         types.Type.ty_imported as im:
             return Option[str].some(value = im.name)
+        _:
+            return Option[str].none
+
+
+## Extract the base variant name from a generic variant type (`Option[int]` →
+## "Option"), so match on a generic scrutinee can resolve prelude arm names.
+function generic_variant_name(t: types.Type) -> Option[str]:
+    match t:
+        types.Type.ty_generic as g:
+            return Option[str].some(value = g.name)
         _:
             return Option[str].none
 

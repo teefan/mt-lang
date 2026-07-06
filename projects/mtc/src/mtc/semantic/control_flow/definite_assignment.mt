@@ -29,17 +29,25 @@ public function check(params: span[ast.Param], body: ptr[ast.Stmt]) -> vec.Vec[D
     cfgb.build_cfg_into(ref_of(cfg), params, body)
 
     var assigned = map_mod.Map[ptr_uint, bool].create()
+    # Lexical scope stack of in-scope local names.  An identifier read is only a
+    # tracked local read when its name is currently in scope; names that are not
+    # (import aliases, module symbols, out-of-scope block locals, or forward
+    # references) resolve elsewhere and are invisible to this pass — mirroring the
+    # Ruby reference's scope-aware binding resolution.
+    var scopes = vec.Vec[str].create()
     unsafe:
         var pi: ptr_uint = 0
         while pi < params.len:
             let p = read(params.data + pi)
+            scopes.push(p.name)
             let id_ptr = cfg.binding_map.get(p.name) else:
                 pi += 1
                 continue
             assigned.set(read(id_ptr), true)
             pi += 1
 
-    check_stmt(body, ref_of(assigned), ref_of(cfg.binding_map), ref_of(diags))
+    check_stmt(body, ref_of(assigned), ref_of(cfg.binding_map), ref_of(diags), ref_of(scopes))
+    scopes.release()
     assigned.release()
     return diags
 
@@ -48,22 +56,25 @@ public function check(params: span[ast.Param], body: ptr[ast.Stmt]) -> vec.Vec[D
 ##  Statement checking
 ## ---------------------------------------------------------------------------
 
-function check_stmt(stmt_ptr: ptr[ast.Stmt]?, assigned: ref[map_mod.Map[ptr_uint, bool]], binding_map: ref[map_mod.Map[str, ptr_uint]], diags: ref[vec.Vec[Diag]]) -> void:
+function check_stmt(stmt_ptr: ptr[ast.Stmt]?, assigned: ref[map_mod.Map[ptr_uint, bool]], binding_map: ref[map_mod.Map[str, ptr_uint]], diags: ref[vec.Vec[Diag]], scopes: ref[vec.Vec[str]]) -> void:
     if stmt_ptr == null:
         return
     unsafe:
         match read(ptr[ast.Stmt]<-stmt_ptr):
             ast.Stmt.stmt_block as b:
+                let mark = scopes.len()
                 var i: ptr_uint = 0
                 while i < b.statements.len:
-                    check_stmt(b.statements.data + i, assigned, binding_map, diags)
+                    check_stmt(b.statements.data + i, assigned, binding_map, diags, scopes)
                     i += 1
+                truncate_scope(scopes, mark)
             ast.Stmt.stmt_local as l:
-                check_expr(l.value, assigned, binding_map, diags)
+                check_expr(l.value, assigned, binding_map, diags, scopes)
                 if not l.name.equal("_"):
                     mark_assigned(binding_map, assigned, l.name)
+                    scopes.push(l.name)
             ast.Stmt.stmt_assignment as a:
-                check_expr(a.value, assigned, binding_map, diags)
+                check_expr(a.value, assigned, binding_map, diags, scopes)
                 mark_assigned_target(a.target, assigned, binding_map)
             ast.Stmt.stmt_if as i:
                 var bi: ptr_uint = 0
@@ -71,16 +82,16 @@ function check_stmt(stmt_ptr: ptr[ast.Stmt]?, assigned: ref[map_mod.Map[ptr_uint
                 var first_branch = true
                 while bi < i.branches.len:
                     let br = read(i.branches.data + bi)
-                    check_expr(br.condition, assigned, binding_map, diags)
+                    check_expr(br.condition, assigned, binding_map, diags, scopes)
                     var branch_assigned = copy_assigned(assigned)
-                    check_stmt(br.body, ref_of(branch_assigned), binding_map, diags)
+                    check_stmt(br.body, ref_of(branch_assigned), binding_map, diags, scopes)
                     intersect_assigned(ref_of(after_assigned), ref_of(branch_assigned), ref_of(first_branch))
                     branch_assigned.release()
                     first_branch = false
                     bi += 1
                 if i.else_body != null:
                     var else_assigned = copy_assigned(assigned)
-                    check_stmt(i.else_body, ref_of(else_assigned), binding_map, diags)
+                    check_stmt(i.else_body, ref_of(else_assigned), binding_map, diags, scopes)
                     intersect_assigned(ref_of(after_assigned), ref_of(else_assigned), ref_of(first_branch))
                     else_assigned.release()
                 else:
@@ -88,27 +99,27 @@ function check_stmt(stmt_ptr: ptr[ast.Stmt]?, assigned: ref[map_mod.Map[ptr_uint
                 swap_assigned(assigned, ref_of(after_assigned))
                 after_assigned.release()
             ast.Stmt.stmt_while as w:
-                check_expr(w.condition, assigned, binding_map, diags)
+                check_expr(w.condition, assigned, binding_map, diags, scopes)
                 var body_assigned = copy_assigned(assigned)
-                check_stmt(w.body, ref_of(body_assigned), binding_map, diags)
+                check_stmt(w.body, ref_of(body_assigned), binding_map, diags, scopes)
                 body_assigned.release()
             ast.Stmt.stmt_for as fr:
                 var fi: ptr_uint = 0
                 while fi < fr.iterables.len:
-                    check_expr(fr.iterables.data + fi, assigned, binding_map, diags)
+                    check_expr(fr.iterables.data + fi, assigned, binding_map, diags, scopes)
                     fi += 1
                 var for_assigned = copy_assigned(assigned)
-                check_stmt(fr.body, ref_of(for_assigned), binding_map, diags)
+                check_stmt(fr.body, ref_of(for_assigned), binding_map, diags, scopes)
                 for_assigned.release()
             ast.Stmt.stmt_match as m:
-                check_expr(m.scrutinee, assigned, binding_map, diags)
+                check_expr(m.scrutinee, assigned, binding_map, diags, scopes)
                 var after_assigned = map_mod.Map[ptr_uint, bool].create()
                 var first_branch = true
                 var ai: ptr_uint = 0
                 while ai < m.arms.len:
                     let arm = read(m.arms.data + ai)
                     var arm_assigned = copy_assigned(assigned)
-                    check_stmt(arm.body, ref_of(arm_assigned), binding_map, diags)
+                    check_stmt(arm.body, ref_of(arm_assigned), binding_map, diags, scopes)
                     intersect_assigned(ref_of(after_assigned), ref_of(arm_assigned), ref_of(first_branch))
                     arm_assigned.release()
                     first_branch = false
@@ -116,14 +127,14 @@ function check_stmt(stmt_ptr: ptr[ast.Stmt]?, assigned: ref[map_mod.Map[ptr_uint
                 swap_assigned(assigned, ref_of(after_assigned))
                 after_assigned.release()
             ast.Stmt.stmt_ret as r:
-                check_expr(r.value, assigned, binding_map, diags)
+                check_expr(r.value, assigned, binding_map, diags, scopes)
             ast.Stmt.stmt_defer as d:
-                check_expr(d.expression, assigned, binding_map, diags)
+                check_expr(d.expression, assigned, binding_map, diags, scopes)
                 # Defer body does not affect the current flow; skip it.
             ast.Stmt.stmt_expression as e:
-                check_expr(e.expression, assigned, binding_map, diags)
+                check_expr(e.expression, assigned, binding_map, diags, scopes)
             ast.Stmt.stmt_unsafe as u:
-                check_stmt(u.body, assigned, binding_map, diags)
+                check_stmt(u.body, assigned, binding_map, diags, scopes)
             ast.Stmt.stmt_break:
                 pass
             ast.Stmt.stmt_continue:
@@ -138,59 +149,80 @@ function check_stmt(stmt_ptr: ptr[ast.Stmt]?, assigned: ref[map_mod.Map[ptr_uint
 ##  Expression checking — validates every identifier read is assigned.
 ## ---------------------------------------------------------------------------
 
-function check_expr(ep: ptr[ast.Expr]?, assigned: ref[map_mod.Map[ptr_uint, bool]], binding_map: ref[map_mod.Map[str, ptr_uint]], diags: ref[vec.Vec[Diag]]) -> void:
+function check_expr(ep: ptr[ast.Expr]?, assigned: ref[map_mod.Map[ptr_uint, bool]], binding_map: ref[map_mod.Map[str, ptr_uint]], diags: ref[vec.Vec[Diag]], scopes: ref[vec.Vec[str]]) -> void:
     if ep == null:
         return
     unsafe:
         match read(ptr[ast.Expr]<-ep):
             ast.Expr.expr_identifier as id:
-                if not id.name.equal("_"):
+                if not id.name.equal("_") and scope_has(scopes, id.name):
                     let bid = binding_map.get(id.name)
                     if bid != null:
                         let id_val = read(bid)
                         if not assigned.contains(id_val):
                             diags.push(Diag(name = id.name, line = id.line, column = id.column))
             ast.Expr.expr_binary_op as b:
-                check_expr(b.left, assigned, binding_map, diags)
-                check_expr(b.right, assigned, binding_map, diags)
+                check_expr(b.left, assigned, binding_map, diags, scopes)
+                check_expr(b.right, assigned, binding_map, diags, scopes)
             ast.Expr.expr_unary_op as u:
-                check_expr(u.operand, assigned, binding_map, diags)
+                check_expr(u.operand, assigned, binding_map, diags, scopes)
             ast.Expr.expr_member_access as ma:
-                check_expr(ma.receiver, assigned, binding_map, diags)
+                check_expr(ma.receiver, assigned, binding_map, diags, scopes)
             ast.Expr.expr_index_access as ix:
-                check_expr(ix.receiver, assigned, binding_map, diags)
-                check_expr(ix.index, assigned, binding_map, diags)
+                check_expr(ix.receiver, assigned, binding_map, diags, scopes)
+                check_expr(ix.index, assigned, binding_map, diags, scopes)
             ast.Expr.expr_call as cl:
-                check_expr(cl.callee, assigned, binding_map, diags)
+                check_expr(cl.callee, assigned, binding_map, diags, scopes)
                 var ai: ptr_uint = 0
                 while ai < cl.args.len:
                     let arg = read(cl.args.data + ai)
-                    check_expr(arg.arg_value, assigned, binding_map, diags)
+                    check_expr(arg.arg_value, assigned, binding_map, diags, scopes)
                     ai += 1
             ast.Expr.expr_prefix_cast as c:
-                check_expr(c.expression, assigned, binding_map, diags)
+                check_expr(c.expression, assigned, binding_map, diags, scopes)
             ast.Expr.expr_await as aw:
-                check_expr(aw.expression, assigned, binding_map, diags)
+                check_expr(aw.expression, assigned, binding_map, diags, scopes)
             ast.Expr.expr_unsafe as us:
-                check_expr(us.expression, assigned, binding_map, diags)
+                check_expr(us.expression, assigned, binding_map, diags, scopes)
             ast.Expr.expr_if as ife:
-                check_expr(ife.condition, assigned, binding_map, diags)
-                check_expr(ife.then_expr, assigned, binding_map, diags)
-                check_expr(ife.else_expr, assigned, binding_map, diags)
+                check_expr(ife.condition, assigned, binding_map, diags, scopes)
+                check_expr(ife.then_expr, assigned, binding_map, diags, scopes)
+                check_expr(ife.else_expr, assigned, binding_map, diags, scopes)
             ast.Expr.expr_detach as det:
-                check_expr(det.expression, assigned, binding_map, diags)
+                check_expr(det.expression, assigned, binding_map, diags, scopes)
             ast.Expr.expr_format_string as fs:
                 var fi: ptr_uint = 0
                 while fi < fs.parts.len:
                     var part: ast.FormatStringPart = read(fs.parts.data + fi)
                     match part:
                         ast.FormatStringPart.fmt_expr as fe:
-                            check_expr(fe.expression, assigned, binding_map, diags)
+                            check_expr(fe.expression, assigned, binding_map, diags, scopes)
                         _:
                             pass
                     fi += 1
             _:
                 pass
+
+
+## Truncate the scope stack back to `mark`, dropping names declared since.
+function truncate_scope(scopes: ref[vec.Vec[str]], mark: ptr_uint) -> void:
+    while scopes.len() > mark:
+        let _dropped = scopes.pop()
+
+
+## True when `name` is currently an in-scope local (declared in some active
+## lexical frame).  Names that resolve outside the locals (import aliases,
+## module symbols) return false and are skipped by the read check.
+function scope_has(scopes: ref[vec.Vec[str]], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < scopes.len():
+        let p = scopes.get(i) else:
+            break
+        unsafe:
+            if read(p).equal(name):
+                return true
+        i += 1
+    return false
 
 
 ## ---------------------------------------------------------------------------
