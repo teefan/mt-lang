@@ -164,7 +164,7 @@ public function generate_c(program: ir.Program) -> string.String:
             let value_ptr = str_lits.get(i) else:
                 break
             unsafe:
-                emit_line(ref_of(e), emit_str_literal_constant(read(value_ptr), i))
+                emit_line(ref_of(e), render_str_literal_constant(read(value_ptr), i))
             i += 1
         emit_line(ref_of(e), "")
 
@@ -437,7 +437,7 @@ function str_literal_name(index: ptr_uint) -> str:
     return j2("mt_str_lit_", ptr_uint_to_str(index))
 
 
-function emit_str_literal_constant(value: str, index: ptr_uint) -> str:
+function render_str_literal_constant(value: str, index: ptr_uint) -> str:
     return j6(
         "static const mt_str ",
         str_literal_name(index),
@@ -1025,7 +1025,7 @@ function emit_enum(e: ref[Emitter], enum_decl: ir.EnumDecl) -> void:
         unsafe:
             let m = read(enum_decl.members.data + i)
             let suffix = if i == enum_decl.members.len - 1: "" else: ","
-            emit_line(e, j6("  ", m.linkage_name, " = ", emit_expression(e, m.value), suffix, ""))
+            emit_line(e, j6("  ", m.linkage_name, " = ", render_expression(e, m.value), suffix, ""))
         i += 1
     emit_line(e, "};")
 
@@ -1157,17 +1157,17 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 let value = r.value else:
                     emit_line(e, j2(indent, "return;"))
                     return
-                emit_line(e, j4(indent, "return ", emit_expression(e, value), ";"))
+                emit_line(e, j4(indent, "return ", render_expression(e, value), ";"))
             ir.Stmt.stmt_local as loc:
                 if is_array_type(loc.ty) and not array_direct_initializer(loc.value):
                     emit_line(e, j3(indent, c_declaration(loc.ty, loc.linkage_name), ";"))
-                    emit_line(e, j6(indent, "memcpy(", loc.linkage_name, ", ", emit_expression(e, loc.value), j3(", sizeof(", loc.linkage_name, "));")))
+                    emit_line(e, j6(indent, "memcpy(", loc.linkage_name, ", ", render_expression(e, loc.value), j3(", sizeof(", loc.linkage_name, "));")))
                 else:
-                    emit_line(e, j5(indent, c_declaration(loc.ty, loc.linkage_name), " = ", emit_initializer(e, loc.value), ";"))
+                    emit_line(e, j5(indent, c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";"))
             ir.Stmt.stmt_assignment as asg:
-                emit_line(e, j6(indent, emit_expression(e, asg.target), " ", asg.operator, " ", j2(emit_expression(e, asg.value), ";")))
+                emit_line(e, j6(indent, render_expression(e, asg.target), " ", asg.operator, " ", j2(render_expression(e, asg.value), ";")))
             ir.Stmt.stmt_expression as ex:
-                emit_line(e, j3(indent, emit_expression(e, ex.expression), ";"))
+                emit_line(e, j3(indent, render_expression(e, ex.expression), ";"))
             ir.Stmt.stmt_block as blk:
                 if block_requires_scope(blk.body):
                     emit_line(e, j2(indent, "{"))
@@ -1178,18 +1178,18 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
             ir.Stmt.stmt_if as iff:
                 emit_if(e, iff.condition, iff.then_body, iff.else_body, level)
             ir.Stmt.stmt_while as w:
-                emit_line(e, j4(indent, "while (", emit_expression(e, w.condition), ") {"))
+                emit_line(e, j4(indent, "while (", render_expression(e, w.condition), ") {"))
                 emit_stmts(e, w.body, level + 1)
                 emit_line(e, j2(indent, "}"))
             ir.Stmt.stmt_for as f:
                 var header = string.String.create()
                 header.append(indent)
                 header.append("for (")
-                header.append(emit_for_clause(e, f.init))
+                header.append(render_for_clause(e, f.init))
                 header.append("; ")
-                header.append(emit_expression(e, f.condition))
+                header.append(render_expression(e, f.condition))
                 header.append("; ")
-                header.append(emit_for_clause(e, f.post))
+                header.append(render_for_clause(e, f.post))
                 header.append(") {")
                 emit_line(e, header.as_str())
                 emit_stmts(e, f.body, level + 1)
@@ -1207,7 +1207,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
 function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.SwitchCase], exhaustive: bool, level: ptr_uint) -> void:
     let indent = indent_c(level)
     let case_indent = indent_c(level + 1)
-    emit_line(e, j4(indent, "switch (", emit_expression(e, expression), ") {"))
+    emit_line(e, j4(indent, "switch (", render_expression(e, expression), ") {"))
     var has_default = false
     var i: ptr_uint = 0
     while i < cases.len:
@@ -1219,7 +1219,7 @@ function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.S
             else:
                 let value = sc.value else:
                     fatal(c"c_backend Phase 2: non-default switch case missing value")
-                emit_line(e, j4(case_indent, "case ", emit_expression(e, value), ": {"))
+                emit_line(e, j4(case_indent, "case ", render_expression(e, value), ": {"))
             emit_stmts(e, sc.body, level + 2)
             if not body_terminates(sc.body):
                 emit_line(e, j2(indent_c(level + 2), "break;"))
@@ -1279,7 +1279,7 @@ function block_requires_scope(body: span[ir.Stmt]) -> bool:
 ## into `else if` (mirrors control_flow_emission.rb emit_if_statement).
 function emit_if(e: ref[Emitter], condition: ptr[ir.Expr], then_body: span[ir.Stmt], else_body: span[ir.Stmt], level: ptr_uint) -> void:
     let indent = indent_c(level)
-    emit_line(e, j4(indent, "if (", emit_expression(e, condition), ") {"))
+    emit_line(e, j4(indent, "if (", render_expression(e, condition), ") {"))
     emit_stmts(e, then_body, level + 1)
     emit_else(e, else_body, level)
 
@@ -1290,7 +1290,7 @@ function emit_else(e: ref[Emitter], else_body: span[ir.Stmt], level: ptr_uint) -
         unsafe:
             match read(else_body.data + 0):
                 ir.Stmt.stmt_if as nested:
-                    emit_line(e, j4(indent, "} else if (", emit_expression(e, nested.condition), ") {"))
+                    emit_line(e, j4(indent, "} else if (", render_expression(e, nested.condition), ") {"))
                     emit_stmts(e, nested.then_body, level + 1)
                     emit_else(e, nested.else_body, level)
                     return
@@ -1306,15 +1306,15 @@ function emit_else(e: ref[Emitter], else_body: span[ir.Stmt], level: ptr_uint) -
 
 ## Render a `for` init/post clause (no indent, no trailing `;`) — mirrors
 ## c_backend/statements.rb emit_for_clause_statement.
-function emit_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
+function render_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
-                return j5(c_declaration(loc.ty, loc.linkage_name), " = ", emit_initializer(e, loc.value), "", "")
+                return j5(c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), "", "")
             ir.Stmt.stmt_assignment as asg:
-                return j5(emit_expression(e, asg.target), " ", asg.operator, " ", emit_expression(e, asg.value))
+                return j5(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value))
             ir.Stmt.stmt_expression as ex:
-                return emit_expression(e, ex.expression)
+                return render_expression(e, ex.expression)
             _:
                 fatal(c"c_backend Phase 2: unsupported for-loop clause")
 
@@ -1323,7 +1323,7 @@ function emit_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
 #  Expression emission (mirrors c_backend/expressions.rb)
 # =============================================================================
 
-function emit_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_name as n:
@@ -1333,35 +1333,35 @@ function emit_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
             ir.Expr.expr_boolean_literal as b:
                 return if b.value: "true" else: "false"
             ir.Expr.expr_string_literal as s:
-                return emit_string_literal(e, s.value, s.cstring)
+                return render_string_literal(e, s.value, s.cstring)
             ir.Expr.expr_unary as un:
                 if un.operator == "not":
                     return j2("!", wrap_expression(e, un.operand))
                 return j2(un.operator, wrap_expression(e, un.operand))
             ir.Expr.expr_binary as bin:
                 if is_str_equality(bin.operator, bin.left, bin.right):
-                    let call = j5("mt_str_equal(", emit_expression(e, bin.left), ", ", emit_expression(e, bin.right), ")")
+                    let call = j5("mt_str_equal(", render_expression(e, bin.left), ", ", render_expression(e, bin.right), ")")
                     if bin.operator == "!=":
                         return j2("!", call)
                     return call
-                return emit_binary(e, bin.operator, bin.left, bin.right)
+                return render_binary(e, bin.operator, bin.left, bin.right)
             ir.Expr.expr_call as call:
-                return emit_call(e, call.callee, call.arguments)
+                return render_call(e, call.callee, call.arguments)
             ir.Expr.expr_member as member:
                 let operator = if pointer_member_receiver(member.receiver): "->" else: "."
                 return j3(wrap_member_receiver(e, member.receiver), operator, member.member)
             ir.Expr.expr_aggregate_literal as agg:
-                return emit_aggregate_literal(e, agg.ty, agg.fields)
+                return render_aggregate_literal(e, agg.ty, agg.fields)
             ir.Expr.expr_zero_init as z:
-                return emit_zero_expression(z.ty)
+                return render_zero_expression(z.ty)
             ir.Expr.expr_checked_index as ci:
-                return j5("(*", checked_array_index_helper_name(ci.receiver_type), "(", emit_address_of_operand(e, ci.receiver), j3(", ", emit_expression(e, ci.index), "))"))
+                return j5("(*", checked_array_index_helper_name(ci.receiver_type), "(", render_address_of_operand(e, ci.receiver), j3(", ", render_expression(e, ci.index), "))"))
             ir.Expr.expr_checked_span_index as cs:
-                return j5("(*", checked_span_index_helper_name(cs.receiver_type), "(", emit_expression(e, cs.receiver), j3(", ", emit_expression(e, cs.index), "))"))
+                return j5("(*", checked_span_index_helper_name(cs.receiver_type), "(", render_expression(e, cs.receiver), j3(", ", render_expression(e, cs.index), "))"))
             ir.Expr.expr_index as ix:
-                return j4(wrap_member_receiver(e, ix.receiver), "[", emit_expression(e, ix.index), "]")
+                return j4(wrap_member_receiver(e, ix.receiver), "[", render_expression(e, ix.index), "]")
             ir.Expr.expr_address_of as addr:
-                return emit_address_of(e, addr.expression)
+                return render_address_of(e, addr.expression)
             _:
                 fatal(c"c_backend Phase 3: unsupported expression")
 
@@ -1369,16 +1369,16 @@ function emit_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
 ## The address of an operand for a `&`-style position.  A checked array index is
 ## the pointer the helper already returns (no extra `*`/`&`); other operands are
 ## `&expr`.
-function emit_address_of(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+function render_address_of(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_checked_index as ci:
-                return j4(checked_array_index_helper_name(ci.receiver_type), "(", emit_address_of_operand(e, ci.receiver), j3(", ", emit_expression(e, ci.index), ")"))
+                return j4(checked_array_index_helper_name(ci.receiver_type), "(", render_address_of_operand(e, ci.receiver), j3(", ", render_expression(e, ci.index), ")"))
             _:
-                return emit_address_of_operand(e, ep)
+                return render_address_of_operand(e, ep)
 
 
-function emit_address_of_operand(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+function render_address_of_operand(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     return j2("&", wrap_member_receiver(e, ep))
 
 
@@ -1639,21 +1639,21 @@ function emit_checked_span_index_helper(e: ref[Emitter], receiver_type: types.Ty
 
 ## The initializer form of a value (aggregate literals use `{ ... }` without a
 ## compound-literal cast); everything else is an ordinary expression.  Mirrors
-## c_backend/expressions.rb emit_initializer.
-function emit_initializer(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+## c_backend/expressions.rb render_initializer.
+function render_initializer(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_aggregate_literal as agg:
-                return emit_aggregate_initializer(e, agg.fields)
+                return render_aggregate_initializer(e, agg.fields)
             ir.Expr.expr_zero_init as z:
-                return emit_zero_initializer(z.ty)
+                return render_zero_initializer(z.ty)
             _:
-                return emit_expression(e, ep)
+                return render_expression(e, ep)
 
 
 ## The zero value of a type in initializer position (mirrors
-## c_backend/expressions.rb emit_zero_initializer).
-function emit_zero_initializer(t: types.Type) -> str:
+## c_backend/expressions.rb render_zero_initializer).
+function render_zero_initializer(t: types.Type) -> str:
     match t:
         types.Type.ty_str:
             return "{ 0 }"
@@ -1670,17 +1670,17 @@ function emit_zero_initializer(t: types.Type) -> str:
 
 
 ## The zero value of a type in expression position.
-function emit_zero_expression(t: types.Type) -> str:
+function render_zero_expression(t: types.Type) -> str:
     match t:
         types.Type.ty_primitive:
-            return emit_zero_initializer(t)
+            return render_zero_initializer(t)
         types.Type.ty_str:
             return j4("(", c_type(t), ")", " { 0 }")
         _:
-            return j4("(", c_declaration(t, ""), ") ", emit_zero_initializer(t))
+            return j4("(", c_declaration(t, ""), ") ", render_zero_initializer(t))
 
 
-function emit_aggregate_initializer(e: ref[Emitter], fields: span[ir.AggregateField]) -> str:
+function render_aggregate_initializer(e: ref[Emitter], fields: span[ir.AggregateField]) -> str:
     var buf = string.String.create()
     buf.append("{ ")
     var i: ptr_uint = 0
@@ -1692,22 +1692,22 @@ function emit_aggregate_initializer(e: ref[Emitter], fields: span[ir.AggregateFi
             buf.append(".")
             buf.append(f.name)
             buf.append(" = ")
-            buf.append(emit_initializer(e, f.value))
+            buf.append(render_initializer(e, f.value))
         i += 1
     buf.append(" }")
     return buf.as_str()
 
 
-function emit_aggregate_literal(e: ref[Emitter], ty: types.Type, fields: span[ir.AggregateField]) -> str:
-    return j4("(", c_type(ty), ")", emit_aggregate_initializer(e, fields))
+function render_aggregate_literal(e: ref[Emitter], ty: types.Type, fields: span[ir.AggregateField]) -> str:
+    return j4("(", c_type(ty), ")", render_aggregate_initializer(e, fields))
 
 
 ## `receiver.field` receivers that are postfix (name/member/index/call) need no
 ## parentheses; anything else is wrapped.  Mirrors wrap_member_receiver.
 function wrap_member_receiver(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     if is_postfix_expr(ep):
-        return emit_expression(e, ep)
-    return j3("(", emit_expression(e, ep), ")")
+        return render_expression(e, ep)
+    return j3("(", render_expression(e, ep), ")")
 
 
 function is_postfix_expr(ep: ptr[ir.Expr]) -> bool:
@@ -1744,7 +1744,7 @@ function is_ptr_type(t: types.Type) -> bool:
             return false
 
 
-function emit_string_literal(e: ref[Emitter], value: str, cstring: bool) -> str:
+function render_string_literal(e: ref[Emitter], value: str, cstring: bool) -> str:
     if cstring:
         return c_string_literal(value)
     let name_ptr = e.str_lit_map.get(value)
@@ -1760,7 +1760,7 @@ function is_str_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr])
     return is_str_type(expr_result_type(left)) and is_str_type(expr_result_type(right))
 
 
-function emit_call(e: ref[Emitter], callee: str, arguments: span[ir.Expr]) -> str:
+function render_call(e: ref[Emitter], callee: str, arguments: span[ir.Expr]) -> str:
     var buf = string.String.create()
     buf.append(callee)
     buf.append("(")
@@ -1769,21 +1769,21 @@ function emit_call(e: ref[Emitter], callee: str, arguments: span[ir.Expr]) -> st
         if i > 0:
             buf.append(", ")
         unsafe:
-            buf.append(emit_expression(e, arguments.data + i))
+            buf.append(render_expression(e, arguments.data + i))
         i += 1
     buf.append(")")
     return buf.as_str()
 
 
-function emit_binary(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
+function render_binary(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
     let parent = binary_precedence(operator)
-    let left_text = emit_binary_operand(e, left, parent, false)
-    let right_text = emit_binary_operand(e, right, parent, true)
+    let left_text = render_binary_operand(e, left, parent, false)
+    let right_text = render_binary_operand(e, right, parent, true)
     return j5(left_text, " ", c_operator(operator), " ", right_text)
 
 
-function emit_binary_operand(e: ref[Emitter], ep: ptr[ir.Expr], parent_precedence: int, is_right: bool) -> str:
-    let text = emit_expression(e, ep)
+function render_binary_operand(e: ref[Emitter], ep: ptr[ir.Expr], parent_precedence: int, is_right: bool) -> str:
+    let text = render_expression(e, ep)
     unsafe:
         match read(ep):
             ir.Expr.expr_conditional:
@@ -1798,7 +1798,7 @@ function emit_binary_operand(e: ref[Emitter], ep: ptr[ir.Expr], parent_precedenc
 
 
 function wrap_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
-    let text = emit_expression(e, ep)
+    let text = render_expression(e, ep)
     unsafe:
         match read(ep):
             ir.Expr.expr_name:
