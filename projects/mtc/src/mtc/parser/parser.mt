@@ -2952,11 +2952,13 @@ function try_parse_specialization(s: ref[ParserState], left: ptr[ast.Expr]) -> O
     if not closed or had_error:
         s.stream.current = saved
         return Option[ptr[ast.Expr]].none
+    let args_span = args_vec.as_span()
     if match_kind(s, tk.TokenKind.lparen):
         var call_args = parse_call_args(s)
         consume(s, tk.TokenKind.rparen, c"expected ')'")
-        var node = alloc_expr(s)
-        let args_span = args_vec.as_span()
+        if not specialization_call_target(s, left, args_span, call_args):
+            s.stream.current = saved
+            return Option[ptr[ast.Expr]].none
         var spec = alloc_expr(s)
         unsafe:
             read(spec) = ast.Expr.expr_specialization(callee = left, arguments = args_span)
@@ -2964,11 +2966,161 @@ function try_parse_specialization(s: ref[ParserState], left: ptr[ast.Expr]) -> O
         unsafe:
             read(call) = ast.Expr.expr_call(callee = spec, args = call_args)
         return Option[ptr[ast.Expr]].some(value = call)
+    if not specialization_value_target(s, left, args_span):
+        s.stream.current = saved
+        return Option[ptr[ast.Expr]].none
     var node = alloc_expr(s)
-    let args_span = args_vec.as_span()
     unsafe:
         read(node) = ast.Expr.expr_specialization(callee = left, arguments = args_span)
     return Option[ptr[ast.Expr]].some(value = node)
+
+
+# =============================================================================
+#  Specialization target disambiguation (mirrors Ruby parser/expressions.rb).
+#  Without these checks a value index like `xs[0]` would be mis-parsed as a type
+#  specialization; requiring definite/explicit type arguments reverts it to an
+#  index access.
+# =============================================================================
+
+function is_identifier_named(callee: ptr[ast.Expr], name: str) -> bool:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                return id.name.equal(name)
+            _:
+                return false
+
+
+function builtin_specialization_target(callee: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                return (
+                    id.name.equal("array") or id.name.equal("reinterpret") or id.name.equal("span")
+                    or id.name.equal("zero") or id.name.equal("ptr") or id.name.equal("const_ptr")
+                    or id.name.equal("ref") or id.name.equal("adapt") or id.name.equal("equal")
+                    or id.name.equal("hash") or id.name.equal("order")
+                )
+            _:
+                return false
+
+
+function generic_callable_specialization_target(s: ref[ParserState], callee: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                return s.known_generic_callable_names.contains(id.name)
+            _:
+                return false
+
+
+function imported_member_specialization_target(s: ref[ParserState], callee: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as rid:
+                        return s.known_import_aliases.contains(rid.name)
+                    _:
+                        return false
+            _:
+                return false
+
+
+function callee_known_type_like(s: ref[ParserState], callee: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                return known_type_like_name(s, id.name)
+            _:
+                return false
+
+
+## A definite type argument: a callable type, or a single name that is a known
+## type-like name (builtin type, declared type, alias, import alias, or type
+## parameter).  A bare integer such as the `0` in `xs[0]` is not definite.
+function definite_type_argument(s: ref[ParserState], arg: ptr[ast.TypeRef]) -> bool:
+    unsafe:
+        let t = read(arg)
+        if t.is_fn or t.is_proc:
+            return true
+        if t.name.parts.len >= 1:
+            return known_type_like_name(s, read(t.name.parts.data + 0))
+        return false
+
+
+function potential_named_literal_type_argument(arg: ptr[ast.TypeRef]) -> bool:
+    unsafe:
+        let t = read(arg)
+        return t.arguments.len == 0 and not t.nullable
+
+
+function explicit_specialization_argument(s: ref[ParserState], arg: ptr[ast.TypeRef]) -> bool:
+    if definite_type_argument(s, arg):
+        return true
+    return potential_named_literal_type_argument(arg)
+
+
+function all_definite_type_args(s: ref[ParserState], args: span[ast.TypeArgument]) -> bool:
+    var i: ptr_uint = 0
+    while i < args.len:
+        unsafe:
+            if not definite_type_argument(s, read(args.data + i).value):
+                return false
+        i += 1
+    return true
+
+
+function all_explicit_specialization_args(s: ref[ParserState], args: span[ast.TypeArgument]) -> bool:
+    var i: ptr_uint = 0
+    while i < args.len:
+        unsafe:
+            if not explicit_specialization_argument(s, read(args.data + i).value):
+                return false
+        i += 1
+    return true
+
+
+function all_call_args_named(call_args: span[ast.Argument]) -> bool:
+    var i: ptr_uint = 0
+    while i < call_args.len:
+        unsafe:
+            match read(call_args.data + i).arg_name:
+                Option.some:
+                    pass
+                Option.none:
+                    return false
+        i += 1
+    return true
+
+
+## True when the `name[args]` form (no call) is a genuine type specialization
+## rather than an index access.
+function specialization_value_target(s: ref[ParserState], callee: ptr[ast.Expr], args: span[ast.TypeArgument]) -> bool:
+    if is_identifier_named(callee, "zero") and all_explicit_specialization_args(s, args):
+        return true
+    if specialization_target(callee) and all_definite_type_args(s, args):
+        return true
+    if generic_callable_specialization_target(s, callee) and all_explicit_specialization_args(s, args):
+        return true
+    if imported_member_specialization_target(s, callee) and all_explicit_specialization_args(s, args):
+        return true
+    return false
+
+
+## True when the `name[args](call_args)` form is a genuine specialized call.
+function specialization_call_target(s: ref[ParserState], callee: ptr[ast.Expr], args: span[ast.TypeArgument], call_args: span[ast.Argument]) -> bool:
+    if (is_identifier_named(callee, "default") or is_identifier_named(callee, "zero")) and not callee_known_type_like(s, callee) and not generic_callable_specialization_target(s, callee):
+        return false
+    if builtin_specialization_target(callee):
+        return true
+    if specialization_target(callee) and all_call_args_named(call_args):
+        return true
+    if generic_callable_specialization_target(s, callee) and all_explicit_specialization_args(s, args):
+        return true
+    if imported_member_specialization_target(s, callee) and all_explicit_specialization_args(s, args):
+        return true
+    return specialization_target(callee) and all_definite_type_args(s, args)
 
 
 function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:

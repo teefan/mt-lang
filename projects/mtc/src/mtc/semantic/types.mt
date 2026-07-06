@@ -11,6 +11,7 @@
 
 import std.string as string
 import std.str
+import std.fmt as fmt
 import std.mem.heap as heap
 
 
@@ -26,6 +27,7 @@ public variant Type:
     ty_dyn(iface: str)
     ty_generic(name: str, args: span[Type])
     ty_function(params: span[Type], return_type: ptr[Type], variadic: bool)
+    ty_literal_int(value: long)
 
 
 public function alloc_type(value: Type) -> ptr[Type]:
@@ -37,6 +39,12 @@ public function alloc_type(value: Type) -> ptr[Type]:
 
 public function primitive(name: str) -> Type:
     return Type.ty_primitive(name = name)
+
+
+## A compile-time integer used as a generic type argument (e.g. the `N` in
+## `array[T, N]` / `str_buffer[N]`).  Mirrors Ruby's Types::LiteralTypeArg.
+public function literal_int(value: long) -> Type:
+    return Type.ty_literal_int(value = value)
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +155,10 @@ public function type_to_string(t: Type) -> str:
             buf.append(") -> ")
             unsafe:
                 buf.append(type_to_string(read(fnt.return_type)))
+            return buf.as_str()
+        Type.ty_literal_int as lit:
+            var buf = string.String.create()
+            fmt.append_long(ref_of(buf), lit.value)
             return buf.as_str()
 
 
@@ -299,6 +311,12 @@ public function type_equals(a: Type, b: Type) -> bool:
                                 return false
                         i += 1
                     return true
+                _:
+                    return false
+        Type.ty_literal_int as la:
+            match b:
+                Type.ty_literal_int as lb:
+                    return la.value == lb.value
                 _:
                     return false
 

@@ -278,7 +278,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if init == null:
                     let declared = loc.stmt_type else:
                         fatal(c"lowering Phase 3: local without initializer requires a type")
-                    ty = resolve_field_type_ref(ctx, read(declared))
+                    ty = resolve_type_ref(ctx, declared)
                     value_expr = alloc_expr(ir.Expr.expr_zero_init(ty = ty))
                 else:
                     value_expr = lower_expr(ctx, init)
@@ -319,7 +319,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
 function local_decl_type(ctx: ref[LowerCtx], declared: ptr[ast.TypeRef]?, value: ptr[ast.Expr]) -> types.Type:
     let annotation = declared else:
         return qualify_type(ctx, expr_type(ctx, value))
-    let resolved = resolve_scalar_type_ref(annotation)
+    let resolved = resolve_type_ref(ctx, annotation)
     if types.is_error(resolved):
         return qualify_type(ctx, expr_type(ctx, value))
     return resolved
@@ -334,6 +334,76 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             return types.Type.ty_imported(module_name = ctx.module_name, name = n.name)
         _:
             return t
+
+
+## Resolve a syntactic `ast.TypeRef` to a `types.Type`, producing module-
+## qualified named types and modelling `array[T, N]` (N as `ty_literal_int`) and
+## `span[T]` / `ptr[T]` / `const_ptr[T]` / `ref[T]` as generic instances.  Returns
+## `ty_error` for forms not yet handled (callable/dyn/tuple/nullable), letting
+## callers fall back to the analyzer's inferred type.
+function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Type:
+    unsafe:
+        let t = read(tp)
+        if t.is_fn or t.is_proc or t.is_dyn or t.is_tuple or t.nullable:
+            return types.Type.ty_error
+        if t.arguments.len > 0:
+            return resolve_generic_type_ref(ctx, t)
+        if t.name.parts.len != 1:
+            return types.Type.ty_error
+        let name = read(t.name.parts.data + 0)
+        if name.equal("str"):
+            return types.Type.ty_str
+        if is_primitive_name(name):
+            return types.primitive(name)
+        if ctx.analysis.type_names.contains(name):
+            return types.Type.ty_imported(module_name = ctx.module_name, name = name)
+        return types.Type.ty_error
+
+
+function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.Type:
+    if t.name.parts.len != 1:
+        return types.Type.ty_error
+    let name = unsafe: read(t.name.parts.data + 0)
+    if name.equal("array") and t.arguments.len == 2:
+        var args = vec.Vec[types.Type].create()
+        unsafe:
+            args.push(resolve_type_ref(ctx, t.arguments.data + 0))
+        args.push(types.literal_int(resolve_array_length(unsafe: t.arguments.data + 1)))
+        return types.Type.ty_generic(name = "array", args = args.as_span())
+    # span / ptr / const_ptr / ref and other generics: resolve each type argument.
+    var args = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < t.arguments.len:
+        unsafe:
+            args.push(resolve_type_ref(ctx, t.arguments.data + i))
+        i += 1
+    return types.Type.ty_generic(name = name, args = args.as_span())
+
+
+## The compile-time length of an array type argument (`array[int, 3]` -> 3),
+## parsed from the argument's decimal name.  Non-literal lengths (named
+## constants) resolve later.
+function resolve_array_length(tp: ptr[ast.TypeRef]) -> long:
+    let t = unsafe: read(tp)
+    if t.name.parts.len != 1:
+        return 0
+    let text = unsafe: read(t.name.parts.data + 0)
+    return parse_decimal(text)
+
+
+function parse_decimal(text: str) -> long:
+    var value: long = 0
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if b == '_':
+            i += 1
+            continue
+        if b < '0' or b > '9':
+            break
+        value = value * 10 + long<-(b - '0')
+        i += 1
+    return value
 
 
 ## Lower an `if`/`else if`/`else` chain (mtc's multi-branch AST) into nested
@@ -475,8 +545,70 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 return lower_call(ctx, call.callee, call.args, ep)
             ast.Expr.expr_member_access as ma:
                 return lower_member_access(ctx, ma.receiver, ma.member_name, ep)
+            ast.Expr.expr_index_access as ix:
+                return lower_index_access(ctx, ix.receiver, ix.index, ep)
             _:
-                fatal(c"lowering Phase 2: unsupported expression")
+                fatal(c"lowering Phase 3: unsupported expression")
+
+
+## Lower `receiver[index]`: array receivers use a bounds-checked index, span
+## receivers a bounds-checked span index, and raw pointers a plain index.
+function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let receiver_type = index_receiver_type(ctx, receiver)
+    let recv = lower_expr(ctx, receiver)
+    let index_expr = lower_expr(ctx, index)
+    var elem_ty = expr_type(ctx, ep)
+    if types.is_error(elem_ty):
+        elem_ty = generic_first_arg(receiver_type)
+    if is_array_type(receiver_type):
+        return alloc_expr(ir.Expr.expr_checked_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))
+    if is_span_type(receiver_type):
+        return alloc_expr(ir.Expr.expr_checked_span_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))
+    return alloc_expr(ir.Expr.expr_index(receiver = recv, index = index_expr, ty = elem_ty))
+
+
+## The type of an index receiver: for a local/parameter identifier take its
+## recorded binding type (which carries the correct array length); otherwise fall
+## back to the analyzer's inferred type.
+function index_receiver_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> types.Type:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                match lookup_local(ctx, id.name):
+                    Option.some as lb:
+                        return lb.value.ty
+                    Option.none:
+                        pass
+            _:
+                pass
+    return expr_type(ctx, receiver)
+
+
+function is_array_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name.equal("array") and g.args.len == 2
+        _:
+            return false
+
+
+function is_span_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name.equal("span") and g.args.len == 1
+        _:
+            return false
+
+
+function generic_first_arg(t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_generic as g:
+            if g.args.len > 0:
+                unsafe:
+                    return read(g.args.data + 0)
+            return types.Type.ty_error
+        _:
+            return types.Type.ty_error
 
 
 function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:

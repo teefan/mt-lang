@@ -58,7 +58,10 @@ public function generate_c(program: ir.Program) -> string.String:
         li += 1
 
     let has_str_literals = str_lits.len() > 0
-    let use_fatal = uses_fatal_helper(funcs)
+    var checked_index_types = collect_checked_index_types(funcs)
+    # Bounds-checked accessors call mt_fatal, so their presence pulls in the
+    # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
+    let use_fatal = uses_fatal_helper(funcs) or checked_index_types.len() > 0
     let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal
     let use_str_equality = uses_str_equality(funcs)
 
@@ -125,6 +128,15 @@ public function generate_c(program: ir.Program) -> string.String:
                 emit_line(ref_of(e), j2(function_signature(read(funcs.data + i)), ";"))
             i += 1
         emit_line(ref_of(e), "")
+
+    i = 0
+    while i < checked_index_types.len():
+        let ty_ptr = checked_index_types.get(i) else:
+            break
+        unsafe:
+            emit_checked_index_helper(ref_of(e), read(ty_ptr))
+        emit_line(ref_of(e), "")
+        i += 1
 
     if has_str_literals:
         i = 0
@@ -764,8 +776,58 @@ function c_type(t: types.Type) -> str:
             return "mt_str"
         types.Type.ty_imported as im:
             return naming.qualified_c_name(im.module_name, im.name)
+        types.Type.ty_generic as g:
+            return generic_c_type(g.name, g.args)
         _:
-            fatal(c"c_backend Phase 2: unsupported C type")
+            fatal(c"c_backend Phase 3: unsupported C type")
+
+
+## C type for a generic instance: span -> mt_span_ELEM, ptr/const_ptr/ref ->
+## pointer.  Arrays are declarators (handled by c_declaration), not plain types.
+function generic_c_type(name: str, args: span[types.Type]) -> str:
+    if name.equal("span") and args.len == 1:
+        return span_type_name(unsafe: read(args.data + 0))
+    if name.equal("ptr") and args.len == 1:
+        return j2(c_type(unsafe: read(args.data + 0)), "*")
+    if name.equal("const_ptr") and args.len == 1:
+        return j3("const ", c_type(unsafe: read(args.data + 0)), "*")
+    if name.equal("ref") and args.len >= 1:
+        return j2(c_type(unsafe: read(args.data + (args.len - 1))), "*")
+    fatal(c"c_backend Phase 3: unsupported generic C type")
+
+
+function span_type_name(element: types.Type) -> str:
+    return j2("mt_span_", naming.sanitize_identifier(types.type_to_string(element)))
+
+
+function is_array_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name.equal("array") and g.args.len == 2
+        _:
+            return false
+
+
+function array_element_type(t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_generic as g:
+            unsafe:
+                return read(g.args.data + 0)
+        _:
+            return types.Type.ty_error
+
+
+function array_length(t: types.Type) -> long:
+    match t:
+        types.Type.ty_generic as g:
+            unsafe:
+                match read(g.args.data + 1):
+                    types.Type.ty_literal_int as lit:
+                        return lit.value
+                    _:
+                        return 0
+        _:
+            return 0
 
 
 function is_str_type(t: types.Type) -> bool:
@@ -818,8 +880,11 @@ function primitive_c_type(name: str) -> str:
     fatal(c"c_backend Phase 2: unsupported primitive type")
 
 
-## A scalar declaration `TYPE NAME` (Phase 2 has no arrays/pointers/functions).
+## A C declaration `TYPE NAME`.  Array types place the length after the name
+## (`int32_t xs[3]`); everything else in Phase 3 is a plain `TYPE NAME`.
 function c_declaration(t: types.Type, name: str) -> str:
+    if is_array_type(t):
+        return j6(c_type(array_element_type(t)), " ", name, "[", long_to_str(array_length(t)), "]")
     return j3(c_type(t), " ", name)
 
 
@@ -1171,8 +1236,162 @@ function emit_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return emit_aggregate_literal(e, agg.ty, agg.fields)
             ir.Expr.expr_zero_init as z:
                 return emit_zero_expression(z.ty)
+            ir.Expr.expr_checked_index as ci:
+                return j5("(*", checked_array_index_helper_name(ci.receiver_type), "(", emit_address_of_operand(e, ci.receiver), j3(", ", emit_expression(e, ci.index), "))"))
+            ir.Expr.expr_index as ix:
+                return j4(wrap_member_receiver(e, ix.receiver), "[", emit_expression(e, ix.index), "]")
+            ir.Expr.expr_address_of as addr:
+                return emit_address_of(e, addr.expression)
             _:
                 fatal(c"c_backend Phase 3: unsupported expression")
+
+
+## The address of an operand for a `&`-style position.  A checked array index is
+## the pointer the helper already returns (no extra `*`/`&`); other operands are
+## `&expr`.
+function emit_address_of(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_checked_index as ci:
+                return j4(checked_array_index_helper_name(ci.receiver_type), "(", emit_address_of_operand(e, ci.receiver), j3(", ", emit_expression(e, ci.index), ")"))
+            _:
+                return emit_address_of_operand(e, ep)
+
+
+function emit_address_of_operand(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+    return j2("&", wrap_member_receiver(e, ep))
+
+
+function checked_array_index_helper_name(receiver_type: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("mt_checked_index_array_")
+    buf.append(naming.sanitize_identifier(types.type_to_string(array_element_type(receiver_type))))
+    buf.append("_")
+    buf.append(long_to_str(array_length(receiver_type)))
+    return buf.as_str()
+
+
+# =============================================================================
+#  Checked-index helper generation
+# =============================================================================
+
+## Distinct array-index receiver types used across the emitted functions
+## (deduplicated by helper name), one per generated bounds-checked accessor.
+function collect_checked_index_types(functions: span[ir.Function]) -> vec.Vec[types.Type]:
+    var seen = map_mod.Map[str, bool].create()
+    var collected = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < functions.len:
+        unsafe:
+            checked_from_stmts(read(functions.data + i).body, ref_of(seen), ref_of(collected))
+        i += 1
+    return collected
+
+
+function checked_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            checked_from_stmt(body.data + i, seen, collected)
+        i += 1
+
+
+function checked_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_return as r:
+                let value = r.value else:
+                    return
+                checked_from_expr(value, seen, collected)
+            ir.Stmt.stmt_local as loc:
+                checked_from_expr(loc.value, seen, collected)
+            ir.Stmt.stmt_assignment as asg:
+                checked_from_expr(asg.target, seen, collected)
+                checked_from_expr(asg.value, seen, collected)
+            ir.Stmt.stmt_expression as ex:
+                checked_from_expr(ex.expression, seen, collected)
+            ir.Stmt.stmt_block as blk:
+                checked_from_stmts(blk.body, seen, collected)
+            ir.Stmt.stmt_if as iff:
+                checked_from_expr(iff.condition, seen, collected)
+                checked_from_stmts(iff.then_body, seen, collected)
+                checked_from_stmts(iff.else_body, seen, collected)
+            ir.Stmt.stmt_while as w:
+                checked_from_expr(w.condition, seen, collected)
+                checked_from_stmts(w.body, seen, collected)
+            ir.Stmt.stmt_for as f:
+                checked_from_stmt(f.init, seen, collected)
+                checked_from_expr(f.condition, seen, collected)
+                checked_from_stmt(f.post, seen, collected)
+                checked_from_stmts(f.body, seen, collected)
+            ir.Stmt.stmt_switch as sw:
+                checked_from_expr(sw.expression, seen, collected)
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    checked_from_stmts(read(sw.cases.data + ci).body, seen, collected)
+                    ci += 1
+            _:
+                pass
+
+
+function checked_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_checked_index as ci:
+                let name = checked_array_index_helper_name(ci.receiver_type)
+                if not seen.contains(name):
+                    seen.set(name, true)
+                    collected.push(ci.receiver_type)
+                checked_from_expr(ci.receiver, seen, collected)
+                checked_from_expr(ci.index, seen, collected)
+            ir.Expr.expr_index as ix:
+                checked_from_expr(ix.receiver, seen, collected)
+                checked_from_expr(ix.index, seen, collected)
+            ir.Expr.expr_binary as bin:
+                checked_from_expr(bin.left, seen, collected)
+                checked_from_expr(bin.right, seen, collected)
+            ir.Expr.expr_unary as un:
+                checked_from_expr(un.operand, seen, collected)
+            ir.Expr.expr_conditional as cond:
+                checked_from_expr(cond.condition, seen, collected)
+                checked_from_expr(cond.then_expression, seen, collected)
+                checked_from_expr(cond.else_expression, seen, collected)
+            ir.Expr.expr_call as call:
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    checked_from_expr(call.arguments.data + i, seen, collected)
+                    i += 1
+            ir.Expr.expr_member as member:
+                checked_from_expr(member.receiver, seen, collected)
+            ir.Expr.expr_address_of as addr:
+                checked_from_expr(addr.expression, seen, collected)
+            ir.Expr.expr_aggregate_literal as agg:
+                var i: ptr_uint = 0
+                while i < agg.fields.len:
+                    checked_from_expr(read(agg.fields.data + i).value, seen, collected)
+                    i += 1
+            _:
+                pass
+
+
+function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -> void:
+    let elem_c = c_type(array_element_type(receiver_type))
+    let n = long_to_str(array_length(receiver_type))
+    let name = checked_array_index_helper_name(receiver_type)
+    var sig = string.String.create()
+    sig.append("static inline ")
+    sig.append(elem_c)
+    sig.append(" *")
+    sig.append(name)
+    sig.append("(")
+    sig.append(elem_c)
+    sig.append(" (*array)[")
+    sig.append(n)
+    sig.append("], uintptr_t index) {")
+    emit_line(e, sig.as_str())
+    emit_line(e, j4("  if (index >= ", n, ") mt_fatal(\"array index out of bounds\");", ""))
+    emit_line(e, "  return &(*array)[index];")
+    emit_line(e, "}")
 
 
 ## The initializer form of a value (aggregate literals use `{ ... }` without a
