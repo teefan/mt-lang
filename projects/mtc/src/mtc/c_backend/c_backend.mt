@@ -59,9 +59,10 @@ public function generate_c(program: ir.Program) -> string.String:
 
     let has_str_literals = str_lits.len() > 0
     var checked_index_types = collect_checked_index_types(funcs)
+    var checked_span_index_types = collect_checked_span_index_types(funcs)
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
-    let use_fatal = uses_fatal_helper(funcs) or checked_index_types.len() > 0
+    let use_fatal = uses_fatal_helper(funcs) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0
     let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal
     let use_str_equality = uses_str_equality(funcs)
 
@@ -85,6 +86,16 @@ public function generate_c(program: ir.Program) -> string.String:
     if use_str_equality:
         emit_str_equality_helper(ref_of(e))
         emit_line(ref_of(e), "")
+
+    var span_types = collect_span_types(funcs)
+    i = 0
+    while i < span_types.len():
+        let ty_ptr = span_types.get(i) else:
+            break
+        unsafe:
+            emit_span_type(ref_of(e), read(ty_ptr))
+        emit_line(ref_of(e), "")
+        i += 1
 
     if program.structs.len > 0 or program.unions.len > 0:
         var sorted_structs = topo_sort_structs(program.structs)
@@ -135,6 +146,15 @@ public function generate_c(program: ir.Program) -> string.String:
             break
         unsafe:
             emit_checked_index_helper(ref_of(e), read(ty_ptr))
+        emit_line(ref_of(e), "")
+        i += 1
+
+    i = 0
+    while i < checked_span_index_types.len():
+        let ty_ptr = checked_span_index_types.get(i) else:
+            break
+        unsafe:
+            emit_checked_span_index_helper(ref_of(e), read(ty_ptr))
         emit_line(ref_of(e), "")
         i += 1
 
@@ -800,10 +820,104 @@ function span_type_name(element: types.Type) -> str:
     return j2("mt_span_", naming.sanitize_identifier(types.type_to_string(element)))
 
 
+# =============================================================================
+#  Span type collection + emission
+# =============================================================================
+
+## Distinct span types used across the emitted functions (params, returns, and
+## local declarations), deduplicated by span type name.
+function collect_span_types(functions: span[ir.Function]) -> vec.Vec[types.Type]:
+    var seen = map_mod.Map[str, bool].create()
+    var collected = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < functions.len:
+        unsafe:
+            let f = read(functions.data + i)
+            maybe_add_span(f.return_type, ref_of(seen), ref_of(collected))
+            var j: ptr_uint = 0
+            while j < f.params.len:
+                maybe_add_span(read(f.params.data + j).ty, ref_of(seen), ref_of(collected))
+                j += 1
+            span_from_stmts(f.body, ref_of(seen), ref_of(collected))
+        i += 1
+    return collected
+
+
+function maybe_add_span(t: types.Type, seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    if not is_span_type(t):
+        return
+    let name = span_type_name(array_element_type(t))
+    if not seen.contains(name):
+        seen.set(name, true)
+        collected.push(t)
+
+
+function span_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            span_from_stmt(body.data + i, seen, collected)
+        i += 1
+
+
+function span_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_local as loc:
+                maybe_add_span(loc.ty, seen, collected)
+            ir.Stmt.stmt_block as blk:
+                span_from_stmts(blk.body, seen, collected)
+            ir.Stmt.stmt_if as iff:
+                span_from_stmts(iff.then_body, seen, collected)
+                span_from_stmts(iff.else_body, seen, collected)
+            ir.Stmt.stmt_while as w:
+                span_from_stmts(w.body, seen, collected)
+            ir.Stmt.stmt_for as f:
+                span_from_stmt(f.init, seen, collected)
+                span_from_stmts(f.body, seen, collected)
+            ir.Stmt.stmt_switch as sw:
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    span_from_stmts(read(sw.cases.data + ci).body, seen, collected)
+                    ci += 1
+            _:
+                pass
+
+
+function emit_span_type(e: ref[Emitter], t: types.Type) -> void:
+    let element = array_element_type(t)
+    let name = span_type_name(element)
+    emit_line(e, j3("typedef struct ", name, " {"))
+    emit_line(e, j3("  ", c_type(element), " *data;"))
+    emit_line(e, "  uintptr_t len;")
+    emit_line(e, j3("} ", name, ";"))
+
+
+## True when an array local has a brace-initializable value (array literal or
+## zero-init); other array values (e.g. copying another array) need `memcpy`.
+function array_direct_initializer(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_array_literal:
+                return true
+            ir.Expr.expr_zero_init:
+                return true
+            _:
+                return false
+
+
 function is_array_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
             return g.name.equal("array") and g.args.len == 2
+        _:
+            return false
+
+
+function is_span_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name.equal("span") and g.args.len == 1
         _:
             return false
 
@@ -1045,7 +1159,11 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     return
                 emit_line(e, j4(indent, "return ", emit_expression(e, value), ";"))
             ir.Stmt.stmt_local as loc:
-                emit_line(e, j5(indent, c_declaration(loc.ty, loc.linkage_name), " = ", emit_initializer(e, loc.value), ";"))
+                if is_array_type(loc.ty) and not array_direct_initializer(loc.value):
+                    emit_line(e, j3(indent, c_declaration(loc.ty, loc.linkage_name), ";"))
+                    emit_line(e, j6(indent, "memcpy(", loc.linkage_name, ", ", emit_expression(e, loc.value), j3(", sizeof(", loc.linkage_name, "));")))
+                else:
+                    emit_line(e, j5(indent, c_declaration(loc.ty, loc.linkage_name), " = ", emit_initializer(e, loc.value), ";"))
             ir.Stmt.stmt_assignment as asg:
                 emit_line(e, j6(indent, emit_expression(e, asg.target), " ", asg.operator, " ", j2(emit_expression(e, asg.value), ";")))
             ir.Stmt.stmt_expression as ex:
@@ -1238,6 +1356,8 @@ function emit_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return emit_zero_expression(z.ty)
             ir.Expr.expr_checked_index as ci:
                 return j5("(*", checked_array_index_helper_name(ci.receiver_type), "(", emit_address_of_operand(e, ci.receiver), j3(", ", emit_expression(e, ci.index), "))"))
+            ir.Expr.expr_checked_span_index as cs:
+                return j5("(*", checked_span_index_helper_name(cs.receiver_type), "(", emit_expression(e, cs.receiver), j3(", ", emit_expression(e, cs.index), "))"))
             ir.Expr.expr_index as ix:
                 return j4(wrap_member_receiver(e, ix.receiver), "[", emit_expression(e, ix.index), "]")
             ir.Expr.expr_address_of as addr:
@@ -1269,6 +1389,10 @@ function checked_array_index_helper_name(receiver_type: types.Type) -> str:
     buf.append("_")
     buf.append(long_to_str(array_length(receiver_type)))
     return buf.as_str()
+
+
+function checked_span_index_helper_name(receiver_type: types.Type) -> str:
+    return j2("mt_checked_span_index_", naming.sanitize_identifier(types.type_to_string(receiver_type)))
 
 
 # =============================================================================
@@ -1391,6 +1515,125 @@ function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -
     emit_line(e, sig.as_str())
     emit_line(e, j4("  if (index >= ", n, ") mt_fatal(\"array index out of bounds\");", ""))
     emit_line(e, "  return &(*array)[index];")
+    emit_line(e, "}")
+
+
+## Distinct span-index receiver types across the emitted functions.
+function collect_checked_span_index_types(functions: span[ir.Function]) -> vec.Vec[types.Type]:
+    var seen = map_mod.Map[str, bool].create()
+    var collected = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < functions.len:
+        unsafe:
+            span_index_from_stmts(read(functions.data + i).body, ref_of(seen), ref_of(collected))
+        i += 1
+    return collected
+
+
+function span_index_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            span_index_from_stmt(body.data + i, seen, collected)
+        i += 1
+
+
+function span_index_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_return as r:
+                let value = r.value else:
+                    return
+                span_index_from_expr(value, seen, collected)
+            ir.Stmt.stmt_local as loc:
+                span_index_from_expr(loc.value, seen, collected)
+            ir.Stmt.stmt_assignment as asg:
+                span_index_from_expr(asg.target, seen, collected)
+                span_index_from_expr(asg.value, seen, collected)
+            ir.Stmt.stmt_expression as ex:
+                span_index_from_expr(ex.expression, seen, collected)
+            ir.Stmt.stmt_block as blk:
+                span_index_from_stmts(blk.body, seen, collected)
+            ir.Stmt.stmt_if as iff:
+                span_index_from_expr(iff.condition, seen, collected)
+                span_index_from_stmts(iff.then_body, seen, collected)
+                span_index_from_stmts(iff.else_body, seen, collected)
+            ir.Stmt.stmt_while as w:
+                span_index_from_expr(w.condition, seen, collected)
+                span_index_from_stmts(w.body, seen, collected)
+            ir.Stmt.stmt_for as f:
+                span_index_from_stmt(f.init, seen, collected)
+                span_index_from_expr(f.condition, seen, collected)
+                span_index_from_stmt(f.post, seen, collected)
+                span_index_from_stmts(f.body, seen, collected)
+            ir.Stmt.stmt_switch as sw:
+                span_index_from_expr(sw.expression, seen, collected)
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    span_index_from_stmts(read(sw.cases.data + ci).body, seen, collected)
+                    ci += 1
+            _:
+                pass
+
+
+function span_index_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_checked_span_index as cs:
+                let name = checked_span_index_helper_name(cs.receiver_type)
+                if not seen.contains(name):
+                    seen.set(name, true)
+                    collected.push(cs.receiver_type)
+                span_index_from_expr(cs.receiver, seen, collected)
+                span_index_from_expr(cs.index, seen, collected)
+            ir.Expr.expr_checked_index as ci:
+                span_index_from_expr(ci.receiver, seen, collected)
+                span_index_from_expr(ci.index, seen, collected)
+            ir.Expr.expr_index as ix:
+                span_index_from_expr(ix.receiver, seen, collected)
+                span_index_from_expr(ix.index, seen, collected)
+            ir.Expr.expr_binary as bin:
+                span_index_from_expr(bin.left, seen, collected)
+                span_index_from_expr(bin.right, seen, collected)
+            ir.Expr.expr_unary as un:
+                span_index_from_expr(un.operand, seen, collected)
+            ir.Expr.expr_conditional as cond:
+                span_index_from_expr(cond.condition, seen, collected)
+                span_index_from_expr(cond.then_expression, seen, collected)
+                span_index_from_expr(cond.else_expression, seen, collected)
+            ir.Expr.expr_call as call:
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    span_index_from_expr(call.arguments.data + i, seen, collected)
+                    i += 1
+            ir.Expr.expr_member as member:
+                span_index_from_expr(member.receiver, seen, collected)
+            ir.Expr.expr_address_of as addr:
+                span_index_from_expr(addr.expression, seen, collected)
+            ir.Expr.expr_aggregate_literal as agg:
+                var i: ptr_uint = 0
+                while i < agg.fields.len:
+                    span_index_from_expr(read(agg.fields.data + i).value, seen, collected)
+                    i += 1
+            _:
+                pass
+
+
+function emit_checked_span_index_helper(e: ref[Emitter], receiver_type: types.Type) -> void:
+    let elem_c = c_type(array_element_type(receiver_type))
+    let span_c = c_type(receiver_type)
+    let name = checked_span_index_helper_name(receiver_type)
+    var sig = string.String.create()
+    sig.append("static inline ")
+    sig.append(elem_c)
+    sig.append(" *")
+    sig.append(name)
+    sig.append("(")
+    sig.append(span_c)
+    sig.append(" span, uintptr_t index) {")
+    emit_line(e, sig.as_str())
+    emit_line(e, "  if (index >= span.len) mt_fatal(\"span index out of bounds\");")
+    emit_line(e, "  return &span.data[index];")
     emit_line(e, "}")
 
 

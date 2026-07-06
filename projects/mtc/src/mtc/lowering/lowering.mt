@@ -283,6 +283,8 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 else:
                     value_expr = lower_expr(ctx, init)
                     ty = local_decl_type(ctx, loc.stmt_type, init)
+                    if types.is_error(ty):
+                        ty = ir_expr_type(value_expr)
                 output.push(ir.Stmt.stmt_local(
                     name = loc.name,
                     linkage_name = c_name,
@@ -447,7 +449,8 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
                 start = rng.start_expr
                 stop = rng.end_expr
             _:
-                fatal(c"lowering Phase 2: for-loop over non-range iterables is unsupported")
+                lower_collection_for(ctx, output, index_name, iterables.data + 0, body_ptr)
+                return
 
     var loop_type = expr_type(ctx, start)
     if types.is_error(loop_type):
@@ -502,6 +505,83 @@ function is_integer_literal(ep: ptr[ast.Expr]) -> bool:
                 return true
             _:
                 return false
+
+
+## Lower `for v in xs:` (array) / `for v in s:` (span) into a scope block that
+## copies the iterable into a temp and drives a C index loop.  Mirrors
+## lowering/loops.rb lower_collection_for_stmt (including the always-allocated
+## continue/break label temporaries so the fresh-temp counter matches).
+function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], binding_name: str, iterable: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+    let iterable_type = index_receiver_type(ctx, iterable)
+    let element_type = generic_first_arg(iterable_type)
+    let is_arr = is_array_type(iterable_type)
+    let ptr_uint_ty = types.primitive("ptr_uint")
+
+    let items_c = fresh_c_temp_name(ctx, "for_items")
+    let index_c = fresh_c_temp_name(ctx, "for_index")
+    let _continue_label = fresh_c_temp_name(ctx, "loop_continue")
+    let _break_label = fresh_c_temp_name(ctx, "loop_break")
+
+    let binding_c = c_local_name(binding_name)
+    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = element_type, pointer = false))
+    let body = lower_block(ctx, body_ptr)
+
+    # item value: array -> items[index]; span -> items.data[index]
+    var item_value: ptr[ir.Expr]
+    let index_ref_item = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = false))
+    if is_arr:
+        let items_ref = alloc_expr(ir.Expr.expr_name(name = items_c, ty = iterable_type, pointer = false))
+        item_value = alloc_expr(ir.Expr.expr_index(receiver = items_ref, index = index_ref_item, ty = element_type))
+    else:
+        let items_ref = alloc_expr(ir.Expr.expr_name(name = items_c, ty = iterable_type, pointer = false))
+        var ptr_args = vec.Vec[types.Type].create()
+        ptr_args.push(element_type)
+        let data_ty = types.Type.ty_generic(name = "ptr", args = ptr_args.as_span())
+        let data_ref = alloc_expr(ir.Expr.expr_member(receiver = items_ref, member = "data", ty = data_ty))
+        item_value = alloc_expr(ir.Expr.expr_index(receiver = data_ref, index = index_ref_item, ty = element_type))
+
+    # stop value: array -> N; span -> items.len
+    var stop_value: ptr[ir.Expr]
+    if is_arr:
+        stop_value = alloc_expr(ir.Expr.expr_integer_literal(value = array_length_of(iterable_type), ty = ptr_uint_ty))
+    else:
+        let items_ref_stop = alloc_expr(ir.Expr.expr_name(name = items_c, ty = iterable_type, pointer = false))
+        stop_value = alloc_expr(ir.Expr.expr_member(receiver = items_ref_stop, member = "len", ty = ptr_uint_ty))
+
+    var loop_body = vec.Vec[ir.Stmt].create()
+    loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = element_type, value = item_value, line = 0, source_path = ""))
+    var bi: ptr_uint = 0
+    while bi < body.len:
+        unsafe:
+            loop_body.push(read(body.data + bi))
+        bi += 1
+
+    let init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
+    let index_ref_cond = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = false))
+    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref_cond, right = stop_value, ty = types.primitive("bool")))
+    let post_target = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = false))
+    let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
+    let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = loop_body.as_span())
+
+    var block_stmts = vec.Vec[ir.Stmt].create()
+    block_stmts.push(ir.Stmt.stmt_local(name = items_c, linkage_name = items_c, ty = iterable_type, value = lower_expr(ctx, iterable), line = 0, source_path = ""))
+    block_stmts.push(for_stmt)
+    output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
+
+
+function array_length_of(t: types.Type) -> long:
+    match t:
+        types.Type.ty_generic as g:
+            if g.args.len == 2:
+                unsafe:
+                    match read(g.args.data + 1):
+                        types.Type.ty_literal_int as lit:
+                            return lit.value
+                        _:
+                            return 0
+            return 0
+        _:
+            return 0
 
 
 function fresh_c_temp_name(ctx: ref[LowerCtx], prefix: str) -> str:
@@ -611,12 +691,57 @@ function generic_first_arg(t: types.Type) -> types.Type:
             return types.Type.ty_error
 
 
+## The result type carried by a lowered IR expression (used to recover a local's
+## type when the analyzer left it unresolved, e.g. `span[T](...)` construction).
+function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name as x:
+                return x.ty
+            ir.Expr.expr_member as x:
+                return x.ty
+            ir.Expr.expr_index as x:
+                return x.ty
+            ir.Expr.expr_checked_index as x:
+                return x.ty
+            ir.Expr.expr_checked_span_index as x:
+                return x.ty
+            ir.Expr.expr_call as x:
+                return x.ty
+            ir.Expr.expr_unary as x:
+                return x.ty
+            ir.Expr.expr_binary as x:
+                return x.ty
+            ir.Expr.expr_conditional as x:
+                return x.ty
+            ir.Expr.expr_cast as x:
+                return x.ty
+            ir.Expr.expr_integer_literal as x:
+                return x.ty
+            ir.Expr.expr_boolean_literal as x:
+                return x.ty
+            ir.Expr.expr_string_literal as x:
+                return x.ty
+            ir.Expr.expr_address_of as x:
+                return x.ty
+            ir.Expr.expr_aggregate_literal as x:
+                return x.ty
+            ir.Expr.expr_zero_init as x:
+                return x.ty
+            _:
+                return types.Type.ty_error
+
+
 function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
                 if id.name.equal("fatal"):
                     return lower_plain_call(ctx, "mt_fatal", args, call_ep)
+                if id.name.equal("ptr_of") or id.name.equal("ref_of") or id.name.equal("const_ptr_of"):
+                    if args.len == 1:
+                        let inner = lower_expr(ctx, read(args.data + 0).arg_value)
+                        return alloc_expr(ir.Expr.expr_address_of(expression = inner, ty = expr_type(ctx, call_ep)))
                 if ctx.analysis.structs.contains(id.name):
                     return lower_aggregate_literal(ctx, id.name, args)
                 let foreign_ptr = ctx.foreign_map.get(id.name)
@@ -626,8 +751,35 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 if extern_ptr != null:
                     return lower_plain_call(ctx, read(extern_ptr), args, call_ep)
                 return lower_plain_call(ctx, naming.qualified_c_name(ctx.module_name, id.name), args, call_ep)
+            ast.Expr.expr_specialization as spec:
+                return lower_specialization_call(ctx, spec.callee, spec.arguments, args, call_ep)
             _:
-                fatal(c"lowering Phase 2: only direct function calls are supported")
+                fatal(c"lowering Phase 3: unsupported call target")
+
+
+## Lower a specialized call `Name[TypeArgs](args)`.  Phase 3 handles the builtin
+## `span[T](data = ..., len = ...)` constructor as an aggregate literal; generic
+## function-call monomorphization arrives in Phase 4.
+function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], call_args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    unsafe:
+        match read(spec_callee):
+            ast.Expr.expr_identifier as id:
+                if id.name.equal("span") and type_args.len == 1:
+                    var elem_args = vec.Vec[types.Type].create()
+                    elem_args.push(resolve_type_ref(ctx, read(type_args.data + 0).value))
+                    let span_ty = types.Type.ty_generic(name = "span", args = elem_args.as_span())
+                    var fields = vec.Vec[ir.AggregateField].create()
+                    var i: ptr_uint = 0
+                    while i < call_args.len:
+                        let arg = read(call_args.data + i)
+                        let field_name = arg.arg_name else:
+                            fatal(c"lowering Phase 3: span construction requires named fields")
+                        fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
+                        i += 1
+                    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = span_ty, fields = fields.as_span()))
+            _:
+                pass
+    fatal(c"lowering Phase 3: unsupported specialized call")
 
 
 ## Lower a struct constructor `Name(field = value, ...)` to an IR aggregate
