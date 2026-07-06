@@ -31,8 +31,8 @@ Self-host source layout (src ≈ 21.0k LOC):
 | Semantic analyzer | `src/mtc/semantic/*.mt` | ~5,000 |
 | Loader | `src/mtc/loader/*.mt` | ~700 |
 | IR | `src/mtc/ir.mt` | ~220 |
-| Lowering | `src/mtc/lowering/lowering.mt` | ~3,750 |
-| C Backend | `src/mtc/c_backend/c_backend.mt` | ~2,590 |
+| Lowering | `src/mtc/lowering/lowering.mt` | ~4,520 |
+| C Backend | `src/mtc/c_backend/c_backend.mt` | ~2,790 |
 | Build driver | `src/mtc/build.mt` | ~80 |
 | C naming (shared) | `src/mtc/c_naming.mt` | ~70 |
 
@@ -124,19 +124,19 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 
 ## 2. Deferred items
 
-- **Guards and equality patterns** in struct-pattern match arms. Target: Phase 5.
+- **Guards and equality patterns** in struct-pattern match arms. Target: Phase 6.
 - **Build-mode codegen parity**. Target: Phase 7.
-- **`as cstr` for non-literal values**. Target: Phase 5.
+- **`as cstr` for non-literal values**. Target: Phase 6.
 - **Prelude module prefix** (`std_option_Option_int` vs `Option_int`). Target: Phase 7.
-- **proc selective retain** (retain on assign only for non-fresh procs). Target: Phase 5 (proc polish).
-- **proc release on scope exit** (defer-style env release). Target: Phase 5 (proc polish).
+- **proc selective retain** (retain on assign only for non-fresh procs). Deferred (Phase 5 polish).
+- **proc release on scope exit** (defer-style env release). Deferred (Phase 5 polish).
 - **SoA**: deferred indefinitely.
 
 ---
 
 ## 3. Remaining work per phase
 
-### Phase 5 — proc/fn, dyn, method dispatch, str_buffer, format, `is`
+### Phase 5 — proc/fn, dyn, method dispatch, str_buffer, format, `is` ✅
 
 | # | Item | Est. LOC | Status | Notes |
 |---|------|----------|--------|-------|
@@ -194,14 +194,14 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
   - [x] Cycle detection (spec_in_progress)
   - [x] Cross-module struct constructors in monomorphized bodies
         (`struct_exists_in_imports` — 29 LOC in lowering.mt)
-- [ ] Phase 5 — dyn, str_buffer, format (remaining 1/7) [dyn complete 2026-07-07 @427a3873]
+- [x] Phase 5 — proc/fn, dyn, method dispatch, str_buffer, format, `is` (complete 2026-07-07)
   - [x] proc closures (non-capturing + capturing + fn→proc coercion + indirect calls)
   - [x] fn pointer types (c_fn_ptr_declarator, c_type/c_declaration ty_function)
   - [x] method dispatch + extending block lowering (MethodInfo, resolve_method_info)
   - [x] is + match-expressions (lower_match_expression_local, enum + variant)
-  - [x] dyn[I] interfaces — vtable, fat pointer, adapt, dyn method dispatch
-  - [ ] str_buffer[N] — type decl + append/assign/as_str
-  - [ ] format strings — f"..." desugaring + format-value lowering
+  - [x] dyn[I] interfaces — vtable, fat pointer, adapt, dyn method dispatch (427a3873)
+  - [x] str_buffer[N] — struct type decl + method dispatch + C helpers (acf93788)
+  - [x] format strings — static concatenation + interpolation via mt_format_str_* helpers (acf93788)
 - [ ] Phase 6 — events, async, parallel, compile-time
 - [ ] Phase 7 — build parity + self-host bootstrap
 
@@ -209,36 +209,57 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 
 ## 5. Next session context
 
-### Phase 5 status
+### Phase 6 — events, async, parallel, compile-time
 
-**Completed (6 of 7):**
-
-| # | Item | Key implementation |
-|---|------|-------------------|
-| 1 | proc closures | `lower_proc_expression`, `build_env_setup_fn`, `build_capturing_invoke`/`release`/`retain`, `lower_fn_to_proc` (fn→proc coercion), `is_proc_type`, `proc_ensure_struct_decl`, `lower_proc_call` via `expr_call_indirect` |
-| 2 | fn pointer types | `c_fn_ptr_declarator`, `resolve_function_type_ref`, `ty_function` in `c_type`/`c_declaration` |
-| 3 | dyn[I] interfaces | `lower_adapt_call`, `ensure_dyn_vtable`/`_struct`/`_struct_type`, `gen_dyn_vtable_wrappers`/`_constant`, `find_interface_analysis`, `find_dyn_method`, `lower_dyn_method_call`, `dyn_vtable_c_type`, `is_dyn_type`, vtable struct decl + fat pointer + adapt + dyn method dispatch. Fixed `ref_of` builtin missing from analyzer `try_builtin_call`. C backend: `c_type` handles `ty_dyn`, constant emission, reachability seeds from vtable constants. |
-| 4 | method dispatch | `lower_extending_block`, `resolve_method_info`, `lower_method_resolved` (pointer/value/static receiver), `MethodInfo` struct |
-| 7 | is/match-expr | `lower_match_expression_local`, `lower_enum_match_expr`, `lower_variant_match_expr` |
-
-**Remaining (1 of 7):**
+**Overview:** Phase 6 adds the remaining semantic features to the self-host:
+events (observer pattern), async/await (state-machine transform), parallel
+concurrency (libuv dispatch), and compile-time evaluation (`const function`,
+`when`, `inline for/while/if/match`, `emit`, reflection).
 
 | # | Item | Est. LOC | Ruby ref | Notes |
 |---|------|----------|----------|-------|
-| 5 | str_buffer[N] | ~150 | `str_buffer.rb` 115 | Type decl + runtime helpers for clear/assign/append/as_str |
-| 6 | format strings | ~250 | `format.rb` | `f"..."` desugaring + per-field-type `format_value[T]` dispatch |
+| 1 | **Events** — `emit`, `subscribe`, `unsubscribe` | ~600 | `events.rb` 1,054 | Event queue + handler dispatch |
+| 2 | **Async/await** — state-machine transform | ~2,000 | `async/*` 2,834 | Highest-risk module after generics |
+| 3 | **parallel/detach/gather** — libuv dispatch | ~400 | — | Thread pool + handle tracking |
+| 4 | **Compile-time** — `const function`, `when`, `inline`, `emit`, reflection | ~800 | `compile_time/*` + `const_eval.rb` | CT eval + emit code generation |
+| **Total** | | **~3,800** | | |
 
 ### Recommended resume order
 
-1. **str_buffer[N]** — type decl emission + runtime C helpers. More self-contained.
-2. **Format strings** — depends on method dispatch (done) for `format_value[T]` resolution.
+1. **Events** — simplest Phase 6 item, self-contained. Event queue is per-module
+   (module-level `event` declarations), handler dispatch via function pointers.
+2. **Compile-time** — `const function` and `when` are the most impactful for
+   self-host bootstrap (removes dependency on Ruby compiler for comptime features).
+   `inline for/while/if/match` and `emit` follow naturally.
+3. **parallel/detach/gather** — requires libuv linking, thread pool. Blocked
+   until build-mode codegen parity (Phase 7) for native linking.
+4. **Async/await** — highest risk, largest module. Requires state-machine
+   transform, task scheduling. Save for last.
 
-### Key context for resume
+### Key context
 
-- **Dyn lowering**: `LowerCtx` extended with `pending_dyn_structs`, `pending_dyn_vtable_structs`, `pending_dyn_wrappers`, `pending_dyn_constants`, `dyn_generated_vtables`. Dyn artifacts are appended to the module fragment at end of `lower_module`.
-- **Dyn vtable struct**: Fields use `ty_function` type. Vtable constants reference wrapper functions; C backend reachability seeds from constants to ensure wrappers are emitted.
-- **Dyn dispatch**: `lower_dyn_method_call` extracts `.data` (void*) and `.vtable` (cast to `mt_vtable_{iface}*`), accesses method via `expr_member`, calls via `expr_call_indirect`.
-- **Analyzer fix**: `ref_of` was missing from `try_builtin_call`, causing it to return `void` instead of `ref[T]`. Added to both `try_builtin_call` and `is_builtin_call_name`.
+- **Lowering file**: 4,520 LOC (up from 3,750 at start of Phase 5). Contains
+  lowering for all types, expressions, statements through Phase 5.
+- **C Backend file**: 2,790 LOC (up from 2,590). Handles all IR
+  constructs through Phase 5 including vtable constants, str_buffer helpers,
+  and format string C helpers.
+- **180 total tests**: 172 existing + dyn + str_buffer + format strings
+  (all verified as standalone programs, not in test suite yet).
+- **`ref_of` analyzer fix**: Added to `try_builtin_call` in analyzer (was
+  missing, caused `ref_of(c)` to return `void`). Also added to
+  `is_builtin_call_name`.
+- **Deferred from Phase 5**: Guards/equality patterns in match arms (→Phase 6),
+  `as cstr` for non-literals (→Phase 6), proc polish items (deferred).
+- **LowerCtx fields added in Phase 5**: `pending_dyn_*` (4 fields),
+  `dyn_generated_vtables`, `str_buffer_structs`. Lowering iterates all pending
+  vectors at end of `lower_module` before returning the IR fragment.
+- **C backend additions**: `render_constant`/`render_initializer_exp` for
+  vtable globals, `has_str_buffer_structs` + `emit_str_buffer_helpers`,
+  `uses_format_string` + `emit_format_string_helpers`, reachability seeding
+  from constants.
+- **Debugging**: Use `std.log` (unbuffered stderr) for traces. The log module
+  is already imported in both lowering and C backend (import removed after
+  debugging, can be re-added).
 
 ---
 
