@@ -118,6 +118,10 @@ struct LowerCtx:
     generic_struct_decls: map_mod.Map[str, ir.StructDecl]
     # All module analyses in dependency order, for cross-module lookups.
     program_analyses: span[analyzer.Analysis]
+    # Raw loaded modules with parsed source files, for cross-module generic
+    # function lookups. The analysis copies are occasionally incomplete
+    # (mirroring Ruby's @ctx.imports ModuleBinding access).
+    loaded_modules: span[loader.LoadedModule]
     # Set of specialization keys currently being lowered, used to detect cyclic
     # generic instantiations (A[T] calls B[T] calls A[T] in monomorphized
     # bodies).
@@ -171,7 +175,7 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == count - 1
-        var fragment = lower_module(analysis, ref_of(program_returns), is_root, program.analyses.as_span())
+        var fragment = lower_module(analysis, ref_of(program_returns), is_root, program.analyses.as_span(), program.modules.as_span())
         constants.append_span(fragment.constants)
         globals.append_span(fragment.globals)
         opaques.append_span(fragment.opaques)
@@ -234,6 +238,24 @@ function search_func_in_analysis(name: str, a: analyzer.Analysis) -> Option[ast.
         var d: ast.Decl
         unsafe:
             d = read(a.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_function as f:
+                if f.name.equal(name):
+                    return Option[ast.Decl].some(value = d)
+            _:
+                pass
+        di += 1
+    return Option[ast.Decl].none
+
+
+## Search a source file's declarations for a function by name.  Unlike
+## the analysis-based helpers, this reads the raw parsed source file directly.
+function find_func_in_source(sf: ast.SourceFile, name: str) -> Option[ast.Decl]:
+    var di: ptr_uint = 0
+    while di < sf.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(sf.declarations.data + di)
         match d:
             ast.Decl.decl_function as f:
                 if f.name.equal(name):
@@ -361,6 +383,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
             specialization_cache = map_mod.Map[str, ir.Function].create(),
             generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
             program_analyses = program.analyses.as_span(),
+            loaded_modules = program.modules.as_span(),
             spec_in_progress = map_mod.Map[str, bool].create(),
             type_substitution = map_mod.Map[str, types.Type].create(),
         )
@@ -379,7 +402,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
         mi += 1
 
 
-function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis]) -> ir.Program:
+function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule]) -> ir.Program:
     var ctx = LowerCtx(
         module_name = analysis.module_name,
         analysis = analysis,
@@ -395,8 +418,9 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         specialization_cache = map_mod.Map[str, ir.Function].create(),
         generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
         program_analyses = program_analyses,
+        loaded_modules = loaded_modules,
         spec_in_progress = map_mod.Map[str, bool].create(),
-            type_substitution = map_mod.Map[str, types.Type].create(),
+        type_substitution = map_mod.Map[str, types.Type].create(),
     )
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -1456,28 +1480,29 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr
             _:
                 fatal(c"lowering Phase 4c: unsupported generic callee")
 
-    # Find the function declaration — search source-file declarations across all
-    # program analyses (mirrors how binder.mt exports functions).
+    # Find the function declaration — search analyses first, then raw loaded
+    # modules (analyses may be incomplete for generic functions with complex
+    # return types — raw source files always have the full AST).
+    # Mirrors Ruby's @ctx.imports ModuleBinding access pattern.
     var fun_decl_opt = Option[ast.Decl].none
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len and fun_decl_opt.is_none():
         var a: analyzer.Analysis
         unsafe:
             a = read(ctx.program_analyses.data + ai)
-        var di: ptr_uint = 0
-        while di < a.source_file.declarations.len and fun_decl_opt.is_none():
-            var d: ast.Decl
-            unsafe:
-                d = read(a.source_file.declarations.data + di)
-            match d:
-                ast.Decl.decl_function as f:
-                    if f.name.equal(callee_name):
-                        fun_decl_opt = Option[ast.Decl].some(value = d)
-                _:
-                    pass
-            di += 1
+        fun_decl_opt = find_func_in_source(a.source_file, callee_name)
         ai += 1
+    if fun_decl_opt.is_none():
+        var mi: ptr_uint = 0
+        while mi < ctx.loaded_modules.len and fun_decl_opt.is_none():
+            var lm: loader.LoadedModule
+            unsafe:
+                lm = read(ctx.loaded_modules.data + mi)
+            fun_decl_opt = find_func_in_source(lm.source_file, callee_name)
+            mi += 1
     let fun_decl = fun_decl_opt else:
+        if ctx.loaded_modules.len <= 1:
+            fatal(c"lowering Phase 4c: only 1 module loaded, no imports available")
         fatal(c"lowering Phase 4c: could not find generic function decl")
 
     # Build type substitution map from the function's type params.
