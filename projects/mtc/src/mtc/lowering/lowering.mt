@@ -1456,15 +1456,26 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr
             _:
                 fatal(c"lowering Phase 4c: unsupported generic callee")
 
-    # Find the function declaration — search all source-file spans across all
-    # program analyses (same pattern as ensure_generic_struct_decl).
+    # Find the function declaration — search source-file declarations across all
+    # program analyses (mirrors how binder.mt exports functions).
     var fun_decl_opt = Option[ast.Decl].none
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len and fun_decl_opt.is_none():
         var a: analyzer.Analysis
         unsafe:
             a = read(ctx.program_analyses.data + ai)
-        fun_decl_opt = search_func_in_analysis(callee_name, a)
+        var di: ptr_uint = 0
+        while di < a.source_file.declarations.len and fun_decl_opt.is_none():
+            var d: ast.Decl
+            unsafe:
+                d = read(a.source_file.declarations.data + di)
+            match d:
+                ast.Decl.decl_function as f:
+                    if f.name.equal(callee_name):
+                        fun_decl_opt = Option[ast.Decl].some(value = d)
+                _:
+                    pass
+            di += 1
         ai += 1
     let fun_decl = fun_decl_opt else:
         fatal(c"lowering Phase 4c: could not find generic function decl")
