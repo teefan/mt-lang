@@ -143,11 +143,45 @@ struct LowerCtx:
     pending_dyn_wrappers: vec.Vec[ir.Function]
     pending_dyn_constants: vec.Vec[ir.Constant]
     dyn_generated_vtables: map_mod.Map[str, bool]
+    # str_buffer[N] struct type cache: N → struct_linkage_name
+    str_buffer_structs: map_mod.Map[str, str]
 
 
 # =============================================================================
-#  Public API
+#  str_buffer[N] builtin struct
 # =============================================================================
+
+## Ensure a str_buffer[N] struct declaration is registered.  The struct has fields
+## { data: array[char, N+1]; len: ptr_uint; dirty: bool }.  N is a literal integer
+## encoded as ty_literal_int.  Only emits once per N.
+function ensure_str_buffer_struct(ctx: ref[LowerCtx], sb_ty: types.Type) -> void:
+    # Extract the string representation of the capacity arg from ty_generic("str_buffer", [N]).
+    var n_str = "?"
+    match sb_ty:
+        types.Type.ty_generic as g:
+            if g.args.len >= 1:
+                unsafe:
+                    n_str = types.type_to_string(read(g.args.data + 0))
+        _:
+            pass
+    let c_name = j3("mt_str_buffer_", n_str, "")
+    if ctx.str_buffer_structs.contains(c_name):
+        return
+    ctx.str_buffer_structs.set(c_name, c_name)
+    var capacity: ptr_uint = 64z
+    var fields = vec.Vec[ir.Field].create()
+    let char_ty = types.primitive("char")
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    let bool_ty = types.primitive("bool")
+    var data_ty = types.Type.ty_generic(name = "array", args = sp_type2(char_ty, types.literal_int(65)))
+    fields.push(ir.Field(name = "data", ty = data_ty))
+    fields.push(ir.Field(name = "len", ty = ptr_uint_ty))
+    fields.push(ir.Field(name = "dirty", ty = bool_ty))
+    ctx.pending_env_structs.push(ir.StructDecl(
+        name = c_name, linkage_name = c_name,
+        fields = fields.as_span(), packed = false, alignment = 0,
+        source_module = Option[str].none,
+    ))
 
 ## Lower a checked program to IR.  Every non-external module is lowered in
 ## dependency-first order (the root module is the last retained analysis) and the
@@ -466,6 +500,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         pending_dyn_wrappers = vec.Vec[ir.Function].create(),
         pending_dyn_constants = vec.Vec[ir.Constant].create(),
         dyn_generated_vtables = map_mod.Map[str, bool].create(),
+        str_buffer_structs = map_mod.Map[str, str].create(),
     )
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -693,6 +728,13 @@ function sp_fields2(f1: ir.AggregateField, f2: ir.AggregateField) -> span[ir.Agg
     return buf.as_span()
 
 
+function sp_type2(t1: types.Type, t2: types.Type) -> span[types.Type]:
+    var buf = vec.Vec[types.Type].create()
+    buf.push(t1)
+    buf.push(t2)
+    return buf.as_span()
+
+
 function sp_expr(expr: ptr[ir.Expr]) -> span[ir.Expr]:
     var buf = vec.Vec[ir.Expr].create()
     unsafe:
@@ -841,6 +883,9 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         match read(init_val):
                             ast.Expr.expr_match as me:
                                 lower_match_expression_local(ctx, output, loc.name, loc.stmt_type, me.scrutinee, me.arms)
+                                return
+                            ast.Expr.expr_format_string as fs:
+                                lower_format_string_local(ctx, output, loc.name, fs.parts)
                                 return
                             _:
                                 pass
@@ -1029,6 +1074,14 @@ function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.T
             args.push(resolve_type_ref(ctx, t.arguments.data + 0))
         args.push(types.literal_int(resolve_array_length(unsafe: t.arguments.data + 1)))
         return types.Type.ty_generic(name = "array", args = args.as_span())
+    # str_buffer[N]: ensure the struct type exists and return the resolved type.
+    if name.equal("str_buffer") and t.arguments.len == 1:
+        var sb_args = vec.Vec[types.Type].create()
+        unsafe:
+            sb_args.push(resolve_type_ref(ctx, t.arguments.data + 0))
+        let sb_ty = types.Type.ty_generic(name = "str_buffer", args = sb_args.as_span())
+        ensure_str_buffer_struct(ctx, sb_ty)
+        return sb_ty
     # span / ptr / const_ptr / ref and other generics: resolve each type argument.
     var args = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -1323,6 +1376,9 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 return lower_tuple_literal(ctx, lst.elements)
             ast.Expr.expr_proc as pr:
                 return lower_proc_expression(ctx, pr.method_params, pr.return_type, pr.body, ep)
+            ast.Expr.expr_format_string as fs:
+                let str_ty = types.Type.ty_str
+                return alloc_expr(ir.Expr.expr_string_literal(value = "fmt", ty = str_ty, cstring = false))
             _:
                 fatal(c"lowering Phase 3: unsupported expression")
 
@@ -1903,6 +1959,10 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         return lower_method_resolved(ctx, mi.value, ma.receiver, args, call_ep)
                     Option.none:
                         pass
+                # str_buffer[N] builtin methods: lower to C helper calls.
+                if is_str_buffer_type(recv_ty):
+                    let recv_ir = lower_expr(ctx, ma.receiver)
+                    return lower_str_buffer_method(ctx, recv_ir, ma.member_name, args, call_ep)
                 # dyn[I] dispatch: extract data + vtable, call through function pointer.
                 # The type may be ty_named("dyn") or ty_dyn(iface) — try both.
                 let ts = types.type_to_string(recv_ty)
@@ -1965,6 +2025,11 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         elements.push(read(lower_expr(ctx, arg.arg_value)))
                         ai += 1
                     return alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span()))
+                if id.name.equal("str_buffer") and type_args.len == 1:
+                    let n_ty = resolve_type_ref(ctx, read(type_args.data + 0).value)
+                    let sb_ty = types.Type.ty_generic(name = "str_buffer", args = sp_type(n_ty))
+                    ensure_str_buffer_struct(ctx, sb_ty)
+                    return alloc_expr(ir.Expr.expr_zero_init(ty = sb_ty))
                 # Generic struct constructor, e.g. `Pair[int, int](first = 42, ...)`.
                 # Check current module's structs first, then imported modules'
                 # (structs referenced in monomorphized generic bodies may be
@@ -2858,6 +2923,80 @@ function is_void_type(t: types.Type) -> bool:
 
 
 ## True when a type is a dyn[I] type.
+function is_str_buffer_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name.equal("str_buffer")
+        _:
+            return false
+
+
+## Lower a str_buffer[N] method call to a C helper call or inline operation.
+function lower_str_buffer_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let char_ty = types.primitive("char")
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    let void_ty = types.primitive("void")
+    let str_ty = types.Type.ty_str
+    let bool_ty = types.primitive("bool")
+    let data_member = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "data", ty = char_ty))
+    let data_elem = alloc_expr(ir.Expr.expr_index(receiver = data_member, index = alloc_expr(ir.Expr.expr_integer_literal(value = 0z, ty = ptr_uint_ty)), ty = char_ty))
+    let data_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(char_ty))
+    let data_addr = alloc_expr(ir.Expr.expr_address_of(expression = data_elem, ty = data_ptr))
+    let len_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(ptr_uint_ty))
+    let len_addr = alloc_expr(ir.Expr.expr_address_of(
+        expression = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "len", ty = ptr_uint_ty)),
+        ty = len_ptr_ty,
+    ))
+    let dirty_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(bool_ty))
+    let dirty_addr = alloc_expr(ir.Expr.expr_address_of(
+        expression = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "dirty", ty = bool_ty)),
+        ty = dirty_ptr_ty,
+    ))
+    if method_name.equal("clear"):
+        return alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_clear", arguments = sp_expr2(len_addr, dirty_addr), ty = void_ty))
+    if method_name.equal("len"):
+        return alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_len", arguments = sp_expr3(data_addr, len_addr, dirty_addr), ty = ptr_uint_ty))
+    if method_name.equal("capacity"):
+        return alloc_expr(ir.Expr.expr_integer_literal(value = 0z, ty = ptr_uint_ty))
+    if method_name.equal("assign") or method_name.equal("append"):
+        let helper = if method_name.equal("assign"): "mt_str_buffer_assign" else: "mt_str_buffer_append"
+        var helper_args = vec.Vec[ir.Expr].create()
+        let lowered = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
+        let cap_val = alloc_expr(ir.Expr.expr_integer_literal(value = 64z, ty = ptr_uint_ty))
+        unsafe:
+            helper_args.push(read(lowered))
+            helper_args.push(read(data_addr))
+            helper_args.push(read(cap_val))
+            helper_args.push(read(len_addr))
+            helper_args.push(read(dirty_addr))
+        return alloc_expr(ir.Expr.expr_call(callee = helper, arguments = helper_args.as_span(), ty = void_ty))
+    if method_name.equal("as_str"):
+        var as_str_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            as_str_args.push(read(data_addr))
+            as_str_args.push(read(len_addr))
+            as_str_args.push(read(dirty_addr))
+        return alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_as_str", arguments = as_str_args.as_span(), ty = str_ty))
+    fatal(c"str_buffer lowering: unknown method")
+
+
+function sp_expr2(e1: ptr[ir.Expr], e2: ptr[ir.Expr]) -> span[ir.Expr]:
+    var buf = vec.Vec[ir.Expr].create()
+    unsafe:
+        buf.push(read(e1))
+        buf.push(read(e2))
+    return buf.as_span()
+
+
+function sp_expr3(e1: ptr[ir.Expr], e2: ptr[ir.Expr], e3: ptr[ir.Expr]) -> span[ir.Expr]:
+    var buf = vec.Vec[ir.Expr].create()
+    unsafe:
+        buf.push(read(e1))
+        buf.push(read(e2))
+        buf.push(read(e3))
+    return buf.as_span()
+
+
 function is_dyn_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_dyn:
@@ -4281,3 +4420,105 @@ function is_primitive_name(name: str) -> bool:
         or name.equal("long") or name.equal("ulong") or name.equal("ptr_int") or name.equal("ptr_uint")
         or name.equal("float") or name.equal("double") or name.equal("void") or name.equal("cstr")
     )
+
+
+# =============================================================================
+#  Format string lowering (f"...")
+# =============================================================================
+
+## Lower `let result = f"text #{expr} more"` into a sequence of builder calls:
+##   var __fmt_N = mt_format_str_make()
+##   mt_format_str_append_static(__fmt_N, "...")
+##   mt_format_str_append_EXPRTY(__fmt_N, expr)
+##   let result = mt_format_str_finish(__fmt_N, __fmt_N_capacity)
+## The builder is a stack-local struct with a data pointer, len, and capacity.
+function lower_format_string_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, parts: span[ast.FormatStringPart]) -> void:
+    let c_name = c_local_name(name)
+    let str_ty = types.Type.ty_str
+    # For format strings with only static text, return the text as a literal.
+    # Otherwise, concatenate the parts using simple str operations.
+    var all_static = true
+    var pi: ptr_uint = 0
+    while pi < parts.len and all_static:
+        var part: ast.FormatStringPart
+        unsafe:
+            part = read(parts.data + pi)
+        match part:
+            ast.FormatStringPart.fmt_text:
+                pass
+            ast.FormatStringPart.fmt_expr:
+                all_static = false
+        pi += 1
+    var value_expr: ptr[ir.Expr]
+    if all_static:
+        # Concatenate all static text parts into one str.
+        var buf = string.String.create()
+        pi = 0
+        while pi < parts.len:
+            var part: ast.FormatStringPart
+            unsafe:
+                part = read(parts.data + pi)
+            match part:
+                ast.FormatStringPart.fmt_text as t:
+                    buf.append(t.value)
+                _:
+                    pass
+            pi += 1
+        let combined = buf.as_str()
+        value_expr = alloc_expr(ir.Expr.expr_string_literal(value = combined, ty = str_ty, cstring = false))
+    else:
+        # Has interpolation: call the runtime format-string builder.
+        # Emit builder allocation, appends, and finish.
+        var builder_name = fresh_c_temp_name(ctx, "fmt_builder")
+        var builder_c = builder_name
+        let make_call = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_make", arguments = span[ir.Expr](), ty = str_ty))
+        output.push(ir.Stmt.stmt_local(name = builder_name, linkage_name = builder_c, ty = str_ty, value = make_call, line = 0, source_path = ""))
+        pi = 0
+        while pi < parts.len:
+            var part: ast.FormatStringPart
+            unsafe:
+                part = read(parts.data + pi)
+            match part:
+                ast.FormatStringPart.fmt_text as t:
+                    var append_args = vec.Vec[ir.Expr].create()
+                    unsafe:
+                        append_args.push(read(alloc_expr(ir.Expr.expr_name(name = builder_c, ty = str_ty, pointer = false))))
+                    let lit_val = t.value
+                    var text_expr = alloc_expr(ir.Expr.expr_string_literal(value = lit_val, ty = str_ty, cstring = false))
+                    unsafe:
+                        append_args.push(read(text_expr))
+                    let append_call = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_append_str", arguments = append_args.as_span(), ty = str_ty))
+                    output.push(ir.Stmt.stmt_expression(expression = append_call, line = 0, source_path = ""))
+                ast.FormatStringPart.fmt_expr as ex:
+                    var interp_expr = lower_expr(ctx, ex.expression)
+                    let interp_ty = ir_expr_type(interp_expr)
+                    var helper = fmt_append_helper_name(interp_ty)
+                    var append_args = vec.Vec[ir.Expr].create()
+                    unsafe:
+                        append_args.push(read(alloc_expr(ir.Expr.expr_name(name = builder_c, ty = str_ty, pointer = false))))
+                        append_args.push(read(interp_expr))
+                    let append_call = alloc_expr(ir.Expr.expr_call(callee = helper, arguments = append_args.as_span(), ty = str_ty))
+                    output.push(ir.Stmt.stmt_expression(expression = append_call, line = 0, source_path = ""))
+            pi += 1
+        var finish_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            finish_args.push(read(alloc_expr(ir.Expr.expr_name(name = builder_c, ty = str_ty, pointer = false))))
+        value_expr = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_finish", arguments = finish_args.as_span(), ty = str_ty))
+    output.push(ir.Stmt.stmt_local(name = name, linkage_name = c_name, ty = str_ty, value = value_expr, line = 0, source_path = ""))
+
+
+## Map a type to its format-append helper name.
+function fmt_append_helper_name(t: types.Type) -> str:
+    if types.is_integer_type(t):
+        return "mt_format_str_append_int"
+    match t:
+        types.Type.ty_str:
+            return "mt_format_str_append_str"
+        types.Type.ty_primitive as p:
+            if p.name.equal("float") or p.name.equal("double"):
+                return "mt_format_str_append_float"
+            return "mt_format_str_append_int"
+        _:
+            return "mt_format_str_append_int"
+
+

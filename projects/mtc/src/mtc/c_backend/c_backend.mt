@@ -80,7 +80,7 @@ public function generate_c(program: ir.Program) -> string.String:
     var gen_variants = collect_generic_variants(program)
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
-    let use_fatal = uses_fatal_helper(funcs) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0
+    let use_fatal = uses_fatal_helper(funcs, program) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0
     let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants))
     let use_str_equality = uses_str_equality(funcs)
 
@@ -235,6 +235,14 @@ public function generate_c(program: ir.Program) -> string.String:
                 emit_line(ref_of(e), render_constant(ref_of(e), c))
             ci += 1
         emit_line(ref_of(e), "")
+
+    # Emit str_buffer runtime helpers if any str_buffer struct is present.
+    if has_str_buffer_structs(program):
+        emit_str_buffer_helpers(ref_of(e))
+
+    # Emit format string runtime helpers when used.
+    if uses_format_string(program):
+        emit_format_string_helpers(ref_of(e))
 
     i = 0
     while i < funcs.len:
@@ -764,8 +772,11 @@ function uses_str_equality(functions: span[ir.Function]) -> bool:
 
 
 ## True when any emitted function calls `mt_fatal` (so the helper, `<stdlib.h>`,
-## and the string-view type must be emitted).
-function uses_fatal_helper(functions: span[ir.Function]) -> bool:
+## and the string-view type must be emitted).  Also true when str_buffer
+## runtime helpers are needed (they reference mt_fatal).
+function uses_fatal_helper(functions: span[ir.Function], program: ir.Program) -> bool:
+    if has_str_buffer_structs(program):
+        return true
     var i: ptr_uint = 0
     while i < functions.len:
         unsafe:
@@ -1117,6 +1128,9 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
         return j3("const ", c_type(unsafe: read(args.data + 0)), "*")
     if name.equal("ref") and args.len >= 1:
         return j2(c_type(unsafe: read(args.data + (args.len - 1))), "*")
+    # str_buffer[N] → mt_str_buffer_N
+    if name.equal("str_buffer") and args.len >= 1:
+        return j3("mt_str_buffer_", naming.sanitize_identifier(types.type_to_string(unsafe: read(args.data + 0))), "")
     # Generic variant: `<name>_<type0>_<type1>_...`.  The caller module prefix
     # is added by `qualified_c_name` when the type is `ty_imported`.
     if args.len > 0:
@@ -1457,6 +1471,9 @@ function c_declaration(t: types.Type, name: str) -> str:
             if g.name.equal("const_ptr") and g.args.len == 1:
                 let base = unsafe: c_type(read(g.args.data + 0))
                 return j4("const ", base, "*", name)
+            if g.name.equal("str_buffer") and g.args.len >= 1:
+                let c_name = j3("mt_str_buffer_", naming.sanitize_identifier(types.type_to_string(unsafe: read(g.args.data + 0))), "")
+                return j3(c_name, " ", name)
             var buf = string.String.create()
             buf.append(g.name)
             var i: ptr_uint = 0
@@ -2636,3 +2653,139 @@ function render_initializer_exp(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return render_aggregate_initializer(e, agg.fields)
             _:
                 return render_expression(e, ep)
+
+
+# =============================================================================
+#  str_buffer runtime helpers
+# =============================================================================
+
+function has_str_buffer_structs(program: ir.Program) -> bool:
+    var i: ptr_uint = 0
+    while i < program.structs.len:
+        unsafe:
+            if read(program.structs.data + i).linkage_name.starts_with("mt_str_buffer_"):
+                return true
+        i += 1
+    return false
+
+
+function emit_str_buffer_helpers(e: ref[Emitter]) -> void:
+    emit_line(e, "static uintptr_t mt_str_buffer_len(char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {")
+    emit_line(e, "  if (*dirty) {")
+    emit_line(e, "    uintptr_t current = 0;")
+    emit_line(e, "    while (current < cap + 1 && data[current] != '\\0') {")
+    emit_line(e, "      current++;")
+    emit_line(e, "    }")
+    emit_line(e, "    if (current > cap) mt_fatal(\"str_buffer text requires a trailing NUL within capacity\");")
+    emit_line(e, "    *len = current;")
+    emit_line(e, "    *dirty = false;")
+    emit_line(e, "  }")
+    emit_line(e, "  return *len;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static uintptr_t mt_str_buffer_capacity(uintptr_t cap) {")
+    emit_line(e, "  return cap;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void mt_str_buffer_clear(uintptr_t* len, bool* dirty) {")
+    emit_line(e, "  *len = 0;")
+    emit_line(e, "  *dirty = false;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void mt_str_buffer_assign(mt_str value, char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {")
+    emit_line(e, "  if (value.len > cap) mt_fatal(\"str_buffer.assign exceeds capacity\");")
+    emit_line(e, "  memcpy(data, value.data, value.len);")
+    emit_line(e, "  data[value.len] = '\\0';")
+    emit_line(e, "  *len = value.len;")
+    emit_line(e, "  *dirty = false;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void mt_str_buffer_append(mt_str suffix, char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {")
+    emit_line(e, "  uintptr_t current = mt_str_buffer_len(data, cap, len, dirty);")
+    emit_line(e, "  uintptr_t total = current + suffix.len;")
+    emit_line(e, "  if (total > cap) mt_fatal(\"str_buffer.append exceeds capacity\");")
+    emit_line(e, "  memcpy(data + current, suffix.data, suffix.len);")
+    emit_line(e, "  data[total] = '\\0';")
+    emit_line(e, "  *len = total;")
+    emit_line(e, "  *dirty = false;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static mt_str mt_str_buffer_as_str(char* data, uintptr_t* len, bool* dirty) {")
+    emit_line(e, "  if (*dirty) mt_fatal(\"str_buffer.as_str requires valid UTF-8, call len() first\");")
+    emit_line(e, "  mt_str result;")
+    emit_line(e, "  result.data = data;")
+    emit_line(e, "  result.len = *len;")
+    emit_line(e, "  return result;")
+    emit_line(e, "}")
+
+
+# =============================================================================
+#  Format string runtime helpers
+# =============================================================================
+
+function uses_format_string(program: ir.Program) -> bool:
+    # Detect by checking for mt_format_str_* calls in any function body.
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            let f = read(program.functions.data + i)
+            if body_calls(f.body, "mt_format_str_make") or body_calls(f.body, "mt_format_str_finish") or body_calls(f.body, "mt_format_str_append_str") or body_calls(f.body, "mt_format_str_append_int") or body_calls(f.body, "mt_format_str_append_float"):
+                return true
+        i += 1
+    return false
+
+
+function emit_format_string_helpers(e: ref[Emitter]) -> void:
+    # Format string builder struct: data pointer, len, capacity.
+    emit_line(e, "typedef struct {")
+    emit_line(e, "  char* data;")
+    emit_line(e, "  uintptr_t len;")
+    emit_line(e, "  uintptr_t cap;")
+    emit_line(e, "} mt_fmt_builder;")
+    emit_line(e, "")
+    emit_line(e, "static mt_fmt_builder mt_format_str_make(void) {")
+    emit_line(e, "  mt_fmt_builder b;")
+    emit_line(e, "  b.data = (char*)malloc(64);")
+    emit_line(e, "  b.len = 0;")
+    emit_line(e, "  b.cap = 64;")
+    emit_line(e, "  return b;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "#define mt_fmt_grow(b, need) do { \\")
+    emit_line(e, "  uintptr_t total = (b).len + (need); \\")
+    emit_line(e, "  if (total > (b).cap) { \\")
+    emit_line(e, "    uintptr_t nc = (b).cap < 16 ? 64 : (b).cap * 2; \\")
+    emit_line(e, "    while (nc < total) nc *= 2; \\")
+    emit_line(e, "    (b).data = (char*)realloc((b).data, nc); \\")
+    emit_line(e, "    (b).cap = nc; \\")
+    emit_line(e, "  } \\")
+    emit_line(e, "} while(0)")
+    emit_line(e, "")
+    emit_line(e, "static mt_str mt_format_str_append_str(mt_fmt_builder b, mt_str s) {")
+    emit_line(e, "  mt_fmt_grow(b, s.len);")
+    emit_line(e, "  memcpy(b.data + b.len, s.data, s.len);")
+    emit_line(e, "  b.len += s.len;")
+    emit_line(e, "  mt_str r = { b.data, b.len };")
+    emit_line(e, "  return r;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static mt_str mt_format_str_append_int(mt_fmt_builder b, int32_t v) {")
+    emit_line(e, "  mt_fmt_grow(b, 24);")
+    emit_line(e, "  int n = snprintf(b.data + b.len, b.cap - b.len, \"%d\", v);")
+    emit_line(e, "  b.len += (uintptr_t)n;")
+    emit_line(e, "  mt_str r = { b.data, b.len };")
+    emit_line(e, "  return r;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static mt_str mt_format_str_append_float(mt_fmt_builder b, double v) {")
+    emit_line(e, "  mt_fmt_grow(b, 48);")
+    emit_line(e, "  int n = snprintf(b.data + b.len, b.cap - b.len, \"%g\", v);")
+    emit_line(e, "  b.len += (uintptr_t)n;")
+    emit_line(e, "  mt_str r = { b.data, b.len };")
+    emit_line(e, "  return r;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static mt_str mt_format_str_finish(mt_fmt_builder b) {")
+    emit_line(e, "  mt_str r = { b.data, b.len };")
+    emit_line(e, "  return r;")
+    emit_line(e, "}")

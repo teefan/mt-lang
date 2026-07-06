@@ -1,12 +1,11 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phases 0–4 complete, Phase 5 in progress.** 6 of 7 Phase 5 items done:
-fn pointer types, method dispatch + extending blocks, proc closures
-(non-capturing, capturing with ref-counted lifecycle, fn→proc coercion,
-indirect calls), is + match-expressions, dyn[I] interfaces (vtable dispatch,
-adapt, fat pointers).  Remaining: str_buffer[N], format strings.
+Status: **Phases 0–5 complete.** All 7 Phase 5 items done:
+fn pointer types, method dispatch + extending blocks, proc closures,
+dyn[I] interfaces (vtable dispatch, adapt, fat pointers),
+is + match-expressions, str_buffer[N], format strings.
 Owner: compiler team
-Last updated: 2026-07-07 (commits through 427a3873)
+Last updated: 2026-07-07 (commits through HEAD)
 
 Pipeline:
 
@@ -145,9 +144,9 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 | 2 | **fn pointer types** | ~50 | ✅ done | `c_fn_ptr_declarator`, `ty_function` in `c_type`/`c_declaration` |
 | 3 | **dyn[I] interfaces** | ~550 | ✅ done | Vtable struct + fat pointer + `adapt` + dyn method dispatch; vtable constants, reachability seeding; `ref_of` builtin added to analyzer |
 | 4 | **Method dispatch** | ~400 | ✅ done | Extending block lowering, `MethodInfo`, `resolve_method_info`, receiver passing (pointer/value/static) |
-| 5 | **str_buffer[N]** | ~150 | pending | Type decl + append/assign/as_str methods |
-| 6 | **Format strings** | ~250 | pending | `f"..."` desugaring + format-value lowering |
-| **Total** | | **~2,600** | 6/7 done |
+| 5 | **str_buffer[N]** | ~250 | ✅ done | Struct type decl + clear/assign/append/len/capacity/as_str methods; C runtime helpers (mt_str_buffer_len/clear/assign/append/as_str); capacity handling; detect in resolve_generic_type_ref |
+| 6 | **Format strings** | ~150 | ✅ done | Static text concatenation via lowering; interpolation via mt_format_str_* C helpers (make/append_str/append_int/append_float/finish); heap-allocated builder with grow support |
+| **Total** | | **~2,950** | 7/7 done ✅ |
 
 ### Phase 6 — events, async, parallel, compile-time
 

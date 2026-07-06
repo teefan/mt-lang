@@ -3039,8 +3039,45 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
             return lookup_method_anywhere(ctx, "str", method_name)
         types.Type.ty_primitive as p:
             return lookup_method_anywhere(ctx, p.name, method_name)
+        # str_buffer[N] builtin methods.
+        types.Type.ty_generic as g:
+            if g.name.equal("str_buffer"):
+                return str_buffer_method_sig(g.args, method_name)
+            return Option[FnSig].none
         _:
             return Option[FnSig].none
+
+
+## Synthetic FnSig for a builtin str_buffer method.  Only the known methods are
+## recognized; anything else returns none.
+function str_buffer_method_sig(args: span[types.Type], method_name: str) -> Option[FnSig]:
+    let void_ty = types.primitive("void")
+    let str_ty = types.Type.ty_str
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    let cstr_ty = types.primitive("cstr")
+    var params = vec.Vec[ParamEntry].create()
+    var return_type = void_ty
+    if method_name.equal("clear"):
+        pass
+    else if method_name.equal("assign") or method_name.equal("append") or method_name.equal("assign_format") or method_name.equal("append_format"):
+        params.push(ParamEntry(name = "text", ty = str_ty))
+    else if method_name.equal("len"):
+        return_type = ptr_uint_ty
+    else if method_name.equal("capacity"):
+        return_type = ptr_uint_ty
+    else if method_name.equal("as_str"):
+        return_type = str_ty
+    else if method_name.equal("as_cstr"):
+        return_type = cstr_ty
+    else:
+        return Option[FnSig].none
+    return Option[FnSig].some(value = FnSig(
+        name = method_name,
+        params = params.as_span(),
+        return_type = return_type,
+        has_return_type = true,
+        method_kind = ast.MethodKind.mk_plain
+    ))
 
 
 ## Resolve `Type.method` by searching the local method table, then every
