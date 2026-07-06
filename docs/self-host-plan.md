@@ -1,33 +1,13 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phases 0–3 complete; Phases 4a–4b complete; Phase 4c partial (prelude
-generic-variant pipeline: constructors, literals, match, declarations — builds
-and runs correctly; Option[int] programs produce correct exit codes).** Remaining
-in 4c: full generics monomorphization (specialization worklist, type substitution,
-caching — Ruby `resolve.rb` = 2,511 LOC). Then: closures, dyn, format, async,
-compile-time, build parity, self-host bootstrap.
+Status: **Phases 0–3 complete; 4a (multi-module assembly) + 4b (non-generic
+variants) complete; 4c (generics) partial — same-module generic functions,
+generic structs, and prelude variants build and run correctly; cross-module
+generics and full monomorphization worklist remain.**
 Owner: compiler team
-Last updated: 2026-07-07
+Last updated: 2026-07-07 (commit `0b8a786d`)
 
-This document is the durable, cross-session plan for extending the self-hosted
-Milk Tea compiler (`mtc`, `projects/mtc/`) from a front-end-only checker into a
-full compiler that emits C and produces a binary — ultimately compiling itself.
-
-Guiding constraint: **follow the Ruby reference compiler (`lib/milk_tea/core/`)
-architecture, algorithms, and file decomposition as closely as possible.** It is
-proven and well-tested. Each compiler stage must stay decoupled, self-contained,
-and isolated behind a stable data contract.
-
----
-
-## 1. Current state
-
-`mtc` implements a self-hosted compiler that **lexes, parses, type-checks, lowers,
-emits C, and builds native binaries**. The front-end (lexer through module loader)
-pre-existed; the middle- and back-end (lowering through C emission + `cc` build
-driver) were added in Phases 0–4b of this plan, with Phase 4c partially complete.
-
-Pipeline as wired in `projects/mtc/src/mtc/main.mt`:
+Pipeline:
 
 ```
 source → lexer → token stream → parser → AST → semantic analyzer → module loader → Program
@@ -41,169 +21,264 @@ source → lexer → token stream → parser → AST → semantic analyzer → m
                                                                     C source → cc → binary
 ```
 
-Self-host source layout (src ≈ 20.3k LOC):
+Self-host source layout (src ≈ 20.7k LOC):
 
-| Stage | Path | LOC (approx) |
-|-------|------|---------------|
+| Stage | Path | LOC |
+|-------|------|-----|
 | Lexer | `src/mtc/lexer/` | ~1,600 |
 | Parser + AST | `src/mtc/parser/*.mt` | ~4,700 |
 | Pretty printers | `src/mtc/pretty_printer/*.mt` | ~2,000 |
 | Semantic analyzer | `src/mtc/semantic/*.mt` | ~5,000 |
 | Loader | `src/mtc/loader/*.mt` | ~700 |
 | IR | `src/mtc/ir.mt` | ~100 |
-| Lowering | `src/mtc/lowering/lowering.mt` | ~2,300 |
-| C Backend | `src/mtc/c_backend/c_backend.mt` | ~2,400 |
+| Lowering | `src/mtc/lowering/lowering.mt` | ~2,700 |
+| C Backend | `src/mtc/c_backend/c_backend.mt` | ~2,500 |
 | Build driver | `src/mtc/build.mt` | ~80 |
 | C naming (shared) | `src/mtc/c_naming.mt` | ~70 |
 
-**All 172 self-host tests pass, 0 files failed.**
-
-### Pre-existing issues fixed
-
-- **DA scoping false-positives** — scope-aware pass with per-block marks.
-- **`array[T,N](...)` constructor** — lowering + backend emission.
-- **`c_type` mangled match arms** — duplicate fatal; `ty_named` missing handler.
-
-### Deferred to later work
-
-- **`is` operator / match-expressions** — requires statement-hoisting infrastructure
-  (also affects enum/int match-expr from Phase 2). Target: Phase 5+.
-- **Guards and equality patterns** in struct-pattern match arms — not exercised by
-  any test or stdlib code. Target: Phase 5.
-- **Build-mode codegen parity** (`<stdlib.h>`, `mt_fatal`, `#line`). Target: Phase 7.
-- **`as cstr` for non-literal values** — runtime str→cstr helper. Target: Phase 5.
-- **Prelude module prefix** (`std_option_Option_int` vs `Option_int`) — cosmetic;
-  self-host uses bare type-arg-inclusive names (`Option_int`, `Option_int_some`,
-  `Option_int_kind_some`); functionally correct. Target: Phase 7.
-- **SoA** — deferred indefinitely.
+**All 172 self-host tests pass, 0 files failed.** Three generics programs
+verify: `id[T]` (identity), `Pair[A,B]` (generic struct + function), and
+`Option[int]` (prelude variant with match) all build and return 42.
 
 ---
 
-## 2. Prerequisite substrate gaps
+## 1. What is complete
 
-1. **Analyzer permissiveness** — `ty_error` fallback; each phase requires matching
-   analyzer hardening.
-2. **No binding layer** — AST-driven approach works through 4b; may be needed for
-   full monomorphization.
+### Phase 0 — IR + scaffolding
+- `ir.mt`, `ir_formatter.mt`, CLI stubs. Program retains analyses in dependency order.
 
----
+### Phase 1 — First binary
+- Scalar lowering + C backend. Byte-identical to Ruby on 8 programs.
 
-## 3. Phased plan
+### Phase 2 — Control flow, str/cstr, enums, foreign functions
+- if/else/while/for, str literals + `mt_str` type, enums/flags + switch, foreign/external calls. Byte-identical to Ruby.
 
-### Phase 0–3 — IR, scalars, control flow, aggregates
-
-- [x] **Done.** All byte-identical to Ruby on 11 differential programs.
+### Phase 3 — Non-generic aggregates
+- Structs, unions, arrays, spans, tuples. Reachability pruning. Byte-identical to Ruby on 11 programs.
 
 ### Phase 4a — Multi-module assembly
-
-- [x] **Done.** Cross-module calls via `program_returns` map.
+- `Lowering.lower` concatenates all non-external modules in dependency-first order.
+- Cross-module calls (`mod.func(...)`) via `analysis.imports` + shared `program_returns`.
+- Un-annotated local types prefer IR type (correct cross-module qual).
 
 ### Phase 4b — Non-generic variants
+- Variant declarations, arm constructors (no-payload + payload).
+- Match lowering: **switch** for member/`as name`/wildcard arms; **if/goto chain**
+  for struct-pattern arms (payload temp, field destructure, `as name` binding).
+- Backend: `emit_variant` (payload structs, kind enum, data union, tagged struct).
+- Dead-code elimination (`used_labels` set, goto-after-terminator skip).
+- Supporting: `aggregates_use_str`, compound-literal payload casts, `goto`/`label`
+  statement emission. 3 variant programs byte-identical to Ruby.
 
-- [x] **Done.** Variant decls, arm constructors, switch + if/goto match strategies,
-  field destructure bindings, dead-code elimination, compound-literal casts,
-  `goto`/`label` emission. 3 variant programs byte-identical to Ruby.
+### Phase 4c partial — Generics
 
-### Phase 4c — Prelude generic-variant pipeline (done)
+**What works (same-module):**
 
-The prelude types `Option[T]` and `Result[T,E]` are synthetic — they're registered
-internally by the analyzer but have no AST `decl_variant` nodes. The lowering and
-backend now handle them through a generic-variant path distinct from non-generic
-variants.
-
-- **Variant registry** — `install_prelude_variants` registers `Option`/`Result`
-  with arm payload structures (field names via `sp_str`/`sp_str_type` placeholders).
-- **Generic variant constructors** — `Option[int].some(value=42)` → `lower_generic_
-  variant_literal` → IR `expr_variant_literal(ty=ty_generic(...))`.
-- **Consistent C naming** — `variant_base_c_name(scrutinee_ty, module)` produces
-  type-arg-inclusive names (`Option_int`, `Option_int_some`, `Option_int_kind_some`)
-  for discriminants, arm types, and declarations.
-- **Match dispatch** — `generic_variant_name` extracts the base name from
-  `ty_generic`; `lower_variant_match` routes through switch or if/goto strategies.
-- **Variant type declarations** — `collect_generic_variants` scans the lowered IR
-  for used concrete specializations and emits synthetic `ir.VariantDecl` nodes
-  with per-arm payload structs populated from `prelude_variant_arm_info`.
-- **IR type pipeline** — `ir_expr_type` handles `expr_variant_literal` +
-  `expr_array_literal` (previously fell to `ty_error`).
-- **Backend** — `render_variant_initializer` and `c_declaration` handle
-  `ty_generic` inline; `generic_c_type` has variant naming fallback.
-- **Verified:** `Option[int]` programs with constructors, match-as-binding, and
-  build+run produce correct exit codes (e.g., 42). The diff from Ruby is cosmetic
-  (bare names vs `std_option_` prefix). 172/172 tests clean.
-
-### Phase 4c — Generics monomorphization (IN PROGRESS, highest risk)
-
-The full generics subsystem (Ruby `resolve.rb` = 2,511 LOC) gates compilation of
-all generic std collections (`Vec[T]`, `Map[K,V]`, `String`) and the self-host's
-own generic code (`ast.mt`, `semantic/types.mt`).
+| Feature | Verified |
+|---------|----------|
+| Generic function monomorphization (`id[T](x: T) → T` called as `id[int](42)`) | Builds, exit=42 |
+| Generic struct constructors (`Pair[int, int](first=42, second=0)`) | Builds, exit=42 |
+| Generic struct + generic function (`Pair[A,B]` + `first[T]`) | Builds, exit=42 |
+| Prelude variant pipeline (`Option[int].some(...)` + match) | Builds, exit=42 |
+| Type substitution (`substitute_type_params`: `ty_var`/`ty_named`/`ty_imported`/`ty_generic`) | ✓ |
+| Specialization cache (`specialization_cache` map, keyed by C linkage name) | ✓ |
+| Concrete struct IR emission (AST field types with substitution) | ✓ |
 
 **Architecture:**
-1. **Specialization worklist** — during lowering, collect generic function call
-   sites that reference a generic function with concrete type arguments. Each
-   unique `(function, concrete_type_args)` pair becomes a specialization key.
-   Process the worklist iteratively: for each key, lower a monomorphized copy of
-   the generic function body with type parameters substituted by concrete types.
-   Monomorphized bodies may themselves contain generic calls → add to worklist.
-   Converges when no new specializations are discovered.
-2. **Type substitution** — given a generic function's AST body and its declared
-   type parameters, produce a lowered body where every reference to a type param
-   is replaced by the concrete type. This includes: function signatures, local
-   declarations, field types, call targets, aggregate constructors.
-3. **Specialization caching** — a `map[specialization_key → lowered_functions]`
-   avoids re-lowering. The key encodes the generic function's qualified name +
-   concrete type args in canonical order.
-4. **Method-definition resolution** — generic bodies that call methods on
-   type-param receivers (`this.append(...)`) need the concrete struct's method
-   bound at specialization time via `@method_definitions`.
-5. **Cross-module generics** — `Vec[T]` in `std/vec.mt` instantiated for
-   `T = int` in the calling module; linkage name encodes the specialization.
+- **Inline monomorphization**: generic calls are lowered immediately on encounter
+  (`lower_specialization_call` → `lower_monomorphized_call` → `lower_and_cache_specialization`).
+- Cached in `specialization_cache`; entries pushed to program functions at end of
+  `lower_module` via `values()` iteration.
+- Generic struct decls emitted by lowering (`ensure_generic_struct_decl` reads AST
+  field types directly, applies `substitute_type_params`). Backend's
+  `collect_generic_variants` filtered to prelude types only.
+- `resolve_field_type_ref` delegates to `resolve_generic_type_ref` for complex
+  types; `resolve_type_ref` has `ty_named` fallback for type params.
 
-Substrate check: the analyzer records `FnSig` with type param info and resolves
-generic type parameters. The lowering needs:
-- A `SpecializationCache` struct in `LowerCtx` (maps key → lowered function IR).
-- A `substitute_type_params` helper (replaces type params in `types.Type`).
-- A worklist in `lower` that iterates until convergence.
+**Key fixes in this phase:**
+- `resolve_type_ref`/`resolve_field_type_ref` returned `ty_error` for type param
+  names (not in `type_names`). Fixed with `ty_named(name)` fallback.
+- `resolve_field_type_ref` returned `ty_error` for types with generic arguments
+  (`Pair[T, int]`). Fixed by delegating to `resolve_generic_type_ref`.
+- `analysis.structs` stored `ty_error` for generic struct fields (analyzer's
+  `collect_struct_fields` resolves before type param scope is active). Fixed by
+  reading fields from AST declarations directly.
+- `c_type` had no `ty_var` handler. Added as defensive fallback.
+- `c_type` match arms were mangled (duplicate fatal, swapped `ty_tuple` return).
+  Fixed.
+- `ir_expr_type` missing `expr_variant_literal` and `expr_array_literal` cases.
+  Fixed.
 
-**Remaining (in priority order):**
-1. Specialization worklist + cache in `lower()` (collect generic calls; iterate).
-2. Type-substitution helper (map type-param names to concrete types).
-3. Lower generic function body with substituted types.
-4. Cross-module generic function instantiation.
-5. Generic struct/variant emission (per-specialization IR decls).
+### Pre-existing issues fixed
+- **DA scoping false-positives**: scope-name stack with per-block marks.
+- **`array[T,N](...)` constructor**: lowering + backend emission.
+
+---
+
+## 2. Deferred items (phased)
+
+- **`is` operator / match-expressions**: requires statement-hoisting infrastructure
+  (also affects enum/int match-expr from Phase 2). Target: Phase 5+.
+- **Guards and equality patterns** in struct-pattern match arms. Not exercised by
+  any test or stdlib. Target: Phase 5.
+- **Build-mode codegen parity** (`<stdlib.h>`, `mt_fatal`, `#line`). Target: Phase 7.
+- **`as cstr` for non-literal values**: runtime str→cstr helper. Target: Phase 5.
+- **Prelude module prefix** (`std_option_Option_int` vs `Option_int`): cosmetic;
+  self-host uses bare type-arg-inclusive names. Target: Phase 7.
+- **SoA**: deferred indefinitely.
+
+---
+
+## 3. Remaining work per phase
+
+### Phase 4c — Generics monomorphization (remaining)
+
+1. **Cross-module generics** — `Vec[T]` from `std/vec.mt` instantiated for
+   `T = int`. Requires: find the generic function in the imported module's
+   `analysis`, build substitution from the call site's type args, lower the
+   monomorphized copy, and append to the calling module's output. The
+   `specialization_cache` and `substitute_type_params` already handle type
+   substitution; the gap is function-lookup across modules.
+   - **Estimated scope:** ~150 LOC in `lower_and_cache_specialization` (accept
+     foreign analysis + function AST).
+
+2. **Generic struct emission from imported modules** — `Pair[int, int]` from an
+   imported module (`import lib; ... lib.Pair[int, int](...)`). The concrete
+   struct `lib_Pair_int_int` must come from the imported module's AST. Currently
+   `ensure_generic_struct_decl` only searches `ctx.analysis.source_file`.
+   - **Estimated scope:** ~80 LOC (extend search to imported module analyses).
+
+3. **Full worklist convergence** — currently the inline specialization lowers
+   each call as encountered. If a monomorphized function's body contains further
+   generic calls (e.g., `Vec[T].push()` inside `Vec[T].append_span()`), those
+   inner calls must also be monomorphized. A proper worklist iterates until
+   convergence.
+   - **Estimated scope:** ~100 LOC (pending queue + iterative processing).
+
+4. **Result[T, E] with non-int E types** — currently `prelude_variant_arm_info`
+   hardcodes `ty_primitive("int")` for the `value` and `error` fields of
+   Result. The field types should come from the concrete type args (T → value
+   type, E → error type). This affects variant declaration emission and field
+   types in match bindings.
+   - **Estimated scope:** ~60 LOC (parameterize prelude_variant_arm_info).
+
+5. **`expr_specialization` as value expression** — `Option[int].none` (without
+   call) should resolve to a variant literal with correct type. Currently
+   `lower_expr` fatals on `expr_specialization`.
+   - **Estimated scope:** ~40 LOC (add handler in `lower_expr`).
+
+**After Phase 4c:** self-host can compile programs using `Vec[int]`,
+`Map[int, int]`, and other generic std collections with int/str key types.
 
 ### Phase 5 — proc/fn closures, dyn interfaces, method dispatch, str_buffer, format strings
 
+1. **proc closures** — capture environment, ref-counted lifecycle. Ruby
+   `proc.rb` = 419 LOC. Emit capture struct + invoke/release/retain functions.
+   - **Estimated scope:** ~300 LOC (lowering + backend).
+
+2. **fn pointer types** — function pointers as values, stored in structs,
+   passed as args. Already partially handled (fn→proc coercion, fn struct
+   fields from Phase 1–3). Remaining: full fn type support in `c_type`.
+   - **Estimated scope:** ~50 LOC.
+
+3. **dyn[I] interfaces** — vtable, fat pointer, `adapt[I](value)` builtin.
+   Ruby `dyn.rb` = 233 LOC.
+   - **Estimated scope:** ~200 LOC.
+
+4. **Method dispatch** — generic method calls on receivers (editable/value/
+   static). Requires building a method-definition table (`@method_definitions`
+   in Ruby). This also completes generics for method receivers.
+   - **Estimated scope:** ~400 LOC (method table + dispatch in lowering).
+
+5. **str_buffer[N]** — fixed-capacity UTF-8 text buffer type with `append`,
+   `assign`, `as_str`, etc. Ruby `str_buffer.rb` = 115 LOC.
+   - **Estimated scope:** ~150 LOC.
+
+6. **Format strings** — `f"count=#{n}"` desugaring + `fmt` helpers.
+   - **Estimated scope:** ~250 LOC.
+
+7. **`is` operator + match-expressions** — statement-hoisting infrastructure
+   needed. Also unlocks match-expr for enums/integers. Deferred from Phase 4b.
+   - **Estimated scope:** ~200 LOC.
+
+**After Phase 5:** self-host can compile closures, dyn dispatch, format strings,
+and `is` expressions.
+
 ### Phase 6 — events, async/await, parallel/detach/gather, compile-time
 
-### Phase 7 — Build parity + self-host bootstrap (mtc builds mtc)
+1. **Events** — event declaration, `emit`, `subscribe`, `unsubscribe`. Ruby
+   `events.rb` = 1,054 LOC.
+   - **Estimated scope:** ~600 LOC.
+
+2. **Async/await** — state-machine transform. Ruby `async/*` = 2,834 LOC total
+   (analysis + normalization + lowering). This is the second-highest risk module
+   after generics.
+   - **Estimated scope:** ~2,000 LOC.
+
+3. **parallel for / parallel: / detach/gather** — libuv thread dispatch.
+   - **Estimated scope:** ~400 LOC.
+
+4. **Compile-time evaluation** — `const function`, `when`, `inline for/while/
+   if/match`, `emit`, reflection builtins (`fields_of`, `size_of`, etc.).
+   Ruby `compile_time/*` + `const_eval.rb`.
+   - **Estimated scope:** ~800 LOC.
+
+**After Phase 6:** self-host can compile async programs, events, compile-time
+metaprogramming.
+
+### Phase 7 — Build parity + self-host bootstrap
+
+1. **Build cache** + `--no-cache` / `--keep-c`.
+2. **Module roots / package graph** resolution (`--root`, `package.toml`).
+3. **Platform targets** (linux/windows/wasm).
+4. **`--debug-guards`** (loop iteration guards).
+5. **`#line` directives** in emitted C.
+6. **Build-mode include set** (`<stdlib.h>`, `mt_fatal` always-on).
+7. **Prelude module prefix** (`std_option_` names).
+8. **Milestone: `mtc build projects/mtc`** — the self-host compiles itself.
 
 ---
 
-## 4. Progress checklist
+## 4. Cross-cutting principles
 
-- [x] Phase 0 — IR contract + stage scaffolding + CLI stubs
-- [x] Phase 1 — return-int binary end-to-end
-- [x] Phase 2 — control flow, str/cstr, enums, foreign functions
-- [x] Phase 3 — non-generic aggregates (structs, unions, arrays, spans, tuples)
-- [x] Phase 4a — multi-module assembly + cross-module calls
-- [x] Phase 4b — non-generic variants + match (switch + if/goto) + variant literals
-- [/] Phase 4c — generics/monomorphization
-  - [x] Prelude generic-variant pipeline (Option/Result constructors, literals,
-        match, declarations — builds and runs correctly)
-  - [ ] Specialization worklist + type substitution + caching
-  - [ ] Cross-module generic function instantiation (Vec[T], Map[K,V], String)
-  - [ ] Generic struct/variant emission per specialization
-- [ ] Phase 5 — proc/fn, dyn, method dispatch, str_buffer, format strings
-- [ ] Phase 6 — events, async, parallel/detach, compile-time
-- [ ] Phase 7 — build parity + self-host bootstrap (mtc builds mtc)
-
----
-
-## 5. Cross-cutting principles
-
-- **IR is the frozen seam.** Backend reads only `IR`; Lowering reads only
-  `Analysis`.
+- **IR is the frozen seam.** Backend reads only `IR`; Lowering reads only `Analysis`.
 - **Byte-identical C as the correctness oracle.**
 - **Mirror Ruby's file split**, never grow monoliths.
-- **Fail loud on substrate gaps.**
-- **Sandbox every built binary.**
+- **Fail loud on substrate gaps** (`LoweringError` on `ty_error` for emittable nodes).
+- **Sandbox every built binary** (`timeout` + `ulimit -v`).
+
+---
+
+## 5. Risks
+
+| Risk | Phase | LOC | Notes |
+|------|-------|-----|-------|
+| Generics monomorphization (remaining) | 4c | ~400 | Cross-module + worklist convergence |
+| Method dispatch table | 5 | ~400 | Generic method receivers |
+| Async state-machine | 6 | ~2,834 | Second-hardest module |
+| Analyzer permissiveness | all | ongoing | Hidden long pole |
+
+---
+
+## 6. Progress checklist
+
+- [x] Phase 0 — IR + scaffolding
+- [x] Phase 1 — return-int binary
+- [x] Phase 2 — control flow, str/cstr, enums, foreign
+- [x] Phase 3 — non-generic aggregates
+- [x] Phase 4a — multi-module assembly + cross-module calls
+- [x] Phase 4b — non-generic variants + match strategies + variant literals
+- [/] Phase 4c — generics monomorphization
+  - [x] Same-module generic functions (identity, struct methods)
+  - [x] Same-module generic structs (constructors, concrete IR)
+  - [x] Prelude variant pipeline (Option/Result constructors, match, decls)
+  - [x] Type substitution infrastructure (ty_var/ty_named/ty_imported/ty_generic)
+  - [x] Specialization cache + inline monomorphization
+  - [ ] Cross-module generic functions (Vec[T] from std)
+  - [ ] Generic struct emission from imported modules
+  - [ ] Full worklist convergence
+  - [ ] Result[T,E] with non-int error types
+  - [ ] `expr_specialization` as value expression (Option.none without call)
+- [ ] Phase 5 — proc/fn, dyn, method dispatch, str_buffer, format, `is`
+- [ ] Phase 6 — events, async, parallel, compile-time
+- [ ] Phase 7 — build parity + self-host bootstrap
