@@ -130,6 +130,13 @@ struct LowerCtx:
     # Always points to a valid map (empty during normal lowering, populated
     # during monomorphized function lowering).
     type_substitution: map_mod.Map[str, types.Type]
+    # Proc counter for synthetic invoke/release/retain function names.
+    proc_counter: ptr_uint
+    # Pending synthetic functions (invoke/release/retain) emitted during
+    # proc lowering, to be appended after the main module iteration.
+    pending_synthetic_functions: vec.Vec[ir.Function]
+    # Pending capture-env structs for capturing procs.
+    pending_env_structs: vec.Vec[ir.StructDecl]
 
 
 # =============================================================================
@@ -407,6 +414,9 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
             loaded_modules = program.modules.as_span(),
             spec_in_progress = map_mod.Map[str, bool].create(),
             type_substitution = map_mod.Map[str, types.Type].create(),
+            proc_counter = 0,
+            pending_synthetic_functions = vec.Vec[ir.Function].create(),
+            pending_env_structs = vec.Vec[ir.StructDecl].create(),
         )
         var di: ptr_uint = 0
         while di < analysis.source_file.declarations.len:
@@ -442,6 +452,9 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         loaded_modules = loaded_modules,
         spec_in_progress = map_mod.Map[str, bool].create(),
         type_substitution = map_mod.Map[str, types.Type].create(),
+        proc_counter = 0,
+        pending_synthetic_functions = vec.Vec[ir.Function].create(),
+        pending_env_structs = vec.Vec[ir.StructDecl].create(),
     )
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -506,6 +519,18 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         let spec_ptr = spec_iter.next() else:
             break
         functions.push(unsafe: read(spec_ptr))
+
+    # Append any pending synthetic proc functions and capture-env structs.
+    var sf_iter = ctx.pending_synthetic_functions.iter()
+    while true:
+        let sf_ptr = sf_iter.next() else:
+            break
+        functions.push(unsafe: read(sf_ptr))
+    var es_iter = ctx.pending_env_structs.iter()
+    while true:
+        let es_ptr = es_iter.next() else:
+            break
+        structs.push(unsafe: read(es_ptr))
 
     return ir.Program(
         module_name = analysis.module_name,
@@ -1192,11 +1217,142 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 return lower_index_access(ctx, ix.receiver, ix.index, ep)
             ast.Expr.expr_expression_list as lst:
                 return lower_tuple_literal(ctx, lst.elements)
+            ast.Expr.expr_proc as pr:
+                return lower_proc_expression(ctx, pr.method_params, pr.return_type, pr.body, ep)
             _:
                 fatal(c"lowering Phase 3: unsupported expression")
 
 
-## Lower a positional tuple literal `(a, b, ...)` to an aggregate literal with
+## Lower a proc expression `proc(x: int) -> int: x + 1` to a proc struct literal
+## with invoke/release/retain function pointers and a capture env pointer.  No-
+## capture procs use null env; capturing procs (deferred) use a heap-allocated
+## env struct with ref-counting.
+function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body_ptr: ptr[ast.Stmt], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    ctx.proc_counter += 1
+    let proc_id = ctx.proc_counter
+    var id_buf = string.String.create()
+    id_buf.append(naming.module_c_prefix(ctx.module_name))
+    id_buf.append("__proc_")
+    fmt.append_ptr_uint(ref_of(id_buf), proc_id)
+    let proc_prefix = id_buf.as_str()
+
+    let proc_ty = expr_type(ctx, ep)
+
+    # Build a synthetic struct for this proc type: { env, invoke, release, retain }.
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let struct_name = proc_prefix
+
+    var struct_fields = vec.Vec[ir.Field].create()
+    struct_fields.push(ir.Field(name = "env", ty = void_ptr))
+    struct_fields.push(ir.Field(name = "invoke", ty = proc_invoke_field_type(proc_ty)))
+    let lifecycle_ty = proc_lifecycle_fn_type()
+    struct_fields.push(ir.Field(name = "release", ty = lifecycle_ty))
+    struct_fields.push(ir.Field(name = "retain", ty = lifecycle_ty))
+    ctx.pending_env_structs.push(ir.StructDecl(name = struct_name, linkage_name = struct_name, fields = struct_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+
+    # Build invoke/release/retain functions.
+    var invoke_c = string.String.create()
+    invoke_c.append(proc_prefix)
+    invoke_c.append("__invoke")
+    var release_c = string.String.create()
+    release_c.append(proc_prefix)
+    release_c.append("__release")
+    var retain_c = string.String.create()
+    retain_c.append(proc_prefix)
+    retain_c.append("__retain")
+
+    let invoke_str = invoke_c.as_str()
+    let release_str = release_c.as_str()
+    let retain_str = retain_c.as_str()
+
+    ctx.pending_synthetic_functions.push(build_proc_invoke_fn(ctx, method_params, return_type, body_ptr, invoke_str))
+    ctx.pending_synthetic_functions.push(build_proc_noop_fn(retain_str))
+    ctx.pending_synthetic_functions.push(build_proc_noop_fn(release_str))
+
+    # Build the proc struct literal.
+    let null_env = alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr))
+    var fields = vec.Vec[ir.AggregateField].create()
+    fields.push(ir.AggregateField(name = "env", value = null_env))
+    fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = proc_invoke_field_type(proc_ty), pointer = false))))
+    fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = false))))
+    fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
+
+    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(name = struct_name), fields = fields.as_span()))
+
+
+## Build a non-capturing proc invoke function: unpacks env (unused), lowers the
+## body.  Returns the body expression directly (or void return for no-return).
+function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt], invoke_c_name: str) -> ir.Function:
+    let saved_locals = ctx.locals
+    let saved_counter = ctx.temp_counter
+    ctx.locals = vec.Vec[LocalBinding].create()
+    ctx.temp_counter = 0
+
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
+
+    var pi: ptr_uint = 0
+    while pi < method_params.len:
+        var p: ast.Param
+        unsafe:
+            p = read(method_params.data + pi)
+        let p_ty = resolve_field_type_ref(ctx, p.param_type)
+        let pc = c_local_name(p.name)
+        params.push(ir.Param(name = p.name, linkage_name = pc, ty = p_ty, pointer = false))
+        ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = false))
+        pi += 1
+
+    var ret_ty = types.primitive("void")
+    if return_type != null:
+        ret_ty = resolve_type_ref(ctx, return_type)
+    let body_stmts = lower_block(ctx, body)
+
+    ctx.locals = saved_locals
+    ctx.temp_counter = saved_counter
+    return ir.Function(
+        name = invoke_c_name,
+        linkage_name = invoke_c_name,
+        params = params.as_span(),
+        return_type = ret_ty,
+        body = body_stmts,
+        entry_point = false,
+        method_receiver_param = false,
+    )
+
+
+## Build a no-op release/retain function for non-capturing procs.
+function build_proc_noop_fn(c_name: str) -> ir.Function:
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
+    var body = vec.Vec[ir.Stmt].create()
+    body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+    return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = types.primitive("void"), body = body.as_span(), entry_point = false, method_receiver_param = false)
+
+
+## The proc's invoke field type: `fn(env: ptr[void], params...) -> R`.
+function proc_invoke_field_type(proc_ty: types.Type) -> types.Type:
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    match proc_ty:
+        types.Type.ty_function as fn_ty:
+            var all_params = vec.Vec[types.Type].create()
+            all_params.push(void_ptr)
+            var i: ptr_uint = 0
+            while i < fn_ty.params.len:
+                unsafe:
+                    all_params.push(read(fn_ty.params.data + i))
+                i += 1
+            return types.Type.ty_function(params = all_params.as_span(), return_type = fn_ty.return_type, variadic = false)
+        _:
+            return types.Type.ty_error
+
+
+## The proc's release/retain field type: `fn(env: ptr[void]) -> void`.
+function proc_lifecycle_fn_type() -> types.Type:
+    var params = vec.Vec[types.Type].create()
+    params.push(types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))))
+    return types.Type.ty_function(params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false)
 ## fields `_0`, `_1`, ... and a `ty_tuple` type.  (Named tuples arrive later.)
 function lower_tuple_literal(ctx: ref[LowerCtx], elements: span[ast.Expr]) -> ptr[ir.Expr]:
     var fields = vec.Vec[ir.AggregateField].create()
@@ -1354,6 +1510,13 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 let extern_ptr = ctx.extern_map.get(id.name)
                 if extern_ptr != null:
                     return lower_plain_call(ctx, read(extern_ptr), args, call_ep, null)
+                # Proc-typed local: `p(args)` → `p.invoke(p.env, args)`.
+                match lookup_local(ctx, id.name):
+                    Option.some as lb:
+                        if is_proc_type(lb.value.ty):
+                            return lower_proc_call(ctx, lb.value, args, call_ep)
+                    Option.none:
+                        pass
                 var ret_ty = function_return_type(ctx, id.name)
                 var ret_type_ptr = types.alloc_type(ret_ty)
                 return lower_plain_call(ctx, naming.qualified_c_name(ctx.module_name, id.name), args, call_ep, ret_type_ptr)
@@ -1964,6 +2127,52 @@ function collect_function_returns(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> 
 ## The resolved return type of a module function: recorded during pre-scan
 ## (handles tuple/array returns the analyzer can't resolve), else the
 ## analyzer's best guess.
+## True when a lowered type represents a proc struct (has invoke/release/retain
+## fields), as opposed to a bare fn pointer or a regular struct.
+function is_proc_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_named as n:
+            return n.name.find_substring("__proc_").is_some()
+        _:
+            return false
+
+
+## Lower a proc call `p(arg1, arg2)` to `p.invoke(p.env, arg1, arg2)`.  Since the
+## IR's `expr_call` uses a string callee for direct calls, we generate a direct
+## call to the invoke function (which is `<struct_name>__invoke`) and pass the
+## env member as the first argument.
+function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let recv = alloc_expr(ir.Expr.expr_name(name = lb.c_name, ty = lb.ty, pointer = false))
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let env_member = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "env", ty = void_ptr))
+
+    # The proc struct type is ty_named(name = "<struct_name>").  The invoke
+    # function's C name is `<struct_name>__invoke`.
+    var struct_name: str = ""
+    match lb.ty:
+        types.Type.ty_named as n:
+            struct_name = n.name
+        _:
+            fatal(c"lowering Phase 5: proc call on non-proc type")
+    var invoke_name = string.String.create()
+    invoke_name.append(struct_name)
+    invoke_name.append("__invoke")
+
+    var invoke_args = vec.Vec[ir.Expr].create()
+    unsafe:
+        invoke_args.push(read(env_member))
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        let lowered = lower_expr(ctx, arg.arg_value)
+        unsafe:
+            invoke_args.push(read(lowered))
+        i += 1
+    return alloc_expr(ir.Expr.expr_call(callee = invoke_name.as_str(), arguments = invoke_args.as_span(), ty = expr_type(ctx, call_ep)))
+
+
 function function_return_type(ctx: ref[LowerCtx], name: str) -> types.Type:
     let ret_ptr = ctx.function_returns.get(name)
     if ret_ptr != null:

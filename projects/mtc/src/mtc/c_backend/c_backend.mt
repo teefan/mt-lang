@@ -1898,6 +1898,15 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return j4("(", c_type(vl.ty), ")", render_variant_initializer(e, vl.ty, vl.arm_name, vl.fields, true))
             ir.Expr.expr_zero_init as z:
                 return render_zero_expression(z.ty)
+            ir.Expr.expr_null_literal:
+                return "NULL"
+            ir.Expr.expr_cast as cast:
+                var cast_buf = string.String.create()
+                cast_buf.append("(")
+                cast_buf.append(c_type(cast.target_type))
+                cast_buf.append(")")
+                cast_buf.append(wrap_expression(e, cast.expression))
+                return cast_buf.as_str()
             ir.Expr.expr_checked_index as ci:
                 return j5("(*", checked_array_index_helper_name(ci.receiver_type), "(", render_address_of_operand(e, ci.receiver), j3(", ", render_expression(e, ci.index), "))"))
             ir.Expr.expr_checked_span_index as cs:
