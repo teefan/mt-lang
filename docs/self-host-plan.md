@@ -1,12 +1,12 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phases 0–4 complete, Phase 5 in progress.** 5 of 7 Phase 5 items done:
+Status: **Phases 0–4 complete, Phase 5 in progress.** 6 of 7 Phase 5 items done:
 fn pointer types, method dispatch + extending blocks, proc closures
 (non-capturing, capturing with ref-counted lifecycle, fn→proc coercion,
-indirect calls), is + match-expressions.  Remaining: dyn[I], str_buffer[N],
-format strings.
+indirect calls), is + match-expressions, dyn[I] interfaces (vtable dispatch,
+adapt, fat pointers).  Remaining: str_buffer[N], format strings.
 Owner: compiler team
-Last updated: 2026-07-06 (commits through cab27b68)
+Last updated: 2026-07-07 (commits through 427a3873)
 
 Pipeline:
 
@@ -143,12 +143,11 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 |---|------|----------|--------|-------|
 | 1 | **proc closures** | ~800 | ✅ done | Non-capturing + capturing with ref-counted lifecycle + fn→proc coercion + `expr_call_indirect` |
 | 2 | **fn pointer types** | ~50 | ✅ done | `c_fn_ptr_declarator`, `ty_function` in `c_type`/`c_declaration` |
-| 3 | **dyn[I] interfaces** | ~200 | pending | Vtable struct + fat pointer + `adapt` |
+| 3 | **dyn[I] interfaces** | ~550 | ✅ done | Vtable struct + fat pointer + `adapt` + dyn method dispatch; vtable constants, reachability seeding; `ref_of` builtin added to analyzer |
 | 4 | **Method dispatch** | ~400 | ✅ done | Extending block lowering, `MethodInfo`, `resolve_method_info`, receiver passing (pointer/value/static) |
 | 5 | **str_buffer[N]** | ~150 | pending | Type decl + append/assign/as_str methods |
 | 6 | **Format strings** | ~250 | pending | `f"..."` desugaring + format-value lowering |
-| 7 | **`is` + match-expressions** | ~200 | ✅ done | Enum + variant `expr_match` hoisting, `lower_match_expression_local` |
-| **Total** | | **~2,050** | 5/7 done |
+| **Total** | | **~2,600** | 6/7 done |
 
 ### Phase 6 — events, async, parallel, compile-time
 
@@ -196,12 +195,12 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
   - [x] Cycle detection (spec_in_progress)
   - [x] Cross-module struct constructors in monomorphized bodies
         (`struct_exists_in_imports` — 29 LOC in lowering.mt)
-- [ ] Phase 5 — dyn, str_buffer, format (remaining 2/7) [see §5 for completed items]
+- [ ] Phase 5 — dyn, str_buffer, format (remaining 1/7) [dyn complete 2026-07-07 @427a3873]
   - [x] proc closures (non-capturing + capturing + fn→proc coercion + indirect calls)
   - [x] fn pointer types (c_fn_ptr_declarator, c_type/c_declaration ty_function)
   - [x] method dispatch + extending block lowering (MethodInfo, resolve_method_info)
   - [x] is + match-expressions (lower_match_expression_local, enum + variant)
-  - [ ] dyn[I] interfaces — vtable, fat pointer, adapt
+  - [x] dyn[I] interfaces — vtable, fat pointer, adapt, dyn method dispatch
   - [ ] str_buffer[N] — type decl + append/assign/as_str
   - [ ] format strings — f"..." desugaring + format-value lowering
 - [ ] Phase 6 — events, async, parallel, compile-time
@@ -213,37 +212,34 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 
 ### Phase 5 status
 
-**Completed (5 of 7):**
+**Completed (6 of 7):**
 
 | # | Item | Key implementation |
 |---|------|-------------------|
 | 1 | proc closures | `lower_proc_expression`, `build_env_setup_fn`, `build_capturing_invoke`/`release`/`retain`, `lower_fn_to_proc` (fn→proc coercion), `is_proc_type`, `proc_ensure_struct_decl`, `lower_proc_call` via `expr_call_indirect` |
 | 2 | fn pointer types | `c_fn_ptr_declarator`, `resolve_function_type_ref`, `ty_function` in `c_type`/`c_declaration` |
+| 3 | dyn[I] interfaces | `lower_adapt_call`, `ensure_dyn_vtable`/`_struct`/`_struct_type`, `gen_dyn_vtable_wrappers`/`_constant`, `find_interface_analysis`, `find_dyn_method`, `lower_dyn_method_call`, `dyn_vtable_c_type`, `is_dyn_type`, vtable struct decl + fat pointer + adapt + dyn method dispatch. Fixed `ref_of` builtin missing from analyzer `try_builtin_call`. C backend: `c_type` handles `ty_dyn`, constant emission, reachability seeds from vtable constants. |
 | 4 | method dispatch | `lower_extending_block`, `resolve_method_info`, `lower_method_resolved` (pointer/value/static receiver), `MethodInfo` struct |
 | 7 | is/match-expr | `lower_match_expression_local`, `lower_enum_match_expr`, `lower_variant_match_expr` |
 
-**Remaining (2 of 7):**
+**Remaining (1 of 7):**
 
 | # | Item | Est. LOC | Ruby ref | Notes |
 |---|------|----------|----------|-------|
-| 3 | dyn[I] interfaces | ~200 | `dyn.rb` 233 | Vtable struct + fat pointer + `adapt` |
 | 5 | str_buffer[N] | ~150 | `str_buffer.rb` 115 | Type decl + runtime helpers for clear/assign/append/as_str |
 | 6 | format strings | ~250 | `format.rb` | `f"..."` desugaring + per-field-type `format_value[T]` dispatch |
 
 ### Recommended resume order
 
-1. **dyn[I] interfaces** — requires method dispatch (done) + proc infrastructure (done). The hardest remaining item.
-2. **str_buffer[N]** — type decl emission + runtime C helpers. More self-contained.
-3. **Format strings** — depends on method dispatch (done) for `format_value[T]` resolution.
+1. **str_buffer[N]** — type decl emission + runtime C helpers. More self-contained.
+2. **Format strings** — depends on method dispatch (done) for `format_value[T]` resolution.
 
 ### Key context for resume
 
-- **IR additions**: `expr_call_indirect(callee: ptr[Expr], arguments: span[Expr], ty: types.Type)` added for function-pointer calls through proc `invoke` fields.
-- **Proc type system**: `proc_type_name_from_signature` produces shared type names like `mt_proc_int_int`. `proc_ensure_struct_decl` registers struct declarations in `pending_env_structs`. Multiple procs with the same signature share the same struct type.
-- **Proc call path**: `is_proc_type` checks `ty_named` with `__proc_` or `mt_proc_` prefix AND `ty_function`. `lower_proc_call` uses `expr_call_indirect` through `p.invoke` field.
-- **fn→proc coercion**: `lower_expr` → `expr_identifier` → when function reference detected, wraps in proc struct via `lower_fn_to_proc` with synthetic invoke.
-- **Debugging**: Use `std.log` (unbuffered stderr) for traces. File-based debug (`std.fs.write_text`) as fallback.
-- **Lowering cleanup**: 142 lines of dead code removed (old `wrap_fn_in_proc` path). Comment placement fixed for `function_return_type`.
+- **Dyn lowering**: `LowerCtx` extended with `pending_dyn_structs`, `pending_dyn_vtable_structs`, `pending_dyn_wrappers`, `pending_dyn_constants`, `dyn_generated_vtables`. Dyn artifacts are appended to the module fragment at end of `lower_module`.
+- **Dyn vtable struct**: Fields use `ty_function` type. Vtable constants reference wrapper functions; C backend reachability seeds from constants to ensure wrappers are emitted.
+- **Dyn dispatch**: `lower_dyn_method_call` extracts `.data` (void*) and `.vtable` (cast to `mt_vtable_{iface}*`), accesses method via `expr_member`, calls via `expr_call_indirect`.
+- **Analyzer fix**: `ref_of` was missing from `try_builtin_call`, causing it to return `void` instead of `ref[T]`. Added to both `try_builtin_call` and `is_builtin_call_name`.
 
 ---
 
