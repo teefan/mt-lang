@@ -1,13 +1,11 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phases 0–4c complete.** Same-module generics (functions, structs,
-prelude variants, type substitution), cross-module struct constructors,
-cross-module scalar generic functions, and prelude variant pipeline all build
-and run correctly. One remaining gap in cross-module generic function lookup
-(imported functions with complex struct return types) is definitively
-characterized as an analyzer substrate issue.
+Status: **Phases 0–4 complete.** All generics monomorphization scenarios
+verified — same-module, cross-module struct constructors, cross-module scalar
+functions, and cross-module struct-returning functions all build and run
+correctly. Phase 5 is the next target.
 Owner: compiler team
-Last updated: 2026-07-07 (commits through `52faa2d8`)
+Last updated: 2026-07-07 (commits through HEAD)
 
 Pipeline:
 
@@ -33,13 +31,12 @@ Self-host source layout (src ≈ 21.0k LOC):
 | Semantic analyzer | `src/mtc/semantic/*.mt` | ~5,000 |
 | Loader | `src/mtc/loader/*.mt` | ~700 |
 | IR | `src/mtc/ir.mt` | ~100 |
-| Lowering | `src/mtc/lowering/lowering.mt` | ~2,850 |
+| Lowering | `src/mtc/lowering/lowering.mt` | ~2,880 |
 | C Backend | `src/mtc/c_backend/c_backend.mt` | ~2,500 |
 | Build driver | `src/mtc/build.mt` | ~80 |
 | C naming (shared) | `src/mtc/c_naming.mt` | ~70 |
 
-**All 172 self-host tests pass, 0 files failed.** Nine generics programs verify —
-all build and return correct exit codes.
+**All 172 self-host tests pass, 0 files failed.**
 
 ---
 
@@ -72,8 +69,6 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 - Cycle detection via `spec_in_progress` guard.
 - `prelude_variant_arm_info` parameterized with concrete type args.
 - Backend: `collect_generic_variants` filtered to prelude types only.
-- Cross-module lookups: `program_analyses` span + `loaded_modules` span
-  (raw source files, bypassing analysis serialization).
 
 **Key fixes:**
 - `resolve_type_ref`/`resolve_field_type_ref` `ty_named` fallback for type params.
@@ -84,7 +79,28 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 - `ir_expr_type` handles `expr_variant_literal` and `expr_array_literal`.
 - `gen_variants_have_str` detects str in synthetic generic variant fields.
 
-**9 verification programs (all correct exits):**
+**Final gap resolved (2026-07-07):**
+- **Symptom:** `import imp3; imp3.make[int](40, 2)` crashed in lowering when
+  `make[T] → Pair[T, T]` returned a user-defined generic struct.
+- **Root cause (refined):** During monomorphization of `make[int]`, the
+  function body contained `Pair[int, int](first = a, second = b)` — a struct
+  constructor referencing *Pair* (defined in the imported `imp3` module).
+  `lower_specialization_call` only checked `ctx.analysis.structs` (the
+  caller's module) when routing `Name[TypeArgs](named_args)` to
+  `lower_generic_aggregate_literal`. Since main3 didn't declare *Pair*, the
+  constructor was misrouted to `lower_monomorphized_call`, which tried to
+  monomorphize it as a generic function — failing because *Pair* is a struct.
+- **Fix:** Added `struct_exists_in_imports(ctx, name)` (16 LOC) — iterates
+  `ctx.analysis.imports`, walks each imported module's analysis, and checks
+  its `structs` map.  Called in `lower_specialization_call` as a fallback
+  when the current module doesn't own the struct name.  Total fix: 29 LOC
+  in `lowering.mt`.
+- **Debug methodology:** Used file-based debug output (`std.fs.write_text`)
+  to trace the callee name and module context, revealing that the callee was
+  *Pair* (not *make*), which pointed to the real problem.  Future debugging
+  should prefer `std.log` (unbuffered stderr) over file I/O.
+
+**10 verification programs (all correct exits):**
 
 | Program | Feature | Exit |
 |---------|---------|------|
@@ -97,6 +113,7 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 | `single make[int]` | Same-module struct-returning function | 40 |
 | `imp.id[int](42)` | Cross-module generic identity | 42 |
 | `imp2.make[int](40,2)` | Cross-module scalar-returning function | 40 |
+| `imp3.make[int](40,2)` | Cross-module struct-returning function | 42 |
 
 ### Pre-existing issues fixed
 - DA scoping false-positives (scope-name stack with per-block marks).
@@ -105,42 +122,7 @@ destructure bindings, dead-code elimination, compound-literal payload casts,
 
 ---
 
-## 2. Remaining gap — Phase 4c (characterized)
-
-### Cross-module generic function with imported struct return type
-
-**Symptom:** `import imp3; imp3.make[int](40, 2)` fails with "could not find
-generic function decl" when `imp3.mt` contains both a struct `Pair[A,B]` and
-function `make[T] -> Pair[T,T]`.
-
-**Root cause (definitively identified):** The generic function's AST declaration
-is NOT present in any `source_file.declarations` accessible from lowering:
-- Not in the Analysis copies in `program_analyses`
-- Not in the raw `LoadedModule.source_file` from `loaded_modules`
-- The function IS in the analyzer's ModuleBinding exports (check passes,
-  binder finds it via `analysis.source_file.declarations`)
-- The struct `Pair` in the same file IS accessible from all three sources
-
-**Analysis:** Ruby's `resolve_specialized_callable_binding` (resolve.rb:1208)
-accesses `@ctx.imports.fetch(alias).functions[name]` — the import map stores
-**ModuleBinding objects** with full FunctionBinding (including AST). The
-self-host's import map only stores module name strings. The self-host's
-`resolve_named()` also ignores type arguments for non-prelude generic structs,
-returning `ty_named("Pair")` instead of `ty_generic("Pair", [args])`.
-
-**Architecture for fix:** Port Ruby's approach — give the lowering direct access
-to imported module bindings (not just module name strings), similar to how
-`loaded_modules` was added to `LowerCtx`. Or fix the analyzer's
-`resolve_named()` to properly handle generic struct type arguments, which may
-also fix analysis serialization. Estimated scope: ~30 LOC in analyzer.
-
-**Mitigation:** All other cross-module generic scenarios work (struct
-constructors, scalar functions, identity functions). This is a narrow,
-well-defined edge case.
-
----
-
-## 3. Deferred items
+## 2. Deferred items
 
 - **`is` operator / match-expressions**: requires statement-hoisting infrastructure.
   Target: Phase 5.
@@ -152,7 +134,7 @@ well-defined edge case.
 
 ---
 
-## 4. Remaining work per phase
+## 3. Remaining work per phase
 
 ### Phase 5 — proc/fn, dyn, method dispatch, str_buffer, format, `is`
 
@@ -192,7 +174,7 @@ well-defined edge case.
 
 ---
 
-## 5. Progress checklist
+## 4. Progress checklist
 
 - [x] Phase 0 — IR + scaffolding
 - [x] Phase 1 — return-int binary
@@ -200,7 +182,7 @@ well-defined edge case.
 - [x] Phase 3 — non-generic aggregates
 - [x] Phase 4a — multi-module assembly + cross-module calls
 - [x] Phase 4b — non-generic variants + match strategies + variant literals
-- [x] Phase 4c — generics monomorphization
+- [x] Phase 4c — generics monomorphization (complete)
   - [x] Same-module generic functions
   - [x] Same-module generic structs
   - [x] Prelude variant pipeline (Option/Result)
@@ -211,58 +193,59 @@ well-defined edge case.
   - [x] Result[T,E] field types from concrete args
   - [x] expr_specialization as value expression (Option.none)
   - [x] Cycle detection (spec_in_progress)
-  - [/] Cross-module generic function calls (characterized: analyzer substrate gap,
-        `resolve_named` ignores type args for user generic structs; ~30 LOC fix)
+  - [x] Cross-module struct constructors in monomorphized bodies
+        (`struct_exists_in_imports` — 29 LOC in lowering.mt)
 - [ ] Phase 5 — proc/fn, dyn, method dispatch, str_buffer, format, `is`
 - [ ] Phase 6 — events, async, parallel, compile-time
 - [ ] Phase 7 — build parity + self-host bootstrap
 
 ---
 
-## 6. Commit history (Phase 4)
+## 5. Next session context
 
-```
-52faa2d8 Phase 4c: cross-module generic function lookup — root cause identified
-0d756f3a Clean up diagnostics in cross-module function search
-bf83e9f5 Fix cross-module generic function search + body type substitution
-9e97fc44 Fix generic body type substitution + cross-module return type lookup
-79a684fc Phase 4c: cross-module generic function lookup infrastructure
-6d1c712f Sync plan: Phase 4c complete, revise next items for Phases 5-7
-f4561506 Phase 4c complete: generics monomorphization — all 5 gaps resolved
-cc5256fe Clean up dead code and fix naming in lowering + backend
-0b8a786d Phase 4a/4b/4c: multi-module assembly, non-generic variants, generics
-```
+### Phase 5 priority order
+
+All Phase 4c gaps are closed.  Start Phase 5:
+
+1. **proc closures** (capture struct, ref-counted) — ~300 LOC
+   Ruby ref: `lowering/proc.rb` (419 LOC).  Needs capture-env struct
+   synthesis, invoke/release/retain function generation, selective retain
+   logic for fresh vs reused proc values, and `fn → proc` coercion.
+2. **fn pointer types** — ~50 LOC.  Already partially wired in `c_type`.
+   Complete the `fn(...)` → C function-pointer type emission.
+3. **Method dispatch** — ~400 LOC.  `editable function` / `function` /
+   `static function` receiver lowering, method-table construction from
+   `ctx.analysis.method_sigs`, pointer-lowered receivers for
+   array-containing structs.
+4. **dyn[I] interfaces** — ~200 LOC.  Fat pointer (data + vtable),
+   `adapt[I](ref[T])` lowering, vtable emission from interface conformance.
+5. **str_buffer[N]** — ~150 LOC.  Type decl + append/assign/as_str.
+6. **Format strings** — ~250 LOC.  `f"..."` desugaring + per-field-type
+   `format_value[T]` dispatch.
+7. **`is` + match-expressions** — ~200 LOC.  Statement-hoisting for
+   match-expr and `is` desugaring.
+
+### Key context for Phase 5
+
+- **Lowering file**: `projects/mtc/src/mtc/lowering/lowering.mt` (~2,880 LOC)
+  is the only lowering file.  Ruby splits across 16 files; the self-host has
+  not yet split.  As Phase 5 grows, consider extracting `proc`, `dyn`, `str_buffer`,
+  and `format` into separate modules under `src/mtc/lowering/`.
+- **C backend**: `projects/mtc/src/mtc/c_backend/c_backend.mt` (~2,500 LOC).
+  Similarly, split into per-feature files as Phase 5 adds capture structs,
+  vtable emission, etc.
+- **Ruby references**: `lib/milk_tea/core/lowering/proc.rb`,
+  `lib/milk_tea/core/lowering/dyn.rb`,
+  `lib/milk_tea/core/lowering/str_buffer.rb`,
+  `lib/milk_tea/core/lowering/format.rb`,
+  `lib/milk_tea/core/c_backend/*.rb`.
+- **Debugging**: Use `std.log` (unbuffered stderr via `terminal.write_stderr`)
+  for traces that must survive `fatal()`.  File-based debug (`std.fs.write_text`)
+  as a fallback when async/parallel contexts may corrupt stderr.
 
 ---
 
-## 7. Next session context
-
-### Immediate (remaining Phase 4c gap, ~30 LOC)
-
-The cross-module generic function lookup for struct-returning functions needs
-one fix in the **semantic analyzer**: `resolve_named()` at `analyzer.mt:938`
-returns `ty_named(name)` for struct names without processing type arguments
-when the struct is not a known generic constructor (`is_generic_constructor_name`
-returns false for user-defined structs). This means `Pair[T,T]` in a function's
-return type is stored as just `ty_named("Pair")` without the type arguments,
-which may cause the function's AST to not be retained properly in the analysis
-serialization. The fix is to extend `resolve_named` to handle generic structs:
-when `ctx.type_names.contains(name)` and `arguments.len > 0`, return
-`ty_generic(name, args)` instead of `ty_named(name)`.
-
-### Priority order after 4c closure
-
-1. Phase 5.1: **proc closures** (capture struct, ref-counted) — ~300 LOC
-2. Phase 5.2: **fn pointer types** — ~50 LOC
-3. Phase 5.4: **Method dispatch** — ~400 LOC
-4. Phase 5.3: **dyn[I] interfaces** — ~200 LOC
-5. Phase 5.5: **str_buffer[N]** — ~150 LOC
-6. Phase 5.6: **Format strings** — ~250 LOC
-7. Phase 5.7: **`is` + match-expressions** — ~200 LOC
-
----
-
-## 8. Cross-cutting principles
+## 6. Cross-cutting principles
 
 - **IR is the frozen seam.** Backend reads only `IR`; Lowering reads only `Analysis`.
 - **Byte-identical C as the correctness oracle.**
@@ -272,11 +255,10 @@ when `ctx.type_names.contains(name)` and `arguments.len > 0`, return
 
 ---
 
-## 9. Risks
+## 7. Risks
 
 | Risk | Phase | LOC | Notes |
 |------|-------|-----|-------|
-| 4c gap — generic struct return types | 4c | ~30 | Analyzer `resolve_named` fix |
 | Method dispatch table | 5 | ~400 | Generic method receivers |
 | Async state-machine | 6 | ~2,834 | Second-hardest module |
 | Analyzer permissiveness | all | ongoing | Hidden long pole |

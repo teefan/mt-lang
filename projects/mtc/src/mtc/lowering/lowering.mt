@@ -281,6 +281,27 @@ function find_imported_analysis(ctx: ref[LowerCtx], module_name: str) -> Option[
     return Option[analyzer.Analysis].none
 
 
+## True when `name` is a struct declared in any loaded module — searches the
+## current module first, then imported modules, so generics that reference
+## structs from other modules resolve during monomorphisation.
+function struct_exists_in_imports(ctx: ref[LowerCtx], name: str) -> bool:
+    if ctx.analysis.structs.contains(name):
+        return true
+    # Check imported modules.
+    var import_values = ctx.analysis.imports.values()
+    while true:
+        let target_ptr = import_values.next() else:
+            break
+        let target_module = unsafe: read(target_ptr)
+        match find_imported_analysis(ctx, target_module):
+            Option.some as imported:
+                if imported.value.structs.contains(name):
+                    return true
+            Option.none:
+                pass
+    return false
+
+
 # =============================================================================
 #  Monomorphized function lowering
 # =============================================================================
@@ -1309,8 +1330,14 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         ai += 1
                     return alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span()))
                 # Generic struct constructor, e.g. `Pair[int, int](first = 42, ...)`.
-                if ctx.analysis.structs.contains(id.name) and all_call_args_named(call_args):
-                    return lower_generic_aggregate_literal(ctx, id.name, type_args, call_args)
+                # Check current module's structs first, then imported modules'
+                # (structs referenced in monomorphized generic bodies may be
+                # defined in a separate module).
+                if all_call_args_named(call_args):
+                    if ctx.analysis.structs.contains(id.name):
+                        return lower_generic_aggregate_literal(ctx, id.name, type_args, call_args)
+                    if struct_exists_in_imports(ctx, id.name):
+                        return lower_generic_aggregate_literal(ctx, id.name, type_args, call_args)
             ast.Expr.expr_member_access as ma:
                 match read(ma.receiver):
                     ast.Expr.expr_identifier as recv_id:
