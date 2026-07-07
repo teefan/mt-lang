@@ -934,7 +934,7 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
     # to the permissive named/error resolution.
     match resolve_imported_type(ctx, t.name):
         Option.some as imported:
-            return wrap_nullable(imported.value, t.nullable)
+            return wrap_nullable(imported_type_with_args(ctx, imported.value, t.arguments, depth), t.nullable)
         Option.none:
             pass
 
@@ -960,8 +960,28 @@ function resolve_imported_type(ctx: ref[Context], name: ast.QualifiedName) -> Op
     unsafe:
         let binding = read(binding_ptr)
         if binding.structs.contains(type_name) or binding.static_member_types.contains(type_name) or binding.interfaces.contains(type_name):
-            return Option[types.Type].some(value = types.Type.ty_imported(module_name = read(module_name_ptr), name = type_name))
+            return Option[types.Type].some(value = types.Type.ty_imported(module_name = read(module_name_ptr), name = type_name, args = span[types.Type]()))
     return Option[types.Type].none
+
+
+## Wrap a resolved imported type with concrete type arguments from the TypeRef.
+## When the type arguments are empty, the imported type is returned unchanged.
+function imported_type_with_args(ctx: ref[Context], imported: types.Type, arguments: span[ast.TypeRef], depth: int) -> types.Type:
+    if arguments.len == 0:
+        return imported
+    match imported:
+        types.Type.ty_imported as im:
+            var resolved_args = vec.Vec[types.Type].create()
+            var i: ptr_uint = 0
+            while i < arguments.len:
+                var a: ast.TypeRef
+                unsafe:
+                    a = read(arguments.data + i)
+                resolved_args.push(resolve_type_at(ctx, a, depth + 1))
+                i += 1
+            return types.Type.ty_imported(module_name = im.module_name, name = im.name, args = resolved_args.as_span())
+        _:
+            return imported
 
 
 function wrap_nullable(base: types.Type, nullable: bool) -> types.Type:
@@ -2871,6 +2891,7 @@ function try_imported_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast
                             return Option[types.Type].some(value = types.Type.ty_imported(
                                 module_name = read(module_name_ptr),
                                 name = ma.member_name,
+                                args = span[types.Type](),
                             ))
 
                         return Option[types.Type].none
@@ -3026,9 +3047,10 @@ function static_struct_receiver_type(ctx: ref[Context], scope: ref[Scope], recei
                             return Option[types.Type].none
                         if read(binding_ptr).structs.contains(inner.member_name):
                             return Option[types.Type].some(value = types.Type.ty_imported(
-                                module_name = read(module_name_ptr),
-                                name = inner.member_name,
-                            ))
+                                    module_name = read(module_name_ptr),
+                                    name = inner.member_name,
+                                    args = span[types.Type](),
+                                ))
                         return Option[types.Type].none
                     _:
                         return Option[types.Type].none

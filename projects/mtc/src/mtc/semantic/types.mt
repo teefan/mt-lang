@@ -22,7 +22,7 @@ public variant Type:
     ty_type_meta
     ty_nullable(base: ptr[Type])
     ty_named(name: str)
-    ty_imported(module_name: str, name: str)
+    ty_imported(module_name: str, name: str, args: span[Type])
     ty_var(name: str)
     ty_dyn(iface: str)
     ty_generic(name: str, args: span[Type])
@@ -119,7 +119,9 @@ public function type_to_string(t: Type) -> str:
         Type.ty_named as n:
             return n.name
         Type.ty_imported as im:
-            return im.name
+            if im.args.len == 0:
+                return im.name
+            return type_to_string(Type.ty_generic(name = im.name, args = im.args))
         Type.ty_var as v:
             return v.name
         Type.ty_dyn as d:
@@ -279,9 +281,19 @@ public function type_equals(a: Type, b: Type) -> bool:
         Type.ty_imported as ia:
             match b:
                 Type.ty_imported as ib:
-                    return ia.module_name.equal(ib.module_name) and ia.name.equal(ib.name)
+                    if not ia.module_name.equal(ib.module_name) or not ia.name.equal(ib.name):
+                        return false
+                    if ia.args.len != ib.args.len:
+                        return false
+                    var i: ptr_uint = 0
+                    while i < ia.args.len:
+                        unsafe:
+                            if not type_equals(read(ia.args.data + i), read(ib.args.data + i)):
+                                return false
+                        i += 1
+                    return true
                 Type.ty_named as nb:
-                    return ia.name.equal(nb.name)
+                    return ia.name.equal(nb.name) and ia.args.len == 0
                 _:
                     return false
         Type.ty_var as va:

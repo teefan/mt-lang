@@ -106,18 +106,22 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_line(ref_of(e), "")
 
     var span_types = collect_span_types(funcs)
-    i = 0
-    while i < span_types.len():
-        let ty_ptr = span_types.get(i) else:
-            break
-        unsafe:
-            emit_span_type(ref_of(e), read(ty_ptr))
-        emit_line(ref_of(e), "")
-        i += 1
+    collect_struct_span_types(program, ref_of(span_types))
+    collect_variant_span_types(program, ref_of(span_types))
 
     if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0 or program.variants.len > 0 or gen_variants.len() > 0:
         var sorted_structs = topo_sort_structs(program.structs)
         let sorted = sorted_structs.as_span()
+
+        # Emit span type forward declarations first (so struct types can reference them).
+        var si: ptr_uint = 0
+        while si < span_types.len():
+            let ty_ptr = span_types.get(si) else:
+                break
+            unsafe:
+                emit_line(ref_of(e), j3("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
+            si += 1
+        emit_line(ref_of(e), "")
 
         i = 0
         while i < sorted.len:
@@ -154,6 +158,32 @@ public function generate_c(program: ir.Program) -> string.String:
 
         emit_enums_block(ref_of(e), program)
 
+        # Emit span type full definitions after forward declarations
+        # so they can reference struct types.
+        si = 0
+        while si < span_types.len():
+            let ty_ptr = span_types.get(si) else:
+                break
+            unsafe:
+                emit_span_type(ref_of(e), read(ty_ptr))
+            emit_line(ref_of(e), "")
+            si += 1
+
+        i = 0
+        while i < gen_variants.len():
+            let v_ptr = gen_variants.get(i) else:
+                break
+            unsafe:
+                emit_variant(ref_of(e), read(v_ptr))
+            emit_line(ref_of(e), "")
+            i += 1
+
+        i = 0
+        while i < program.variants.len:
+            unsafe:
+                emit_variant(ref_of(e), read(program.variants.data + i))
+            emit_line(ref_of(e), "")
+            i += 1
         i = 0
         while i < sorted.len:
             unsafe:
@@ -172,20 +202,6 @@ public function generate_c(program: ir.Program) -> string.String:
                 break
             unsafe:
                 emit_tuple_type_def(ref_of(e), read(ty_ptr))
-            emit_line(ref_of(e), "")
-            i += 1
-        i = 0
-        while i < program.variants.len:
-            unsafe:
-                emit_variant(ref_of(e), read(program.variants.data + i))
-            emit_line(ref_of(e), "")
-            i += 1
-        i = 0
-        while i < gen_variants.len():
-            let v_ptr = gen_variants.get(i) else:
-                break
-            unsafe:
-                emit_variant(ref_of(e), read(v_ptr))
             emit_line(ref_of(e), "")
             i += 1
     else:
@@ -666,6 +682,12 @@ function fields_have_str(fields: span[ir.Field]) -> bool:
 function collect_generic_variants(program: ir.Program) -> vec.Vec[ir.VariantDecl]:
     var seen = map_mod.Map[str, bool].create()
     var result = vec.Vec[ir.VariantDecl].create()
+    # Seed seen with variants already in program.variants (from lowering).
+    var si: ptr_uint = 0
+    while si < program.variants.len:
+        unsafe:
+            seen.set(read(program.variants.data + si).linkage_name, true)
+        si += 1
     var i: ptr_uint = 0
     while i < program.functions.len:
         unsafe:
@@ -719,6 +741,9 @@ function collect_gv_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]],
             # are handled by the lowering's `ensure_generic_struct_decl`.
             if not g.name.equal("Option") and not g.name.equal("Result"):
                 return
+            # Skip when type args contain raw type parameters (inside generic bodies).
+            if generic_has_type_param(g.args):
+                return
             let c_name = generic_c_type(g.name, g.args)
             if seen.contains(c_name):
                 return
@@ -745,6 +770,33 @@ function collect_gv_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]],
         _:
             pass
 
+
+## True when any type arg contains a raw type parameter (T/K/V/E/U).
+function generic_has_type_param(args: span[types.Type]) -> bool:
+    var i: ptr_uint = 0
+    while i < args.len:
+        unsafe:
+            match read(args.data + i):
+                types.Type.ty_var:
+                    return true
+                types.Type.ty_named as n:
+                    if is_raw_type_param_name(n.name):
+                        return true
+                types.Type.ty_generic as g:
+                    if generic_has_type_param(g.args):
+                        return true
+                types.Type.ty_nullable as nl:
+                    if generic_has_type_param(sp_elem(unsafe: read(nl.base))):
+                        return true
+                _:
+                    pass
+        i += 1
+    return false
+
+function sp_elem(t: types.Type) -> span[types.Type]:
+    var buf = vec.Vec[types.Type].create()
+    buf.push(t)
+    return buf.as_span()
 
 ## Return the arm info for a prelude variant (Option / Result).  Mirrors the
 ## lowering's `install_prelude_variants`.
@@ -1190,6 +1242,51 @@ function span_type_name(element: types.Type) -> str:
 
 ## Distinct span types used across the emitted functions (params, returns, and
 ## local declarations), deduplicated by span type name.
+function collect_variant_span_types(program: ir.Program, collected: ref[vec.Vec[types.Type]]) -> void:
+    var seen = map_mod.Map[str, bool].create()
+    var ci: ptr_uint = 0
+    while ci < collected.len():
+        let ty_ptr = collected.get(ci) else:
+            break
+        unsafe:
+            seen.set(span_type_name(array_element_type(read(ty_ptr))), true)
+        ci += 1
+    var i: ptr_uint = 0
+    while i < program.variants.len:
+        unsafe:
+            let vd = read(program.variants.data + i)
+            var ai: ptr_uint = 0
+            while ai < vd.arms.len:
+                let arm = read(vd.arms.data + ai)
+                var fi: ptr_uint = 0
+                while fi < arm.fields.len:
+                    maybe_add_span(read(arm.fields.data + fi).ty, ref_of(seen), collected)
+                    fi += 1
+                ai += 1
+        i += 1
+
+
+function collect_struct_span_types(program: ir.Program, collected: ref[vec.Vec[types.Type]]) -> void:
+    var seen = map_mod.Map[str, bool].create()
+    # Seed seen with already-collected types.
+    var ci: ptr_uint = 0
+    while ci < collected.len():
+        let ty_ptr = collected.get(ci) else:
+            break
+        unsafe:
+            seen.set(span_type_name(array_element_type(read(ty_ptr))), true)
+        ci += 1
+    var i: ptr_uint = 0
+    while i < program.structs.len:
+        unsafe:
+            let s = read(program.structs.data + i)
+            var fi: ptr_uint = 0
+            while fi < s.fields.len:
+                maybe_add_span(read(s.fields.data + fi).ty, ref_of(seen), collected)
+                fi += 1
+        i += 1
+
+
 function collect_span_types(functions: span[ir.Function]) -> vec.Vec[types.Type]:
     var seen = map_mod.Map[str, bool].create()
     var collected = vec.Vec[types.Type].create()
@@ -1210,10 +1307,25 @@ function collect_span_types(functions: span[ir.Function]) -> vec.Vec[types.Type]
 function maybe_add_span(t: types.Type, seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
     if not is_span_type(t):
         return
-    let name = span_type_name(array_element_type(t))
+    let elem = array_element_type(t)
+    if types.is_error(elem):
+        return
+    match elem:
+        types.Type.ty_var:
+            return
+        types.Type.ty_named as n:
+            if is_raw_type_param_name(n.name):
+                return
+        _:
+            pass
+    let name = span_type_name(elem)
     if not seen.contains(name):
         seen.set(name, true)
         collected.push(t)
+
+## True when `name` is a single-letter type parameter used in generic bodies.
+function is_raw_type_param_name(name: str) -> bool:
+    return name.equal("T") or name.equal("U") or name.equal("K") or name.equal("V") or name.equal("E")
 
 
 function span_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
@@ -1508,15 +1620,7 @@ function c_declaration(t: types.Type, name: str) -> str:
             if g.name.equal("str_buffer") and g.args.len >= 1:
                 let c_name = j3("mt_str_buffer_", naming.sanitize_identifier(types.type_to_string(unsafe: read(g.args.data + 0))), "")
                 return j3(c_name, " ", name)
-            var buf = string.String.create()
-            buf.append(g.name)
-            var i: ptr_uint = 0
-            while i < g.args.len:
-                buf.append("_")
-                unsafe:
-                    buf.append(naming.sanitize_identifier(types.type_to_string(read(g.args.data + i))))
-                i += 1
-            return j3(buf.as_str(), " ", name)
+            return j3(generic_c_type(g.name, g.args), " ", name)
         _:
             pass
     return j3(c_type(t), " ", name)
@@ -2027,7 +2131,7 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return buf.as_str()
             ir.Expr.expr_alignof as al:
                 var buf = string.String.create()
-                buf.append("alignof(")
+                buf.append("_Alignof(")
                 buf.append(c_type(al.target_type))
                 buf.append(")")
                 return buf.as_str()
