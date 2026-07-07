@@ -2493,6 +2493,20 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     if args.len == 1:
                         let inner = lower_expr(ctx, read(args.data + 0).arg_value)
                         return alloc_expr(ir.Expr.expr_address_of(expression = inner, ty = expr_type(ctx, call_ep)))
+                # `read(p)` as an rvalue → pointer dereference `*p`.  The result
+                # type is the pointer's element type (more reliable than the
+                # analyzer's generically-recorded type inside monomorphized
+                # bodies); fall back to the recorded call type otherwise.
+                if id.name.equal("read"):
+                    if args.len == 1:
+                        let inner = lower_expr(ctx, read(args.data + 0).arg_value)
+                        var base = ir_expr_type(inner)
+                        if types.is_nullable_type(base):
+                            base = types.unwrap_nullable(base)
+                        var elem_ty = expr_type(ctx, call_ep)
+                        if types.is_raw_pointer(base) or types.is_ref_type(base):
+                            elem_ty = types.pointer_element(base)
+                        return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = inner, ty = qualify_type(ctx, elem_ty)))
                 if ctx.analysis.structs.contains(id.name):
                     return lower_aggregate_literal(ctx, id.name, args)
                 if struct_exists_in_imports(ctx, id.name):
@@ -4965,16 +4979,52 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                 pass
     let recv = lower_expr(ctx, receiver)
     var member_ty = expr_type(ctx, ep)
-    if types.is_error(member_ty):
-        var recv_ty = ir_expr_type(recv)
-        if is_tuple_type(recv_ty):
-            let index = parse_tuple_member_index(member)
-            member_ty = tuple_element_type(recv_ty, index)
+    # Prefer the receiver's concrete (monomorphized) struct field type: the
+    # analyzer records member types generically (e.g. Node[K,V] -> Node with the
+    # args dropped), so inside a monomorphized method the recorded type loses its
+    # arguments.  The concrete struct declaration carries the resolved field type.
+    match concrete_field_type(ctx, ir_expr_type(recv), member):
+        Option.some as ft:
+            member_ty = ft.value
+        Option.none:
+            if types.is_error(member_ty):
+                var recv_ty = ir_expr_type(recv)
+                if is_tuple_type(recv_ty):
+                    let index = parse_tuple_member_index(member)
+                    member_ty = tuple_element_type(recv_ty, index)
     return alloc_expr(ir.Expr.expr_member(
         receiver = recv,
         member = member,
         ty = qualify_type(ctx, member_ty),
     ))
+
+
+## The resolved type of `member` on a receiver whose type is a concrete
+## monomorphized generic struct.  Looks the field up in the receiver struct's
+## emitted declaration (keyed by concrete C name), auto-dereferencing a pointer
+## or ref receiver.  Returns none for non-generic structs (handled by the
+## analyzer's recorded member type) or unknown fields.
+function concrete_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[types.Type]:
+    var base = recv_ty
+    if types.is_raw_pointer(base) or types.is_ref_type(base):
+        base = types.pointer_element(base)
+    var struct_name: str
+    match base:
+        types.Type.ty_named as n:
+            struct_name = n.name
+        _:
+            return Option[types.Type].none
+    let decl_ptr = ctx.generic_struct_decls.get(struct_name) else:
+        return Option[types.Type].none
+    unsafe:
+        let decl = read(decl_ptr)
+        var i: ptr_uint = 0
+        while i < decl.fields.len:
+            let f = read(decl.fields.data + i)
+            if f.name.equal(member):
+                return Option[types.Type].some(value = f.ty)
+            i += 1
+    return Option[types.Type].none
 
 
 ## Extract the integer index from a tuple field name `_0`, `_1`, ...
