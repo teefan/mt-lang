@@ -2535,6 +2535,20 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         if types.is_raw_pointer(base) or types.is_ref_type(base):
                             elem_ty = types.pointer_element(base)
                         return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = inner, ty = qualify_type(ctx, elem_ty)))
+                # Native `str(data = ..., len = ...)` construction -> mt_str
+                # aggregate literal (not a call to a `str` function).
+                if id.name.equal("str"):
+                    var str_fields = vec.Vec[ir.AggregateField].create()
+                    var sfi: ptr_uint = 0
+                    while sfi < args.len:
+                        var sarg: ast.Argument
+                        unsafe:
+                            sarg = read(args.data + sfi)
+                        let fname = sarg.arg_name else:
+                            fatal(c"lowering: str construction requires named fields")
+                        str_fields.push(ir.AggregateField(name = fname, value = lower_expr(ctx, sarg.arg_value)))
+                        sfi += 1
+                    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_str, fields = str_fields.as_span()))
                 if ctx.analysis.structs.contains(id.name):
                     return lower_aggregate_literal(ctx, id.name, args)
                 if struct_exists_in_imports(ctx, id.name):
