@@ -1919,7 +1919,15 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_binary_op as bin:
                 let left = lower_expr(ctx, bin.left)
                 let right = lower_expr(ctx, bin.right)
-                return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = expr_type(ctx, ep)))
+                var result_ty = expr_type(ctx, ep)
+                # Pointer arithmetic (`p + i` / `p - i`) yields the pointer
+                # operand's concrete type; the analyzer's generically-recorded
+                # type may have dropped its arguments inside a monomorphized body.
+                if bin.operator.equal("+") or bin.operator.equal("-"):
+                    let left_ty = ir_expr_type(left)
+                    if types.is_raw_pointer(left_ty) and not types.is_raw_pointer(ir_expr_type(right)):
+                        result_ty = left_ty
+                return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = result_ty))
             ast.Expr.expr_unary_op as un:
                 let operand = lower_expr(ctx, un.operand)
                 return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = expr_type(ctx, ep)))
