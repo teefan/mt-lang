@@ -272,12 +272,16 @@ public function type_equals(a: Type, b: Type) -> bool:
             match b:
                 Type.ty_named as nb:
                     return na.name.equal(nb.name)
+                Type.ty_imported as ib:
+                    return na.name.equal(ib.name)
                 _:
                     return false
         Type.ty_imported as ia:
             match b:
                 Type.ty_imported as ib:
                     return ia.module_name.equal(ib.module_name) and ia.name.equal(ib.name)
+                Type.ty_named as nb:
+                    return ia.name.equal(nb.name)
                 _:
                     return false
         Type.ty_var as va:

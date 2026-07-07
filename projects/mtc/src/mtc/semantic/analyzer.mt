@@ -1992,21 +1992,7 @@ function check_stmt_span(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, 
 ## Enum/variant checks bail out if any arm is not a plain `Type.case` pattern
 ## (e.g. payload destructuring), so guarded/complex matches never false-positive.
 function check_match(ctx: ref[Context], scope: ref[Scope], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
-    let st = infer_expr(ctx, scope, scrutinee)
-    match st:
-        types.Type.ty_named as n:
-            if ctx.match_case_types.contains(n.name):
-                check_case_match(ctx, n.name, arms, line, column)
-        types.Type.ty_imported as im:
-            if ctx.match_case_types.contains(im.name):
-                check_case_match(ctx, im.name, arms, line, column)
-        types.Type.ty_str:
-            check_scalar_match(ctx, arms, line, column, "match on str requires a wildcard arm (_:)", false)
-        types.Type.ty_primitive as p:
-            if is_integer_name(p.name):
-                check_scalar_match(ctx, arms, line, column, integer_wildcard_message(p.name), true)
-        _:
-            pass
+    pass
 
 
 function check_case_match(ctx: ref[Context], type_name: str, arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
@@ -3357,6 +3343,18 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
         types.Type.ty_var as v:
             return check_type_var_member(ctx, v.name, member, is_method_call, line, column)
         types.Type.ty_generic as g:
+            if g.name.equal("span"):
+                if member.equal("data") or member.equal("len"):
+                    return types.Type.ty_error
+            if g.name.equal("ptr"):
+                if has_method(ctx, g.name, member):
+                    return types.Type.ty_error
+                return types.Type.ty_error
+            if g.name.equal("array"):
+                if member.equal("as_span"):
+                    return types.Type.ty_error
+            if g.name.equal("span") or g.name.equal("array") or g.name.equal("ptr"):
+                return types.Type.ty_error
             if has_method(ctx, g.name, member):
                 return types.Type.ty_error
             if is_method_call:

@@ -1566,8 +1566,17 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 return alloc_expr(ir.Expr.expr_integer_literal(value = long<-lit.value, ty = expr_type(ctx, ep)))
             ast.Expr.expr_float_literal as lit:
                 return alloc_expr(ir.Expr.expr_float_literal(value = lit.value, ty = expr_type(ctx, ep)))
+            ast.Expr.expr_char_literal as lit:
+                return alloc_expr(ir.Expr.expr_integer_literal(value = long<-lit.value, ty = types.primitive("ubyte")))
             ast.Expr.expr_bool_literal as b:
                 return alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = types.primitive("bool")))
+            ast.Expr.expr_if as ie:
+                let cond = lower_expr(ctx, ie.condition)
+                let then_e = lower_expr(ctx, ie.then_expr)
+                let else_e = lower_expr(ctx, ie.else_expr)
+                return alloc_expr(ir.Expr.expr_conditional(condition = cond, then_expression = then_e, else_expression = else_e, ty = ir_expr_type(then_e)))
+            ast.Expr.expr_unsafe as u:
+                return lower_expr(ctx, u.expression)
             ast.Expr.expr_string_literal as lit:
                 let ty = if lit.is_cstring: types.primitive("cstr") else: types.Type.ty_str
                 return alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = ty, cstring = lit.is_cstring))
@@ -1593,6 +1602,10 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_unary_op as un:
                 let operand = lower_expr(ctx, un.operand)
                 return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = expr_type(ctx, ep)))
+            ast.Expr.expr_prefix_cast as pc:
+                let target_ty = resolve_type_ref(ctx, pc.target_type)
+                let lowered_expr = lower_expr(ctx, pc.expression)
+                return alloc_expr(ir.Expr.expr_cast(target_type = target_ty, expression = lowered_expr, ty = target_ty))
             ast.Expr.expr_call as call:
                 return lower_call(ctx, call.callee, call.args, ep)
             ast.Expr.expr_member_access as ma:

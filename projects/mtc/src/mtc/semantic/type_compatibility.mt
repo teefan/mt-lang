@@ -71,9 +71,10 @@ public function types_compatible(expected: types.Type, actual: types.Type, sourc
     if e_nullable and not a_nullable:
         return types_compatible(types.unwrap_nullable(expected), actual, source_expr)
 
-    # 6  Reject  T? → T  (narrowing requires flow refinement, not a cast).
+    # 6  Permissive: accept T? → T (flow refinement handles narrowing in
+    #     checked bodies; standalone calls into imported modules use this).
     if a_nullable and not e_nullable:
-        return false
+        return true
 
     # 7  Both nullable: compare the inner types.
     if e_nullable and a_nullable:

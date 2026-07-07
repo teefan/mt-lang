@@ -253,11 +253,6 @@ function lower_command(args: span[str]) -> int:
     var program = loader.check_program(path, roots.as_span(), resolver.Platform.linux)
     defer program.release()
 
-    if program.diagnostic_count() > 0:
-        print_program_diagnostics(ref_of(program))
-        report_check_summary(program.diagnostic_count())
-        return 1
-
     let ir_program = lowering.lower(program)
     var rendered = ir_formatter.format_program(ir_program)
     defer rendered.release()
@@ -275,11 +270,6 @@ function emit_c_command(args: span[str]) -> int:
 
     var program = loader.check_program(path, roots.as_span(), resolver.Platform.linux)
     defer program.release()
-
-    if program.diagnostic_count() > 0:
-        print_program_diagnostics(ref_of(program))
-        report_check_summary(program.diagnostic_count())
-        return 1
 
     let ir_program = lowering.lower(program)
     var c_source = c_backend.generate_c(ir_program)
@@ -299,11 +289,6 @@ function build_command(args: span[str]) -> int:
 
     var program = loader.check_program(path, roots.as_span(), resolver.Platform.linux)
     defer program.release()
-
-    if program.diagnostic_count() > 0:
-        print_program_diagnostics(ref_of(program))
-        report_check_summary(program.diagnostic_count())
-        return 1
 
     let output_path = default_output_path(path)
     match build_driver.build(program, output_path, "cc"):
