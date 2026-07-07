@@ -1236,6 +1236,10 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             # different module context does not double-prefix them.
             if ctx.generic_struct_instances.contains(n.name) or ctx.generic_struct_decls.contains(n.name):
                 return t
+            # Prelude variant instances (Option_str, Result_int_Error) have global
+            # C names and must not be module-prefixed.
+            if n.name.starts_with("Option_") or n.name.starts_with("Result_"):
+                return t
             return types.Type.ty_imported(module_name = ctx.module_name, name = n.name, args = span[types.Type]())
         types.Type.ty_imported as im:
             if is_raw_type_param_name(im.name):
@@ -1249,6 +1253,12 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
                         args_vec.push(qualify_type(ctx, read(im.args.data + ai)))
                     ai += 1
                 resolved_args = args_vec.as_span()
+            # Prelude variants (Option/Result) have global, un-prefixed C names
+            # (Option_str, not <module>_Option_str) and are emitted as generic
+            # variants, so keep them in generic form rather than monomorphizing a
+            # module-qualified struct.
+            if is_prelude_variant_name(im.name):
+                return types.Type.ty_generic(name = im.name, args = resolved_args)
             if resolved_args.len > 0:
                 let concrete_name = naming.qualified_c_name(im.module_name, generic_struct_c_name(im.name, resolved_args))
                 ensure_generic_struct_decl_named(ctx, im.name, span[ast.TypeArgument](), resolved_args, concrete_name)
