@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 7 — cross-module type system hardened; generic method monomorphization is the next blocker.**
-Last updated: 2026-07-07 (P7.5)
+Status: **Phase 8 — self-compile C-error elimination. Generic method/function monomorphization complete; 516 C errors remain.**
+Last updated: 2026-07-07 (P8)
 
 Pipeline:
 
@@ -17,23 +17,23 @@ source → lexer → token stream → parser → AST → semantic analyzer → m
                                                                     C source → cc → binary
 ```
 
-Self-host source layout (src ≈ 24k LOC):
+Self-host source layout (src ≈ 26k LOC):
 
 | Stage | Path | LOC |
 |-------|------|-----|
-| Lexer | `src/mtc/lexer/` | ~1,600 |
-| Parser + AST | `src/mtc/parser/*.mt` | ~4,700 |
-| Pretty printers | `src/mtc/pretty_printer/*.mt` | ~2,000 |
-| Semantic analyzer | `src/mtc/semantic/analyzer.mt` | ~3,800 |
-| Type system | `src/mtc/semantic/types.mt` | ~700 |
-| Loader | `src/mtc/loader/` | ~700 |
+| Lexer | `src/mtc/lexer/` | ~1,590 |
+| Parser + AST | `src/mtc/parser/*.mt` | ~4,860 |
+| Pretty printers | `src/mtc/pretty_printer/*.mt` | ~2,190 |
+| Semantic analyzer | `src/mtc/semantic/analyzer.mt` | ~3,880 |
+| Type system | `src/mtc/semantic/types.mt` | ~710 |
+| Loader | `src/mtc/loader/` | ~720 |
 | IR | `src/mtc/ir.mt` | ~220 |
-| Lowering | `src/mtc/lowering/lowering.mt` | ~6,330 |
-| C Backend | `src/mtc/c_backend/c_backend.mt` | ~3,100 |
+| Lowering | `src/mtc/lowering/lowering.mt` | ~7,205 |
+| C Backend | `src/mtc/c_backend/c_backend.mt` | ~3,320 |
 | Build driver | `src/mtc/build.mt` | ~80 |
-| C naming (shared) | `src/mtc/c_naming.mt` | ~70 |
+| C naming (shared) | `src/mtc/c_naming.mt` | ~137 |
 
-**All 172 self-host tests pass (7 known permissiveness failures, 0 regressions).**
+**All 172 self-host tests pass, 0 failures** (the former "7 known permissiveness failures" were fixed by `check_match`).
 
 ---
 
@@ -50,171 +50,137 @@ Byte-identical to Ruby on 11 differential programs.
 Variant decls, arm constructors, switch + if/goto match strategies, field
 destructure bindings.
 
-### Phase 4c — Generics monomorphization (function-level)
+### Phase 4c — Generic function monomorphization
 Inline monomorphization with `type_substitution` map and `specialization_cache`.
-Generic struct decls via `ensure_generic_struct_decl`. Cross-module struct
-constructors via `struct_exists_in_imports`. **Note**: only handles generic
-FUNCTIONS (e.g. `first[int](p)`), not METHODS on generic types.
 
 ### Phase 5 — proc/fn, dyn, method dispatch, str_buffer, format, `is` ✅
 
 ### Phase 6 — events, async, parallel, compile-time ✅ (serial approximations)
 
-### Phase 7 — Cross-module type system hardening (complete)
+### Phase 7 — Cross-module type system hardening ✅ (see git history for the 18-item table)
 
-All Phase 7 blocker items from the original plan are resolved:
+### Phase 7.5 — Generic method/function monomorphization + codegen correctness ✅ (this session)
 
-| # | Item | Status | Notes |
-|---|------|--------|-------|
-| 1 | Imported module method names | ✅ | `fallback_type` → `import_qualified_type` resolves `alias.Type` → `ty_imported` |
-| 2 | `ty_imported` args propagation | ✅ | Added `args: span[Type]` field; `imported_type_with_args` in analyzer |
-| 3 | 2-part name resolution | ✅ | `resolve_generic_type_ref`, `resolve_field_type_ref`, `resolve_type_ref` all handle `vec.Vec[Token]` |
-| 4 | Nullable types in field resolution | ✅ | `resolve_field_type_ref` no longer returns `ty_error` for nullable |
-| 5 | `substitute_type_params` recursion | ✅ | Recurses into `ty_nullable` and `ty_imported` args |
-| 6 | Generic struct monomorphization | ✅ | `qualify_type` recursive; private struct search via `struct_in_source`; recursion guard via `spec_in_progress` |
-| 7 | Cross-module enum match names | ✅ | `enum_source_module` lookup; `variant_match_allowed` prefix matching |
-| 8 | Import alias member access | ✅ | `lower_member_access` resolves `import_alias.type/value` through imports |
-| 9 | No-payload variant arm lowering | ✅ | `find_imported_variant_arm` → `expr_variant_literal` |
-| 10 | Pointer access (. vs ->) | ✅ | `is_pointer_or_ref_type` for `ref[T]`/`ptr[T]` params |
-| 11 | `_Alignof` rendering | ✅ | C backend uses C11 `_Alignof` |
-| 12 | Module constants | ✅ | `decl_const` lowering emits `ir.Constant`; `lookup_qualified_constant` |
-| 13 | Variant deduplication | ✅ | `dedup_append_structs`/`dedup_append_variants` during fragment merge |
-| 14 | Generic method filtering | ✅ | `lower_extending_block` skips blocks with type params (methods monomorphized on demand) |
-| 15 | `zero[T]` / `read()` builtins | ✅ | `expr_specialization` handles `zero`; `is_read_call` desugars `read(x)=v` |
-| 16 | Raw type params → void | ✅ | `qualify_type` returns `void` for `T`/`K`/`V`/etc. |
-| 17 | `std_c_*` re-exports | ✅ | Raw module constants use bare C macro names |
-| 18 | Variant match for prelude types | ✅ | `variant_match_allowed` + `variant_base_c_name` handle qualified types |
+The former "next blocker" is done, plus a large batch of codegen-correctness fixes
+that drove self-compile C errors from **1127 → 516** (via **2227** once method bodies
+started emitting — see §2). Commits `1fe8924f`…`24476860`:
+
+| Area | What landed | Key symbols |
+|------|-------------|-------------|
+| Generic **method** monomorphization | Method calls on generic types (`Vec[int].create()`, `v.push(x)`) clone the method body, substituting the struct's type params, and emit a specialized C function. Body lowered in the **owner module's context**. | `lower_monomorphized_method`, `ensure_monomorphized_method`, `lower_specialized_method`, `try_generic_method_call`, `generic_receiver_info`, `spec_receiver_info`, `find_generic_method` |
+| Generic **function** owner-context | Generic function bodies also lowered in the owner module's context; instances named by owner + dedup'd across callers. | `lower_and_cache_specialization`, `find_generic_function`, `dedup_append_functions` |
+| **Naming** | Module-qualified generic-instance names via a shared pure key (fixes `Vec[ir.Field]` vs `Vec[ast.Field]` collisions). | `naming.type_c_key` (used by `generic_struct_c_name`, `generic_c_type`, `span_type_name`, `specialization_key`, tuple/str_buffer/checked-index/variant/fn names) |
+| **Member/field typing** | Field types resolved from concrete monomorphized struct decls, imported-struct decls (owner context), and variant arm-payload info. Auto-ref/deref receiver passing. | `concrete_field_type`, `imported_field_type`, `arm_payload_field_type`, `build_receiver_arg`, `build_imported_variant_info` (owner-context field types) |
+| **Match** | `lower_match` prefers the lowered scrutinee's type; integer→switch, string→if-chain; exhaustiveness diagnostics. | `lower_scalar_match`, `lower_string_match`, `check_match` (diagnostic-only, `infer_expr_inner`) |
+| **Builtins/casts** | rvalue `read(p)`→deref; `size_of`/`align_of`/`reinterpret`/`zero`/cast targets qualified; pointer arithmetic typed by the pointer operand; span `.data`/`.len`; `hash`/`equal`/`order`→canonical hooks with implicit borrow; native `str(data=, len=)`→`mt_str` aggregate. | |
+| **Ordering/emission** | Combined struct+variant topological sort; generic-variant instance collection scans expressions and nested type args; reachability walk scans variant-literal fields. | `topo_sort_types`, `collect_gv_from_expr`, `collect_gv_from_type`, `reach_from_expr` |
+| **Prelude variants** | `Option`/`Result` instances kept globally named (`Option_str`, not `<module>_Option_str`) through `qualify_type`. | |
 
 ---
 
-## 2. Current state (2026-07-07 P7.5)
+## 2. Current state (Phase 8)
 
-### Self-host build: `mtc build projects/mtc`
+### Self-compile: the Ruby-built self-host binary compiles its own source
 
-**Status**: 0 undeclared C errors, 1127 total C compiler errors.
-Pipeline end-to-end works. The binary built by the Ruby compiler can
-parse, check, lower, and generate C for its own source. The generated C
-has errors that prevent native compilation.
+```sh
+# The default (debug-guarded) binary trips a loop guard on the ~800KB source
+# (str.is_valid_utf8 scans >50k bytes). Use a guard-free binary for now:
+bin/mtc build projects/mtc --no-cache --no-debug-guards -o tmp/mtc-noguard
+tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root . > tmp/self.c
+cc -std=c11 -Wno-implicit-function-declaration -c tmp/self.c -o /dev/null
+```
 
-### Error breakdown (1127 remaining)
+**Status**: pipeline end-to-end works. Generated C is **43,950 lines** with **516 `cc` errors**
+(down from 1127; the count rose to 2227 mid-session once method/function bodies began
+emitting real code, then fell to 516 — so 516 is measured against a far more complete
+codebase than the earlier 1127).
 
-All errors cascade from one root cause:
+### Error breakdown (516)
 
-| Category | Count | Root cause |
-|----------|-------|-----------|
-| Generic method call names (`std_vec_Vec`, `std_map_Map`) | ~142 | Calls to `Vec[Diag].create()` use generic function names instead of monomorphized `Vec_Diag_create()` |
-| Pointer init from int | ~200 | Cascade from unknown types → `void*` initialized with `0` |
-| Member access on non-struct | ~150 | Cascade from unknown types → `.` on `void`/`int` |
-| Variable declared void | ~45 | Local variable types resolve to `void` |
-| Incomplete type fields | ~50 | Variant arm payload structs after struct definitions |
-| Other | ~540 | Type mismatches, return type conflicts |
+No single dominant root remains — it is a diverse tail. Approximate groupings:
 
-### Error elimination path
-
-Fixing the generic method call name resolution (~142 errors) will
-eliminate ~500 cascading errors. Estimated ~300 LOC change.
-
----
-
-## 3. Current file sizes
-
-| File | LOC | Change since original plan |
-|------|-----|---------------------------|
-| `lowering/lowering.mt` | 6,326 | +756 |
-| `c_backend/c_backend.mt` | 3,106 | +106 |
-| `semantic/analyzer.mt` | 3,818 | -1,182 (consolidation) |
-| `semantic/types.mt` | 707 | — |
-| `semantic/type_compatibility.mt` | 133 | — |
-| `loader/module_loader.mt` | 335 | — |
+| Theme | ~Count | Representative errors |
+|-------|--------|-----------------------|
+| Match-**expression** hoisting (return/arg positions) | ~22 | `match_expr` undeclared; some `return int but mt_str expected` |
+| Residual member/field typing | ~40 | `mt_str == mt_str` (str field not typed str → not `mt_str_equal`); `member on non-struct` (`len`/`data`/`value`) |
+| Cross-module type attribution / struct emission | ~25 | `mtc_main_LoadDiagnostic` (should be its defining module); `Diag`/`FnSig` unknown (struct not emitted) |
+| Generic `Map` instance arg mismatches | ~21 | `std_map_Map_str_..._contains` argument type mismatch (span/struct keys) |
+| Option/init handling | ~23 | `char* = Option_str`; `invalid initializer` |
+| External/opaque ABI types | ~6 | `std_c_fs_mt_fs_error` unknown |
+| Other | ~380 | scattered type/return mismatches in newly-emitted bodies |
 
 ---
 
-## 4. Next session: Generic method monomorphization
+## 3. Next steps to finish self-host
 
-### Context
+### 3.1 Drive self-compile C errors 516 → 0
 
-The original Phase 4c completed *function-level* generics monomorphization:
-`lower_monomorphized_call` monomorphizes bare generic functions like
-`first[int](p)` by cloning the generic body with type substitution and
-generating a specialized C function.
+Incremental grind; suggested order (highest leverage / cleanest first). Each fix tends
+to un-mask the next layer, so re-measure after each.
 
-It does NOT cover *method calls* on generic types. When `Vec[Diag].create()`
-is called, the specialization path in `lower_specialization_call` routes
-through `resolve_method_info` which returns the generic function name
-(`std_vec_Vec_create`) with the generic return type. The call uses the
-raw generic function name, but the function doesn't exist (generic
-extending blocks are skipped by `lower_extending_block`).
+1. **Match-expression hoisting** (`return match …`, `match` in call args). `lower_expression_match`
+   is a stub returning an undeclared `match_expr` name. Needs to hoist into a temp + switch.
+   **Blocker to redo carefully:** `lower_match_expression_local` only handles enum/variant
+   scrutinees; a str/int expression-match falls into `lower_enum_match_expr` and **infinite-loops
+   (OOM)**. Add int/str expression-match lowering (mirror `lower_scalar_match`/`lower_string_match`)
+   **before** wiring `return match` hoisting. Verify on a minimal str-scrutinee repro first.
+2. **Residual member/field typing** — chase the remaining `member on non-struct` and `str ==`
+   cases (fields whose type still resolves to void/int). Same theme as the arm-payload/imported-field
+   fixes already landed; likely more `ty_named` receivers that bypass `imported_field_type`.
+3. **Cross-module attribution & struct emission** — `LoadDiagnostic` attributed to `mtc.main`
+   instead of its defining module; `Diag`/`FnSig` structs referenced but not emitted (reachability
+   or module attribution). Audit where a bare type name gets the current module's prefix.
+4. **Generic `Map` instance mismatches** — `contains(...)` arg types for `Map` with span/struct
+   keys; check key-type qualification consistency between the struct decl and call sites.
+5. **Option/init handling** — `char* = Option_str` and `invalid initializer` (Option-typed
+   values used where a scalar/pointer is expected — likely a residual match/type-resolution gap).
+6. **External ABI types** — `std_c_fs_mt_fs_error` (external `struct` types from `std.c.*`);
+   ensure external-file structs are emitted/forward-declared.
 
-### What needs to happen
+### 3.2 Verify correctness beyond "it compiles"
 
-When a method call on a generic type with concrete type args is encountered
-(e.g. `vec.Vec[Diag].create()`), the lowering must:
+Reaching 0 `cc` errors is necessary but not sufficient — dropped/empty bodies and wrong
+codegen do not always surface as C errors. Once errors are low:
 
-1. Find the method's AST declaration in the defining module's extending block
-2. Build a type substitution map from the extending block's type params to the
-   concrete args (e.g. `{T: Diag}`)
-3. Clone the method body with the substitution applied
-4. Generate a monomorphized C function (e.g. `std_vec_Vec_Diag_create`) with
-   concrete return/param types
-5. Replace the call site with the monomorphized name
+- **Differential C**: diff the self-host's C output against the Ruby compiler's C output
+  for the same inputs (the 11 differential programs, then the self-host source). Target
+  behavioral equivalence (byte-identical where feasible — the correctness oracle).
+- **Bootstrap fixpoint**: guard-free self-host → C → `cc` → **stage-2** binary; stage-2
+  compiles the source again → **stage-3**; assert `stage-2 output == stage-3 output`.
 
-### Key code paths
+### 3.3 Fix the debug-guard false-positive
 
-| Function | File:line | Purpose |
-|----------|-----------|---------|
-| `lower_specialization_call` | `lowering.mt:~2700` | Entry point for `Vec[Diag].create()` — currently routes through `resolve_method_info` |
-| `resolve_method_info` | `lowering.mt:~3609` | Resolves method on receiver type, returns generic `MethodInfo` |
-| `lower_method_resolved` | `lowering.mt:~3590` | Generates `expr_call` with the resolved C name |
-| `lower_monomorphized_call` | `lowering.mt:~2846` | Monomorphizes generic FUNCTION calls — needs extending for method calls |
-| `lower_extending_block` | `lowering.mt:~780` | Currently skips generic blocks — needs to be kept as source for monomorphization |
-| `type_substitution` | `LowerCtx` field | Maps type param names to concrete types during monomorphization |
-| `specialization_cache` | `LowerCtx` field | Cache of already-monomorphized function bodies |
+Linear scans over the whole source (`str.is_valid_utf8`, lexer loops) exceed the 50k
+loop-iteration guard, so the **default (guarded) binary aborts on its own source**. A debug
+self-host must be able to guard *its own* compilation loops without tripping on large input:
+raise/scope the threshold, or exclude byte-scan loops. Needed before the guarded binary can
+self-compile.
 
-### Implementation plan
+### 3.4 Build-mode / runtime parity (after self-compile is green)
 
-1. **Modify `lower_extending_block`**: Instead of skipping generic blocks entirely,
-   store the AST method declarations in a `generic_methods` map keyed by
-   `(module, struct_name, method_name)`. Don't emit the IR functions.
-
-2. **Modify `resolve_method_info`**: When receiver has concrete type args AND
-   the method is generic, return a marker indicating monomorphization is needed.
-
-3. **Add `lower_monomorphized_method`**: Takes the receiver type args, finds
-   the generic method AST, builds substitution, clones the method body,
-   generates the specialized function, and returns the monomorphized call.
-
-4. **Wire into `lower_specialization_call`**: After `resolve_method_info`, if the
-   method needs monomorphization, call `lower_monomorphized_method` instead of
-   `lower_method_resolved`.
-
-### Ruby compiler reference
-
-The Ruby compiler's `lowering.rb` handles this in `lower_specialization_call`
-and `lower_monomorphized_call`. Key patterns to follow:
-
-- The monomorphized function name includes type args: `Vec_Diag_create`
-- The body is cloned with `type_substitution` for all local types
-- The specialized function is cached in `specialization_cache`
-- Cross-module methods are found by searching `program_analyses` for the
-  defining module's AST
-
-### Testing approach
-
-1. Create a minimal test: `import std.vec` + `var v = vec.Vec[int].create()`
-2. Verify the generated C calls `std_vec_Vec_int_create()` with correct return type
-3. Verify all 172 self-host tests still pass
-4. Verify `std_vec_Vec` and `std_map_Map` raw name errors decrease
-
-### Risks
-
-| Risk | LOC | Notes |
-|------|-----|-------|
-| Method AST lookup across modules | ~50 | Need to search imported module's source_file.declarations |
-| Body cloning with type substitution | ~100 | Need to handle local types, params, return types |
-| Specialization caching key design | ~30 | Must include module + struct name + method name + type args |
-| Recursive method calls | ~20 | Need recursion guard (similar to `spec_in_progress`) |
+Deferred codegen/runtime items (see §6) — cache, line directives, include set, `as cstr`
+for non-literals, proc retain/release, async CPS, capture analysis.
 
 ---
+
+## 4. Architecture notes for the next session
+
+Established this session; reuse these seams rather than re-deriving them:
+
+- **Monomorphization**: method calls route through `try_generic_method_call` →
+  `lower_monomorphized_method`; both method and function bodies are lowered in the **owner
+  module's context** (`ctx.module_name`/`analysis`/`foreign_map`/`variants` swapped, then
+  restored). Concrete type args are **qualified in the caller's context** before the switch,
+  so a type from a module the owner does not import still renders correctly.
+- **Naming**: `naming.type_c_key(ty)` is the single source of truth for generic-instance
+  name suffixes — use it for any new generic-name construction so lowering and the backend
+  stay byte-identical.
+- **Member typing** resolution order in `lower_member_access`: span `.data`/`.len` →
+  `concrete_field_type` (monomorphized structs) → `arm_payload_field_type` (variant payloads)
+  → `imported_field_type` (cross-module structs, owner context) → analyzer `expr_type`.
+- **Match**: `lower_match` prefers `ir_expr_type(lower_expr(scrutinee))` over the analyzer's
+  `expr_type` (more accurate for Option-typed fields / `read(ptr)`).
+- **Prelude variants** (`Option`/`Result`) are globally named — never module-prefix them.
 
 ## 5. Progress checklist
 
@@ -224,26 +190,29 @@ and `lower_monomorphized_call`. Key patterns to follow:
 - [x] Phase 3 — non-generic aggregates
 - [x] Phase 4a — multi-module assembly + cross-module calls
 - [x] Phase 4b — non-generic variants + match strategies + variant literals
-- [x] Phase 4c — generics monomorphization (function-level complete)
+- [x] Phase 4c — generic function monomorphization
 - [x] Phase 5 — proc/fn, dyn, method dispatch, str_buffer, format, `is`
 - [x] Phase 6 — events, async, parallel, compile-time
-- [ ] Phase 7 — build parity + self-host bootstrap (in progress)
-  - [x] Imported module method names (18 fixes applied)
-  - [x] Cross-module type system hardening
-  - [x] Generic struct monomorphization
-  - [x] Cross-module variant/enum/const resolution
-  - [x] Builtin handling (zero, read, _Alignof, pointer flags)
-  - [ ] Generic method monomorphization ← **next**
-  - [ ] Milestone: `mtc build projects/mtc`
+- [x] Phase 7 — cross-module type system hardening
+- [x] Phase 7.5 — generic **method** monomorphization + owner-context + naming + codegen fixes
+- [ ] Phase 8 — self-compile C-error elimination (**516 → 0**, in progress)
+  - [ ] Match-expression hoisting (needs int/str expr-match first; avoid the OOM loop)
+  - [ ] Residual member/field typing
+  - [ ] Cross-module attribution & struct emission
+  - [ ] Generic `Map` instance mismatches / Option-init handling / external ABI types
+  - [ ] Milestone: `mtc build projects/mtc` produces a native binary
+- [ ] Phase 9 — correctness verification (differential C + bootstrap fixpoint)
+- [ ] Phase 10 — debug-guard fix + build-mode/runtime parity
 
 ---
 
 ## 6. Deferred items
 
+- Match-expression hoisting for str/int scrutinees (see §3.1 — the OOM blocker).
 - Guards and equality patterns in struct-pattern match arms.
 - Build-mode codegen parity (cache, debug-guards, line directives, include set).
+- Debug-guard false-positive on large byte-scan loops (§3.3).
 - `as cstr` for non-literal values.
-- Prelude module prefix (`std_option_` names).
 - proc selective retain / scope-exit release.
 - SoA: deferred indefinitely.
 - CPS state machine for async/await.
@@ -257,4 +226,8 @@ and `lower_monomorphized_call`. Key patterns to follow:
 - **Byte-identical C as the correctness oracle.**
 - **Follow Ruby's algorithmic structure.**
 - **Fail loud on substrate gaps.**
-- **Sandbox every built binary** (`timeout` + `ulimit -v`).
+- **Diagnostic passes must not mutate the analysis codegen consumes** (learned the hard way:
+  `check_match` recording scrutinee types doubled the emitted C).
+- **A rising C-error count can mean progress** — correct typing / un-dropping bodies emits
+  more real code, which surfaces the next layer. Track categories, not just totals.
+- **Sandbox every built binary** (`timeout` + `ulimit -v`); interpret `137`/`134` as OOM/abort.
