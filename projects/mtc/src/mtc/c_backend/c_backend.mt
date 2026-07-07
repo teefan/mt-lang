@@ -257,6 +257,10 @@ public function generate_c(program: ir.Program) -> string.String:
     if uses_event_runtime(program):
         emit_event_helpers(ref_of(e))
 
+    # Emit parallel runtime helpers when any parallel/detach calls are present.
+    if uses_parallel_runtime(program):
+        emit_parallel_helpers(ref_of(e))
+
     i = 0
     while i < funcs.len:
         unsafe:
@@ -2905,4 +2909,43 @@ function emit_event_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "      }")
     emit_line(e, "    }")
     emit_line(e, "  }")
+    emit_line(e, "}")
+
+
+# =============================================================================
+#  Parallel / detach runtime helpers
+# =============================================================================
+
+function uses_parallel_runtime(program: ir.Program) -> bool:
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            let f = read(program.functions.data + i)
+            if body_calls(f.body, "mt_parallel_for") or body_calls(f.body, "mt_spawn_run") or body_calls(f.body, "mt_detach_run") or body_calls(f.body, "mt_detach_join"):
+                return true
+        i += 1
+    return false
+
+
+function emit_parallel_helpers(e: ref[Emitter]) -> void:
+    emit_line(e, "static void mt_parallel_for(intptr_t start, intptr_t end, intptr_t step, void (*worker)(void*, intptr_t, intptr_t), void* data) {")
+    emit_line(e, "  for (intptr_t i = start; i < end; i += step) {")
+    emit_line(e, "    worker(data, i, end);")
+    emit_line(e, "  }")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void mt_spawn_run(void (*work)(void*), void* data) {")
+    emit_line(e, "  work(data);")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void mt_spawn_wait(void) {")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void* mt_detach_run(void (*work)(void*), void* data) {")
+    emit_line(e, "  work(data);")
+    emit_line(e, "  return NULL;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void mt_detach_join(void* handle) {")
+    emit_line(e, "  (void)handle;")
     emit_line(e, "}")

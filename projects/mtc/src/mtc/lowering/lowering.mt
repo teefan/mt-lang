@@ -987,12 +987,21 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let body = lower_block(ctx, w.body)
                 output.push(ir.Stmt.stmt_while(condition = cond, body = body))
             ast.Stmt.stmt_for as f:
+                if f.threaded:
+                    lower_parallel_for(ctx, output, f.bindings, f.iterables, f.body)
+                    return
                 lower_for_range(ctx, output, f.bindings, f.iterables, f.body)
             ast.Stmt.stmt_expression as ex:
                 let lowered = lower_expr(ctx, ex.expression)
                 output.push(ir.Stmt.stmt_expression(expression = lowered, line = ex.line, source_path = ""))
             ast.Stmt.stmt_when as wn:
                 lower_when_stmt(ctx, output, wn.discriminant, wn.branches, wn.else_body)
+            ast.Stmt.stmt_parallel_block as pb:
+                lower_parallel_block(ctx, output, pb.bodies)
+            ast.Stmt.stmt_gather as gth:
+                lower_gather_stmt(ctx, output, gth.handles)
+            ast.Stmt.stmt_pass:
+                pass
             ast.Stmt.stmt_if as iff:
                 if iff.is_inline:
                     lower_inline_if_statement(ctx, output, iff.branches, iff.else_body)
@@ -1379,12 +1388,165 @@ function array_length_of(t: types.Type) -> long:
                         types.Type.ty_literal_int as lit:
                             return lit.value
                         _:
-                            return 0
-            return 0
+                            pass
         _:
-            return 0
+            pass
+    return 0
 
 
+# =============================================================================
+#  Parallel / detach / gather lowering
+# =============================================================================
+
+var parallel_cnt: ptr_uint = 0
+
+
+function parallel_uid(ctx: ref[LowerCtx]) -> str:
+    var buf = string.String.create()
+    buf.append(naming.module_c_prefix(ctx.module_name))
+    buf.append("_par_")
+    fmt.append_ptr_uint(ref_of(buf), parallel_cnt)
+    return buf.as_str()
+
+
+function parallel_worker_fn(ctx: ref[LowerCtx], body_ir: span[ir.Stmt]) -> ir.Function:
+    let void_ty = types.primitive("void")
+    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
+    parallel_cnt += 1
+    let uid = parallel_uid(ctx)
+    let name = j2("mt_p_work_", uid)
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(name = "data", linkage_name = "data", ty = void_ptr_ty, pointer = false))
+    return ir.Function(name = name, linkage_name = name, params = params.as_span(),
+        return_type = void_ty, body = body_ir, entry_point = false, method_receiver_param = false)
+
+
+## Worker for mt_parallel_for: takes (void* data, intptr_t start, intptr_t end).
+function parallel_for_worker_fn(ctx: ref[LowerCtx], body_ir: span[ir.Stmt]) -> ir.Function:
+    let void_ty = types.primitive("void")
+    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
+    let long_ty = types.primitive("long")
+    parallel_cnt += 1
+    let uid = parallel_uid(ctx)
+    let name = j2("mt_p_work_", uid)
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(name = "data", linkage_name = "data", ty = void_ptr_ty, pointer = false))
+    params.push(ir.Param(name = "mt_pfor_start", linkage_name = "mt_pfor_start", ty = long_ty, pointer = false))
+    params.push(ir.Param(name = "mt_pfor_end", linkage_name = "mt_pfor_end", ty = long_ty, pointer = false))
+    return ir.Function(name = name, linkage_name = name, params = params.as_span(),
+        return_type = void_ty, body = body_ir, entry_point = false, method_receiver_param = false)
+
+
+function void_ptr_ty() -> types.Type:
+    return types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+
+
+function pw1_str(value: ptr_uint) -> str:
+    var buf = string.String.create()
+    fmt.append_ptr_uint(ref_of(buf), value)
+    return buf.as_str()
+
+
+## Lower `parallel for i in 0..N: body`.  Generates a worker function that
+## contains the loop body, and emits a call to mt_parallel_for.
+function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body: ptr[ast.Stmt]?) -> void:
+    if bindings.len == 0 or iterables.len == 0:
+        return
+    # Extract range start/end from the iterable (must be a range expression)
+    var start_ptr: ptr[ast.Expr]
+    var end_ptr: ptr[ast.Expr]
+    unsafe:
+        match read(iterables.data + 0):
+            ast.Expr.expr_range as rng:
+                start_ptr = rng.start_expr
+                end_ptr = rng.end_expr
+            _:
+                fatal(c"lowering parallel for: only range iteration is supported")
+    let void_ty = types.primitive("void")
+    let long_ty = types.primitive("long")
+    # Lower the loop body (captured globals work via static linkage)
+    let bd = body else:
+        return
+    let loop_body = lower_block(ctx, bd)
+    # Wrap in a worker function
+    let worker = parallel_for_worker_fn(ctx, loop_body)
+    # Emit: mt_parallel_for(start, end, step, worker, NULL)
+    var call_args = vec.Vec[ir.Expr].create()
+    let start_expr = lower_expr(ctx, start_ptr)
+    let end_expr = lower_expr(ctx, end_ptr)
+    unsafe:
+        call_args.push(read(start_expr))
+        call_args.push(read(end_expr))
+        call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = long_ty))))
+        call_args.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
+        call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
+    ctx.pending_synthetic_functions.push(worker)
+    output.push(ir.Stmt.stmt_expression(
+        expression = alloc_expr(ir.Expr.expr_call(callee = "mt_parallel_for", arguments = call_args.as_span(), ty = void_ty)),
+        line = 0, source_path = "",
+    ))
+
+
+## Lower `parallel: stmt1; stmt2; ...`.  Each statement becomes a worker
+## function, dispatched via mt_spawn_run, then mt_spawn_wait.
+function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bodies: span[ast.Stmt]) -> void:
+    if bodies.len < 2:
+        return
+    let void_ty = types.primitive("void")
+    # Generate worker for each body, emit spawn call
+    var i: ptr_uint = 0
+    while i < bodies.len:
+        var wb = lower_block(ctx, unsafe: ptr[ast.Stmt]<-(bodies.data + i))
+        let worker = parallel_worker_fn(ctx, wb)
+        ctx.pending_synthetic_functions.push(worker)
+        var spawn_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            spawn_args.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
+            spawn_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
+        output.push(ir.Stmt.stmt_expression(
+            expression = alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_run", arguments = spawn_args.as_span(), ty = void_ty)),
+            line = 0, source_path = "",
+        ))
+        i += 1
+    output.push(ir.Stmt.stmt_expression(
+        expression = alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_wait", arguments = span[ir.Expr](), ty = void_ty)),
+        line = 0, source_path = "",
+    ))
+
+
+## Lower `gather h1, h2, ...`.  Each handle is joined via mt_detach_join.
+function lower_gather_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], handles: span[ast.Expr]) -> void:
+    let void_ty = types.primitive("void")
+    var i: ptr_uint = 0
+    while i < handles.len:
+        let h = unsafe: lower_expr(ctx, handles.data + i)
+        var join_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            join_args.push(read(h))
+        output.push(ir.Stmt.stmt_expression(
+            expression = alloc_expr(ir.Expr.expr_call(callee = "mt_detach_join", arguments = join_args.as_span(), ty = void_ty)),
+            line = 0, source_path = "",
+        ))
+        i += 1
+
+
+## Lower `detach <call>` expression.  Wraps the call in a worker function
+## and dispatches via mt_detach_run, returning a void* handle.
+function lower_detach_expr(ctx: ref[LowerCtx], expression: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let void_ty = types.primitive("void")
+    let lowered_call = lower_expr(ctx, expression)
+    var wb = vec.Vec[ir.Stmt].create()
+    wb.push(ir.Stmt.stmt_expression(expression = lowered_call, line = 0, source_path = ""))
+    let worker = parallel_worker_fn(ctx, wb.as_span())
+    ctx.pending_synthetic_functions.push(worker)
+    var da = vec.Vec[ir.Expr].create()
+    unsafe:
+        da.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
+        da.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
+    return alloc_expr(ir.Expr.expr_call(callee = "mt_detach_run", arguments = da.as_span(), ty = void_ptr_ty()))
+
+
+# =============================================================================
 function fresh_c_temp_name(ctx: ref[LowerCtx], prefix: str) -> str:
     ctx.temp_counter += 1
     var buf = string.String.create()
@@ -1446,6 +1608,8 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_format_string as fs:
                 let str_ty = types.Type.ty_str
                 return alloc_expr(ir.Expr.expr_string_literal(value = "fmt", ty = str_ty, cstring = false))
+            ast.Expr.expr_detach as dt:
+                return lower_detach_expr(ctx, dt.expression, ep)
             _:
                 fatal(c"lowering Phase 3: unsupported expression")
 
