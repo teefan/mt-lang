@@ -1226,6 +1226,11 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
         types.Type.ty_named as n:
             if is_raw_type_param_name(n.name):
                 return types.primitive("void")
+            # Already-monomorphized concrete names (e.g. std_map_Node_str_bool)
+            # are fully qualified: pass them through so re-qualifying in a
+            # different module context does not double-prefix them.
+            if ctx.generic_struct_instances.contains(n.name) or ctx.generic_struct_decls.contains(n.name):
+                return t
             return types.Type.ty_imported(module_name = ctx.module_name, name = n.name, args = span[types.Type]())
         types.Type.ty_imported as im:
             if is_raw_type_param_name(im.name):
@@ -3062,22 +3067,6 @@ function generic_struct_c_name(name: str, args: span[types.Type]) -> str:
 ## lowered.  The monomorphized copy is cached so subsequent calls to the same
 ## specialization reuse the already-lowered function.
 function lower_monomorphized_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], call_args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
-    let spec_key = specialization_key(ctx, callee, type_args)
-    if not ctx.specialization_cache.contains(spec_key):
-        lower_and_cache_specialization(ctx, callee, type_args, spec_key)
-    let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
-    var ret_type_ptr = types.alloc_type(ret_ty)
-    return lower_plain_call(ctx, spec_key, call_args, call_ep, ret_type_ptr)
-
-
-## Lower an uncached generic function specialization: find the function's AST
-## declaration, build the type substitution map, lower the body, and cache.
-function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], spec_key: str) -> void:
-    # Detect cyclic generic instantiations (A[T] → B[T] → A[T]).
-    if ctx.spec_in_progress.contains(spec_key):
-        fatal(c"lowering: cyclic generic instantiation")
-    ctx.spec_in_progress.set(spec_key, true)
-
     var callee_name: str
     unsafe:
         match read(callee):
@@ -3088,34 +3077,78 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr
             _:
                 fatal(c"lowering: unsupported generic callee")
 
-    # Find the function declaration — search analyses first, then raw loaded
-    # modules (analyses may be incomplete for generic functions with complex
-    # return types — raw source files always have the full AST).
-    # Mirrors Ruby's @ctx.imports ModuleBinding access pattern.
-    var fun_decl_opt = Option[ast.Decl].none
-    var ai: ptr_uint = 0
-    while ai < ctx.program_analyses.len and fun_decl_opt.is_none():
-        var a: analyzer.Analysis
-        unsafe:
-            a = read(ctx.program_analyses.data + ai)
-        fun_decl_opt = find_func_in_source(a.source_file, callee_name)
-        ai += 1
-    if fun_decl_opt.is_none():
-        var mi: ptr_uint = 0
-        while mi < ctx.loaded_modules.len and fun_decl_opt.is_none():
-            var lm: loader.LoadedModule
-            unsafe:
-                lm = read(ctx.loaded_modules.data + mi)
-            fun_decl_opt = find_func_in_source(lm.source_file, callee_name)
-            mi += 1
-    let fun_decl = fun_decl_opt else:
+    let gm = find_generic_function(ctx, callee_name) else:
         if ctx.loaded_modules.len <= 1:
             fatal(j2("lowering: monomorphization failed for ", callee_name))
         fatal(j2("lowering: could not find generic function decl for ", callee_name))
 
-    # Build type substitution map from the function's type params.
-    match fun_decl:
+    # Name the specialization by its OWNER module so the same instance reached
+    # from multiple caller modules dedups to one definition (see
+    # dedup_append_functions).
+    let spec_key = specialization_key(ctx, gm.module_name, callee_name, type_args)
+    if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
+        lower_and_cache_specialization(ctx, gm, type_args, spec_key)
+    let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
+    var ret_type_ptr = types.alloc_type(ret_ty)
+    return lower_plain_call(ctx, spec_key, call_args, call_ep, ret_type_ptr)
+
+
+## A generic function's AST declaration plus the module that defines it.
+struct GenericFunctionMatch:
+    module_name: str
+    decl: ast.Decl
+
+
+## Find a generic function declaration by name.  The current module is searched
+## first (so same-module generics resolve to their own module), then all other
+## analyses, then raw loaded modules as a fallback for functions whose analysis
+## copy is incomplete.
+function find_generic_function(ctx: ref[LowerCtx], callee_name: str) -> Option[GenericFunctionMatch]:
+    match find_func_in_source(ctx.analysis.source_file, callee_name):
+        Option.some as d:
+            return Option[GenericFunctionMatch].some(value = GenericFunctionMatch(module_name = ctx.module_name, decl = d.value))
+        Option.none:
+            pass
+    var ai: ptr_uint = 0
+    while ai < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + ai)
+        if not a.module_name.equal(ctx.module_name):
+            match find_func_in_source(a.source_file, callee_name):
+                Option.some as d:
+                    return Option[GenericFunctionMatch].some(value = GenericFunctionMatch(module_name = a.module_name, decl = d.value))
+                Option.none:
+                    pass
+        ai += 1
+    var mi: ptr_uint = 0
+    while mi < ctx.loaded_modules.len:
+        var lm: loader.LoadedModule
+        unsafe:
+            lm = read(ctx.loaded_modules.data + mi)
+        match find_func_in_source(lm.source_file, callee_name):
+            Option.some as d:
+                return Option[GenericFunctionMatch].some(value = GenericFunctionMatch(module_name = lm.module_name.as_str(), decl = d.value))
+            Option.none:
+                pass
+        mi += 1
+    return Option[GenericFunctionMatch].none
+
+
+## Lower an uncached generic function specialization: build the type substitution
+## map, then lower the body in the OWNER module's context (so its imports,
+## foreign functions, variants, and recorded expression types resolve against the
+## defining module rather than the caller) and cache it under `spec_key`.
+function lower_and_cache_specialization(ctx: ref[LowerCtx], gm: GenericFunctionMatch, type_args: span[ast.TypeArgument], spec_key: str) -> void:
+    ctx.spec_in_progress.set(spec_key, true)
+    match gm.decl:
         ast.Decl.decl_function as fun:
+            # Build type substitution from the function's type params, resolving
+            # AND qualifying the type arguments in the CALLER's context: the
+            # concrete type must become a fully-qualified name here (where it is
+            # known) so the owner module — which may not import the argument's
+            # defining module — renders it correctly rather than dropping the
+            # module prefix.
             var sub = map_mod.Map[str, types.Type].create()
             var tpi: ptr_uint = 0
             while tpi < fun.type_params.len:
@@ -3123,15 +3156,32 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr
                 unsafe:
                     tp = read(fun.type_params.data + tpi)
                 if tpi < type_args.len:
-                    let concrete = resolve_type_ref(ctx, unsafe: read(type_args.data + tpi).value)
+                    let concrete = qualify_type(ctx, resolve_type_ref(ctx, unsafe: read(type_args.data + tpi).value))
                     sub.set(tp.name, concrete)
                 tpi += 1
 
-            # Save the current context (locals, temp counter, function_returns)
-            # and lower the specialized copy.
+            # Save the caller context.
+            var saved_module = ctx.module_name
+            var saved_analysis = ctx.analysis
+            var saved_foreign = ctx.foreign_map
+            var saved_variants = ctx.variants
             var saved_locals = ctx.locals
             var saved_counter = ctx.temp_counter
             var saved_returns = ctx.function_returns
+
+            # Switch to the owner module's context when its analysis is available.
+            match find_imported_analysis(ctx, gm.module_name):
+                Option.some as owner_a:
+                    ctx.module_name = gm.module_name
+                    ctx.analysis = owner_a.value
+                    ctx.foreign_map = map_mod.Map[str, ForeignInfo].create()
+                    ctx.variants = map_mod.Map[str, VariantInfo].create()
+                    collect_foreign_functions(ctx, owner_a.value.source_file.declarations)
+                    collect_variants(ctx, owner_a.value.source_file.declarations)
+                    install_prelude_variants(ctx)
+                Option.none:
+                    pass
+
             ctx.locals = vec.Vec[LocalBinding].create()
             ctx.temp_counter = 0
             ctx.function_returns = map_mod.Map[str, types.Type].create()
@@ -3141,18 +3191,18 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr
             spec_fun.name = spec_key
 
             ctx.specialization_cache.set(spec_key, spec_fun)
-
-            # Record the monomorphized function's return type on the ORIGINAL
-            # (saved) function_returns so that subsequent lookups in the same
-            # module find it after the context is restored.
             saved_returns.set(spec_key, spec_fun.return_type)
 
-            # Restore the original lowering context.
+            # Restore the caller context.
+            ctx.module_name = saved_module
+            ctx.analysis = saved_analysis
+            ctx.foreign_map = saved_foreign
+            ctx.variants = saved_variants
             ctx.locals = saved_locals
             ctx.temp_counter = saved_counter
             ctx.function_returns = saved_returns
         _:
-            fatal(j2("lowering: monomorphization failed, expected function decl for ", callee_name))
+            fatal(j2("lowering: monomorphization failed, expected function decl for ", gm.module_name))
 
 
 ## Lower a payload variant arm constructor `Variant.arm(field = value, ...)` to an
@@ -3222,18 +3272,11 @@ function collect_variant_literal_fields(ctx: ref[LowerCtx], args: span[ast.Argum
 ## Build a specialization key from the callee name + concrete type args.  For a
 ## same-module function `first[int]`, the key is `<module_prefix>_first_int`.  The
 ## key doubles as the monomorphized C linkage name.
-function specialization_key(ctx: ref[LowerCtx], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument]) -> str:
+function specialization_key(ctx: ref[LowerCtx], module_name: str, callee_name: str, type_args: span[ast.TypeArgument]) -> str:
     var buf = string.String.create()
-    buf.append(naming.module_c_prefix(ctx.module_name))
+    buf.append(naming.module_c_prefix(module_name))
     buf.append("_")
-    unsafe:
-        match read(callee):
-            ast.Expr.expr_identifier as id:
-                buf.append(id.name)
-            ast.Expr.expr_member_access as ma:
-                buf.append(ma.member_name)
-            _:
-                fatal(c"lowering: unsupported generic callee")
+    buf.append(callee_name)
     var i: ptr_uint = 0
     while i < type_args.len:
         buf.append("_")
