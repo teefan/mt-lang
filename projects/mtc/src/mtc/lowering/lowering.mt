@@ -2260,7 +2260,10 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     let recv_ir = lower_expr(ctx, ma.receiver)
                     return lower_dyn_method_call(ctx, recv_ir, ma.member_name, args, call_ep)
                 # Fallback: treat as a direct C call with the member as callee.
-                let recv_type_name = named_type_name(recv_ty) else:
+                var recv_type_name = named_type_name(recv_ty)
+                if recv_type_name.is_none():
+                    recv_type_name = try_spec_type_name(ma.receiver)
+                let recv_name = recv_type_name else:
                     let fn_c_name = naming.qualified_member_c_name(ctx.module_name, "mt", ma.member_name)
                     var ir_args = vec.Vec[ir.Expr].create()
                     let recv_ir = lower_expr(ctx, ma.receiver)
@@ -2276,21 +2279,27 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                             ir_args.push(read(lowered))
                         si += 1
                     return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
-                let fn_c_name = naming.qualified_member_c_name(ctx.module_name, recv_type_name, ma.member_name)
-                let recv_ir = lower_expr(ctx, ma.receiver)
-                var ir_args = vec.Vec[ir.Expr].create()
-                unsafe:
-                    ir_args.push(read(recv_ir))
-                var si: ptr_uint = 0
-                while si < args.len:
-                    var arg: ast.Argument
-                    unsafe:
-                        arg = read(args.data + si)
-                    let lowered = lower_expr(ctx, arg.arg_value)
-                    unsafe:
-                        ir_args.push(read(lowered))
-                    si += 1
-                return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
+                # Method found — try method resolution with the recovered type name.
+                var resolved_ty = types.Type.ty_named(name = recv_name)
+                match resolve_method_info(ctx, resolved_ty, ma.member_name):
+                    Option.some as mi:
+                        return lower_method_resolved(ctx, mi.value, ma.receiver, args, call_ep)
+                    Option.none:
+                        let fn_c_name = naming.qualified_member_c_name(ctx.module_name, recv_name, ma.member_name)
+                        let recv_ir = lower_expr(ctx, ma.receiver)
+                        var ir_args = vec.Vec[ir.Expr].create()
+                        unsafe:
+                            ir_args.push(read(recv_ir))
+                        var si: ptr_uint = 0
+                        while si < args.len:
+                            var arg: ast.Argument
+                            unsafe:
+                                arg = read(args.data + si)
+                            let lowered = lower_expr(ctx, arg.arg_value)
+                            unsafe:
+                                ir_args.push(read(lowered))
+                            si += 1
+                        return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
             _:
                 fatal(c"lowering: unsupported call target")
 
@@ -3109,6 +3118,7 @@ function dyn_vtable_c_type(t: types.Type) -> str:
 struct MethodInfo:
     c_name: str
     method_kind: ast.MethodKind
+    return_type: types.Type
 
 
 ## HACK: qualified_member_c_name but with an explicit module prefix.
@@ -3120,6 +3130,24 @@ function qualified_member_c_name_ext(module_prefix: str, owner: str, member: str
     buf.append("_")
     buf.append(member)
     return buf.as_str()
+
+
+## Extract a type name from a specialization receiver when the analyzer's
+## expr_type returned void.  For `expr_specialization(callee = member_access("string", "String"), ...)`,
+## returns `Option.some("String")`.
+function try_spec_type_name(receiver: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_specialization as spec:
+                match read(spec.callee):
+                    ast.Expr.expr_member_access as ma:
+                        return Option[str].some(value = ma.member_name)
+                    ast.Expr.expr_identifier as id:
+                        return Option[str].some(value = id.name)
+                    _:
+                        return Option[str].none
+            _:
+                return Option[str].none
 
 
 ## Resolve a method call `receiver.method(args)` to its C function name and kind,
@@ -3135,7 +3163,10 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
                     let sig_ptr = ctx.analysis.method_sigs.get(key) else:
                         return Option[MethodInfo].none
                     let sig = unsafe: read(sig_ptr)
-                    return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, gv.value, method_name), method_kind = sig.method_kind))
+                    var ret = sig.return_type
+                    if not sig.has_return_type:
+                        ret = types.primitive("void")
+                    return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, gv.value, method_name), method_kind = sig.method_kind, return_type = ret))
             Option.none:
                 pass
         return Option[MethodInfo].none
@@ -3144,7 +3175,10 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
         let sig_ptr = ctx.analysis.method_sigs.get(key) else:
             return Option[MethodInfo].none
         let sig = unsafe: read(sig_ptr)
-        return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, type_name, method_name), method_kind = sig.method_kind))
+        var ret = sig.return_type
+        if not sig.has_return_type:
+            ret = types.primitive("void")
+        return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, type_name, method_name), method_kind = sig.method_kind, return_type = ret))
     # Search imported modules' method_sigs when the method is not found locally.
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len:
@@ -3160,9 +3194,22 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
                 continue
             let sig = unsafe: read(sig_ptr)
             let mod_prefix = naming.module_c_prefix(a.module_name)
+            var ret = sig.return_type
+            if not sig.has_return_type:
+                ret = types.primitive("void")
+            # If the method returns a locally-named struct (ty_named), which is
+            # defined in the imported module, convert it to ty_imported so the C
+            # backend produces the module-qualified C name.
+            match ret:
+                types.Type.ty_named as rn:
+                    if a.structs.contains(rn.name):
+                        ret = types.Type.ty_imported(module_name = a.module_name, name = rn.name)
+                _:
+                    pass
             return Option[MethodInfo].some(value = MethodInfo(
                 c_name = qualified_member_c_name_ext(mod_prefix, type_name, method_name),
                 method_kind = sig.method_kind,
+                return_type = ret,
             ))
         ai += 1
     return Option[MethodInfo].none
@@ -3189,7 +3236,7 @@ function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr
         unsafe:
             ir_args.push(read(lowered))
         i += 1
-    return alloc_expr(ir.Expr.expr_call(callee = mi.c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
+    return alloc_expr(ir.Expr.expr_call(callee = mi.c_name, arguments = ir_args.as_span(), ty = mi.return_type))
 
 
 ## Wrap a function reference in a proc struct with a synthetic invoke function
@@ -4772,6 +4819,8 @@ function named_type_name(t: types.Type) -> Option[str]:
             return Option[str].some(value = n.name)
         types.Type.ty_imported as im:
             return Option[str].some(value = im.name)
+        types.Type.ty_generic as g:
+            return Option[str].some(value = g.name)
         _:
             return Option[str].none
 
@@ -4896,6 +4945,14 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                             return read(foreign_ptr).return_ty
                         return fn_sig_return_type(lookup_fn_sig(ctx, id.name))
                     _:
+                        return types.Type.ty_error
+            ast.Expr.expr_member_access as ma:
+                return fallback_type(ctx, ma.receiver)
+            ast.Expr.expr_specialization as spec:
+                match try_spec_type_name(ep):
+                    Option.some as tn:
+                        return types.Type.ty_generic(name = tn.value, args = sp_type(types.Type.ty_error))
+                    Option.none:
                         return types.Type.ty_error
             _:
                 return types.Type.ty_error
