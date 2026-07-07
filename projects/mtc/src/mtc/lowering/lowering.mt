@@ -5686,12 +5686,13 @@ function enum_source_module(ctx: ref[LowerCtx], ty: types.Type, default_module: 
 
 function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
     var scrutinee_ty = expr_type(ctx, scrutinee)
-    # The analyzer records some scrutinees (e.g. a `read(ptr)` rvalue) as void;
-    # fall back to the lowered scrutinee's type so the match is not silently
-    # dropped.  This lower_expr is used only for typing; the emitting paths below
-    # lower the scrutinee again for the actual switch/if expression.
-    if types.is_error(scrutinee_ty) or types.type_to_string(scrutinee_ty).equal("void"):
-        scrutinee_ty = ir_expr_type(lower_expr(ctx, scrutinee))
+    # Prefer the lowered scrutinee's type: lowering resolves member/field types
+    # (including Option-typed fields and read(ptr) rvalues) more accurately than
+    # the analyzer's recorded type, which can drop the Option wrapper or record
+    # void.  Fall back to the analyzer type only when the lowered type is unknown.
+    let lowered_ty = ir_expr_type(lower_expr(ctx, scrutinee))
+    if not types.is_error(lowered_ty) and not types.type_to_string(lowered_ty).equal("void"):
+        scrutinee_ty = lowered_ty
 
     let type_name = named_type_name(scrutinee_ty)
 
