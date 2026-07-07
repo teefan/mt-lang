@@ -2012,7 +2012,10 @@ function check_stmt_span(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, 
 ## Enum/variant checks bail out if any arm is not a plain `Type.case` pattern
 ## (e.g. payload destructuring), so guarded/complex matches never false-positive.
 function check_match(ctx: ref[Context], scope: ref[Scope], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
-    let scrutinee_ty = infer_expr(ctx, scope, scrutinee)
+    # Infer the scrutinee type WITHOUT recording it (`infer_expr_inner`, not
+    # `infer_expr`): this is a diagnostic-only pass and must not mutate the
+    # `resolved_expr_types` map that lowering later consumes.
+    let scrutinee_ty = infer_expr_inner(ctx, scope, scrutinee)
     if types.is_error(scrutinee_ty):
         return
 
