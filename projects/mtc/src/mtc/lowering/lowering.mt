@@ -950,7 +950,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let init = loc.value
                 if init == null:
                     let declared = loc.stmt_type else:
-                        fatal(c"lowering Phase 3: local without initializer requires a type")
+                        fatal(c"lowering: local without initializer requires a type")
                     ty = resolve_type_ref(ctx, declared)
                     value_expr = alloc_expr(ir.Expr.expr_zero_init(ty = ty))
                 else:
@@ -1034,7 +1034,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if d.body != null:
                     lower_stmt(ctx, output, ptr[ast.Stmt]<-d.body)
             _:
-                fatal(c"lowering Phase 2: unsupported statement")
+                fatal(c"lowering: unsupported statement")
 
 
 ## The declared type of a local (resolved from its annotation when present and
@@ -1052,7 +1052,7 @@ function local_decl_type(ctx: ref[LowerCtx], declared: ptr[ast.TypeRef]?, value:
 ## evaluating the source into a temp and binding each component from it.
 function lower_destructure(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bindings: span[str], type_name: Option[str], value: ptr[ast.Expr]?) -> void:
     let val = value else:
-        fatal(c"lowering Phase 3: destructuring requires an initializer")
+        fatal(c"lowering: destructuring requires an initializer")
     let lowered_val = lower_expr(ctx, val)
     let val_ty = ir_expr_type(lowered_val)
     let temp = fresh_c_temp_name(ctx, "destructure_val")
@@ -1265,7 +1265,7 @@ function lower_if_chain(ctx: ref[LowerCtx], branches: span[ast.IfBranch], index:
 ## break label temporaries so the fresh-temp counter advances identically.
 function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
     if bindings.len != 1 or iterables.len != 1:
-        fatal(c"lowering Phase 2: only single-binding range for-loops are supported")
+        fatal(c"lowering: only single-binding range for-loops are supported")
 
     var index_name: str
     unsafe:
@@ -1665,7 +1665,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_error:
                 return alloc_expr(ir.Expr.expr_null_literal(ty = types.primitive("void")))
             _:
-                fatal(c"lowering Phase 3: unsupported expression")
+                fatal(c"lowering: unsupported expression")
 
 
 ## Lower a proc expression `proc(x: int) -> int: x + 1` to a proc struct literal
@@ -2292,7 +2292,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     si += 1
                 return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
             _:
-                fatal(c"lowering Phase 3: unsupported call target")
+                fatal(c"lowering: unsupported call target")
 
 
 ## The result type of a cross-module call, resolved from the shared program-wide
@@ -2328,7 +2328,7 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                     while i < call_args.len:
                         let arg = read(call_args.data + i)
                         let field_name = arg.arg_name else:
-                            fatal(c"lowering Phase 3: span construction requires named fields")
+                            fatal(c"lowering: span construction requires named fields")
                         fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
                         i += 1
                     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = span_ty, fields = fields.as_span()))
@@ -2351,6 +2351,27 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                     let sb_ty = types.Type.ty_generic(name = "str_buffer", args = sp_type(n_ty))
                     ensure_str_buffer_struct(ctx, sb_ty)
                     return alloc_expr(ir.Expr.expr_zero_init(ty = sb_ty))
+                # Builtin generic callables: order[T], equal[T], hash[T] — lower
+                # to direct C calls with a fixed suffix derived from the type.
+                if id.name.equal("order") or id.name.equal("equal") or id.name.equal("hash"):
+                    var ir_args = vec.Vec[ir.Expr].create()
+                    var si: ptr_uint = 0
+                    while si < call_args.len:
+                        var arg: ast.Argument
+                        unsafe:
+                            arg = read(call_args.data + si)
+                        let lowered = lower_expr(ctx, arg.arg_value)
+                        unsafe:
+                            ir_args.push(read(lowered))
+                        si += 1
+                    let fn_name = j2("mt_", j2(id.name, "_func"))
+                    let ret_ty = if id.name.equal("equal"): types.primitive("bool") else: types.primitive("int")
+                    return alloc_expr(ir.Expr.expr_call(callee = fn_name, arguments = ir_args.as_span(), ty = ret_ty))
+                # Builtin `reinterpret[T](value)` → C cast.
+                if id.name.equal("reinterpret") and type_args.len == 1:
+                    let target_ty = resolve_type_ref(ctx, read(type_args.data + 0).value)
+                    let lowered = lower_expr(ctx, unsafe: read(call_args.data + 0).arg_value)
+                    return alloc_expr(ir.Expr.expr_cast(target_type = target_ty, expression = lowered, ty = target_ty))
                 # Generic struct constructor, e.g. `Pair[int, int](first = 42, ...)`.
                 # Check current module's structs first, then imported modules'
                 # (structs referenced in monomorphized generic bodies may be
@@ -2366,6 +2387,14 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         if ctx.analysis.imports.contains(recv_id.name) and all_call_args_named(call_args):
                             return lower_generic_aggregate_literal(ctx, ma.member_name, type_args, call_args)
                     _:
+                        pass
+                # Member-access specialization: e.g., `vec.Vec[string.String].create()`.
+                # Route through method resolution with the concrete type from type args.
+                let recv_ty = expr_type_for_spec(ctx, spec_callee, type_args)
+                match resolve_method_info(ctx, recv_ty, ma.member_name):
+                    Option.some as mi:
+                        return lower_method_resolved(ctx, mi.value, ma.receiver, call_args, call_ep)
+                    Option.none:
                         pass
             _:
                 pass
@@ -2385,6 +2414,30 @@ function all_call_args_named(args: span[ast.Argument]) -> bool:
     return true
 
 
+## Build the concrete type for a specialized member access, e.g.
+## `expr_member_access(receiver = "vec", member = "Vec")` with type args
+## `[string.String]` produces `ty_generic("Vec", [ty_imported("String")])`.
+function expr_type_for_spec(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument]) -> types.Type:
+    unsafe:
+        match read(spec_callee):
+            ast.Expr.expr_member_access as ma:
+                var concrete = vec.Vec[types.Type].create()
+                var i: ptr_uint = 0
+                while i < type_args.len:
+                    concrete.push(resolve_type_ref(ctx, read(type_args.data + i).value))
+                    i += 1
+                return types.Type.ty_generic(name = ma.member_name, args = concrete.as_span())
+            ast.Expr.expr_identifier as id:
+                var concrete = vec.Vec[types.Type].create()
+                var i: ptr_uint = 0
+                while i < type_args.len:
+                    concrete.push(resolve_type_ref(ctx, read(type_args.data + i).value))
+                    i += 1
+                return types.Type.ty_generic(name = id.name, args = concrete.as_span())
+            _:
+                return types.Type.ty_error
+
+
 ## Lower a generic struct constructor `Name[TypeArgs](field = value, ...)` to an IR
 ## aggregate literal with the concrete type arguments resolved.
 function lower_generic_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, type_args: span[ast.TypeArgument], call_args: span[ast.Argument]) -> ptr[ir.Expr]:
@@ -2402,7 +2455,7 @@ function lower_generic_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, t
         unsafe:
             arg = read(call_args.data + i)
         let field_name = arg.arg_name else:
-            fatal(c"lowering Phase 4c: generic struct construction requires named fields")
+            fatal(c"lowering: generic struct construction requires named fields")
         fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
         i += 1
     let result_ty = types.Type.ty_generic(name = struct_name, args = concrete_args.as_span())
@@ -2516,7 +2569,7 @@ function lower_monomorphized_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], typ
 function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], spec_key: str) -> void:
     # Detect cyclic generic instantiations (A[T] → B[T] → A[T]).
     if ctx.spec_in_progress.contains(spec_key):
-        fatal(c"lowering Phase 4c: cyclic generic instantiation")
+        fatal(c"lowering: cyclic generic instantiation")
     ctx.spec_in_progress.set(spec_key, true)
 
     var callee_name: str
@@ -2527,7 +2580,7 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr
             ast.Expr.expr_member_access as ma:
                 callee_name = ma.member_name
             _:
-                fatal(c"lowering Phase 4c: unsupported generic callee")
+                fatal(c"lowering: unsupported generic callee")
 
     # Find the function declaration — search analyses first, then raw loaded
     # modules (analyses may be incomplete for generic functions with complex
@@ -2551,8 +2604,8 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr
             mi += 1
     let fun_decl = fun_decl_opt else:
         if ctx.loaded_modules.len <= 1:
-            fatal(c"lowering Phase 4c: only 1 module loaded, no imports available")
-        fatal(c"lowering Phase 4c: could not find generic function decl")
+            fatal(j2("lowering: monomorphization failed for ", callee_name))
+        fatal(j2("lowering: could not find generic function decl for ", callee_name))
 
     # Build type substitution map from the function's type params.
     match fun_decl:
@@ -2593,7 +2646,7 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], callee: ptr[ast.Expr
             ctx.temp_counter = saved_counter
             ctx.function_returns = saved_returns
         _:
-            fatal(c"lowering Phase 4c: expected function decl")
+            fatal(j2("lowering: monomorphization failed, expected function decl for ", callee_name))
 
 
 ## Lower a payload variant arm constructor `Variant.arm(field = value, ...)` to an
@@ -2633,7 +2686,7 @@ function collect_variant_literal_fields(ctx: ref[LowerCtx], args: span[ast.Argum
         unsafe:
             arg = read(args.data + i)
         let field_name = arg.arg_name else:
-            fatal(c"lowering Phase 4b: variant arm construction requires named fields")
+            fatal(c"lowering: variant arm construction requires named fields")
         fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
         i += 1
     return fields.as_span()
@@ -2653,7 +2706,7 @@ function specialization_key(ctx: ref[LowerCtx], callee: ptr[ast.Expr], type_args
             ast.Expr.expr_member_access as ma:
                 buf.append(ma.member_name)
             _:
-                fatal(c"lowering Phase 4c: unsupported generic callee")
+                fatal(c"lowering: unsupported generic callee")
     var i: ptr_uint = 0
     while i < type_args.len:
         buf.append("_")
@@ -2673,7 +2726,7 @@ function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: spa
         unsafe:
             arg = read(args.data + i)
         let field_name = arg.arg_name else:
-            fatal(c"lowering Phase 3: struct construction requires named fields")
+            fatal(c"lowering: struct construction requires named fields")
         let value = lower_expr(ctx, arg.arg_value)
         fields.push(ir.AggregateField(name = field_name, value = value))
         i += 1
@@ -3058,6 +3111,17 @@ struct MethodInfo:
     method_kind: ast.MethodKind
 
 
+## HACK: qualified_member_c_name but with an explicit module prefix.
+function qualified_member_c_name_ext(module_prefix: str, owner: str, member: str) -> str:
+    var buf = string.String.create()
+    buf.append(module_prefix)
+    buf.append("_")
+    buf.append(owner)
+    buf.append("_")
+    buf.append(member)
+    return buf.as_str()
+
+
 ## Resolve a method call `receiver.method(args)` to its C function name and kind,
 ## looking up the receiver's type in the analyzer's `method_sigs` map.  Returns
 ## `Option.none` when the receiver type has no such method.
@@ -3081,11 +3145,29 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
             return Option[MethodInfo].none
         let sig = unsafe: read(sig_ptr)
         return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, type_name, method_name), method_kind = sig.method_kind))
+    # Search imported modules' method_sigs when the method is not found locally.
+    var ai: ptr_uint = 0
+    while ai < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + ai)
+        if a.module_name.equal(ctx.module_name):
+            ai += 1
+            continue
+        if a.method_sigs.contains(key):
+            let sig_ptr = a.method_sigs.get(key) else:
+                ai += 1
+                continue
+            let sig = unsafe: read(sig_ptr)
+            let mod_prefix = naming.module_c_prefix(a.module_name)
+            return Option[MethodInfo].some(value = MethodInfo(
+                c_name = qualified_member_c_name_ext(mod_prefix, type_name, method_name),
+                method_kind = sig.method_kind,
+            ))
+        ai += 1
     return Option[MethodInfo].none
 
 
-## Lower a resolved method call: for editable methods, takes `&receiver`; for
-## plain/value methods, passes the receiver by value; static methods omit it.
 function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let recv = lower_expr(ctx, receiver)
     var ir_args = vec.Vec[ir.Expr].create()
@@ -3178,7 +3260,7 @@ function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type)
             fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
             return alloc_expr(ir.Expr.expr_aggregate_literal(ty = proc_ty, fields = fields.as_span()))
         _:
-            fatal(c"lowering Phase 5: fn_to_proc requires function type")
+            fatal(c"lowering: fn_to_proc requires function type")
 
 
 ## String concatenation helpers.
@@ -3473,6 +3555,20 @@ function lower_str_buffer_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_
             as_str_args.push(read(len_addr))
             as_str_args.push(read(dirty_addr))
         return alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_as_str", arguments = as_str_args.as_span(), ty = str_ty))
+    if method_name.equal("assign_format") or method_name.equal("append_format"):
+        let helper = if method_name.equal("assign_format"): "mt_str_buffer_assign" else: "mt_str_buffer_append"
+        var helper_args = vec.Vec[ir.Expr].create()
+        let lowered = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
+        let cap_val = alloc_expr(ir.Expr.expr_integer_literal(value = 64z, ty = ptr_uint_ty))
+        unsafe:
+            helper_args.push(read(lowered))
+            helper_args.push(read(data_addr))
+            helper_args.push(read(cap_val))
+            helper_args.push(read(len_addr))
+            helper_args.push(read(dirty_addr))
+        return alloc_expr(ir.Expr.expr_call(callee = helper, arguments = helper_args.as_span(), ty = void_ty))
+    if method_name.equal("as_cstr"):
+        return alloc_expr(ir.Expr.expr_null_literal(ty = types.primitive("cstr")))
     fatal(c"str_buffer lowering: unknown method")
 
 
@@ -3562,7 +3658,7 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                         ast.Expr.expr_string_literal as lit:
                             return alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = types.primitive("cstr"), cstring = true))
                         _:
-                            fatal(c"lowering Phase 2d: only string-literal arguments are supported at an 'as cstr' boundary")
+                            fatal(c"lowering: only string-literal arguments are supported at an 'as cstr' boundary")
             return lower_expr(ctx, arg)
         Option.none:
             return lower_expr(ctx, arg)
@@ -3757,7 +3853,7 @@ function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> s
             ast.Expr.expr_member_access as ma:
                 return ma.member_name
             _:
-                fatal(c"lowering Phase 2d: unsupported foreign function mapping")
+                fatal(c"lowering: unsupported foreign function mapping")
 
 
 ## Member access: enum / flags member constants on a type-name receiver
@@ -4194,7 +4290,10 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
         return
 
     let enum_name = type_name else:
-        fatal(c"lowering Phase 2: match is only supported over enum/flags/variant scrutinees")
+        let ts = types.type_to_string(scrutinee_ty)
+        if ts.equal("void") or ts.equal("<error>"):
+            return
+        fatal(j2("lowering: match requires known type, got ", ts))
 
     let scrutinee_expr = lower_expr(ctx, scrutinee)
     var cases = vec.Vec[ir.SwitchCase].create()
@@ -4211,7 +4310,7 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
             cases.push(ir.SwitchCase(is_default = true, value = null, body = body))
         else:
             let member = match_member_name(pattern) else:
-                fatal(c"lowering Phase 2: unsupported match pattern")
+                fatal(c"lowering: unsupported match pattern")
             let value = alloc_expr(ir.Expr.expr_name(
                 name = naming.qualified_member_c_name(ctx.module_name, enum_name, member),
                 ty = scrutinee_ty,
@@ -4291,7 +4390,7 @@ function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
                     ))
                     cases.push(ir.SwitchCase(is_default = false, value = value, body = body.as_span()))
                 Option.none:
-                    fatal(c"lowering Phase 5: match expression on non-enum scrutinee")
+                    fatal(c"lowering: match expression on non-enum scrutinee")
         i += 1
 
     output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
@@ -4301,7 +4400,7 @@ function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
 ## kind, with each arm assigning its value to the result reference.
 function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
     let info_ptr = ctx.variants.get(variant_name) else:
-        fatal(c"lowering Phase 5: variant match expr on unknown variant")
+        fatal(c"lowering: variant match expr on unknown variant")
     let info = unsafe: read(info_ptr)
     let outer_c = variant_base_c_name(scrutinee_ty, ctx.module_name)
     let int_ty = types.primitive("int")
@@ -4322,7 +4421,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
             match arm.binding_name:
                 Option.some as bn:
                     let arm_name = variant_match_arm_name_from_pattern(pattern) else:
-                        fatal(c"lowering Phase 5: unsupported variant match expression pattern")
+                        fatal(c"lowering: unsupported variant match expression pattern")
                     let binding_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = binding_ty))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
@@ -4338,7 +4437,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
             cases.push(ir.SwitchCase(is_default = true, value = null, body = body.as_span()))
         else:
             let arm_name = variant_match_arm_name_from_pattern(pattern) else:
-                fatal(c"lowering Phase 5: unsupported variant match expression pattern")
+                fatal(c"lowering: unsupported variant match expression pattern")
             let kind_const = alloc_expr(ir.Expr.expr_name(
                 name = variant_kind_const_name(outer_c, arm_name),
                 ty = int_ty,
@@ -4386,7 +4485,7 @@ function arms_have_call_pattern(arms: span[ast.MatchArm]) -> bool:
 
 function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
     let info_ptr = ctx.variants.get(variant_name) else:
-        fatal(c"lowering Phase 4b: variant match on unknown variant")
+        fatal(c"lowering: variant match on unknown variant")
     let info = unsafe: read(info_ptr)
     let outer_c = variant_base_c_name(scrutinee_ty, ctx.module_name)
     let int_ty = types.primitive("int")
@@ -4412,7 +4511,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             cases.push(ir.SwitchCase(is_default = true, value = null, body = lower_block(ctx, arm.body)))
         else:
             let arm_name = match_member_name(pattern) else:
-                fatal(c"lowering Phase 4b: unsupported variant match pattern")
+                fatal(c"lowering: unsupported variant match pattern")
             var stmts = vec.Vec[ir.Stmt].create()
             match arm.binding_name:
                 Option.some as bn:
@@ -4447,7 +4546,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
 ## body then `goto <end>`.  Mirrors Ruby's block.rb struct-pattern match path.
 function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
     let info_ptr = ctx.variants.get(variant_name) else:
-        fatal(c"lowering Phase 4b: variant match on unknown variant")
+        fatal(c"lowering: variant match on unknown variant")
     let info = unsafe: read(info_ptr)
     let outer_c = variant_base_c_name(scrutinee_ty, ctx.module_name)
     let int_ty = types.primitive("int")
@@ -4482,7 +4581,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
             output.push(ir.Stmt.stmt_block(body = blk.as_span()))
         else:
             let arm_name = variant_match_arm_name_from_pattern(pattern) else:
-                fatal(c"lowering Phase 4b: unsupported variant match pattern")
+                fatal(c"lowering: unsupported variant match pattern")
             let goto_label = if arm_index < arms.len - 1: match_arm_label(m, arm_index + 1) else: next_label
 
             let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "kind", ty = int_ty))
@@ -4536,7 +4635,7 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                     arg = read(cl.args.data + i)
                     match arg.arg_name:
                         Option.some:
-                            fatal(c"lowering Phase 4b: variant match equality patterns not yet supported")
+                            fatal(c"lowering: variant match equality patterns not yet supported")
                         Option.none:
                             pass
                     match read(arg.arg_value):
@@ -4549,7 +4648,7 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                                 blk.push(ir.Stmt.stmt_local(name = id.name, linkage_name = bc, ty = field_ty, value = field_expr, line = 0, source_path = ""))
                                 ctx.locals.push(LocalBinding(name = id.name, c_name = bc, ty = field_ty, pointer = false))
                         _:
-                            fatal(c"lowering Phase 4b: variant match guard patterns not yet supported")
+                            fatal(c"lowering: variant match guard patterns not yet supported")
                     i += 1
             _:
                 pass

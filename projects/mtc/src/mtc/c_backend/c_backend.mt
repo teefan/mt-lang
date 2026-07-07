@@ -261,6 +261,10 @@ public function generate_c(program: ir.Program) -> string.String:
     if uses_parallel_runtime(program):
         emit_parallel_helpers(ref_of(e))
 
+    # Emit builtin helpers (order/equal/hash) when used.
+    if uses_builtin_helpers(program):
+        emit_builtin_helpers(ref_of(e))
+
     i = 0
     while i < funcs.len:
         unsafe:
@@ -1119,8 +1123,15 @@ function c_type(t: types.Type) -> str:
             return generic_c_type(g.name, g.args)
         types.Type.ty_tuple:
             return tuple_type_name(t)
+        types.Type.ty_type_meta:
+            return "void"
+        types.Type.ty_error:
+            return "void"
+        types.Type.ty_nullable as nl:
+            unsafe:
+                return c_type(read(nl.base))
         _:
-            fatal(j2("c_backend Phase 3: unsupported C type: ", types.type_to_string(t)))
+            fatal(j2("c_backend: unsupported C type: ", types.type_to_string(t)))
 
 
 ## The C type name of a positional tuple (`(int, int)` -> `mt_tuple_int_int`).
@@ -1166,7 +1177,7 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
                 buf.append(naming.sanitize_identifier(types.type_to_string(read(args.data + i))))
             i += 1
         return buf.as_str()
-    fatal(c"c_backend Phase 3: unsupported generic C type")
+    fatal(c"c_backend: unsupported generic C type")
 
 
 function span_type_name(element: types.Type) -> str:
@@ -1439,7 +1450,7 @@ function primitive_c_type(name: str) -> str:
         return "void"
     if name.equal("cstr"):
         return "const char*"
-    fatal(c"c_backend Phase 2: unsupported primitive type")
+    fatal(c"c_backend: unsupported primitive type")
 
 
 ## Render a function-pointer declarator: `ret_type (*noname)(int32_t, int32_t)` or
@@ -1823,8 +1834,12 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
             ir.Stmt.stmt_label as lbl:
                 if e.used_labels.contains(lbl.name):
                     emit_line(e, j3(indent, lbl.name, ":;"))
+            ir.Stmt.stmt_break:
+                emit_line(e, j2(indent, "break;"))
+            ir.Stmt.stmt_continue:
+                emit_line(e, j2(indent, "continue;"))
             _:
-                fatal(c"c_backend Phase 2: unsupported statement")
+                fatal(c"c_backend: unsupported statement")
 
 
 ## Emit a `switch`.  Non-default cases are `case VALUE: { body [break;] }`; a `_`
@@ -1845,7 +1860,7 @@ function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.S
                 emit_line(e, j2(case_indent, "default: {"))
             else:
                 let value = sc.value else:
-                    fatal(c"c_backend Phase 2: non-default switch case missing value")
+                    fatal(c"c_backend: non-default switch case missing value")
                 emit_line(e, j4(case_indent, "case ", render_expression(e, value), ": {"))
             emit_stmts(e, sc.body, level + 2)
             if not body_terminates(sc.body):
@@ -1943,7 +1958,7 @@ function render_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
             ir.Stmt.stmt_expression as ex:
                 return render_expression(e, ex.expression)
             _:
-                fatal(c"c_backend Phase 2: unsupported for-loop clause")
+                fatal(c"c_backend: unsupported for-loop clause")
 
 
 # =============================================================================
@@ -2010,8 +2025,18 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 buf.append(c_type(sz.target_type))
                 buf.append(")")
                 return buf.as_str()
+            ir.Expr.expr_alignof as al:
+                var buf = string.String.create()
+                buf.append("alignof(")
+                buf.append(c_type(al.target_type))
+                buf.append(")")
+                return buf.as_str()
+            ir.Expr.expr_array_literal as arr:
+                return render_array_literal_initializer(e, arr.elements)
+            ir.Expr.expr_conditional as cond:
+                return j5(wrap_expression(e, cond.condition), " ? ", render_expression(e, cond.then_expression), " : ", render_expression(e, cond.else_expression))
             _:
-                fatal(c"c_backend Phase 3: unsupported expression")
+                fatal(c"c_backend: unsupported expression")
 
 
 ## The address of an operand for a `&`-style position.  A checked array index is
@@ -2586,7 +2611,7 @@ function binary_precedence(operator: str) -> int:
         return 9
     if operator == "*" or operator == "/" or operator == "%":
         return 10
-    fatal(c"c_backend Phase 2: unsupported binary operator")
+    fatal(c"c_backend: unsupported binary operator")
 
 
 # =============================================================================
@@ -2948,4 +2973,30 @@ function emit_parallel_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "")
     emit_line(e, "static void mt_detach_join(void* handle) {")
     emit_line(e, "  (void)handle;")
+    emit_line(e, "}")
+
+
+function uses_builtin_helpers(program: ir.Program) -> bool:
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            let f = read(program.functions.data + i)
+            if body_calls(f.body, "mt_order_func") or body_calls(f.body, "mt_equal_func") or body_calls(f.body, "mt_hash_func"):
+                return true
+        i += 1
+    return false
+
+
+function emit_builtin_helpers(e: ref[Emitter]) -> void:
+    emit_line(e, "static int32_t mt_order_func(void const* a, void const* b) {")
+    emit_line(e, "  intptr_t diff = (char const*)a - (char const*)b;")
+    emit_line(e, "  return diff < 0 ? -1 : diff > 0 ? 1 : 0;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static bool mt_equal_func(void const* a, void const* b) {")
+    emit_line(e, "  return a == b;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static uint32_t mt_hash_func(void const* value) {")
+    emit_line(e, "  return (uint32_t)(uintptr_t)value;")
     emit_line(e, "}")
