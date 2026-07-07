@@ -1958,9 +1958,9 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_named as nm:
                 return lower_expr(ctx, nm.value)
             ast.Expr.expr_sizeof as sz:
-                return alloc_expr(ir.Expr.expr_sizeof(target_type = resolve_type_ref(ctx, sz.target_type), ty = types.primitive("ptr_uint")))
+                return alloc_expr(ir.Expr.expr_sizeof(target_type = qualify_type(ctx, resolve_type_ref(ctx, sz.target_type)), ty = types.primitive("ptr_uint")))
             ast.Expr.expr_alignof as al:
-                return alloc_expr(ir.Expr.expr_alignof(target_type = resolve_type_ref(ctx, al.target_type), ty = types.primitive("ptr_uint")))
+                return alloc_expr(ir.Expr.expr_alignof(target_type = qualify_type(ctx, resolve_type_ref(ctx, al.target_type)), ty = types.primitive("ptr_uint")))
             ast.Expr.expr_offsetof as off:
                 return alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("ptr_uint")))
             ast.Expr.expr_error:
