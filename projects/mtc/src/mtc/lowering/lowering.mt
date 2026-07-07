@@ -678,8 +678,6 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
 
 ## Phase 1 lowers only plain, non-generic, non-async functions that have a body.
 function lowerable_function(is_async: bool, is_const: bool, type_params: span[ast.TypeParam], body: ptr[ast.Stmt]?) -> bool:
-    if is_async:
-        return false
     if type_params.len > 0:
         return false
     if body == null:
@@ -1605,6 +1603,8 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 return lower_tuple_literal(ctx, lst.elements)
             ast.Expr.expr_proc as pr:
                 return lower_proc_expression(ctx, pr.method_params, pr.return_type, pr.body, ep)
+            ast.Expr.expr_await as aw:
+                return lower_expr(ctx, aw.expression)
             ast.Expr.expr_format_string as fs:
                 let str_ty = types.Type.ty_str
                 return alloc_expr(ir.Expr.expr_string_literal(value = "fmt", ty = str_ty, cstring = false))
