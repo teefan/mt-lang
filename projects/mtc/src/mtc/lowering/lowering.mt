@@ -5001,6 +5001,71 @@ function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> s
 ## Member access: enum / flags member constants on a type-name receiver
 ## (`State.running` -> `en_State_running`), otherwise a struct field access
 ## (`p.x`).  Method calls and other member forms arrive in later phases.
+## The resolved type of `member` on a receiver that is an instance of a struct
+## defined in ANOTHER module.  The analyzer stores field types with names bare
+## relative to their defining module, so qualifying them in the accessing
+## module's context mis-attributes them (ir.Program.functions -> a Function type
+## prefixed with the caller's module).  Resolve the field's declared type ref in
+## the owner module's context instead.  Returns none for same-module receivers
+## (handled by the recorded type) and non-struct receivers.
+function imported_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[types.Type]:
+    var base = recv_ty
+    if types.is_raw_pointer(base) or types.is_ref_type(base):
+        base = types.pointer_element(base)
+    if types.is_nullable_type(base):
+        base = types.unwrap_nullable(base)
+    var owner_module: str
+    var struct_name: str
+    match base:
+        types.Type.ty_imported as im:
+            if im.args.len > 0:
+                return Option[types.Type].none
+            owner_module = im.module_name
+            struct_name = im.name
+        _:
+            return Option[types.Type].none
+    if owner_module.equal(ctx.module_name):
+        return Option[types.Type].none
+    let owner_a = find_imported_analysis(ctx, owner_module) else:
+        return Option[types.Type].none
+    let field_tref = find_struct_field_tref(owner_a.source_file, struct_name, member) else:
+        return Option[types.Type].none
+    # Resolve the field type ref in the owner module's context so its bare type
+    # names qualify against the owner module rather than the current one.
+    var saved_module = ctx.module_name
+    var saved_analysis = ctx.analysis
+    ctx.module_name = owner_module
+    ctx.analysis = owner_a
+    let resolved = qualify_type(ctx, resolve_field_type_ref(ctx, field_tref))
+    ctx.module_name = saved_module
+    ctx.analysis = saved_analysis
+    return Option[types.Type].some(value = resolved)
+
+
+## The declared type ref of a struct's field, looked up in a module's AST.
+function find_struct_field_tref(sf: ast.SourceFile, struct_name: str, member: str) -> Option[ast.TypeRef]:
+    var di: ptr_uint = 0
+    while di < sf.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(sf.declarations.data + di)
+        match d:
+            ast.Decl.decl_struct as s:
+                if s.name.equal(struct_name):
+                    var fi: ptr_uint = 0
+                    while fi < s.struct_fields.len:
+                        var f: ast.Field
+                        unsafe:
+                            f = read(s.struct_fields.data + fi)
+                        if f.name.equal(member):
+                            return Option[ast.TypeRef].some(value = f.field_type)
+                        fi += 1
+            _:
+                pass
+        di += 1
+    return Option[ast.TypeRef].none
+
+
 function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str, ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(receiver):
@@ -5108,10 +5173,14 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
             Option.some as ft:
                 member_ty = ft.value
             Option.none:
-                if types.is_error(member_ty):
-                    if is_tuple_type(recv_ty):
-                        let index = parse_tuple_member_index(member)
-                        member_ty = tuple_element_type(recv_ty, index)
+                match imported_field_type(ctx, recv_ty, member):
+                    Option.some as ift:
+                        member_ty = ift.value
+                    Option.none:
+                        if types.is_error(member_ty):
+                            if is_tuple_type(recv_ty):
+                                let index = parse_tuple_member_index(member)
+                                member_ty = tuple_element_type(recv_ty, index)
     return alloc_expr(ir.Expr.expr_member(
         receiver = recv,
         member = member,
