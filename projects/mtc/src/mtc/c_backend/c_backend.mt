@@ -169,27 +169,26 @@ public function generate_c(program: ir.Program) -> string.String:
             emit_line(ref_of(e), "")
             si += 1
 
-        i = 0
-        while i < gen_variants.len():
-            let v_ptr = gen_variants.get(i) else:
+        # Emit struct and variant full definitions in a single dependency order,
+        # since structs and variants can embed each other by value.
+        var type_order = topo_sort_types(program.structs, ref_of(gen_variants), program.variants)
+        var toi: ptr_uint = 0
+        while toi < type_order.len():
+            let node_ptr = type_order.get(toi) else:
                 break
             unsafe:
-                emit_variant(ref_of(e), read(v_ptr))
+                let node = read(node_ptr)
+                if node.kind == 0:
+                    emit_struct(ref_of(e), read(program.structs.data + node.index))
+                else if node.kind == 1:
+                    let gv_ptr = gen_variants.get(node.index) else:
+                        toi += 1
+                        continue
+                    emit_variant(ref_of(e), read(gv_ptr))
+                else:
+                    emit_variant(ref_of(e), read(program.variants.data + node.index))
             emit_line(ref_of(e), "")
-            i += 1
-
-        i = 0
-        while i < program.variants.len:
-            unsafe:
-                emit_variant(ref_of(e), read(program.variants.data + i))
-            emit_line(ref_of(e), "")
-            i += 1
-        i = 0
-        while i < sorted.len:
-            unsafe:
-                emit_struct(ref_of(e), read(sorted.data + i))
-            emit_line(ref_of(e), "")
-            i += 1
+            toi += 1
         i = 0
         while i < program.unions.len:
             unsafe:
@@ -1808,6 +1807,135 @@ function struct_field_linkage(ty: types.Type) -> Option[str]:
             return Option[str].some(value = naming.qualified_c_name(im.module_name, im.name))
         _:
             return Option[str].none
+
+
+# =============================================================================
+#  Combined struct + variant topological ordering
+#
+#  A struct may embed a variant by value (e.g. `ir.Field { ty: Type }`) and a
+#  variant arm may embed a struct by value (e.g. `Option[String]`), so their C
+#  full definitions must be emitted in a single dependency order rather than
+#  structs-then-variants or vice versa.  Pointer / ref / span fields need only a
+#  forward declaration and so are not dependencies; array and value-nullable
+#  fields embed their element by value and are.
+# =============================================================================
+
+## One aggregate type to emit: `kind` 0 = struct, 1 = generic variant,
+## 2 = program variant; `index` selects it within its source collection.
+struct TypeNode:
+    key: str
+    kind: ubyte
+    index: ptr_uint
+
+
+## The C name of the aggregate type a field embeds by value, or none for
+## pointer-like fields (which need only a forward declaration).
+function by_value_dep_key(ty: types.Type) -> Option[str]:
+    match ty:
+        types.Type.ty_named as n:
+            return Option[str].some(value = n.name)
+        types.Type.ty_imported as im:
+            if im.args.len == 0:
+                return Option[str].some(value = naming.qualified_c_name(im.module_name, im.name))
+            return Option[str].none
+        types.Type.ty_nullable as nl:
+            return by_value_dep_key(unsafe: read(nl.base))
+        types.Type.ty_generic as g:
+            if g.name.equal("array") and g.args.len >= 1:
+                return by_value_dep_key(unsafe: read(g.args.data + 0))
+            return Option[str].none
+        _:
+            return Option[str].none
+
+
+function collect_field_deps(fields: span[ir.Field], deps: ref[vec.Vec[str]]) -> void:
+    var i: ptr_uint = 0
+    while i < fields.len:
+        unsafe:
+            match by_value_dep_key(read(fields.data + i).ty):
+                Option.some as dep:
+                    deps.push(dep.value)
+                Option.none:
+                    pass
+        i += 1
+
+
+function collect_variant_deps(vd: ir.VariantDecl, deps: ref[vec.Vec[str]]) -> void:
+    var i: ptr_uint = 0
+    while i < vd.arms.len:
+        unsafe:
+            collect_field_deps(read(vd.arms.data + i).fields, deps)
+        i += 1
+
+
+function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl]) -> vec.Vec[str]:
+    var deps = vec.Vec[str].create()
+    if node.kind == 0:
+        unsafe:
+            collect_field_deps(read(structs.data + node.index).fields, ref_of(deps))
+    else if node.kind == 1:
+        let gv_ptr = gen_variants.get(node.index) else:
+            return deps
+        collect_variant_deps(unsafe: read(gv_ptr), ref_of(deps))
+    else:
+        unsafe:
+            collect_variant_deps(read(program_variants.data + node.index), ref_of(deps))
+    return deps
+
+
+function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl]) -> vec.Vec[TypeNode]:
+    var nodes = vec.Vec[TypeNode].create()
+    var by_key = map_mod.Map[str, ptr_uint].create()
+    var i: ptr_uint = 0
+    while i < structs.len:
+        let key = unsafe: read(structs.data + i).linkage_name
+        by_key.set(key, nodes.len())
+        nodes.push(TypeNode(key = key, kind = 0, index = i))
+        i += 1
+    i = 0
+    while i < gen_variants.len():
+        let gv_ptr = gen_variants.get(i) else:
+            break
+        let key = unsafe: read(gv_ptr).linkage_name
+        by_key.set(key, nodes.len())
+        nodes.push(TypeNode(key = key, kind = 1, index = i))
+        i += 1
+    i = 0
+    while i < program_variants.len:
+        let key = unsafe: read(program_variants.data + i).linkage_name
+        by_key.set(key, nodes.len())
+        nodes.push(TypeNode(key = key, kind = 2, index = i))
+        i += 1
+
+    var visited = map_mod.Map[str, bool].create()
+    var result = vec.Vec[TypeNode].create()
+    i = 0
+    while i < nodes.len():
+        topo_visit_type(ref_of(nodes), i, structs, gen_variants, program_variants, ref_of(by_key), ref_of(visited), ref_of(result))
+        i += 1
+    return result
+
+
+function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], by_key: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[TypeNode]]) -> void:
+    var node: TypeNode
+    let node_ptr = nodes.get(index) else:
+        return
+    unsafe:
+        node = read(node_ptr)
+    if visited.contains(node.key):
+        return
+    visited.set(node.key, true)
+    var deps = type_node_deps(node, structs, gen_variants, program_variants)
+    var di: ptr_uint = 0
+    while di < deps.len():
+        let dep_ptr = deps.get(di) else:
+            break
+        unsafe:
+            let dep_idx = by_key.get(read(dep_ptr))
+            if dep_idx != null:
+                topo_visit_type(nodes, read(dep_idx), structs, gen_variants, program_variants, by_key, visited, result)
+        di += 1
+    result.push(node)
 
 function function_signature(func: ir.Function) -> str:
     let prefix = if func.entry_point: "" else: "static "
