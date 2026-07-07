@@ -132,20 +132,50 @@ to un-mask the next layer, so re-measure after each.
 #### 3.1.1 Cross-ctx prelude payload `_phantom` (~47, highest single root)
 
 The scrutinee is a cross-module call returning `Option[T]`/`Result[T,E]` (e.g.
-`fs.read_text(...)` → `Result[String, Error]`). By the time the match lowers in the
-consuming module, its `LowerCtx.pending_generic_variants` does **not** contain that
-concrete instance (it was instantiated while lowering `std.fs`), and the analyzer's
-recorded scrutinee type has already collapsed to an arg-less `ty_named`
-(`Result_std_string_String_std_fs_Error`) — so both branches of
-`concrete_prelude_field_type` miss and the `_phantom` placeholder survives.
-Note: these matches are **not** reached via `lower_match` / `lower_variant_match`
-(verified with probes) — trace the actual lowering path for a cross-module
-`Result`-returning scrutinee first (candidates: a guard/`?`/`else` desugaring or an
-expression-match local), then either (a) make `pending_generic_variants` /
-`arm_payload_fields` a shared program-wide registry rather than per-`LowerCtx`, or
-(b) decode the concrete field type from the payload struct C name, which already
-encodes the args. Minimal repro that reproduces it in isolation:
-`match fs.read_text(k): Result.failure as f: ... Result.success as p: p.value...`.
+`fs.read_text(...)` → `Result[String, Error]`).
+
+**Investigation (session 2, corrected findings — supersedes the earlier "not reached
+via lower_match" note, which was a probe artifact: `stdio` writes to stdout and the
+`emit-c` redirect discarded it; re-probing via `terminal.write_stderr` showed the real
+flow):**
+
+The pipeline IS `lower_match` → `lower_variant_match` → `lower_variant_match_switch` →
+`register_arm_payload_fields` → `arm_payload_field_type`. Confirmed facts:
+
+1. The analyzer resolves the scrutinee correctly: `try_imported_call` (analyzer.mt)
+   returns the imported fn's `sig.return_type` = `Result[String, Error]` **with args**,
+   and `expr_type` in `lower_match` returns it intact (verified via stderr probe).
+2. But `lower_match` line ~5717 overrides `scrutinee_ty` with the **lowered** type
+   (`ir_expr_type(lower_expr(scrutinee))`), which collapses to an arg-less
+   `ty_named("Result_std_string_String_std_fs_Error")`. `register_arm_payload_fields`
+   receives that collapsed type, so `variant_type_args` returns empty.
+3. `arm_payload_fields` is **per-`LowerCtx`** (each module re-created). The concrete
+   `Result[String,Error]` variant decl lives in `std.fs`'s ctx `pending_generic_variants`,
+   not the consuming module's — so `prelude_field_type_from_variants` also misses.
+4. Worse, the map is keyed only by payload struct C name, shared across sites: a site
+   that fails to resolve **overwrites** a good entry a prior site set.
+
+**Fix attempted (session 2), reverted — partial, insufficient:** three combined pieces —
+(a) `fallback_type` member-access-callee case via new `imported_call_return_type`
+(independently correct: resolves cross-module call types that were `ty_error`);
+(b) capture `analyzer_scrutinee_ty` before the line-5717 override and thread it as a new
+`arg_source_ty` param through `lower_variant_match`/`_switch`/`_goto` to the specializer;
+(c) an anti-overwrite guard (`arm_info_has_phantom` + `existing_arm_info_phantom_free`).
+Result: a plain-`match` isolation repro improved **4 → 2 phantom** (the `success`/arg-0
+arm resolved; the `failure`/arg-1 arm still didn't — asymmetry not yet explained), but the
+**full self-compile stayed at 495/47**. The real modules' matches did not benefit even
+though their source (`module_loader.mt:205`) is the identical `match fs.read_text(k)`
+shape — strongly implying the remaining resolution gap is the **arg-1 (`failure`/error)
+fallback** and/or `qualify_type` of the analyzer arg in the consuming module's context.
+
+**Recommended next approach (cleanest):** make the concrete payload field types
+resolvable **without** relying on per-ctx state or the collapsed type — decode them from
+the payload struct C name (which already encodes the fully-qualified args, e.g.
+`Result_std_string_String_std_fs_Error_failure`), OR promote `arm_payload_fields` /
+`pending_generic_variants` to a shared program-wide registry threaded through `LowerCtx`.
+Debug the arg-1/`failure` asymmetry first with the minimal repro
+`match fs.read_text(k): Result.failure as f: var e = f.error ...` and a stderr probe
+(NOT stdout — emit-c writes C to stdout).
 
 #### 3.1.2 Remaining tail
 
