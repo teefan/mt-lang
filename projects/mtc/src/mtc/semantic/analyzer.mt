@@ -2012,7 +2012,43 @@ function check_stmt_span(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, 
 ## Enum/variant checks bail out if any arm is not a plain `Type.case` pattern
 ## (e.g. payload destructuring), so guarded/complex matches never false-positive.
 function check_match(ctx: ref[Context], scope: ref[Scope], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
-    pass
+    let scrutinee_ty = infer_expr(ctx, scope, scrutinee)
+    if types.is_error(scrutinee_ty):
+        return
+
+    # Enum or variant scrutinee: exhaustiveness ("missing cases") plus
+    # duplicate-arm checks.  `match_case_names` holds member/arm names for both
+    # local and imported enums and variants, keyed by type name.
+    match scrutinee_type_name(scrutinee_ty):
+        Option.some as nm:
+            if ctx.match_case_names.contains(nm.value):
+                check_case_match(ctx, nm.value, arms, line, column)
+                return
+        Option.none:
+            pass
+
+    # Integer scrutinee: requires a wildcard `_` arm, plus duplicate-value check.
+    # String scrutinee: requires a wildcard `_` arm.  Anything else is permissive.
+    match scrutinee_ty:
+        types.Type.ty_primitive as p:
+            if is_integer_name(p.name):
+                check_scalar_match(ctx, arms, line, column, integer_wildcard_message(p.name), true)
+        types.Type.ty_str:
+            check_scalar_match(ctx, arms, line, column, str_wildcard_message(), false)
+        _:
+            pass
+
+
+## The name of a nominal (enum/variant/struct) type, for `match_case_names`
+## lookup.  Local types are `ty_named`; imported types are `ty_imported`.
+function scrutinee_type_name(t: types.Type) -> Option[str]:
+    match t:
+        types.Type.ty_named as n:
+            return Option[str].some(value = n.name)
+        types.Type.ty_imported as im:
+            return Option[str].some(value = im.name)
+        _:
+            return Option[str].none
 
 
 function check_case_match(ctx: ref[Context], type_name: str, arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
@@ -2041,6 +2077,18 @@ function check_case_match(ctx: ref[Context], type_name: str, arms: span[ast.Matc
         return
     unsafe:
         let members = read(namesp)
+        # Guard against bare-name type collisions: the self-host has both
+        # ast.Stmt/ir.Stmt and ast.Expr/ir.Expr, which share the match_case_names
+        # key "Stmt"/"Expr".  If any covered arm is not a member of the
+        # looked-up type, the name resolved to a different same-named type, so
+        # stay permissive rather than reporting spurious missing cases.
+        var ci: ptr_uint = 0
+        while ci < covered.len():
+            let cn = covered.get(ci) else:
+                break
+            if not span_contains_str(members, read(cn)):
+                return
+            ci += 1
         var buf = string.String.create()
         var any_missing = false
         var j: ptr_uint = 0
@@ -2054,6 +2102,16 @@ function check_case_match(ctx: ref[Context], type_name: str, arms: span[ast.Matc
             j += 1
         if any_missing:
             report(ctx, line, column, missing_cases_message(type_name, buf.as_str()))
+
+
+## True when `name` is one of the strings in `members`.
+function span_contains_str(members: span[str], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < members.len:
+        if unsafe: read(members.data + i).equal(name):
+            return true
+        i += 1
+    return false
 
 
 function check_scalar_match(ctx: ref[Context], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint, wildcard_message: str, check_duplicate_int: bool) -> void:
@@ -3628,6 +3686,10 @@ function integer_wildcard_message(type_name: str) -> str:
     buf.append(type_name)
     buf.append(" requires a wildcard arm (_:)")
     return buf.as_str()
+
+
+function str_wildcard_message() -> str:
+    return "match on str requires a wildcard arm (_:)"
 
 
 function dup_case_message(type_name: str, member: str) -> str:
