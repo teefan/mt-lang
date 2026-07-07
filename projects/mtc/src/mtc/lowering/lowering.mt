@@ -4033,7 +4033,10 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
         let concrete = substitute_type_params(ctx, arg, ref_of(ctx.type_substitution))
         if type_is_unresolved_param(concrete):
             return Option[GenericReceiver].none
-        resolved.push(concrete)
+        # Qualify in the caller's context so a concrete element type from a
+        # module the container (owner) does not import still renders with its
+        # correct prefix when the method body is lowered in owner context.
+        resolved.push(qualify_type(ctx, concrete))
         i += 1
     return Option[GenericReceiver].some(value = GenericReceiver(owner_name = owner_name, concrete_args = resolved.as_span()))
 
@@ -4095,7 +4098,7 @@ function spec_receiver_info(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> Opti
                     let concrete = substitute_type_params(ctx, raw, ref_of(ctx.type_substitution))
                     if types.is_error(concrete) or type_is_unresolved_param(concrete):
                         return Option[GenericReceiver].none
-                    resolved.push(concrete)
+                    resolved.push(qualify_type(ctx, concrete))
                     i += 1
                 return Option[GenericReceiver].some(value = GenericReceiver(owner_name = owner_name, concrete_args = resolved.as_span()))
             _:
