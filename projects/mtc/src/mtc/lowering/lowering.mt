@@ -2746,11 +2746,35 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         unsafe:
                             arg = read(call_args.data + si)
                         let lowered = lower_expr(ctx, arg.arg_value)
-                        unsafe:
-                            ir_args.push(read(lowered))
+                        # The hooks take `const_ptr[T]`: implicitly borrow a value
+                        # argument (`&value`); pass a pointer/ref argument through.
+                        let arg_ty = ir_expr_type(lowered)
+                        if is_pointer_or_ref_type(arg_ty):
+                            unsafe:
+                                ir_args.push(read(lowered))
+                        else:
+                            let borrowed = alloc_expr(ir.Expr.expr_address_of(
+                                expression = lowered,
+                                ty = types.Type.ty_generic(name = "const_ptr", args = sp_type(arg_ty)),
+                            ))
+                            unsafe:
+                                ir_args.push(read(borrowed))
                         si += 1
+                    var ret_ty = types.primitive("int")
+                    if id.name.equal("equal"):
+                        ret_ty = types.primitive("bool")
+                    else if id.name.equal("hash"):
+                        ret_ty = types.primitive("uint")
+                    # Resolve the canonical hook (`T.hash` / `T.equal` / `T.order`)
+                    # for the type argument to its concrete C function name.
+                    if type_args.len >= 1:
+                        let t_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
+                        match resolve_canonical_hook(ctx, t_ty, id.name):
+                            Option.some as hook_name:
+                                return alloc_expr(ir.Expr.expr_call(callee = hook_name.value, arguments = ir_args.as_span(), ty = ret_ty))
+                            Option.none:
+                                pass
                     let fn_name = j2("mt_", j2(id.name, "_func"))
-                    let ret_ty = if id.name.equal("equal"): types.primitive("bool") else: types.primitive("int")
                     return alloc_expr(ir.Expr.expr_call(callee = fn_name, arguments = ir_args.as_span(), ty = ret_ty))
                 # Builtin `reinterpret[T](value)` → C cast.
                 if id.name.equal("reinterpret") and type_args.len == 1:
@@ -3728,6 +3752,43 @@ function try_spec_type_name(receiver: ptr[ast.Expr]) -> Option[str]:
 ## Resolve a method call `receiver.method(args)` to its C function name and kind,
 ## looking up the receiver's type in the analyzer's `method_sigs` map.  Returns
 ## `Option.none` when the receiver type has no such method.
+## Resolve a canonical hook builtin (`hash` / `equal` / `order`) for a concrete
+## type argument to the C name of the type's static hook function.  Searches the
+## current module then all analyses for the module that declares `T.hook`, so
+## primitive hooks (std.hash / std.str) and user struct hooks both resolve.
+function resolve_canonical_hook(ctx: ref[LowerCtx], t_ty: types.Type, hook: str) -> Option[str]:
+    let type_name = hook_type_name(t_ty) else:
+        return Option[str].none
+    let key = analyzer.method_key(type_name, hook)
+    if ctx.analysis.method_sigs.contains(key):
+        return Option[str].some(value = naming.qualified_member_c_name(ctx.module_name, type_name, hook))
+    var ai: ptr_uint = 0
+    while ai < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + ai)
+        if a.method_sigs.contains(key):
+            return Option[str].some(value = naming.qualified_member_c_name(a.module_name, type_name, hook))
+        ai += 1
+    return Option[str].none
+
+
+## The base type name used to key a canonical hook lookup (`int`, `str`, or a
+## nominal type's name).
+function hook_type_name(t: types.Type) -> Option[str]:
+    match t:
+        types.Type.ty_primitive as p:
+            return Option[str].some(value = p.name)
+        types.Type.ty_str:
+            return Option[str].some(value = "str")
+        types.Type.ty_named as n:
+            return Option[str].some(value = n.name)
+        types.Type.ty_imported as im:
+            return Option[str].some(value = im.name)
+        _:
+            return Option[str].none
+
+
 function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method_name: str) -> Option[MethodInfo]:
     let type_name = named_type_name(receiver_ty) else:
         let gen_var = generic_variant_name(receiver_ty)
