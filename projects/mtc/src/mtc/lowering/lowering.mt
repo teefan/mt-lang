@@ -5973,7 +5973,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                     let arm_name = variant_match_arm_name_from_pattern(pattern) else:
                         fatal(c"lowering: unsupported variant match expression pattern")
                     let binding_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
-                    register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name)
+                    register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = binding_ty))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
                     let bc = c_local_name(bn.value)
@@ -6076,7 +6076,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             match arm.binding_name:
                 Option.some as bn:
                     let binding_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
-                    register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name)
+                    register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = binding_ty))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
                     let bc = c_local_name(bn.value)
@@ -6154,7 +6154,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
 
             var blk = vec.Vec[ir.Stmt].create()
             let payload_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
-            register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name)
+            register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
             match variant_arm_info(info, arm_name):
                 Option.some as ai:
                     if ai.value.field_names.len > 0:
@@ -6301,17 +6301,115 @@ function variant_arm_type_name(outer_c: str, arm_name: str) -> str:
 
 ## Record a match-arm payload binding's field info under its payload struct C
 ## name, so member access on the binding (e.g. `un.operator`) resolves field
-## types via `arm_payload_field_type`.
-function register_arm_payload_fields(ctx: ref[LowerCtx], payload_c_name: str, info: VariantInfo, arm_name: str) -> void:
+## types via `arm_payload_field_type`.  Prelude Option/Result arms carry a
+## `_phantom` placeholder payload type (their VariantInfo is generic); it is
+## specialized here against the scrutinee's concrete type args so `s.value` /
+## `f.error` resolve to the real type instead of an undeclared `_phantom` C type.
+function register_arm_payload_fields(ctx: ref[LowerCtx], payload_c_name: str, info: VariantInfo, arm_name: str, scrutinee_ty: types.Type) -> void:
     var i: ptr_uint = 0
     while i < info.arms.len:
         var arm_info: VariantArmInfo
         unsafe:
             arm_info = read(info.arms.data + i)
         if arm_info.name.equal(arm_name):
-            ctx.arm_payload_fields.set(payload_c_name, arm_info)
+            ctx.arm_payload_fields.set(payload_c_name, specialize_prelude_arm_info(ctx, arm_info, arm_name, payload_c_name, scrutinee_ty))
             return
         i += 1
+
+
+## Replace any `_phantom` placeholder field type in a prelude arm's info with the
+## concrete payload field type.  Prelude Option/Result VariantInfo carries a
+## `_phantom` placeholder because it is registered generically; the concrete arm
+## field types are already computed when the concrete generic variant is emitted
+## (`ensure_generic_variant`), keyed by the outer C name embedded in
+## `payload_c_name` (`<outer_c>_<arm>`).  We look the field type up there first
+## (works even when the scrutinee type has already collapsed to a concrete
+## `ty_named` with no args), then fall back to the scrutinee's own type args, then
+## to the placeholder (no worse than before).
+function specialize_prelude_arm_info(ctx: ref[LowerCtx], arm_info: VariantArmInfo, arm_name: str, payload_c_name: str, scrutinee_ty: types.Type) -> VariantArmInfo:
+    var changed = false
+    var new_types = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < arm_info.field_types.len:
+        var ft: types.Type
+        unsafe:
+            ft = read(arm_info.field_types.data + i)
+        if is_phantom_type(ft):
+            match concrete_prelude_field_type(ctx, payload_c_name, arm_name, scrutinee_ty):
+                Option.some as resolved:
+                    new_types.push(resolved.value)
+                    changed = true
+                Option.none:
+                    new_types.push(ft)
+        else:
+            new_types.push(ft)
+        i += 1
+
+    if not changed:
+        return arm_info
+
+    return VariantArmInfo(name = arm_info.name, field_names = arm_info.field_names, field_types = new_types.as_span())
+
+
+## Resolve a prelude arm's concrete payload field type.  `payload_c_name` is the
+## concrete payload struct C name (`Option_std_string_String_some`); its concrete
+## variant decl in `pending_generic_variants` carries the real field type.  Falls
+## back to the scrutinee's own type args when the decl is not (yet) recorded.
+function concrete_prelude_field_type(ctx: ref[LowerCtx], payload_c_name: str, arm_name: str, scrutinee_ty: types.Type) -> Option[types.Type]:
+    match prelude_field_type_from_variants(ctx, payload_c_name, arm_name):
+        Option.some as decl_ty:
+            return Option[types.Type].some(value = decl_ty.value)
+        Option.none:
+            pass
+
+    let args = variant_type_args(scrutinee_ty)
+    let arg_index = if arm_name.equal("failure"): 1z else: 0z
+    if arg_index < args.len:
+        unsafe:
+            return Option[types.Type].some(value = qualify_type(ctx, read(args.data + arg_index)))
+    return Option[types.Type].none
+
+
+## Look up an arm's single payload field type from the concrete generic variant
+## decl recorded in `pending_generic_variants`.  `payload_c_name` is the arm's
+## concrete payload struct C name (`<outer_c>_<arm>`), which matches an arm's
+## `linkage_name` in the outer decl.
+function prelude_field_type_from_variants(ctx: ref[LowerCtx], payload_c_name: str, arm_name: str) -> Option[types.Type]:
+    var vi: ptr_uint = 0
+    while vi < ctx.pending_generic_variants.len():
+        let vp = ctx.pending_generic_variants.get(vi) else:
+            break
+        unsafe:
+            let vdecl = read(vp)
+            var ai: ptr_uint = 0
+            while ai < vdecl.arms.len:
+                let arm = read(vdecl.arms.data + ai)
+                if arm.name.equal(arm_name) and arm.linkage_name.equal(payload_c_name) and arm.fields.len > 0:
+                    return Option[types.Type].some(value = read(arm.fields.data + 0).ty)
+                ai += 1
+        vi += 1
+    return Option[types.Type].none
+
+
+## The concrete type arguments of a variant scrutinee type (`Option[str]` →
+## `[str]`), for both generic and imported forms; empty for others.
+function variant_type_args(ty: types.Type) -> span[types.Type]:
+    match ty:
+        types.Type.ty_generic as g:
+            return g.args
+        types.Type.ty_imported as im:
+            return im.args
+        _:
+            return span[types.Type]()
+
+
+## True when a type is the prelude arm-payload `_phantom` placeholder `ty_named`.
+function is_phantom_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_named as n:
+            return n.name.equal("_phantom")
+        _:
+            return false
 
 
 ## The type of `member` on a variant arm payload binding, looked up from the

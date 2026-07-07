@@ -1,6 +1,6 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. Generic method/function monomorphization complete; 516 C errors remain.**
+Status: **Phase 8 — self-compile C-error elimination. Generic method/function monomorphization complete; 495 C errors remain.**
 Last updated: 2026-07-07 (P8)
 
 Pipeline:
@@ -90,12 +90,12 @@ tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --ro
 cc -std=c11 -Wno-implicit-function-declaration -c tmp/self.c -o /dev/null
 ```
 
-**Status**: pipeline end-to-end works. Generated C is **43,950 lines** with **516 `cc` errors**
+**Status**: pipeline end-to-end works. Generated C is **44,065 lines** with **495 `cc` errors**
 (down from 1127; the count rose to 2227 mid-session once method/function bodies began
-emitting real code, then fell to 516 — so 516 is measured against a far more complete
-codebase than the earlier 1127).
+emitting real code, then fell to 516, then to 495 — so 495 is measured against a far more
+complete codebase than the earlier 1127).
 
-### Error breakdown (516)
+### Error breakdown (495)
 
 No single dominant root remains — it is a diverse tail. Approximate groupings:
 
@@ -104,19 +104,50 @@ No single dominant root remains — it is a diverse tail. Approximate groupings:
 | Match-**expression** hoisting (return/arg positions) | ~22 | `match_expr` undeclared; some `return int but mt_str expected` |
 | Residual member/field typing | ~40 | `mt_str == mt_str` (str field not typed str → not `mt_str_equal`); `member on non-struct` (`len`/`data`/`value`) |
 | Cross-module type attribution / struct emission | ~25 | `mtc_main_LoadDiagnostic` (should be its defining module); `Diag`/`FnSig` unknown (struct not emitted) |
+| Cross-ctx prelude payload `_phantom` | ~47 | `mtc_<mod>__phantom` — Option/Result payload arm bound in a module where the concrete variant instance was created in *another* module's LowerCtx (see §3.1.1) |
 | Generic `Map` instance arg mismatches | ~21 | `std_map_Map_str_..._contains` argument type mismatch (span/struct keys) |
 | Option/init handling | ~23 | `char* = Option_str`; `invalid initializer` |
 | External/opaque ABI types | ~6 | `std_c_fs_mt_fs_error` unknown |
-| Other | ~380 | scattered type/return mismatches in newly-emitted bodies |
+| Other | ~360 | scattered type/return mismatches in newly-emitted bodies |
+
+**Landed this session (516 → 495, −21):** prelude `Option`/`Result` match-arm payload
+bindings (`s.value` / `f.error`) previously resolved to an undeclared `_phantom` C type
+because the prelude `VariantInfo` stores a `_phantom` placeholder payload type.
+`register_arm_payload_fields` now specializes that placeholder via
+`specialize_prelude_arm_info`: it first looks the concrete field type up in the
+just-emitted concrete variant decl (`pending_generic_variants`, keyed by the payload
+struct C name), then falls back to the scrutinee's own generic args. This fixed the
+**same-LowerCtx** cases (`mtc_semantic_analyzer`, `std_process`). The remaining ~47
+phantom refs are the **cross-ctx** case (§3.1.1).
 
 ---
 
 ## 3. Next steps to finish self-host
 
-### 3.1 Drive self-compile C errors 516 → 0
+### 3.1 Drive self-compile C errors 495 → 0
 
 Incremental grind; suggested order (highest leverage / cleanest first). Each fix tends
 to un-mask the next layer, so re-measure after each.
+
+#### 3.1.1 Cross-ctx prelude payload `_phantom` (~47, highest single root)
+
+The scrutinee is a cross-module call returning `Option[T]`/`Result[T,E]` (e.g.
+`fs.read_text(...)` → `Result[String, Error]`). By the time the match lowers in the
+consuming module, its `LowerCtx.pending_generic_variants` does **not** contain that
+concrete instance (it was instantiated while lowering `std.fs`), and the analyzer's
+recorded scrutinee type has already collapsed to an arg-less `ty_named`
+(`Result_std_string_String_std_fs_Error`) — so both branches of
+`concrete_prelude_field_type` miss and the `_phantom` placeholder survives.
+Note: these matches are **not** reached via `lower_match` / `lower_variant_match`
+(verified with probes) — trace the actual lowering path for a cross-module
+`Result`-returning scrutinee first (candidates: a guard/`?`/`else` desugaring or an
+expression-match local), then either (a) make `pending_generic_variants` /
+`arm_payload_fields` a shared program-wide registry rather than per-`LowerCtx`, or
+(b) decode the concrete field type from the payload struct C name, which already
+encodes the args. Minimal repro that reproduces it in isolation:
+`match fs.read_text(k): Result.failure as f: ... Result.success as p: p.value...`.
+
+#### 3.1.2 Remaining tail
 
 1. **Match-expression hoisting** (`return match …`, `match` in call args). `lower_expression_match`
    is a stub returning an undeclared `match_expr` name. Needs to hoist into a temp + switch.
@@ -195,7 +226,9 @@ Established this session; reuse these seams rather than re-deriving them:
 - [x] Phase 6 — events, async, parallel, compile-time
 - [x] Phase 7 — cross-module type system hardening
 - [x] Phase 7.5 — generic **method** monomorphization + owner-context + naming + codegen fixes
-- [ ] Phase 8 — self-compile C-error elimination (**516 → 0**, in progress)
+- [ ] Phase 8 — self-compile C-error elimination (**516 → 0**, in progress; currently **495**)
+  - [x] Prelude Option/Result match-arm payload `_phantom` — same-LowerCtx cases (516 → 495)
+  - [ ] Cross-ctx prelude payload `_phantom` (~47, §3.1.1)
   - [ ] Match-expression hoisting (needs int/str expr-match first; avoid the OOM loop)
   - [ ] Residual member/field typing
   - [ ] Cross-module attribution & struct emission
