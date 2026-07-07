@@ -982,20 +982,28 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let target = lower_expr(ctx, asg.target)
                 let value = lower_expr(ctx, asg.value)
                 output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
-            ast.Stmt.stmt_if as iff:
-                if iff.branches.len > 0:
-                    output.push(lower_if_chain(ctx, iff.branches, 0, iff.else_body))
             ast.Stmt.stmt_while as w:
                 let cond = lower_expr(ctx, w.condition)
                 let body = lower_block(ctx, w.body)
                 output.push(ir.Stmt.stmt_while(condition = cond, body = body))
             ast.Stmt.stmt_for as f:
                 lower_for_range(ctx, output, f.bindings, f.iterables, f.body)
-            ast.Stmt.stmt_match as m:
-                lower_match(ctx, output, m.scrutinee, m.arms)
             ast.Stmt.stmt_expression as ex:
                 let lowered = lower_expr(ctx, ex.expression)
                 output.push(ir.Stmt.stmt_expression(expression = lowered, line = ex.line, source_path = ""))
+            ast.Stmt.stmt_when as wn:
+                lower_when_stmt(ctx, output, wn.discriminant, wn.branches, wn.else_body)
+            ast.Stmt.stmt_if as iff:
+                if iff.is_inline:
+                    lower_inline_if_statement(ctx, output, iff.branches, iff.else_body)
+                    return
+                if iff.branches.len > 0:
+                    output.push(lower_if_chain(ctx, iff.branches, 0, iff.else_body))
+            ast.Stmt.stmt_match as m:
+                if m.is_inline:
+                    lower_inline_match_statement(ctx, output, m.scrutinee, m.arms)
+                    return
+                lower_match(ctx, output, m.scrutinee, m.arms)
             _:
                 fatal(c"lowering Phase 2: unsupported statement")
 
@@ -4759,5 +4767,396 @@ function fmt_append_helper_name(t: types.Type) -> str:
             return "mt_format_str_append_int"
         _:
             return "mt_format_str_append_int"
+
+
+# =============================================================================
+#  Compile-time evaluation and lowering (when, inline if, inline match)
+# =============================================================================
+
+## A compile-time constant value: integer, boolean, string, or type.
+variant ConstValue:
+    cv_int(value: long)
+    cv_bool(value: bool)
+    cv_str(value: str)
+    cv_type(ty: types.Type)
+
+
+## Lower a `when` statement: evaluate the discriminant at compile time,
+## find the matching branch, and only emit that branch's body.
+function lower_when_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
+    match try_evaluate_const_expr(ctx, discriminant):
+        Option.some as val:
+            var i: ptr_uint = 0
+            while i < branches.len:
+                var br: ast.WhenBranch
+                unsafe:
+                    br = read(branches.data + i)
+                match try_evaluate_const_expr(ctx, br.pattern):
+                    Option.some as pv:
+                        if const_values_equal(val.value, pv.value):
+                            lower_span_stmts(ctx, output, br.body)
+                            return
+                    Option.none:
+                        pass
+                i += 1
+            let eb = else_body
+            if eb != null:
+                lower_block_stmts(ctx, output, eb)
+        Option.none:
+            pass
+
+
+## Lower an `inline if` statement.  Evaluate the condition; if true, emit
+## the then-branch; otherwise emit the else branch (if present).
+function lower_inline_if_statement(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> void:
+    if branches.len == 0:
+        return
+    var br: ast.IfBranch
+    unsafe:
+        br = read(branches.data + 0)
+    match try_evaluate_const_expr(ctx, br.condition):
+        Option.some as val:
+            match val.value:
+                ConstValue.cv_bool as bv:
+                    if bv.value:
+                        lower_block_stmts(ctx, output, br.body)
+                        return
+                    # False: check else
+                    if branches.len > 1:
+                        var eb: ast.IfBranch
+                        unsafe:
+                            eb = read(branches.data + 1)
+                        lower_block_stmts(ctx, output, eb.body)
+                        return
+                    let el = else_body
+                    if el != null:
+                        lower_block_stmts(ctx, output, el)
+                    return
+                _:
+                    return
+        Option.none:
+            # Can't evaluate at compile time: emit nothing (like Ruby).
+            pass
+
+
+## Lower an `inline match` statement.  Evaluate the scrutinee and only emit
+## the matching arm's body.  If no arm matches, emit the wildcard or nothing.
+function lower_inline_match_statement(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
+    match try_evaluate_const_expr(ctx, scrutinee):
+        Option.some as val:
+            var i: ptr_uint = 0
+            while i < arms.len:
+                var arm: ast.MatchArm
+                unsafe:
+                    arm = read(arms.data + i)
+                if arm.pattern == null:
+                    if arm.body != null:
+                        unsafe:
+                            lower_block_stmts(ctx, output, ptr[ast.Stmt]<-arm.body)
+                    return
+                let pattern_ptr = arm.pattern else:
+                    return
+                match try_evaluate_const_expr(ctx, pattern_ptr):
+                    Option.some as pv:
+                        if const_values_equal(val.value, pv.value):
+                            if arm.body != null:
+                                unsafe:
+                                    lower_block_stmts(ctx, output, ptr[ast.Stmt]<-arm.body)
+                            return
+                    Option.none:
+                        pass
+                i += 1
+        Option.none:
+            pass
+
+
+## Compare two compile-time values for equality.  Integer values are compared
+## with each other; booleans with booleans; strings with strings; types with types.
+function const_values_equal(l: ConstValue, r: ConstValue) -> bool:
+    match l:
+        ConstValue.cv_int as li:
+            match r:
+                ConstValue.cv_int as ri:
+                    return li.value == ri.value
+                _:
+                    return false
+        ConstValue.cv_bool as lb:
+            match r:
+                ConstValue.cv_bool as rb:
+                    return lb.value == rb.value
+                _:
+                    return false
+        ConstValue.cv_str as ls:
+            match r:
+                ConstValue.cv_str as rs:
+                    return ls.value.equal(rs.value)
+                _:
+                    return false
+        ConstValue.cv_type as lt:
+            match r:
+                ConstValue.cv_type as rt:
+                    return types_are_equal(lt.ty, rt.ty)
+                _:
+                    return false
+
+
+## Simple type equality check for primitive/named types.
+function types_are_equal(a: types.Type, b: types.Type) -> bool:
+    let ta = types.type_to_string(a)
+    let tb = types.type_to_string(b)
+    return ta.equal(tb)
+
+
+## Lower a span of statements (from a when branch) into the output vec.
+function lower_span_stmts(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], stmts: span[ast.Stmt]) -> void:
+    var i: ptr_uint = 0
+    while i < stmts.len:
+        unsafe:
+            lower_stmt(ctx, output, ptr[ast.Stmt]<-(stmts.data + i))
+        i += 1
+
+
+## Lower a block body (ptr to statement) into the output vec.
+function lower_block_stmts(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], body: ptr[ast.Stmt]) -> void:
+    var blk: ast.Stmt
+    unsafe:
+        blk = read(body)
+    match blk:
+        ast.Stmt.stmt_block as b:
+            var i: ptr_uint = 0
+            while i < b.statements.len:
+                unsafe:
+                    lower_stmt(ctx, output, ptr[ast.Stmt]<-(b.statements.data + i))
+                i += 1
+        _:
+            lower_stmt(ctx, output, body)
+
+
+## Try to evaluate an AST expression at compile time, returning the constant
+## value when the expression can be resolved.
+## Look up an enum member's integer value.  Returns >= 0 on success, -1 if not found.
+function try_lookup_enum_value(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member_name: str) -> long:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                # Check the current module's source file for enum declarations
+                # that match the receiver name and contain the member.
+                var i: ptr_uint = 0
+                let decls = ctx.analysis.source_file.declarations
+                while i < decls.len:
+                    var d: ast.Decl
+                    unsafe:
+                        d = read(decls.data + i)
+                    match d:
+                        ast.Decl.decl_enum as en:
+                            if en.name.equal(id.name):
+                                return find_enum_member_value(en.enum_members, member_name)
+                        ast.Decl.decl_flags as fl:
+                            if fl.name.equal(id.name):
+                                return find_enum_member_value(fl.flags_members, member_name)
+                        _:
+                            pass
+                    i += 1
+                # Also check in imported module sources
+                var mi: ptr_uint = 0
+                while mi < ctx.program_analyses.len:
+                    var a: analyzer.Analysis
+                    unsafe:
+                        a = read(ctx.program_analyses.data + mi)
+                    if a.module_name.equal(id.name):
+                        var di: ptr_uint = 0
+                        let adecls = a.source_file.declarations
+                        while di < adecls.len:
+                            var dd: ast.Decl
+                            unsafe:
+                                dd = read(adecls.data + di)
+                            match dd:
+                                ast.Decl.decl_enum as een:
+                                    return find_enum_member_value(een.enum_members, member_name)
+                                _:
+                                    pass
+                            di += 1
+                    mi += 1
+                return -1
+            _:
+                return -1
+    return -1
+
+
+## Find an enum/flags member by name and return its value.  Returns -1 if not found.
+
+function find_enum_member_value(members: span[ast.EnumMember], name: str) -> long:
+    var i: ptr_uint = 0
+    while i < members.len:
+        var m: ast.EnumMember
+        unsafe:
+            m = read(members.data + i)
+        if m.name.equal(name):
+            let val_expr = m.value else:
+                return long<-(i)
+            unsafe:
+                match read(val_expr):
+                    ast.Expr.expr_integer_literal as lit:
+                        return long<-lit.value
+                    _:
+                        return long<-(i)
+        i += 1
+    return -1
+
+
+function try_evaluate_const_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[ConstValue]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal as lit:
+                return Option[ConstValue].some(value = ConstValue.cv_int(value = long<-lit.value))
+            ast.Expr.expr_float_literal as lit:
+                return Option[ConstValue].some(value = ConstValue.cv_int(value = long<-(lit.value)))
+            ast.Expr.expr_bool_literal as b:
+                return Option[ConstValue].some(value = ConstValue.cv_bool(value = b.value))
+            ast.Expr.expr_string_literal as s:
+                return Option[ConstValue].some(value = ConstValue.cv_str(value = s.value))
+            ast.Expr.expr_identifier as id:
+                let cv_entry = ctx.analysis.const_values.get(id.name)
+                if cv_entry != null:
+                    unsafe:
+                        let cv_val = read(cv_entry)
+                        return try_evaluate_const_expr(ctx, cv_val)
+                if id.name.equal("true"):
+                    return Option[ConstValue].some(value = ConstValue.cv_bool(value = true))
+                if id.name.equal("false"):
+                    return Option[ConstValue].some(value = ConstValue.cv_bool(value = false))
+                return Option[ConstValue].none
+            ast.Expr.expr_member_access as ma:
+                match try_evaluate_const_expr(ctx, ma.receiver):
+                    Option.some as rv:
+                        return Option[ConstValue].some(value = rv.value)
+                    Option.none:
+                        pass
+                # If the receiver is an enum type, look up the member value
+                # from the enum's backing integer.
+                let enum_val = try_lookup_enum_value(ctx, ma.receiver, ma.member_name)
+                if enum_val >= 0:
+                    return Option[ConstValue].some(value = ConstValue.cv_int(value = enum_val))
+                return Option[ConstValue].none
+            ast.Expr.expr_binary_op as bin:
+                return evaluate_const_binary(ctx, bin.operator, bin.left, bin.right)
+            ast.Expr.expr_unary_op as un:
+                return evaluate_const_unary(ctx, un.operator, un.operand)
+            _:
+                return Option[ConstValue].none
+
+
+function evaluate_const_unary(ctx: ref[LowerCtx], op: str, operand: ptr[ast.Expr]) -> Option[ConstValue]:
+    match try_evaluate_const_expr(ctx, operand):
+        Option.some as val:
+            match val.value:
+                ConstValue.cv_int as iv:
+                    if op.equal("-"):
+                        return Option[ConstValue].some(value = ConstValue.cv_int(value = -iv.value))
+                    if op.equal("~"):
+                        return Option[ConstValue].some(value = ConstValue.cv_int(value = ~iv.value))
+                    return Option[ConstValue].none
+                ConstValue.cv_bool as bv:
+                    if op.equal("not"):
+                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = not bv.value))
+                    return Option[ConstValue].none
+                _:
+                    return Option[ConstValue].none
+        Option.none:
+            return Option[ConstValue].none
+
+
+function evaluate_const_binary(ctx: ref[LowerCtx], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[ConstValue]:
+    match try_evaluate_const_expr(ctx, left):
+        Option.some as lv:
+            match try_evaluate_const_expr(ctx, right):
+                Option.some as rv:
+                    return const_binary_op(op, lv.value, rv.value)
+                Option.none:
+                    return Option[ConstValue].none
+        Option.none:
+            return Option[ConstValue].none
+
+
+function const_binary_op(op: str, left_val: ConstValue, right_val: ConstValue) -> Option[ConstValue]:
+    match left_val:
+        ConstValue.cv_int as li:
+            match right_val:
+                ConstValue.cv_int as ri:
+                    return Option[ConstValue].some(value = ConstValue.cv_int(value = apply_int_op(op, li.value, ri.value)))
+                _:
+                    return Option[ConstValue].none
+        ConstValue.cv_bool as lb:
+            match right_val:
+                ConstValue.cv_bool as rb:
+                    if op.equal("and"):
+                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = lb.value and rb.value))
+                    if op.equal("or"):
+                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = lb.value or rb.value))
+                    if op.equal("=="):
+                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = lb.value == rb.value))
+                    if op.equal("!="):
+                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = lb.value != rb.value))
+                    return Option[ConstValue].none
+                _:
+                    return Option[ConstValue].none
+        ConstValue.cv_str as ls:
+            match right_val:
+                ConstValue.cv_str as rs:
+                    if op.equal("=="):
+                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = ls.value.equal(rs.value)))
+                    if op.equal("!="):
+                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = not ls.value.equal(rs.value)))
+                    return Option[ConstValue].none
+                _:
+                    return Option[ConstValue].none
+        ConstValue.cv_type as lt:
+            match right_val:
+                ConstValue.cv_type as rt:
+                    if op.equal("=="):
+                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = types_are_equal(lt.ty, rt.ty)))
+                    if op.equal("!="):
+                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = not types_are_equal(lt.ty, rt.ty)))
+                    return Option[ConstValue].none
+                _:
+                    return Option[ConstValue].none
+
+
+function apply_int_op(op: str, l: long, r: long) -> long:
+    if op.equal("+"):
+        return l + r
+    if op.equal("-"):
+        return l - r
+    if op.equal("*"):
+        return l * r
+    if op.equal("/"):
+        return l / r
+    if op.equal("%"):
+        return l % r
+    if op.equal("=="):
+        return long<-(l == r)
+    if op.equal("!="):
+        return long<-(l != r)
+    if op.equal("<"):
+        return long<-(l < r)
+    if op.equal("<="):
+        return long<-(l <= r)
+    if op.equal(">"):
+        return long<-(l > r)
+    if op.equal(">="):
+        return long<-(l >= r)
+    if op.equal("<<"):
+        return l << long<-(r)
+    if op.equal(">>"):
+        return l >> long<-(r)
+    if op.equal("&"):
+        return l & r
+    if op.equal("|"):
+        return l | r
+    if op.equal("^"):
+        return l ^ r
+    return 0
+
+
 
 
