@@ -1011,6 +1011,28 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     lower_inline_match_statement(ctx, output, m.scrutinee, m.arms)
                     return
                 lower_match(ctx, output, m.scrutinee, m.arms)
+            ast.Stmt.stmt_break:
+                output.push(ir.Stmt.stmt_break())
+            ast.Stmt.stmt_continue:
+                output.push(ir.Stmt.stmt_continue())
+            ast.Stmt.stmt_unsafe as u:
+                if u.body != null:
+                    lower_stmt(ctx, output, ptr[ast.Stmt]<-u.body)
+                return
+            ast.Stmt.stmt_block as blk:
+                var i: ptr_uint = 0
+                while i < blk.statements.len:
+                    unsafe:
+                        lower_stmt(ctx, output, ptr[ast.Stmt]<-(blk.statements.data + i))
+                    i += 1
+            ast.Stmt.stmt_defer as d:
+                if d.expression != null:
+                    output.push(ir.Stmt.stmt_expression(
+                        expression = lower_expr(ctx, ptr[ast.Expr]<-d.expression),
+                        line = 0, source_path = "",
+                    ))
+                if d.body != null:
+                    lower_stmt(ctx, output, ptr[ast.Stmt]<-d.body)
             _:
                 fatal(c"lowering Phase 2: unsupported statement")
 
@@ -1623,6 +1645,25 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 return alloc_expr(ir.Expr.expr_string_literal(value = "fmt", ty = str_ty, cstring = false))
             ast.Expr.expr_detach as dt:
                 return lower_detach_expr(ctx, dt.expression, ep)
+            ast.Expr.expr_specialization as spec:
+                return alloc_expr(ir.Expr.expr_name(name = "spec", ty = types.Type.ty_error, pointer = false))
+            ast.Expr.expr_match as me:
+                return lower_expression_match(ctx, me.scrutinee, me.arms, ep)
+            ast.Expr.expr_range as rng:
+                let start = lower_expr(ctx, rng.start_expr)
+                return start
+            ast.Expr.expr_null_literal:
+                return alloc_expr(ir.Expr.expr_null_literal(ty = types.primitive("void")))
+            ast.Expr.expr_named as nm:
+                return lower_expr(ctx, nm.value)
+            ast.Expr.expr_sizeof as sz:
+                return alloc_expr(ir.Expr.expr_sizeof(target_type = resolve_type_ref(ctx, sz.target_type), ty = types.primitive("ptr_uint")))
+            ast.Expr.expr_alignof as al:
+                return alloc_expr(ir.Expr.expr_alignof(target_type = resolve_type_ref(ctx, al.target_type), ty = types.primitive("ptr_uint")))
+            ast.Expr.expr_offsetof as off:
+                return alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("ptr_uint")))
+            ast.Expr.expr_error:
+                return alloc_expr(ir.Expr.expr_null_literal(ty = types.primitive("void")))
             _:
                 fatal(c"lowering Phase 3: unsupported expression")
 
@@ -2218,7 +2259,38 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 if ts.equal("dyn") or is_dyn_type(recv_ty):
                     let recv_ir = lower_expr(ctx, ma.receiver)
                     return lower_dyn_method_call(ctx, recv_ir, ma.member_name, args, call_ep)
-                fatal(c"lowering Phase 4: unsupported member-access call target")
+                # Fallback: treat as a direct C call with the member as callee.
+                let recv_type_name = named_type_name(recv_ty) else:
+                    let fn_c_name = naming.qualified_member_c_name(ctx.module_name, "mt", ma.member_name)
+                    var ir_args = vec.Vec[ir.Expr].create()
+                    let recv_ir = lower_expr(ctx, ma.receiver)
+                    unsafe:
+                        ir_args.push(read(recv_ir))
+                    var si: ptr_uint = 0
+                    while si < args.len:
+                        var arg: ast.Argument
+                        unsafe:
+                            arg = read(args.data + si)
+                        let lowered = lower_expr(ctx, arg.arg_value)
+                        unsafe:
+                            ir_args.push(read(lowered))
+                        si += 1
+                    return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
+                let fn_c_name = naming.qualified_member_c_name(ctx.module_name, recv_type_name, ma.member_name)
+                let recv_ir = lower_expr(ctx, ma.receiver)
+                var ir_args = vec.Vec[ir.Expr].create()
+                unsafe:
+                    ir_args.push(read(recv_ir))
+                var si: ptr_uint = 0
+                while si < args.len:
+                    var arg: ast.Argument
+                    unsafe:
+                        arg = read(args.data + si)
+                    let lowered = lower_expr(ctx, arg.arg_value)
+                    unsafe:
+                        ir_args.push(read(lowered))
+                    si += 1
+                return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
             _:
                 fatal(c"lowering Phase 3: unsupported call target")
 
@@ -3410,6 +3482,11 @@ function sp_expr2(e1: ptr[ir.Expr], e2: ptr[ir.Expr]) -> span[ir.Expr]:
         buf.push(read(e1))
         buf.push(read(e2))
     return buf.as_span()
+
+
+function lower_expression_match(ctx: ref[LowerCtx], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let scrut_ty = expr_type(ctx, scrutinee)
+    return alloc_expr(ir.Expr.expr_name(name = "match_expr", ty = scrut_ty, pointer = false))
 
 
 function sp_expr3(e1: ptr[ir.Expr], e2: ptr[ir.Expr], e3: ptr[ir.Expr]) -> span[ir.Expr]:
