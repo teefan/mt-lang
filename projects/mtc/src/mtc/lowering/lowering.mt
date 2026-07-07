@@ -5091,19 +5091,27 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                 pass
     let recv = lower_expr(ctx, receiver)
     var member_ty = expr_type(ctx, ep)
-    # Prefer the receiver's concrete (monomorphized) struct field type: the
-    # analyzer records member types generically (e.g. Node[K,V] -> Node with the
-    # args dropped), so inside a monomorphized method the recorded type loses its
-    # arguments.  The concrete struct declaration carries the resolved field type.
-    match concrete_field_type(ctx, ir_expr_type(recv), member):
-        Option.some as ft:
-            member_ty = ft.value
-        Option.none:
-            if types.is_error(member_ty):
-                var recv_ty = ir_expr_type(recv)
-                if is_tuple_type(recv_ty):
-                    let index = parse_tuple_member_index(member)
-                    member_ty = tuple_element_type(recv_ty, index)
+    let recv_ty = ir_expr_type(recv)
+    # span synthetic fields: `.data` is ptr[element], `.len` is ptr_uint.  The
+    # analyzer records these as ty_error (permissive), so type them here.
+    if is_span_type(recv_ty) and member.equal("data"):
+        member_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.pointer_element(recv_ty)))
+    else if is_span_type(recv_ty) and member.equal("len"):
+        member_ty = types.primitive("ptr_uint")
+    else:
+        # Prefer the receiver's concrete (monomorphized) struct field type: the
+        # analyzer records member types generically (e.g. Node[K,V] -> Node with
+        # the args dropped), so inside a monomorphized method the recorded type
+        # loses its arguments.  The concrete struct declaration carries the
+        # resolved field type.
+        match concrete_field_type(ctx, recv_ty, member):
+            Option.some as ft:
+                member_ty = ft.value
+            Option.none:
+                if types.is_error(member_ty):
+                    if is_tuple_type(recv_ty):
+                        let index = parse_tuple_member_index(member)
+                        member_ty = tuple_element_type(recv_ty, index)
     return alloc_expr(ir.Expr.expr_member(
         receiver = recv,
         member = member,
