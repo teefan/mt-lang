@@ -5670,7 +5670,14 @@ function enum_source_module(ctx: ref[LowerCtx], ty: types.Type, default_module: 
             return default_module
 
 function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
-    let scrutinee_ty = expr_type(ctx, scrutinee)
+    var scrutinee_ty = expr_type(ctx, scrutinee)
+    # The analyzer records some scrutinees (e.g. a `read(ptr)` rvalue) as void;
+    # fall back to the lowered scrutinee's type so the match is not silently
+    # dropped.  This lower_expr is used only for typing; the emitting paths below
+    # lower the scrutinee again for the actual switch/if expression.
+    if types.is_error(scrutinee_ty) or types.type_to_string(scrutinee_ty).equal("void"):
+        scrutinee_ty = ir_expr_type(lower_expr(ctx, scrutinee))
+
     let type_name = named_type_name(scrutinee_ty)
 
     if type_name.is_some() and ctx.variants.contains(type_name.unwrap()):
@@ -5680,6 +5687,16 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
     let gen_var = generic_variant_name(scrutinee_ty)
     if gen_var.is_some() and variant_match_allowed(ctx, gen_var.unwrap()):
         lower_variant_match(ctx, output, scrutinee, gen_var.unwrap(), scrutinee_ty, arms)
+        return
+
+    # Integer scrutinee: switch over integer / char literal case values.
+    if is_integer_scrutinee(scrutinee_ty):
+        lower_scalar_match(ctx, output, scrutinee, arms)
+        return
+
+    # String scrutinee: an if / else-if chain comparing with `equal`.
+    if is_str_scrutinee(scrutinee_ty):
+        lower_string_match(ctx, output, scrutinee, arms)
         return
 
     let enum_name = type_name else:
@@ -5714,6 +5731,105 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
         i += 1
 
     output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
+
+
+## True when a match scrutinee type is an integer (byte/short/int/long and the
+## unsigned/pointer widths) matched with integer or char literal patterns.
+function is_integer_scrutinee(ty: types.Type) -> bool:
+    match ty:
+        types.Type.ty_primitive as p:
+            return types.is_integer_name(p.name)
+        _:
+            return false
+
+
+function is_str_scrutinee(ty: types.Type) -> bool:
+    match ty:
+        types.Type.ty_str:
+            return true
+        _:
+            return false
+
+
+## Lower an integer match to a `switch`, using each arm's integer / char literal
+## pattern as the case value.  A `_` arm becomes `default`.  Integer matches
+## always require a wildcard, so the switch is never marked exhaustive.
+function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
+    let scrutinee_expr = lower_expr(ctx, scrutinee)
+    var cases = vec.Vec[ir.SwitchCase].create()
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.MatchArm
+        unsafe:
+            arm = read(arms.data + i)
+        let body = lower_block(ctx, arm.body)
+        let pattern = arm.pattern
+        if pattern == null:
+            cases.push(ir.SwitchCase(is_default = true, value = null, body = body))
+        else:
+            cases.push(ir.SwitchCase(is_default = false, value = lower_expr(ctx, ptr[ast.Expr]<-pattern), body = body))
+        i += 1
+    output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = false))
+
+
+## Lower a string match to an if / else-if chain comparing the scrutinee with
+## each arm's string-literal pattern via `equal` (rendered as `mt_str_equal`).
+## The scrutinee is evaluated once into a temp.  A `_` arm becomes the final
+## else block.
+function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
+    let scrutinee_expr = lower_expr(ctx, scrutinee)
+    let temp = fresh_c_temp_name(ctx, "match_str")
+    let str_ty = types.Type.ty_str
+    output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = str_ty, value = scrutinee_expr, line = 0, source_path = ""))
+
+    # Collect literal arms and the optional default (wildcard) body.
+    var default_body = span[ir.Stmt]()
+    var has_default = false
+    var lit_bodies = vec.Vec[span[ir.Stmt]].create()
+    var lit_values = vec.Vec[ptr[ir.Expr]].create()
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.MatchArm
+        unsafe:
+            arm = read(arms.data + i)
+        let body = lower_block(ctx, arm.body)
+        let pattern = arm.pattern
+        if pattern == null:
+            default_body = body
+            has_default = true
+        else:
+            lit_values.push(lower_expr(ctx, ptr[ast.Expr]<-pattern))
+            lit_bodies.push(body)
+        i += 1
+
+    # Build the chain from the last arm backwards so each else wraps the rest.
+    var else_body = default_body
+    if not has_default:
+        else_body = span[ir.Stmt]()
+    var idx = lit_values.len()
+    while idx > 0:
+        idx -= 1
+        let value_ptr = lit_values.get(idx) else:
+            fatal(c"lowering: string match value")
+        let body_ptr = lit_bodies.get(idx) else:
+            fatal(c"lowering: string match body")
+        let name_ref = alloc_expr(ir.Expr.expr_name(name = temp, ty = str_ty, pointer = false))
+        let condition = alloc_expr(ir.Expr.expr_binary(
+            operator = "==",
+            left = name_ref,
+            right = unsafe: read(value_ptr),
+            ty = types.primitive("bool"),
+        ))
+        let then_body = unsafe: read(body_ptr)
+        var if_stmts = vec.Vec[ir.Stmt].create()
+        if_stmts.push(ir.Stmt.stmt_if(condition = condition, then_body = then_body, else_body = else_body))
+        else_body = if_stmts.as_span()
+
+    var j: ptr_uint = 0
+    while j < else_body.len:
+        unsafe:
+            output.push(read(else_body.data + j))
+        j += 1
 
 
 ## Lower a match expression used as a local variable initializer (`let x = match
