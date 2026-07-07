@@ -121,6 +121,10 @@ struct LowerCtx:
     # method resolution on variables whose type has been collapsed to
     # `ty_named` by the C backend qualification pass.
     generic_struct_instances: map_mod.Map[str, GenericReceiver]
+    # Map from a variant arm payload struct's C name (the `ty_named` given to a
+    # match-arm binding, e.g. `mtc_parser_ast_Expr_expr_unary_op`) to that arm's
+    # field info, so member access on the binding resolves field types.
+    arm_payload_fields: map_mod.Map[str, VariantArmInfo]
     # All module analyses in dependency order, for cross-module lookups.
     program_analyses: span[analyzer.Analysis]
     # Raw loaded modules with parsed source files, for cross-module generic
@@ -532,7 +536,8 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
             pending_specializations = vec.Vec[PendingSpecialization].create(),
             specialization_cache = map_mod.Map[str, ir.Function].create(),
             generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
-            generic_struct_instances = map_mod.Map[str, GenericReceiver].create(),
+        generic_struct_instances = map_mod.Map[str, GenericReceiver].create(),
+        arm_payload_fields = map_mod.Map[str, VariantArmInfo].create(),
             program_analyses = program.analyses.as_span(),
             loaded_modules = program.modules.as_span(),
             spec_in_progress = map_mod.Map[str, bool].create(),
@@ -5176,14 +5181,18 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
             Option.some as ft:
                 member_ty = ft.value
             Option.none:
-                match imported_field_type(ctx, recv_ty, member):
-                    Option.some as ift:
-                        member_ty = ift.value
+                match arm_payload_field_type(ctx, recv_ty, member):
+                    Option.some as aft:
+                        member_ty = aft.value
                     Option.none:
-                        if types.is_error(member_ty):
-                            if is_tuple_type(recv_ty):
-                                let index = parse_tuple_member_index(member)
-                                member_ty = tuple_element_type(recv_ty, index)
+                        match imported_field_type(ctx, recv_ty, member):
+                            Option.some as ift:
+                                member_ty = ift.value
+                            Option.none:
+                                if types.is_error(member_ty):
+                                    if is_tuple_type(recv_ty):
+                                        let index = parse_tuple_member_index(member)
+                                        member_ty = tuple_element_type(recv_ty, index)
     return alloc_expr(ir.Expr.expr_member(
         receiver = recv,
         member = member,
@@ -5407,7 +5416,7 @@ function install_imported_variants(ctx: ref[LowerCtx]) -> void:
                     match d:
                         ast.Decl.decl_variant as vr:
                             if vr.type_params.len == 0 and not ctx.variants.contains(vr.name):
-                                ctx.variants.set(vr.name, build_imported_variant_info(vr.variant_arms))
+                                ctx.variants.set(vr.name, build_imported_variant_info(ctx, target_module, imported.value, vr.variant_arms))
                         _:
                             pass
                     di += 1
@@ -5417,7 +5426,13 @@ function install_imported_variants(ctx: ref[LowerCtx]) -> void:
 
 ## Like `build_variant_info` but uses the imported module's name for
 ## `module_name` so variant arm constructors produce correctly-qualified names.
-function build_imported_variant_info(arms: span[ast.VariantArm]) -> VariantInfo:
+## Arm field types are resolved in the OWNER module's context so they qualify
+## against the defining module (needed for member access on a match-arm binding).
+function build_imported_variant_info(ctx: ref[LowerCtx], owner_module: str, owner_analysis: analyzer.Analysis, arms: span[ast.VariantArm]) -> VariantInfo:
+    var saved_module = ctx.module_name
+    var saved_analysis = ctx.analysis
+    ctx.module_name = owner_module
+    ctx.analysis = owner_analysis
     var arm_infos = vec.Vec[VariantArmInfo].create()
     var i: ptr_uint = 0
     while i < arms.len:
@@ -5432,12 +5447,12 @@ function build_imported_variant_info(arms: span[ast.VariantArm]) -> VariantInfo:
             unsafe:
                 f = read(arm.arm_fields.data + fi)
             names.push(f.name)
-            # Use ty_named as placeholder; the actual type is looked up in the
-            # imported analysis during lowering.
-            tys.push(types.Type.ty_named(name = "void"))
+            tys.push(qualify_type(ctx, resolve_field_type_ref(ctx, f.field_type)))
             fi += 1
         arm_infos.push(VariantArmInfo(name = arm.name, field_names = names.as_span(), field_types = tys.as_span()))
         i += 1
+    ctx.module_name = saved_module
+    ctx.analysis = saved_analysis
     return VariantInfo(module_name = "", arms = arm_infos.as_span())
 
 
@@ -5933,6 +5948,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                     let arm_name = variant_match_arm_name_from_pattern(pattern) else:
                         fatal(c"lowering: unsupported variant match expression pattern")
                     let binding_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
+                    register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name)
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = binding_ty))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
                     let bc = c_local_name(bn.value)
@@ -6035,6 +6051,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             match arm.binding_name:
                 Option.some as bn:
                     let binding_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
+                    register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name)
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = binding_ty))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
                     let bc = c_local_name(bn.value)
@@ -6112,6 +6129,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
 
             var blk = vec.Vec[ir.Stmt].create()
             let payload_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
+            register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name)
             match variant_arm_info(info, arm_name):
                 Option.some as ai:
                     if ai.value.field_names.len > 0:
@@ -6254,6 +6272,42 @@ function variant_arm_type_name(outer_c: str, arm_name: str) -> str:
     buf.append("_")
     buf.append(arm_name)
     return buf.as_str()
+
+
+## Record a match-arm payload binding's field info under its payload struct C
+## name, so member access on the binding (e.g. `un.operator`) resolves field
+## types via `arm_payload_field_type`.
+function register_arm_payload_fields(ctx: ref[LowerCtx], payload_c_name: str, info: VariantInfo, arm_name: str) -> void:
+    var i: ptr_uint = 0
+    while i < info.arms.len:
+        var arm_info: VariantArmInfo
+        unsafe:
+            arm_info = read(info.arms.data + i)
+        if arm_info.name.equal(arm_name):
+            ctx.arm_payload_fields.set(payload_c_name, arm_info)
+            return
+        i += 1
+
+
+## The type of `member` on a variant arm payload binding, looked up from the
+## registered arm field info.  Returns none for non-arm-payload receivers.
+function arm_payload_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[types.Type]:
+    var name: str
+    match recv_ty:
+        types.Type.ty_named as n:
+            name = n.name
+        _:
+            return Option[types.Type].none
+    let arm_ptr = ctx.arm_payload_fields.get(name) else:
+        return Option[types.Type].none
+    let arm_info = unsafe: read(arm_ptr)
+    var i: ptr_uint = 0
+    while i < arm_info.field_names.len:
+        unsafe:
+            if read(arm_info.field_names.data + i).equal(member):
+                return Option[types.Type].some(value = read(arm_info.field_types.data + i))
+        i += 1
+    return Option[types.Type].none
 
 
 ## The discriminant constant name for an arm: `<outer_c>_kind_<arm>`.
