@@ -236,6 +236,15 @@ public function generate_c(program: ir.Program) -> string.String:
             ci += 1
         emit_line(ref_of(e), "")
 
+    if program.globals.len > 0:
+        var gi: ptr_uint = 0
+        while gi < program.globals.len:
+            unsafe:
+                let g = read(program.globals.data + gi)
+                emit_line(ref_of(e), render_global(ref_of(e), g))
+            gi += 1
+        emit_line(ref_of(e), "")
+
     # Emit str_buffer runtime helpers if any str_buffer struct is present.
     if has_str_buffer_structs(program):
         emit_str_buffer_helpers(ref_of(e))
@@ -243,6 +252,10 @@ public function generate_c(program: ir.Program) -> string.String:
     # Emit format string runtime helpers when used.
     if uses_format_string(program):
         emit_format_string_helpers(ref_of(e))
+
+    # Emit event runtime helpers when any event method calls are present.
+    if uses_event_runtime(program):
+        emit_event_helpers(ref_of(e))
 
     i = 0
     while i < funcs.len:
@@ -485,6 +498,12 @@ function indent_c(level: ptr_uint) -> str:
 function long_to_str(value: long) -> str:
     var buf = string.String.create()
     fmt.append_long(ref_of(buf), value)
+    return buf.as_str()
+
+
+function double_to_str(value: double) -> str:
+    var buf = string.String.create()
+    fmt.append_double(ref_of(buf), value)
     return buf.as_str()
 
 
@@ -1934,6 +1953,8 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return n.name
             ir.Expr.expr_integer_literal as lit:
                 return long_to_str(lit.value)
+            ir.Expr.expr_float_literal as lit:
+                return double_to_str(lit.value)
             ir.Expr.expr_boolean_literal as b:
                 return if b.value: "true" else: "false"
             ir.Expr.expr_string_literal as s:
@@ -2655,6 +2676,17 @@ function render_initializer_exp(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return render_expression(e, ep)
 
 
+## Emit a module-level global variable (event, var, etc.).
+function render_global(e: ref[Emitter], g: ir.Global) -> str:
+    var buf = string.String.create()
+    buf.append("static ")
+    buf.append(c_type(g.ty))
+    buf.append(" ")
+    buf.append(g.linkage_name)
+    buf.append(";")
+    return buf.as_str()
+
+
 # =============================================================================
 #  str_buffer runtime helpers
 # =============================================================================
@@ -2788,4 +2820,89 @@ function emit_format_string_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "static mt_str mt_format_str_finish(mt_fmt_builder b) {")
     emit_line(e, "  mt_str r = { b.data, b.len };")
     emit_line(e, "  return r;")
+    emit_line(e, "}")
+
+
+# =============================================================================
+#  Event runtime helpers
+# =============================================================================
+
+function uses_event_runtime(program: ir.Program) -> bool:
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            let f = read(program.functions.data + i)
+            if body_calls(f.body, "mt_event_subscribe") or body_calls(f.body, "mt_event_subscribe_once") or body_calls(f.body, "mt_event_unsubscribe") or body_calls(f.body, "mt_event_emit"):
+                return true
+        i += 1
+    return false
+
+
+function emit_event_helpers(e: ref[Emitter]) -> void:
+    emit_line(e, "typedef enum { mt_event_error_full = 0 } mt_event_error;")
+    emit_line(e, "")
+    emit_line(e, "static struct mt_subscription mt_event_subscribe(void* slots, uintptr_t capacity, void* listener) {")
+    emit_line(e, "  struct mt_subscription out;")
+    emit_line(e, "  for (uintptr_t i = 0; i < capacity; i++) {")
+    emit_line(e, "    uintptr_t off = i * (2*sizeof(bool) + sizeof(uintptr_t) + sizeof(void*));")
+    emit_line(e, "    bool* active = (bool*)((char*)slots + off);")
+    emit_line(e, "    if (!*active) {")
+    emit_line(e, "      *active = true;")
+    emit_line(e, "      ((bool*)((char*)slots + off))[1] = false;")
+    emit_line(e, "      *(uintptr_t*)((char*)slots + off + 2*sizeof(bool)) += 1;")
+    emit_line(e, "      *(void**)((char*)slots + off + 2*sizeof(bool) + sizeof(uintptr_t)) = listener;")
+    emit_line(e, "      out.slot = i;")
+    emit_line(e, "      out.generation = *(uintptr_t*)((char*)slots + off + 2*sizeof(bool));")
+    emit_line(e, "      return out;")
+    emit_line(e, "    }")
+    emit_line(e, "  }")
+    emit_line(e, "  out.slot = ~(uintptr_t)0;")
+    emit_line(e, "  out.generation = 0;")
+    emit_line(e, "  return out;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static struct mt_subscription mt_event_subscribe_once(void* slots, uintptr_t capacity, void* listener) {")
+    emit_line(e, "  struct mt_subscription out;")
+    emit_line(e, "  for (uintptr_t i = 0; i < capacity; i++) {")
+    emit_line(e, "    uintptr_t off = i * (2*sizeof(bool) + sizeof(uintptr_t) + sizeof(void*));")
+    emit_line(e, "    bool* active = (bool*)((char*)slots + off);")
+    emit_line(e, "    if (!*active) {")
+    emit_line(e, "      *active = true;")
+    emit_line(e, "      ((bool*)((char*)slots + off))[1] = true;")
+    emit_line(e, "      *(uintptr_t*)((char*)slots + off + 2*sizeof(bool)) += 1;")
+    emit_line(e, "      *(void**)((char*)slots + off + 2*sizeof(bool) + sizeof(uintptr_t)) = listener;")
+    emit_line(e, "      out.slot = i;")
+    emit_line(e, "      out.generation = *(uintptr_t*)((char*)slots + off + 2*sizeof(bool));")
+    emit_line(e, "      return out;")
+    emit_line(e, "    }")
+    emit_line(e, "  }")
+    emit_line(e, "  out.slot = ~(uintptr_t)0;")
+    emit_line(e, "  out.generation = 0;")
+    emit_line(e, "  return out;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static bool mt_event_unsubscribe(void* slots, uintptr_t capacity, struct mt_subscription sub) {")
+    emit_line(e, "  if (sub.slot >= capacity) return false;")
+    emit_line(e, "  uintptr_t off = sub.slot * (2*sizeof(bool) + sizeof(uintptr_t) + sizeof(void*));")
+    emit_line(e, "  if (!*((bool*)((char*)slots + off))) return false;")
+    emit_line(e, "  if (*(uintptr_t*)((char*)slots + off + 2*sizeof(bool)) != sub.generation) return false;")
+    emit_line(e, "  *((bool*)((char*)slots + off)) = false;")
+    emit_line(e, "  ((bool*)((char*)slots + off))[1] = false;")
+    emit_line(e, "  return true;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void mt_event_emit(void* slots, uintptr_t capacity) {")
+    emit_line(e, "  for (uintptr_t i = 0; i < capacity; i++) {")
+    emit_line(e, "    uintptr_t off = i * (2*sizeof(bool) + sizeof(uintptr_t) + sizeof(void*));")
+    emit_line(e, "    if (*((bool*)((char*)slots + off))) {")
+    emit_line(e, "      void* listener = *(void**)((char*)slots + off + 2*sizeof(bool) + sizeof(uintptr_t));")
+    emit_line(e, "      if (listener) {")
+    emit_line(e, "        ((void (*)())listener)();")
+    emit_line(e, "        if (((bool*)((char*)slots + off))[1]) {")
+    emit_line(e, "          *((bool*)((char*)slots + off)) = false;")
+    emit_line(e, "          ((bool*)((char*)slots + off))[1] = false;")
+    emit_line(e, "        }")
+    emit_line(e, "      }")
+    emit_line(e, "    }")
+    emit_line(e, "  }")
     emit_line(e, "}")

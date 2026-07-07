@@ -49,6 +49,12 @@ public struct FieldEntry:
     ty: types.Type
 
 
+public struct EventInfo:
+    name: str
+    capacity: int
+    payload_type: ptr[ast.TypeRef]?
+
+
 ## The public export surface of a module, consumed by importers for cross-module
 ## name resolution.  Built from an Analysis by the loader's binder
 ## (mtc.loader.binder); the type lives here to keep the analyzer free of a
@@ -104,6 +110,7 @@ struct Context:
     declared_attributes: map_mod.Map[str, span[str]]
     diagnostics: vec.Vec[SemanticDiagnostic]
     uses_parallel_for: bool
+    event_types: map_mod.Map[str, EventInfo]
 
 
 public struct Analysis:
@@ -131,6 +138,7 @@ public struct Analysis:
     directives: span[ast.Decl]
     types: map_mod.Map[str, types.Type]
     attribute_applications: map_mod.Map[str, span[ast.AttributeApplication]]
+    events: map_mod.Map[str, EventInfo]
 
 
 public function check_source_file(file: ast.SourceFile) -> Analysis:
@@ -171,6 +179,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         declared_attributes = map_mod.Map[str, span[str]].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
         uses_parallel_for = false,
+        event_types = map_mod.Map[str, EventInfo].create(),
     )
     collect_import_aliases(ref_of(ctx), file)
     declare_named_types(ref_of(ctx), file)
@@ -183,6 +192,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
     collect_extending_methods(ref_of(ctx), file)
     collect_enum_variant_members(ref_of(ctx), file)
     collect_interfaces(ref_of(ctx), file)
+    register_event_methods(ref_of(ctx))
     declare_values_and_functions(ref_of(ctx), file)
     declare_values_and_functions_extra(ref_of(ctx), when_extra)
     check_functions(ref_of(ctx), file)
@@ -215,6 +225,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         directives = file.directives,
         types = ctx.types,
         attribute_applications = build_attr_app_spans(ref_of(ctx)),
+        events = ctx.event_types,
     )
 
 
@@ -285,6 +296,10 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
             ast.Decl.decl_type_alias as ta:
                 declare_type(ctx, ta.name, ta.line, ta.column)
                 ctx.type_aliases.set(ta.name, ta.target)
+            ast.Decl.decl_event as ev:
+                declare_type(ctx, ev.name, ev.line, ev.column)
+                ctx.types.set(ev.name, types.Type.ty_named(name = ev.name))
+                ctx.event_types.set(ev.name, EventInfo(name = ev.name, capacity = ev.capacity, payload_type = ev.payload_type))
             _:
                 pass
         i += 1
@@ -499,6 +514,23 @@ function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: 
         let bool_ty = types.primitive("bool")
         ctx.method_sigs.set(method_key(name, "is_success"), fn_sig_no_params(name, "is_success", bool_ty))
         ctx.method_sigs.set(method_key(name, "is_failure"), fn_sig_no_params(name, "is_failure", bool_ty))
+
+
+## Register built-in event methods (emit, subscribe, subscribe_once,
+## unsubscribe) for each event type declared in the module.  Runs after
+## declare_named_types so event types are populated.
+function register_event_methods(ctx: ref[Context]) -> void:
+    let bool_ty = types.primitive("bool")
+    var entries = ctx.event_types.entries()
+    while true:
+        if not entries.next():
+            break
+        unsafe:
+            let key = read(entries.current().key)
+            ctx.method_keys.set(method_key(key, "emit"), true)
+            ctx.method_keys.set(method_key(key, "subscribe"), true)
+            ctx.method_keys.set(method_key(key, "subscribe_once"), true)
+            ctx.method_keys.set(method_key(key, "unsubscribe"), true)
 
 
 function fn_sig_no_params(type_name: str, method_name: str, return_type: types.Type) -> FnSig:
@@ -815,6 +847,9 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                 declare_value(ctx, ef.name, ef.line, 1)
             ast.Decl.decl_foreign_function as ff:
                 declare_value(ctx, ff.name, ff.line, 1)
+            ast.Decl.decl_event as ev:
+                if declare_value(ctx, ev.name, ev.line, ev.column):
+                    ctx.value_types.set(ev.name, types.Type.ty_named(name = ev.name))
             _:
                 pass
         i += 1

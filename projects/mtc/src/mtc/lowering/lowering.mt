@@ -145,6 +145,32 @@ struct LowerCtx:
     dyn_generated_vtables: map_mod.Map[str, bool]
     # str_buffer[N] struct type cache: N → struct_linkage_name
     str_buffer_structs: map_mod.Map[str, str]
+    # Event runtime: per-event-type synthetic info (capacity, payload, linkage names).
+    event_runtimes: map_mod.Map[str, EventRuntimeInfo]
+    # Pending synthetic declarations emitted during event lowering, appended after
+    # the main module iteration.
+    pending_event_structs: vec.Vec[ir.StructDecl]
+    pending_event_functions: vec.Vec[ir.Function]
+    # Emitted-once guards for shared runtime types.
+    subscription_emitted: bool
+    event_error_emitted: bool
+
+
+## Per-event runtime linkage information.  Each declared `event Name[N]`
+## produces one of these; it drives the synthetic slot struct, event struct,
+## and runtime functions (subscribe / subscribe_once / unsubscribe / emit).
+struct EventRuntimeInfo:
+    name: str
+    linkage_name: str
+    capacity: ptr_uint
+    has_payload: bool
+    payload_type: types.Type
+    slot_c_name: str
+    event_c_name: str
+    subscribe_c_name: str
+    subscribe_once_c_name: str
+    unsubscribe_c_name: str
+    emit_c_name: str
 
 
 # =============================================================================
@@ -501,6 +527,11 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         pending_dyn_constants = vec.Vec[ir.Constant].create(),
         dyn_generated_vtables = map_mod.Map[str, bool].create(),
         str_buffer_structs = map_mod.Map[str, str].create(),
+        event_runtimes = map_mod.Map[str, EventRuntimeInfo].create(),
+        pending_event_structs = vec.Vec[ir.StructDecl].create(),
+        pending_event_functions = vec.Vec[ir.Function].create(),
+        subscription_emitted = false,
+        event_error_emitted = false,
     )
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -511,6 +542,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
     var structs = vec.Vec[ir.StructDecl].create()
     var unions = vec.Vec[ir.UnionDecl].create()
     var variants = vec.Vec[ir.VariantDecl].create()
+    var globals = vec.Vec[ir.Global].create()
 
     var i: ptr_uint = 0
     while i < analysis.source_file.declarations.len:
@@ -548,6 +580,18 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                     variants.push(lower_variant_decl(ref_of(ctx), vr.name, vr.variant_arms))
             ast.Decl.decl_extending_block as ex:
                 lower_extending_block(ctx, ref_of(functions), ex.type_name, ex.methods)
+            ast.Decl.decl_var as v:
+                var g_ty = types.primitive("void")
+                if v.var_type != null:
+                    var vt: ptr[ast.TypeRef] = unsafe: ptr[ast.TypeRef]<-v.var_type
+                    g_ty = resolve_type_ref(ctx, vt)
+                let zero_val = alloc_expr(ir.Expr.expr_zero_init(ty = g_ty))
+                globals.push(ir.Global(name = v.name, linkage_name = v.name, ty = g_ty, value = zero_val))
+            ast.Decl.decl_event as ev:
+                ensure_event_runtime(ctx, ev.name)
+                let ev_ty = types.Type.ty_named(name = naming.qualified_c_name(ctx.module_name, ev.name))
+                let ev_zero = alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
+                globals.push(ir.Global(name = ev.name, linkage_name = ev.name, ty = ev_ty, value = ev_zero))
             _:
                 pass
         i += 1
@@ -603,11 +647,24 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         dyn_constants.push(unsafe: read(dc_ptr))
         dci += 1
 
+    var ev_struct_index: ptr_uint = 0
+    while ev_struct_index < ctx.pending_event_structs.len():
+        let es_ptr = ctx.pending_event_structs.get(ev_struct_index) else:
+            break
+        structs.push(unsafe: read(es_ptr))
+        ev_struct_index += 1
+    var ev_func_index: ptr_uint = 0
+    while ev_func_index < ctx.pending_event_functions.len():
+        let ef_ptr = ctx.pending_event_functions.get(ev_func_index) else:
+            break
+        functions.push(unsafe: read(ef_ptr))
+        ev_func_index += 1
+
     return ir.Program(
         module_name = analysis.module_name,
         includes = span[ir.Include](),
-        constants = dyn_constants.as_span(),
-        globals = span[ir.Global](),
+        constants = span[ir.Constant](),
+        globals = globals.as_span(),
         opaques = span[ir.OpaqueDecl](),
         structs = structs.as_span(),
         unions = unions.as_span(),
@@ -1339,6 +1396,8 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
                 return alloc_expr(ir.Expr.expr_integer_literal(value = long<-lit.value, ty = expr_type(ctx, ep)))
+            ast.Expr.expr_float_literal as lit:
+                return alloc_expr(ir.Expr.expr_float_literal(value = lit.value, ty = expr_type(ctx, ep)))
             ast.Expr.expr_bool_literal as b:
                 return alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = types.primitive("bool")))
             ast.Expr.expr_string_literal as lit:
@@ -1954,6 +2013,11 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # Method call: receiver.method(args).  Resolve the method from the
                 # receiver's type and lower to a direct C function call.
                 let recv_ty = expr_type(ctx, ma.receiver)
+                # Event builtin methods: must be checked before resolve_method_info
+                # because they ARE registered in method_sigs for sema validation.
+                if is_event_type(ctx, recv_ty):
+                    let recv_ir = lower_expr(ctx, ma.receiver)
+                    return lower_event_method(ctx, recv_ir, recv_ty, ma.member_name, args, call_ep)
                 match resolve_method_info(ctx, recv_ty, ma.member_name):
                     Option.some as mi:
                         return lower_method_resolved(ctx, mi.value, ma.receiver, args, call_ep)
@@ -2922,13 +2986,188 @@ function is_void_type(t: types.Type) -> bool:
             return false
 
 
-## True when a type is a dyn[I] type.
+## True when a type is a str_buffer[N] type.
 function is_str_buffer_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
             return g.name.equal("str_buffer")
         _:
             return false
+
+
+# =============================================================================
+#  Event runtime — delegates to C runtime helpers for slot management.
+# =============================================================================
+
+## True when `t` is the type of a declared event.
+function is_event_type(ctx: ref[LowerCtx], t: types.Type) -> bool:
+    match t:
+        types.Type.ty_named as n:
+            return ctx.analysis.events.contains(n.name)
+        _:
+            return false
+
+
+## Extract the event name from an event type (ty_named).
+function event_name_from_type(t: types.Type) -> str:
+    match t:
+        types.Type.ty_named as n:
+            return n.name
+        _:
+            fatal(c"event type is not ty_named")
+
+
+## Ensure event runtime structs are declared (slot type, event type, subscript type).
+## Called lazily on first event method call.
+function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRuntimeInfo:
+    let existing_ptr = ctx.event_runtimes.get(event_name)
+    if existing_ptr != null:
+        return unsafe: read(existing_ptr)
+    let ev_ptr = ctx.analysis.events.get(event_name) else:
+        fatal(c"ensure_event_runtime: event not found")
+    var ev = unsafe: read(ev_ptr)
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    let bool_ty = types.primitive("bool")
+    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let linkage = naming.qualified_c_name(ctx.module_name, event_name)
+    let slot_cn = j2(linkage, "__slot")
+    let event_cn = linkage
+    # Slot struct: { active, once, generation, listener }
+    ctx.pending_event_structs.push(ir.StructDecl(
+        name = slot_cn, linkage_name = slot_cn,
+        fields = sp_field4(
+            ir.Field(name = "active", ty = bool_ty),
+            ir.Field(name = "once", ty = bool_ty),
+            ir.Field(name = "generation", ty = ptr_uint_ty),
+            ir.Field(name = "listener", ty = void_ptr_ty),
+        ),
+        packed = false, alignment = 0, source_module = Option[str].none,
+    ))
+    # Event struct: { slots: array[Slot, capacity] }
+    let capacity_val: long = long<-(ev.capacity)
+    let slot_ty = types.Type.ty_named(name = slot_cn)
+    let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(capacity_val)))
+    ctx.pending_event_structs.push(ir.StructDecl(
+        name = event_cn, linkage_name = event_cn,
+        fields = sp_field1(ir.Field(name = "slots", ty = slot_arr_ty)),
+        packed = false, alignment = 0, source_module = Option[str].none,
+    ))
+    # Subscript struct: { slot, generation }
+    if not ctx.subscription_emitted:
+        ctx.pending_event_structs.push(ir.StructDecl(
+            name = "mt_subscription", linkage_name = "mt_subscription",
+            fields = sp_field2(
+                ir.Field(name = "slot", ty = ptr_uint_ty),
+                ir.Field(name = "generation", ty = ptr_uint_ty),
+            ),
+            packed = false, alignment = 0, source_module = Option[str].none,
+        ))
+        ctx.subscription_emitted = true
+    var has_payload = false
+    var payload_ty = types.primitive("void")
+    if ev.payload_type != null:
+        has_payload = true
+        let pt = ev.payload_type else:
+            fatal(c"ensure_event_runtime: payload type is null")
+        payload_ty = resolve_type_ref(ctx, pt)
+    var info = EventRuntimeInfo(
+        name = event_name, linkage_name = linkage, capacity = ptr_uint<-(ev.capacity),
+        has_payload = has_payload, payload_type = payload_ty,
+        slot_c_name = slot_cn, event_c_name = event_cn,
+        subscribe_c_name = "mt_event_subscribe",
+        subscribe_once_c_name = "mt_event_subscribe_once",
+        unsubscribe_c_name = "mt_event_unsubscribe",
+        emit_c_name = "mt_event_emit",
+    )
+    ctx.event_runtimes.set(event_name, info)
+    return info
+
+
+## Lower an event method call: emit, subscribe, subscribe_once, or unsubscribe.
+## Routes to C runtime helpers (mt_event_*) and wraps subscribe results in
+## Option[mt_subscription] for let-else integration.
+function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let ev_name = event_name_from_type(recv_ty)
+    var info = ensure_event_runtime(ctx, ev_name)
+    let void_ty = types.primitive("void")
+    let bool_ty = types.primitive("bool")
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    # Address of the event struct
+    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(name = info.event_c_name)))
+    let recv_addr = alloc_expr(ir.Expr.expr_address_of(expression = recv, ty = event_ptr_ty))
+    if method_name.equal("emit"):
+        var call_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            call_args.push(read(recv_addr))
+            call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))))
+        return alloc_expr(ir.Expr.expr_call(callee = info.emit_c_name, arguments = call_args.as_span(), ty = void_ty))
+    if method_name.equal("subscribe") or method_name.equal("subscribe_once"):
+        let callee = if method_name.equal("subscribe"): info.subscribe_c_name else: info.subscribe_once_c_name
+        var call_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            call_args.push(read(recv_addr))
+            call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))))
+        let listener_val = lower_listener_arg(ctx, unsafe: read(args.data + 0).arg_value)
+        unsafe:
+            call_args.push(read(listener_val))
+        let sub_ty = types.Type.ty_named(name = "mt_subscription")
+        return alloc_expr(ir.Expr.expr_call(callee = callee, arguments = call_args.as_span(), ty = sub_ty))
+    if method_name.equal("unsubscribe"):
+        var call_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            call_args.push(read(recv_addr))
+            call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))))
+        let sub_val = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
+        unsafe:
+            call_args.push(read(sub_val))
+        return alloc_expr(ir.Expr.expr_call(callee = info.unsubscribe_c_name, arguments = call_args.as_span(), ty = bool_ty))
+    fatal(c"lowering: unknown event method")
+
+
+## Build a field list span helper with 1 field.
+function sp_field1(f1: ir.Field) -> span[ir.Field]:
+    var buf = vec.Vec[ir.Field].create()
+    buf.push(f1)
+    return buf.as_span()
+
+
+## Build a field list span helper with 2 fields.
+function sp_field2(f1: ir.Field, f2: ir.Field) -> span[ir.Field]:
+    var buf = vec.Vec[ir.Field].create()
+    buf.push(f1)
+    buf.push(f2)
+    return buf.as_span()
+
+
+## Build a field list span helper with 4 fields.
+function sp_field4(f1: ir.Field, f2: ir.Field, f3: ir.Field, f4: ir.Field) -> span[ir.Field]:
+    var buf = vec.Vec[ir.Field].create()
+    buf.push(f1)
+    buf.push(f2)
+    buf.push(f3)
+    buf.push(f4)
+    return buf.as_span()
+
+
+## Lower a listener argument for event subscribe calls.  When the argument is a
+## plain function name, use the raw C function name (avoid fn→proc coercion
+## which creates a temporary proc struct); otherwise fall back to lower_expr.
+function lower_listener_arg(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    unsafe:
+        match read(arg):
+            ast.Expr.expr_identifier as id:
+                if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
+                    let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
+                    let void_ty = types.primitive("void")
+                    let void_fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false)
+                    return alloc_expr(ir.Expr.expr_cast(
+                        target_type = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))),
+                        expression = alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = void_fn_ty, pointer = false)),
+                        ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))),
+                    ))
+            _:
+                pass
+    return lower_expr(ctx, arg)
 
 
 ## Lower a str_buffer[N] method call to a C helper call or inline operation.
