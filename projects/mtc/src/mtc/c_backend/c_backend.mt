@@ -717,16 +717,30 @@ function collect_gv_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, b
             match read(body.data + i):
                 ir.Stmt.stmt_local as loc:
                     collect_gv_from_type(loc.ty, seen, result)
+                    collect_gv_from_expr(loc.value, seen, result)
+                ir.Stmt.stmt_assignment as asg:
+                    collect_gv_from_expr(asg.target, seen, result)
+                    collect_gv_from_expr(asg.value, seen, result)
+                ir.Stmt.stmt_return as ret:
+                    let rv = ret.value
+                    if rv != null:
+                        collect_gv_from_expr(ptr[ir.Expr]<-rv, seen, result)
+                ir.Stmt.stmt_expression as ex:
+                    collect_gv_from_expr(ex.expression, seen, result)
                 ir.Stmt.stmt_block as blk:
                     collect_gv_from_stmts(blk.body, seen, result)
                 ir.Stmt.stmt_if as iff:
+                    collect_gv_from_expr(iff.condition, seen, result)
                     collect_gv_from_stmts(iff.then_body, seen, result)
                     collect_gv_from_stmts(iff.else_body, seen, result)
                 ir.Stmt.stmt_while as w:
+                    collect_gv_from_expr(w.condition, seen, result)
                     collect_gv_from_stmts(w.body, seen, result)
                 ir.Stmt.stmt_for as fr:
+                    collect_gv_from_expr(fr.condition, seen, result)
                     collect_gv_from_stmts(fr.body, seen, result)
                 ir.Stmt.stmt_switch as sw:
+                    collect_gv_from_expr(sw.expression, seen, result)
                     var ci: ptr_uint = 0
                     while ci < sw.cases.len:
                         collect_gv_from_stmts(read(sw.cases.data + ci).body, seen, result)
@@ -736,11 +750,74 @@ function collect_gv_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, b
         i += 1
 
 
+## Collect generic-variant instances referenced by an expression: the
+## expression's own result type plus every sub-expression.  Without this,
+## Option/Result instances that appear only in values (returns, call arguments,
+## variant/aggregate literal fields) are never declared.
+function collect_gv_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.VariantDecl]]) -> void:
+    collect_gv_from_type(expr_result_type(ep), seen, result)
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_call as c:
+                var i: ptr_uint = 0
+                while i < c.arguments.len:
+                    collect_gv_from_expr(c.arguments.data + i, seen, result)
+                    i += 1
+            ir.Expr.expr_call_indirect as c:
+                collect_gv_from_expr(c.callee, seen, result)
+                var i: ptr_uint = 0
+                while i < c.arguments.len:
+                    collect_gv_from_expr(c.arguments.data + i, seen, result)
+                    i += 1
+            ir.Expr.expr_binary as b:
+                collect_gv_from_expr(b.left, seen, result)
+                collect_gv_from_expr(b.right, seen, result)
+            ir.Expr.expr_unary as u:
+                collect_gv_from_expr(u.operand, seen, result)
+            ir.Expr.expr_conditional as cd:
+                collect_gv_from_expr(cd.condition, seen, result)
+                collect_gv_from_expr(cd.then_expression, seen, result)
+                collect_gv_from_expr(cd.else_expression, seen, result)
+            ir.Expr.expr_member as m:
+                collect_gv_from_expr(m.receiver, seen, result)
+            ir.Expr.expr_index as ix:
+                collect_gv_from_expr(ix.receiver, seen, result)
+                collect_gv_from_expr(ix.index, seen, result)
+            ir.Expr.expr_cast as cx:
+                collect_gv_from_type(cx.target_type, seen, result)
+                collect_gv_from_expr(cx.expression, seen, result)
+            ir.Expr.expr_address_of as ad:
+                collect_gv_from_expr(ad.expression, seen, result)
+            ir.Expr.expr_aggregate_literal as agg:
+                var i: ptr_uint = 0
+                while i < agg.fields.len:
+                    collect_gv_from_expr(read(agg.fields.data + i).value, seen, result)
+                    i += 1
+            ir.Expr.expr_variant_literal as vl:
+                var i: ptr_uint = 0
+                while i < vl.fields.len:
+                    collect_gv_from_expr(read(vl.fields.data + i).value, seen, result)
+                    i += 1
+            ir.Expr.expr_array_literal as arr:
+                var i: ptr_uint = 0
+                while i < arr.elements.len:
+                    collect_gv_from_expr(arr.elements.data + i, seen, result)
+                    i += 1
+            _:
+                pass
+
+
 function collect_gv_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.VariantDecl]]) -> void:
     match ty:
         types.Type.ty_generic as g:
-            if g.name.equal("span") or g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("ref") or g.name.equal("array"):
-                return
+            # Recurse into type arguments first so nested generic variants
+            # (Option[Result[...]], span[Option[X]], Option[RemovedEntry[K,V]])
+            # are collected regardless of the outer constructor.
+            var gi: ptr_uint = 0
+            while gi < g.args.len:
+                unsafe:
+                    collect_gv_from_type(read(g.args.data + gi), seen, result)
+                gi += 1
             # Only emit variant decls for prelude types; user-generic structs
             # are handled by the lowering's `ensure_generic_struct_decl`.
             if not g.name.equal("Option") and not g.name.equal("Result"):
@@ -771,6 +848,8 @@ function collect_gv_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]],
                 arms = arms.as_span(),
                 source_module = Option[str].none,
             ))
+        types.Type.ty_nullable as nl:
+            collect_gv_from_type(unsafe: read(nl.base), seen, result)
         _:
             pass
 
