@@ -453,6 +453,11 @@ function reach_from_expr(ep: ptr[ir.Expr], func_names: ref[map_mod.Map[str, bool
                 while i < agg.fields.len:
                     reach_from_expr(read(agg.fields.data + i).value, func_names, reachable, worklist)
                     i += 1
+            ir.Expr.expr_variant_literal as vl:
+                var i: ptr_uint = 0
+                while i < vl.fields.len:
+                    reach_from_expr(read(vl.fields.data + i).value, func_names, reachable, worklist)
+                    i += 1
             _:
                 pass
 
