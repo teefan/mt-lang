@@ -116,6 +116,11 @@ struct LowerCtx:
     # concrete struct decl (with resolved field types) is recorded here so it can
     # be appended to the module's structs span.
     generic_struct_decls: map_mod.Map[str, ir.StructDecl]
+    # Map from a concrete struct's qualified C name (`std_vec_Vec_int`) to the
+    # generic struct instance info (owner module, name, type args), enabling
+    # method resolution on variables whose type has been collapsed to
+    # `ty_named` by the C backend qualification pass.
+    generic_struct_instances: map_mod.Map[str, GenericReceiver]
     # All module analyses in dependency order, for cross-module lookups.
     program_analyses: span[analyzer.Analysis]
     # Raw loaded modules with parsed source files, for cross-module generic
@@ -243,6 +248,7 @@ public function lower(program: loader.Program) -> ir.Program:
     var i: ptr_uint = 0
     var seen_structs = map_mod.Map[str, bool].create()
     var seen_variants = map_mod.Map[str, bool].create()
+    var seen_functions = map_mod.Map[str, bool].create()
     while i < count:
         let a_ptr = program.analyses.get(i) else:
             i += 1
@@ -261,7 +267,7 @@ public function lower(program: loader.Program) -> ir.Program:
         dedup_append_variants(ref_of(variants), fragment.variants, ref_of(seen_variants))
         static_asserts.append_span(fragment.static_asserts)
         constants.append_span(fragment.constants)
-        functions.append_span(fragment.functions)
+        dedup_append_functions(ref_of(functions), fragment.functions, ref_of(seen_functions))
         i += 1
 
     return ir.Program(
@@ -308,6 +314,19 @@ function dedup_append_variants(sink: ref[vec.Vec[ir.VariantDecl]], src: span[ir.
         if not seen.contains(vd.linkage_name):
             seen.set(vd.linkage_name, true)
             sink.push(vd)
+        i += 1
+
+
+## Append functions, deduplicating by linkage_name.  Monomorphized generic
+## methods carry owner-module-qualified names (e.g. `std_vec_Vec_int_push`), so
+## the same specialization reached from multiple caller modules is emitted once.
+function dedup_append_functions(sink: ref[vec.Vec[ir.Function]], src: span[ir.Function], seen: ref[map_mod.Map[str, bool]]) -> void:
+    var i: ptr_uint = 0
+    while i < src.len:
+        let func_decl = unsafe: read(src.data + i)
+        if not seen.contains(func_decl.linkage_name):
+            seen.set(func_decl.linkage_name, true)
+            sink.push(func_decl)
         i += 1
 
 
@@ -513,6 +532,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
             pending_specializations = vec.Vec[PendingSpecialization].create(),
             specialization_cache = map_mod.Map[str, ir.Function].create(),
             generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
+            generic_struct_instances = map_mod.Map[str, GenericReceiver].create(),
             program_analyses = program.analyses.as_span(),
             loaded_modules = program.modules.as_span(),
             spec_in_progress = map_mod.Map[str, bool].create(),
@@ -563,6 +583,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         pending_specializations = vec.Vec[PendingSpecialization].create(),
         specialization_cache = map_mod.Map[str, ir.Function].create(),
         generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
+        generic_struct_instances = map_mod.Map[str, GenericReceiver].create(),
         program_analyses = program_analyses,
         loaded_modules = loaded_modules,
         spec_in_progress = map_mod.Map[str, bool].create(),
@@ -1221,6 +1242,7 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             if resolved_args.len > 0:
                 let concrete_name = naming.qualified_c_name(im.module_name, generic_struct_c_name(im.name, resolved_args))
                 ensure_generic_struct_decl_named(ctx, im.name, span[ast.TypeArgument](), resolved_args, concrete_name)
+                ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = im.name, concrete_args = resolved_args))
                 return types.Type.ty_named(name = concrete_name)
             return t
         types.Type.ty_generic as g:
@@ -1256,6 +1278,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
     if ctx.analysis.structs.contains(name):
         let concrete_name = naming.qualified_c_name(ctx.module_name, generic_struct_c_name(name, args))
         ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
+        ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = name, concrete_args = args))
         return types.Type.ty_named(name = concrete_name)
     # Try imported modules — search both public and private structs,
     # and fall back to extracting from the AST directly.
@@ -1272,6 +1295,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
                 if has_struct:
                     let concrete_name = naming.qualified_c_name(target_module, generic_struct_c_name(name, args))
                     ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
+                    ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = name, concrete_args = args))
                     return types.Type.ty_named(name = concrete_name)
             Option.none:
                 pass
@@ -1895,7 +1919,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 let operand = lower_expr(ctx, un.operand)
                 return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = expr_type(ctx, ep)))
             ast.Expr.expr_prefix_cast as pc:
-                let target_ty = resolve_type_ref(ctx, pc.target_type)
+                let target_ty = qualify_type(ctx, resolve_type_ref(ctx, pc.target_type))
                 let lowered_expr = lower_expr(ctx, pc.expression)
                 return alloc_expr(ir.Expr.expr_cast(target_type = target_ty, expression = lowered_expr, ty = target_ty))
             ast.Expr.expr_call as call:
@@ -2567,6 +2591,11 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 if is_event_type(ctx, recv_ty):
                     let recv_ir = lower_expr(ctx, ma.receiver)
                     return lower_event_method(ctx, recv_ir, recv_ty, ma.member_name, args, call_ep)
+                match try_generic_method_call(ctx, recv_ty, ma.member_name, ma.receiver, args, call_ep):
+                    Option.some as gen_call:
+                        return gen_call.value
+                    Option.none:
+                        pass
                 match resolve_method_info(ctx, recv_ty, ma.member_name):
                     Option.some as mi:
                         return lower_method_resolved(ctx, mi.value, ma.receiver, args, call_ep)
@@ -2706,12 +2735,12 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                     return alloc_expr(ir.Expr.expr_call(callee = fn_name, arguments = ir_args.as_span(), ty = ret_ty))
                 # Builtin `reinterpret[T](value)` → C cast.
                 if id.name.equal("reinterpret") and type_args.len == 1:
-                    let target_ty = resolve_type_ref(ctx, read(type_args.data + 0).value)
+                    let target_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
                     let lowered = lower_expr(ctx, unsafe: read(call_args.data + 0).arg_value)
                     return alloc_expr(ir.Expr.expr_cast(target_type = target_ty, expression = lowered, ty = target_ty))
                 # Builtin `zero[T]` → zero-initialized value of type T.
                 if id.name.equal("zero") and type_args.len == 1:
-                    let z_ty = resolve_type_ref(ctx, read(type_args.data + 0).value)
+                    let z_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
                     return alloc_expr(ir.Expr.expr_zero_init(ty = z_ty))
                 # Generic struct constructor, e.g. `Pair[int, int](first = 42, ...)`.
                 # Check current module's structs first, then imported modules'
@@ -2732,6 +2761,11 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                 # Member-access specialization: e.g., `vec.Vec[string.String].create()`.
                 # Route through method resolution with the concrete type from type args.
                 let recv_ty = expr_type_for_spec(ctx, spec_callee, type_args)
+                match try_generic_method_call(ctx, recv_ty, ma.member_name, ma.receiver, call_args, call_ep):
+                    Option.some as gen_call:
+                        return gen_call.value
+                    Option.none:
+                        pass
                 match resolve_method_info(ctx, recv_ty, ma.member_name):
                     Option.some as mi:
                         return lower_method_resolved(ctx, mi.value, ma.receiver, call_args, call_ep)
@@ -2842,8 +2876,10 @@ function lower_generic_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, t
             fatal(c"lowering: generic struct construction requires named fields")
         fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
         i += 1
-    let result_ty = types.Type.ty_generic(name = struct_name, args = concrete_args.as_span())
-    ensure_generic_struct_decl(ctx, struct_name, type_args, concrete_args.as_span())
+    # Qualify the constructed type so its C name is module-prefixed
+    # (`std_vec_Vec_int`), matching the type produced by `qualify_type` for the
+    # same instance elsewhere; this also emits the concrete struct declaration.
+    let result_ty = qualify_type(ctx, types.Type.ty_generic(name = struct_name, args = concrete_args.as_span()))
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = result_ty, fields = fields.as_span()))
 
 
@@ -2890,6 +2926,7 @@ function ensure_generic_struct_decl_named(ctx: ref[LowerCtx], struct_name: str, 
                 alignment = 0,
                 source_module = Option[str].none,
             ))
+            ctx.generic_struct_instances.set(decl_name, GenericReceiver(owner_name = struct_name, concrete_args = concrete_args))
         Option.none:
             pass
 
@@ -3699,15 +3736,12 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
 function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let recv = lower_expr(ctx, receiver)
     var ir_args = vec.Vec[ir.Expr].create()
-    if mi.method_kind != ast.MethodKind.mk_static:
-        var recv_arg: ptr[ir.Expr]
-        if mi.method_kind == ast.MethodKind.mk_editable:
-            let recv_ty = ir_expr_type(recv)
-            recv_arg = alloc_expr(ir.Expr.expr_address_of(expression = recv, ty = types.Type.ty_generic(name = "ptr", args = sp_type(recv_ty))))
-        else:
-            recv_arg = recv
-        unsafe:
-            ir_args.push(read(recv_arg))
+    match build_receiver_arg(recv, mi.method_kind):
+        Option.some as recv_arg:
+            unsafe:
+                ir_args.push(read(recv_arg.value))
+        Option.none:
+            pass
     var i: ptr_uint = 0
     while i < args.len:
         var arg: ast.Argument
@@ -3718,6 +3752,414 @@ function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr
             ir_args.push(read(lowered))
         i += 1
     return alloc_expr(ir.Expr.expr_call(callee = mi.c_name, arguments = ir_args.as_span(), ty = mi.return_type))
+
+
+## Build the receiver argument for a method call, applying auto-ref / auto-deref
+## so the passed value matches the C receiver parameter:
+##   - static:   no receiver argument (returns none)
+##   - editable: parameter is `ptr[T]`; pass a pointer receiver through, else take
+##               its address (`&value`)
+##   - plain:    parameter is `T` by value; dereference a pointer receiver (`*p`),
+##               else pass the value through
+## This mirrors the Ruby lowerer's implicit receiver borrow/deref and, in
+## particular, makes `this.method()` calls inside editable methods (where `this`
+## is already a pointer) pass `this` directly instead of `&this`.
+function build_receiver_arg(recv: ptr[ir.Expr], method_kind: ast.MethodKind) -> Option[ptr[ir.Expr]]:
+    if method_kind == ast.MethodKind.mk_static:
+        return Option[ptr[ir.Expr]].none
+    let recv_ty = ir_expr_type(recv)
+    let recv_is_pointer = is_pointer_or_ref_type(recv_ty)
+    if method_kind == ast.MethodKind.mk_editable:
+        if recv_is_pointer:
+            return Option[ptr[ir.Expr]].some(value = recv)
+        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_address_of(
+            expression = recv,
+            ty = types.Type.ty_generic(name = "ptr", args = sp_type(recv_ty)),
+        )))
+    # Plain value receiver.
+    if recv_is_pointer:
+        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_unary(
+            operator = "*",
+            operand = recv,
+            ty = types.pointer_element(recv_ty),
+        )))
+    return Option[ptr[ir.Expr]].some(value = recv)
+
+
+# =============================================================================
+#  Generic method monomorphization
+#
+#  Generic *functions* are monomorphized by `lower_monomorphized_call`.  Methods
+#  on generic types (e.g. `Vec[int].create()`, `v.push(7)` where `v: Vec[int]`)
+#  are monomorphized here: a method call on a concrete instance of a user-defined
+#  generic struct clones the method body with the struct's type parameters bound
+#  to the receiver's concrete type arguments and emits a specialized C function.
+#
+#  Mirrors the Ruby lowerer, where `specialize_function_binding` derives the
+#  substitution from the receiver type (`infer_receiver_type_substitutions`) and
+#  `instantiate_function_binding` produces a specialized instance.  The self-host
+#  uses inline caller-side monomorphization (like its generic-function path) and
+#  lowers the body in the *owner* module's context so the method's recorded
+#  expression types and imports resolve correctly.
+# =============================================================================
+
+## A concrete generic receiver: the struct name and its resolved type arguments
+## (e.g. `Vec` + `[int]`).  Type-parameter arguments are resolved through the
+## active substitution so nested method calls inside monomorphized bodies work.
+struct GenericReceiver:
+    owner_name: str
+    concrete_args: span[types.Type]
+
+
+## A located generic method: the module that defines the extending block, the
+## struct's type-parameter names, and the method's AST declaration.
+struct GenericMethodMatch:
+    owner_module: str
+    struct_param_names: span[str]
+    method: ast.Method
+
+
+## The first component of a qualified name (`vec.Vec` -> "vec"; `Vec` -> "Vec").
+function qname_first(qn: ast.QualifiedName) -> str:
+    if qn.parts.len == 0:
+        return ""
+    return unsafe: read(qn.parts.data + 0)
+
+
+## The type-parameter names declared by an extending block's receiver type
+## arguments (`extending Vec[T]:` -> ["T"]).
+function type_param_names_of(args: span[ast.TypeRef]) -> span[str]:
+    var names = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        unsafe:
+            names.push(qname_first(read(args.data + i).name))
+        i += 1
+    return names.as_span()
+
+
+## A named method within an extending block's method list.
+function find_method_in_block(methods: span[ast.Method], name: str) -> Option[ast.Method]:
+    var i: ptr_uint = 0
+    while i < methods.len:
+        var m: ast.Method
+        unsafe:
+            m = read(methods.data + i)
+        if m.name.equal(name):
+            return Option[ast.Method].some(value = m)
+        i += 1
+    return Option[ast.Method].none
+
+
+## True when a type is an unresolved type parameter (`ty_var`, or a bare named
+## type using a raw parameter letter) — i.e. not a concrete type argument.
+function type_is_unresolved_param(t: types.Type) -> bool:
+    if type_is_type_var(t):
+        return true
+    match t:
+        types.Type.ty_named as n:
+            return is_raw_type_param_name(n.name)
+        types.Type.ty_imported as im:
+            return is_raw_type_param_name(im.name)
+        _:
+            return false
+
+
+## Extract a concrete generic-struct receiver from a receiver type.  Returns
+## none for non-generic, builtin (`span`/`array`/`ptr`/...), and prelude-variant
+## (`Option`/`Result`) receivers, which are handled by other lowering paths.
+## Type-parameter arguments are resolved through the active substitution; if any
+## remain abstract the receiver is not a concrete instance and none is returned.
+function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Option[GenericReceiver]:
+    # Auto-deref: when the receiver is a pointer or ref, unwrap to the pointee
+    # type because method calls auto-dereference the receiver.
+    var effective = recv_ty
+    if types.is_raw_pointer(effective) or types.is_ref_type(effective):
+        effective = types.pointer_element(effective)
+    var owner_name: str
+    var raw_args: span[types.Type]
+    match effective:
+        types.Type.ty_imported as im:
+            owner_name = im.name
+            raw_args = im.args
+        types.Type.ty_generic as g:
+            if is_builtin_pointer_generic(g.name):
+                return Option[GenericReceiver].none
+            owner_name = g.name
+            raw_args = g.args
+        types.Type.ty_named as n:
+            let instance_ptr = ctx.generic_struct_instances.get(n.name)
+            if instance_ptr == null:
+                return Option[GenericReceiver].none
+            let inst = unsafe: read(instance_ptr)
+            owner_name = inst.owner_name
+            raw_args = inst.concrete_args
+        _:
+            return Option[GenericReceiver].none
+    if raw_args.len == 0:
+        return Option[GenericReceiver].none
+    if is_prelude_variant_name(owner_name):
+        return Option[GenericReceiver].none
+    var resolved = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < raw_args.len:
+        let arg = unsafe: read(raw_args.data + i)
+        let concrete = substitute_type_params(ctx, arg, ref_of(ctx.type_substitution))
+        if type_is_unresolved_param(concrete):
+            return Option[GenericReceiver].none
+        resolved.push(concrete)
+        i += 1
+    return Option[GenericReceiver].some(value = GenericReceiver(owner_name = owner_name, concrete_args = resolved.as_span()))
+
+
+## Locate a generic method by owner-struct name and method name: search every
+## module for a generic extending block (`extending Owner[...]:`) on a struct
+## named `owner_name` that declares `method_name`.  Restricting to modules that
+## declare the struct excludes prelude variants and non-struct receivers.
+function find_generic_method(ctx: ref[LowerCtx], owner_name: str, method_name: str) -> Option[GenericMethodMatch]:
+    var ai: ptr_uint = 0
+    while ai < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + ai)
+        if a.structs.contains(owner_name) or struct_in_source(a, owner_name):
+            var di: ptr_uint = 0
+            while di < a.source_file.declarations.len:
+                var d: ast.Decl
+                unsafe:
+                    d = read(a.source_file.declarations.data + di)
+                match d:
+                    ast.Decl.decl_extending_block as ex:
+                        let type_ref = unsafe: read(ex.type_name)
+                        if qname_first(type_ref.name).equal(owner_name) and type_ref.arguments.len > 0:
+                            match find_method_in_block(ex.methods, method_name):
+                                Option.some as m:
+                                    return Option[GenericMethodMatch].some(value = GenericMethodMatch(
+                                        owner_module = a.module_name,
+                                        struct_param_names = type_param_names_of(type_ref.arguments),
+                                        method = m.value,
+                                    ))
+                                Option.none:
+                                    pass
+                    _:
+                        pass
+                di += 1
+        ai += 1
+    return Option[GenericMethodMatch].none
+
+
+## Extract a concrete generic-struct receiver from a specialization receiver
+## expression (`Vec[int]` in `Vec[int].create()`), reading the real type
+## arguments from the AST.  This is needed because `expr_type` records a
+## placeholder (`ty_error`) argument for specialization expressions.
+function spec_receiver_info(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> Option[GenericReceiver]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_specialization as spec:
+                let owner_name = spec_callee_name(spec.callee) else:
+                    return Option[GenericReceiver].none
+                if is_builtin_pointer_generic(owner_name) or is_prelude_variant_name(owner_name):
+                    return Option[GenericReceiver].none
+                if spec.arguments.len == 0:
+                    return Option[GenericReceiver].none
+                var resolved = vec.Vec[types.Type].create()
+                var i: ptr_uint = 0
+                while i < spec.arguments.len:
+                    let raw = resolve_type_ref(ctx, read(spec.arguments.data + i).value)
+                    let concrete = substitute_type_params(ctx, raw, ref_of(ctx.type_substitution))
+                    if types.is_error(concrete) or type_is_unresolved_param(concrete):
+                        return Option[GenericReceiver].none
+                    resolved.push(concrete)
+                    i += 1
+                return Option[GenericReceiver].some(value = GenericReceiver(owner_name = owner_name, concrete_args = resolved.as_span()))
+            _:
+                return Option[GenericReceiver].none
+
+
+## The struct name a specialization callee refers to (`vec.Vec` -> "Vec";
+## `Vec` -> "Vec").
+function spec_callee_name(callee: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_member_access as ma:
+                return Option[str].some(value = ma.member_name)
+            ast.Expr.expr_identifier as id:
+                return Option[str].some(value = id.name)
+            _:
+                return Option[str].none
+
+
+## Attempt to lower a method call as a generic-method monomorphization.  Returns
+## none when the receiver is not a concrete instance of a user generic struct, or
+## when the method declares its own type parameters (deferred — those need
+## call-site type-argument inference and fall through to ordinary resolution).
+function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method_name: str, receiver: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> Option[ptr[ir.Expr]]:
+    var info_opt = spec_receiver_info(ctx, receiver)
+    if info_opt.is_none():
+        info_opt = generic_receiver_info(ctx, recv_ty)
+    if info_opt.is_none():
+        # Fallback for identifier receivers (`this`, locals): the analyzer's
+        # recorded type can lack recoverable type arguments, but the binding's
+        # lowered IR type carries the concrete (collapsed) struct name, which the
+        # generic-struct instance map can map back to its type arguments.
+        # Restricted to identifiers because lowering them has no side effects.
+        var is_identifier = false
+        unsafe:
+            match read(receiver):
+                ast.Expr.expr_identifier:
+                    is_identifier = true
+                _:
+                    pass
+        if is_identifier:
+            info_opt = generic_receiver_info(ctx, ir_expr_type(lower_expr(ctx, receiver)))
+    let info = info_opt else:
+        return Option[ptr[ir.Expr]].none
+    let gm = find_generic_method(ctx, info.owner_name, method_name) else:
+        return Option[ptr[ir.Expr]].none
+    if gm.method.type_params.len > 0:
+        return Option[ptr[ir.Expr]].none
+    return Option[ptr[ir.Expr]].some(value = lower_monomorphized_method(ctx, info, gm, method_name, receiver, args))
+
+
+## Lower a monomorphized method call: ensure the specialized method body exists,
+## then emit a direct C call to it with the receiver argument.  The specialized
+## C name groups by the concrete struct (`std_vec_Vec_int_push`), matching the
+## monomorphized struct type produced by `qualify_type`.
+function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, gm: GenericMethodMatch, method_name: str, receiver: ptr[ast.Expr], args: span[ast.Argument]) -> ptr[ir.Expr]:
+    let struct_c = naming.qualified_c_name(gm.owner_module, generic_struct_c_name(info.owner_name, info.concrete_args))
+    let method_c = j3(struct_c, "_", method_name)
+
+    if not ctx.specialization_cache.contains(method_c) and not ctx.spec_in_progress.contains(method_c):
+        ensure_monomorphized_method(ctx, method_c, info, gm)
+
+    var ret_ty = types.primitive("void")
+    let cached = ctx.specialization_cache.get(method_c)
+    if cached != null:
+        ret_ty = unsafe: read(cached).return_type
+
+    let recv = lower_expr(ctx, receiver)
+    var ir_args = vec.Vec[ir.Expr].create()
+    match build_receiver_arg(recv, gm.method.method_kind):
+        Option.some as recv_arg:
+            unsafe:
+                ir_args.push(read(recv_arg.value))
+        Option.none:
+            pass
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        let lowered = lower_expr(ctx, arg.arg_value)
+        unsafe:
+            ir_args.push(read(lowered))
+        i += 1
+    return alloc_expr(ir.Expr.expr_call(callee = method_c, arguments = ir_args.as_span(), ty = ret_ty))
+
+
+## Lower and cache a monomorphized method body once, in the owner module's
+## context.  The context switch (module name, analysis, foreign map, variants)
+## makes the body's recorded expression types and import-qualified references
+## resolve against the defining module rather than the caller.
+function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: GenericReceiver, gm: GenericMethodMatch) -> void:
+    ctx.spec_in_progress.set(method_c, true)
+    let owner_a = find_imported_analysis(ctx, gm.owner_module) else:
+        return
+
+    var sub = map_mod.Map[str, types.Type].create()
+    var pi: ptr_uint = 0
+    while pi < gm.struct_param_names.len and pi < info.concrete_args.len:
+        unsafe:
+            sub.set(read(gm.struct_param_names.data + pi), read(info.concrete_args.data + pi))
+        pi += 1
+
+    var saved_module = ctx.module_name
+    var saved_analysis = ctx.analysis
+    var saved_foreign = ctx.foreign_map
+    var saved_variants = ctx.variants
+    var saved_locals = ctx.locals
+    var saved_counter = ctx.temp_counter
+    var saved_returns = ctx.function_returns
+    var saved_sub = ctx.type_substitution
+
+    ctx.module_name = gm.owner_module
+    ctx.analysis = owner_a
+    ctx.foreign_map = map_mod.Map[str, ForeignInfo].create()
+    ctx.variants = map_mod.Map[str, VariantInfo].create()
+    ctx.locals = vec.Vec[LocalBinding].create()
+    ctx.temp_counter = 0
+    ctx.function_returns = map_mod.Map[str, types.Type].create()
+    ctx.type_substitution = sub
+    collect_foreign_functions(ctx, owner_a.source_file.declarations)
+    collect_variants(ctx, owner_a.source_file.declarations)
+    install_prelude_variants(ctx)
+
+    let spec_fun = lower_specialized_method(ctx, method_c, info, gm, ref_of(sub))
+    ctx.specialization_cache.set(method_c, spec_fun)
+    saved_returns.set(method_c, spec_fun.return_type)
+
+    ctx.module_name = saved_module
+    ctx.analysis = saved_analysis
+    ctx.foreign_map = saved_foreign
+    ctx.variants = saved_variants
+    ctx.locals = saved_locals
+    ctx.temp_counter = saved_counter
+    ctx.function_returns = saved_returns
+    ctx.type_substitution = saved_sub
+
+
+## Lower a single generic method to an IR function with the struct's type
+## parameters substituted.  Mirrors `lower_method`, but resolves the receiver and
+## parameter/return types through `substitute_type_params` with `sub`.
+function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: GenericReceiver, gm: GenericMethodMatch, sub: ref[map_mod.Map[str, types.Type]]) -> ir.Function:
+    let m = gm.method
+    ctx.locals.clear()
+    ctx.temp_counter = 0
+
+    let recv_struct_ty = qualify_type(ctx, types.Type.ty_imported(
+        module_name = gm.owner_module,
+        name = info.owner_name,
+        args = info.concrete_args,
+    ))
+
+    var ir_params = vec.Vec[ir.Param].create()
+    if m.method_kind != ast.MethodKind.mk_static:
+        let recv_ty = if m.method_kind == ast.MethodKind.mk_editable: types.Type.ty_generic(name = "ptr", args = sp_type(recv_struct_ty)) else: recv_struct_ty
+        ir_params.push(ir.Param(name = "this", linkage_name = c_local_name("this"), ty = recv_ty, pointer = false))
+        ctx.locals.push(LocalBinding(name = "this", c_name = c_local_name("this"), ty = recv_ty, pointer = false))
+
+    var pi: ptr_uint = 0
+    while pi < m.method_params.len:
+        var p: ast.Param
+        unsafe:
+            p = read(m.method_params.data + pi)
+        let p_ty = qualify_type(ctx, substitute_type_params(ctx, resolve_field_type_ref(ctx, p.param_type), sub))
+        let c_pname = c_local_name(p.name)
+        let is_ptr = is_pointer_or_ref_type(p_ty)
+        ir_params.push(ir.Param(name = p.name, linkage_name = c_pname, ty = p_ty, pointer = is_ptr))
+        ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = p_ty, pointer = is_ptr))
+        pi += 1
+
+    var ret_ty = types.primitive("void")
+    let return_ref = m.return_type
+    if return_ref != null:
+        let resolved_ret = resolve_field_type_ref(ctx, unsafe: read(return_ref))
+        ret_ty = qualify_type(ctx, substitute_type_params(ctx, resolved_ret, sub))
+
+    var saved_sub = ctx.type_substitution
+    ctx.type_substitution = read(sub)
+    let body_ir = lower_block(ctx, m.body)
+    ctx.type_substitution = saved_sub
+
+    return ir.Function(
+        name = method_c,
+        linkage_name = method_c,
+        params = ir_params.as_span(),
+        return_type = ret_ty,
+        body = body_ir,
+        entry_point = false,
+        method_receiver_param = m.method_kind != ast.MethodKind.mk_static,
+    )
 
 
 ## Wrap a function reference in a proc struct with a synthetic invoke function
