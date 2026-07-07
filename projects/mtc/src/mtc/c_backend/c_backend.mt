@@ -1195,7 +1195,7 @@ function tuple_type_name(t: types.Type) -> str:
             while i < tup.elements.len:
                 buf.append("_")
                 unsafe:
-                    buf.append(naming.sanitize_identifier(types.type_to_string(read(tup.elements.data + i))))
+                    buf.append(naming.type_c_key(read(tup.elements.data + i)))
                 i += 1
         _:
             pass
@@ -1215,7 +1215,7 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
         return j2(c_type(unsafe: read(args.data + (args.len - 1))), "*")
     # str_buffer[N] → mt_str_buffer_N
     if name.equal("str_buffer") and args.len >= 1:
-        return j3("mt_str_buffer_", naming.sanitize_identifier(types.type_to_string(unsafe: read(args.data + 0))), "")
+        return j3("mt_str_buffer_", naming.type_c_key(unsafe: read(args.data + 0)), "")
     # Generic variant: `<name>_<type0>_<type1>_...`.  The caller module prefix
     # is added by `qualified_c_name` when the type is `ty_imported`.
     if args.len > 0:
@@ -1225,14 +1225,14 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
         while i < args.len:
             buf.append("_")
             unsafe:
-                buf.append(naming.sanitize_identifier(types.type_to_string(read(args.data + i))))
+                buf.append(naming.type_c_key(read(args.data + i)))
             i += 1
         return buf.as_str()
     fatal(c"c_backend: unsupported generic C type")
 
 
 function span_type_name(element: types.Type) -> str:
-    return j2("mt_span_", naming.sanitize_identifier(types.type_to_string(element)))
+    return j2("mt_span_", naming.type_c_key(element))
 
 
 # =============================================================================
@@ -1617,7 +1617,7 @@ function c_declaration(t: types.Type, name: str) -> str:
                 let base = unsafe: c_type(read(g.args.data + 0))
                 return j4("const ", base, "*", name)
             if g.name.equal("str_buffer") and g.args.len >= 1:
-                let c_name = j3("mt_str_buffer_", naming.sanitize_identifier(types.type_to_string(unsafe: read(g.args.data + 0))), "")
+                let c_name = j3("mt_str_buffer_", naming.type_c_key(unsafe: read(g.args.data + 0)), "")
                 return j3(c_name, " ", name)
             return j3(generic_c_type(g.name, g.args), " ", name)
         _:
@@ -2290,14 +2290,14 @@ function render_address_of_operand(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
 function checked_array_index_helper_name(receiver_type: types.Type) -> str:
     var buf = string.String.create()
     buf.append("mt_checked_index_array_")
-    buf.append(naming.sanitize_identifier(types.type_to_string(array_element_type(receiver_type))))
+    buf.append(naming.type_c_key(array_element_type(receiver_type)))
     buf.append("_")
     buf.append(long_to_str(array_length(receiver_type)))
     return buf.as_str()
 
 
 function checked_span_index_helper_name(receiver_type: types.Type) -> str:
-    return j2("mt_checked_span_index_", naming.sanitize_identifier(types.type_to_string(receiver_type)))
+    return j2("mt_checked_span_index_", naming.type_c_key(receiver_type))
 
 
 # =============================================================================
@@ -2587,7 +2587,7 @@ function render_variant_initializer(e: ref[Emitter], ty: types.Type, arm_name: s
             while i < g.args.len:
                 buf.append("_")
                 unsafe:
-                    buf.append(naming.sanitize_identifier(types.type_to_string(read(g.args.data + i))))
+                    buf.append(naming.type_c_key(read(g.args.data + i)))
                 i += 1
             outer_c = buf.as_str()
         types.Type.ty_imported as im:

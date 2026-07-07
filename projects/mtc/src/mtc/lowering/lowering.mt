@@ -1371,7 +1371,7 @@ function generic_c_type_raw(name: str, args: span[types.Type]) -> str:
     while i < args.len:
         buf.append("_")
         unsafe:
-            buf.append(naming.sanitize_identifier(types.type_to_string(read(args.data + i))))
+            buf.append(naming.type_c_key(read(args.data + i)))
         i += 1
     return buf.as_str()
 
@@ -3089,7 +3089,7 @@ function generic_struct_c_name(name: str, args: span[types.Type]) -> str:
     while i < args.len:
         buf.append("_")
         unsafe:
-            buf.append(naming.sanitize_identifier(types.type_to_string(read(args.data + i))))
+            buf.append(naming.type_c_key(read(args.data + i)))
         i += 1
     return buf.as_str()
 
@@ -3313,7 +3313,7 @@ function specialization_key(ctx: ref[LowerCtx], module_name: str, callee_name: s
     while i < type_args.len:
         buf.append("_")
         let ty = resolve_type_ref(ctx, unsafe: read(type_args.data + i).value)
-        buf.append(naming.sanitize_identifier(types.type_to_string(ty)))
+        buf.append(naming.type_c_key(ty))
         i += 1
     return buf.as_str()
 
@@ -4854,12 +4854,12 @@ function proc_type_name_from_signature(proc_ty: types.Type) -> str:
     match proc_ty:
         types.Type.ty_function as fnt:
             unsafe:
-                buf.append(naming.sanitize_identifier(types.type_to_string(read(fnt.return_type))))
+                buf.append(naming.type_c_key(read(fnt.return_type)))
             var i: ptr_uint = 0
             while i < fnt.params.len:
                 buf.append("_")
                 unsafe:
-                    buf.append(naming.sanitize_identifier(types.type_to_string(read(fnt.params.data + i))))
+                    buf.append(naming.type_c_key(read(fnt.params.data + i)))
                 i += 1
         _:
             pass
@@ -5487,7 +5487,7 @@ function variant_base_c_name(ty: types.Type, module_name: str) -> str:
             while i < g.args.len:
                 buf.append("_")
                 unsafe:
-                    buf.append(naming.sanitize_identifier(types.type_to_string(read(g.args.data + i))))
+                    buf.append(naming.type_c_key(read(g.args.data + i)))
                 i += 1
             result = buf.as_str()
         types.Type.ty_imported as im:
