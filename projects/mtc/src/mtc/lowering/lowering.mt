@@ -2722,7 +2722,13 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
         match read(callee):
             ast.Expr.expr_identifier as id:
                 if id.name.equal("fatal"):
-                    return lower_plain_call(ctx, "mt_fatal", args, call_ep, null)
+                    # `fatal(cstr)` → mt_fatal(const char*); `fatal(str)` →
+                    # mt_fatal_str(mt_str), mirroring Ruby's fatal dispatch.
+                    var fatal_callee = "mt_fatal"
+                    if args.len > 0:
+                        if not fatal_arg_is_cstr(ctx, unsafe: read(args.data + 0).arg_value):
+                            fatal_callee = "mt_fatal_str"
+                    return lower_plain_call(ctx, fatal_callee, args, call_ep, null)
                 if id.name.equal("ptr_of") or id.name.equal("ref_of") or id.name.equal("const_ptr_of"):
                     if args.len == 1:
                         let inner = lower_expr(ctx, read(args.data + 0).arg_value)
@@ -6013,6 +6019,24 @@ function is_integer_scrutinee(ty: types.Type) -> bool:
     match ty:
         types.Type.ty_primitive as p:
             return types.is_integer_name(p.name)
+        _:
+            return false
+
+
+## True when a `fatal(...)` argument is a `cstr` (so it uses `mt_fatal`); `str`
+## and everything else route to `mt_fatal_str`.  A `c"..."` literal is detected
+## structurally (its recorded type is not always reliable); other expressions
+## fall back to their resolved type.
+function fatal_arg_is_cstr(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(arg):
+            ast.Expr.expr_string_literal as lit:
+                return lit.is_cstring
+            _:
+                pass
+    match expr_type(ctx, arg):
+        types.Type.ty_primitive as p:
+            return p.name.equal("cstr")
         _:
             return false
 

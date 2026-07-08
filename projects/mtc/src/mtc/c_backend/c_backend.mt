@@ -81,7 +81,8 @@ public function generate_c(program: ir.Program) -> string.String:
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
     let use_fatal = uses_fatal_helper(funcs, program) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0
-    let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants))
+    let use_fatal_str = uses_fatal_str_helper(funcs)
+    let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or use_fatal_str or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants))
     let use_str_equality = uses_str_equality(funcs)
 
     var i: ptr_uint = 0
@@ -89,7 +90,7 @@ public function generate_c(program: ir.Program) -> string.String:
         unsafe:
             emit_line(ref_of(e), j2("#include ", read(program.includes.data + i).header))
         i += 1
-    if use_fatal:
+    if use_fatal or use_fatal_str:
         emit_line(ref_of(e), "#include <stdlib.h>")
     emit_line(ref_of(e), "")
 
@@ -99,6 +100,10 @@ public function generate_c(program: ir.Program) -> string.String:
 
     if use_fatal:
         emit_fatal_helper(ref_of(e))
+        emit_line(ref_of(e), "")
+
+    if use_fatal_str:
+        emit_fatal_str_helper(ref_of(e))
         emit_line(ref_of(e), "")
 
     if use_str_equality:
@@ -570,6 +575,16 @@ function emit_fatal_helper(e: ref[Emitter]) -> void:
     emit_line(e, "}")
 
 
+## The `str`-argument fatal helper: writes the byte view then aborts.  Mirrors
+## Ruby's `mt_fatal_str` runtime helper; used for `fatal(str)` calls.
+function emit_fatal_str_helper(e: ref[Emitter]) -> void:
+    emit_line(e, "static _Noreturn void mt_fatal_str(mt_str message) {")
+    emit_line(e, "  fwrite(message.data, 1, message.len, stderr);")
+    emit_line(e, "  fputc('\\n', stderr);")
+    emit_line(e, "  abort();")
+    emit_line(e, "}")
+
+
 function str_literal_name(index: ptr_uint) -> str:
     return j2("mt_str_lit_", ptr_uint_to_str(index))
 
@@ -943,6 +958,18 @@ function uses_fatal_helper(functions: span[ir.Function], program: ir.Program) ->
     while i < functions.len:
         unsafe:
             if body_calls(read(functions.data + i).body, "mt_fatal"):
+                return true
+        i += 1
+    return false
+
+
+## True when any emitted function calls `mt_fatal_str` (the `str`-argument fatal
+## helper), so the helper, `<stdlib.h>`, and the string-view type are emitted.
+function uses_fatal_str_helper(functions: span[ir.Function]) -> bool:
+    var i: ptr_uint = 0
+    while i < functions.len:
+        unsafe:
+            if body_calls(read(functions.data + i).body, "mt_fatal_str"):
                 return true
         i += 1
     return false
