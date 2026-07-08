@@ -1,7 +1,14 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. Generic method/function monomorphization complete; 495 C errors remain.**
-Last updated: 2026-07-07 (P8)
+Status: **Phase 8 — self-compile C-error elimination. 304 C errors remain (measured with `-I std/c`).**
+Last updated: 2026-07-08 (P8)
+
+> **Measurement note:** always compile the self-compiled C with the external header
+> path and GNU source, i.e.
+> `cc -std=c11 -D_GNU_SOURCE -Wno-implicit-function-declaration -I std/c -c tmp/self.c`.
+> Earlier baselines that omitted `-I std/c` stopped at the first missing header and
+> undercounted; the honest count with headers in scope was ~493 at the start of the
+> 2026-07-08 session.
 
 Pipeline:
 
@@ -256,13 +263,18 @@ Established this session; reuse these seams rather than re-deriving them:
 - [x] Phase 6 — events, async, parallel, compile-time
 - [x] Phase 7 — cross-module type system hardening
 - [x] Phase 7.5 — generic **method** monomorphization + owner-context + naming + codegen fixes
-- [ ] Phase 8 — self-compile C-error elimination (**516 → 0**, in progress; currently **495**)
-  - [x] Prelude Option/Result match-arm payload `_phantom` — same-LowerCtx cases (516 → 495)
-  - [ ] Cross-ctx prelude payload `_phantom` (~47, §3.1.1)
+- [ ] Phase 8 — self-compile C-error elimination (in progress; **493 → 304** with `-I std/c`)
+  - [x] Prelude Option/Result match-arm payload `_phantom` — same-LowerCtx cases
+  - [x] External ABI type names (std.c.* bare C name) + gather external `include` directives (493 → 465)
+  - [x] Method-call receiver types resolved in owner-module context — kills FnSig/FieldEntry
+        misattribution cluster (465 → 355)
+  - [x] `let/var ... else:` guard lowering with success unwrapping (355 → 313)
+  - [x] Cross-module + external call return-type resolution in fallback_type (313 → 307)
+  - [x] Stop double-qualifying cross-module call return types (307 → 304)
+  - [ ] Cross-ctx prelude payload `_phantom` (~40, §3.1.1)
+  - [ ] `vec.get()`/generic-method return type monomorphization (remaining `void*` / `declared void`)
   - [ ] Match-expression hoisting (needs int/str expr-match first; avoid the OOM loop)
-  - [ ] Residual member/field typing
-  - [ ] Cross-module attribution & struct emission
-  - [ ] Generic `Map` instance mismatches / Option-init handling / external ABI types
+  - [ ] Residual member/field typing + argument-type mismatches (top category, ~64)
   - [ ] Milestone: `mtc build projects/mtc` produces a native binary
 - [ ] Phase 9 — correctness verification (differential C + bootstrap fixpoint)
 - [ ] Phase 10 — debug-guard fix + build-mode/runtime parity
