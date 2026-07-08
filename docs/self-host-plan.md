@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. 69 C errors remain (measured with `-I std/c`).**
-Last updated: 2026-07-09 (P8, Seam A landed)
+Status: **Phase 8 — self-compile C-error elimination. 57 C errors remain (measured with `-I std/c`).**
+Last updated: 2026-07-09 (P8, Seam A + Seam B §3.1 landed)
 
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -331,9 +331,31 @@ Established this session; reuse these seams rather than re-deriving them:
         (`last`/`_prev`/`found` no longer `void`) (−5). (d) **cross-module foreign-function returns**:
         `collect_program_returns` registers `decl_foreign_function` returns (via nullable-aware
         `resolve_type_ref`) under the module-qualified key, so `libc.get_environment_variable() -> cstr?`
-        no longer resolves `void` (−1). 172/172 tests pass. Leftover: the single `array.as_span()`
-        builtin on a const array (`kinds`) still hits the `mt_` fallback — a builtin-method seam (§3.6
-        family), not a return-type gap.
+         no longer resolves `void` (−1). 172/172 tests pass. Leftover: the single `array.as_span()`
+         builtin on a const array (`kinds`) still hits the `mt_` fallback — a builtin-method seam (§3.6
+         family), not a return-type gap.
+  - [x] **Seam B §3.1 — monomorphize prelude variant methods (69 → 57, −12).** The plan's framing
+        ("variant-literal naming, ~3") was inaccurate: prelude `Option`/`Result` methods
+        (`unwrap`/`unwrap_or`/`is_some`/…) were **existence-only** in the analyzer with NO lowering path
+        — emitted as undefined functions (compile errors on `.unwrap().value`, latent link errors
+        elsewhere). Fixed with faithful **Strategy A** monomorphization (mirroring Ruby):
+        (a) the loader now **seeds `std.option` / `std.result` as prelude modules** (like Ruby's
+        `PreludeInstaller`) via `seed_prelude_module`, so their real `extending` method bodies are
+        parsed/checked and available; (b) `generic_receiver_info` recovers prelude-variant receivers —
+        structured `ty_generic`/`ty_imported` args, or a collapsed `ty_named` via `prelude_instance_args`
+        (recovered from the pending generic-variant registry's arm field types); (c) `find_generic_method`
+        searches variant-declaring modules (`variant_in_source`), not just structs; (d)
+        `monomorphized_method_c_name` uses the global `Option_<typeargs>_<method>` scheme for prelude
+        variants. 172/172 tests pass. Note: pre-existing self-host `check`-command gaps (8 errors, e.g.
+        `.is_none()`/`.unwrap()` unknown-method and `pointer cast requires unsafe`) are unrelated to the
+        emit-c self-compile path and unchanged.
+  - [ ] **Seam B §3.4 — `ir.Expr` vs `ast.Expr` collision (3, in progress).** In `lower_stmt`'s
+        `stmt_local` handling, `loc.value` (`ptr[ast.Expr]?`) is emitted typed as `mtc_ir_Expr*`, so the
+        `match read(init_val)` dispatches on nonexistent `ir.Expr` arms (`expr_match`/`expr_format_string`).
+        Root: bare `Expr` field-type resolution / arm-payload member typing picks the wrong module's
+        `Expr`. Entangled with the match-expr dead-stub region (D1) and a double-qualification symptom
+        (`mtc_lowering_lowering_mtc_parser_ast_Stmt_stmt_local`). Best resolved together with D1
+        (neutralize the dead stub) since they are physically colocated in the same `lower_stmt` region.
   - [ ] Match-expression hoisting (~8 cluster: `match_expr` undeclared, `Stmt_stmt_local` unknown
         types, member-on-non-struct cascades).  Investigation this session: the `return match` hoist
         in `lower_stmt` correctly detects and emits a temp + `lower_match_expression_local`, but
