@@ -5500,9 +5500,6 @@ function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> s
                 fatal(c"lowering: unsupported foreign function mapping")
 
 
-## Member access: enum / flags member constants on a type-name receiver
-## (`State.running` -> `en_State_running`), otherwise a struct field access
-## (`p.x`).  Method calls and other member forms arrive in later phases.
 ## The resolved type of `member` on a receiver that is an instance of a struct
 ## defined in ANOTHER module.  The analyzer stores field types with names bare
 ## relative to their defining module, so qualifying them in the accessing
@@ -5510,6 +5507,9 @@ function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> s
 ## prefixed with the caller's module).  Resolve the field's declared type ref in
 ## the owner module's context instead.  Returns none for same-module receivers
 ## (handled by the recorded type) and non-struct receivers.
+## Member access: enum / flags member constants on a type-name receiver
+## (`State.running` -> `en_State_running`), otherwise a struct field access
+## (`p.x`).  Method calls and other member forms arrive in later phases.
 function imported_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[types.Type]:
     var base = recv_ty
     if types.is_raw_pointer(base) or types.is_ref_type(base):

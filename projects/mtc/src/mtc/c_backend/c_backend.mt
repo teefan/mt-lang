@@ -3034,9 +3034,9 @@ function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
 function render_constant(e: ref[Emitter], c: ir.Constant) -> str:
     var buf = string.String.create()
     buf.append("static const ")
-    buf.append(c_type(c.ty))
-    buf.append(" ")
-    buf.append(c.linkage_name)
+    # Use c_declaration so array types get C-native `TYPE NAME[N]` syntax
+    # (mirrors Ruby, which does not emit a struct typedef for arrays).
+    buf.append(c_declaration(c.ty, c.linkage_name))
     buf.append(" = ")
     unsafe:
         buf.append(render_initializer_exp(e, c.value))
@@ -3058,9 +3058,10 @@ function render_initializer_exp(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
 function render_global(e: ref[Emitter], g: ir.Global) -> str:
     var buf = string.String.create()
     buf.append("static ")
-    buf.append(c_type(g.ty))
-    buf.append(" ")
-    buf.append(g.linkage_name)
+    # Use c_declaration so array types get C-native `TYPE NAME[N]` syntax
+    # rather than the backend-internal `array_elem_N` struct type name (which
+    # has no typedef emitted).
+    buf.append(c_declaration(g.ty, g.linkage_name))
     buf.append(";")
     return buf.as_str()
 

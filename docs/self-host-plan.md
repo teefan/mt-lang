@@ -1,6 +1,6 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. 88 C errors remain (measured with `-I std/c`).**
+Status: **Phase 8 — self-compile C-error elimination. 83 C errors remain (measured with `-I std/c`).**
 Last updated: 2026-07-08 (P8)
 
 
@@ -264,7 +264,7 @@ Established this session; reuse these seams rather than re-deriving them:
 - [x] Phase 6 — events, async, parallel, compile-time
 - [x] Phase 7 — cross-module type system hardening
 - [x] Phase 7.5 — generic **method** monomorphization + owner-context + naming + codegen fixes
-- [ ] Phase 8 — self-compile C-error elimination (in progress; **493 → 88** with `-I std/c`)
+- [ ] Phase 8 — self-compile C-error elimination (in progress; **493 → 83** with `-I std/c`)
   - [x] Prelude Option/Result match-arm payload `_phantom` — same-LowerCtx cases
   - [x] External ABI type names (std.c.* bare C name) + gather external `include` directives (493 → 465)
   - [x] Method-call receiver types resolved in owner-module context — kills FnSig/FieldEntry
