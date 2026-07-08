@@ -1,6 +1,6 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. 222 C errors remain (measured with `-I std/c`).**
+Status: **Phase 8 — self-compile C-error elimination. 206 C errors remain (measured with `-I std/c`).**
 Last updated: 2026-07-08 (P8)
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -263,7 +263,7 @@ Established this session; reuse these seams rather than re-deriving them:
 - [x] Phase 6 — events, async, parallel, compile-time
 - [x] Phase 7 — cross-module type system hardening
 - [x] Phase 7.5 — generic **method** monomorphization + owner-context + naming + codegen fixes
-- [ ] Phase 8 — self-compile C-error elimination (in progress; **493 → 222** with `-I std/c`)
+- [ ] Phase 8 — self-compile C-error elimination (in progress; **493 → 206** with `-I std/c`)
   - [x] Prelude Option/Result match-arm payload `_phantom` — same-LowerCtx cases
   - [x] External ABI type names (std.c.* bare C name) + gather external `include` directives (493 → 465)
   - [x] Method-call receiver types resolved in owner-module context — kills FnSig/FieldEntry
@@ -280,12 +280,21 @@ Established this session; reuse these seams rather than re-deriving them:
         `mt_str x = ....len` mis-inference cascade (273 → 249)
   - [x] Coerce pointer args to by-value params in generic method calls (`Map.find_node(this, ...)`
         inside editable methods) (249 → 222)
-  - [ ] Cross-ctx prelude payload `_phantom` (~40, §3.1.1)
-  - [ ] Deferred: resolve `str` method calls (byte_at/slice/equal) through resolve_method_info
-        instead of the `mt_` fallback — blocked on the `std_str_str_equal` name collision between
-        str's instance `equal(right)` method and its static `equal(left,right)` hash hook
-  - [ ] Remaining member/field typing (Map iterator `.current()` via `mt_` fallback; Option
-        `.unwrap().value` return-type collapse) and residual argument-type mismatches
+  - [x] Qualify imported bare type names against their owner module (`qualify_type` +
+        `imported_type_module`) — kills the `Diag` → `mtc_semantic_analyzer_Diag` misattribution (222 → 206)
+  - [ ] **str method naming overhaul (highest remaining leverage, ~30+ errors).** `str` instance
+        methods (`slice`/`byte_at`/...) currently fall to the `mt_` fallback (returning `int`), and
+        the instance `equal(right)` collides with the static `equal(left,right)` hook — both emit
+        `std_str_str_equal`. Ruby names primitive-type methods `<type>_<method>` (e.g. `str_slice`,
+        `str_equal`) with NO module prefix, and disambiguates the static hooks with a `_static`
+        suffix (`str_order_static`). Porting requires a coordinated change to primitive-method C
+        naming (definition in `lower_extending_block`, call resolution in `resolve_method_info`, and
+        the hook path in `resolve_canonical_hook`) — see Ruby `member_c_name` / `field_c_name`.
+  - [ ] `Option[RemovedEntry[K,V]]` prelude-variant instance is named inconsistently: the
+        `remove_entry` body (lowered in std.map ctx) builds `Option_RemovedEntry_str_bool` (bare
+        arg) while its signature uses `Option_std_map_RemovedEntry_str_bool` (qualified). The Option
+        type-arg `RemovedEntry` must be qualified with its owner module in the body context too.
+  - [ ] Cross-ctx prelude payload `_phantom` (~12: mtc_main/mtc_build/module_loader/path_resolver, §3.1.1)
   - [ ] Variant registry keyed by bare name collides across modules (`ir.Expr`/`ast.Expr`) — the
         arm-payload path is worked around, but match dispatch/other lookups may still be affected;
         consider module-qualifying the registry key
