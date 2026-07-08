@@ -276,7 +276,7 @@ public function lower(program: loader.Program) -> ir.Program:
 
     return ir.Program(
         module_name = root_name,
-        includes = base_includes(),
+        includes = collect_includes(program),
         constants = constants.as_span(),
         globals = globals.as_span(),
         opaques = opaques.as_span(),
@@ -790,13 +790,65 @@ function lowerable_function(is_async: bool, is_const: bool, type_params: span[as
 ## `fatal`, making it universal there; the self-host matches that for byte
 ## parity.  Conditional `<stddef.h>` (offsetof) / `<stdlib.h>` (fatal) arrive in
 ## later phases.
-function base_includes() -> span[ir.Include]:
+## Collect the full include set: the base C runtime headers plus every `include`
+## directive from raw (`external`) module analyses (e.g. `std.c.fs` →
+## `fs_support.h`).  Mirrors Ruby's `collect_includes` so external ABI struct
+## types declared in those headers are in scope.  Deduplicated, base headers first.
+function collect_includes(program: loader.Program) -> span[ir.Include]:
     var includes = vec.Vec[ir.Include].create()
+    var seen = map_mod.Map[str, bool].create()
     includes.push(ir.Include(header = "<stdbool.h>"))
     includes.push(ir.Include(header = "<stdint.h>"))
     includes.push(ir.Include(header = "<string.h>"))
     includes.push(ir.Include(header = "<stdio.h>"))
+    seen.set("<stdbool.h>", true)
+    seen.set("<stdint.h>", true)
+    seen.set("<string.h>", true)
+    seen.set("<stdio.h>", true)
+
+    var mi: ptr_uint = 0
+    while mi < program.analyses.len():
+        let a_ptr = program.analyses.get(mi) else:
+            mi += 1
+            continue
+        var analysis = unsafe: read(a_ptr)
+        if not is_raw_module(analysis.module_kind):
+            mi += 1
+            continue
+        var di: ptr_uint = 0
+        while di < analysis.directives.len:
+            var directive: ast.Decl
+            unsafe:
+                directive = read(analysis.directives.data + di)
+            match directive:
+                ast.Decl.decl_include as inc:
+                    let header = normalized_include_header(inc.value)
+                    if not seen.contains(header):
+                        seen.set(header, true)
+                        includes.push(ir.Include(header = header))
+                _:
+                    pass
+            di += 1
+        mi += 1
+
     return includes.as_span()
+
+
+## Wrap an include header: standard C runtime headers use `<angle>` brackets,
+## everything else uses `"quotes"` (mirrors Ruby's normalized_include_header).
+function normalized_include_header(header_name: str) -> str:
+    if standard_c_runtime_header(header_name):
+        return j3("<", header_name, ">")
+    return j3("\"", header_name, "\"")
+
+
+function standard_c_runtime_header(header_name: str) -> bool:
+    return (
+        header_name.equal("stdbool.h") or header_name.equal("stdint.h")
+        or header_name.equal("stdlib.h") or header_name.equal("string.h")
+        or header_name.equal("stddef.h") or header_name.equal("stdio.h")
+        or header_name.equal("time.h")
+    )
 
 
 # =============================================================================

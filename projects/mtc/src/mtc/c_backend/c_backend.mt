@@ -1245,6 +1245,12 @@ function c_type(t: types.Type) -> str:
             # Function types are declarators: `ret_type (*)(param_types)`.
             return c_fn_ptr_declarator(t, "")
         types.Type.ty_imported as im:
+            # Types from `std.c.*` raw-ABI modules use their bare C name (the
+            # `struct X = c"X"` alias / raw external name), never a module prefix,
+            # so they match the C header declarations (mirrors Ruby's
+            # `named_type_c_name` std.c. special case).
+            if im.module_name.starts_with("std.c."):
+                return im.name
             return naming.qualified_c_name(im.module_name, im.name)
         types.Type.ty_named as n:
             # Bare named types (prelude, local), mirrored as-is.
