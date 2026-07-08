@@ -2148,6 +2148,15 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                     let left_ty = ir_expr_type(left)
                     if types.is_raw_pointer(left_ty) and not types.is_raw_pointer(ir_expr_type(right)):
                         result_ty = left_ty
+                # Integer arithmetic where the analyzer's recorded type is not an
+                # integer (e.g. `text.len - n`, where `.len` is typed `ptr_uint`
+                # by lowering but the analyzer recorded a wrong type): trust the
+                # lowered operand types when both are the same integer type.
+                if is_arithmetic_operator(bin.operator) and not is_integer_scrutinee(result_ty):
+                    let lt = ir_expr_type(left)
+                    let rt = ir_expr_type(right)
+                    if is_integer_scrutinee(lt) and types.type_to_string(lt).equal(types.type_to_string(rt)):
+                        result_ty = lt
                 return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = result_ty))
             ast.Expr.expr_unary_op as un:
                 let operand = lower_expr(ctx, un.operand)
@@ -5442,6 +5451,13 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
         member_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.pointer_element(recv_ty)))
     else if is_span_type(recv_ty) and member.equal("len"):
         member_ty = types.primitive("ptr_uint")
+    # str synthetic fields: `.data` is ptr[char], `.len` is ptr_uint.  Like span,
+    # the analyzer does not type these reliably (a `var n = text.len` would
+    # otherwise be mis-typed as str).
+    else if is_str_typed(recv_ty) and member.equal("data"):
+        member_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("char")))
+    else if is_str_typed(recv_ty) and member.equal("len"):
+        member_ty = types.primitive("ptr_uint")
     else:
         # Prefer the receiver's concrete (monomorphized) struct field type: the
         # analyzer records member types generically (e.g. Node[K,V] -> Node with
@@ -7026,6 +7042,24 @@ function is_comparison_operator(op: str) -> bool:
     return (
         op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
         or op == "and" or op == "or"
+    )
+
+
+## True when a type is exactly `str` (`ty_str`).
+function is_str_typed(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_str:
+            return true
+        _:
+            return false
+
+
+## True for integer/bitwise arithmetic operators whose result type matches the
+## (same-typed) operands.
+function is_arithmetic_operator(op: str) -> bool:
+    return (
+        op == "+" or op == "-" or op == "*" or op == "/" or op == "%"
+        or op == "&" or op == "|" or op == "^" or op == "<<" or op == ">>"
     )
 
 
