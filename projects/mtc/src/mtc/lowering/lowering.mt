@@ -585,6 +585,15 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
                     # resolve the result type from that same bare-name key.
                     let ext_ret = if ext.return_type != null: resolve_return_type(ref_of(ctx), Option[analyzer.FnSig].none, ext.return_type) else: types.primitive("void")
                     sink.set(ext.name, ext_ret)
+                ast.Decl.decl_foreign_function as ff:
+                    # Foreign functions are called cross-module by their Milk Tea
+                    # name (`libc.get_environment_variable(...)`), lowered to a
+                    # module-qualified C wrapper, so register the resolved return
+                    # type under that same qualified linkage key.  Without this a
+                    # cross-module foreign call resolves to void and its result
+                    # local is emitted `void`.
+                    let ff_ret = qualify_type(ref_of(ctx), resolve_type_ref(ref_of(ctx), ff.return_type))
+                    sink.set(naming.qualified_c_name(analysis.module_name, ff.name), ff_ret)
                 _:
                     pass
             di += 1
@@ -2893,6 +2902,19 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                     return lower_static_call_args(ctx, prim_mi.value, args)
                                 Option.none:
                                     pass
+                        # Static method call on a struct type name, e.g.
+                        # `String.create()`.  The receiver is a bare type name (not
+                        # a value), so resolve the static method and lower only the
+                        # arguments.  Mirrors the Ruby resolver's `resolve_type_expression`
+                        # + `static:<method>` associated-function path.
+                        if struct_exists_in_imports(ctx, recv_id.name):
+                            let static_recv_ty = types.Type.ty_named(name = recv_id.name)
+                            match resolve_method_info(ctx, static_recv_ty, ma.member_name):
+                                Option.some as smi:
+                                    if smi.value.method_kind == ast.MethodKind.mk_static:
+                                        return lower_static_call_args(ctx, smi.value, args)
+                                Option.none:
+                                    pass
                         let mod_ptr = ctx.analysis.imports.get(recv_id.name)
                         if mod_ptr != null:
                             let target_module = read(mod_ptr)
@@ -4302,7 +4324,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
         var ret = sig.return_type
         if not sig.has_return_type:
             ret = types.primitive("void")
-        return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name(ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = ret))
+        return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name(ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = qualify_type(ctx, ret)))
     # Search imported modules' method_sigs when the method is not found locally.
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len:
@@ -5618,6 +5640,22 @@ function method_receiver_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> ty
                 side_effect_free = true
             ast.Expr.expr_identifier:
                 side_effect_free = true
+            ast.Expr.expr_call as call:
+                # A chained method call receiver, e.g. `result.as_str().byte_at(i)`.
+                # Typing it by lowering the inner call is safe here: the receiver is
+                # lowered identically when the outer call is emitted, so no extra
+                # side effect is introduced.  This lets a method call on a
+                # call-result value resolve instead of falling to the `mt_` fallback.
+                # Also covers the `read(ptr).method(...)` builtin projection, whose
+                # callee is a bare `read` identifier rather than a member access.
+                match read(call.callee):
+                    ast.Expr.expr_member_access:
+                        side_effect_free = true
+                    ast.Expr.expr_identifier as call_id:
+                        if call_id.name.equal("read"):
+                            side_effect_free = true
+                    _:
+                        pass
             _:
                 pass
     if side_effect_free:

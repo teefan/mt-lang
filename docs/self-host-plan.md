@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. 83 C errors remain (measured with `-I std/c`).**
-Last updated: 2026-07-09 (P8)
+Status: **Phase 8 — self-compile C-error elimination. 69 C errors remain (measured with `-I std/c`).**
+Last updated: 2026-07-09 (P8, Seam A landed)
 
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -315,8 +315,25 @@ Established this session; reuse these seams rather than re-deriving them:
         type (`var previous: ptr[Node[K,V]]?`) kept the bare `Node_str_bool` after
         `resolve_type_ref` because `local_decl_type` returned the resolved annotation without
         `qualify_type`. Now mirrors `resolve_param_type`/`resolve_return_type` by applying
-        `qualify_type`. Also fixed a dormant infinite loop in `lower_enum_match_expr` (missing
-        `i += 1` before `continue` in the non-enum-member-pattern branch).
+         `qualify_type`. Also fixed a dormant infinite loop in `lower_enum_match_expr` (missing
+         `i += 1` before `continue` in the non-enum-member-pattern branch).
+  - [x] **Seam A — return-type table completeness (83 → 69, −14).** Cascade-first landing so calls
+        stop falling to the `<module>_mt_<method>` fallback (which typed results `void`/`int`). Four
+        coordinated fixes in `lowering.mt`: (a) **static methods on struct type names**
+        (`String.create()`): `lower_call` routes an identifier receiver naming a struct through
+        `resolve_method_info` and emits a static call (mirrors Ruby's `resolve_type_expression` +
+        `static:<method>` path), killing the `std_string_mt_create(std_string_String)` fallback and the
+        bare-`String` local-type cascade (−8). (b) **current-module return qualification**:
+        `resolve_method_info`'s current-module nominal path now applies `qualify_type` to the return
+        type (`String` → `std_string_String`). (c) **chained / `read()` method receivers**:
+        `method_receiver_type` types method-call and `read(ptr)` receivers by lowering them
+        (side-effect-free), so `result.as_str().byte_at(i)` and `read(frame_ptr).set(...)` resolve
+        (`last`/`_prev`/`found` no longer `void`) (−5). (d) **cross-module foreign-function returns**:
+        `collect_program_returns` registers `decl_foreign_function` returns (via nullable-aware
+        `resolve_type_ref`) under the module-qualified key, so `libc.get_environment_variable() -> cstr?`
+        no longer resolves `void` (−1). 172/172 tests pass. Leftover: the single `array.as_span()`
+        builtin on a const array (`kinds`) still hits the `mt_` fallback — a builtin-method seam (§3.6
+        family), not a return-type gap.
   - [ ] Match-expression hoisting (~8 cluster: `match_expr` undeclared, `Stmt_stmt_local` unknown
         types, member-on-non-struct cascades).  Investigation this session: the `return match` hoist
         in `lower_stmt` correctly detects and emits a temp + `lower_match_expression_local`, but
