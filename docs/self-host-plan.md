@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. 57 C errors remain (measured with `-I std/c`).**
-Last updated: 2026-07-09 (P8, Seam A + Seam B §3.1 landed)
+Status: **Phase 8 — self-compile C-error elimination. 44 C errors remain (measured with `-I std/c`).**
+Last updated: 2026-07-09 (P8, Seam A + B §3.1 + C landed)
 
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -347,8 +347,22 @@ Established this session; reuse these seams rather than re-deriving them:
         searches variant-declaring modules (`variant_in_source`), not just structs; (d)
         `monomorphized_method_c_name` uses the global `Option_<typeargs>_<method>` scheme for prelude
         variants. 172/172 tests pass. Note: pre-existing self-host `check`-command gaps (8 errors, e.g.
-        `.is_none()`/`.unwrap()` unknown-method and `pointer cast requires unsafe`) are unrelated to the
-        emit-c self-compile path and unchanged.
+         `.is_none()`/`.unwrap()` unknown-method and `pointer cast requires unsafe`) are unrelated to the
+         emit-c self-compile path and unchanged.
+  - [x] **Seam C — monomorphized call arg qualification + array builtins (57 → 44, −13).** Two fixes:
+        (a) **implicit borrow for `ref[T]` call args (57 → 49):** a by-value argument passed to a
+        `ref[T]` parameter was emitted verbatim, producing a value/pointer mismatch (e.g.
+        `vec_contains_str(covered)` where the param is `ref[Vec[str]]`, plus the Map `.contains()`
+        cluster). `lower_plain_call` now threads the callee's `FnSig` (via `lower_plain_call_sig`) and
+        `coerce_arg_to_ref_param` takes the address (`&arg`) when the parameter is `ref[T]` and the
+        argument is not already pointer-typed — mirroring the analyzer's call-site borrow rule.
+        (b) **`array[T, N].as_span()` builtin (49 → 44):** it fell to the `<module>_mt_as_span`
+        fallback (declared void). Intercepted in the method-call dispatch and lowered to a span
+        aggregate literal `{ data = &arr[0], len = N }` (mirrors Ruby's `:array_as_span`). The length
+        is recovered from the array type, or from the const/var declaration's type annotation when the
+        recorded receiver type dropped its literal count; the index receiver type is rebuilt with the
+        recovered length so the correct `mt_checked_index_array_*_N` helper is emitted (fixes a latent
+        `len=0` / `[0]`-helper bug on const array references). 172/172 tests pass.
   - [ ] **Seam B §3.4 — `ir.Expr` vs `ast.Expr` collision (3, in progress).** In `lower_stmt`'s
         `stmt_local` handling, `loc.value` (`ptr[ast.Expr]?`) is emitted typed as `mtc_ir_Expr*`, so the
         `match read(init_val)` dispatches on nonexistent `ir.Expr` arms (`expr_match`/`expr_format_string`).
