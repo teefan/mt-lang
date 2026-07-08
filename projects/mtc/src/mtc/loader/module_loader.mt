@@ -132,6 +132,16 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
     var diagnostics = vec.Vec[LoadDiagnostic].create()
 
     var root_resolved = resolver.resolve_source_path(root_path, platform)
+
+    # Seed the language prelude modules (std.option, std.result) so their real
+    # `extending Option[T]:` / `extending Result[T,E]:` method bodies are parsed,
+    # checked, and available for monomorphization — mirroring Ruby's
+    # PreludeInstaller.  Parsing them first also makes them dependency-first in
+    # `order`, so they are checked before any consumer.  A prelude that cannot be
+    # resolved is skipped silently (the analyzer still synthesizes the types).
+    seed_prelude_module("std.option", roots, platform, ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics))
+    seed_prelude_module("std.result", roots, platform, ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics))
+
     parse_all(
         root_resolved,
         roots,
@@ -169,6 +179,28 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
         oi += 1
 
     return Program(modules = modules, order = order, analyses = analyses, diagnostics = diagnostics)
+
+
+## Resolve and parse a prelude module (e.g. std.option) into the module set so
+## its declarations — in particular the `extending` method bodies — are checked
+## and available to lowering.  Unresolvable prelude modules are skipped silently
+## because the analyzer synthesizes the prelude types regardless.
+function seed_prelude_module(
+    module_name: str,
+    roots: span[str],
+    platform: resolver.Platform,
+    modules: ref[vec.Vec[LoadedModule]],
+    visited: ref[map_mod.Map[str, ptr_uint]],
+    on_stack: ref[map_mod.Map[str, bool]],
+    order: ref[vec.Vec[ptr_uint]],
+    diagnostics: ref[vec.Vec[LoadDiagnostic]],
+) -> void:
+    match resolver.resolve_module_path(module_name, roots, platform):
+        Result.success as resolved_ok:
+            parse_all(resolved_ok.value, roots, platform, modules, visited, on_stack, order, diagnostics)
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
 
 
 ## Depth-first transitive parse.  Uses three-colour marking: `on_stack` (gray,

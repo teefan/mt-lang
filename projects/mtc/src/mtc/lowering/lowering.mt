@@ -1637,6 +1637,22 @@ function struct_in_source(module_analysis: analyzer.Analysis, name: str) -> bool
         di += 1
     return false
 
+## True when a module's AST declares a generic variant named `name`.
+function variant_in_source(module_analysis: analyzer.Analysis, name: str) -> bool:
+    var di: ptr_uint = 0
+    while di < module_analysis.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(module_analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_variant as vr:
+                if vr.name.equal(name):
+                    return true
+            _:
+                pass
+        di += 1
+    return false
+
 ## Ensure a concrete variant declaration exists for `Option[T]` or `Result[T,E]`.
 function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.Type]) -> types.Type:
     let c_name = generic_c_type_raw(name, args)
@@ -4533,6 +4549,15 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
             owner_name = g.name
             raw_args = g.args
         types.Type.ty_named as n:
+            # Collapsed prelude-variant instance (`Option_str`): recover owner +
+            # args from the pending generic-variant registry so prelude methods
+            # monomorphize instead of falling to the module-qualified fallback.
+            if is_prelude_variant_name(n.name):
+                match prelude_instance_args(ctx, n.name):
+                    Option.some as rec:
+                        return Option[GenericReceiver].some(value = rec.value)
+                    Option.none:
+                        return Option[GenericReceiver].none
             let instance_ptr = ctx.generic_struct_instances.get(n.name)
             if instance_ptr == null:
                 return Option[GenericReceiver].none
@@ -4542,8 +4567,6 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
         _:
             return Option[GenericReceiver].none
     if raw_args.len == 0:
-        return Option[GenericReceiver].none
-    if is_prelude_variant_name(owner_name):
         return Option[GenericReceiver].none
     var resolved = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -4560,6 +4583,40 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
     return Option[GenericReceiver].some(value = GenericReceiver(owner_name = owner_name, concrete_args = resolved.as_span()))
 
 
+## Recover a prelude variant's owner name and concrete type arguments from its
+## collapsed C name (`Option_str` → owner "Option", args [str]) by looking up the
+## already-emitted concrete variant declaration in `pending_generic_variants`.
+## The declaration's arm field types carry the concrete args (Option.some.value,
+## Result.success.value + Result.failure.error), so they can be recovered without
+## re-parsing the mangled name.
+function prelude_instance_args(ctx: ref[LowerCtx], c_name: str) -> Option[GenericReceiver]:
+    let base = prelude_variant_base(c_name) else:
+        return Option[GenericReceiver].none
+    var si: ptr_uint = 0
+    while si < ctx.pending_generic_variants.len():
+        let vp = ctx.pending_generic_variants.get(si) else:
+            break
+        var decl: ir.VariantDecl
+        unsafe:
+            decl = read(vp)
+        if decl.linkage_name.equal(c_name):
+            var args = vec.Vec[types.Type].create()
+            # Option: [some.value]; Result: [success.value, failure.error].
+            var ai: ptr_uint = 0
+            while ai < decl.arms.len:
+                var arm: ir.VariantArm
+                unsafe:
+                    arm = read(decl.arms.data + ai)
+                if arm.fields.len > 0:
+                    unsafe:
+                        args.push(read(arm.fields.data + 0).ty)
+                ai += 1
+            if args.len() > 0:
+                return Option[GenericReceiver].some(value = GenericReceiver(owner_name = base, concrete_args = args.as_span()))
+        si += 1
+    return Option[GenericReceiver].none
+
+
 ## Locate a generic method by owner-struct name and method name: search every
 ## module for a generic extending block (`extending Owner[...]:`) on a struct
 ## named `owner_name` that declares `method_name`.  Restricting to modules that
@@ -4570,7 +4627,10 @@ function find_generic_method(ctx: ref[LowerCtx], owner_name: str, method_name: s
         var a: analyzer.Analysis
         unsafe:
             a = read(ctx.program_analyses.data + ai)
-        if a.structs.contains(owner_name) or struct_in_source(a, owner_name):
+        # Search modules that declare the owner as a struct or as a generic
+        # variant (prelude Option/Result live in std.option / std.result and are
+        # declared as variants, not structs).
+        if a.structs.contains(owner_name) or struct_in_source(a, owner_name) or variant_in_source(a, owner_name):
             var di: ptr_uint = 0
             while di < a.source_file.declarations.len:
                 var d: ast.Decl
@@ -4677,12 +4737,23 @@ function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method
 
 
 ## Lower a monomorphized method call: ensure the specialized method body exists,
+## The C linkage name for a monomorphized method instance.  Struct receivers use
+## the module-qualified concrete-struct prefix (`std_vec_Vec_int_push`); prelude
+## variant receivers (Option/Result) use the global concrete-variant prefix with
+## no module qualifier (`Option_str_unwrap`), matching how prelude variant
+## instances are named globally elsewhere.
+function monomorphized_method_c_name(owner_module: str, info: GenericReceiver, method_name: str) -> str:
+    if is_prelude_variant_name(info.owner_name):
+        return j3(generic_struct_c_name(info.owner_name, info.concrete_args), "_", method_name)
+    let struct_c = naming.qualified_c_name(owner_module, generic_struct_c_name(info.owner_name, info.concrete_args))
+    return j3(struct_c, "_", method_name)
+
+
 ## then emit a direct C call to it with the receiver argument.  The specialized
 ## C name groups by the concrete struct (`std_vec_Vec_int_push`), matching the
 ## monomorphized struct type produced by `qualify_type`.
 function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, gm: GenericMethodMatch, method_name: str, receiver: ptr[ast.Expr], args: span[ast.Argument]) -> ptr[ir.Expr]:
-    let struct_c = naming.qualified_c_name(gm.owner_module, generic_struct_c_name(info.owner_name, info.concrete_args))
-    let method_c = j3(struct_c, "_", method_name)
+    let method_c = monomorphized_method_c_name(gm.owner_module, info, method_name)
 
     if not ctx.specialization_cache.contains(method_c) and not ctx.spec_in_progress.contains(method_c):
         ensure_monomorphized_method(ctx, method_c, info, gm)
