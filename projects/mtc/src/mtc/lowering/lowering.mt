@@ -519,9 +519,6 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
             mi += 1
             continue
         var analysis = unsafe: read(a_ptr)
-        if is_raw_module(analysis.module_kind):
-            mi += 1
-            continue
         var ctx = LowerCtx(
             module_name = analysis.module_name,
             analysis = analysis,
@@ -567,6 +564,12 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
                 ast.Decl.decl_function as fun:
                     let ret = resolve_return_type(ref_of(ctx), lookup_fn_sig(ref_of(ctx), fun.name), fun.return_type)
                     sink.set(naming.qualified_c_name(analysis.module_name, fun.name), ret)
+                ast.Decl.decl_extern_function as ext:
+                    # External functions use their bare C name as the linkage name
+                    # (no module prefix), so a cross-module call `c.func(...)` can
+                    # resolve the result type from that same bare-name key.
+                    let ext_ret = if ext.return_type != null: resolve_return_type(ref_of(ctx), Option[analyzer.FnSig].none, ext.return_type) else: types.primitive("void")
+                    sink.set(ext.name, ext_ret)
                 _:
                     pass
             di += 1
@@ -6839,6 +6842,33 @@ function import_qualified_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[
     return Option[types.Type].none
 
 
+## The return type of a cross-module call `alias.func(...)`, resolved from the
+## shared `program_returns` table.  Ordinary functions are keyed by their
+## module-qualified C name; `std.c.*` external functions are keyed by their bare
+## C name (matching `collect_program_returns`).  Returns `ty_error` when the
+## receiver is not an import alias or the function is unknown.
+function imported_call_return_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], func_name: str) -> types.Type:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                let mod_ptr = ctx.analysis.imports.get(id.name) else:
+                    return types.Type.ty_error
+                let target_module = read(mod_ptr)
+                # External (std.c.*) functions are keyed by bare name; ordinary
+                # functions by module-qualified name.  Try the bare name first for
+                # std.c.* aliases, then the qualified name.
+                if target_module.starts_with("std.c."):
+                    let bare_ptr = read(ctx.program_returns).get(func_name)
+                    if bare_ptr != null:
+                        return read(bare_ptr)
+                let linkage = naming.qualified_c_name(target_module, func_name)
+                let ret_ptr = read(ctx.program_returns).get(linkage) else:
+                    return types.Type.ty_error
+                return read(ret_ptr)
+            _:
+                return types.Type.ty_error
+
+
 function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
     unsafe:
         match read(ep):
@@ -6880,6 +6910,14 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                         if foreign_ptr != null:
                             return read(foreign_ptr).return_ty
                         return fn_sig_return_type(lookup_fn_sig(ctx, id.name))
+                    ast.Expr.expr_member_access as ma:
+                        # Cross-module call `alias.func(...)` (ordinary or external):
+                        # the analyzer does not record a resolved type for these, so
+                        # recover the callee's return type from the shared
+                        # program_returns table (keyed by its C linkage name — the
+                        # module-qualified name for ordinary functions, the bare
+                        # name for std.c.* external functions).
+                        return imported_call_return_type(ctx, ma.receiver, ma.member_name)
                     _:
                         return types.Type.ty_error
             ast.Expr.expr_member_access as ma:
