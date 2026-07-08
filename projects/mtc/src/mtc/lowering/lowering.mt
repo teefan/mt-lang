@@ -4429,10 +4429,12 @@ function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, g
 
     let recv = lower_expr(ctx, receiver)
     var ir_args = vec.Vec[ir.Expr].create()
+    var param_offset: ptr_uint = 0
     match build_receiver_arg(recv, gm.method.method_kind):
         Option.some as recv_arg:
             unsafe:
                 ir_args.push(read(recv_arg.value))
+            param_offset = 1
         Option.none:
             pass
     var i: ptr_uint = 0
@@ -4440,11 +4442,33 @@ function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, g
         var arg: ast.Argument
         unsafe:
             arg = read(args.data + i)
-        let lowered = lower_expr(ctx, arg.arg_value)
+        var lowered = lower_expr(ctx, arg.arg_value)
+        lowered = coerce_arg_to_param(cached, param_offset + i, lowered)
         unsafe:
             ir_args.push(read(lowered))
         i += 1
     return alloc_expr(ir.Expr.expr_call(callee = method_c, arguments = ir_args.as_span(), ty = ret_ty))
+
+
+## Coerce a lowered call argument to the specialized function's parameter type:
+## when the parameter is a by-value type but the argument is a pointer (e.g. `this`
+## inside an editable method passed to a by-value `current` param), dereference
+## the argument.  Leaves the argument unchanged when types already agree or the
+## parameter info is unavailable.
+function coerce_arg_to_param(cached: ptr[ir.Function]?, param_index: ptr_uint, arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    let fn_ptr = cached else:
+        return arg
+    let spec_fn = unsafe: read(fn_ptr)
+    if param_index >= spec_fn.params.len:
+        return arg
+    var param: ir.Param
+    unsafe:
+        param = read(spec_fn.params.data + param_index)
+    let arg_ty = ir_expr_type(arg)
+    if is_pointer_or_ref_type(arg_ty) and not is_pointer_or_ref_type(param.ty):
+        # `*arg`: dereference the pointer argument to match the value parameter.
+        return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = arg, ty = param.ty))
+    return arg
 
 
 ## Lower and cache a monomorphized method body once, in the owner module's
