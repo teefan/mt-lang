@@ -2929,14 +2929,18 @@ function cross_module_return_type(ctx: ref[LowerCtx], c_name: str, call_ep: ptr[
         if rp != null:
             ret_ty = read(rp)
     if not types.is_error(ret_ty):
-        return qualify_type(ctx, ret_ty)
+        # The stored type was already qualified in its defining module's context
+        # by `collect_program_returns`; re-qualifying it here (in the caller's
+        # context) would double-prefix concrete generic instance names
+        # (e.g. analyzer calling da.check() → mtc_semantic_analyzer_std_vec_Vec_…).
+        return ret_ty
     # Also check per-module function_returns (monomorphized functions added here).
     let fp = ctx.function_returns.get(c_name)
     if fp != null:
         unsafe:
             ret_ty = read(fp)
         if not types.is_error(ret_ty):
-            return qualify_type(ctx, ret_ty)
+            return ret_ty
     return expr_type(ctx, call_ep)
 
 
