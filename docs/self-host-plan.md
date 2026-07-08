@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
 Status: **Phase 8 — self-compile C-error elimination. 83 C errors remain (measured with `-I std/c`).**
-Last updated: 2026-07-08 (P8)
+Last updated: 2026-07-09 (P8)
 
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -86,149 +86,133 @@ started emitting — see §2). Commits `1fe8924f`…`24476860`:
 
 ---
 
-## 2. Current state (Phase 8)
+## 2. Current state (Phase 8, as of 2026-07-09)
 
 ### Self-compile: the Ruby-built self-host binary compiles its own source
 
+The pipeline works end-to-end: `mtc emit-c` → 47,814 lines of C → `cc -c`.  The
+compiled shared system comes from *all* of the self-host's modules in aggregate, so each
+fix measured against the full emit-c + `cc` baseline.
+
 ```sh
-# The default (debug-guarded) binary trips a loop guard on the ~800KB source
-# (str.is_valid_utf8 scans >50k bytes). Use a guard-free binary for now:
 bin/mtc build projects/mtc --no-cache --no-debug-guards -o tmp/mtc-noguard
 tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root . > tmp/self.c
-cc -std=c11 -Wno-implicit-function-declaration -c tmp/self.c -o /dev/null
+cc -std=c11 -D_GNU_SOURCE -Wno-implicit-function-declaration -I std/c -c tmp/self.c -o /dev/null 2>tmp/errs.txt
 ```
 
-**Status**: pipeline end-to-end works. Generated C is **44,065 lines** with **495 `cc` errors**
-(down from 1127; the count rose to 2227 mid-session once method/function bodies began
-emitting real code, then fell to 516, then to 495 — so 495 is measured against a far more
-complete codebase than the earlier 1127).
+**Status**: 83 `cc` errors, 172/172 tests pass.
 
-### Error breakdown (495)
+### Error breakdown (83, grouped by root cause)
 
-No single dominant root remains — it is a diverse tail. Approximate groupings:
+| Root cause | Count | Representative errors |
+|-----------|-------|-----------------------|
+| Match-expression lowering (stub-generated) | ~12 | `match_expr` undeclared, `stmt_local_some`/`none` undeclared, `expr_match` unknown, `scrutinee` member-on-non-struct. All cosmetic — the `lower_expression_match` stub is dead code. |
+| `std_map_Option_` variant-literal prefix | ~3 | `request for member 'value'` on `std_map_Option_..._unwrap(removed)`. The `.some(...)` arm body still module-prefixes the Option outer variant. |
+| `String.create()` static method return type | ~8 | `String` unknown type, `std_string_String` return-from-int, `String_reserve`/`append` arg mismatch, `expected expression before 'String'`. Static methods on nominal types (`String.create()`) are not in the `function_returns` table. |
+| `void*` return-from-int (std_mem_heap) | 4 | External libc functions (`malloc`/`aligned_alloc`/`calloc`/`realloc`) typed as `int` instead of `ptr[void]?`. Pre-existing — in std-lib modules, not self-host source. |
+| `mtc_ir_Expr` vs `ast_Expr` pointer mismatch | 3 | Variant registry name collision between `mtc.ir.Expr` and `mtc.parser.ast.Expr` modules — bare name `Expr` maps to the wrong type. |
+| Declared void / `mt_` fallback (Map/Vec methods) | ~6 | `_prev`/`last`/`kinds`/`found`/`configured` declared void. Method calls on monomorphized Map/Vec fall to `<module>_mt_<method>`. |
+| Map/vec `.contains()` arg type mismatches | 4 | Monomorphized generic method call arg types don't match struct decl. |
+| Scattered singletons | ~43 | Mostly 1-each: pointer/type mismatches, `String_String_from_str` return-int, `Stmt_stmt_local` unknown, `interfering types`, `intialization` mismatches, `binds`/`destructure_bindings`/`str_cstr_as_str`/`vec_contains_int`/`variant_match_allowed`/`lower_extending_block`/`lower_expr`/`guard_variant_base`/`ensure_event_runtime`/`emit_result_failure_binding` arg type errors, `subscripted value`, `redefinition of 't'`, `invalid initializer`, `conflicting types for 'value'`, `Vec_* expected '* *' but got '* **'`. |
 
-| Theme | ~Count | Representative errors |
-|-------|--------|-----------------------|
-| Match-**expression** hoisting (return/arg positions) | ~22 | `match_expr` undeclared; some `return int but mt_str expected` |
-| Residual member/field typing | ~40 | `mt_str == mt_str` (str field not typed str → not `mt_str_equal`); `member on non-struct` (`len`/`data`/`value`) |
-| Cross-module type attribution / struct emission | ~25 | `mtc_main_LoadDiagnostic` (should be its defining module); `Diag`/`FnSig` unknown (struct not emitted) |
-| Cross-ctx prelude payload `_phantom` | ~47 | `mtc_<mod>__phantom` — Option/Result payload arm bound in a module where the concrete variant instance was created in *another* module's LowerCtx (see §3.1.1) |
-| Generic `Map` instance arg mismatches | ~21 | `std_map_Map_str_..._contains` argument type mismatch (span/struct keys) |
-| Option/init handling | ~23 | `char* = Option_str`; `invalid initializer` |
-| External/opaque ABI types | ~6 | `std_c_fs_mt_fs_error` unknown |
-| Other | ~360 | scattered type/return mismatches in newly-emitted bodies |
+### Already fixed this session (208 → 83, −125)
 
-**Landed this session (516 → 495, −21):** prelude `Option`/`Result` match-arm payload
-bindings (`s.value` / `f.error`) previously resolved to an undeclared `_phantom` C type
-because the prelude `VariantInfo` stores a `_phantom` placeholder payload type.
-`register_arm_payload_fields` now specializes that placeholder via
-`specialize_prelude_arm_info`: it first looks the concrete field type up in the
-just-emitted concrete variant decl (`pending_generic_variants`, keyed by the payload
-struct C name), then falls back to the scrutinee's own generic args. This fixed the
-**same-LowerCtx** cases (`mtc_semantic_analyzer`, `std_process`). The remaining ~47
-phantom refs are the **cross-ctx** case (§3.1.1).
+See §5 checklist for the full list. The big items:
+
+- **str-method naming overhaul** (−27): bare `<type>_<method>` for primitive/str receivers, `_static` for hooks.
+- **RemovedEntry qualification** (−12): `qualify_type` on generic-variant-literal type args.
+- **current-module field typing** (−30): `imported_field_type` resolves current-module struct fields.
+- **Cross-ctx prelude `_phantom`** (−43): shared `prelude_arm_field_types` program-wide registry.
+- **array const C emission** (−5): `render_constant`/`render_global` use `c_declaration` for array types.
+- **match-expr infrastructure** (3 bugfixes, no net change): `enum_source_module`, `var ty → ty_error`, `lower_str_match_expr`.
+- **prelude method C naming** (in progress): `method_c_name` + `prelude_variant_base` for global Option/Result methods.
+
+### Infrastructure ready, hoist pending
+
+The 3 match-expression infrastructure bugs are fixed. The `return match` hoist works on all 4 individual match-expr files (keywords.mt/81, token.mt/enum, lexer.mt/2 tuples). Full self-compile crashes with `lowering: unsupported variant match expression pattern` when the hoist is enabled — root cause not yet isolated. The crash is NOT a guard trip (unguarded also crashes), NOT from the str-routing change, and NOT from the `let x = match` path. Suspect a side-effect from `lower_match_expression_local` during lowering that triggers `lower_variant_match_expr`'s goto-path in a subsequent module's variant match.
 
 ---
 
-## 3. Next steps to finish self-host
+## 3. Ranked path to zero (83 → 0)
 
-### 3.1 Drive self-compile C errors 495 → 0
+### 3.1 `std_map_Option_` variant-literal prefix (~3, plus may cascade)
 
-Incremental grind; suggested order (highest leverage / cleanest first). Each fix tends
-to un-mask the next layer, so re-measure after each.
+The remaining `std_map_Option_...` lines come from variant-literal constructions
+(`Option[RemovedEntry].some(value = ...)`) in `Map.remove()`, not from method calls.
+The `.some(...)` arm body emits `Option[RemovedEntry]` with `std_map_` prefixing the
+outer Option. Fix: the variant-literal type argument build path must recognize prelude
+variant outer names (Option/Result) and use global naming, similar to the method-call
+fix in `method_c_name`.
 
-#### 3.1.1 Cross-ctx prelude payload `_phantom` (~47, highest single root)
+**Approach**: in `lower_generic_variant_literal` or `ensure_generic_variant`, when the
+outer variant is a prelude variant, use a bare global name (no module prefix) for the
+outer variant C name — matching the already-fixed method-name path.
 
-The scrutinee is a cross-module call returning `Option[T]`/`Result[T,E]` (e.g.
-`fs.read_text(...)` → `Result[String, Error]`).
+### 3.2 `String.create()` static method return type (~8)
 
-**Investigation (session 2, corrected findings — supersedes the earlier "not reached
-via lower_match" note, which was a probe artifact: `stdio` writes to stdout and the
-`emit-c` redirect discarded it; re-probing via `terminal.write_stderr` showed the real
-flow):**
+`String.create()` / `String.with_capacity()` / `String.from_str()` return `String` (a
+nominal struct), but static methods are **not** in the `function_returns` table (only
+free functions are registered by `collect_program_returns`). When lowered, the call's
+return type resolves as `void` or `int`, cascading into `String` unknown-type,
+return-type mismatches, and `reserve`/`append` arg-type errors.
 
-The pipeline IS `lower_match` → `lower_variant_match` → `lower_variant_match_switch` →
-`register_arm_payload_fields` → `arm_payload_field_type`. Confirmed facts:
+**Approach**: either (a) register static method return types in `function_returns`
+during `collect_program_returns` (by iterating each module's `method_sigs` for static
+methods whose return type is a nominal struct and adding entries keyed by the member
+C name), or (b) teach `function_return_type` to search `method_sigs` when the functions
+table has no entry. Approach (a) is more surgical and mirrors how free-function returns
+are already collected.
 
-1. The analyzer resolves the scrutinee correctly: `try_imported_call` (analyzer.mt)
-   returns the imported fn's `sig.return_type` = `Result[String, Error]` **with args**,
-   and `expr_type` in `lower_match` returns it intact (verified via stderr probe).
-2. But `lower_match` line ~5717 overrides `scrutinee_ty` with the **lowered** type
-   (`ir_expr_type(lower_expr(scrutinee))`), which collapses to an arg-less
-   `ty_named("Result_std_string_String_std_fs_Error")`. `register_arm_payload_fields`
-   receives that collapsed type, so `variant_type_args` returns empty.
-3. `arm_payload_fields` is **per-`LowerCtx`** (each module re-created). The concrete
-   `Result[String,Error]` variant decl lives in `std.fs`'s ctx `pending_generic_variants`,
-   not the consuming module's — so `prelude_field_type_from_variants` also misses.
-4. Worse, the map is keyed only by payload struct C name, shared across sites: a site
-   that fails to resolve **overwrites** a good entry a prior site set.
+### 3.3 Match-expression hoist (unblocked, the ~12 cosmetic cluster)
 
-**Fix attempted (session 2), reverted — partial, insufficient:** three combined pieces —
-(a) `fallback_type` member-access-callee case via new `imported_call_return_type`
-(independently correct: resolves cross-module call types that were `ty_error`);
-(b) capture `analyzer_scrutinee_ty` before the line-5717 override and thread it as a new
-`arg_source_ty` param through `lower_variant_match`/`_switch`/`_goto` to the specializer;
-(c) an anti-overwrite guard (`arm_info_has_phantom` + `existing_arm_info_phantom_free`).
-Result: a plain-`match` isolation repro improved **4 → 2 phantom** (the `success`/arg-0
-arm resolved; the `failure`/arg-1 arm still didn't — asymmetry not yet explained), but the
-**full self-compile stayed at 495/47**. The real modules' matches did not benefit even
-though their source (`module_loader.mt:205`) is the identical `match fs.read_text(k)`
-shape — strongly implying the remaining resolution gap is the **arg-1 (`failure`/error)
-fallback** and/or `qualify_type` of the analyzer arg in the consuming module's context.
+The 3 infrastructure bugs are fixed. The `return match` hoist in `lower_stmt` works on
+all 4 individual match-expr files. Full self-compile crashes — root cause to isolate:
 
-**Recommended next approach (cleanest):** make the concrete payload field types
-resolvable **without** relying on per-ctx state or the collapsed type — decode them from
-the payload struct C name (which already encodes the fully-qualified args, e.g.
-`Result_std_string_String_std_fs_Error_failure`), OR promote `arm_payload_fields` /
-`pending_generic_variants` to a shared program-wide registry threaded through `LowerCtx`.
-Debug the arg-1/`failure` asymmetry first with the minimal repro
-`match fs.read_text(k): Result.failure as f: var e = f.error ...` and a stderr probe
-(NOT stdout — emit-c writes C to stdout).
+- The crash is `lowering: unsupported variant match expression pattern` from
+  `lower_variant_match_expr`'s goto-path. The goto-path fires for variant matches with
+  struct-pattern arms.
+- The crash occurs **only** during full compilation (all modules), never on individual
+  files — suggesting a side-effect or state-leak from the hoist's
+  `lower_match_expression_local` call that triggers the variant path in a later module.
 
-#### 3.1.2 Remaining tail
+**Debug plan**: add a unique fatal identifier to each `variant_match_arm_name_from_pattern`
+call site (3 in total) to identify which module's match triggers it; add a `lower_match_expression_local`
+suppression flag to skip the hoist path and see if the crash persists; bisect which module
+causes the crash by compiling subsets of modules.
 
-1. **Match-expression hoisting** (`return match …`, `match` in call args). `lower_expression_match`
-   is a stub returning an undeclared `match_expr` name. Needs to hoist into a temp + switch.
-   **Blocker to redo carefully:** `lower_match_expression_local` only handles enum/variant
-   scrutinees; a str/int expression-match falls into `lower_enum_match_expr` and **infinite-loops
-   (OOM)**. Add int/str expression-match lowering (mirror `lower_scalar_match`/`lower_string_match`)
-   **before** wiring `return match` hoisting. Verify on a minimal str-scrutinee repro first.
-2. **Residual member/field typing** — chase the remaining `member on non-struct` and `str ==`
-   cases (fields whose type still resolves to void/int). Same theme as the arm-payload/imported-field
-   fixes already landed; likely more `ty_named` receivers that bypass `imported_field_type`.
-3. **Cross-module attribution & struct emission** — `LoadDiagnostic` attributed to `mtc.main`
-   instead of its defining module; `Diag`/`FnSig` structs referenced but not emitted (reachability
-   or module attribution). Audit where a bare type name gets the current module's prefix.
-4. **Generic `Map` instance mismatches** — `contains(...)` arg types for `Map` with span/struct
-   keys; check key-type qualification consistency between the struct decl and call sites.
-5. **Option/init handling** — `char* = Option_str` and `invalid initializer` (Option-typed
-   values used where a scalar/pointer is expected — likely a residual match/type-resolution gap).
-6. **External ABI types** — `std_c_fs_mt_fs_error` (external `struct` types from `std.c.*`);
-   ensure external-file structs are emitted/forward-declared.
+### 3.4 `mtc_ir_Expr` vs `ast_Expr` pointer mismatch (3)
 
-### 3.2 Verify correctness beyond "it compiles"
+Variant registry keyed by bare `Expr` name — `mtc.ir.Expr` and `mtc.parser.ast.Expr`
+collide. The arm-payload path has a workaround, but match dispatch and other lookups may
+still be affected.
 
-Reaching 0 `cc` errors is necessary but not sufficient — dropped/empty bodies and wrong
-codegen do not always surface as C errors. Once errors are low:
+**Approach**: change the variant registry key to use module-qualified names, or add
+module-qualified fallback lookup in the relevant paths.
 
-- **Differential C**: diff the self-host's C output against the Ruby compiler's C output
-  for the same inputs (the 11 differential programs, then the self-host source). Target
-  behavioral equivalence (byte-identical where feasible — the correctness oracle).
-- **Bootstrap fixpoint**: guard-free self-host → C → `cc` → **stage-2** binary; stage-2
-  compiles the source again → **stage-3**; assert `stage-2 output == stage-3 output`.
+### 3.5 Declared void / `mt_` fallback on Map/Vec methods (~6)
 
-### 3.3 Fix the debug-guard false-positive
+`_prev`/`last`/`kinds`/`found`/`configured` all come from monomorphized Map/Vec method
+calls (`.set()`, `.get()`, `.byte_at()`, `as_span()`) falling to the `<module>_mt_<method>`
+fallback because the method's return type isn't in the return-type table for
+monomorphized instances.
 
-Linear scans over the whole source (`str.is_valid_utf8`, lexer loops) exceed the 50k
-loop-iteration guard, so the **default (guarded) binary aborts on its own source**. A debug
-self-host must be able to guard *its own* compilation loops without tripping on large input:
-raise/scope the threshold, or exclude byte-scan loops. Needed before the guarded binary can
-self-compile.
+**Approach**: similar to §3.2 — register monomorphized method return types, or resolve
+them from the method's FnSig in `resolve_method_info`.
 
-### 3.4 Build-mode / runtime parity (after self-compile is green)
+### 3.6 Map/vec `.contains()` arg mismatches (4)
 
-Deferred codegen/runtime items (see §6) — cache, line directives, include set, `as cstr`
-for non-literals, proc retain/release, async CPS, capture analysis.
+Monomorphized generic method call arg types don't match the concrete struct decl. Likely
+a key-type qualification inconsistency between the struct-decl site and the call site.
+
+**Approach**: check how `Map.contains(key)` arg types are qualified in the call
+lowering vs the struct decl emitted for `Map[span_str, VariantInfo]`.
+
+### 3.7 Scattered singletons (~43)
+
+No dominant root; most are single-occurrence. After the clusters above are fixed, a
+final pass to identify any remaining groups will likely resolve most of these.
+
+---
 
 ---
 
@@ -345,10 +329,36 @@ Established this session; reuse these seams rather than re-deriving them:
         three is a multi-session effort; the hoist stub is dormant (never reached) and the
         pre-existing bugs don't affect current compilation.  Skip for now; the 8 errors are cosmetic
         (stub-generated `match_expr` names in dead code paths).
-  - [ ] Diverse tail (~80): `void *` return-from-int (4), `mtc_ir_Expr` vs `ast_Expr` pointer
-        mismatches (3), `String`/`array_str_N` unknown types (4+2), residual `member on non-struct`
-        values (3), generic `Map`/`vec_contains` arg mismatches (4), and other singletons. No
-        dominant root; each cluster is 2-4 errors.
+  - [x] `array[T,N]` const emission (88 → 83, −5). `render_constant`/`render_global` used `c_type`
+        for arrays, which produced the backend-internal `array_str_N` struct name (no typedef
+        emitted). Fixed to use `c_declaration` which renders C-native `TYPE NAME[N]`.
+  - [x] **Match-expr infrastructure** (3 bugfixes, no net error change):
+        (a) `lower_enum_match_expr` now uses `enum_source_module` for imported enum member C names;
+        (b) `var ty = types.Type.ty_error` replaces the default `ty_primitive("")` which crashed
+        the backend; (c) added `lower_str_match_expr` (if-chain for str scrutinees) + `is_str_scrutinee`
+        routing.  Also restored the `continue` infinite-loop fix.  The `return match` hoist works on
+        all 4 individual match-expr files; full self-compile crash deferred (§3.3).
+  - [x] **Prelude variant method C naming** (halved `std_map_Option_` prefix, 6→3).
+        `resolve_method_info` used the full concrete variant type name (e.g.
+        `std_map_Option_std_map_RemovedEntry_ptr_uint_bool`) to construct the method lookup key, but
+        prelude methods (Option.is_some, Result.unwrap) are registered under the base variant name
+        (`Option_is_some`).  The keys mismatched, so method calls fell to the `mt_` fallback.
+        Added `prelude_variant_base` to extract the base name from qualified concrete names, plus
+        `contains_substring` checks in `is_prelude_variant_name` for `_Option_`/`_Result_` embedded
+        in module-qualified names.  `method_c_name` delegates to `prelude_variant_base` for global
+        naming.  Remaining 3 `std_map_Option_` lines come from variant-literal constructions
+        (`.some(...)`, not method calls — §3.1).
+  - [ ] **`std_map_Option_` variant-literal prefix** (3 — §3.1).  The remaining occurrences come
+        from `Option[RemovedEntry].some(value = ...)` in monomorphized method bodies.
+  - [ ] **`String.create()` static method return type** (~8 — §3.2).  Static methods on nominal
+        types are not in the `function_returns` table.
+  - [ ] **Match-expression hoist crash** (~12 cosmetic — §3.3).  Infrastructure is ready; hoist
+        works on individual files; full self-compile crashes with lowering variant error.
+  - [ ] **`mtc_ir_Expr` vs `ast_Expr` pointer mismatch** (3 — §3.4).  Variant registry name collision.
+  - [ ] **Declared void / `mt_` fallback** (~6 — §3.5).  Monomorphized Map/Vec method return types
+        not resolved.
+  - [ ] **Map/vec `.contains()` arg mismatches** (4 — §3.6).
+  - [ ] **Scattered singletons** (~43).
   - [ ] Milestone: `mtc build projects/mtc` produces a native binary
 - [ ] Phase 9 — correctness verification (differential C + bootstrap fixpoint)
 - [ ] Phase 10 — debug-guard fix + build-mode/runtime parity
