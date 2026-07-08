@@ -4126,6 +4126,26 @@ function method_link_name(module_name: str, type_name: str, method_name: str, is
     return naming.qualified_member_c_name(module_name, type_name, method_name)
 
 
+## The C linkage name for a resolved method call.  Prelude variants (Option,
+## Result) use a bare name with no module prefix (e.g. `Option_unwrap`),
+## matching the global naming scheme used when declaring Option/Result
+## instances.  Primitive/str receivers use `method_link_name` for consistency
+## with `lower_extending_block`.  Nominal receivers keep the module-qualified
+## scheme.
+function method_c_name(module_name: str, type_name: str, method_name: str, method_kind: ast.MethodKind) -> str:
+    if is_prelude_variant_name(type_name):
+        match prelude_variant_base(type_name):
+            Option.some as p:
+                var buf = string.String.create()
+                buf.append(p.value)
+                buf.append("_")
+                buf.append(method_name)
+                return buf.as_str()
+            Option.none:
+                pass
+    return method_link_name(module_name, type_name, method_name, method_kind == ast.MethodKind.mk_static)
+
+
 ## Some(type name) when `t` is a primitive or `str` receiver type, whose methods
 ## use the bare naming scheme; none for nominal or other receiver types.
 function primitive_receiver_name(t: types.Type) -> Option[str]:
@@ -4265,7 +4285,16 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
             Option.none:
                 pass
         return Option[MethodInfo].none
-    let key = analyzer.method_key(type_name, method_name)
+    # Prelude variant methods (Option.is_some, Result.unwrap) are registered
+    # under the base variant name, not the concrete qualified C name
+    # (e.g. key "Option_is_some", not "std_map_Option_std_map_RemovedEntry_ptr_uint_bool_is_some").
+    var lookup_name = type_name
+    match prelude_variant_base(type_name):
+        Option.some as base:
+            lookup_name = base.value
+        Option.none:
+            pass
+    let key = analyzer.method_key(lookup_name, method_name)
     if ctx.analysis.method_sigs.contains(key):
         let sig_ptr = ctx.analysis.method_sigs.get(key) else:
             return Option[MethodInfo].none
@@ -4273,7 +4302,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
         var ret = sig.return_type
         if not sig.has_return_type:
             ret = types.primitive("void")
-        return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, type_name, method_name), method_kind = sig.method_kind, return_type = ret))
+        return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name(ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = ret))
     # Search imported modules' method_sigs when the method is not found locally.
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len:
@@ -4302,7 +4331,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
                 _:
                     pass
             return Option[MethodInfo].some(value = MethodInfo(
-                c_name = qualified_member_c_name_ext(mod_prefix, type_name, method_name),
+                c_name = method_c_name(a.module_name, type_name, method_name, sig.method_kind),
                 method_kind = sig.method_kind,
                 return_type = resolve_method_return_from_import(ctx, a.module_name, sig, receiver_ty),
             ))
@@ -7165,8 +7194,30 @@ function variant_match_allowed(ctx: ref[LowerCtx], name: str) -> bool:
         i += 1
     return false
 
+## Extract the base prelude variant name from a qualified concrete variant name.
+## "std_map_Option_std_map_RemovedEntry_ptr_uint_bool" → Some("Option").
+## "Option_str" → Some("Option").  Non-prelude names return none.
+function prelude_variant_base(name: str) -> Option[str]:
+    if name.contains_substring("_Option_"):
+        return Option[str].some(value = "Option")
+    if name.contains_substring("_Result_"):
+        return Option[str].some(value = "Result")
+    if name.starts_with("Option_"):
+        return Option[str].some(value = "Option")
+    if name.starts_with("Result_"):
+        return Option[str].some(value = "Result")
+    return Option[str].none
+
+
+## True when a type name is a prelude variant (Option/Result), either bare
+## or embedded in a qualified concrete name (e.g. "std_map_Option_...").
 function is_prelude_variant_name(name: str) -> bool:
-    return name.equal("Option") or name.equal("Result") or name.starts_with("Option_") or name.starts_with("Result_")
+    return (
+        name.equal("Option") or name.equal("Result")
+        or name.starts_with("Option_") or name.starts_with("Result_")
+        or name.contains_substring("_Option_") or name.contains_substring("_Result_")
+    )
+
 
 ## Extract the base variant name from a qualified name like "Option_span_Field" → "Option".
 function variant_base_name(name: str) -> Option[str]:
