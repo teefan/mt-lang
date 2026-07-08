@@ -6457,7 +6457,7 @@ function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
 ## `lower_match`).  Integer and string scrutinees are deferred.
 function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, declared_type: ptr[ast.TypeRef]?, scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm]) -> void:
     let c_name = c_local_name(name)
-    var ty: types.Type
+    var ty = types.Type.ty_error
     let dt = declared_type
     if dt != null:
         ty = resolve_type_ref(ctx, dt)
@@ -6478,7 +6478,9 @@ function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
     let result_ref = alloc_expr(ir.Expr.expr_name(name = c_name, ty = ty, pointer = false))
 
     let type_name = named_type_name(scrutinee_ty)
-    if type_name.is_some() and ctx.variants.contains(type_name.unwrap()):
+    if is_str_scrutinee(scrutinee_ty):
+        lower_str_match_expr(ctx, output, scrutinee_expr, arms, result_ref)
+    else if type_name.is_some() and ctx.variants.contains(type_name.unwrap()):
         lower_variant_match_expr(ctx, output, scrutinee_expr, type_name.unwrap(), scrutinee_ty, arms, result_ref)
     else:
         lower_enum_match_expr(ctx, output, scrutinee_expr, type_name, arms, result_ref)
@@ -6486,11 +6488,81 @@ function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
     ctx.locals.push(LocalBinding(name = name, c_name = c_name, ty = ty, pointer = false))
 
 
+
+## Lower a match expression over a `str` scrutinee: emit an if / else-if chain
+## comparing the scrutinee with each arm's string-literal pattern, assigning the
+## arm's value to `result_ref` on match.  Mirrors `lower_string_match` for the
+## expression form.
+function lower_str_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+    var has_default = false
+    var default_val: ptr[ir.Expr]? = null
+    var pattern_lits = vec.Vec[ptr[ir.Expr]].create()
+    var result_vals = vec.Vec[ptr[ir.Expr]].create()
+    var ai: ptr_uint = 0
+    while ai < arms.len:
+        var arm: ast.MatchExprArm
+        unsafe:
+            arm = read(arms.data + ai)
+        if arm.pattern == null:
+            has_default = true
+            default_val = lower_expr(ctx, arm.value)
+        else:
+            unsafe:
+                pattern_lits.push(lower_expr(ctx, ptr[ast.Expr]<-arm.pattern))
+            result_vals.push(lower_expr(ctx, arm.value))
+        ai += 1
+
+    # Emit arm if-thens in forward order directly into output, with the
+    # wildcard-arm assignment as the final else for the last pattern arm.
+    var idx: ptr_uint = 0
+    while idx < pattern_lits.len:
+        let pat_ptr = pattern_lits.get(idx) else:
+            fatal(c"lowering: str match expr pattern")
+        let val_ptr = result_vals.get(idx) else:
+            fatal(c"lowering: str match expr value")
+        let condition = alloc_expr(ir.Expr.expr_binary(
+            operator = "==",
+            left = scrutinee_expr,
+            right = unsafe: read(pat_ptr),
+            ty = types.primitive("bool"),
+        ))
+        var assign = vec.Vec[ir.Stmt].create()
+        assign.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = unsafe: read(val_ptr)))
+        if idx + 1 < pattern_lits.len:
+            # Not the last arm: if-then with no else (fall-through to next arm).
+            output.push(ir.Stmt.stmt_if(condition = condition, then_body = assign.as_span(), else_body = span[ir.Stmt]()))
+        else if has_default:
+            # Last arm + wildcard: if-then with the wildcard assignment as else.
+            var else_body = vec.Vec[ir.Stmt].create()
+            let dv = default_val else:
+                fatal(c"lowering: str match expr default value")
+            else_body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = dv))
+            output.push(ir.Stmt.stmt_if(condition = condition, then_body = assign.as_span(), else_body = else_body.as_span()))
+        else:
+            # Last arm, no wildcard: if-then with no else.
+            output.push(ir.Stmt.stmt_if(condition = condition, then_body = assign.as_span(), else_body = span[ir.Stmt]()))
+        idx += 1
+
+    # Only a wildcard arm: emit the assignment directly.
+    if has_default and pattern_lits.len == 0:
+        var stmts = vec.Vec[ir.Stmt].create()
+        let dv = default_val else:
+            fatal(c"lowering: str match expr default value")
+        stmts.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = dv))
+        var j: ptr_uint = 0
+        while j < stmts.len:
+            let s_ptr = stmts.get(j) else:
+                break
+            unsafe:
+                output.push(read(s_ptr))
+            j += 1
+
 ## Lower a match expression over an enum scrutinee: emit a switch whose cases
 ## assign the result and break, plus a default case for the wildcard arm.
 function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], type_name: Option[str], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
     var cases = vec.Vec[ir.SwitchCase].create()
     var has_wildcard = false
+    var enum_module = enum_source_module(ctx, ir_expr_type(scrutinee_expr), ctx.module_name)
     var i: ptr_uint = 0
     while i < arms.len:
         var arm: ast.MatchExprArm
@@ -6513,7 +6585,7 @@ function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
             match type_name:
                 Option.some as tn:
                     let value = alloc_expr(ir.Expr.expr_name(
-                        name = naming.qualified_member_c_name(ctx.module_name, tn.value, member),
+                        name = naming.qualified_member_c_name(enum_module, tn.value, member),
                         ty = ir_expr_type(scrutinee_expr),
                         pointer = false,
                     ))
