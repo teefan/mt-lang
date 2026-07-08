@@ -5681,11 +5681,61 @@ function install_imported_variants(ctx: ref[LowerCtx]) -> void:
                         ast.Decl.decl_variant as vr:
                             if vr.type_params.len == 0 and not ctx.variants.contains(vr.name):
                                 ctx.variants.set(vr.name, build_imported_variant_info(ctx, target_module, imported.value, vr.variant_arms))
+                            # Register arm payload field types keyed by the
+                            # module-qualified payload struct C name, for EVERY
+                            # imported variant — even when its bare name collides
+                            # with an already-registered variant (e.g. both
+                            # `ir.Expr` and `ast.Expr` are named "Expr").  This
+                            # feeds `arm_payload_field_type` directly so member
+                            # access on an arm binding (`node.operator`) types
+                            # correctly regardless of the registry collision.
+                            if vr.type_params.len == 0:
+                                register_imported_variant_arm_fields(ctx, target_module, imported.value, vr.name, vr.variant_arms)
                         _:
                             pass
                     di += 1
             Option.none:
                 pass
+
+
+## Register arm payload field types for an imported variant into
+## `arm_payload_fields`, keyed by the module-qualified payload struct C name
+## (`<owner>_<Variant>_<arm>`).  Populated for every imported variant regardless
+## of bare-name registry collisions, so member access on an arm binding resolves
+## the field type structurally.  Field types are resolved in the owner context.
+function register_imported_variant_arm_fields(ctx: ref[LowerCtx], owner_module: str, owner_analysis: analyzer.Analysis, variant_name: str, arms: span[ast.VariantArm]) -> void:
+    let outer_c = naming.qualified_c_name(owner_module, variant_name)
+    var saved_module = ctx.module_name
+    var saved_analysis = ctx.analysis
+    ctx.module_name = owner_module
+    ctx.analysis = owner_analysis
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.VariantArm
+        unsafe:
+            arm = read(arms.data + i)
+        if arm.arm_fields.len > 0:
+            var names = vec.Vec[str].create()
+            var tys = vec.Vec[types.Type].create()
+            var fi: ptr_uint = 0
+            while fi < arm.arm_fields.len:
+                var f: ast.Field
+                unsafe:
+                    f = read(arm.arm_fields.data + fi)
+                names.push(f.name)
+                tys.push(qualify_type(ctx, resolve_field_type_ref(ctx, f.field_type)))
+                fi += 1
+            let payload_c = variant_arm_type_name(outer_c, arm.name)
+            # Do not overwrite an entry a real match already registered.
+            if not ctx.arm_payload_fields.contains(payload_c):
+                ctx.arm_payload_fields.set(payload_c, VariantArmInfo(
+                    name = arm.name,
+                    field_names = names.as_span(),
+                    field_types = tys.as_span(),
+                ))
+        i += 1
+    ctx.module_name = saved_module
+    ctx.analysis = saved_analysis
 
 
 ## Like `build_variant_info` but uses the imported module's name for
