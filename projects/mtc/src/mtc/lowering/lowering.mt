@@ -1090,6 +1090,12 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         return
                     Option.none:
                         pass
+                # Guard form: `let x = expr else: <exit>` (and var).  The else body
+                # runs on the absent/failure case; on success `x` binds the
+                # unwrapped value.
+                if loc.else_body != null and loc.value != null:
+                    lower_guard_local(ctx, output, loc.name, loc.else_binding, loc.value, loc.else_body)
+                    return
                 let init_val = loc.value
                 if init_val != null:
                     unsafe:
@@ -1215,6 +1221,151 @@ function local_decl_type(ctx: ref[LowerCtx], declared: ptr[ast.TypeRef]?, value:
     if types.is_error(resolved):
         return qualify_type(ctx, expr_type(ctx, value))
     return resolved
+
+
+## Lower a guard local `let name = value else: <else_body>` (and the `var` form).
+## The initializer has an `Option[T]`, `Result[T, E]`, or nullable `T?` storage
+## type; the `else` body runs on the absent/failure case and must exit control
+## flow.  On success `name` binds the unwrapped success value `T`.  Mirrors Ruby's
+## let-else lowering (block.rb): store the value in a hidden local, emit
+## `if (failure) { <else_body> }`, then bind `name` to the projected success value.
+function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, else_binding: Option[str], value: ptr[ast.Expr]?, else_body: ptr[ast.Stmt]?) -> void:
+    let value_ptr = value else:
+        fatal(c"lowering: guard local requires an initializer")
+    let value_ir = lower_expr(ctx, value_ptr)
+    let storage_ty = ir_expr_type(value_ir)
+
+    # Hidden storage local holding the full Option/Result/nullable value.
+    let storage_c = fresh_c_temp_name(ctx, "guard")
+    output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = 0, source_path = ""))
+    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = false))
+
+    let kind = guard_storage_kind(ctx, storage_ty)
+
+    # else body: for a Result `else as error:` guard, project the failure error
+    # into a local at the top of the else body so it can be referenced there.
+    var else_stmts = vec.Vec[ir.Stmt].create()
+    if kind.equal("result") and else_binding.is_some():
+        emit_result_failure_binding(ctx, ref_of(else_stmts), storage_ty, storage_ref, else_binding.unwrap())
+    append_span_stmts(ref_of(else_stmts), lower_block(ctx, else_body))
+    let else_ir = else_stmts.as_span()
+
+    # `if (<failure condition>) { <else body> }`
+    let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = else_ir, else_body = span[ir.Stmt]()))
+
+    # Bind `name` to the unwrapped success value (unless discarded with `_`).
+    if name.equal("_"):
+        return
+    let success_ty = guard_success_type(ctx, kind, storage_ty)
+    let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
+    let bc = c_local_name(name)
+    output.push(ir.Stmt.stmt_local(name = name, linkage_name = bc, ty = success_ty, value = success_val, line = 0, source_path = ""))
+    ctx.locals.push(LocalBinding(name = name, c_name = bc, ty = success_ty, pointer = false))
+
+
+## Classify a guard's storage type: "option", "result", or "nullable".
+function guard_storage_kind(ctx: ref[LowerCtx], storage_ty: types.Type) -> str:
+    if types.is_nullable_type(storage_ty):
+        return "nullable"
+    let gv = generic_variant_name(storage_ty)
+    if gv.is_some():
+        let base = guard_variant_base(gv.unwrap())
+        if base.equal("Result"):
+            return "result"
+        return "option"
+    # A collapsed concrete name (Option_str / Result_..._).
+    let tn = named_type_name(storage_ty)
+    if tn.is_some():
+        if tn.unwrap().starts_with("Result_"):
+            return "result"
+        if tn.unwrap().starts_with("Option_"):
+            return "option"
+    return "nullable"
+
+
+## The base variant name from a possibly-qualified name (`Result_int_Error` →
+## "Result"; `Result` → "Result").
+function guard_variant_base(name: str) -> str:
+    if name.starts_with("Result"):
+        return "Result"
+    if name.starts_with("Option"):
+        return "Option"
+    return name
+
+
+## The failure/absent condition for a guard: `storage == null` for nullable,
+## `storage.kind == <none/failure>` for Option/Result.
+function guard_failure_condition(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type, storage_ref: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    let bool_ty = types.primitive("bool")
+    if kind.equal("nullable"):
+        let null_lit = alloc_expr(ir.Expr.expr_null_literal(ty = storage_ty))
+        return alloc_expr(ir.Expr.expr_binary(operator = "==", left = storage_ref, right = null_lit, ty = bool_ty))
+    let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
+    let absent_arm = if kind.equal("result"): "failure" else: "none"
+    let int_ty = types.primitive("int")
+    let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "kind", ty = int_ty))
+    let absent_const = alloc_expr(ir.Expr.expr_name(name = variant_kind_const_name(outer_c, absent_arm), ty = int_ty, pointer = false))
+    return alloc_expr(ir.Expr.expr_binary(operator = "==", left = kind_expr, right = absent_const, ty = bool_ty))
+
+
+## The unwrapped success type `T` of a guard's storage type.
+function guard_success_type(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type) -> types.Type:
+    if kind.equal("nullable"):
+        return types.unwrap_nullable(storage_ty)
+    # Option[T] / Result[T, E] in generic form: first type arg is T.
+    let args = variant_type_args(storage_ty)
+    if args.len > 0:
+        return qualify_type(ctx, unsafe: read(args.data + 0))
+    # Collapsed concrete form (Option_str / Result_..._): recover the success
+    # payload field type from the concrete variant decl, mirroring the prelude
+    # payload specialization (arg-less `ty_named` carries no type args).
+    let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
+    let success_arm = if kind.equal("result"): "success" else: "some"
+    let payload_c = variant_arm_type_name(outer_c, success_arm)
+    match prelude_field_type_from_variants(ctx, payload_c, success_arm):
+        Option.some as ft:
+            return ft.value
+        Option.none:
+            return storage_ty
+
+
+## The success-value projection for a guard: the storage itself for nullable,
+## `storage.data.<some/success>.value` for Option/Result.
+function guard_success_projection(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type, storage_ref: ptr[ir.Expr], success_ty: types.Type) -> ptr[ir.Expr]:
+    if kind.equal("nullable"):
+        return storage_ref
+    let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
+    let success_arm = if kind.equal("result"): "success" else: "some"
+    let payload_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, success_arm))
+    let data_member = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = payload_ty))
+    let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = success_arm, ty = payload_ty))
+    return alloc_expr(ir.Expr.expr_member(receiver = arm_data, member = "value", ty = success_ty))
+
+
+## Emit the `else as error:` binding for a Result guard as a local at the top of
+## the else body, projected as `storage.data.failure.error`, and register it so
+## the else body resolves the name.
+function emit_result_failure_binding(ctx: ref[LowerCtx], else_stmts: ref[vec.Vec[ir.Stmt]], storage_ty: types.Type, storage_ref: ptr[ir.Expr], error_name: str) -> void:
+    let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
+    let payload_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, "failure"))
+    var error_ty = types.primitive("void")
+    let args = variant_type_args(storage_ty)
+    if args.len >= 2:
+        error_ty = qualify_type(ctx, unsafe: read(args.data + 1))
+    else:
+        # Collapsed concrete form: recover the error field type from the decl.
+        match prelude_field_type_from_variants(ctx, variant_arm_type_name(outer_c, "failure"), "failure"):
+            Option.some as ft:
+                error_ty = ft.value
+            Option.none:
+                pass
+    let data_member = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = payload_ty))
+    let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = "failure", ty = payload_ty))
+    let error_val = alloc_expr(ir.Expr.expr_member(receiver = arm_data, member = "error", ty = error_ty))
+    let bc = c_local_name(error_name)
+    else_stmts.push(ir.Stmt.stmt_local(name = error_name, linkage_name = bc, ty = error_ty, value = error_val, line = 0, source_path = ""))
+    ctx.locals.push(LocalBinding(name = error_name, c_name = bc, ty = error_ty, pointer = false))
 
 
 ## Lower `let (a, b) = expr` (tuple) / `let Name(x, y) = expr` (struct) by
