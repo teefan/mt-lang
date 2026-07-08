@@ -2041,6 +2041,60 @@ function array_length_of(t: types.Type) -> long:
     return 0
 
 
+## Lower `array[T, N].as_span()` to a `span[T]` aggregate literal
+## `{ data = &arr[0], len = N }`, mirroring Ruby's `lower_array_to_span_expression`.
+function lower_array_as_span(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], array_ty: types.Type) -> ptr[ir.Expr]:
+    let elem_ty = generic_first_arg(array_ty)
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    let recv = lower_expr(ctx, receiver)
+    let zero_index = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))
+    let elem0 = alloc_expr(ir.Expr.expr_checked_index(
+        receiver = recv, index = zero_index, receiver_type = array_ty, ty = elem_ty,
+    ))
+    let data_ptr = alloc_expr(ir.Expr.expr_address_of(
+        expression = elem0,
+        ty = types.Type.ty_generic(name = "ptr", args = sp_type(elem_ty)),
+    ))
+    # Recover the length from the array type; if it lost its literal length
+    # (a const/var reference whose recorded type dropped the count), resolve it
+    # from the declaration's type annotation.
+    var length = array_length_of(array_ty)
+    if length == 0:
+        length = const_array_length(ctx, receiver)
+    let len_expr = alloc_expr(ir.Expr.expr_integer_literal(value = length, ty = ptr_uint_ty))
+    var fields = vec.Vec[ir.AggregateField].create()
+    fields.push(ir.AggregateField(name = "data", value = data_ptr))
+    fields.push(ir.AggregateField(name = "len", value = len_expr))
+    let span_ty = types.Type.ty_generic(name = "span", args = sp_type(elem_ty))
+    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = span_ty, fields = fields.as_span()))
+
+
+## Recover the declared length of a const/var array referenced by `receiver` by
+## resolving its declaration's type annotation.  Returns 0 when the receiver is
+## not a module-level const/var array identifier.
+function const_array_length(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> long:
+    var name: str
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                name = id.name
+            _:
+                return 0
+    var di: ptr_uint = 0
+    while di < ctx.analysis.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(ctx.analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_const as c:
+                if c.name.equal(name):
+                    return array_length_of(resolve_type_ref(ctx, c.const_type))
+            _:
+                pass
+        di += 1
+    return 0
+
+
 # =============================================================================
 #  Parallel / detach / gather lowering
 # =============================================================================
@@ -2996,6 +3050,12 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # Method call: receiver.method(args).  Resolve the method from the
                 # receiver's type and lower to a direct C function call.
                 let recv_ty = method_receiver_type(ctx, ma.receiver)
+                # Builtin `array[T, N].as_span()` → span aggregate literal
+                # `{ data = &arr[0], len = N }`.  Intercept before method
+                # resolution so it does not fall to the `<module>_mt_as_span`
+                # fallback (mirrors Ruby's :array_as_span lowering).
+                if is_array_type(recv_ty) and ma.member_name.equal("as_span") and args.len == 0:
+                    return lower_array_as_span(ctx, ma.receiver, recv_ty)
                 # Event builtin methods: must be checked before resolve_method_info
                 # because they ARE registered in method_sigs for sema validation.
                 if is_event_type(ctx, recv_ty):
