@@ -1,6 +1,6 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. 273 C errors remain (measured with `-I std/c`).**
+Status: **Phase 8 — self-compile C-error elimination. 222 C errors remain (measured with `-I std/c`).**
 Last updated: 2026-07-08 (P8)
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -263,7 +263,7 @@ Established this session; reuse these seams rather than re-deriving them:
 - [x] Phase 6 — events, async, parallel, compile-time
 - [x] Phase 7 — cross-module type system hardening
 - [x] Phase 7.5 — generic **method** monomorphization + owner-context + naming + codegen fixes
-- [ ] Phase 8 — self-compile C-error elimination (in progress; **493 → 273** with `-I std/c`)
+- [ ] Phase 8 — self-compile C-error elimination (in progress; **493 → 222** with `-I std/c`)
   - [x] Prelude Option/Result match-arm payload `_phantom` — same-LowerCtx cases
   - [x] External ABI type names (std.c.* bare C name) + gather external `include` directives (493 → 465)
   - [x] Method-call receiver types resolved in owner-module context — kills FnSig/FieldEntry
@@ -276,9 +276,16 @@ Established this session; reuse these seams rather than re-deriving them:
         `ir.Expr`/`ast.Expr` registry name-collision (`mt_str==mt_str`) (298 → 282)
   - [x] Recover generic method receiver args from analyzer type for cross-module-bound
         instances (`da.check()` → `Vec[Diag]`) — fixes `void*`/`declared void` cascade (282 → 273)
+  - [x] Type `str.data`/`.len` synthetic fields + integer arithmetic result types — fixes the
+        `mt_str x = ....len` mis-inference cascade (273 → 249)
+  - [x] Coerce pointer args to by-value params in generic method calls (`Map.find_node(this, ...)`
+        inside editable methods) (249 → 222)
   - [ ] Cross-ctx prelude payload `_phantom` (~40, §3.1.1)
+  - [ ] Deferred: resolve `str` method calls (byte_at/slice/equal) through resolve_method_info
+        instead of the `mt_` fallback — blocked on the `std_str_str_equal` name collision between
+        str's instance `equal(right)` method and its static `equal(left,right)` hash hook
   - [ ] Remaining member/field typing (Map iterator `.current()` via `mt_` fallback; Option
-        `.unwrap().value` return-type collapse) and argument-type mismatches (top category, ~59)
+        `.unwrap().value` return-type collapse) and residual argument-type mismatches
   - [ ] Variant registry keyed by bare name collides across modules (`ir.Expr`/`ast.Expr`) — the
         arm-payload path is worked around, but match dispatch/other lookups may still be affected;
         consider module-qualifying the registry key
