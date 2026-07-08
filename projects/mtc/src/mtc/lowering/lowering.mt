@@ -1251,7 +1251,7 @@ function local_decl_type(ctx: ref[LowerCtx], declared: ptr[ast.TypeRef]?, value:
     let resolved = resolve_type_ref(ctx, annotation)
     if types.is_error(resolved):
         return qualify_type(ctx, expr_type(ctx, value))
-    return resolved
+    return qualify_type(ctx, resolved)
 
 
 ## Lower a guard local `let name = value else: <else_body>` (and the `var` form).
