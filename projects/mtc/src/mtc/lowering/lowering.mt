@@ -4372,6 +4372,13 @@ function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method
     if info_opt.is_none():
         info_opt = generic_receiver_info(ctx, recv_ty)
     if info_opt.is_none():
+        # The collapsed IR type is a concrete `ty_named` whose generic-instance
+        # entry was registered in the defining module's context, not this one
+        # (e.g. a local bound from a cross-module call `da.check()` returning
+        # `Vec[Diag]`).  The analyzer's recorded receiver type still carries the
+        # generic form with type args, so recover owner + args from it.
+        info_opt = generic_receiver_info(ctx, expr_type(ctx, receiver))
+    if info_opt.is_none():
         # Fallback for identifier receivers (`this`, locals): the analyzer's
         # recorded type can lack recoverable type arguments, but the binding's
         # lowered IR type carries the concrete (collapsed) struct name, which the
