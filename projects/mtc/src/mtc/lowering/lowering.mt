@@ -6508,6 +6508,7 @@ function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
                 # Non-enum pattern (integer literal, char literal, etc.)
                 let lowered_pat = lower_expr(ctx, pattern)
                 cases.push(ir.SwitchCase(is_default = false, value = lowered_pat, body = body.as_span()))
+                i += 1
                 continue
             match type_name:
                 Option.some as tn:
