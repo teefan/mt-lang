@@ -1446,6 +1446,15 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             # C names and must not be module-prefixed.
             if n.name.starts_with("Option_") or n.name.starts_with("Result_"):
                 return t
+            # A bare type name may be a type imported from another module (e.g.
+            # `Diag` used in `analyzer` but defined in `definite_assignment`).
+            # Qualify it against its OWNER module, not the current one, so it does
+            # not become a mis-attributed `<current_module>_Diag`.
+            match imported_type_module(ctx, n.name):
+                Option.some as owner:
+                    return types.Type.ty_imported(module_name = owner.value, name = n.name, args = span[types.Type]())
+                Option.none:
+                    pass
             return types.Type.ty_imported(module_name = ctx.module_name, name = n.name, args = span[types.Type]())
         types.Type.ty_imported as im:
             if is_raw_type_param_name(im.name):
@@ -1526,6 +1535,52 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
             Option.none:
                 pass
     return types.Type.ty_error
+
+
+## The owner module of a bare type `name` when it is defined in an imported
+## module (struct, variant, or enum) rather than the current one.  Used by
+## `qualify_type` so an imported bare type name qualifies against its defining
+## module instead of being mis-attributed to the current module.  Returns none
+## when the name is defined locally or not found in any import.
+function imported_type_module(ctx: ref[LowerCtx], name: str) -> Option[str]:
+    # A locally-declared type takes precedence — never redirect it to an import.
+    if ctx.analysis.structs.contains(name) or type_declared_in_source(ctx.analysis, name):
+        return Option[str].none
+    var import_values = ctx.analysis.imports.values()
+    while true:
+        let target_ptr = import_values.next() else:
+            break
+        let target_module = unsafe: read(target_ptr)
+        match find_imported_analysis(ctx, target_module):
+            Option.some as imported:
+                if imported.value.structs.contains(name) or type_declared_in_source(imported.value, name):
+                    return Option[str].some(value = target_module)
+            Option.none:
+                pass
+    return Option[str].none
+
+
+## True when a module's AST declares a struct, variant, or enum named `name`.
+function type_declared_in_source(module_analysis: analyzer.Analysis, name: str) -> bool:
+    var di: ptr_uint = 0
+    while di < module_analysis.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(module_analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_struct as s:
+                if s.name.equal(name):
+                    return true
+            ast.Decl.decl_variant as vr:
+                if vr.name.equal(name):
+                    return true
+            ast.Decl.decl_enum as en:
+                if en.name.equal(name):
+                    return true
+            _:
+                pass
+        di += 1
+    return false
 
 
 ## Check if a struct named `name` exists in a module's source file AST.
