@@ -2901,7 +2901,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         pass
                 var ret_ty = function_return_type(ctx, id.name)
                 var ret_type_ptr = types.alloc_type(ret_ty)
-                return lower_plain_call(ctx, naming.qualified_c_name(ctx.module_name, id.name), args, call_ep, ret_type_ptr)
+                return lower_plain_call_sig(ctx, naming.qualified_c_name(ctx.module_name, id.name), args, call_ep, ret_type_ptr, lookup_fn_sig(ctx, id.name))
             ast.Expr.expr_specialization as spec:
                 return lower_specialization_call(ctx, spec.callee, spec.arguments, args, call_ep)
             ast.Expr.expr_member_access as ma:
@@ -5323,13 +5323,22 @@ function is_dyn_type(t: types.Type) -> bool:
 
 
 function lower_plain_call(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?) -> ptr[ir.Expr]:
+    return lower_plain_call_sig(ctx, c_name, args, call_ep, override_ty, Option[analyzer.FnSig].none)
+
+
+## Like `lower_plain_call` but with the callee's signature available, so a value
+## argument passed to a `ref[T]` parameter is implicitly borrowed (`&arg`) —
+## mirroring the call-site borrow rule the analyzer accepts.  The signature is
+## optional; when absent, arguments are lowered verbatim.
+function lower_plain_call_sig(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
     var ir_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
     while i < args.len:
         var arg: ast.Argument
         unsafe:
             arg = read(args.data + i)
-        let lowered = lower_expr(ctx, arg.arg_value)
+        var lowered = lower_expr(ctx, arg.arg_value)
+        lowered = coerce_arg_to_ref_param(sig, i, lowered)
         unsafe:
             ir_args.push(read(lowered))
         i += 1
@@ -5341,6 +5350,32 @@ function lower_plain_call(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argume
     else:
         ret_ty = expr_type(ctx, call_ep)
     return alloc_expr(ir.Expr.expr_call(callee = c_name, arguments = ir_args.as_span(), ty = ret_ty))
+
+
+## Implicitly borrow a by-value argument passed to a `ref[T]` parameter: when the
+## callee's parameter `index` has a `ref[T]` type but the lowered argument is not
+## already a pointer/ref, take its address (`&arg`).  Leaves the argument
+## unchanged when the signature is unavailable, the parameter is not a ref, or the
+## argument is already pointer-typed.
+function coerce_arg_to_ref_param(sig: Option[analyzer.FnSig], index: ptr_uint, arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    match sig:
+        Option.some as s:
+            if index >= s.value.params.len:
+                return arg
+            var param: analyzer.ParamEntry
+            unsafe:
+                param = read(s.value.params.data + index)
+            if not types.is_ref_type(param.ty):
+                return arg
+            let arg_ty = ir_expr_type(arg)
+            if is_pointer_or_ref_type(arg_ty):
+                return arg
+            return alloc_expr(ir.Expr.expr_address_of(
+                expression = arg,
+                ty = types.Type.ty_generic(name = "ref", args = sp_type(arg_ty)),
+            ))
+        Option.none:
+            return arg
 
 
 ## Lower a foreign function call to a direct call on its mapped C function,
