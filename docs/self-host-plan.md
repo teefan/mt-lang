@@ -1,6 +1,6 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. 304 C errors remain (measured with `-I std/c`).**
+Status: **Phase 8 — self-compile C-error elimination. 273 C errors remain (measured with `-I std/c`).**
 Last updated: 2026-07-08 (P8)
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -263,7 +263,7 @@ Established this session; reuse these seams rather than re-deriving them:
 - [x] Phase 6 — events, async, parallel, compile-time
 - [x] Phase 7 — cross-module type system hardening
 - [x] Phase 7.5 — generic **method** monomorphization + owner-context + naming + codegen fixes
-- [ ] Phase 8 — self-compile C-error elimination (in progress; **493 → 304** with `-I std/c`)
+- [ ] Phase 8 — self-compile C-error elimination (in progress; **493 → 273** with `-I std/c`)
   - [x] Prelude Option/Result match-arm payload `_phantom` — same-LowerCtx cases
   - [x] External ABI type names (std.c.* bare C name) + gather external `include` directives (493 → 465)
   - [x] Method-call receiver types resolved in owner-module context — kills FnSig/FieldEntry
@@ -271,10 +271,18 @@ Established this session; reuse these seams rather than re-deriving them:
   - [x] `let/var ... else:` guard lowering with success unwrapping (355 → 313)
   - [x] Cross-module + external call return-type resolution in fallback_type (313 → 307)
   - [x] Stop double-qualifying cross-module call return types (307 → 304)
+  - [x] Dispatch `fatal(str)` to `mt_fatal_str` helper (304 → 298)
+  - [x] Register imported variant arm-payload field types by qualified name — fixes the
+        `ir.Expr`/`ast.Expr` registry name-collision (`mt_str==mt_str`) (298 → 282)
+  - [x] Recover generic method receiver args from analyzer type for cross-module-bound
+        instances (`da.check()` → `Vec[Diag]`) — fixes `void*`/`declared void` cascade (282 → 273)
   - [ ] Cross-ctx prelude payload `_phantom` (~40, §3.1.1)
-  - [ ] `vec.get()`/generic-method return type monomorphization (remaining `void*` / `declared void`)
+  - [ ] Remaining member/field typing (Map iterator `.current()` via `mt_` fallback; Option
+        `.unwrap().value` return-type collapse) and argument-type mismatches (top category, ~59)
+  - [ ] Variant registry keyed by bare name collides across modules (`ir.Expr`/`ast.Expr`) — the
+        arm-payload path is worked around, but match dispatch/other lookups may still be affected;
+        consider module-qualifying the registry key
   - [ ] Match-expression hoisting (needs int/str expr-match first; avoid the OOM loop)
-  - [ ] Residual member/field typing + argument-type mismatches (top category, ~64)
   - [ ] Milestone: `mtc build projects/mtc` produces a native binary
 - [ ] Phase 9 — correctness verification (differential C + bootstrap fixpoint)
 - [ ] Phase 10 — debug-guard fix + build-mode/runtime parity
