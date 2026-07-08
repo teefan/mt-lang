@@ -2046,21 +2046,29 @@ function array_length_of(t: types.Type) -> long:
 function lower_array_as_span(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], array_ty: types.Type) -> ptr[ir.Expr]:
     let elem_ty = generic_first_arg(array_ty)
     let ptr_uint_ty = types.primitive("ptr_uint")
-    let recv = lower_expr(ctx, receiver)
-    let zero_index = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))
-    let elem0 = alloc_expr(ir.Expr.expr_checked_index(
-        receiver = recv, index = zero_index, receiver_type = array_ty, ty = elem_ty,
-    ))
-    let data_ptr = alloc_expr(ir.Expr.expr_address_of(
-        expression = elem0,
-        ty = types.Type.ty_generic(name = "ptr", args = sp_type(elem_ty)),
-    ))
     # Recover the length from the array type; if it lost its literal length
     # (a const/var reference whose recorded type dropped the count), resolve it
     # from the declaration's type annotation.
     var length = array_length_of(array_ty)
     if length == 0:
         length = const_array_length(ctx, receiver)
+    # Rebuild the array type with the recovered length so the checked-index helper
+    # is generated for the correct array size (not a `[0]` mismatch).
+    var index_array_ty = array_ty
+    if array_length_of(array_ty) == 0 and length != 0:
+        var arr_args = vec.Vec[types.Type].create()
+        arr_args.push(elem_ty)
+        arr_args.push(types.literal_int(length))
+        index_array_ty = types.Type.ty_generic(name = "array", args = arr_args.as_span())
+    let recv = lower_expr(ctx, receiver)
+    let zero_index = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))
+    let elem0 = alloc_expr(ir.Expr.expr_checked_index(
+        receiver = recv, index = zero_index, receiver_type = index_array_ty, ty = elem_ty,
+    ))
+    let data_ptr = alloc_expr(ir.Expr.expr_address_of(
+        expression = elem0,
+        ty = types.Type.ty_generic(name = "ptr", args = sp_type(elem_ty)),
+    ))
     let len_expr = alloc_expr(ir.Expr.expr_integer_literal(value = length, ty = ptr_uint_ty))
     var fields = vec.Vec[ir.AggregateField].create()
     fields.push(ir.AggregateField(name = "data", value = data_ptr))
