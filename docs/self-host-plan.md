@@ -1,6 +1,6 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. 206 C errors remain (measured with `-I std/c`).**
+Status: **Phase 8 — self-compile C-error elimination. 94 C errors remain (measured with `-I std/c`).**
 Last updated: 2026-07-08 (P8)
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -263,7 +263,7 @@ Established this session; reuse these seams rather than re-deriving them:
 - [x] Phase 6 — events, async, parallel, compile-time
 - [x] Phase 7 — cross-module type system hardening
 - [x] Phase 7.5 — generic **method** monomorphization + owner-context + naming + codegen fixes
-- [ ] Phase 8 — self-compile C-error elimination (in progress; **493 → 206** with `-I std/c`)
+- [ ] Phase 8 — self-compile C-error elimination (in progress; **493 → 94** with `-I std/c`)
   - [x] Prelude Option/Result match-arm payload `_phantom` — same-LowerCtx cases
   - [x] External ABI type names (std.c.* bare C name) + gather external `include` directives (493 → 465)
   - [x] Method-call receiver types resolved in owner-module context — kills FnSig/FieldEntry
@@ -282,23 +282,57 @@ Established this session; reuse these seams rather than re-deriving them:
         inside editable methods) (249 → 222)
   - [x] Qualify imported bare type names against their owner module (`qualify_type` +
         `imported_type_module`) — kills the `Diag` → `mtc_semantic_analyzer_Diag` misattribution (222 → 206)
-  - [ ] **str method naming overhaul (highest remaining leverage, ~30+ errors).** `str` instance
-        methods (`slice`/`byte_at`/...) currently fall to the `mt_` fallback (returning `int`), and
-        the instance `equal(right)` collides with the static `equal(left,right)` hook — both emit
-        `std_str_str_equal`. Ruby names primitive-type methods `<type>_<method>` (e.g. `str_slice`,
-        `str_equal`) with NO module prefix, and disambiguates the static hooks with a `_static`
-        suffix (`str_order_static`). Porting requires a coordinated change to primitive-method C
-        naming (definition in `lower_extending_block`, call resolution in `resolve_method_info`, and
-        the hook path in `resolve_canonical_hook`) — see Ruby `member_c_name` / `field_c_name`.
-  - [ ] `Option[RemovedEntry[K,V]]` prelude-variant instance is named inconsistently: the
-        `remove_entry` body (lowered in std.map ctx) builds `Option_RemovedEntry_str_bool` (bare
-        arg) while its signature uses `Option_std_map_RemovedEntry_str_bool` (qualified). The Option
-        type-arg `RemovedEntry` must be qualified with its owner module in the body context too.
-  - [ ] Cross-ctx prelude payload `_phantom` (~12: mtc_main/mtc_build/module_loader/path_resolver, §3.1.1)
+  - [x] **str method naming overhaul (208 → 181, −27).** `str` instance methods
+        (`slice`/`byte_at`/...) fell to the `mt_` fallback (returning `int`), the instance
+        `equal(right)` collided with the static `equal(left,right)` hook (both `std_str_str_equal`),
+        and the `this` receiver was typed `std_str_str` instead of `mt_str`. Fixed by mirroring
+        Ruby's `function_binding_c_name` / `c_type_name` for primitive/`str` receivers:
+        `method_link_name` emits a bare `<type>_<method>` C name (no module prefix) with a
+        `_static` suffix for static hooks (`str_equal_static`/`str_hash_static`/`str_order_static`);
+        `extending_receiver_type` types the receiver as the real primitive/`str` type;
+        `resolve_primitive_method_info` resolves instance calls on primitive/`str` receivers; and a
+        `lower_static_call_args` path handles static hook calls on a bare type name (`str.order(a,b)`).
+        Coordinated across `lower_extending_block` (def site), `resolve_method_info` (call site), and
+        `resolve_canonical_hook` (hook path). Eliminated all `int-vs-mt_str-return`, `std_str_str`,
+        and `str`-undeclared clusters; 172/172 tests still pass. (Nominal-type `_static` deferred —
+        no collisions in self-host source; revisit for byte-identical C.)
+  - [x] `Option[RemovedEntry[K,V]]` prelude-variant instance naming (181 → 169, −12). The
+        `remove_entry` body built `Option_RemovedEntry_str_bool` (bare) while its signature used
+        `Option_std_map_RemovedEntry_str_bool` (qualified). Fixed by applying `qualify_type` to the
+        resolved type args in BOTH generic-variant-literal paths — `lower_generic_variant_literal`
+        (the `.some` arm) and the no-payload arm path in `lower_member_access` (the `.none` arm) —
+        so a locally-defined struct arg like `RemovedEntry` is monomorphized to its module-qualified
+        C name in the body, matching the signature and the emitted variant decl.
+  - [x] Proc typedef over-qualification (169 → 167, −2). A `proc(...)` param/field type resolves to a
+        global `ty_named("mt_proc_...")` typedef, but `qualify_type` module-prefixed it in a
+        monomorphized context (`std_vec_mt_proc_int_ptr_str_ptr_str`). Added `mt_proc_` to the
+        `Option_`/`Result_` global-name passthrough in `qualify_type`.
+  - [x] **`mt_` fallback / current-module field typing (167 → 137, −30).** Method calls whose receiver
+        type resolved to void/error fell to the `<module>_mt_<method>` fallback (`mt_equal` on a `str`
+        from `read(ptr[str])` / field access, etc.). Root: `read(ptr[LocalStruct])` gets type
+        `ty_imported(current_module, LocalStruct)` after `qualify_type`, but `concrete_field_type` only
+        matched `ty_named` and `imported_field_type` explicitly bailed for the current module — so a
+        field on a current-module struct fell through all recovery paths when the analyzer's
+        `expr_type` (keyed by AST-node identity) had no record. Fix: `imported_field_type` now resolves
+        current-module struct fields via `ctx.analysis.source_file` directly. Eliminated all `mt_equal`
+        fallbacks; cascaded broadly (−30).
+  - [x] **Cross-ctx prelude payload `_phantom` (137 → 94, −43).** A match on a cross-module call
+        returning `Option[T]`/`Result[T,E]` (`fs.read_text(...)`) bound `s.value`/`f.error` to an
+        undeclared `_phantom` type: the concrete decl's arm field types live only in the *defining*
+        module's per-ctx `pending_generic_variants`, and `lower_match` collapses the scrutinee type to
+        an arg-less C name so the fallback also failed. Fix (plan's recommended "shared program-wide
+        registry"): added `LowerCtx.prelude_arm_field_types` — a `program_returns`-style shared
+        `ptr[Map]` keyed by the arm's payload struct C name (`Result_std_string_String_std_fs_Error_success`
+        → `std_string_String`), populated by `ensure_generic_variant` during `collect_program_returns`
+        (before any body lowers) and consulted first in `concrete_prelude_field_type`. Eliminated all
+        `_phantom` errors and their `int-init`/`declared-void` cascades (−43).
   - [ ] Variant registry keyed by bare name collides across modules (`ir.Expr`/`ast.Expr`) — the
         arm-payload path is worked around, but match dispatch/other lookups may still be affected;
         consider module-qualifying the registry key
-  - [ ] Match-expression hoisting (needs int/str expr-match first; avoid the OOM loop)
+  - [ ] Match-expression hoisting (7, now the largest cluster; needs int/str expr-match first; avoid the OOM loop)
+  - [ ] Diverse tail (~87): `void *` return-from-int, `mtc_ir_Expr` vs `ast_Expr` pointer mismatches,
+        `String`/`array_str_N` unknown types, residual `member on non-struct`, generic `Map`/`vec_contains`
+        arg mismatches — mostly 2-3 each, no dominant root.
   - [ ] Milestone: `mtc build projects/mtc` produces a native binary
 - [ ] Phase 9 — correctness verification (differential C + bootstrap fixpoint)
 - [ ] Phase 10 — debug-guard fix + build-mode/runtime parity

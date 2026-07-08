@@ -105,6 +105,15 @@ struct LowerCtx:
     # variant matches; mirrors Ruby's @match_label_counter.
     match_label_counter: ptr_uint
     program_returns: ptr[map_mod.Map[str, types.Type]]
+    # Shared across all modules: concrete prelude (Option/Result) arm payload
+    # field types, keyed by the arm's payload struct C name
+    # (`Result_std_string_String_std_fs_Error_success` → `std_string_String`).
+    # Populated when any context emits a concrete generic variant decl
+    # (`ensure_generic_variant`), so a match in a consuming module can recover
+    # `s.value` / `f.error` types even though the concrete decl was created in the
+    # defining module's (separate) context.  Borrowed pointer into a map owned by
+    # `lower`, mirroring `program_returns`.
+    prelude_arm_field_types: ptr[map_mod.Map[str, types.Type]]
     # Specialization worklist: entries for generic function calls encountered
     # during lowering, processed after all root modules are lowered.
     pending_specializations: vec.Vec[PendingSpecialization]
@@ -237,7 +246,12 @@ public function lower(program: loader.Program) -> ir.Program:
     # `mod.func(...)` call in one module can resolve the result type of a
     # function defined in another.
     var program_returns = map_mod.Map[str, types.Type].create()
-    collect_program_returns(program, ref_of(program_returns))
+    # Shared prelude arm-payload field types (see LowerCtx.prelude_arm_field_types).
+    # Populated by `collect_program_returns` (which resolves every function's
+    # return type, emitting the concrete Option/Result decls) so it is available
+    # before any module body is lowered.
+    var prelude_arm_field_types = map_mod.Map[str, types.Type].create()
+    collect_program_returns(program, ref_of(program_returns), ref_of(prelude_arm_field_types))
 
     var constants = vec.Vec[ir.Constant].create()
     var globals = vec.Vec[ir.Global].create()
@@ -262,7 +276,7 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == count - 1
-        var fragment = lower_module(analysis, ref_of(program_returns), is_root, program.analyses.as_span(), program.modules.as_span())
+        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span())
         globals.append_span(fragment.globals)
         opaques.append_span(fragment.opaques)
         dedup_append_structs(ref_of(structs), fragment.structs, ref_of(seen_structs))
@@ -512,7 +526,7 @@ function substitute_type_params(ctx: ref[LowerCtx], ty: types.Type, sub: ref[map
 ## Pre-scan every module's function declarations and record each one's resolved
 ## return type keyed by its C linkage name, so cross-module calls can look them
 ## up regardless of lowering order.
-function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[str, types.Type]]) -> void:
+function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]]) -> void:
     var mi: ptr_uint = 0
     while mi < program.analyses.len():
         let a_ptr = program.analyses.get(mi) else:
@@ -530,6 +544,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
             variants = map_mod.Map[str, VariantInfo].create(),
             match_label_counter = 0,
             program_returns = ptr_of(read(sink)),
+            prelude_arm_field_types = ptr_of(read(prelude_arm_field_types)),
             pending_specializations = vec.Vec[PendingSpecialization].create(),
             specialization_cache = map_mod.Map[str, ir.Function].create(),
             generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
@@ -576,7 +591,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
         mi += 1
 
 
-function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule]) -> ir.Program:
+function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule]) -> ir.Program:
     var ctx = LowerCtx(
         module_name = analysis.module_name,
         analysis = analysis,
@@ -588,6 +603,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         variants = map_mod.Map[str, VariantInfo].create(),
         match_label_counter = 0,
         program_returns = ptr_of(read(program_returns)),
+        prelude_arm_field_types = ptr_of(read(prelude_arm_field_types)),
         pending_specializations = vec.Vec[PendingSpecialization].create(),
         specialization_cache = map_mod.Map[str, ir.Function].create(),
         generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
@@ -858,6 +874,18 @@ function standard_c_runtime_header(header_name: str) -> bool:
 #  Function lowering
 # =============================================================================
 
+## The `this` receiver type for an `extending` block: the concrete primitive or
+## `str` type for primitive receivers (so `this` renders as `mt_str` / `int`
+## rather than a bogus `<module>_<type>` struct name), and a nominal
+## `ty_imported` type otherwise.
+function extending_receiver_type(module_name: str, type_name: str) -> types.Type:
+    if type_name.equal("str"):
+        return types.Type.ty_str
+    if is_primitive_name(type_name):
+        return types.primitive(type_name)
+    return types.Type.ty_imported(module_name = module_name, name = type_name, args = span[types.Type]())
+
+
 ## Lower all methods in an extending block to IR functions.  Each method becomes
 ## a C function with the receiver as the first parameter (pointer for editable,
 ## by value for plain, omitted for static).
@@ -878,8 +906,8 @@ function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Fun
         if m.is_async or m.type_params.len > 0:
             mi += 1
             continue
-        let c_name = naming.qualified_member_c_name(ctx.module_name, type_name, m.name)
-        let receiver_ty = types.Type.ty_imported(module_name = ctx.module_name, name = type_name, args = span[types.Type]())
+        let c_name = method_link_name(ctx.module_name, type_name, m.name, m.method_kind == ast.MethodKind.mk_static)
+        let receiver_ty = extending_receiver_type(ctx.module_name, type_name)
         functions.push(lower_method(ctx, c_name, receiver_ty, m))
         mi += 1
 
@@ -1442,9 +1470,10 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             # different module context does not double-prefix them.
             if ctx.generic_struct_instances.contains(n.name) or ctx.generic_struct_decls.contains(n.name):
                 return t
-            # Prelude variant instances (Option_str, Result_int_Error) have global
-            # C names and must not be module-prefixed.
-            if n.name.starts_with("Option_") or n.name.starts_with("Result_"):
+            # Prelude variant instances (Option_str, Result_int_Error) and proc
+            # typedefs (mt_proc_...) have global C names and must not be
+            # module-prefixed.
+            if n.name.starts_with("Option_") or n.name.starts_with("Result_") or n.name.starts_with("mt_proc_"):
                 return t
             # A bare type name may be a type imported from another module (e.g.
             # `Diag` used in `analyzer` but defined in `definite_assignment`).
@@ -1617,6 +1646,7 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
         sf.push(ir.Field(name = "value", ty = elem))
         arms.push(ir.VariantArm(name = "some", linkage_name = j3(c_name, "_", "some"), fields = sf.as_span()))
         arms.push(ir.VariantArm(name = "none", linkage_name = j3(c_name, "_", "none"), fields = span[ir.Field]()))
+        unsafe: read(ctx.prelude_arm_field_types).set(j3(c_name, "_", "some"), elem)
     else if name.equal("Result") and args.len >= 2:
         let ok = unsafe: read(args.data + 0)
         let err = unsafe: read(args.data + 1)
@@ -1626,6 +1656,8 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
         ef.push(ir.Field(name = "error", ty = err))
         arms.push(ir.VariantArm(name = "success", linkage_name = j3(c_name, "_", "success"), fields = sf.as_span()))
         arms.push(ir.VariantArm(name = "failure", linkage_name = j3(c_name, "_", "failure"), fields = ef.as_span()))
+        unsafe: read(ctx.prelude_arm_field_types).set(j3(c_name, "_", "success"), ok)
+        unsafe: read(ctx.prelude_arm_field_types).set(j3(c_name, "_", "failure"), err)
     ctx.pending_generic_variants.push(ir.VariantDecl(
         name = c_name, linkage_name = c_name,
         arms = arms.as_span(), source_module = Option[str].none,
@@ -2853,6 +2885,14 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         # A non-generic variant arm constructor, e.g. `Token.number(value = 41)`.
                         if ctx.variants.contains(recv_id.name):
                             return lower_variant_literal(ctx, recv_id.name, ma.member_name, args)
+                        # Static hook / method call on a primitive or `str` type
+                        # name, e.g. `str.order(a, b)` → `str_order_static(a, b)`.
+                        if is_primitive_or_str_name(recv_id.name):
+                            match resolve_primitive_method_info(ctx, recv_id.name, ma.member_name):
+                                Option.some as prim_mi:
+                                    return lower_static_call_args(ctx, prim_mi.value, args)
+                                Option.none:
+                                    pass
                         let mod_ptr = ctx.analysis.imports.get(recv_id.name)
                         if mod_ptr != null:
                             let target_module = read(mod_ptr)
@@ -3563,8 +3603,13 @@ function lower_generic_variant_literal(ctx: ref[LowerCtx], variant_name: str, ty
     var concrete_args = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
     while i < type_args.len:
+        # Qualify each type argument the same way the signature return type is
+        # qualified, so a locally-defined struct arg (e.g. `RemovedEntry` in
+        # std.map) is monomorphized to its module-qualified C name
+        # (`std_map_RemovedEntry_str_bool`) rather than a bare `RemovedEntry_str_bool`
+        # that would mismatch the declared `Option[RemovedEntry[K, V]]` return type.
         unsafe:
-            concrete_args.push(resolve_type_ref(ctx, read(type_args.data + i).value))
+            concrete_args.push(qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + i).value)))
         i += 1
     let ty = types.Type.ty_generic(name = variant_name, args = concrete_args.as_span())
     return alloc_expr(ir.Expr.expr_variant_literal(
@@ -4048,6 +4093,51 @@ function qualified_member_c_name_ext(module_prefix: str, owner: str, member: str
     return buf.as_str()
 
 
+## True when `name` names a primitive type or `str` — the receiver types whose
+## methods use a bare `<type>_<method>` C name with no module prefix.  Mirrors
+## Ruby's `c_type_name`, which returns the bare name for primitives (a struct
+## receiver instead yields `<module>_<Type>`).
+function is_primitive_or_str_name(name: str) -> bool:
+    return is_primitive_name(name) or name.equal("str")
+
+
+## The C linkage name for a method on a primitive or `str` receiver, mirroring
+## Ruby's `function_binding_c_name`: a bare `<type>_<method>` prefix (no module
+## qualifier) plus a `_static` suffix for static methods, so a static hook
+## (e.g. `str.equal(left, right)`) cannot collide with a same-named instance
+## method (`str.equal(right)`).
+function primitive_method_c_name(type_name: str, method_name: str, is_static: bool) -> str:
+    var buf = string.String.create()
+    buf.append(type_name)
+    buf.append("_")
+    buf.append(method_name)
+    if is_static:
+        buf.append("_static")
+    return buf.as_str()
+
+
+## The C linkage name for a method: the bare primitive scheme for primitive /
+## `str` receivers, and the module-qualified `<module>_<type>_<method>` scheme
+## for nominal (struct / variant) receivers.  The `_static` suffix only applies
+## to the primitive scheme, where static hooks and instance methods can collide.
+function method_link_name(module_name: str, type_name: str, method_name: str, is_static: bool) -> str:
+    if is_primitive_or_str_name(type_name):
+        return primitive_method_c_name(type_name, method_name, is_static)
+    return naming.qualified_member_c_name(module_name, type_name, method_name)
+
+
+## Some(type name) when `t` is a primitive or `str` receiver type, whose methods
+## use the bare naming scheme; none for nominal or other receiver types.
+function primitive_receiver_name(t: types.Type) -> Option[str]:
+    match t:
+        types.Type.ty_primitive as p:
+            return Option[str].some(value = p.name)
+        types.Type.ty_str:
+            return Option[str].some(value = "str")
+        _:
+            return Option[str].none
+
+
 ## Extract a type name from a specialization receiver when the analyzer's
 ## expr_type returned void.  For `expr_specialization(callee = member_access("string", "String"), ...)`,
 ## returns `Option.some("String")`.
@@ -4078,14 +4168,14 @@ function resolve_canonical_hook(ctx: ref[LowerCtx], t_ty: types.Type, hook: str)
         return Option[str].none
     let key = analyzer.method_key(type_name, hook)
     if ctx.analysis.method_sigs.contains(key):
-        return Option[str].some(value = naming.qualified_member_c_name(ctx.module_name, type_name, hook))
+        return Option[str].some(value = method_link_name(ctx.module_name, type_name, hook, true))
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len:
         var a: analyzer.Analysis
         unsafe:
             a = read(ctx.program_analyses.data + ai)
         if a.method_sigs.contains(key):
-            return Option[str].some(value = naming.qualified_member_c_name(a.module_name, type_name, hook))
+            return Option[str].some(value = method_link_name(a.module_name, type_name, hook, true))
         ai += 1
     return Option[str].none
 
@@ -4106,7 +4196,59 @@ function hook_type_name(t: types.Type) -> Option[str]:
             return Option[str].none
 
 
+## Resolve a method call on a primitive or `str` receiver.  Primitive methods
+## live in one `extending` block (e.g. `extending str:` in std.str), so search
+## the current module then every analysis for the one that declares it, and
+## build the bare `<type>_<method>` C name (with `_static` for static hooks so
+## `str.equal(left, right)` does not collide with the instance `str.equal`).
+function resolve_primitive_method_info(ctx: ref[LowerCtx], type_name: str, method_name: str) -> Option[MethodInfo]:
+    let key = analyzer.method_key(type_name, method_name)
+    if ctx.analysis.method_sigs.contains(key):
+        let sig_ptr = ctx.analysis.method_sigs.get(key) else:
+            return Option[MethodInfo].none
+        let sig = unsafe: read(sig_ptr)
+        var ret = sig.return_type
+        if not sig.has_return_type:
+            ret = types.primitive("void")
+        return Option[MethodInfo].some(value = MethodInfo(
+            c_name = primitive_method_c_name(type_name, method_name, sig.method_kind == ast.MethodKind.mk_static),
+            method_kind = sig.method_kind,
+            return_type = qualify_type(ctx, ret),
+        ))
+    var ai: ptr_uint = 0
+    while ai < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + ai)
+        if a.module_name.equal(ctx.module_name):
+            ai += 1
+            continue
+        if a.method_sigs.contains(key):
+            let sig_ptr = a.method_sigs.get(key) else:
+                ai += 1
+                continue
+            let sig = unsafe: read(sig_ptr)
+            var ret = sig.return_type
+            if not sig.has_return_type:
+                ret = types.primitive("void")
+            return Option[MethodInfo].some(value = MethodInfo(
+                c_name = primitive_method_c_name(type_name, method_name, sig.method_kind == ast.MethodKind.mk_static),
+                method_kind = sig.method_kind,
+                return_type = qualify_type(ctx, ret),
+            ))
+        ai += 1
+    return Option[MethodInfo].none
+
+
 function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method_name: str) -> Option[MethodInfo]:
+    # Primitive / `str` receivers: methods live in a single `extending` block
+    # (e.g. `extending str:` in std.str) and use the bare `<type>_<method>` C
+    # naming scheme, so resolve them before the nominal path.
+    match primitive_receiver_name(receiver_ty):
+        Option.some as pn:
+            return resolve_primitive_method_info(ctx, pn.value, method_name)
+        Option.none:
+            pass
     let type_name = named_type_name(receiver_ty) else:
         let gen_var = generic_variant_name(receiver_ty)
         match gen_var:
@@ -4166,6 +4308,23 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
             ))
         ai += 1
     return Option[MethodInfo].none
+
+
+## Lower a static method / hook call `Type.method(args)` where the receiver is a
+## bare type name and there is no receiver value to pass: lower only the
+## arguments and emit a direct call to the static C function.
+function lower_static_call_args(ctx: ref[LowerCtx], mi: MethodInfo, args: span[ast.Argument]) -> ptr[ir.Expr]:
+    var ir_args = vec.Vec[ir.Expr].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        let lowered = lower_expr(ctx, arg.arg_value)
+        unsafe:
+            ir_args.push(read(lowered))
+        i += 1
+    return alloc_expr(ir.Expr.expr_call(callee = mi.c_name, arguments = ir_args.as_span(), ty = mi.return_type))
 
 
 function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
@@ -5368,7 +5527,13 @@ function imported_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: st
         _:
             return Option[types.Type].none
     if owner_module.equal(ctx.module_name):
-        return Option[types.Type].none
+        # A local struct that `qualify_type` rewrote to `ty_imported(current_module, ...)`:
+        # resolve its field type in the current context directly (no owner swap).
+        # This recovers field types the analyzer did not record (e.g. `.name` on a
+        # `read(ptr[LocalStruct])` receiver) so chained calls like `.equal(...)` bind.
+        let local_tref = find_struct_field_tref(ctx.analysis.source_file, struct_name, member) else:
+            return Option[types.Type].none
+        return Option[types.Type].some(value = qualify_type(ctx, resolve_field_type_ref(ctx, local_tref)))
     let owner_a = find_imported_analysis(ctx, owner_module) else:
         return Option[types.Type].none
     let field_tref = find_struct_field_tref(owner_a.source_file, struct_name, member) else:
@@ -5482,7 +5647,10 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                                 var concrete_args = vec.Vec[types.Type].create()
                                 var ai: ptr_uint = 0
                                 while ai < spec.arguments.len:
-                                    concrete_args.push(resolve_type_ref(ctx, read(spec.arguments.data + ai).value))
+                                    # Qualify args to match the signature's C name
+                                    # (see lower_generic_variant_literal), so a local
+                                    # struct arg like RemovedEntry becomes module-qualified.
+                                    concrete_args.push(qualify_type(ctx, resolve_type_ref(ctx, read(spec.arguments.data + ai).value)))
                                     ai += 1
                                 let variant_ty = types.Type.ty_generic(name = spec_id.name, args = concrete_args.as_span())
                                 return alloc_expr(ir.Expr.expr_variant_literal(
@@ -6766,6 +6934,15 @@ function specialize_prelude_arm_info(ctx: ref[LowerCtx], arm_info: VariantArmInf
 ## variant decl in `pending_generic_variants` carries the real field type.  Falls
 ## back to the scrutinee's own type args when the decl is not (yet) recorded.
 function concrete_prelude_field_type(ctx: ref[LowerCtx], payload_c_name: str, arm_name: str, scrutinee_ty: types.Type) -> Option[types.Type]:
+    # Program-wide registry first: the concrete Option/Result decl may have been
+    # emitted in a different module's context (e.g. `Result[String, Error]` from
+    # `fs.read_text`), so its arm field type is not in this ctx's
+    # `pending_generic_variants`.  The stored type is already qualified — return
+    # it as-is (re-qualifying would mis-attribute its concrete C name).
+    let shared_ty_ptr = unsafe: read(ctx.prelude_arm_field_types).get(payload_c_name)
+    if shared_ty_ptr != null:
+        return Option[types.Type].some(value = unsafe: read(shared_ty_ptr))
+
     match prelude_field_type_from_variants(ctx, payload_c_name, arm_name):
         Option.some as decl_ty:
             return Option[types.Type].some(value = decl_ty.value)
