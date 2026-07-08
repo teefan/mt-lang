@@ -2693,7 +2693,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         pass
                 # Method call: receiver.method(args).  Resolve the method from the
                 # receiver's type and lower to a direct C function call.
-                let recv_ty = expr_type(ctx, ma.receiver)
+                let recv_ty = method_receiver_type(ctx, ma.receiver)
                 # Event builtin methods: must be checked before resolve_method_info
                 # because they ARE registered in method_sigs for sema validation.
                 if is_event_type(ctx, recv_ty):
@@ -5148,6 +5148,30 @@ function find_struct_field_tref(sf: ast.SourceFile, struct_name: str, member: st
                 pass
         di += 1
     return Option[ast.TypeRef].none
+
+
+## The receiver type for a method call `receiver.method(...)`.  The analyzer's
+## recorded type (via `expr_type`) drops the defining module from cross-module
+## struct field types (e.g. `analysis.functions` records `Map[str, FnSig]` with a
+## bare `FnSig`, which would then mis-qualify to the current module).  When the
+## receiver is a member access or identifier (both side-effect-free to lower), the
+## lowered IR type resolves fields in their owner module's context
+## (`imported_field_type`), so prefer it; fall back to `expr_type` otherwise.
+function method_receiver_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> types.Type:
+    var side_effect_free = false
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_member_access:
+                side_effect_free = true
+            ast.Expr.expr_identifier:
+                side_effect_free = true
+            _:
+                pass
+    if side_effect_free:
+        let lowered_ty = ir_expr_type(lower_expr(ctx, receiver))
+        if not types.is_error(lowered_ty) and not types.type_to_string(lowered_ty).equal("void"):
+            return lowered_ty
+    return expr_type(ctx, receiver)
 
 
 function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str, ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
