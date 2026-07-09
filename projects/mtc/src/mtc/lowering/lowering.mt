@@ -1925,7 +1925,15 @@ function variant_in_source(module_analysis: analyzer.Analysis, name: str) -> boo
 
 ## Ensure a concrete variant declaration exists for `Option[T]` or `Result[T,E]`.
 function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.Type]) -> types.Type:
-    let c_name = generic_c_type_raw(name, args)
+    # Prelude variants (Option, Result) are named with their source module
+    # prefix (`std_option_Option_...`, `std_result_Result_...`) to match
+    # Ruby, which defines them in `std.option` / `std.result`.
+    var base_name = name
+    if name.equal("Option"):
+        base_name = j2("std_option_", name)
+    if name.equal("Result"):
+        base_name = j2("std_result_", name)
+    let c_name = generic_c_type_raw(base_name, args)
     var si: ptr_uint = 0
     while si < ctx.pending_generic_variants.len():
         let vp = ctx.pending_generic_variants.get(si) else:
