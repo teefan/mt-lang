@@ -4228,7 +4228,8 @@ function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: spa
     var source_module = ctx.module_name
     if not ctx.analysis.structs.contains(struct_name):
         var import_values = ctx.analysis.imports.values()
-        while true:
+        var found_module = false
+        while not found_module:
             let target_ptr = import_values.next() else:
                 break
             let target_module = unsafe: read(target_ptr)
@@ -4236,7 +4237,7 @@ function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: spa
                 Option.some as imported:
                     if imported.value.structs.contains(struct_name):
                         source_module = target_module
-                        break
+                        found_module = true
                 Option.none:
                     pass
     return alloc_expr(ir.Expr.expr_aggregate_literal(
