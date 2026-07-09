@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination COMPLETE (G1 reached): 0 `cc` errors with `-I std/c`.**
-Last updated: 2026-07-09 (P8 complete — Seams A/B§3.1/C/§3.4/E/8b-void*/D1 all landed; 172/172 tests)
+Status: **Phase 8 COMPLETE (G1). Phase 8b: self-host emit-c compiles to an object file with 0 errors (no implicit declarations). Native-binary milestone remains (argv bridge + link flags + CLI wiring).**
+Last updated: 2026-07-09 (P8 done; P8b compile-clean — cc -c of self-emitted C = 0 errors)
 
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -467,9 +467,30 @@ Established this session; reuse these seams rather than re-deriving them:
   - [x] **Declared void / `mt_` fallback** (§3.5) — resolved by Seam A (chained/read receiver typing).
   - [x] **Map/vec `.contains()` arg mismatches** (§3.6) — resolved by Seam C (ref[T] implicit borrow).
   - [x] **Scattered singletons** — resolved by Seam E (7 fixes).
-  - [ ] Milestone: `mtc build projects/mtc` produces a native binary (needs Phase-8b LINK: real external
-        ABI declarations incl. `out`-param cross-module externals; currently emit-c compiles to 0 errors
-        with `-Wno-implicit-function-declaration`).
+  - [x] **Phase 8b (compile-clean): self-emitted C compiles to an object file with 0 errors.** Beyond
+        `cc -c` with the `-Wno-implicit-function-declaration` crutch, the self-host emit-c output now
+        compiles cleanly (`cc -std=c11 -D_GNU_SOURCE -I std/c -c` → 0 errors, no implicit declarations).
+        Two fixes: (a) **out-param cross-module external calls** — `imported_extern_call` now carries the
+        params and `lower_extern_call` passes `out`/`inout` args by address (`&arg`), so `mt_fs_read_text`
+        etc. use the bare C name with the right pointer args (mirrors Ruby's
+        `lower_foreign_pointer_argument_value`); (b) **inferred generic function calls** — `heap.release(x)`
+        (`release[T]`) now infers `T` from the argument (`try_inferred_generic_call` + `unify_type_param`
+        peeling ptr/const_ptr/ref/span/nullable) and monomorphizes per T
+        (`std_mem_heap_release_ubyte/_str/_ptr_uint`), via the new sub-map-driven
+        `lower_and_cache_specialization_with_sub`. 172/172 tests pass.
+  - [ ] **Milestone: `mtc build projects/mtc` produces a runnable native binary.** Remaining work
+        (toolchain integration — a coherent Phase-8b-LINK unit):
+        1. **argv main bridge** — `build_root_main_entrypoint` only supports a no-param `main`; the
+           self-host's `main(args: span[str])` needs the `span_str` bridge emitting
+           `int main(int argc, char** argv)` + `mt_entry_argv_to_span_str` conversion + cleanup (mirrors
+           Ruby's `build_root_main_entrypoint_bridge`). Requires the self-host c_backend to emit the
+           `mt_entry_argv_to_span_str` / `mt_free_entry_argv_strs` runtime helpers.
+        2. **link flags** — collect `-luv` (libuv, for fs/process) and `-I std/c` from the `link`/`include`
+           directives in `std.c.*` external files (mirrors Ruby's `collect_link_flags`); the self-host
+           `build.mt` currently links none.
+        3. **CLI wiring** — `main.mt`'s `build` command is stubbed; wire it to `build.mt`'s `build()`.
+        4. **drop the crutch** — remove `-Wno-implicit-function-declaration` from `build.mt` once (1)+(2)
+           land (all symbols then declared).
 - [ ] Phase 9 — correctness verification (differential C + bootstrap fixpoint)
 - [ ] Phase 10 — debug-guard fix + build-mode/runtime parity
 
