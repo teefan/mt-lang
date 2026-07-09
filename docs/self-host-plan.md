@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 COMPLETE (G1). Phase 8b: self-host emit-c compiles to an object file with 0 errors (no implicit declarations). Native-binary milestone remains (argv bridge + link flags + CLI wiring).**
-Last updated: 2026-07-09 (P8 done; P8b compile-clean — cc -c of self-emitted C = 0 errors)
+Status: **Phase 8 COMPLETE (G1). Native-binary milestone REACHED: `mtc build projects/mtc` produces a runnable executable and the self-host builds ITSELF (stage-2 runs). Stage-2 aborts at runtime on real work — Phase 9 (bootstrap fixpoint / correctness) is next.**
+Last updated: 2026-07-09 (P8 done; native binary milestone reached; stage-2 runtime bug → Phase 9)
 
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -478,20 +478,23 @@ Established this session; reuse these seams rather than re-deriving them:
         peeling ptr/const_ptr/ref/span/nullable) and monomorphizes per T
         (`std_mem_heap_release_ubyte/_str/_ptr_uint`), via the new sub-map-driven
         `lower_and_cache_specialization_with_sub`. 172/172 tests pass.
-  - [ ] **Milestone: `mtc build projects/mtc` produces a runnable native binary.** Remaining work
-        (toolchain integration — a coherent Phase-8b-LINK unit):
-        1. **argv main bridge** — `build_root_main_entrypoint` only supports a no-param `main`; the
-           self-host's `main(args: span[str])` needs the `span_str` bridge emitting
-           `int main(int argc, char** argv)` + `mt_entry_argv_to_span_str` conversion + cleanup (mirrors
-           Ruby's `build_root_main_entrypoint_bridge`). Requires the self-host c_backend to emit the
-           `mt_entry_argv_to_span_str` / `mt_free_entry_argv_strs` runtime helpers.
-        2. **link flags** — collect `-luv` (libuv, for fs/process) and `-I std/c` from the `link`/`include`
-           directives in `std.c.*` external files (mirrors Ruby's `collect_link_flags`); the self-host
-           `build.mt` currently links none.
-        3. **CLI wiring** — `main.mt`'s `build` command is stubbed; wire it to `build.mt`'s `build()`.
-        4. **drop the crutch** — remove `-Wno-implicit-function-declaration` from `build.mt` once (1)+(2)
-           land (all symbols then declared).
-- [ ] Phase 9 — correctness verification (differential C + bootstrap fixpoint)
+  - [x] **Milestone: `mtc build projects/mtc` produces a runnable native binary — REACHED.** The
+        self-host binary compiles+links itself into a working executable (stage-2 runs, prints help).
+        Four coordinated pieces, all mirroring Ruby:
+        1. **argv main bridge** — `build_root_main_entrypoint` now supports `main(args: span[str])`,
+           emitting `int main(int argc, char** argv)` + `mt_entry_argv_to_span_str` conversion + cleanup.
+        2. **runtime helper emission** — c_backend emits `mt_entry_argv_to_span_str` /
+           `mt_free_entry_argv_strs` (`uses_entry_argv` detector), pulls in `<stdlib.h>`/`<string.h>`, and
+           forces `use_string_view` so `mt_str`/`mt_span_str` are defined.
+        3. **link flags** — `build.mt` collects `-l<lib>` from `link` directives (`link "uv"` → `-luv`),
+           adds `-I<root>/std/c` + `-D_GNU_SOURCE`, and drops the `-Wno-implicit-function-declaration` crutch.
+        4. **CLI wiring** — `build_command` passes roots to `build_driver.build`; help updated.
+        KNOWN ISSUE (→ Phase 9): stage-2 aborts at runtime on real work (`arena.to_cstr out of memory`) —
+        a correctness bug in the generated code / runtime, not a build/link issue. This is exactly the
+        bootstrap-fixpoint work of Phase 9.
+- [ ] Phase 9 — correctness verification (differential C + bootstrap fixpoint). FIRST TARGET: the
+      stage-2 runtime abort (`arena.to_cstr out of memory` on `lex`) — likely an arena/allocation or
+      generated-code correctness bug surfaced only when the self-host binary actually runs.
 - [ ] Phase 10 — debug-guard fix + build-mode/runtime parity
 
 ---
