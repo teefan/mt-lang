@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. 44 C errors remain (measured with `-I std/c`).**
-Last updated: 2026-07-09 (P8, Seam A + B §3.1 + C landed)
+Status: **Phase 8 — self-compile C-error elimination. 20 C errors remain (measured with `-I std/c`).**
+Last updated: 2026-07-09 (P8, Seam A + B §3.1 + C + §3.4 landed)
 
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -100,20 +100,29 @@ tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --ro
 cc -std=c11 -D_GNU_SOURCE -Wno-implicit-function-declaration -I std/c -c tmp/self.c -o /dev/null 2>tmp/errs.txt
 ```
 
-**Status**: 83 `cc` errors, 172/172 tests pass.
+**Status**: 20 `cc` errors, 172/172 tests pass. (Was 83 at the start of this session; Seams A, B §3.1,
+C, and §3.4 landed — see the progress checklist in §5 for the authoritative, up-to-date breakdown.)
 
-### Error breakdown (83, grouped by root cause)
+### Error breakdown (20 remaining, grouped by root cause)
 
-| Root cause | Count | Representative errors |
+| Root cause | Count | Notes |
+|-----------|-------|-------|
+| `return match` hoist (D1) | 7 | LIVE `return match` in token.mt (enum), keywords.mt (str), lexer.mt x2 (tuple). Needs real hoist + tuple-scrutinee support + latent `lower_variant_match_expr` crash fix. Deferred to a dedicated session — see §5 D1 entry. |
+| `void*` return-from-int (std_mem_heap) | 4 | External libc functions (`malloc`/`aligned_alloc`/`calloc`/`realloc`) typed as `int`. Phase 8b (external ABI declarations), not self-host source. |
+| Scattered singletons (Seam E) | ~9 | Vec diagnostic pointer mismatches (`Vec_*ParseDiagnostic **` vs `*`), `redefinition of 't'`, `conflicting types for 'value'`, `destructure_bindings has incomplete type`, `const char* from int`, `invalid initializer`. Best next target (low risk). |
+
+### Historical breakdown (83, grouped by root cause) — mostly RESOLVED this session
+
+| Root cause | Count | Status |
 |-----------|-------|-----------------------|
-| Match-expression lowering (stub-generated) | ~12 | `match_expr` undeclared, `stmt_local_some`/`none` undeclared, `expr_match` unknown, `scrutinee` member-on-non-struct. All cosmetic — the `lower_expression_match` stub is dead code. |
-| `std_map_Option_` variant-literal prefix | ~3 | `request for member 'value'` on `std_map_Option_..._unwrap(removed)`. The `.some(...)` arm body still module-prefixes the Option outer variant. |
-| `String.create()` static method return type | ~8 | `String` unknown type, `std_string_String` return-from-int, `String_reserve`/`append` arg mismatch, `expected expression before 'String'`. Static methods on nominal types (`String.create()`) are not in the `function_returns` table. |
-| `void*` return-from-int (std_mem_heap) | 4 | External libc functions (`malloc`/`aligned_alloc`/`calloc`/`realloc`) typed as `int` instead of `ptr[void]?`. Pre-existing — in std-lib modules, not self-host source. |
-| `mtc_ir_Expr` vs `ast_Expr` pointer mismatch | 3 | Variant registry name collision between `mtc.ir.Expr` and `mtc.parser.ast.Expr` modules — bare name `Expr` maps to the wrong type. |
-| Declared void / `mt_` fallback (Map/Vec methods) | ~6 | `_prev`/`last`/`kinds`/`found`/`configured` declared void. Method calls on monomorphized Map/Vec fall to `<module>_mt_<method>`. |
-| Map/vec `.contains()` arg type mismatches | 4 | Monomorphized generic method call arg types don't match struct decl. |
-| Scattered singletons | ~43 | Mostly 1-each: pointer/type mismatches, `String_String_from_str` return-int, `Stmt_stmt_local` unknown, `interfering types`, `intialization` mismatches, `binds`/`destructure_bindings`/`str_cstr_as_str`/`vec_contains_int`/`variant_match_allowed`/`lower_extending_block`/`lower_expr`/`guard_variant_base`/`ensure_event_runtime`/`emit_result_failure_binding` arg type errors, `subscripted value`, `redefinition of 't'`, `invalid initializer`, `conflicting types for 'value'`, `Vec_* expected '* *' but got '* **'`. |
+| Match-expression lowering (stub-generated) | ~12 | Partly resolved via §3.4; 7 remain as D1 (`return match`, re-characterized as live code). |
+| `std_map_Option_` variant-literal prefix | ~3 | ✅ Fixed by Seam B §3.1 (prelude variant method monomorphization). |
+| `String.create()` static method return type | ~8 | ✅ Fixed by Seam A (static-method returns via resolve_method_info). |
+| `void*` return-from-int (std_mem_heap) | 4 | Still open — Phase 8b (external ABI). |
+| `mtc_ir_Expr` vs `ast_Expr` pointer mismatch | 3 | ✅ Fixed by §3.4 (arm-payload collision guard). |
+| Declared void / `mt_` fallback (Map/Vec methods) | ~6 | ✅ Fixed by Seam A (chained/read() receiver typing) + Seam C. |
+| Map/vec `.contains()` arg type mismatches | 4 | ✅ Fixed by Seam C (ref[T] implicit borrow). |
+| Scattered singletons | ~43 | Mostly collapsed by A/B/C/§3.4; ~9 remain (Seam E). |
 
 ### Already fixed this session (208 → 83, −125)
 
@@ -363,25 +372,33 @@ Established this session; reuse these seams rather than re-deriving them:
         recorded receiver type dropped its literal count; the index receiver type is rebuilt with the
         recovered length so the correct `mt_checked_index_array_*_N` helper is emitted (fixes a latent
         `len=0` / `[0]`-helper bug on const array references). 172/172 tests pass.
-  - [ ] **Seam B §3.4 — `ir.Expr` vs `ast.Expr` collision (3, in progress).** In `lower_stmt`'s
-        `stmt_local` handling, `loc.value` (`ptr[ast.Expr]?`) is emitted typed as `mtc_ir_Expr*`, so the
-        `match read(init_val)` dispatches on nonexistent `ir.Expr` arms (`expr_match`/`expr_format_string`).
-        Root: bare `Expr` field-type resolution / arm-payload member typing picks the wrong module's
-        `Expr`. Entangled with the match-expr dead-stub region (D1) and a double-qualification symptom
-        (`mtc_lowering_lowering_mtc_parser_ast_Stmt_stmt_local`). Best resolved together with D1
-        (neutralize the dead stub) since they are physically colocated in the same `lower_stmt` region.
-  - [ ] Match-expression hoisting (~8 cluster: `match_expr` undeclared, `Stmt_stmt_local` unknown
-        types, member-on-non-struct cascades).  Investigation this session: the `return match` hoist
-        in `lower_stmt` correctly detects and emits a temp + `lower_match_expression_local`, but
-        the expression-form lowering infrastructure has multiple pre-existing bugs: (a)
-        `lower_enum_match_expr` uses `ctx.module_name` for enum-member C names, missing
-        `enum_source_module` for imported enums; (b) `lower_variant_match_expr`'s goto-path
-        crashes with struct-pattern arms used in the self-host's statement-form matches; (c) str
-        scrutinees need an if-chain (`lower_str_match_expr`) — the switch-based
-        `lower_enum_match_expr` emits illegal C (string literals as switch constants). Fixing all
-        three is a multi-session effort; the hoist stub is dormant (never reached) and the
-        pre-existing bugs don't affect current compilation.  Skip for now; the 8 errors are cosmetic
-        (stub-generated `match_expr` names in dead code paths).
+  - [x] **§3.4 — `ir.Stmt`/`ast.Stmt` arm-payload collision (44 → 20, −24).** In `lower_stmt`,
+        `loc.destructure_bindings` (an `Option` field) lowered to a garbage `switch`, and `loc.value`
+        (`ptr[ast.Expr]?`) was typed `mtc_ir_Expr*`. Root cause: when a module imports two variants
+        sharing a bare name (both `ir.Stmt` and `ast.Stmt` are "Stmt"), a match on one re-registered its
+        arm-payload fields from `ctx.variants[base_name]`, which the bare-name collision could resolve to
+        the WRONG module's variant — clobbering the authoritative, module-qualified entry that
+        `install_imported_variants` had already registered (field types resolved in the owner context).
+        Fix: `register_arm_payload_fields` skips re-registration when a non-prelude entry already exists,
+        so the `install_imported_variants` entry wins; prelude variants still re-register to specialize
+        their `_phantom` placeholder. Corrected both `loc.destructure_bindings` and `loc.value` typing,
+        cascading −24. 172/172 tests pass.
+  - [ ] **D1 — match-expression `return match` hoist (7 errors, DEFERRED — needs a dedicated session).**
+        RE-CHARACTERIZED: this is NOT a dead stub. The 7 `match_expr` errors come from LIVE `return match`
+        code: `token.mt` `kind_name` (enum scrutinee), `keywords.mt` `keyword_kind` (**str** scrutinee),
+        `lexer.mt` `three_char_token`/`two_char_token` (**tuple** scrutinee). `lower_stmt`'s `stmt_ret`
+        lowers the value via `lower_expr`, which hits the `lower_expression_match` stub emitting an
+        undeclared `match_expr` placeholder. Attempted fix this session (a `return match` hoist reusing a
+        shared `lower_match_expression_temp`) but it triggers a pre-existing crash
+        `lowering: unsupported variant match expression pattern` in `lower_variant_match_expr`
+        (scrutinee_ty="Expr", module `mtc.parser.parser`) — even though parser.mt has no match
+        expressions, so the crash is triggered indirectly (suspect: eager arm-value lowering in the
+        type-inference helper, or `expr_type` mis-typing a hoisted match result). Also, the **tuple
+        scrutinee** case is entirely unsupported by the expression-form lowering (no tuple path). Proper
+        fix requires: (a) a hoist that infers the result type without side-effecting arm lowering, (b)
+        tuple-scrutinee match-expression support, (c) isolating the latent `lower_variant_match_expr`
+        crash. Reverted cleanly; tree stays at 20. Do this as its own focused session (the plan's original
+        multi-session estimate stands).
   - [x] `array[T,N]` const emission (88 → 83, −5). `render_constant`/`render_global` used `c_type`
         for arrays, which produced the backend-internal `array_str_N` struct name (no typedef
         emitted). Fixed to use `c_declaration` which renders C-native `TYPE NAME[N]`.
