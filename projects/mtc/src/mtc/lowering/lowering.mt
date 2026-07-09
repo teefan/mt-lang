@@ -1232,14 +1232,23 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 output.push(ir.Stmt.stmt_continue())
             ast.Stmt.stmt_unsafe as u:
                 if u.body != null:
-                    lower_stmt(ctx, output, ptr[ast.Stmt]<-u.body)
+                    # Lower the unsafe body into its own statement list and wrap it
+                    # in an IR block, so its locals get a distinct C scope (`{ }`).
+                    # Without this, sibling `unsafe:` blocks that each declare the
+                    # same local name (e.g. `let t = read(tok)`) collide in the flat
+                    # function scope ("redefinition of 't'").
+                    var body_stmts = vec.Vec[ir.Stmt].create()
+                    lower_stmt(ctx, ref_of(body_stmts), ptr[ast.Stmt]<-u.body)
+                    output.push(ir.Stmt.stmt_block(body = body_stmts.as_span()))
                 return
             ast.Stmt.stmt_block as blk:
+                var block_stmts = vec.Vec[ir.Stmt].create()
                 var i: ptr_uint = 0
                 while i < blk.statements.len:
                     unsafe:
-                        lower_stmt(ctx, output, ptr[ast.Stmt]<-(blk.statements.data + i))
+                        lower_stmt(ctx, ref_of(block_stmts), ptr[ast.Stmt]<-(blk.statements.data + i))
                     i += 1
+                output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
             ast.Stmt.stmt_defer as d:
                 if d.expression != null:
                     output.push(ir.Stmt.stmt_expression(
