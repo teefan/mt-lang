@@ -82,7 +82,8 @@ public function generate_c(program: ir.Program) -> string.String:
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
     let use_fatal = uses_fatal_helper(funcs, program) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0
     let use_fatal_str = uses_fatal_str_helper(funcs)
-    let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or use_fatal_str or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants))
+    let use_entry_argv = uses_entry_argv(program)
+    let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or use_fatal_str or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants)) or use_entry_argv
     let use_str_equality = uses_str_equality(funcs)
 
     var i: ptr_uint = 0
@@ -90,8 +91,10 @@ public function generate_c(program: ir.Program) -> string.String:
         unsafe:
             emit_line(ref_of(e), j2("#include ", read(program.includes.data + i).header))
         i += 1
-    if use_fatal or use_fatal_str:
+    if use_fatal or use_fatal_str or use_entry_argv:
         emit_line(ref_of(e), "#include <stdlib.h>")
+    if use_entry_argv:
+        emit_line(ref_of(e), "#include <string.h>")
     emit_line(ref_of(e), "")
 
     if use_string_view:
@@ -284,6 +287,10 @@ public function generate_c(program: ir.Program) -> string.String:
     # Emit builtin helpers (order/equal/hash) when used.
     if uses_builtin_helpers(program):
         emit_builtin_helpers(ref_of(e))
+
+    # Emit the argv → span[str] entry bridge helpers when the entry point uses them.
+    if use_entry_argv:
+        emit_entry_argv_helpers(ref_of(e))
 
     i = 0
     while i < funcs.len:
@@ -3363,4 +3370,41 @@ function emit_builtin_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "")
     emit_line(e, "static uint32_t mt_hash_func(void const* value) {")
     emit_line(e, "  return (uint32_t)(uintptr_t)value;")
+    emit_line(e, "}")
+
+
+## True when the entry point uses the argv → span[str] bridge.
+function uses_entry_argv(program: ir.Program) -> bool:
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            let f = read(program.functions.data + i)
+            if body_calls(f.body, "mt_entry_argv_to_span_str") or body_calls(f.body, "mt_free_entry_argv_strs"):
+                return true
+        i += 1
+    return false
+
+
+## Emit the argv → span[str] entry bridge runtime helpers.  Mirrors Ruby's
+## mt_entry_argv_to_span_str / mt_free_entry_argv_strs (runtime_helpers.rb).
+function emit_entry_argv_helpers(e: ref[Emitter]) -> void:
+    emit_line(e, "static mt_span_str mt_entry_argv_to_span_str(int32_t argc, char** argv, mt_str** items_out) {")
+    emit_line(e, "  uintptr_t len = argc > 1 ? (uintptr_t)(argc - 1) : 0;")
+    emit_line(e, "  mt_str* items = NULL;")
+    emit_line(e, "  uintptr_t index = 0;")
+    emit_line(e, "  if (len > 0) {")
+    emit_line(e, "    items = (mt_str*)malloc(len * sizeof(mt_str));")
+    emit_line(e, "    if (items == NULL) abort();")
+    emit_line(e, "  }")
+    emit_line(e, "  while (index < len) {")
+    emit_line(e, "    char* value = argv[index + 1];")
+    emit_line(e, "    items[index] = (mt_str){ .data = value, .len = (uintptr_t)strlen(value) };")
+    emit_line(e, "    index++;")
+    emit_line(e, "  }")
+    emit_line(e, "  *items_out = items;")
+    emit_line(e, "  return (mt_span_str){ .data = items, .len = len };")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void mt_free_entry_argv_strs(mt_str* items) {")
+    emit_line(e, "  free(items);")
     emit_line(e, "}")

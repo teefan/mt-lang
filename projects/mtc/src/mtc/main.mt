@@ -91,7 +91,7 @@ function print_help() -> void:
     stdio.print_line("  check <file> [--root DIR]...  type-check a file and its imports")
     stdio.print_line("  lower <file> [--root DIR]...  lower to IR and print it")
     stdio.print_line("  emit-c <file> [--root DIR]...  compile to C and print it")
-    stdio.print_line("  build <file> [--root DIR]...  build a program (Phase 0: stubbed)")
+    stdio.print_line("  build <file> [--root DIR]...  compile and link a native binary")
     stdio.print_line("  help          print this help")
 
 
@@ -291,7 +291,7 @@ function build_command(args: span[str]) -> int:
     defer program.release()
 
     let output_path = default_output_path(path)
-    match build_driver.build(program, output_path, "cc"):
+    match build_driver.build(program, output_path, "cc", roots.as_span()):
         Result.success as built:
             var output = built.value
             defer output.release()

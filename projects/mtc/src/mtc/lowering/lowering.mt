@@ -1059,13 +1059,12 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
     )
 
 
-## Synthesize the C entry point `int main(void)` that calls the user's root
-## `main`.  Phase 1 supports only a no-parameter `main` returning `int` or
-## `void` (the `:none` bridge in Ruby's build_root_main_entrypoint).
+## Synthesize the C entry point `int main(...)` that calls the user's root
+## `main`.  Supports a no-parameter `main` (`int main(void)`) and a single
+## `span[str]` parameter (`int main(int argc, char** argv)` with the argv →
+## `span[str]` bridge), each returning `int` or `void`.  Mirrors Ruby's
+## build_root_main_entrypoint (:none / :span_str signatures).
 function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[ast.Param]) -> Option[ir.Function]:
-    if params.len != 0:
-        return Option[ir.Function].none
-
     let sig = lookup_fn_sig(ctx, name)
     let user_return = fn_sig_return_type(sig)
     if not (types.is_void(user_return) or is_int_type(user_return)):
@@ -1073,9 +1072,72 @@ function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[
 
     let int_ty = types.primitive("int")
     let user_linkage = naming.qualified_c_name(ctx.module_name, name)
-    let call = alloc_expr(ir.Expr.expr_call(callee = user_linkage, arguments = span[ir.Expr](), ty = user_return))
 
-    var body = vec.Vec[ir.Stmt].create()
+    if params.len == 0:
+        let call = alloc_expr(ir.Expr.expr_call(callee = user_linkage, arguments = span[ir.Expr](), ty = user_return))
+        var body = vec.Vec[ir.Stmt].create()
+        append_entry_call_and_return(ref_of(body), call, user_return, int_ty)
+        return Option[ir.Function].some(value = ir.Function(
+            name = name, linkage_name = "main", params = span[ir.Param](),
+            return_type = int_ty, body = body.as_span(), entry_point = true, method_receiver_param = false,
+        ))
+
+    # Single `span[str]` parameter: emit `int main(int argc, char** argv)`, build a
+    # `span[str]` from argv via the runtime bridge, call the user main, then free.
+    if params.len == 1 and main_param_is_span_str(ctx, params):
+        let span_str_ty = types.Type.ty_generic(name = "span", args = sp_type(types.Type.ty_str))
+        let items_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_str))
+        let char_ptr_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("char")))))
+
+        var body = vec.Vec[ir.Stmt].create()
+        # mt_str* __mt_args_items = NULL;
+        let items_null = alloc_expr(ir.Expr.expr_name(name = "NULL", ty = items_ty, pointer = true))
+        body.push(ir.Stmt.stmt_local(name = "__mt_args_items", linkage_name = "__mt_args_items", ty = items_ty, value = items_null, line = 0, source_path = ""))
+        let items_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_args_items", ty = items_ty, pointer = false))
+        # mt_span_str __mt_args = mt_entry_argv_to_span_str(argc, argv, &__mt_args_items);
+        let argc_expr = alloc_expr(ir.Expr.expr_name(name = "argc", ty = int_ty, pointer = false))
+        let argv_expr = alloc_expr(ir.Expr.expr_name(name = "argv", ty = char_ptr_ptr, pointer = false))
+        let items_addr = alloc_expr(ir.Expr.expr_address_of(expression = items_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(items_ty))))
+        var bridge_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            bridge_args.push(read(argc_expr))
+            bridge_args.push(read(argv_expr))
+            bridge_args.push(read(items_addr))
+        let bridge_call = alloc_expr(ir.Expr.expr_call(callee = "mt_entry_argv_to_span_str", arguments = bridge_args.as_span(), ty = span_str_ty))
+        body.push(ir.Stmt.stmt_local(name = "__mt_args", linkage_name = "__mt_args", ty = span_str_ty, value = bridge_call, line = 0, source_path = ""))
+        let args_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_args", ty = span_str_ty, pointer = false))
+
+        var call_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            call_args.push(read(args_ref))
+        let call = alloc_expr(ir.Expr.expr_call(callee = user_linkage, arguments = call_args.as_span(), ty = user_return))
+
+        # Capture the user result, free the argv strings, then return.
+        if types.is_void(user_return):
+            body.push(ir.Stmt.stmt_expression(expression = call, line = 0, source_path = ""))
+            append_free_argv_items(ref_of(body), items_ref)
+            let zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = int_ty))
+            body.push(ir.Stmt.stmt_return(value = zero, line = 0, source_path = ""))
+        else:
+            body.push(ir.Stmt.stmt_local(name = "__mt_exit", linkage_name = "__mt_exit", ty = int_ty, value = call, line = 0, source_path = ""))
+            append_free_argv_items(ref_of(body), items_ref)
+            let exit_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_exit", ty = int_ty, pointer = false))
+            body.push(ir.Stmt.stmt_return(value = exit_ref, line = 0, source_path = ""))
+
+        var entry_params = vec.Vec[ir.Param].create()
+        entry_params.push(ir.Param(name = "argc", linkage_name = "argc", ty = int_ty, pointer = false))
+        entry_params.push(ir.Param(name = "argv", linkage_name = "argv", ty = char_ptr_ptr, pointer = false))
+        return Option[ir.Function].some(value = ir.Function(
+            name = name, linkage_name = "main", params = entry_params.as_span(),
+            return_type = int_ty, body = body.as_span(), entry_point = true, method_receiver_param = false,
+        ))
+
+    return Option[ir.Function].none
+
+
+## Append the user-main call and the `int` return to an entry-point body:
+## `main() ; return 0;` for a void user main, or `return main();` for an int one.
+function append_entry_call_and_return(body: ref[vec.Vec[ir.Stmt]], call: ptr[ir.Expr], user_return: types.Type, int_ty: types.Type) -> void:
     if types.is_void(user_return):
         body.push(ir.Stmt.stmt_expression(expression = call, line = 0, source_path = ""))
         let zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = int_ty))
@@ -1083,15 +1145,31 @@ function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[
     else:
         body.push(ir.Stmt.stmt_return(value = call, line = 0, source_path = ""))
 
-    return Option[ir.Function].some(value = ir.Function(
-        name = name,
-        linkage_name = "main",
-        params = span[ir.Param](),
-        return_type = int_ty,
-        body = body.as_span(),
-        entry_point = true,
-        method_receiver_param = false,
-    ))
+
+## Append `mt_free_entry_argv_strs(__mt_args_items);` to an entry-point body.
+function append_free_argv_items(body: ref[vec.Vec[ir.Stmt]], items_ref: ptr[ir.Expr]) -> void:
+    var free_args = vec.Vec[ir.Expr].create()
+    unsafe:
+        free_args.push(read(items_ref))
+    let free_call = alloc_expr(ir.Expr.expr_call(callee = "mt_free_entry_argv_strs", arguments = free_args.as_span(), ty = types.primitive("void")))
+    body.push(ir.Stmt.stmt_expression(expression = free_call, line = 0, source_path = ""))
+
+
+## True when the root main's single parameter is `span[str]`.
+function main_param_is_span_str(ctx: ref[LowerCtx], params: span[ast.Param]) -> bool:
+    if params.len != 1:
+        return false
+    var p: ast.Param
+    unsafe:
+        p = read(params.data + 0)
+    let resolved = resolve_type_ref(ctx, ptr_of(p.param_type))
+    match resolved:
+        types.Type.ty_generic as g:
+            if g.name.equal("span") and g.args.len == 1:
+                return types.type_to_string(unsafe: read(g.args.data + 0)).equal("str")
+        _:
+            pass
+    return false
 
 
 # =============================================================================
