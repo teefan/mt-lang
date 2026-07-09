@@ -2346,6 +2346,14 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                     let rt = ir_expr_type(right)
                     if is_integer_scrutinee(lt) and types.type_to_string(lt).equal(types.type_to_string(rt)):
                         result_ty = lt
+                    # `<wider-int-expr> + <int literal>` (e.g. `ptr_uint + 2`): the
+                    # analyzer recorded a non-integer result, and one operand is a
+                    # plain `int` literal.  Adopt the other operand's wider integer
+                    # type so the result matches the dominant operand.
+                    else if is_integer_scrutinee(lt) and types.type_to_string(rt).equal("int"):
+                        result_ty = lt
+                    else if is_integer_scrutinee(rt) and types.type_to_string(lt).equal("int"):
+                        result_ty = rt
                 return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = result_ty))
             ast.Expr.expr_unary_op as un:
                 let operand = lower_expr(ctx, un.operand)
