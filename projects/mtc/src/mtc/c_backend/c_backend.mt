@@ -2411,7 +2411,7 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
             ir.Expr.expr_array_literal as arr:
                 return render_array_literal_initializer(e, arr.elements)
             ir.Expr.expr_conditional as cond:
-                return j5(wrap_expression(e, cond.condition), " ? ", render_expression(e, cond.then_expression), " : ", render_expression(e, cond.else_expression))
+                return j5(emit_conditional_condition(e, cond.condition), " ? ", render_expression(e, cond.then_expression), " : ", render_expression(e, cond.else_expression))
             _:
                 fatal(c"c_backend: unsupported expression")
 
@@ -2949,14 +2949,49 @@ function wrap_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return text
             ir.Expr.expr_integer_literal:
                 return text
+            ir.Expr.expr_float_literal:
+                return text
             ir.Expr.expr_boolean_literal:
                 return text
             ir.Expr.expr_string_literal:
                 return text
+            ir.Expr.expr_null_literal:
+                return text
+            ir.Expr.expr_zero_init:
+                return text
+            ir.Expr.expr_member:
+                return text
+            ir.Expr.expr_index:
+                return text
             ir.Expr.expr_call:
+                return text
+            ir.Expr.expr_aggregate_literal:
+                return text
+            ir.Expr.expr_array_literal:
+                return text
+            ir.Expr.expr_reinterpret:
+                return text
+            ir.Expr.expr_sizeof:
+                return text
+            ir.Expr.expr_alignof:
+                return text
+            ir.Expr.expr_offsetof:
                 return text
             _:
                 return j3("(", text, ")")
+
+
+## The condition operand of a `? :` conditional: parenthesized only when the
+## condition is itself a conditional (mirrors Ruby's emit_conditional_condition).
+## All other kinds render bare because `?:` binds looser than every operator.
+function emit_conditional_condition(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+    let text = render_expression(e, ep)
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_conditional:
+                return j3("(", text, ")")
+            _:
+                return text
 
 
 ## True when a cast from the operand's type to `target_ty` is a no-op
