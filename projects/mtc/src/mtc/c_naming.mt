@@ -18,17 +18,13 @@ import mtc.semantic.types as types
 ## — matching the Ruby compiler's `sanitize_identifier`.
 public function sanitize_identifier(text: str) -> str:
     var buf = string.String.create()
-    var prev_underscore = false
     var i: ptr_uint = 0
     while i < text.len:
         let b = text.byte_at(i)
         if is_alnum_byte(b):
             buf.push_byte(b)
-            prev_underscore = false
         else:
-            if not prev_underscore:
-                buf.push_byte('_')
-                prev_underscore = true
+            buf.push_byte('_')
         i += 1
 
     var result = buf.as_str()

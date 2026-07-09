@@ -1764,7 +1764,7 @@ function c_declaration(t: types.Type, name: str) -> str:
         types.Type.ty_generic as g:
             if g.name.equal("ptr") or g.name.equal("ref") and g.args.len >= 1:
                 let base = unsafe: c_type(read(g.args.data + (g.args.len - 1)))
-                return j3(base, "*", name)
+                return j3(base, " *", name)
             if g.name.equal("const_ptr") and g.args.len == 1:
                 let base = unsafe: c_type(read(g.args.data + 0))
                 return j4("const ", base, "*", name)
