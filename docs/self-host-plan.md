@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 9 IN PROGRESS. Native-binary milestone REACHED and the stage-2 runtime abort is FIXED. Stage-2 `lex` and `parse` are now BYTE-IDENTICAL to stage-1 across the entire self-host source (lexer + parser bootstrap fixpoint reached). Next: differential `check`.**
-Last updated: 2026-07-09 (P9: 3 correctness fixes landed — defer lowering, string-match-expr, string-escape decode; lex+parse fixpoint)
+Status: **Phase 9 COMPLETE. Whole-program emit-c is BYTE-IDENTICAL between stage-1 (Ruby-built self-host) and stage-2 (self-built). The bootstrap fixpoint has been reached: the self-host compiles itself into identical C, and that C compiles and links to a working binary (0 cc errors, 172/172 tests pass).**
+Last updated: 2026-07-09 (P9 COMPLETE: 5 correctness fixes — defer lowering, string-match-expr, string-escape decode, break-in-match-in-while x2; whole-program emit-c fixpoint)
 
 
 > **Measurement note:** the self-host emit-c output now compiles cleanly WITHOUT the
@@ -86,11 +86,32 @@ started emitting — see §2). Commits `1fe8924f`…`24476860`:
 
 ---
 
-## 2. RESUME HERE — Phase 9 in progress (as of 2026-07-09)
+## 2. RESUME HERE — Phase 9 COMPLETE (as of 2026-07-09)
 
-**Phase 8 COMPLETE; native-binary milestone REACHED; the stage-2 runtime abort is FIXED.**
-Three correctness fixes have landed and stage-2 `lex` + `parse` are now **byte-identical to
-stage-1 across the whole self-host source**. The next target is differential **`check`**.
+**Phase 9 is COMPLETE. Whole-program emit-c is byte-identical between stage-1
+and stage-2 (52,275 lines, 0 diffs). The bootstrap fixpoint has been reached.**
+
+Five correctness fixes landed this session:
+1. **defer lowering** — `defer` emitted at declaration site instead of scope-exit/return.
+   Implemented Ruby's active_defers/local_defers model per LowerCtx DeferGroup stack.
+2. **string-match-expr** — independent `if`s instead of else-if chain (keyword→identifier).
+3. **string-escape decode** — parser never decoded `\n`/`\r`/`\t`/etc., so C backend
+   emitted `\\n` literally.
+4. **break-in-match-in-while #1** — `break` inside `match` inside `while true:` in C
+   breaks the `switch`, not the loop. `ensure_generic_struct_decl_named` failed to register
+   Vec[String] struct decl. Fixed with flag-based loop.
+5. **break-in-match-in-while #2** — same pattern in `lower_aggregate_literal`. ir.Param
+   aggregate constructors rendered as ast.Param. Fixed with flag-based loop.
+
+Because `break`-in-`match`-in-`while` is a systemic C-lowering semantics gap (Ruby
+converts such breaks to goto-labels), a scan found 26 additional latent instances
+in std/ modules (net, http, terminal, etc.). These are not triggered by the self-host's
+transitive import chain and are deferred to a systematic C-backend fix.
+
+172/172 self-host tests pass throughout; all per-pipeline-stage differentials are
+byte-identical (lex, parse, check, lower, emit-c).
+
+**Next: Phase 10 — debug-guard fix + build-mode/runtime parity (deferred Phase 8 items).**
 
 ### 2.0 Phase 9 fixes landed this session
 
@@ -471,11 +492,11 @@ clean re-apply. When editing near function boundaries in the ~8.8k-line `lowerin
         4. **CLI wiring** — `build_command` passes roots to `build_driver.build`; help updated.
         KNOWN ISSUE (→ Phase 9): stage-2 aborts at runtime on real work (`arena.to_cstr out of memory`) —
         a correctness bug in the generated code / runtime, not a build/link issue. This is exactly the
-        bootstrap-fixpoint work of Phase 9.
-- [ ] Phase 9 — correctness verification (differential C + bootstrap fixpoint). IN PROGRESS:
+         bootstrap-fixpoint work of Phase 9.
+- [x] Phase 9 — correctness verification (differential C + bootstrap fixpoint). COMPLETE:
       stage-2 runtime abort FIXED (defer lowering); string-match-expr + string-escape decode
-      fixed. Stage-2 `lex` and `parse` are byte-identical to stage-1 across the whole self-host
-      source. NEXT: differential `check`, then `lower`/`emit-c`.
+      + break-in-match-in-while x2 fixed. Stage-2 `lex`, `parse`, `check`, and whole-program
+      `emit-c` are byte-identical to stage-1 (52,275 lines, 0 diffs). 172/172 tests pass.
 - [ ] Phase 10 — debug-guard fix + build-mode/runtime parity
 
 ---
