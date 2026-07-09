@@ -2378,11 +2378,15 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
             ir.Expr.expr_null_literal:
                 return "NULL"
             ir.Expr.expr_cast as cast:
+                # A cast whose target C type equals its operand's C type is a
+                # no-op: emit the bare operand (mirrors Ruby's no_op_cast?).
+                if no_op_cast(cast.expression, cast.target_type):
+                    return render_expression(e, cast.expression)
                 var cast_buf = string.String.create()
                 cast_buf.append("(")
                 cast_buf.append(c_type(cast.target_type))
-                cast_buf.append(")")
-                cast_buf.append(wrap_expression(e, cast.expression))
+                cast_buf.append(") ")
+                cast_buf.append(emit_cast_operand(e, cast.expression))
                 return cast_buf.as_str()
             ir.Expr.expr_checked_index as ci:
                 return j5("(*", checked_array_index_helper_name(ci.receiver_type), "(", render_address_of_operand(e, ci.receiver), j3(", ", render_expression(e, ci.index), "))"))
@@ -2953,6 +2957,42 @@ function wrap_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return text
             _:
                 return j3("(", text, ")")
+
+
+## True when a cast from the operand's type to `target_ty` is a no-op
+## (the C type name is the same).  Null-literal operands are never elided
+## (mirrors Ruby's no_op_cast?).
+function no_op_cast(ep: ptr[ir.Expr], target_ty: types.Type) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_null_literal:
+                return false
+            _:
+                pass
+    let source_ty = expr_result_type(ep)
+    if types.is_error(source_ty):
+        return false
+    return c_type(target_ty).equal(c_type(source_ty))
+
+
+## Render the operand of a cast, wrapping it in parentheses only when its
+## top-level expression kind would be ambiguous without them in C (e.g.
+## binary expressions, ternaries).  Otherwise emit it bare.  Mirrors the
+## operands Ruby's emit_cast_operand passes through without parentheses.
+function emit_cast_operand(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+    let text = render_expression(e, ep)
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_binary:
+                return j3("(", text, ")")
+            ir.Expr.expr_call_indirect:
+                return j3("(", text, ")")
+            ir.Expr.expr_conditional:
+                return j3("(", text, ")")
+            ir.Expr.expr_variant_literal:
+                return j3("(", text, ")")
+            _:
+                return text
 
 
 function c_operator(operator: str) -> str:
