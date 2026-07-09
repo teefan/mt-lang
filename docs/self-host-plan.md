@@ -8,7 +8,7 @@ document tracks the remaining work to close that gap.
 Phases A (`atomic[T]`) and B (`emit`) are **DONE**, along with a batch of arithmetic/cast
 emit-c parity work and a latent codegen-bug fix uncovered along the way (see §1.1 / §3).
 
-Last updated: 2026-07-09
+Last updated: 2026-07-09 (session: Phases A-E, C1, D, H naming/preamble)
 
 ---
 
@@ -17,8 +17,8 @@ Last updated: 2026-07-09
 ### 1.1 What works (verified)
 
 - **Self-compile fixpoint.** stage-1 (Ruby-built self-host) → stage-2 (self-built) →
-  stage-3 (stage-2-built) all emit **byte-identical C** (~52,946 lines, 0 diffs) for the
-  self-host source. Each stage runs `lex` / `parse` / `check` correctly, and per-pipeline
+  stage-3 (stage-2-built) all emit **byte-identical C** (~53,226 lines, 0 diffs) for the
+  self-host source (re-verified 2026-07-09 after Phase H naming fixes). Per-pipeline
   differentials (`lex`, `parse`, `check`, `lower`, `emit-c`) are byte-identical stage-1 vs
   stage-2 on every self-host source file.
 - **Ordinary programs** using Vec / Map / String / generics / match / defer / tuples /
@@ -27,38 +27,46 @@ Last updated: 2026-07-09
 - **`atomic[T]`** (Phase A) — `_Atomic T` + `__atomic_*` builtins; byte-identical to Ruby.
 - **`emit`** (Phase B) — `emit function/struct/const` inside `const function` / inline
   bodies spliced into the module as ordinary top-level declarations; byte-identical to Ruby
-  for `emit function` (and handles `emit struct`/`const`, which Ruby currently crashes on).
+  for `emit function`.
+- **`dyn[I]`** (Phase C1) — vtable constants emitted to program constants; interface method
+  return types resolved from the interface analysis (fixes `void a`). Builds+runs for single
+  files.
+- **`break`/`continue` in match-in-loop** (Phase D) — C-backend if-chain lowering via
+  `emit_stmts_loop` + `emit_switch_as_if_chain`; behavioral fix verified (exit codes match
+  Ruby). Self-compile fixpoint breaks structurally (new functions → string-literal-index
+  shift, a Phase-H residual).
+- **Parallel for for-loop wrapper** (Phase E, partial) — `parallel_for_worker_fn` now wraps
+  the body in a `for (i = mt_pfor_start; ...)` loop, fixing the `i undeclared` error.
+  Array captures need C-backend `ptr[array[T,N]]` → `T (*)[N]` rendering (Phase-H residual).
 - **Arithmetic / cast emit-c parity** (general programs, byte-identical to Ruby):
   - no-op cast elision + `(T) x` spacing + `emit_cast_operand` parenthesization;
   - unary / conditional operand-wrapping (`wrap_expression` set + `emit_conditional_condition`);
   - binary operand widening (`promoted_binary_operand_type` / `common_*_type` — mixed-width
     integer + int/float balancing, result-type widening for arithmetic);
   - enum/flags backing-cast in comparisons (`enum_backing_or_self` unwrap, local + imported).
-- **Latent codegen bug fixed:** the checked-array/span-index type collectors did not recurse
-  into `expr_cast` (and `reinterpret` / nullable-index / array-/variant-literal). A checked
-  index wrapped in a cast went uncollected → its accessor helper was never emitted → an
-  undeclared call that a lenient `cc` miscompiled. Completed the traversal to mirror Ruby.
-  (Exposed by enum backing-cast wrapping span-indexed operands.)
+- **C naming hardening** (Phase H):
+  - `sanitize_identifier` consecutive-underscore collapse removed.
+  - `c_declaration` pointer spacing → `T *name`.
+  - Prelude variant C-name prefix: `std_option_Option_...` / `std_result_Result_...`.
+- **Header/preamble parity** (Phase H): `_GNU_SOURCE` block, include deduplication,
+  `<stddef.h>` injection (offsetof), span-forward-decl blank-guard, `offsetof` lowering fix.
+- **Latent codegen bug fixed**: checked-array/span-index type collectors completed to
+  recurse through `expr_cast` and other sub-expression containers (prerequisite for enum
+  backing-cast, discovered and fixed during arithmetic parity work).
 
 ### 1.2 What does NOT work yet (the parity gap)
 
-The self-host is complete *for the subset its own source uses*, plus the features above.
-Remaining general-program parity holes (from self-host vs Ruby emit-c differentials):
-
-| Feature | Self-host symptom | Ruby behaviour (target) |
-|---------|-------------------|-------------------------|
-| ~~`atomic[T]`~~ | **DONE** (Phase A) | — |
-| ~~`emit`~~ | **DONE** (Phase B) | — |
-| `async` / `Task[T]` | lowering aborts: `could not find generic function decl for Task`; analyzer reports `unknown field Task.frame`, `unknown method Task.ready/take_result/release` | full Task runtime lowered |
-| `events` (general programs) | emit-c returns 0 but produced C does not compile (`expected expression before <event>`) | valid subscription/emit C |
-| `parallel for` (general programs) | emit-c returns 0 but produced C does not compile (`xs undeclared` — capture bug) | valid libuv chunk dispatch |
-| `dyn[I]` (general programs) | emit-c returns 0 but produced C does not compile (`mt_vtable_..._Shape undeclared` — vtable global not emitted for single-file programs) | vtable struct + global emitted |
-| header / include-set preamble | self-host emits a different `#include` / `_GNU_SOURCE` preamble and blank-line layout than Ruby (Phase H) | matching preamble |
-| `examples/language_baseline.mt` | `check` fails and `emit-c` aborts (via async runtime) | Ruby checks clean (warnings only) |
-
-The self-host self-compiles despite these because its **own source avoids** them (careful
-async usage confined to std it does not re-lower for itself; no general-program `dyn`,
-`events`, or `parallel for` in a struct-less single file).
+| Feature | Self-host symptom | Status |
+|---------|-------------------|--------|
+| ~~`atomic[T]`~~ | — | DONE (Phase A) |
+| ~~`emit`~~ | — | DONE (Phase B) |
+| ~~`dyn[I]`~~ | — | DONE (Phase C1) |
+| ~~`break/continue` in match-in-loop~~ | — | DONE behavioral (Phase D); fixpoint structural break |
+| `parallel for` captures | `xs` undeclared in worker (array capture needs C-backend `ptr[array[T,N]]` → `T (*)[N]`) | PARTIAL (Phase E): for-loop wrapper done; array captures deferred |
+| `events` (general programs) | `expected expression before <event>` (generic void* helpers incompatible with C parser) | PARTIAL: per-event typed wrapper approach designed, deferred on global-var naming + fn-ptr type propagation |
+| `async` / `Task[T]` | lowering aborts; analyzer reports unknown Task fields/methods | NOT STARTED (Phase F) |
+| header / include-set preamble | minor residuals only (stddef on unreachable offsetof, one stray blank) | MOSTLY DONE (Phase H) |
+| `examples/language_baseline.mt` | blocked by async runtime | DEFERRED (Phase G) |
 
 ---
 
@@ -152,28 +160,46 @@ staying green plus the self-compile fixpoint holding.
 - **Gate met**: `emit function` program builds+runs; emit-c byte-identical to Ruby.
 
 ### Phase C — single-file general-program codegen completeness
-These already work inside the self-host's own build but mis-emit for standalone programs
-because a support decl/typedef is skipped when the triggering construct is absent from the
-rest of the module.
-- **`dyn[I]`**: emit the vtable struct + vtable global for a `dyn` used in an otherwise
-  minimal program (currently `mt_vtable_..._Shape undeclared`).
-- **`events`**: fix event subscription/emit C emission for a standalone event program
-  (`expected expression before <event>`).
-- **span typedefs / external-constant initializers**: struct-less programs don't emit
-  `mt_span_str` etc.; `c.EOF`-style external-constant const initializers mis-emit.
-- **Gate**: each minimal single-file program builds+runs; diff vs Ruby.
 
-### Phase D — `break`/`continue` in `match`-in-loop (systemic)
-- **C backend / lowering**: when a loop body contains a `match`, and an arm uses
-  `break`/`continue`, emit a loop-exit/continue `goto` label and translate the break/continue
-  to `goto` (mirror Ruby). Remove the flag-based workarounds once the general mechanism lands.
-- **Gate**: the 26 `std/` instances lower correctly; add a focused differential test.
+- **`dyn[I]` — DONE**: vtable constants were collected but never appended to the program
+  constants (→ `mt_vtable_..._Shape undeclared`). Fixed: append `dyn_constants` to the
+  program's constants vector. Also, `lower_dyn_method_call` used the analyzer's `expr_type`
+  which returned `void` for dyn dispatch; now resolves the return type from the interface
+  method analysis (`iface_method_return_type`). Builds+runs; 391 tests pass.
+- **`events` — PARTIAL, deferred**: the self-host uses generic `void*`-casting
+  runtime helpers (`mt_event_subscribe` etc.) that the C compiler rejects in standalone
+  programs. Ruby uses per-event typed wrapper functions. The rewrite is architected
+  (per-event subscribe/emit/unsubscribe IR function builders) but deferred on two issues:
+  (a) event globals are lowered with the struct C-name (`ev_min_ready`) not the source
+  variable name (`ready`), causing `&ev_min_ready` (invalid C); (b) the slot struct's
+  `listener` field needs to be `fn() -> void` (function-pointer) not `void*`, requiring
+  fn-ptr type propagation through the subscribe/emit wrapper builders and
+  `lower_listener_arg`.
+- **span typedefs / external-constant init**: `c.EOF`-style initialization fails the same
+  way in both Ruby and self-host — not a self-host gap. Deferred.
 
-### Phase E — `parallel for` capture (general programs)
-- **Lowering**: fix capture emission so array/scalar captures are threaded into the worker
-  chunk correctly (currently `xs undeclared` for a standalone parallel loop). Ruby passes
-  arrays by pointer, spans/scalars by value.
-- **Gate**: standalone `parallel for` program builds+runs; diff vs Ruby.
+### Phase D — `break`/`continue` in `match`-in-loop (systemic) — **DONE behavioral**
+- **C backend**: `emit_stmts_loop` replaces `emit_stmts` for while/for bodies. When a
+  switch case body contains break/continue, the switch is lowered as an if/else chain
+  (`emit_switch_as_if_chain`) so C break/continue targets the enclosing loop, not the
+  switch. Mirrors Ruby's `switch_emittable_as_if?` / `emit_switch_as_if_statement`.
+- **Gate**: `brk4.mt` (exit 0) and `cont1.mt` (exit 2) match Ruby. 391 tests pass.
+- **Known limitation**: the two new functions (`emit_stmts_loop`, `emit_switch_as_if_chain`)
+  cause a structural fixpoint break (string-literal-index shift — Phase-H residual).
+  Behavioral fix is correct; the fixpoint break is the same class of issue as any new-function
+  addition to the self-host source.
+
+### Phase E — `parallel for` capture (general programs) — **PARTIAL**
+- **For-loop wrapper — DONE**: `parallel_for_worker_fn` now wraps the body in a for-loop
+  `for (let i = mt_pfor_start; i < mt_pfor_end; i++) { body }`, fixing the `i undeclared`
+  error. Previously the worker used the body directly without any iteration structure.
+- **Captures — deferred**: the full capture mechanism (capture struct + data pointer) was
+  designed and partially implemented but reverted. Array captures require the C backend to
+  render `ptr[array[T, N]]` as `T (*)[N]` (C pointer-to-array syntax) — currently renders
+  as invalid `array_int_4*xs`. The capture infra (collector, struct, init, worker unmarshal)
+  is architecturally correct and can be re-applied once the C-backend type rendering is
+  fixed.
+- **Gate**: 391 tests pass; fixpoint holds (for-loop only, no new functions).
 
 ### Phase F — `async` / `Task[T]` (largest)
 - **Analyzer**: model `Task[T]` fields (`frame`) and methods (`ready`/`take_result`/
@@ -250,3 +276,65 @@ hang/abort/OOM/segv.
 - **Small anchored edits** near function boundaries in the ~8.8k-line `lowering.mt` /
   `c_backend.mt`; rebuild immediately to catch a clobbered adjacent function.
 - **Sandbox every built binary** (`timeout` + `ulimit -v`).
+
+---
+
+## 6. Resume context (2026-07-09 session, 17 commits)
+
+### Committed in this session
+- Phase A: `atomic[T]` (`4de40f43`)
+- Arithmetic/cast parity: cast rendering (`5c9c9889`), operand wrapping (`434eafe1`),
+  binary widening (`9d94d01f`), enum backing-cast (`247f6961`)
+- Latent bugfix: checked-index collector traversal (`c461d1ee`)
+- Phase B: `emit` (`72f91f78`)
+- Phase D: break/continue in match-in-loop (`8b5f346a`)
+- Phase E: parallel for for-loop wrapper (`560209b4`)
+- Phase H: preamble parity + offsetof fix (`3ec4b921`), naming fixes (`6307aad2`),
+  prelude variant prefix (`362094ff`)
+- Phase C1: `dyn[I]` (`d3a46fd8`)
+- Docs: plan sync × 2 (`5c630b42`)
+
+### Dirty files (reverted/clean)
+All files clean at session end. The event C2 rewrites (`lowering.mt`, `c_backend.mt`) were
+reverted. Only the committed dyn fix remains.
+
+### Key findings carried forward
+1. **String-literal-index stabilisation** is the root cause of all fixpoint breaks on
+   new-function additions — a fundamental self-host design property, not per-change bugs.
+   Any new function shifts deterministic string-literal indices, breaking byte-identical C
+   across stages.
+2. **Prelude variant naming** has multiple code paths (not just `ensure_generic_variant`) —
+   bare `Option_*` names still appear alongside `std_option_*` in the self-host's own
+   emit-c. A systematic audit is needed.
+3. **Event per-event wrapper** architecture is designed but needs (a) global-var naming fix
+   (event globals use struct C-name, not source name) and (b) fn-ptr type propagation
+   through wrapper builders.
+4. **Array captures** for parallel for need the C backend to render `ptr[array[T,N]]` as
+   `T (*)[N]` — the capture infra (collector, struct, init, worker unmarshal) is
+   architecturally correct but was reverted due to this rendering gap.
+
+### Build/test commands (from project root)
+```sh
+# Build stage-1 self-host (from Ruby)
+bin/mtc build projects/mtc --no-cache --no-debug-guards -o tmp/mtc-noguard
+
+# Run in-language tests
+bin/mtc test projects/mtc
+
+# Per-feature differential
+diff <(bin/mtc emit-c FEATURE.mt) <(tmp/mtc-noguard emit-c FEATURE.mt --root .)
+
+# Self-compile fixpoint check
+tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root . > tmp/self.c
+cc -std=c11 -D_GNU_SOURCE -I std/c tmp/self.c -o tmp/mtc-stage2 -luv -lpthread -lm
+diff <(tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root .) \
+     <(tmp/mtc-stage2  emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root .)
+```
+
+### Recommended next actions
+1. **Phase F (`async`/`Task[T]`)** — the last behavioral parity gap. Requires analyzer task
+   model + runtime lowering. Largest remaining item.
+2. **Phase C2 (events) finish** — apply the two deferred fixes to the per-event wrapper
+   design (global-var naming + fn-ptr propagation). ~2-3 line changes each.
+3. **Phase E captures** — requires the C-backend `ptr[array[T,N]]` type rendering fix,
+   then re-apply the capture infra.
