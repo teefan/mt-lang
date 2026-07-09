@@ -3726,7 +3726,8 @@ function ensure_generic_struct_decl_named(ctx: ref[LowerCtx], struct_name: str, 
     if fields_opt.is_none():
         # Try each imported module.
         var import_values = ctx.analysis.imports.values()
-        while true:
+        var found_once = false
+        while not found_once:
             let target_ptr = import_values.next() else:
                 break
             let target_module = unsafe: read(target_ptr)
@@ -3734,7 +3735,7 @@ function ensure_generic_struct_decl_named(ctx: ref[LowerCtx], struct_name: str, 
                 Option.some as imported:
                     fields_opt = extract_generic_struct_fields(ctx, imported.value, struct_name, concrete_args)
                     if fields_opt.is_some():
-                        break
+                        found_once = true
                 Option.none:
                     pass
     match fields_opt:
