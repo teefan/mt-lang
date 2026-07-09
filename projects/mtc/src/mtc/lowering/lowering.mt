@@ -2408,12 +2408,23 @@ function parallel_for_worker_fn(ctx: ref[LowerCtx], body_ir: span[ir.Stmt]) -> i
     parallel_cnt += 1
     let uid = parallel_uid(ctx)
     let name = j2("mt_p_work_", uid)
+    # Wrap body in a for-loop: for (let i = mt_pfor_start; i < mt_pfor_end; i += 1) { body }
+    let index_c = "i"
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_c, ty = long_ty, pointer = false))
+    let start_ref = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_start", ty = long_ty, pointer = false))
+    let end_ref = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_end", ty = long_ty, pointer = false))
+    let cond = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = end_ref, ty = types.primitive("bool")))
+    let post = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = long_ty))))
+    let init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = long_ty, value = start_ref, line = 0, source_path = ""))
+    let for_stmt = ir.Stmt.stmt_for(init = init, condition = cond, post = post, body = body_ir)
+    var full_body = vec.Vec[ir.Stmt].create()
+    full_body.push(for_stmt)
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "data", linkage_name = "data", ty = void_ptr_ty, pointer = false))
     params.push(ir.Param(name = "mt_pfor_start", linkage_name = "mt_pfor_start", ty = long_ty, pointer = false))
     params.push(ir.Param(name = "mt_pfor_end", linkage_name = "mt_pfor_end", ty = long_ty, pointer = false))
     return ir.Function(name = name, linkage_name = name, params = params.as_span(),
-        return_type = void_ty, body = body_ir, entry_point = false, method_receiver_param = false)
+        return_type = void_ty, body = full_body.as_span(), entry_point = false, method_receiver_param = false)
 
 
 function void_ptr_ty() -> types.Type:

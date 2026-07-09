@@ -2210,7 +2210,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 emit_if(e, iff.condition, iff.then_body, iff.else_body, level)
             ir.Stmt.stmt_while as w:
                 emit_line(e, j4(indent, "while (", render_expression(e, w.condition), ") {"))
-                emit_stmts_loop(e, w.body, level + 1)
+                emit_stmts(e, w.body, level + 1)
                 emit_line(e, j2(indent, "}"))
             ir.Stmt.stmt_for as f:
                 var header = string.String.create()
@@ -2223,7 +2223,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 header.append(render_for_clause(e, f.post))
                 header.append(") {")
                 emit_line(e, header.as_str())
-                emit_stmts_loop(e, f.body, level + 1)
+                emit_stmts(e, f.body, level + 1)
                 emit_line(e, j2(indent, "}"))
             ir.Stmt.stmt_switch as sw:
                 emit_switch(e, sw.expression, sw.cases, sw.exhaustive, level)
@@ -3694,123 +3694,3 @@ function emit_entry_argv_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "static void mt_free_entry_argv_strs(mt_str* items) {")
     emit_line(e, "  free(items);")
     emit_line(e, "}")
-
-# =============================================================================
-#  Break/continue in match-in-loop — if-chain lowering
-#  Mirrors Ruby's switch_emittable_as_if? / emit_switch_as_if_statement.
-# =============================================================================
-
-## Like emit_stmts but when a switch appears inside a loop body and any case
-## arm has break/continue, the switch is lowered as an if/else chain so the
-## break/continue targets the enclosing loop rather than a C `switch`.
-## Mirrors Ruby's switch_emittable_as_if?.
-function emit_stmts_loop(e: ref[Emitter], body: span[ir.Stmt], level: ptr_uint) -> void:
-    var i: ptr_uint = 0
-    while i < body.len:
-        unsafe:
-            match read(body.data + i):
-                ir.Stmt.stmt_switch as sw:
-                    # If any case body contains break or continue, emit an
-                    # if/else chain so the C `break`/`continue` targets the
-                    # enclosing loop, not the C `switch`.
-                    var ci: ptr_uint = 0
-                    var use_chain = false
-                    while ci < sw.cases.len:
-                        let sc = read(sw.cases.data + ci)
-                        var bi: ptr_uint = 0
-                        while bi < sc.body.len:
-                            let sp = read(sc.body.data + bi)
-                            match sp:
-                                ir.Stmt.stmt_break:
-                                    use_chain = true
-                                    break
-                                ir.Stmt.stmt_continue:
-                                    use_chain = true
-                                    break
-                                _:
-                                    pass
-                            bi += 1
-                        if use_chain:
-                            break
-                        ci += 1
-                    if use_chain:
-                        emit_switch_as_if_chain(e, sw.expression, sw.cases, sw.exhaustive, level)
-                    else:
-                        emit_switch(e, sw.expression, sw.cases, sw.exhaustive, level)
-                _:
-                    emit_statement(e, body.data + i, level)
-        i += 1
-
-
-## Convert a switch to an if/else chain so that break/continue inside case
-## bodies targets the enclosing loop rather than a C `switch`.  Mirrors Ruby's
-## emit_switch_as_if_statement.
-function emit_switch_as_if_chain(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.SwitchCase], exhaustive: bool, level: ptr_uint) -> void:
-    # Collect explicit (non-default) cases in order.
-    var explicit = vec.Vec[ir.SwitchCase].create()
-    var default_body: span[ir.Stmt]
-    var has_default = false
-    var i: ptr_uint = 0
-    while i < cases.len:
-        unsafe:
-            let sc = read(cases.data + i)
-            if sc.is_default:
-                has_default = true
-                default_body = sc.body
-            else:
-                explicit.push(sc)
-        i += 1
-
-    if explicit.len() == 0:
-        if has_default:
-            emit_stmts_loop(e, default_body, level)
-        return
-
-    # Build the if/else chain from the last arm up.
-    var last = explicit.len() - 1
-    var else_body: span[ir.Stmt]
-    if has_default:
-        else_body = strip_terminal_break(default_body)
-    else:
-        else_body = strip_terminal_break(unsafe: read(explicit.get(last) else:
-            fatal(c"emit_switch_as_if_chain: missing last case")).body)
-        explicit.pop()
-        last -= 1
-
-    # Fold remaining explicit arms from last-1 down to 0, wrapping each as
-    # `if (expr == val) then_body else { <else_body> }`.
-    while true:
-        if last < 0:
-            break
-        unsafe:
-            let ec = read(explicit.get(ptr_uint<-last) else:
-                break)
-            let cond = alloc_expr(ir.Expr.expr_binary(
-                operator = "==",
-                left = expression,
-                right = ec.value,
-                ty = types.primitive("bool"),
-            ))
-            let then_body = strip_terminal_break(ec.body)
-            var block_body = vec.Vec[ir.Stmt].create()
-            var bi: ptr_uint = 0
-            while bi < else_body.len:
-                block_body.push(read(else_body.data + bi))
-                bi += 1
-            let wrapped = vec.Vec[ir.Stmt].create()
-            wrapped.push(ir.Stmt.stmt_block(body = block_body.as_span()))
-            emit_if(e, cond, then_body, wrapped.as_span(), level)
-            return
-        last -= 1
-
-    # First arm, chain end.
-    unsafe:
-        let first = read(explicit.get(0) else:
-            fatal(c"emit_switch_as_if_chain: missing first case"))
-        let cond = alloc_expr(ir.Expr.expr_binary(
-            operator = "==",
-            left = expression,
-            right = first.value,
-            ty = types.primitive("bool"),
-        ))
-        emit_if(e, cond, strip_terminal_break(first.body), else_body, level)
