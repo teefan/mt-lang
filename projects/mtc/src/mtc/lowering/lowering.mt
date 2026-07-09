@@ -4868,7 +4868,6 @@ function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method
     return Option[ptr[ir.Expr]].some(value = lower_monomorphized_method(ctx, info, gm, method_name, receiver, args))
 
 
-## Lower a monomorphized method call: ensure the specialized method body exists,
 ## The C linkage name for a monomorphized method instance.  Struct receivers use
 ## the module-qualified concrete-struct prefix (`std_vec_Vec_int_push`); prelude
 ## variant receivers (Option/Result) use the global concrete-variant prefix with
@@ -4881,6 +4880,7 @@ function monomorphized_method_c_name(owner_module: str, info: GenericReceiver, m
     return j3(struct_c, "_", method_name)
 
 
+## Lower a monomorphized method call: ensure the specialized method body exists,
 ## then emit a direct C call to it with the receiver argument.  The specialized
 ## C name groups by the concrete struct (`std_vec_Vec_int_push`), matching the
 ## monomorphized struct type produced by `qualify_type`.
