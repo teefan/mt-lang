@@ -1960,6 +1960,20 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
         types.Type.ty_generic as g:
             if g.name.equal("array") and g.args.len >= 1:
                 return by_value_dep_key(unsafe: read(g.args.data + 0))
+            # Pointer-like generics need only a forward declaration, not a
+            # by-value dependency.
+            if (
+                g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("ref")
+                or g.name.equal("span") or g.name.equal("str_buffer") or g.name.equal("atomic")
+                or g.name.equal("Task") or g.name.equal("SoA")
+            ):
+                return Option[str].none
+            # A generic variant instance embedded by value (e.g.
+            # `Option[span[str]]` → `Option_span_str`): it depends on the concrete
+            # instance's full definition being ordered first.  Uses the same name
+            # `generic_c_type` emits so the topo edge matches the emitted type.
+            if g.args.len > 0:
+                return Option[str].some(value = generic_c_type(g.name, g.args))
             return Option[str].none
         _:
             return Option[str].none
