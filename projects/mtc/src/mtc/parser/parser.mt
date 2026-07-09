@@ -735,7 +735,7 @@ function parse_string_content(lexeme: str, is_cstring: bool) -> str:
     var i = body_start
     while i < body_stop:
         let b = lexeme.byte_at(i)
-        if b == 92 and i + 1 < body_stop:
+        if b == '\\' and i + 1 < body_stop:
             let esc = lexeme.byte_at(i + 1)
             buf.push_byte(decode_string_escape(esc))
             i += 2
@@ -749,14 +749,14 @@ function parse_string_content(lexeme: str, is_cstring: bool) -> str:
 ## mirroring Ruby's `decode_escape`.  Unknown escapes return the character
 ## unchanged (the backslash is dropped by the caller).
 function decode_string_escape(ch: ubyte) -> ubyte:
-    if ch == 110:
-        return 10
-    if ch == 114:
-        return 13
-    if ch == 116:
-        return 9
-    if ch == 48:
-        return 0
+    if ch == 'n':
+        return '\n'
+    if ch == 'r':
+        return '\r'
+    if ch == 't':
+        return '\t'
+    if ch == '0':
+        return '\0'
     return ch
 
 
