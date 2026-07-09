@@ -1432,6 +1432,12 @@ function lower_destructure(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bi
         var binding: str
         unsafe:
             binding = read(bindings.data + i)
+        # `_` discards bind nothing — skip them (emitting a local for each would
+        # collide, and there is no name to reference).  Mirrors Ruby's
+        # `next if name == "_"`.
+        if binding.equal("_"):
+            i += 1
+            continue
         var member_name: str
         var member_ty: types.Type
         match type_name:
