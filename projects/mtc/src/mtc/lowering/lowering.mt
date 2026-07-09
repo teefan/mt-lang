@@ -782,6 +782,16 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         dyn_constants.push(unsafe: read(dc_ptr))
         dci += 1
 
+    # Append dyn vtable constants to the main constants list so they are
+    # emitted into the C output (previously they were collected but never
+    # written, causing `mt_vtable_..._Shape undeclared`).
+    var di: ptr_uint = 0
+    while di < dyn_constants.len():
+        let c_ptr = dyn_constants.get(di) else:
+            break
+        constants.push(unsafe: read(c_ptr))
+        di += 1
+
     var ev_struct_index: ptr_uint = 0
     while ev_struct_index < ctx.pending_event_structs.len():
         let es_ptr = ctx.pending_event_structs.get(ev_struct_index) else:
@@ -4650,7 +4660,32 @@ function lower_dyn_method_call(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_na
         unsafe:
             call_args.push(read(lowered))
         i += 1
-    return alloc_expr(ir.Expr.expr_call_indirect(callee = method_fn, arguments = call_args.as_span(), ty = expr_type(ctx, call_ep)))
+    return alloc_expr(ir.Expr.expr_call_indirect(callee = method_fn, arguments = call_args.as_span(), ty = iface_method_return_type(ctx, recv_ty, method_name)))
+
+
+## The return type of an interface method by looking it up in the interface's
+## analysis.  Replaces the analyzer's `expr_type` which can infer `void` for
+## dyn dispatch where the call expression wasn't type-tracked.
+function iface_method_return_type(ctx: ref[LowerCtx], recv_ty: types.Type, method_name: str) -> types.Type:
+    match recv_ty:
+        types.Type.ty_dyn as d:
+            match find_interface_analysis(ctx, d.iface):
+                Option.some as ia:
+                    var mi: ptr_uint = 0
+                    while mi < ia.value.methods.len:
+                        var m: ast.InterfaceMethod
+                        unsafe:
+                            m = read(ia.value.methods.data + mi)
+                        if m.name.equal(method_name):
+                            let ret = m.return_type else:
+                                return types.primitive("void")
+                            return resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-ret))
+                        mi += 1
+                Option.none:
+                    pass
+        _:
+            pass
+    return types.primitive("void")
 
 
 ## The C type name for a dyn[I] vtable struct: "mt_vtable_" + iface_name.
