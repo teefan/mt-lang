@@ -1506,6 +1506,12 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if d.body != null:
                     lower_stmt(ctx, ref_of(cleanup), ptr[ast.Stmt]<-d.body)
                 record_defer(ctx, cleanup.as_span())
+            ast.Stmt.stmt_emit:
+                # `emit` declarations are spliced into the module's top-level
+                # declarations by the analyzer (expand_emit_declarations) and
+                # lowered there; the statement itself contributes nothing to the
+                # enclosing const-function body.
+                return
             _:
                 fatal(c"lowering: unsupported statement")
 

@@ -447,3 +447,32 @@ function test_flags_comparison_casts_but_bitwise_does_not() -> t.Check:
     t.expect_true(text.contains_substring("uint<-m == uint<-"))?
     ## The bitwise-or operands are left un-cast.
     return t.expect_true(text.contains_substring("Mask_a | "))
+
+
+# =============================================================================
+#  emit — compile-time code generation.  `emit function ...` inside a const
+#  function body is spliced into the module as an ordinary top-level function.
+# =============================================================================
+
+@[test]
+function test_emit_function_becomes_top_level() -> t.Check:
+    ## The emitted functions appear as top-level `fn`s (so they are declared,
+    ## checked, and lowered like any other), and a normal function can call one.
+    var source = <<-SRC
+        const function generate_helpers() -> void:
+            emit function zero_meaning() -> int:
+                return 0
+            emit function hex_prefix() -> str:
+                return "0x"
+
+        function use_it() -> int:
+            return zero_meaning()
+    SRC
+    var ir = lower_source(source)
+    defer ir.release()
+    let text = ir.as_str()
+    ## Both emitted functions are spliced in as top-level declarations.
+    t.expect_true(text.contains_substring("fn zero_meaning"))?
+    t.expect_true(text.contains_substring("fn hex_prefix"))?
+    ## The call resolves to the emitted function's linkage name.
+    return t.expect_true(text.contains_substring("return main_zero_meaning()"))
