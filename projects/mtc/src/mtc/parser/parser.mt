@@ -714,15 +714,50 @@ function parse_float_literal(lexeme: str) -> double:
     return result
 
 
+## Extract and escape-decode a string/cstring literal's content from its raw
+## lexeme (delimiters included).  Mirrors Ruby's lexer `scan_string_segment` +
+## `decode_escape`: recognized escapes (`\n \r \t \0 \" \' \\`) decode to their
+## byte; any other `\x` drops the backslash and keeps the following char (Ruby's
+## `else char`).  The decoded bytes are written into a fresh String whose heap
+## storage is intentionally leaked (arena-style, per this file's ownership model)
+## so the returned borrowed `str` stays valid for the AST's lifetime.
 function parse_string_content(lexeme: str, is_cstring: bool) -> str:
     if lexeme.len < 2:
         return lexeme
+    var body_start: ptr_uint = 1
+    var body_stop = lexeme.len - 1
     if is_cstring:
         if lexeme.len < 3:
             return lexeme
         # strip the leading `c"` (2 bytes) and trailing `"` (1 byte)
-        return unsafe: str(data = lexeme.data + 2, len = lexeme.len - 3)
-    return unsafe: str(data = lexeme.data + 1, len = lexeme.len - 2)
+        body_start = 2
+    var buf = string.String.create()
+    var i = body_start
+    while i < body_stop:
+        let b = lexeme.byte_at(i)
+        if b == 92 and i + 1 < body_stop:
+            let esc = lexeme.byte_at(i + 1)
+            buf.push_byte(decode_string_escape(esc))
+            i += 2
+        else:
+            buf.push_byte(b)
+            i += 1
+    return buf.as_str()
+
+
+## Decode one escape character following a backslash inside a string literal,
+## mirroring Ruby's `decode_escape`.  Unknown escapes return the character
+## unchanged (the backslash is dropped by the caller).
+function decode_string_escape(ch: ubyte) -> ubyte:
+    if ch == 110:
+        return 10
+    if ch == 114:
+        return 13
+    if ch == 116:
+        return 9
+    if ch == 48:
+        return 0
+    return ch
 
 
 ## True when an fstring lexeme is the heredoc form `f<<-TAG ... TAG` rather
