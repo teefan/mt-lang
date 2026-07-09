@@ -4,12 +4,12 @@ Status: **Phase 8 COMPLETE (G1). Native-binary milestone REACHED: `mtc build pro
 Last updated: 2026-07-09 (P8 done; native binary milestone reached; stage-2 runtime bug → Phase 9)
 
 
-> **Measurement note:** always compile the self-compiled C with the external header
-> path and GNU source, i.e.
-> `cc -std=c11 -D_GNU_SOURCE -Wno-implicit-function-declaration -I std/c -c tmp/self.c`.
-> Earlier baselines that omitted `-I std/c` stopped at the first missing header and
-> undercounted; the honest count with headers in scope was ~493 at the start of the
-> 2026-07-08 session.
+> **Measurement note:** the self-host emit-c output now compiles cleanly WITHOUT the
+> implicit-declaration crutch:
+> `cc -std=c11 -D_GNU_SOURCE -I std/c -c tmp/self.c` → 0 errors.
+> (Historically the count was measured with `-Wno-implicit-function-declaration`; that flag
+> is no longer needed since Phase 8b resolved the out-param externals and inferred generic
+> calls. `-I std/c` is still required so the external ABI headers are in scope.)
 
 Pipeline:
 
@@ -25,7 +25,7 @@ source → lexer → token stream → parser → AST → semantic analyzer → m
                                                                     C source → cc → binary
 ```
 
-Self-host source layout (src ≈ 26k LOC):
+Self-host source layout (src ≈ 27.8k LOC):
 
 | Stage | Path | LOC |
 |-------|------|-----|
@@ -34,11 +34,11 @@ Self-host source layout (src ≈ 26k LOC):
 | Pretty printers | `src/mtc/pretty_printer/*.mt` | ~2,190 |
 | Semantic analyzer | `src/mtc/semantic/analyzer.mt` | ~3,880 |
 | Type system | `src/mtc/semantic/types.mt` | ~710 |
-| Loader | `src/mtc/loader/` | ~720 |
+| Loader | `src/mtc/loader/` | ~730 |
 | IR | `src/mtc/ir.mt` | ~220 |
-| Lowering | `src/mtc/lowering/lowering.mt` | ~7,205 |
-| C Backend | `src/mtc/c_backend/c_backend.mt` | ~3,320 |
-| Build driver | `src/mtc/build.mt` | ~80 |
+| Lowering | `src/mtc/lowering/lowering.mt` | ~8,830 |
+| C Backend | `src/mtc/c_backend/c_backend.mt` | ~3,410 |
+| Build driver | `src/mtc/build.mt` | ~160 |
 | C naming (shared) | `src/mtc/c_naming.mt` | ~137 |
 
 **All 172 self-host tests pass, 0 failures** (the former "7 known permissiveness failures" were fixed by `check_match`).
@@ -86,145 +86,82 @@ started emitting — see §2). Commits `1fe8924f`…`24476860`:
 
 ---
 
-## 2. Current state (Phase 8, as of 2026-07-09)
+## 2. RESUME HERE — Phase 9 kickoff (as of 2026-07-09)
 
-### Self-compile: the Ruby-built self-host binary compiles its own source
+**Phase 8 is COMPLETE and the native-binary milestone is REACHED.** The self-host builds
+itself into a runnable executable. The next work is **Phase 9 — correctness / bootstrap
+fixpoint**, and its concrete first target is a stage-2 runtime abort.
 
-The pipeline works end-to-end: `mtc emit-c` → 47,814 lines of C → `cc -c`.  The
-compiled shared system comes from *all* of the self-host's modules in aggregate, so each
-fix measured against the full emit-c + `cc` baseline.
+### 2.1 Reproduce the current state (from a clean checkout)
 
 ```sh
+# 1. Build the self-host with the Ruby compiler (stage-1 binary).
 bin/mtc build projects/mtc --no-cache --no-debug-guards -o tmp/mtc-noguard
+
+# 2. Self-host emits its own C, which compiles to an object file with 0 errors
+#    (NOTE: no -Wno-implicit-function-declaration crutch needed any more).
 tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root . > tmp/self.c
-cc -std=c11 -D_GNU_SOURCE -Wno-implicit-function-declaration -I std/c -c tmp/self.c -o /dev/null 2>tmp/errs.txt
+cc -std=c11 -D_GNU_SOURCE -I std/c -c tmp/self.c -o /dev/null     # => 0 errors
+
+# 3. Self-host builds ITSELF into a native binary (stage-2). Writes
+#    projects/mtc/src/mtc/main — move it to tmp/mtc-stage2.
+tmp/mtc-noguard build projects/mtc/src/mtc/main.mt --root projects/mtc/src --root .
+mv projects/mtc/src/mtc/main tmp/mtc-stage2
+
+# 4. Stage-2 RUNS and prints help, but ABORTS on real work:
+tmp/mtc-stage2                                   # prints help OK
+timeout 10 bash -c 'ulimit -v 2000000; tmp/mtc-stage2 lex tmp/hello.mt'
+#   => "arena.to_cstr out of memory" then abort (exit 134 / core dump)
 ```
 
-**Status**: **0 `cc` errors, 172/172 tests pass (G1 reached).** Started at 83 this session; Seams A,
-B §3.1, C, §3.4, E, the Phase-8b void* external-ABI cluster, and D1 all landed — see the progress
-checklist in §5 for the authoritative breakdown.
+`bin/mtc test projects/mtc` => **172/172 pass**. `git` tree clean at `737bda2b`.
 
-### Error breakdown — none remaining
+### 2.2 Phase 9 FIRST TARGET — stage-2 runtime abort
 
-The self-host emit-c output compiles cleanly under
-`cc -std=c11 -D_GNU_SOURCE -I std/c -c` (still with `-Wno-implicit-function-declaration`; the `out`-param
-cross-module external declarations noted in §5 Phase-8b remain latent and will need proper `out`-param
-pointer handling at the Phase-8b LINK step).
+The stage-2 binary (self-host compiled by self-host) aborts at runtime with
+`arena.to_cstr out of memory` as soon as it does real work (e.g. `lex`). This is a
+**correctness bug in the generated code / runtime**, NOT a build or link issue — it only
+surfaces when the self-built binary actually executes. It is exactly the bootstrap-fixpoint
+work of Phase 9.
 
-Everything else (scattered singletons, the `void*` libc external-ABI cluster, and the D1 match-expr
-cluster) is resolved.
+Investigation starting points (unverified hypotheses):
+- `arena.create(...)` / `arena.to_cstr` in `std/mem/arena.mt` — the arena allocation may be
+  getting a bogus (zero or huge) capacity, or `to_cstr` computes a wrong length. The message
+  is `arena.to_cstr out of memory` (arena.mt line ~124), meaning `alloc_bytes(text.len + 1)`
+  returned null → likely `text.len` is garbage (huge) OR the arena capacity was mis-sized.
+- Most likely root: a **generated-code miscompile** in a hot path exercised by `lex`/`check`
+  (e.g. a struct field offset, span length, or `str.len` computed wrong in the stage-1→C
+  lowering) — since the SAME source, compiled by Ruby, runs fine. Diff the behaviour:
+  Ruby-built `tmp/mtc-noguard lex X` works; stage-2 `tmp/mtc-stage2 lex X` aborts.
+- Recommended method: pick the smallest failing invocation (`lex` on a tiny file), run
+  stage-2 under `gdb`/`valgrind` (`--keep-c` the stage-2 C via `tmp/self.c` which IS the
+  stage-2 C source), find where `text.len` / arena capacity goes wrong, trace back to the
+  lowering/codegen construct that miscompiles.
 
-### Historical breakdown (83, grouped by root cause) — mostly RESOLVED this session
+### 2.3 Differential harness (Phase 9 method)
 
-| Root cause | Count | Status |
-|-----------|-------|-----------------------|
-| Match-expression lowering (stub-generated) | ~12 | Partly resolved via §3.4; 7 remain as D1 (`return match`, re-characterized as live code). |
-| `std_map_Option_` variant-literal prefix | ~3 | ✅ Fixed by Seam B §3.1 (prelude variant method monomorphization). |
-| `String.create()` static method return type | ~8 | ✅ Fixed by Seam A (static-method returns via resolve_method_info). |
-| `void*` return-from-int (std_mem_heap) | 4 | Still open — Phase 8b (external ABI). |
-| `mtc_ir_Expr` vs `ast_Expr` pointer mismatch | 3 | ✅ Fixed by §3.4 (arm-payload collision guard). |
-| Declared void / `mt_` fallback (Map/Vec methods) | ~6 | ✅ Fixed by Seam A (chained/read() receiver typing) + Seam C. |
-| Map/vec `.contains()` arg type mismatches | 4 | ✅ Fixed by Seam C (ref[T] implicit borrow). |
-| Scattered singletons | ~43 | Mostly collapsed by A/B/C/§3.4; ~9 remain (Seam E). |
-
-### Already fixed this session (208 → 83, −125)
-
-See §5 checklist for the full list. The big items:
-
-- **str-method naming overhaul** (−27): bare `<type>_<method>` for primitive/str receivers, `_static` for hooks.
-- **RemovedEntry qualification** (−12): `qualify_type` on generic-variant-literal type args.
-- **current-module field typing** (−30): `imported_field_type` resolves current-module struct fields.
-- **Cross-ctx prelude `_phantom`** (−43): shared `prelude_arm_field_types` program-wide registry.
-- **array const C emission** (−5): `render_constant`/`render_global` use `c_declaration` for array types.
-- **match-expr infrastructure** (3 bugfixes, no net change): `enum_source_module`, `var ty → ty_error`, `lower_str_match_expr`.
-- **prelude method C naming** (in progress): `method_c_name` + `prelude_variant_base` for global Option/Result methods.
-
-### Infrastructure ready, hoist pending
-
-The 3 match-expression infrastructure bugs are fixed. The `return match` hoist works on all 4 individual match-expr files (keywords.mt/81, token.mt/enum, lexer.mt/2 tuples). Full self-compile crashes with `lowering: unsupported variant match expression pattern` when the hoist is enabled — root cause not yet isolated. The crash is NOT a guard trip (unguarded also crashes), NOT from the str-routing change, and NOT from the `let x = match` path. Suspect a side-effect from `lower_match_expression_local` during lowering that triggers `lower_variant_match_expr`'s goto-path in a subsequent module's variant match.
+The correctness oracle is: **same `.mt` input, compare stage-1 (Ruby-built self-host) vs
+stage-2 (self-built) behaviour**, and compare stage-2's emitted C vs stage-1's emitted C.
+`tmp/self.c` (from step 2 above) is the exact C the stage-2 binary was built from — inspect
+it directly. Bootstrap fixpoint goal: stage-2 emits byte-identical C to stage-1 for the
+whole self-host source.
 
 ---
 
-## 3. Ranked path to zero (83 → 0)
+## 3. Phase 8 history (COMPLETE — kept for reference)
 
-### 3.1 `std_map_Option_` variant-literal prefix (~3, plus may cascade)
+All of Phase 8 (self-compile C-error elimination, 493 → 0) and the native-binary milestone
+are done. The full blow-by-blow is in the §5 progress checklist. The end-state:
 
-The remaining `std_map_Option_...` lines come from variant-literal constructions
-(`Option[RemovedEntry].some(value = ...)`) in `Map.remove()`, not from method calls.
-The `.some(...)` arm body emits `Option[RemovedEntry]` with `std_map_` prefixing the
-outer Option. Fix: the variant-literal type argument build path must recognize prelude
-variant outer names (Option/Result) and use global naming, similar to the method-call
-fix in `method_c_name`.
+- `mtc emit-c` of the self-host → ~48k lines of C → `cc -c` = **0 errors** (no crutch flags).
+- Self-host **builds itself** into a runnable binary (argv bridge + runtime helpers + link
+  flags + CLI wiring all landed).
+- **172/172 self-host tests pass.**
 
-**Approach**: in `lower_generic_variant_literal` or `ensure_generic_variant`, when the
-outer variant is a prelude variant, use a bare global name (no module prefix) for the
-outer variant C name — matching the already-fixed method-name path.
-
-### 3.2 `String.create()` static method return type (~8)
-
-`String.create()` / `String.with_capacity()` / `String.from_str()` return `String` (a
-nominal struct), but static methods are **not** in the `function_returns` table (only
-free functions are registered by `collect_program_returns`). When lowered, the call's
-return type resolves as `void` or `int`, cascading into `String` unknown-type,
-return-type mismatches, and `reserve`/`append` arg-type errors.
-
-**Approach**: either (a) register static method return types in `function_returns`
-during `collect_program_returns` (by iterating each module's `method_sigs` for static
-methods whose return type is a nominal struct and adding entries keyed by the member
-C name), or (b) teach `function_return_type` to search `method_sigs` when the functions
-table has no entry. Approach (a) is more surgical and mirrors how free-function returns
-are already collected.
-
-### 3.3 Match-expression hoist (unblocked, the ~12 cosmetic cluster)
-
-The 3 infrastructure bugs are fixed. The `return match` hoist in `lower_stmt` works on
-all 4 individual match-expr files. Full self-compile crashes — root cause to isolate:
-
-- The crash is `lowering: unsupported variant match expression pattern` from
-  `lower_variant_match_expr`'s goto-path. The goto-path fires for variant matches with
-  struct-pattern arms.
-- The crash occurs **only** during full compilation (all modules), never on individual
-  files — suggesting a side-effect or state-leak from the hoist's
-  `lower_match_expression_local` call that triggers the variant path in a later module.
-
-**Debug plan**: add a unique fatal identifier to each `variant_match_arm_name_from_pattern`
-call site (3 in total) to identify which module's match triggers it; add a `lower_match_expression_local`
-suppression flag to skip the hoist path and see if the crash persists; bisect which module
-causes the crash by compiling subsets of modules.
-
-### 3.4 `mtc_ir_Expr` vs `ast_Expr` pointer mismatch (3)
-
-Variant registry keyed by bare `Expr` name — `mtc.ir.Expr` and `mtc.parser.ast.Expr`
-collide. The arm-payload path has a workaround, but match dispatch and other lookups may
-still be affected.
-
-**Approach**: change the variant registry key to use module-qualified names, or add
-module-qualified fallback lookup in the relevant paths.
-
-### 3.5 Declared void / `mt_` fallback on Map/Vec methods (~6)
-
-`_prev`/`last`/`kinds`/`found`/`configured` all come from monomorphized Map/Vec method
-calls (`.set()`, `.get()`, `.byte_at()`, `as_span()`) falling to the `<module>_mt_<method>`
-fallback because the method's return type isn't in the return-type table for
-monomorphized instances.
-
-**Approach**: similar to §3.2 — register monomorphized method return types, or resolve
-them from the method's FnSig in `resolve_method_info`.
-
-### 3.6 Map/vec `.contains()` arg mismatches (4)
-
-Monomorphized generic method call arg types don't match the concrete struct decl. Likely
-a key-type qualification inconsistency between the struct-decl site and the call site.
-
-**Approach**: check how `Map.contains(key)` arg types are qualified in the call
-lowering vs the struct decl emitted for `Map[span_str, VariantInfo]`.
-
-### 3.7 Scattered singletons (~43)
-
-No dominant root; most are single-occurrence. After the clusters above are fixed, a
-final pass to identify any remaining groups will likely resolve most of these.
-
----
+The former "ranked path to zero" (§3.1–§3.7 clusters: prelude variant-literal prefix,
+`String.create()` static returns, match-expr hoist, `ir.Expr`/`ast.Expr` collision, Map/Vec
+`mt_` fallback, `.contains()` arg mismatch, scattered singletons) is **entirely resolved** —
+each item is checked off with its resolving commit in §5.
 
 ---
 
@@ -246,6 +183,42 @@ Established this session; reuse these seams rather than re-deriving them:
 - **Match**: `lower_match` prefers `ir_expr_type(lower_expr(scrutinee))` over the analyzer's
   `expr_type` (more accurate for Option-typed fields / `read(ptr)`).
 - **Prelude variants** (`Option`/`Result`) are globally named — never module-prefix them.
+
+Added this session (Phase 8 completion + native binary) — key seams for Phase 9:
+
+- **Prelude modules are loaded**: `module_loader.check_program` calls `seed_prelude_module`
+  for `std.option` / `std.result` so their real `extending` method bodies exist for
+  monomorphization (mirrors Ruby's `PreludeInstaller`). Prelude variant methods
+  monomorphize via `generic_receiver_info` (recovers args from collapsed `ty_named` via
+  `prelude_instance_args`) + `find_generic_method` (`variant_in_source`) +
+  `monomorphized_method_c_name` (global `Option_<T>_<method>` name).
+- **Cross-module call resolution order** in `lower_call`'s member-access path:
+  variant-arm ctor → `imported_foreign_call` (foreign → mapped C name via `lower_foreign_call`)
+  → `imported_extern_call` (external → bare C name via `lower_extern_call`, `out`/`inout`
+  args passed by `&arg`) → `try_inferred_generic_call` (infer type args from arg types via
+  `unify_type_param`, monomorphize) → plain qualified call.
+- **Generic specialization** now has two entry points: `lower_and_cache_specialization`
+  (explicit AST type args) and `lower_and_cache_specialization_with_sub` (a pre-built
+  `str→types.Type` substitution map, used by inferred generic calls).
+- **Match expressions**: `is` desugars to a 2-arm match → `lower_expression_match` detects
+  it (`is_variant_membership_arms`) and emits a pure `scrut.kind == Kind_arm` bool. Real
+  `return match` hoists via `lower_match_expr_to_ref` (str/tuple/variant/enum dispatch);
+  `lower_tuple_match_expr` + `tuple_pattern_condition` handle tuple scrutinees.
+- **Entry point**: `build_root_main_entrypoint` handles both no-arg `main` and
+  `main(args: span[str])` (emits `int main(int argc, char** argv)` + `mt_entry_argv_to_span_str`
+  bridge). The bridge runtime helpers are emitted by the c_backend (`uses_entry_argv` →
+  `emit_entry_argv_helpers`), which also forces `use_string_view`.
+- **Build driver** (`build.mt`): `collect_link_flags` reads `link "<lib>"` directives →
+  `-l<lib>`; `std_c_include_flag` adds `-I<root>/std/c`; uses `-D_GNU_SOURCE`; no
+  implicit-decl crutch. CLI `build_command` passes `roots` through.
+
+### EDITING HAZARD (learned this session)
+
+Twice, an `edit` whose `oldString` spanned a function boundary silently deleted/duplicated a
+whole adjacent function (`find_generic_function`, `emit_builtin_helpers`), producing orphaned
+statement fragments. Both were caught by the next build and fixed by `git checkout <file>` +
+clean re-apply. When editing near function boundaries in the ~8.8k-line `lowering.mt` or
+`c_backend.mt`, prefer small anchored edits and rebuild immediately to catch clobbering.
 
 ## 5. Progress checklist
 
@@ -501,15 +474,19 @@ Established this session; reuse these seams rather than re-deriving them:
 
 ## 6. Deferred items
 
-- Match-expression hoisting for str/int scrutinees (see §3.1 — the OOM blocker).
 - Guards and equality patterns in struct-pattern match arms.
 - Build-mode codegen parity (cache, debug-guards, line directives, include set).
-- Debug-guard false-positive on large byte-scan loops (§3.3).
+- Debug-guard false-positive on large byte-scan loops.
 - `as cstr` for non-literal values.
 - proc selective retain / scope-exit release.
 - SoA: deferred indefinitely.
 - CPS state machine for async/await.
 - Capture analysis for parallel/detach (currently no-capture only).
+- Struct-less programs don't emit span typedefs (`mt_span_str` undefined) and the
+  `c.EOF`-style external-constant const initializer mis-emits — both surfaced when
+  `build`-ing a tiny non-self-host program; not on the self-host critical path.
+- Byte-identical-C hardening (deferred `_static` nominal naming, etc.) — for the Phase 9
+  fixpoint oracle.
 
 ---
 
