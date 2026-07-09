@@ -1340,6 +1340,9 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
     # str_buffer[N] → mt_str_buffer_N
     if name.equal("str_buffer") and args.len >= 1:
         return j3("mt_str_buffer_", naming.type_c_key(unsafe: read(args.data + 0)), "")
+    # atomic[T] → _Atomic <c_type(T)>
+    if name.equal("atomic") and args.len == 1:
+        return j3("_Atomic ", c_type(unsafe: read(args.data + 0)), "")
     # Generic variant: `<name>_<type0>_<type1>_...`.  The caller module prefix
     # is added by `qualified_c_name` when the type is `ty_imported`.
     if args.len > 0:

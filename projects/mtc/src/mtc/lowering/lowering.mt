@@ -3394,6 +3394,10 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         return lower_method_resolved(ctx, mi.value, ma.receiver, args, call_ep)
                     Option.none:
                         pass
+                # atomic[T] builtin methods: lower to __atomic_* compiler builtins.
+                if is_atomic_type(recv_ty):
+                    let recv_ir = lower_expr(ctx, ma.receiver)
+                    return lower_atomic_method(ctx, recv_ir, recv_ty, ma.member_name, args, call_ep)
                 # str_buffer[N] builtin methods: lower to C helper calls.
                 if is_str_buffer_type(recv_ty):
                     let recv_ir = lower_expr(ctx, ma.receiver)
@@ -5560,6 +5564,51 @@ function is_str_buffer_type(t: types.Type) -> bool:
             return g.name.equal("str_buffer")
         _:
             return false
+
+
+## True when a type is an atomic[T] type.
+function is_atomic_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name.equal("atomic")
+        _:
+            return false
+
+
+## The element type T of an atomic[T] type, or ty_error for a malformed one.
+function atomic_element_type(t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_generic as g:
+            if g.args.len >= 1:
+                return unsafe: read(g.args.data + 0)
+            return types.Type.ty_error
+        _:
+            return types.Type.ty_error
+
+
+## Lower an atomic[T] method call to a GCC/Clang __atomic_* builtin with the
+## sequential-consistency memory order (5).  `load` reads through the address,
+## `store` writes, and `add`/`sub`/`exchange` are read-modify-write.  Mirrors
+## Ruby's lower_atomic_method_call.
+function lower_atomic_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let elem_ty = atomic_element_type(recv_ty)
+    let void_ty = types.primitive("void")
+    let int_ty = types.primitive("int")
+    let ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(elem_ty))
+    let addr = alloc_expr(ir.Expr.expr_address_of(expression = recv, ty = ptr_ty))
+    let seq_cst = alloc_expr(ir.Expr.expr_integer_literal(value = 5l, ty = int_ty))
+    if method_name.equal("load"):
+        return alloc_expr(ir.Expr.expr_call(callee = "__atomic_load_n", arguments = sp_expr2(addr, seq_cst), ty = elem_ty))
+    let arg_ir = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
+    if method_name.equal("store"):
+        return alloc_expr(ir.Expr.expr_call(callee = "__atomic_store_n", arguments = sp_expr3(addr, arg_ir, seq_cst), ty = void_ty))
+    if method_name.equal("add"):
+        return alloc_expr(ir.Expr.expr_call(callee = "__atomic_fetch_add", arguments = sp_expr3(addr, arg_ir, seq_cst), ty = elem_ty))
+    if method_name.equal("sub"):
+        return alloc_expr(ir.Expr.expr_call(callee = "__atomic_fetch_sub", arguments = sp_expr3(addr, arg_ir, seq_cst), ty = elem_ty))
+    if method_name.equal("exchange"):
+        return alloc_expr(ir.Expr.expr_call(callee = "__atomic_exchange_n", arguments = sp_expr3(addr, arg_ir, seq_cst), ty = elem_ty))
+    fatal(c"atomic lowering: unknown method")
 
 
 # =============================================================================

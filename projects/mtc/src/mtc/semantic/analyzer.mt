@@ -3143,10 +3143,12 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
             return lookup_method_anywhere(ctx, "str", method_name)
         types.Type.ty_primitive as p:
             return lookup_method_anywhere(ctx, p.name, method_name)
-        # str_buffer[N] builtin methods.
+        # str_buffer[N] and atomic[T] builtin methods.
         types.Type.ty_generic as g:
             if g.name.equal("str_buffer"):
                 return str_buffer_method_sig(g.args, method_name)
+            if g.name.equal("atomic"):
+                return atomic_method_sig(g.args, method_name)
             return Option[FnSig].none
         _:
             return Option[FnSig].none
@@ -3181,6 +3183,38 @@ function str_buffer_method_sig(args: span[types.Type], method_name: str) -> Opti
         return_type = return_type,
         has_return_type = true,
         method_kind = ast.MethodKind.mk_plain
+    ))
+
+
+## Synthetic FnSig for a builtin atomic[T] method.  The element type T is the
+## single generic argument; `load`/`add`/`sub`/`exchange` return T, `store`
+## returns void.  `store`/`add`/`sub`/`exchange` mutate and so are editable;
+## `load` is read-only.  Mirrors Ruby's check_atomic_method_call return types.
+function atomic_method_sig(args: span[types.Type], method_name: str) -> Option[FnSig]:
+    if args.len != 1:
+        return Option[FnSig].none
+    let elem_ty = unsafe: read(args.data + 0)
+    let void_ty = types.primitive("void")
+    var params = vec.Vec[ParamEntry].create()
+    var return_type = void_ty
+    var method_kind = ast.MethodKind.mk_plain
+    if method_name.equal("load"):
+        return_type = elem_ty
+    else if method_name.equal("store"):
+        params.push(ParamEntry(name = "value", ty = elem_ty))
+        method_kind = ast.MethodKind.mk_editable
+    else if method_name.equal("add") or method_name.equal("sub") or method_name.equal("exchange"):
+        params.push(ParamEntry(name = "value", ty = elem_ty))
+        return_type = elem_ty
+        method_kind = ast.MethodKind.mk_editable
+    else:
+        return Option[FnSig].none
+    return Option[FnSig].some(value = FnSig(
+        name = method_name,
+        params = params.as_span(),
+        return_type = return_type,
+        has_return_type = true,
+        method_kind = method_kind
     ))
 
 

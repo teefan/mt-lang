@@ -304,3 +304,50 @@ function test_lower_match_with_variant_arms() -> t.Check:
     var ir = lower_source(source)
     defer ir.release()
     return t.ok()
+
+
+# =============================================================================
+#  atomic[T] — the builtin methods lower to GCC/Clang __atomic_* builtins with
+#  the sequential-consistency memory order (5).  (Phase A atomic parity.)
+# =============================================================================
+
+@[test]
+function test_atomic_methods_lower_to_builtins() -> t.Check:
+    ## load/store/add must lower to __atomic_load_n / __atomic_store_n /
+    ## __atomic_fetch_add, each threading the receiver address and the seq-cst
+    ## memory-order constant (5).  store returns void; add/load return the
+    ## element type (int here).
+    var source = <<-SRC
+        function counter_demo() -> int:
+            var counter: atomic[int]
+            counter.store(0)
+            let prev = counter.add(1)
+            let value = counter.load()
+            return prev + value
+    SRC
+    var ir = lower_source(source)
+    defer ir.release()
+    let text = ir.as_str()
+    t.expect_true(text.contains_substring("__atomic_store_n(&counter, 0, 5)"))?
+    t.expect_true(text.contains_substring("__atomic_fetch_add(&counter, 1, 5)"))?
+    t.expect_true(text.contains_substring("__atomic_load_n(&counter, 5)"))?
+    ## add/load must be typed as the element type, not void.
+    t.expect_true(text.contains_substring("let prev: int ="))?
+    return t.expect_true(text.contains_substring("let value: int ="))
+
+
+@[test]
+function test_atomic_sub_and_exchange_lower_to_builtins() -> t.Check:
+    ## sub and exchange round out the read-modify-write surface.
+    var source = <<-SRC
+        function rmw_demo() -> int:
+            var counter: atomic[int]
+            let a = counter.sub(2)
+            let b = counter.exchange(9)
+            return a + b
+    SRC
+    var ir = lower_source(source)
+    defer ir.release()
+    let text = ir.as_str()
+    t.expect_true(text.contains_substring("__atomic_fetch_sub(&counter, 2, 5)"))?
+    return t.expect_true(text.contains_substring("__atomic_exchange_n(&counter, 9, 5)"))
