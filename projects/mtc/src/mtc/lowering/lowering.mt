@@ -7375,13 +7375,25 @@ function lower_str_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
             result_vals.push(lower_expr(ctx, arm.value))
         ai += 1
 
-    # Emit arm if-thens in forward order directly into output, with the
-    # wildcard-arm assignment as the final else for the last pattern arm.
-    var idx: ptr_uint = 0
-    while idx < pattern_lits.len:
-        let pat_ptr = pattern_lits.get(idx) else:
+    # Emit a proper else-if chain: `if (p0) r=v0; else if (p1) r=v1; ... else
+    # r=default;`.  Building it as independent if-thens (with only the final arm
+    # carrying the default as its else) is WRONG — the last arm's `else` would
+    # clobber an earlier arm's assignment.  Mirrors Ruby's string-match lowering,
+    # which nests each subsequent arm inside the prior arm's else branch.
+    # Construct from the tail backwards so each arm's else_body is the already-
+    # built remainder of the chain.
+    var chain = vec.Vec[ir.Stmt].create()
+    if has_default:
+        let dv = default_val else:
+            fatal(c"lowering: str match expr default value")
+        chain.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = dv))
+
+    var back = pattern_lits.len
+    while back > 0:
+        back -= 1
+        let pat_ptr = pattern_lits.get(back) else:
             fatal(c"lowering: str match expr pattern")
-        let val_ptr = result_vals.get(idx) else:
+        let val_ptr = result_vals.get(back) else:
             fatal(c"lowering: str match expr value")
         let condition = alloc_expr(ir.Expr.expr_binary(
             operator = "==",
@@ -7389,36 +7401,14 @@ function lower_str_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
             right = unsafe: read(pat_ptr),
             ty = types.primitive("bool"),
         ))
-        var assign = vec.Vec[ir.Stmt].create()
-        assign.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = unsafe: read(val_ptr)))
-        if idx + 1 < pattern_lits.len:
-            # Not the last arm: if-then with no else (fall-through to next arm).
-            output.push(ir.Stmt.stmt_if(condition = condition, then_body = assign.as_span(), else_body = span[ir.Stmt]()))
-        else if has_default:
-            # Last arm + wildcard: if-then with the wildcard assignment as else.
-            var else_body = vec.Vec[ir.Stmt].create()
-            let dv = default_val else:
-                fatal(c"lowering: str match expr default value")
-            else_body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = dv))
-            output.push(ir.Stmt.stmt_if(condition = condition, then_body = assign.as_span(), else_body = else_body.as_span()))
-        else:
-            # Last arm, no wildcard: if-then with no else.
-            output.push(ir.Stmt.stmt_if(condition = condition, then_body = assign.as_span(), else_body = span[ir.Stmt]()))
-        idx += 1
+        var then_body = vec.Vec[ir.Stmt].create()
+        then_body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = unsafe: read(val_ptr)))
+        let else_body = chain.as_span()
+        var next_chain = vec.Vec[ir.Stmt].create()
+        next_chain.push(ir.Stmt.stmt_if(condition = condition, then_body = then_body.as_span(), else_body = else_body))
+        chain = next_chain
 
-    # Only a wildcard arm: emit the assignment directly.
-    if has_default and pattern_lits.len == 0:
-        var stmts = vec.Vec[ir.Stmt].create()
-        let dv = default_val else:
-            fatal(c"lowering: str match expr default value")
-        stmts.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = dv))
-        var j: ptr_uint = 0
-        while j < stmts.len:
-            let s_ptr = stmts.get(j) else:
-                break
-            unsafe:
-                output.push(read(s_ptr))
-            j += 1
+    append_span_stmts(output, chain.as_span())
 
 
 ## Lower a match expression over a tuple scrutinee: for each arm, compare the
