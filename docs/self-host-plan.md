@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. 11 C errors remain (measured with `-I std/c`).**
-Last updated: 2026-07-09 (P8, Seam A + B §3.1 + C + §3.4 + E landed)
+Status: **Phase 8 — self-compile C-error elimination. 7 C errors remain (all D1; measured with `-I std/c`).**
+Last updated: 2026-07-09 (P8, Seam A + B §3.1 + C + §3.4 + E + 8b void* landed)
 
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -100,17 +100,17 @@ tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --ro
 cc -std=c11 -D_GNU_SOURCE -Wno-implicit-function-declaration -I std/c -c tmp/self.c -o /dev/null 2>tmp/errs.txt
 ```
 
-**Status**: 11 `cc` errors, 172/172 tests pass. (Was 83 at the start of this session; Seams A, B §3.1,
-C, §3.4, and E landed — see the progress checklist in §5 for the authoritative, up-to-date breakdown.)
+**Status**: 7 `cc` errors, 172/172 tests pass. (Was 83 at the start of this session; Seams A, B §3.1,
+C, §3.4, E, and the Phase-8b void* external-ABI cluster landed — see the progress checklist in §5 for
+the authoritative, up-to-date breakdown.  **All 7 remaining errors are D1** — see below.)
 
-### Error breakdown (11 remaining, grouped by root cause)
+### Error breakdown (7 remaining — all D1)
 
 | Root cause | Count | Notes |
 |-----------|-------|-------|
 | `return match` hoist (D1) | 7 | LIVE `return match` in token.mt (enum), keywords.mt (str), lexer.mt x2 (tuple). Needs real hoist + tuple-scrutinee support + latent `lower_variant_match_expr` crash fix. Deferred to a dedicated session — see §5 D1 entry. |
-| `void*` return-from-int (std_mem_heap) | 4 | External libc functions (`malloc`/`aligned_alloc`/`calloc`/`realloc`) typed as `int`. Phase 8b (external ABI declarations), not self-host source. |
 
-All scattered singletons (Seam E) are resolved.
+Everything else (scattered singletons and the `void*` libc external-ABI cluster) is resolved.
 
 ### Historical breakdown (83, grouped by root cause) — mostly RESOLVED this session
 
@@ -405,6 +405,17 @@ Established this session; reuse these seams rather than re-deriving them:
         result (struct) because the `+ 2` mixed `ptr_uint` with an `int` literal; adopt the non-literal
         operand's integer type (scoped narrowly to `int`-literal operands to avoid over-broad
         reclassification — a broader first attempt regressed to 758 and was reverted).
+  - [x] **Phase 8b (partial) — cross-module external function calls (11 → 7, −4).** `libc.malloc` /
+        `calloc` / `realloc` / `aligned_alloc` emitted an undefined module-qualified symbol
+        (`std_c_libc_malloc`) instead of the bare C name, so they returned implicit `int` and failed
+        `void*` assignments. Added `imported_extern_call` to resolve an `external function` decl in the
+        target module and lower the call to its bare C linkage name (`extern_c_name`) with the resolved
+        return type. Scoped to externals whose params are all plain (`extern_all_plain_params`), so
+        `out`/`inout` externals (`mt_fs_*`, `mt_process_*`) keep their existing lowering and are not
+        prematurely exposed (a first, unscoped attempt surfaced their latent `out`-param arg mismatches
+        — masked today by undefined-function tolerance — and was scoped back). NOTE: those `out`-param
+        cross-module external calls remain latent errors that WILL surface at Phase 8b linking and need
+        proper `out`-param pointer handling then. 172/172 tests pass.
   - [ ] **D1 — match-expression `return match` hoist (7 errors, DEFERRED — needs a dedicated session).**
         RE-CHARACTERIZED: this is NOT a dead stub. The 7 `match_expr` errors come from LIVE `return match`
         code: `token.mt` `kind_name` (enum scrutinee), `keywords.mt` `keyword_kind` (**str** scrutinee),
