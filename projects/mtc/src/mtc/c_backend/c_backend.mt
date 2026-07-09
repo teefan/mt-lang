@@ -86,14 +86,38 @@ public function generate_c(program: ir.Program) -> string.String:
     let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or use_fatal_str or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants)) or use_entry_argv
     let use_str_equality = uses_str_equality(funcs)
 
+    # Feature-test macros required by the fs/tls support headers and the
+    # parallel/detach runtime (mirrors Ruby's _GNU_SOURCE / _POSIX_C_SOURCE
+    # preamble block).
+    if includes_need_feature_macros(program) or uses_parallel_runtime(program):
+        emit_line(ref_of(e), "#ifndef _GNU_SOURCE")
+        emit_line(ref_of(e), "#define _GNU_SOURCE")
+        emit_line(ref_of(e), "#endif")
+        emit_line(ref_of(e), "#ifndef _POSIX_C_SOURCE")
+        emit_line(ref_of(e), "#define _POSIX_C_SOURCE 200809L")
+        emit_line(ref_of(e), "#endif")
+        emit_line(ref_of(e), "")
+
+    # Emit the include set deduplicated (mirrors Ruby's `headers.uniq`).
+    # `<stddef.h>` (offsetof) follows `<string.h>` to match Ruby's ordering.
+    let use_offsetof = functions_use_offsetof(funcs)
+    var seen_headers = map_mod.Map[str, bool].create()
     var i: ptr_uint = 0
     while i < program.includes.len:
         unsafe:
-            emit_line(ref_of(e), j2("#include ", read(program.includes.data + i).header))
+            let header = read(program.includes.data + i).header
+            if not seen_headers.contains(header):
+                seen_headers.set(header, true)
+                emit_line(ref_of(e), j2("#include ", header))
+                if use_offsetof and header.equal("<string.h>") and not seen_headers.contains("<stddef.h>"):
+                    seen_headers.set("<stddef.h>", true)
+                    emit_line(ref_of(e), "#include <stddef.h>")
         i += 1
-    if use_fatal or use_fatal_str or use_entry_argv:
+    if (use_fatal or use_fatal_str or use_entry_argv) and not seen_headers.contains("<stdlib.h>"):
+        seen_headers.set("<stdlib.h>", true)
         emit_line(ref_of(e), "#include <stdlib.h>")
-    if use_entry_argv:
+    if use_entry_argv and not seen_headers.contains("<string.h>"):
+        seen_headers.set("<string.h>", true)
         emit_line(ref_of(e), "#include <string.h>")
     emit_line(ref_of(e), "")
 
@@ -129,7 +153,8 @@ public function generate_c(program: ir.Program) -> string.String:
             unsafe:
                 emit_line(ref_of(e), j3("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
             si += 1
-        emit_line(ref_of(e), "")
+        if span_types.len() > 0:
+            emit_line(ref_of(e), "")
 
         i = 0
         while i < sorted.len:
@@ -2408,6 +2433,8 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 buf.append(c_type(al.target_type))
                 buf.append(")")
                 return buf.as_str()
+            ir.Expr.expr_offsetof as off:
+                return j5("offsetof(", c_type(off.target_type), ", ", off.field, ")")
             ir.Expr.expr_array_literal as arr:
                 return render_array_literal_initializer(e, arr.elements)
             ir.Expr.expr_conditional as cond:
@@ -3439,6 +3466,147 @@ function uses_parallel_runtime(program: ir.Program) -> bool:
                 return true
         i += 1
     return false
+
+
+## True when the include set contains the fs/tls support headers, which pull in
+## POSIX APIs guarded by the _GNU_SOURCE / _POSIX_C_SOURCE feature-test macros.
+function includes_need_feature_macros(program: ir.Program) -> bool:
+    var i: ptr_uint = 0
+    while i < program.includes.len:
+        unsafe:
+            let h = read(program.includes.data + i).header
+            if h.equal("\"fs_support.h\"") or h.equal("\"tls_support.h\""):
+                return true
+        i += 1
+    return false
+
+
+## True when any lowered function references offset_of, which requires
+## <stddef.h> (mirrors Ruby's program_uses_offsetof?).
+function functions_use_offsetof(functions: span[ir.Function]) -> bool:
+    var i: ptr_uint = 0
+    while i < functions.len:
+        unsafe:
+            if stmts_use_offsetof(read(functions.data + i).body):
+                return true
+        i += 1
+    return false
+
+
+function stmts_use_offsetof(body: span[ir.Stmt]) -> bool:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            if stmt_uses_offsetof(body.data + i):
+                return true
+        i += 1
+    return false
+
+
+function stmt_uses_offsetof(sp: ptr[ir.Stmt]) -> bool:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_return as r:
+                let value = r.value else:
+                    return false
+                return expr_uses_offsetof(value)
+            ir.Stmt.stmt_local as loc:
+                return expr_uses_offsetof(loc.value)
+            ir.Stmt.stmt_assignment as asg:
+                return expr_uses_offsetof(asg.target) or expr_uses_offsetof(asg.value)
+            ir.Stmt.stmt_expression as ex:
+                return expr_uses_offsetof(ex.expression)
+            ir.Stmt.stmt_block as blk:
+                return stmts_use_offsetof(blk.body)
+            ir.Stmt.stmt_if as iff:
+                return expr_uses_offsetof(iff.condition) or stmts_use_offsetof(iff.then_body) or stmts_use_offsetof(iff.else_body)
+            ir.Stmt.stmt_while as w:
+                return expr_uses_offsetof(w.condition) or stmts_use_offsetof(w.body)
+            ir.Stmt.stmt_for as f:
+                return stmt_uses_offsetof(f.init) or expr_uses_offsetof(f.condition) or stmt_uses_offsetof(f.post) or stmts_use_offsetof(f.body)
+            ir.Stmt.stmt_switch as sw:
+                if expr_uses_offsetof(sw.expression):
+                    return true
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    if stmts_use_offsetof(read(sw.cases.data + ci).body):
+                        return true
+                    ci += 1
+                return false
+            ir.Stmt.stmt_static_assert as sa:
+                return expr_uses_offsetof(sa.condition) or expr_uses_offsetof(sa.message)
+            _:
+                return false
+
+
+function expr_uses_offsetof(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_offsetof:
+                return true
+            ir.Expr.expr_member as m:
+                return expr_uses_offsetof(m.receiver)
+            ir.Expr.expr_index as ix:
+                return expr_uses_offsetof(ix.receiver) or expr_uses_offsetof(ix.index)
+            ir.Expr.expr_checked_index as ci:
+                return expr_uses_offsetof(ci.receiver) or expr_uses_offsetof(ci.index)
+            ir.Expr.expr_checked_span_index as cs:
+                return expr_uses_offsetof(cs.receiver) or expr_uses_offsetof(cs.index)
+            ir.Expr.expr_nullable_index as ni:
+                return expr_uses_offsetof(ni.receiver) or expr_uses_offsetof(ni.index)
+            ir.Expr.expr_nullable_span_index as ns:
+                return expr_uses_offsetof(ns.receiver) or expr_uses_offsetof(ns.index)
+            ir.Expr.expr_call as call:
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    if expr_uses_offsetof(call.arguments.data + i):
+                        return true
+                    i += 1
+                return false
+            ir.Expr.expr_call_indirect as call:
+                if expr_uses_offsetof(call.callee):
+                    return true
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    if expr_uses_offsetof(call.arguments.data + i):
+                        return true
+                    i += 1
+                return false
+            ir.Expr.expr_unary as un:
+                return expr_uses_offsetof(un.operand)
+            ir.Expr.expr_binary as bin:
+                return expr_uses_offsetof(bin.left) or expr_uses_offsetof(bin.right)
+            ir.Expr.expr_conditional as cond:
+                return expr_uses_offsetof(cond.condition) or expr_uses_offsetof(cond.then_expression) or expr_uses_offsetof(cond.else_expression)
+            ir.Expr.expr_reinterpret as rin:
+                return expr_uses_offsetof(rin.expression)
+            ir.Expr.expr_cast as cast:
+                return expr_uses_offsetof(cast.expression)
+            ir.Expr.expr_address_of as addr:
+                return expr_uses_offsetof(addr.expression)
+            ir.Expr.expr_aggregate_literal as agg:
+                var i: ptr_uint = 0
+                while i < agg.fields.len:
+                    if expr_uses_offsetof(read(agg.fields.data + i).value):
+                        return true
+                    i += 1
+                return false
+            ir.Expr.expr_variant_literal as vl:
+                var i: ptr_uint = 0
+                while i < vl.fields.len:
+                    if expr_uses_offsetof(read(vl.fields.data + i).value):
+                        return true
+                    i += 1
+                return false
+            ir.Expr.expr_array_literal as arr:
+                var i: ptr_uint = 0
+                while i < arr.elements.len:
+                    if expr_uses_offsetof(arr.elements.data + i):
+                        return true
+                    i += 1
+                return false
+            _:
+                return false
 
 
 function emit_parallel_helpers(e: ref[Emitter]) -> void:

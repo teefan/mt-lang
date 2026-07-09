@@ -2674,7 +2674,11 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_alignof as al:
                 return alloc_expr(ir.Expr.expr_alignof(target_type = qualify_type(ctx, resolve_type_ref(ctx, al.target_type)), ty = types.primitive("ptr_uint")))
             ast.Expr.expr_offsetof as off:
-                return alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("ptr_uint")))
+                return alloc_expr(ir.Expr.expr_offsetof(
+                    target_type = qualify_type(ctx, resolve_type_ref(ctx, off.target_type)),
+                    field = off.field,
+                    ty = types.primitive("ptr_uint"),
+                ))
             ast.Expr.expr_error:
                 return alloc_expr(ir.Expr.expr_null_literal(ty = types.primitive("void")))
             _:
