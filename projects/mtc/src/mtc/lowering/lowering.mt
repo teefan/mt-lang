@@ -4397,16 +4397,22 @@ function resolve_primitive_method_info(ctx: ref[LowerCtx], type_name: str, metho
 
 
 function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method_name: str) -> Option[MethodInfo]:
+    # Auto-deref pointer / ref receivers so a method call on `this` inside an
+    # editable method (where `this` is `ptr[T]`) resolves against `T`, not the
+    # builtin "ptr" name (which would mis-name the call `<module>_ptr_<method>`).
+    var effective_ty = receiver_ty
+    if types.is_raw_pointer(effective_ty) or types.is_ref_type(effective_ty):
+        effective_ty = types.pointer_element(effective_ty)
     # Primitive / `str` receivers: methods live in a single `extending` block
     # (e.g. `extending str:` in std.str) and use the bare `<type>_<method>` C
     # naming scheme, so resolve them before the nominal path.
-    match primitive_receiver_name(receiver_ty):
+    match primitive_receiver_name(effective_ty):
         Option.some as pn:
             return resolve_primitive_method_info(ctx, pn.value, method_name)
         Option.none:
             pass
-    let type_name = named_type_name(receiver_ty) else:
-        let gen_var = generic_variant_name(receiver_ty)
+    let type_name = named_type_name(effective_ty) else:
+        let gen_var = generic_variant_name(effective_ty)
         match gen_var:
             Option.some as gv:
                 let key = analyzer.method_key(gv.value, method_name)
@@ -4469,7 +4475,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
             return Option[MethodInfo].some(value = MethodInfo(
                 c_name = method_c_name(a.module_name, type_name, method_name, sig.method_kind),
                 method_kind = sig.method_kind,
-                return_type = resolve_method_return_from_import(ctx, a.module_name, sig, receiver_ty),
+                return_type = resolve_method_return_from_import(ctx, a.module_name, sig, effective_ty),
             ))
         ai += 1
     return Option[MethodInfo].none
