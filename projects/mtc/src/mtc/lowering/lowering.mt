@@ -3091,6 +3091,14 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                     return lower_extern_call(ctx, ext_info.value, args, call_ep)
                                 Option.none:
                                     pass
+                            # Cross-module generic function call with inferred type
+                            # args (`heap.release(x)` → `heap.release[T]`): infer T
+                            # from the argument types and monomorphize.
+                            match try_inferred_generic_call(ctx, ma.member_name, args, call_ep):
+                                Option.some as gen_call:
+                                    return gen_call.value
+                                Option.none:
+                                    pass
                             let c_name = naming.qualified_c_name(target_module, ma.member_name)
                             var ret_ty = cross_module_return_type(ctx, c_name, call_ep)
                             var ret_type_ptr = types.alloc_type(ret_ty)
@@ -3697,12 +3705,117 @@ function find_generic_function(ctx: ref[LowerCtx], callee_name: str) -> Option[G
     return Option[GenericFunctionMatch].none
 
 
+## Try to lower a call to a generic function whose type arguments are INFERRED
+## from the argument types (no explicit `[T]`), e.g. `heap.release(this.data)`
+## where `release[T](memory: ptr[T]?)` binds `T` from the argument.  Returns none
+## when the target is not a generic function or inference fails.  Mirrors Ruby's
+## per-instantiation monomorphization of inferred generic calls.
+function try_inferred_generic_call(ctx: ref[LowerCtx], callee_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> Option[ptr[ir.Expr]]:
+    let gm = find_generic_function(ctx, callee_name) else:
+        return Option[ptr[ir.Expr]].none
+    match gm.decl:
+        ast.Decl.decl_function as fun:
+            if fun.type_params.len == 0:
+                return Option[ptr[ir.Expr]].none
+            # Infer each type parameter from the arguments, then build the
+            # substitution map and specialization key.
+            var sub = map_mod.Map[str, types.Type].create()
+            var key = string.String.create()
+            key.append(naming.module_c_prefix(gm.module_name))
+            key.append("_")
+            key.append(callee_name)
+            var tpi: ptr_uint = 0
+            while tpi < fun.type_params.len:
+                var tp: ast.TypeParam
+                unsafe:
+                    tp = read(fun.type_params.data + tpi)
+                let inferred = infer_type_param_from_args(ctx, tp.name, fun.method_params, args) else:
+                    return Option[ptr[ir.Expr]].none
+                sub.set(tp.name, inferred)
+                key.append("_")
+                key.append(naming.type_c_key(inferred))
+                tpi += 1
+            let spec_key = key.as_str()
+            if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
+                lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key)
+            let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
+            return Option[ptr[ir.Expr]].some(value = lower_plain_call(ctx, spec_key, args, call_ep, types.alloc_type(ret_ty)))
+        _:
+            return Option[ptr[ir.Expr]].none
+
+
+## Infer the concrete type bound to type parameter `param_name` by matching each
+## declared parameter type against the corresponding argument's lowered type.
+## Handles the shapes that appear in the self-host's inferred generic calls: a
+## bare `T`, and `T` under `ptr`/`const_ptr`/`ref`/`span`/nullable, by peeling the
+## same constructor off the argument type.
+function infer_type_param_from_args(ctx: ref[LowerCtx], param_name: str, params: span[ast.Param], args: span[ast.Argument]) -> Option[types.Type]:
+    var i: ptr_uint = 0
+    while i < params.len and i < args.len:
+        var p: ast.Param
+        unsafe:
+            p = read(params.data + i)
+        let arg_ty = ir_expr_type(lower_expr(ctx, unsafe: read(args.data + i).arg_value))
+        match unify_type_param(param_name, p.param_type, arg_ty):
+            Option.some as found:
+                return Option[types.Type].some(value = found.value)
+            Option.none:
+                pass
+        i += 1
+    return Option[types.Type].none
+
+
+## Structurally match a declared parameter type-ref against a concrete argument
+## type, binding `param_name` when it is found.  Peels matching pointer/span/
+## nullable constructors off both sides.
+function unify_type_param(param_name: str, param_ref: ast.TypeRef, arg_ty: types.Type) -> Option[types.Type]:
+    let simple_name = type_ref_simple_name(param_ref)
+    # Bare `T`.
+    if simple_name.equal(param_name) and param_ref.arguments.len == 0:
+        return Option[types.Type].some(value = arg_ty)
+    # `ptr[T]` / `const_ptr[T]` / `span[T]` / `ref[T]`: peel one pointer-like
+    # layer off the argument type and recurse into the element type-ref.
+    if param_ref.arguments.len >= 1 and pointer_like_ctor_name(simple_name):
+        let inner_arg = pointer_or_span_element(arg_ty)
+        var inner_ref: ast.TypeRef
+        unsafe:
+            inner_ref = read(param_ref.arguments.data + (param_ref.arguments.len - 1))
+        return unify_type_param(param_name, inner_ref, inner_arg)
+    return Option[types.Type].none
+
+
+## The single (unqualified) name of a type-ref, or "" for a multi-part name.
+function type_ref_simple_name(t: ast.TypeRef) -> str:
+    if t.name.parts.len == 1:
+        return unsafe: read(t.name.parts.data + 0)
+    return ""
+
+
+## True for the pointer-like type constructors whose single element carries the
+## generic parameter.
+function pointer_like_ctor_name(name: str) -> bool:
+    return name.equal("ptr") or name.equal("const_ptr") or name.equal("ref") or name.equal("span")
+
+
+## Peel one pointer/span/nullable layer off a concrete type, yielding the element
+## type (or the type unchanged when it has no such layer).
+function pointer_or_span_element(t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_nullable as nl:
+            return pointer_or_span_element(unsafe: read(nl.base))
+        types.Type.ty_generic as g:
+            if g.args.len >= 1 and pointer_like_ctor_name(g.name):
+                return unsafe: read(g.args.data + (g.args.len - 1))
+        _:
+            pass
+    return t
+
+
 ## Lower an uncached generic function specialization: build the type substitution
 ## map, then lower the body in the OWNER module's context (so its imports,
 ## foreign functions, variants, and recorded expression types resolve against the
 ## defining module rather than the caller) and cache it under `spec_key`.
 function lower_and_cache_specialization(ctx: ref[LowerCtx], gm: GenericFunctionMatch, type_args: span[ast.TypeArgument], spec_key: str) -> void:
-    ctx.spec_in_progress.set(spec_key, true)
     match gm.decl:
         ast.Decl.decl_function as fun:
             # Build type substitution from the function's type params, resolving
@@ -3721,7 +3834,19 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], gm: GenericFunctionM
                     let concrete = qualify_type(ctx, resolve_type_ref(ctx, unsafe: read(type_args.data + tpi).value))
                     sub.set(tp.name, concrete)
                 tpi += 1
+            lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key)
+        _:
+            fatal(j2("lowering: monomorphization failed, expected function decl for ", gm.module_name))
 
+
+## Lower an uncached generic function specialization from a pre-built type
+## substitution map (`sub`: type-param name -> concrete, caller-qualified type).
+## The body is lowered in the OWNER module's context and cached under `spec_key`.
+## Shared by explicit-type-arg specialization and inferred-type-arg calls.
+function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: GenericFunctionMatch, sub: ref[map_mod.Map[str, types.Type]], spec_key: str) -> void:
+    ctx.spec_in_progress.set(spec_key, true)
+    match gm.decl:
+        ast.Decl.decl_function as fun:
             # Save the caller context.
             var saved_module = ctx.module_name
             var saved_analysis = ctx.analysis
@@ -3748,7 +3873,7 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], gm: GenericFunctionM
             ctx.temp_counter = 0
             ctx.function_returns = map_mod.Map[str, types.Type].create()
 
-            var spec_fun = lower_specialized_function(ctx, fun.name, fun.method_params, fun.return_type, fun.body, ref_of(sub))
+            var spec_fun = lower_specialized_function(ctx, fun.name, fun.method_params, fun.return_type, fun.body, sub)
             spec_fun.linkage_name = spec_key
             spec_fun.name = spec_key
 
