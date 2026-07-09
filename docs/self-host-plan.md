@@ -519,6 +519,41 @@ clean re-apply. When editing near function boundaries in the ~8.8k-line `lowerin
 
 ---
 
+## 6b. Parity gap audit (2026-07-09) — what "self-host complete" does and does NOT mean
+
+**What works (verified):** The self-host reaches the self-compile fixpoint. stage-1
+(Ruby-built) → stage-2 (self-built) → stage-3 (stage-2-built) all produce **byte-identical
+C** for the self-host source, and every stage runs `lex`/`parse`/`check` correctly. The
+self-host also compiles+builds+runs ordinary non-async programs (Vec/Map/String/generics/
+match/defer/tuples), verified by build-and-run.
+
+**What does NOT work yet (self-host is NOT at 100% parity with the Ruby compiler).**
+The self-host is complete *for the subset its own source uses*, but general-program parity
+has holes. Concrete, reproduced gaps (self-host vs Ruby, 2026-07-09):
+
+| Feature | Symptom in self-host | Ruby behaviour |
+|---------|---------------------|----------------|
+| `async`/`Task[T]` | lowering aborts: `could not find generic function decl for Task`; analyzer reports `unknown field Task.frame`, `unknown method Task.ready/take_result/release` | full CPS-ish Task runtime lowered |
+| `atomic[T]` | emit-c is a **stub**: emits `atomic_int` (undefined) + undeclared `<mod>_atomic_store/add/load` calls + `void`-typed result | `_Atomic int32_t` + `__atomic_store_n`/`__atomic_fetch_add`/`__atomic_load_n` |
+| `emit` (compile-time codegen) | lowering aborts: `unsupported statement` | emits the generated declarations |
+| `events` (general programs) | emit-c returns 0 but produced C does **not** compile (`expected expression before <event>`) | valid subscription/emit C |
+| `parallel for` (general programs) | emit-c returns 0 but produced C does not compile (`xs undeclared` — capture bug) | valid libuv chunk dispatch |
+| `dyn[I]` (general programs) | emit-c returns 0 but produced C does not compile (`mt_vtable_..._Shape undeclared` — vtable global not emitted for single-file programs) | vtable struct+global emitted |
+| baseline `examples/language_baseline.mt` | self-host `check` fails and `emit-c` aborts (via the async runtime) | Ruby checks clean (warnings only) |
+
+Note several of these "return 0 but bad C" cases match §6 deferred items (struct-less
+programs don't emit span typedefs; scattered singletons). The self-host passes its 181
+in-language tests and self-compiles because its **own source avoids** these paths (no
+`atomic`, no `emit`, careful async usage only inside std it does not re-lower for itself).
+
+**Remaining work for true 100% parity** (rough order): (1) `atomic[T]` proper lowering
+(`_Atomic`/`__atomic_*`); (2) async/`Task[T]` lowering + runtime; (3) `emit` statement
+lowering; (4) single-file-program codegen completeness for events / parallel-for capture /
+dyn vtable emission (the general-program vs self-host-source divergence); (5) then re-run
+`examples/language_baseline.mt` end-to-end as the parity gate. The differential oracle stays
+the method: compare self-host emit-c to Ruby emit-c per feature, fix the root in
+`lowering.mt`/`c_backend.mt` mirroring Ruby.
+
 ## 7. Cross-cutting principles
 
 - **IR is the frozen seam.** Backend reads only `IR`; Lowering reads only `Analysis`.
