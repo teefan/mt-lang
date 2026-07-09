@@ -2576,8 +2576,8 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                 pass
                         return alloc_expr(ir.Expr.expr_name(name = id.name, ty = expr_type(ctx, ep), pointer = false))
             ast.Expr.expr_binary_op as bin:
-                let left = lower_expr(ctx, bin.left)
-                let right = lower_expr(ctx, bin.right)
+                var left = lower_expr(ctx, bin.left)
+                var right = lower_expr(ctx, bin.right)
                 var result_ty = expr_type(ctx, ep)
                 # Pointer arithmetic (`p + i` / `p - i`) yields the pointer
                 # operand's concrete type; the analyzer's generically-recorded
@@ -2603,6 +2603,19 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                         result_ty = lt
                     else if is_integer_scrutinee(rt) and types.type_to_string(lt).equal("int"):
                         result_ty = rt
+                # Balance mixed-width integer and int/float operands: cast the
+                # narrower operand up to the common type, matching Ruby's
+                # usual-arithmetic-conversion casts (redundant casts are elided
+                # by the C backend).  For arithmetic operators the common type is
+                # also the result type, which the analyzer may have under-widened.
+                match promoted_binary_operand_type(bin.operator, ir_expr_type(left), ir_expr_type(right)):
+                    Option.some as op_ty:
+                        left = cast_to_type(left, op_ty.value)
+                        right = cast_to_type(right, op_ty.value)
+                        if is_pure_arithmetic_operator(bin.operator):
+                            result_ty = op_ty.value
+                    Option.none:
+                        pass
                 return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = result_ty))
             ast.Expr.expr_unary_op as un:
                 let operand = lower_expr(ctx, un.operand)
@@ -8402,6 +8415,96 @@ function is_arithmetic_operator(op: str) -> bool:
         op == "+" or op == "-" or op == "*" or op == "/" or op == "%"
         or op == "&" or op == "|" or op == "^" or op == "<<" or op == ">>"
     )
+
+
+## True for the arithmetic operators whose result type is the promoted operand
+## type (excludes comparisons, which yield bool, and shifts/bitwise).
+function is_pure_arithmetic_operator(op: str) -> bool:
+    return op == "+" or op == "-" or op == "*" or op == "/" or op == "%"
+
+
+## The common type both operands of a balanced binary operator are cast to, or
+## none when no balancing applies.  Arithmetic and comparison balance to the
+## common numeric type; `%` to the common integer type; shifts, bitwise, and
+## logical operators do not balance.  Mirrors Ruby's promoted_binary_operand_type.
+function promoted_binary_operand_type(operator: str, left: types.Type, right: types.Type) -> Option[types.Type]:
+    if (
+        operator == "+" or operator == "-" or operator == "*" or operator == "/"
+        or operator == "<" or operator == "<=" or operator == ">" or operator == ">="
+        or operator == "==" or operator == "!="
+    ):
+        return common_numeric_type(left, right)
+    if operator == "%":
+        return common_integer_type(left, right)
+    return Option[types.Type].none
+
+
+## The common numeric type of two operands (mirrors Ruby's common_numeric_type):
+## identical types pass through; two integers use common_integer_type; two floats
+## use the wider float; a float paired with a fixed-width integer uses the float.
+function common_numeric_type(left: types.Type, right: types.Type) -> Option[types.Type]:
+    if types.type_equals(left, right):
+        return Option[types.Type].some(value = left)
+    if not (types.is_numeric(left) and types.is_numeric(right)):
+        return Option[types.Type].none
+    if types.is_integer_type(left) and types.is_integer_type(right):
+        return common_integer_type(left, right)
+    if types.is_float_type(left) and types.is_float_type(right):
+        return Option[types.Type].some(value = wider_float_type(left, right))
+    let float_ty = if types.is_float_type(left): left else: right
+    let int_ty = if types.is_float_type(left): right else: left
+    if not (types.is_integer_type(int_ty) and types.is_fixed_width_integer_name(prim_name(int_ty))):
+        return Option[types.Type].none
+    return Option[types.Type].some(value = float_ty)
+
+
+## The common integer type of two operands (mirrors Ruby's common_integer_type):
+## identical types pass through; otherwise both must be fixed-width integers of
+## the same signedness, and the wider one wins.
+function common_integer_type(left: types.Type, right: types.Type) -> Option[types.Type]:
+    if types.type_equals(left, right):
+        return Option[types.Type].some(value = left)
+    if not (types.is_integer_type(left) and types.is_integer_type(right)):
+        return Option[types.Type].none
+    let left_name = prim_name(left)
+    let right_name = prim_name(right)
+    if not (types.is_fixed_width_integer_name(left_name) and types.is_fixed_width_integer_name(right_name)):
+        return Option[types.Type].none
+    if types.is_signed_integer_name(left_name) != types.is_signed_integer_name(right_name):
+        return Option[types.Type].none
+    if types.integer_width(left_name) >= types.integer_width(right_name):
+        return Option[types.Type].some(value = left)
+    return Option[types.Type].some(value = right)
+
+
+## The wider of two float primitives (mirrors Ruby's wider_float_type).
+function wider_float_type(left: types.Type, right: types.Type) -> types.Type:
+    if float_width_of(left) >= float_width_of(right):
+        return left
+    return right
+
+
+function float_width_of(t: types.Type) -> int:
+    if prim_name(t).equal("double"):
+        return 64
+    return 32
+
+
+## The primitive type name of `t`, or the empty string for non-primitives.
+function prim_name(t: types.Type) -> str:
+    match t:
+        types.Type.ty_primitive as p:
+            return p.name
+        _:
+            return ""
+
+
+## Wrap `ep` in a cast to `target` unless it already has that type (mirrors
+## Ruby's cast_expression).  A redundant cast is elided by the C backend.
+function cast_to_type(ep: ptr[ir.Expr], target: types.Type) -> ptr[ir.Expr]:
+    if types.type_equals(ir_expr_type(ep), target):
+        return ep
+    return alloc_expr(ir.Expr.expr_cast(target_type = target, expression = ep, ty = target))
 
 
 function is_int_type(t: types.Type) -> bool:

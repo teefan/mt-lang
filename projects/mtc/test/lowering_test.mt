@@ -351,3 +351,52 @@ function test_atomic_sub_and_exchange_lower_to_builtins() -> t.Check:
     let text = ir.as_str()
     t.expect_true(text.contains_substring("__atomic_fetch_sub(&counter, 2, 5)"))?
     return t.expect_true(text.contains_substring("__atomic_exchange_n(&counter, 9, 5)"))
+
+
+# =============================================================================
+#  Binary operand widening — mixed-width integer / int+float arithmetic casts
+#  the narrower operand up to the common type, matching Ruby's usual-arithmetic
+#  conversions.  Same-type operands are not cast.
+# =============================================================================
+
+@[test]
+function test_mixed_width_integer_arithmetic_widens_narrow_operand() -> t.Check:
+    ## `int + long` casts the int operand to long; the long operand is left
+    ## alone, and the result type is long.
+    var source = <<-SRC
+        function f(a: int, b: long) -> long:
+            return a + b
+    SRC
+    var ir = lower_source(source)
+    defer ir.release()
+    let text = ir.as_str()
+    return t.expect_true(text.contains_substring("long<-a + b"))
+
+
+@[test]
+function test_same_type_arithmetic_is_not_cast() -> t.Check:
+    ## Two operands of the same type need no balancing cast.
+    var source = <<-SRC
+        function f(a: int, b: int) -> int:
+            return a + b
+    SRC
+    var ir = lower_source(source)
+    defer ir.release()
+    let text = ir.as_str()
+    t.expect_true(text.contains_substring("return a + b"))?
+    return t.expect_true(not text.contains_substring("int<-a"))
+
+
+@[test]
+function test_comparison_widens_operand_but_yields_bool() -> t.Check:
+    ## A comparison across widths still balances the operands, but the binary's
+    ## own result type stays bool (so the arithmetic-result-type widening does
+    ## not apply to comparisons).
+    var source = <<-SRC
+        function f(a: int, b: long) -> bool:
+            return a < b
+    SRC
+    var ir = lower_source(source)
+    defer ir.release()
+    let text = ir.as_str()
+    return t.expect_true(text.contains_substring("long<-a < b"))
