@@ -2701,9 +2701,13 @@ function parse_not(s: ref[ParserState]) -> ptr[ast.Expr]:
 
 function parse_is(s: ref[ParserState]) -> ptr[ast.Expr]:
     var left = parse_bitwise_or(s)
-    if match_kind(s, tk.TokenKind.tk_is):
-        var pattern = parse_expression(s)
-        return is_desugar(s, left, pattern)
+    # The arm pattern is parsed at `bitwise_or` precedence (not full expression),
+    # so `e is A or e is B` groups as `(e is A) or (e is B)` — matching Ruby's
+    # parse_is.  Using parse_expression here would greedily absorb the trailing
+    # `or ...` into the pattern.  Left-associative via the `while` loop.
+    while match_kind(s, tk.TokenKind.tk_is):
+        var pattern = parse_bitwise_or(s)
+        left = is_desugar(s, left, pattern)
     return left
 
 

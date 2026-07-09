@@ -5433,8 +5433,58 @@ function sp_expr2(e1: ptr[ir.Expr], e2: ptr[ir.Expr]) -> span[ir.Expr]:
 
 
 function lower_expression_match(ctx: ref[LowerCtx], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    # `expr is Variant.Arm` desugars (in the parser) to a two-arm match
+    # expression: [Variant.Arm -> true, _ -> false].  Such a match has a pure
+    # boolean-expression equivalent — a discriminant test `scrut.kind == Kind_arm`
+    # — so lower it inline without a temp/switch.  This is the only match-expr
+    # shape that appears as a nested sub-expression (inside `or`/`and`/`if`) in
+    # the self-host, where statement hoisting is not available.
+    match is_variant_membership_arms(arms):
+        Option.some as arm_name:
+            let scrut_ty = method_receiver_type(ctx, scrutinee)
+            let outer_c = variant_base_c_name(scrut_ty, ctx.module_name)
+            let scrut_expr = lower_expr(ctx, scrutinee)
+            let int_ty = types.primitive("int")
+            let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = scrut_expr, member = "kind", ty = int_ty))
+            let kind_const = alloc_expr(ir.Expr.expr_name(name = variant_kind_const_name(outer_c, arm_name.value), ty = int_ty, pointer = false))
+            return alloc_expr(ir.Expr.expr_binary(operator = "==", left = kind_expr, right = kind_const, ty = types.primitive("bool")))
+        Option.none:
+            pass
+    # A genuine multi-arm match expression in a non-return position is not
+    # supported inline (needs statement hoisting); `return match` is handled at
+    # the statement boundary in `lower_stmt`.  Fall back to a placeholder.
     let scrut_ty = expr_type(ctx, scrutinee)
     return alloc_expr(ir.Expr.expr_name(name = "match_expr", ty = scrut_ty, pointer = false))
+
+
+## Detect the `is`-operator desugaring shape: exactly two arms, where the first
+## has a variant-arm pattern with value `true` and the second is a wildcard
+## (`pattern == null`) with value `false`.  Returns the arm name to test against.
+function is_variant_membership_arms(arms: span[ast.MatchExprArm]) -> Option[str]:
+    if arms.len != 2:
+        return Option[str].none
+    var first: ast.MatchExprArm
+    var second: ast.MatchExprArm
+    unsafe:
+        first = read(arms.data + 0)
+        second = read(arms.data + 1)
+    if first.pattern == null or second.pattern != null:
+        return Option[str].none
+    if not expr_is_bool_literal(first.value, true) or not expr_is_bool_literal(second.value, false):
+        return Option[str].none
+    let pat = first.pattern else:
+        return Option[str].none
+    return variant_match_arm_name_from_pattern(pat)
+
+
+## True when `ep` is a boolean literal with the given value.
+function expr_is_bool_literal(ep: ptr[ast.Expr], want: bool) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_bool_literal as b:
+                return b.value == want
+            _:
+                return false
 
 
 function sp_expr3(e1: ptr[ir.Expr], e2: ptr[ir.Expr], e3: ptr[ir.Expr]) -> span[ir.Expr]:
