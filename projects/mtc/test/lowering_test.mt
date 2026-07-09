@@ -400,3 +400,50 @@ function test_comparison_widens_operand_but_yields_bool() -> t.Check:
     defer ir.release()
     let text = ir.as_str()
     return t.expect_true(text.contains_substring("long<-a < b"))
+
+
+# =============================================================================
+#  Enum / flags backing-cast — comparisons unwrap the operands to their integer
+#  backing type and cast to it, matching Ruby's EnumBase unwrap.
+# =============================================================================
+
+@[test]
+function test_enum_comparison_casts_to_backing() -> t.Check:
+    ## `State.running > State.idle` casts both enum operands to the ubyte
+    ## backing type before comparing.
+    var source = <<-SRC
+        enum State: ubyte
+            idle = 0
+            running = 1
+
+        function cmp() -> bool:
+            return State.running > State.idle
+    SRC
+    var ir = lower_source(source)
+    defer ir.release()
+    let text = ir.as_str()
+    t.expect_true(text.contains_substring("ubyte<-"))?
+    return t.expect_true(text.contains_substring("> ubyte<-"))
+
+
+@[test]
+function test_flags_comparison_casts_but_bitwise_does_not() -> t.Check:
+    ## A flags comparison casts to the uint backing; a bitwise `|` does not
+    ## balance (so no cast is inserted around its operands).
+    var source = <<-SRC
+        flags Mask: uint
+            a = 1
+            b = 2
+
+        function cmp(m: Mask) -> bool:
+            return m == Mask.a
+
+        function bits() -> Mask:
+            return Mask.a | Mask.b
+    SRC
+    var ir = lower_source(source)
+    defer ir.release()
+    let text = ir.as_str()
+    t.expect_true(text.contains_substring("uint<-m == uint<-"))?
+    ## The bitwise-or operands are left un-cast.
+    return t.expect_true(text.contains_substring("Mask_a | "))

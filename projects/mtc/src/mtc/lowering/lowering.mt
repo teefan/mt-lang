@@ -2608,7 +2608,11 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 # usual-arithmetic-conversion casts (redundant casts are elided
                 # by the C backend).  For arithmetic operators the common type is
                 # also the result type, which the analyzer may have under-widened.
-                match promoted_binary_operand_type(bin.operator, ir_expr_type(left), ir_expr_type(right)):
+                # Enum/flags operands unwrap to their integer backing first, so
+                # enum comparisons cast to the backing type like Ruby.
+                let bal_lt = enum_backing_or_self(ctx, ir_expr_type(left))
+                let bal_rt = enum_backing_or_self(ctx, ir_expr_type(right))
+                match promoted_binary_operand_type(bin.operator, bal_lt, bal_rt):
                     Option.some as op_ty:
                         left = cast_to_type(left, op_ty.value)
                         right = cast_to_type(right, op_ty.value)
@@ -8505,6 +8509,74 @@ function cast_to_type(ep: ptr[ir.Expr], target: types.Type) -> ptr[ir.Expr]:
     if types.type_equals(ir_expr_type(ep), target):
         return ep
     return alloc_expr(ir.Expr.expr_cast(target_type = target, expression = ep, ty = target))
+
+
+## The backing primitive of an enum or flags type, or `t` unchanged for any
+## other type.  Mirrors Ruby unwrapping Types::EnumBase to its backing_type so
+## enum/flags operands balance (and cast) to their integer backing.
+function enum_backing_or_self(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_named as n:
+            match lookup_enum_backing(ctx, ctx.module_name, n.name):
+                Option.some as b:
+                    return b.value
+                Option.none:
+                    return t
+        types.Type.ty_imported as im:
+            if im.args.len != 0:
+                return t
+            match lookup_enum_backing(ctx, im.module_name, im.name):
+                Option.some as b:
+                    return b.value
+                Option.none:
+                    return t
+        _:
+            return t
+
+
+## The backing primitive type of the enum or flags named `enum_name` in
+## `module_name`, or none when no such declaration exists.  Scans the owning
+## module's AST declarations (the analyzer keeps no separate backing table).
+function lookup_enum_backing(ctx: ref[LowerCtx], module_name: str, enum_name: str) -> Option[types.Type]:
+    if module_name.equal(ctx.module_name):
+        return scan_enum_backing(ctx.analysis.source_file.declarations, enum_name)
+    match find_imported_analysis(ctx, module_name):
+        Option.some as a:
+            return scan_enum_backing(a.value.source_file.declarations, enum_name)
+        Option.none:
+            return Option[types.Type].none
+
+
+## Find an enum/flags declaration named `enum_name` in `decls` and return its
+## resolved backing primitive type.
+function scan_enum_backing(decls: span[ast.Decl], enum_name: str) -> Option[types.Type]:
+    var i: ptr_uint = 0
+    while i < decls.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(decls.data + i)
+        match d:
+            ast.Decl.decl_enum as en:
+                if en.name.equal(enum_name):
+                    return Option[types.Type].some(value = enum_backing_type(en.backing_type))
+            ast.Decl.decl_flags as fl:
+                if fl.name.equal(enum_name):
+                    return Option[types.Type].some(value = enum_backing_type(fl.backing_type))
+            _:
+                pass
+        i += 1
+    return Option[types.Type].none
+
+
+## Resolve an enum/flags backing-type annotation to a primitive type; the
+## default backing is int when the annotation is absent (mirrors lower_enum_decl).
+function enum_backing_type(annotation: ptr[ast.TypeRef]?) -> types.Type:
+    let a = annotation else:
+        return types.primitive("int")
+    let resolved = resolve_scalar_type_ref(a)
+    if types.is_error(resolved):
+        return types.primitive("int")
+    return resolved
 
 
 function is_int_type(t: types.Type) -> bool:
