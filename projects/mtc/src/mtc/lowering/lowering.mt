@@ -2915,7 +2915,22 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 if id.name.equal("ptr_of") or id.name.equal("ref_of") or id.name.equal("const_ptr_of"):
                     if args.len == 1:
                         let inner = lower_expr(ctx, read(args.data + 0).arg_value)
-                        return alloc_expr(ir.Expr.expr_address_of(expression = inner, ty = expr_type(ctx, call_ep)))
+                        let result_ty = expr_type(ctx, call_ep)
+                        # When the argument is already a pointer/ref value (e.g. a
+                        # `ref[T]` parameter, which is a pointer in C), taking its
+                        # address again would produce `T**`.  Use the pointer value
+                        # directly; if it is a `*p` deref, use the underlying `p`.
+                        # Mirrors Ruby's ref_of/ptr_of/const_ptr_of handling.
+                        match read(inner):
+                            ir.Expr.expr_name as nm:
+                                if nm.pointer:
+                                    return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = result_ty, pointer = true))
+                            ir.Expr.expr_unary as un:
+                                if un.operator.equal("*"):
+                                    return un.operand
+                            _:
+                                pass
+                        return alloc_expr(ir.Expr.expr_address_of(expression = inner, ty = result_ty))
                 # `read(p)` as an rvalue → pointer dereference `*p`.  The result
                 # type is the pointer's element type (more reliable than the
                 # analyzer's generically-recorded type inside monomorphized
