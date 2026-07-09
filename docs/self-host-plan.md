@@ -5,6 +5,9 @@ The self-host (`projects/mtc`) compiles *itself* into byte-identical C across st
 is not yet at 100% feature parity with the Ruby compiler for arbitrary programs. This
 document tracks the remaining work to close that gap.
 
+Phases A (`atomic[T]`) and B (`emit`) are **DONE**, along with a batch of arithmetic/cast
+emit-c parity work and a latent codegen-bug fix uncovered along the way (see §1.1 / §3).
+
 Last updated: 2026-07-09
 
 ---
@@ -14,31 +17,48 @@ Last updated: 2026-07-09
 ### 1.1 What works (verified)
 
 - **Self-compile fixpoint.** stage-1 (Ruby-built self-host) → stage-2 (self-built) →
-  stage-3 (stage-2-built) all emit **byte-identical C** (52,275 lines, 0 diffs) for the
+  stage-3 (stage-2-built) all emit **byte-identical C** (~52,946 lines, 0 diffs) for the
   self-host source. Each stage runs `lex` / `parse` / `check` correctly, and per-pipeline
   differentials (`lex`, `parse`, `check`, `lower`, `emit-c`) are byte-identical stage-1 vs
   stage-2 on every self-host source file.
 - **Ordinary programs** using Vec / Map / String / generics / match / defer / tuples /
   detach compile, build, and run correctly (verified build-and-run).
-- **All 181 self-host in-language tests pass** (`bin/mtc test projects/mtc`).
+- **All 391 self-host in-language tests pass** (`bin/mtc test projects/mtc`).
+- **`atomic[T]`** (Phase A) — `_Atomic T` + `__atomic_*` builtins; byte-identical to Ruby.
+- **`emit`** (Phase B) — `emit function/struct/const` inside `const function` / inline
+  bodies spliced into the module as ordinary top-level declarations; byte-identical to Ruby
+  for `emit function` (and handles `emit struct`/`const`, which Ruby currently crashes on).
+- **Arithmetic / cast emit-c parity** (general programs, byte-identical to Ruby):
+  - no-op cast elision + `(T) x` spacing + `emit_cast_operand` parenthesization;
+  - unary / conditional operand-wrapping (`wrap_expression` set + `emit_conditional_condition`);
+  - binary operand widening (`promoted_binary_operand_type` / `common_*_type` — mixed-width
+    integer + int/float balancing, result-type widening for arithmetic);
+  - enum/flags backing-cast in comparisons (`enum_backing_or_self` unwrap, local + imported).
+- **Latent codegen bug fixed:** the checked-array/span-index type collectors did not recurse
+  into `expr_cast` (and `reinterpret` / nullable-index / array-/variant-literal). A checked
+  index wrapped in a cast went uncollected → its accessor helper was never emitted → an
+  undeclared call that a lenient `cc` miscompiled. Completed the traversal to mirror Ruby.
+  (Exposed by enum backing-cast wrapping span-indexed operands.)
 
 ### 1.2 What does NOT work yet (the parity gap)
 
-The self-host is complete *for the subset its own source uses*. General-program parity has
-holes — reproduced 2026-07-09 by comparing self-host emit-c against Ruby emit-c:
+The self-host is complete *for the subset its own source uses*, plus the features above.
+Remaining general-program parity holes (from self-host vs Ruby emit-c differentials):
 
 | Feature | Self-host symptom | Ruby behaviour (target) |
 |---------|-------------------|-------------------------|
-| `atomic[T]` | emit-c stub: emits `atomic_int` (undefined) + undeclared `<mod>_atomic_store/add/load` calls + `void`-typed result | `_Atomic int32_t` + `__atomic_store_n` / `__atomic_fetch_add` / `__atomic_load_n` |
+| ~~`atomic[T]`~~ | **DONE** (Phase A) | — |
+| ~~`emit`~~ | **DONE** (Phase B) | — |
 | `async` / `Task[T]` | lowering aborts: `could not find generic function decl for Task`; analyzer reports `unknown field Task.frame`, `unknown method Task.ready/take_result/release` | full Task runtime lowered |
-| `emit` (compile-time codegen) | lowering aborts: `unsupported statement` | emits generated declarations |
 | `events` (general programs) | emit-c returns 0 but produced C does not compile (`expected expression before <event>`) | valid subscription/emit C |
 | `parallel for` (general programs) | emit-c returns 0 but produced C does not compile (`xs undeclared` — capture bug) | valid libuv chunk dispatch |
 | `dyn[I]` (general programs) | emit-c returns 0 but produced C does not compile (`mt_vtable_..._Shape undeclared` — vtable global not emitted for single-file programs) | vtable struct + global emitted |
+| header / include-set preamble | self-host emits a different `#include` / `_GNU_SOURCE` preamble and blank-line layout than Ruby (Phase H) | matching preamble |
 | `examples/language_baseline.mt` | `check` fails and `emit-c` aborts (via async runtime) | Ruby checks clean (warnings only) |
 
-The self-host self-compiles despite these because its **own source avoids** them (no
-`atomic`, no `emit`, careful async usage confined to std it does not re-lower for itself).
+The self-host self-compiles despite these because its **own source avoids** them (careful
+async usage confined to std it does not re-lower for itself; no general-program `dyn`,
+`events`, or `parallel for` in a struct-less single file).
 
 ---
 
@@ -115,20 +135,21 @@ feature, compare self-host emit-c to Ruby emit-c, fix the root in `lowering.mt` 
 `c_backend.mt` / `analyzer.mt` mirroring Ruby, and gate on `bin/mtc test projects/mtc`
 staying green plus the self-compile fixpoint holding.
 
-### Phase A — `atomic[T]` (smallest, self-contained)
-- **Analyzer**: model `atomic[T]` methods `load`/`store`/`add`/`sub`/`exchange` with correct
-  return types (currently `store`/`add` resolve to `void`).
-- **Lowering**: emit `__atomic_load_n`/`__atomic_store_n`/`__atomic_fetch_add`/
-  `__atomic_fetch_sub`/`__atomic_exchange_n` with the seq-cst memory-order constant (Ruby
-  uses `5`).
-- **C backend**: render the `atomic[T]` type as `_Atomic <c_type(T)>` (not `atomic_int`).
-- **Gate**: `atomic_demo`-style program builds and runs; diff self-host vs Ruby emit-c.
+### Phase A — `atomic[T]` (smallest, self-contained) — **DONE**
+- **Analyzer**: `atomic_method_sig` models `load`/`store`/`add`/`sub`/`exchange` return types.
+- **Lowering**: `lower_atomic_method` emits `__atomic_load_n`/`__atomic_store_n`/
+  `__atomic_fetch_add`/`__atomic_fetch_sub`/`__atomic_exchange_n` with seq-cst order `5`.
+- **C backend**: `generic_c_type` renders `atomic[T]` as `_Atomic <c_type(T)>`.
+- **Gate met**: `atomic_demo` builds+runs; emit-c byte-identical to Ruby.
 
-### Phase B — `emit` (compile-time code generation)
-- **Lowering**: implement the `emit` statement inside `const function` / `inline` bodies —
-  collect emitted declarations and splice them into the program (mirror Ruby's
-  compile-time codegen collection). Currently hits `unsupported statement`.
-- **Gate**: `emit`-based program (`emit function ...`) builds and runs; diff vs Ruby.
+### Phase B — `emit` (compile-time code generation) — **DONE**
+- **Analyzer**: `expand_emit_declarations` walks top-level `const function` bodies (and
+  inline for/while/if/match blocks), collects each `emit` statement's declaration, and
+  splices them into `SourceFile.declarations` so they are declared, checked, and lowered
+  like ordinary top-level declarations (mirrors Ruby's `collect_emit_declarations`).
+- **Lowering**: the `emit` statement lowers to nothing (the emitted decl is lowered via the
+  splice). Was: `fatal("unsupported statement")`.
+- **Gate met**: `emit function` program builds+runs; emit-c byte-identical to Ruby.
 
 ### Phase C — single-file general-program codegen completeness
 These already work inside the self-host's own build but mis-emit for standalone programs
@@ -169,8 +190,12 @@ rest of the module.
   headline 100%-parity milestone.
 
 ### Phase H — build-mode / runtime parity (final polish)
-- Cache, debug-guards, line directives, include-set parity between self-host `build` and
-  Ruby `build`.
+- **Header / include-set preamble parity** (in progress): the self-host emits a different
+  C preamble than Ruby — the `_GNU_SOURCE` / `_POSIX_C_SOURCE` feature-test defines, the
+  `#include` set (order + which headers), and blank-line layout differ. This is the largest
+  remaining source of whole-program self-host-vs-Ruby emit-c diff noise. Gate: header block
+  byte-identical to Ruby for representative programs.
+- Cache, debug-guards, line directives parity between self-host `build` and Ruby `build`.
 - Debug-guard false-positive on large byte-scan loops.
 - `as cstr` for non-literal values; proc selective retain / scope-exit release.
 - Byte-identical-C hardening (e.g. deferred `_static` nominal naming).
