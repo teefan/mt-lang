@@ -7198,6 +7198,16 @@ function variant_arm_type_name(outer_c: str, arm_name: str) -> str:
 ## specialized here against the scrutinee's concrete type args so `s.value` /
 ## `f.error` resolve to the real type instead of an undeclared `_phantom` C type.
 function register_arm_payload_fields(ctx: ref[LowerCtx], payload_c_name: str, info: VariantInfo, arm_name: str, scrutinee_ty: types.Type) -> void:
+    # An entry may already be registered by `install_imported_variants`, keyed by
+    # the module-qualified payload C name with field types resolved in the OWNER
+    # module's context.  That entry is authoritative and must not be overwritten
+    # here: `info` comes from `ctx.variants[base_name]`, which for a bare name that
+    # collides across modules (e.g. both `ir.Stmt` and `ast.Stmt` are "Stmt") may
+    # be the WRONG module's variant.  Only (re)register when absent, or when this
+    # is a prelude variant (whose `_phantom` placeholder must be specialized
+    # against the concrete scrutinee type args at each match site).
+    if ctx.arm_payload_fields.contains(payload_c_name) and not is_prelude_variant_name(payload_c_name):
+        return
     var i: ptr_uint = 0
     while i < info.arms.len:
         var arm_info: VariantArmInfo
