@@ -3046,6 +3046,16 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                             pass
                                 Option.none:
                                     pass
+                            # Cross-module foreign function call (`libc.getenv_wrapper(...)`):
+                            # a foreign function lowers to a direct call on its
+                            # mapped C function (e.g. `getenv`), not a Milk Tea
+                            # module-qualified symbol.  Resolve it against the
+                            # target module's declarations before the plain path.
+                            match imported_foreign_call(ctx, target_module, ma.member_name):
+                                Option.some as ff_info:
+                                    return lower_foreign_call(ctx, ff_info.value, args, call_ep)
+                                Option.none:
+                                    pass
                             let c_name = naming.qualified_c_name(target_module, ma.member_name)
                             var ret_ty = cross_module_return_type(ctx, c_name, call_ep)
                             var ret_type_ptr = types.alloc_type(ret_ty)
@@ -5565,6 +5575,39 @@ function collect_foreign_functions(ctx: ref[LowerCtx], decls: span[ast.Decl]) ->
             _:
                 pass
         i += 1
+
+
+## Resolve a cross-module foreign function call: find a `foreign function` decl
+## named `name` in the target module and build its ForeignInfo (mapped C name +
+## return type + params) resolved in the owner module's context.  Returns none
+## when the target has no such foreign function.
+function imported_foreign_call(ctx: ref[LowerCtx], target_module: str, name: str) -> Option[ForeignInfo]:
+    let owner_a = find_imported_analysis(ctx, target_module) else:
+        return Option[ForeignInfo].none
+    var saved_module = ctx.module_name
+    var saved_analysis = ctx.analysis
+    ctx.module_name = target_module
+    ctx.analysis = owner_a
+    var result = Option[ForeignInfo].none
+    var di: ptr_uint = 0
+    while di < owner_a.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(owner_a.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_foreign_function as ff:
+                if ff.name.equal(name):
+                    result = Option[ForeignInfo].some(value = ForeignInfo(
+                        c_name = resolve_foreign_c_name(ctx, ff.mapping),
+                        return_ty = qualify_type(ctx, resolve_type_ref(ctx, ff.return_type)),
+                        params = ff.foreign_params,
+                    ))
+            _:
+                pass
+        di += 1
+    ctx.module_name = saved_module
+    ctx.analysis = saved_analysis
+    return result
 
 
 ## Pre-scan function declarations to record each one's resolved return type in
