@@ -2544,6 +2544,26 @@ function checked_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], 
                 checked_from_expr(member.receiver, seen, collected)
             ir.Expr.expr_address_of as addr:
                 checked_from_expr(addr.expression, seen, collected)
+            ir.Expr.expr_cast as cast:
+                checked_from_expr(cast.expression, seen, collected)
+            ir.Expr.expr_reinterpret as rin:
+                checked_from_expr(rin.expression, seen, collected)
+            ir.Expr.expr_nullable_index as ni:
+                checked_from_expr(ni.receiver, seen, collected)
+                checked_from_expr(ni.index, seen, collected)
+            ir.Expr.expr_nullable_span_index as ns:
+                checked_from_expr(ns.receiver, seen, collected)
+                checked_from_expr(ns.index, seen, collected)
+            ir.Expr.expr_array_literal as arr:
+                var ai: ptr_uint = 0
+                while ai < arr.elements.len:
+                    checked_from_expr(arr.elements.data + ai, seen, collected)
+                    ai += 1
+            ir.Expr.expr_variant_literal as vl:
+                var vi: ptr_uint = 0
+                while vi < vl.fields.len:
+                    checked_from_expr(read(vl.fields.data + vi).value, seen, collected)
+                    vi += 1
             ir.Expr.expr_aggregate_literal as agg:
                 var i: ptr_uint = 0
                 while i < agg.fields.len:
@@ -2670,6 +2690,26 @@ function span_index_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]
                 span_index_from_expr(member.receiver, seen, collected)
             ir.Expr.expr_address_of as addr:
                 span_index_from_expr(addr.expression, seen, collected)
+            ir.Expr.expr_cast as cast:
+                span_index_from_expr(cast.expression, seen, collected)
+            ir.Expr.expr_reinterpret as rin:
+                span_index_from_expr(rin.expression, seen, collected)
+            ir.Expr.expr_nullable_index as ni:
+                span_index_from_expr(ni.receiver, seen, collected)
+                span_index_from_expr(ni.index, seen, collected)
+            ir.Expr.expr_nullable_span_index as ns:
+                span_index_from_expr(ns.receiver, seen, collected)
+                span_index_from_expr(ns.index, seen, collected)
+            ir.Expr.expr_array_literal as arr:
+                var ai: ptr_uint = 0
+                while ai < arr.elements.len:
+                    span_index_from_expr(arr.elements.data + ai, seen, collected)
+                    ai += 1
+            ir.Expr.expr_variant_literal as vl:
+                var vi: ptr_uint = 0
+                while vi < vl.fields.len:
+                    span_index_from_expr(read(vl.fields.data + vi).value, seen, collected)
+                    vi += 1
             ir.Expr.expr_aggregate_literal as agg:
                 var i: ptr_uint = 0
                 while i < agg.fields.len:
