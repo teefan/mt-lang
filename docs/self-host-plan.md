@@ -190,15 +190,24 @@ rest of the module.
   headline 100%-parity milestone.
 
 ### Phase H — build-mode / runtime parity (final polish)
-- **Header / include-set preamble parity** (in progress): the self-host emits a different
-  C preamble than Ruby — the `_GNU_SOURCE` / `_POSIX_C_SOURCE` feature-test defines, the
-  `#include` set (order + which headers), and blank-line layout differ. This is the largest
-  remaining source of whole-program self-host-vs-Ruby emit-c diff noise. Gate: header block
-  byte-identical to Ruby for representative programs.
-- Cache, debug-guards, line directives parity between self-host `build` and Ruby `build`.
-- Debug-guard false-positive on large byte-scan loops.
+
+**Done:**
+- **Header / include-set preamble parity**: `_GNU_SOURCE` / `_POSIX_C_SOURCE` block,
+  include-deduplication, `<stddef.h>` injection (offsetof), span-forward-decl blank-guard.
+- **C naming hardening** (byte-identical-C):
+  - `sanitize_identifier` consecutive-underscore collapse removed → `__mt_return_value_1`
+    matches Ruby (was: `_mt_return_value_1`).
+  - `c_declaration` pointer spacing → `T *name` matches Ruby (was: `T*name`).
+  - Prelude variant C-name prefix: `std_option_Option_...` / `std_result_Result_...`
+    matches Ruby (was: bare `Option_...` / `Result_...`).
+
+**Remaining:**
+- Cache, debug-guards, line-directives parity (Ruby-only features — no self-host equivalent).
+- Format-helper emission (Ruby emits `mt_format_*` helpers; the self-host skips them —
+  93k-line diff).
+- `<stddef.h>` on full self-host (only offsetof in unreachable generics — correct omission).
 - `as cstr` for non-literal values; proc selective retain / scope-exit release.
-- Byte-identical-C hardening (e.g. deferred `_static` nominal naming).
+- String-literal-index stabilisation (structural fixpoint breaks on new-function additions).
 
 ---
 
