@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. 20 C errors remain (measured with `-I std/c`).**
-Last updated: 2026-07-09 (P8, Seam A + B §3.1 + C + §3.4 landed)
+Status: **Phase 8 — self-compile C-error elimination. 11 C errors remain (measured with `-I std/c`).**
+Last updated: 2026-07-09 (P8, Seam A + B §3.1 + C + §3.4 + E landed)
 
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -100,16 +100,17 @@ tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --ro
 cc -std=c11 -D_GNU_SOURCE -Wno-implicit-function-declaration -I std/c -c tmp/self.c -o /dev/null 2>tmp/errs.txt
 ```
 
-**Status**: 20 `cc` errors, 172/172 tests pass. (Was 83 at the start of this session; Seams A, B §3.1,
-C, and §3.4 landed — see the progress checklist in §5 for the authoritative, up-to-date breakdown.)
+**Status**: 11 `cc` errors, 172/172 tests pass. (Was 83 at the start of this session; Seams A, B §3.1,
+C, §3.4, and E landed — see the progress checklist in §5 for the authoritative, up-to-date breakdown.)
 
-### Error breakdown (20 remaining, grouped by root cause)
+### Error breakdown (11 remaining, grouped by root cause)
 
 | Root cause | Count | Notes |
 |-----------|-------|-------|
 | `return match` hoist (D1) | 7 | LIVE `return match` in token.mt (enum), keywords.mt (str), lexer.mt x2 (tuple). Needs real hoist + tuple-scrutinee support + latent `lower_variant_match_expr` crash fix. Deferred to a dedicated session — see §5 D1 entry. |
 | `void*` return-from-int (std_mem_heap) | 4 | External libc functions (`malloc`/`aligned_alloc`/`calloc`/`realloc`) typed as `int`. Phase 8b (external ABI declarations), not self-host source. |
-| Scattered singletons (Seam E) | ~9 | Vec diagnostic pointer mismatches (`Vec_*ParseDiagnostic **` vs `*`), `redefinition of 't'`, `conflicting types for 'value'`, `destructure_bindings has incomplete type`, `const char* from int`, `invalid initializer`. Best next target (low risk). |
+
+All scattered singletons (Seam E) are resolved.
 
 ### Historical breakdown (83, grouped by root cause) — mostly RESOLVED this session
 
@@ -381,8 +382,29 @@ Established this session; reuse these seams rather than re-deriving them:
         `install_imported_variants` had already registered (field types resolved in the owner context).
         Fix: `register_arm_payload_fields` skips re-registration when a non-prelude entry already exists,
         so the `install_imported_variants` entry wins; prelude variants still re-register to specialize
-        their `_phantom` placeholder. Corrected both `loc.destructure_bindings` and `loc.value` typing,
-        cascading −24. 172/172 tests pass.
+         their `_phantom` placeholder. Corrected both `loc.destructure_bindings` and `loc.value` typing,
+         cascading −24. 172/172 tests pass.
+  - [x] **Seam E — scattered singletons (20 → 11, −9).** Seven independent, mostly-mechanical fixes,
+        each mirroring Ruby semantics; all gated on 172/172 tests:
+        (a) **topo-order generic-variant by-value deps** (20→19): a field embedding a generic-variant
+        instance by value (`stmt_local.destructure_bindings: Option[span[str]]`) produced no topo edge
+        ("incomplete type"); `by_value_dep_key` now returns the instance name for non-pointer generics.
+        (b) **`ptr_of`/`ref_of` on pointer values** (19→17): applying them to an already-pointer value
+        (a `ref[T]` param) emitted `T**`; now uses the pointer directly / the `*p` operand, per Ruby.
+        (c) **scope unsafe/block locals** (17→16): sibling `unsafe:` blocks declaring the same local
+        collided; wrap each body in `ir.Stmt.stmt_block` for a distinct C scope.
+        (d) **skip `_` discards in destructuring** (16→15): `let (_, x, _) = ...` emitted a local per
+        discard ("conflicting types for value"); skip `_` bindings, per Ruby's `next if name == "_"`.
+        (e) **auto-deref pointer receiver in `resolve_method_info`** (15→14): `this.m()` in an editable
+        method resolved against builtin "ptr", mis-naming `<module>_ptr_<method>`; now derefs to the
+        pointee type first.
+        (f) **cross-module foreign calls** (14→13): `libc.get_environment_variable(...)` emitted an
+        undefined Milk Tea symbol instead of the mapped C function; added `imported_foreign_call` to
+        lower it to the mapped C name (`getenv`).
+        (g) **integer result type for int-literal arithmetic** (13→11): `len + len + 2` mis-typed the
+        result (struct) because the `+ 2` mixed `ptr_uint` with an `int` literal; adopt the non-literal
+        operand's integer type (scoped narrowly to `int`-literal operands to avoid over-broad
+        reclassification — a broader first attempt regressed to 758 and was reverted).
   - [ ] **D1 — match-expression `return match` hoist (7 errors, DEFERRED — needs a dedicated session).**
         RE-CHARACTERIZED: this is NOT a dead stub. The 7 `match_expr` errors come from LIVE `return match`
         code: `token.mt` `kind_name` (enum scrutinee), `keywords.mt` `keyword_kind` (**str** scrutinee),
