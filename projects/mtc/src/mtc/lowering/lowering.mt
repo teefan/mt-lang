@@ -3088,7 +3088,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                             # linkage name and return type are correct.
                             match imported_extern_call(ctx, target_module, ma.member_name):
                                 Option.some as ext_info:
-                                    return lower_plain_call(ctx, ext_info.value.c_name, args, call_ep, types.alloc_type(ext_info.value.return_ty))
+                                    return lower_extern_call(ctx, ext_info.value, args, call_ep)
                                 Option.none:
                                     pass
                             let c_name = naming.qualified_c_name(target_module, ma.member_name)
@@ -5716,19 +5716,14 @@ function imported_extern_call(ctx: ref[LowerCtx], target_module: str, name: str)
         match d:
             ast.Decl.decl_extern_function as ef:
                 if ef.name.equal(name):
-                    # Only intercept simple externals: those whose params are all
-                    # plain (by-value).  Externals with `out`/`inout`/`consuming`
-                    # params need pointer-taking arg handling not done here; leave
-                    # them to the existing path.
-                    if extern_all_plain_params(ef.extern_params):
-                        var ret = types.primitive("void")
-                        if ef.return_type != null:
-                            ret = qualify_type(ctx, resolve_return_type(ctx, Option[analyzer.FnSig].none, ef.return_type))
-                        result = Option[ForeignInfo].some(value = ForeignInfo(
-                            c_name = extern_c_name(ef.name, ef.mapping),
-                            return_ty = ret,
-                            params = span[ast.ForeignParam](),
-                        ))
+                    var ret = types.primitive("void")
+                    if ef.return_type != null:
+                        ret = qualify_type(ctx, resolve_return_type(ctx, Option[analyzer.FnSig].none, ef.return_type))
+                    result = Option[ForeignInfo].some(value = ForeignInfo(
+                        c_name = extern_c_name(ef.name, ef.mapping),
+                        return_ty = ret,
+                        params = ef.extern_params,
+                    ))
             _:
                 pass
         di += 1
@@ -5737,16 +5732,32 @@ function imported_extern_call(ctx: ref[LowerCtx], target_module: str, name: str)
     return result
 
 
-## True when every external parameter is plain (by-value) — i.e. none use
-## `out`/`in`/`inout`/`consuming`, which would require pointer-taking arg handling.
-function extern_all_plain_params(params: span[ast.ForeignParam]) -> bool:
+## Lower a cross-module external function call.  External functions use their
+## bare C name; `out`/`inout` parameters are passed by address (`&arg`) so the C
+## function can write back through the pointer, mirroring Ruby's
+## lower_foreign_pointer_argument_value.
+function lower_extern_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    var ir_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
-    while i < params.len:
+    while i < args.len:
+        var arg: ast.Argument
         unsafe:
-            if read(params.data + i).param_mode != ast.ForeignParamMode.fmode_plain:
-                return false
+            arg = read(args.data + i)
+        var lowered = lower_expr(ctx, arg.arg_value)
+        if i < info.params.len:
+            var param: ast.ForeignParam
+            unsafe:
+                param = read(info.params.data + i)
+            if param.param_mode == ast.ForeignParamMode.fmode_out or param.param_mode == ast.ForeignParamMode.fmode_inout:
+                let arg_ty = ir_expr_type(lowered)
+                lowered = alloc_expr(ir.Expr.expr_address_of(
+                    expression = lowered,
+                    ty = types.Type.ty_generic(name = "ptr", args = sp_type(arg_ty)),
+                ))
+        unsafe:
+            ir_args.push(read(lowered))
         i += 1
-    return true
+    return alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
 
 
 ## Pre-scan function declarations to record each one's resolved return type in
