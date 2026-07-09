@@ -1121,6 +1121,23 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let value = r.value else:
                     output.push(ir.Stmt.stmt_return(value = null, line = r.line, source_path = ""))
                     return
+                # `return match ...`: a match expression has no direct C form, so
+                # hoist it into a synthetic temp local (a switch / if-chain that
+                # assigns each arm's value), then return the temp.
+                match read(value):
+                    ast.Expr.expr_match as me:
+                        let ret_ty = current_return_type(ctx, value)
+                        let temp = fresh_c_temp_name(ctx, "match_ret")
+                        let tc = c_local_name(temp)
+                        let zero_init = alloc_expr(ir.Expr.expr_zero_init(ty = ret_ty))
+                        output.push(ir.Stmt.stmt_local(name = temp, linkage_name = tc, ty = ret_ty, value = zero_init, line = 0, source_path = ""))
+                        let result_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = ret_ty, pointer = false))
+                        lower_match_expr_to_ref(ctx, output, me.scrutinee, me.arms, result_ref)
+                        let ret_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = ret_ty, pointer = false))
+                        output.push(ir.Stmt.stmt_return(value = ret_ref, line = r.line, source_path = ""))
+                        return
+                    _:
+                        pass
                 let lowered = lower_expr(ctx, value)
                 output.push(ir.Stmt.stmt_return(value = lowered, line = r.line, source_path = ""))
             ast.Stmt.stmt_local as loc:
@@ -6897,6 +6914,29 @@ function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
 ## the local, keeping the result in a `stmt_local` with zero-init followed by the
 ## switch.  Supports enum and variant scrutinees (the same subset handled by
 ## `lower_match`).  Integer and string scrutinees are deferred.
+## The result type of a `return match ...` expression: the analyzer's recorded
+## type for the match, or — when that is unknown — the lowered type of the first
+## arm whose value type is known.  Used to type the hoisted result temp.
+function current_return_type(ctx: ref[LowerCtx], match_expr: ptr[ast.Expr]) -> types.Type:
+    var ty = qualify_type(ctx, expr_type(ctx, match_expr))
+    if not types.is_error(ty) and not types.type_to_string(ty).equal("void"):
+        return ty
+    unsafe:
+        match read(match_expr):
+            ast.Expr.expr_match as me:
+                var i: ptr_uint = 0
+                while i < me.arms.len:
+                    var arm: ast.MatchExprArm
+                    arm = read(me.arms.data + i)
+                    let vt = ir_expr_type(lower_expr(ctx, arm.value))
+                    if not types.is_error(vt) and not types.type_to_string(vt).equal("void"):
+                        return vt
+                    i += 1
+            _:
+                pass
+    return types.primitive("int")
+
+
 function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, declared_type: ptr[ast.TypeRef]?, scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm]) -> void:
     let c_name = c_local_name(name)
     var ty = types.Type.ty_error
@@ -6910,25 +6950,38 @@ function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
     let zero_init = alloc_expr(ir.Expr.expr_zero_init(ty = ty))
     output.push(ir.Stmt.stmt_local(name = name, linkage_name = c_name, ty = ty, value = zero_init, line = 0, source_path = ""))
 
-    let scrutinee_ty = expr_type(ctx, scrutinee)
+    let result_ref = alloc_expr(ir.Expr.expr_name(name = c_name, ty = ty, pointer = false))
+    lower_match_expr_to_ref(ctx, output, scrutinee, arms, result_ref)
+
+    ctx.locals.push(LocalBinding(name = name, c_name = c_name, ty = ty, pointer = false))
+
+
+## Lower a match expression so each arm assigns its value to `result_ref`, using
+## the strategy that fits the scrutinee type (str if-chain / variant switch /
+## enum switch / tuple if-chain).  The scrutinee is hoisted into a temp when it is
+## not already a name so it is evaluated once.  Shared by `let x = match ...`
+## (lower_match_expression_local) and the `return match ...` hoist.
+function lower_match_expr_to_ref(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+    var scrutinee_ty = expr_type(ctx, scrutinee)
     var scrutinee_expr = lower_expr(ctx, scrutinee)
+    # Prefer the lowered scrutinee's type (more accurate for prelude/field types).
+    let lowered_sty = ir_expr_type(scrutinee_expr)
+    if not types.is_error(lowered_sty) and not types.type_to_string(lowered_sty).equal("void"):
+        scrutinee_ty = lowered_sty
     if not ir_expr_is_name(scrutinee_expr):
         let temp = fresh_c_temp_name(ctx, "match_scrut")
         output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrutinee_ty, value = scrutinee_expr, line = 0, source_path = ""))
         scrutinee_expr = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrutinee_ty, pointer = false))
 
-    let result_ref = alloc_expr(ir.Expr.expr_name(name = c_name, ty = ty, pointer = false))
-
     let type_name = named_type_name(scrutinee_ty)
     if is_str_scrutinee(scrutinee_ty):
         lower_str_match_expr(ctx, output, scrutinee_expr, arms, result_ref)
+    else if is_tuple_type(scrutinee_ty):
+        lower_tuple_match_expr(ctx, output, scrutinee_expr, scrutinee_ty, arms, result_ref)
     else if type_name.is_some() and ctx.variants.contains(type_name.unwrap()):
         lower_variant_match_expr(ctx, output, scrutinee_expr, type_name.unwrap(), scrutinee_ty, arms, result_ref)
     else:
         lower_enum_match_expr(ctx, output, scrutinee_expr, type_name, arms, result_ref)
-
-    ctx.locals.push(LocalBinding(name = name, c_name = c_name, ty = ty, pointer = false))
-
 
 
 ## Lower a match expression over a `str` scrutinee: emit an if / else-if chain
@@ -6998,6 +7051,82 @@ function lower_str_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
             unsafe:
                 output.push(read(s_ptr))
             j += 1
+
+
+## Lower a match expression over a tuple scrutinee: for each arm, compare the
+## tuple element-wise (`scrut._0 == e0 && scrut._1 == e1 && ...`) and assign the
+## arm value on match.  Independent if-thens suffice because tuple-literal
+## patterns are mutually exclusive; the wildcard arm assigns unconditionally
+## first so a later matching arm overrides it.
+function lower_tuple_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+    var wildcard_val: ptr[ir.Expr]? = null
+    var ai: ptr_uint = 0
+    while ai < arms.len:
+        var arm: ast.MatchExprArm
+        unsafe:
+            arm = read(arms.data + ai)
+        if arm.pattern == null:
+            wildcard_val = lower_expr(ctx, arm.value)
+        ai += 1
+
+    if wildcard_val != null:
+        output.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = wildcard_val))
+
+    ai = 0
+    while ai < arms.len:
+        var arm: ast.MatchExprArm
+        unsafe:
+            arm = read(arms.data + ai)
+        let pattern = arm.pattern
+        if pattern == null:
+            ai += 1
+            continue
+        let cond = tuple_pattern_condition(ctx, scrutinee_expr, scrutinee_ty, unsafe: read(pattern))
+        var assign = vec.Vec[ir.Stmt].create()
+        assign.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = lower_expr(ctx, arm.value)))
+        output.push(ir.Stmt.stmt_if(condition = cond, then_body = assign.as_span(), else_body = span[ir.Stmt]()))
+        ai += 1
+
+
+## Build the boolean condition for a tuple-literal pattern: the conjunction of
+## per-element equality tests `scrut._i == elem_i`.  `_` elements are skipped
+## (they match anything).  Returns a literal `true` when the pattern has no
+## constraining elements.
+function tuple_pattern_condition(ctx: ref[LowerCtx], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, pattern: ast.Expr) -> ptr[ir.Expr]:
+    var cond: ptr[ir.Expr]? = null
+    match pattern:
+        ast.Expr.expr_expression_list as lst:
+            var i: ptr_uint = 0
+            while i < lst.elements.len:
+                var elem: ast.Expr
+                unsafe:
+                    elem = read(lst.elements.data + i)
+                if not expr_is_wildcard(elem):
+                    let elem_ty = tuple_element_type(scrutinee_ty, i)
+                    let field = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = tuple_field_name(i), ty = elem_ty))
+                    let elem_expr = lower_expr(ctx, unsafe: ptr[ast.Expr]<-(lst.elements.data + i))
+                    let cmp = alloc_expr(ir.Expr.expr_binary(operator = "==", left = field, right = elem_expr, ty = types.primitive("bool")))
+                    let existing = cond
+                    if existing == null:
+                        cond = cmp
+                    else:
+                        cond = alloc_expr(ir.Expr.expr_binary(operator = "and", left = existing, right = cmp, ty = types.primitive("bool")))
+                i += 1
+        _:
+            pass
+    let final_cond = cond else:
+        return alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool")))
+    return final_cond
+
+
+## True when an expression is the `_` wildcard identifier.
+function expr_is_wildcard(e: ast.Expr) -> bool:
+    match e:
+        ast.Expr.expr_identifier as id:
+            return id.name.equal("_")
+        _:
+            return false
+
 
 ## Lower a match expression over an enum scrutinee: emit a switch whose cases
 ## assign the result and break, plus a default case for the wildcard arm.
