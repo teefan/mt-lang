@@ -3064,6 +3064,16 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                     return lower_foreign_call(ctx, ff_info.value, args, call_ep)
                                 Option.none:
                                     pass
+                            # Cross-module external function call (`libc.malloc(...)`):
+                            # an external function uses its bare C name (or `= target`
+                            # mapping), not a module-qualified symbol.  Resolve it
+                            # against the target module before the plain path so its
+                            # linkage name and return type are correct.
+                            match imported_extern_call(ctx, target_module, ma.member_name):
+                                Option.some as ext_info:
+                                    return lower_plain_call(ctx, ext_info.value.c_name, args, call_ep, types.alloc_type(ext_info.value.return_ty))
+                                Option.none:
+                                    pass
                             let c_name = naming.qualified_c_name(target_module, ma.member_name)
                             var ret_ty = cross_module_return_type(ctx, c_name, call_ep)
                             var ret_type_ptr = types.alloc_type(ret_ty)
@@ -5616,6 +5626,60 @@ function imported_foreign_call(ctx: ref[LowerCtx], target_module: str, name: str
     ctx.module_name = saved_module
     ctx.analysis = saved_analysis
     return result
+
+
+## Resolve a cross-module external function call: find an `external function`
+## decl named `name` in the target module and return its bare C linkage name
+## (or `= target` mapping) plus resolved return type.  External functions carry
+## no module prefix, so a cross-module call must use this bare name instead of
+## `<module>_<name>`.  Returns none when the target has no such external function.
+function imported_extern_call(ctx: ref[LowerCtx], target_module: str, name: str) -> Option[ForeignInfo]:
+    let owner_a = find_imported_analysis(ctx, target_module) else:
+        return Option[ForeignInfo].none
+    var saved_module = ctx.module_name
+    var saved_analysis = ctx.analysis
+    ctx.module_name = target_module
+    ctx.analysis = owner_a
+    var result = Option[ForeignInfo].none
+    var di: ptr_uint = 0
+    while di < owner_a.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(owner_a.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_extern_function as ef:
+                if ef.name.equal(name):
+                    # Only intercept simple externals: those whose params are all
+                    # plain (by-value).  Externals with `out`/`inout`/`consuming`
+                    # params need pointer-taking arg handling not done here; leave
+                    # them to the existing path.
+                    if extern_all_plain_params(ef.extern_params):
+                        var ret = types.primitive("void")
+                        if ef.return_type != null:
+                            ret = qualify_type(ctx, resolve_return_type(ctx, Option[analyzer.FnSig].none, ef.return_type))
+                        result = Option[ForeignInfo].some(value = ForeignInfo(
+                            c_name = extern_c_name(ef.name, ef.mapping),
+                            return_ty = ret,
+                            params = span[ast.ForeignParam](),
+                        ))
+            _:
+                pass
+        di += 1
+    ctx.module_name = saved_module
+    ctx.analysis = saved_analysis
+    return result
+
+
+## True when every external parameter is plain (by-value) — i.e. none use
+## `out`/`in`/`inout`/`consuming`, which would require pointer-taking arg handling.
+function extern_all_plain_params(params: span[ast.ForeignParam]) -> bool:
+    var i: ptr_uint = 0
+    while i < params.len:
+        unsafe:
+            if read(params.data + i).param_mode != ast.ForeignParamMode.fmode_plain:
+                return false
+        i += 1
+    return true
 
 
 ## Pre-scan function declarations to record each one's resolved return type in
