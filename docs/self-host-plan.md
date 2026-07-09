@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 — self-compile C-error elimination. 7 C errors remain (all D1; measured with `-I std/c`).**
-Last updated: 2026-07-09 (P8, Seam A + B §3.1 + C + §3.4 + E + 8b void* landed)
+Status: **Phase 8 — self-compile C-error elimination COMPLETE (G1 reached): 0 `cc` errors with `-I std/c`.**
+Last updated: 2026-07-09 (P8 complete — Seams A/B§3.1/C/§3.4/E/8b-void*/D1 all landed; 172/172 tests)
 
 
 > **Measurement note:** always compile the self-compiled C with the external header
@@ -100,17 +100,19 @@ tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --ro
 cc -std=c11 -D_GNU_SOURCE -Wno-implicit-function-declaration -I std/c -c tmp/self.c -o /dev/null 2>tmp/errs.txt
 ```
 
-**Status**: 7 `cc` errors, 172/172 tests pass. (Was 83 at the start of this session; Seams A, B §3.1,
-C, §3.4, E, and the Phase-8b void* external-ABI cluster landed — see the progress checklist in §5 for
-the authoritative, up-to-date breakdown.  **All 7 remaining errors are D1** — see below.)
+**Status**: **0 `cc` errors, 172/172 tests pass (G1 reached).** Started at 83 this session; Seams A,
+B §3.1, C, §3.4, E, the Phase-8b void* external-ABI cluster, and D1 all landed — see the progress
+checklist in §5 for the authoritative breakdown.
 
-### Error breakdown (7 remaining — all D1)
+### Error breakdown — none remaining
 
-| Root cause | Count | Notes |
-|-----------|-------|-------|
-| `return match` hoist (D1) | 7 | LIVE `return match` in token.mt (enum), keywords.mt (str), lexer.mt x2 (tuple). Needs real hoist + tuple-scrutinee support + latent `lower_variant_match_expr` crash fix. Deferred to a dedicated session — see §5 D1 entry. |
+The self-host emit-c output compiles cleanly under
+`cc -std=c11 -D_GNU_SOURCE -I std/c -c` (still with `-Wno-implicit-function-declaration`; the `out`-param
+cross-module external declarations noted in §5 Phase-8b remain latent and will need proper `out`-param
+pointer handling at the Phase-8b LINK step).
 
-Everything else (scattered singletons and the `void*` libc external-ABI cluster) is resolved.
+Everything else (scattered singletons, the `void*` libc external-ABI cluster, and the D1 match-expr
+cluster) is resolved.
 
 ### Historical breakdown (83, grouped by root cause) — mostly RESOLVED this session
 
@@ -258,7 +260,7 @@ Established this session; reuse these seams rather than re-deriving them:
 - [x] Phase 6 — events, async, parallel, compile-time
 - [x] Phase 7 — cross-module type system hardening
 - [x] Phase 7.5 — generic **method** monomorphization + owner-context + naming + codegen fixes
-- [ ] Phase 8 — self-compile C-error elimination (in progress; **493 → 83** with `-I std/c`)
+- [x] Phase 8 — self-compile C-error elimination COMPLETE (**493 → 0** with `-I std/c`; G1 reached, 172/172 tests)
   - [x] Prelude Option/Result match-arm payload `_phantom` — same-LowerCtx cases
   - [x] External ABI type names (std.c.* bare C name) + gather external `include` directives (493 → 465)
   - [x] Method-call receiver types resolved in owner-module context — kills FnSig/FieldEntry
@@ -416,22 +418,29 @@ Established this session; reuse these seams rather than re-deriving them:
         — masked today by undefined-function tolerance — and was scoped back). NOTE: those `out`-param
         cross-module external calls remain latent errors that WILL surface at Phase 8b linking and need
         proper `out`-param pointer handling then. 172/172 tests pass.
-  - [ ] **D1 — match-expression `return match` hoist (7 errors, DEFERRED — needs a dedicated session).**
-        RE-CHARACTERIZED: this is NOT a dead stub. The 7 `match_expr` errors come from LIVE `return match`
-        code: `token.mt` `kind_name` (enum scrutinee), `keywords.mt` `keyword_kind` (**str** scrutinee),
-        `lexer.mt` `three_char_token`/`two_char_token` (**tuple** scrutinee). `lower_stmt`'s `stmt_ret`
-        lowers the value via `lower_expr`, which hits the `lower_expression_match` stub emitting an
-        undeclared `match_expr` placeholder. Attempted fix this session (a `return match` hoist reusing a
-        shared `lower_match_expression_temp`) but it triggers a pre-existing crash
-        `lowering: unsupported variant match expression pattern` in `lower_variant_match_expr`
-        (scrutinee_ty="Expr", module `mtc.parser.parser`) — even though parser.mt has no match
-        expressions, so the crash is triggered indirectly (suspect: eager arm-value lowering in the
-        type-inference helper, or `expr_type` mis-typing a hoisted match result). Also, the **tuple
-        scrutinee** case is entirely unsupported by the expression-form lowering (no tuple path). Proper
-        fix requires: (a) a hoist that infers the result type without side-effecting arm lowering, (b)
-        tuple-scrutinee match-expression support, (c) isolating the latent `lower_variant_match_expr`
-        crash. Reverted cleanly; tree stays at 20. Do this as its own focused session (the plan's original
-        multi-session estimate stands).
+  - [x] **D1 — match expressions COMPLETE (7 → 0, G1 reached).** Solved in three coordinated parts,
+        each mirroring Ruby's structure where practical:
+        (1) **`is`-operator (parser + lowering).** `is` desugars to a two-arm match expr
+        `[Variant.Arm -> true, _ -> false]`. First fixed a genuine **parser precedence bug**: `parse_is`
+        parsed the arm pattern with `parse_expression`, so `e is A or e is B` mis-grouped as
+        `e is (A or e is B)`; changed to `parse_bitwise_or` + a left-associative `while` loop, mirroring
+        Ruby's `parse_is`. Then `lower_expression_match` detects the `is`-desugar shape
+        (`is_variant_membership_arms`) and lowers it to a pure discriminant test
+        `scrut.kind == Outer_kind_arm` — a plain bool expr that composes inside `or`/`and`/`if` with no
+        statement hoisting (the self-host's `lower_expr` cannot emit setup statements mid-expression).
+        Fixed `block_expression`, `specialization_target`, `null_test_refinements`.
+        (2) **`return match` hoist.** `lower_stmt`'s `stmt_ret` detects an `expr_match` value, hoists it
+        into a zero-init temp + switch/if-chain (shared `lower_match_expr_to_ref`), and returns the temp;
+        `current_return_type` infers the result type. Fixed `kind_name` (enum), `keyword_kind` (str).
+        (3) **tuple match-expr.** `lower_tuple_match_expr` + `tuple_pattern_condition` lower a tuple
+        scrutinee to element-wise conjunction tests (`scrut._0 == e0 && ...`, `_` skipped), wildcard
+        assigned first. Fixed `three_char_token` / `two_char_token`.
+        The feared `lower_variant_match_expr` crash did **not** reproduce: the `is` cases now lower as
+        pure discriminant tests (never reaching the variant-match-expr path), and §3.4 had already fixed
+        the arm-payload collision that likely triggered the earlier crash. Refactored the shared body
+        builder into `lower_match_expr_to_ref` (str/tuple/variant/enum dispatch), used by both
+        `let x = match` and the return hoist. 172/172 tests pass. **This reaches G1: the self-host
+        emit-c output compiles to 0 cc errors.**
   - [x] `array[T,N]` const emission (88 → 83, −5). `render_constant`/`render_global` used `c_type`
         for arrays, which produced the backend-internal `array_str_N` struct name (no typedef
         emitted). Fixed to use `c_declaration` which renders C-native `TYPE NAME[N]`.
@@ -451,18 +460,16 @@ Established this session; reuse these seams rather than re-deriving them:
         in module-qualified names.  `method_c_name` delegates to `prelude_variant_base` for global
         naming.  Remaining 3 `std_map_Option_` lines come from variant-literal constructions
         (`.some(...)`, not method calls — §3.1).
-  - [ ] **`std_map_Option_` variant-literal prefix** (3 — §3.1).  The remaining occurrences come
-        from `Option[RemovedEntry].some(value = ...)` in monomorphized method bodies.
-  - [ ] **`String.create()` static method return type** (~8 — §3.2).  Static methods on nominal
-        types are not in the `function_returns` table.
-  - [ ] **Match-expression hoist crash** (~12 cosmetic — §3.3).  Infrastructure is ready; hoist
-        works on individual files; full self-compile crashes with lowering variant error.
-  - [ ] **`mtc_ir_Expr` vs `ast_Expr` pointer mismatch** (3 — §3.4).  Variant registry name collision.
-  - [ ] **Declared void / `mt_` fallback** (~6 — §3.5).  Monomorphized Map/Vec method return types
-        not resolved.
-  - [ ] **Map/vec `.contains()` arg mismatches** (4 — §3.6).
-  - [ ] **Scattered singletons** (~43).
-  - [ ] Milestone: `mtc build projects/mtc` produces a native binary
+  - [x] **`std_map_Option_` variant-literal prefix** (§3.1) — resolved by Seam B §3.1 (prelude method monomorphization).
+  - [x] **`String.create()` static method return type** (§3.2) — resolved by Seam A.
+  - [x] **Match-expression hoist** (§3.3) — resolved by D1 (is-operator + return-match hoist + tuple match-expr).
+  - [x] **`mtc_ir_Expr` vs `ast_Expr` pointer mismatch** (§3.4) — resolved (arm-payload collision guard).
+  - [x] **Declared void / `mt_` fallback** (§3.5) — resolved by Seam A (chained/read receiver typing).
+  - [x] **Map/vec `.contains()` arg mismatches** (§3.6) — resolved by Seam C (ref[T] implicit borrow).
+  - [x] **Scattered singletons** — resolved by Seam E (7 fixes).
+  - [ ] Milestone: `mtc build projects/mtc` produces a native binary (needs Phase-8b LINK: real external
+        ABI declarations incl. `out`-param cross-module externals; currently emit-c compiles to 0 errors
+        with `-Wno-implicit-function-declaration`).
 - [ ] Phase 9 — correctness verification (differential C + bootstrap fixpoint)
 - [ ] Phase 10 — debug-guard fix + build-mode/runtime parity
 
