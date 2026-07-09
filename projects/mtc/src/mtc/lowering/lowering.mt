@@ -51,6 +51,16 @@ struct LocalBinding:
     pointer: bool
 
 
+## One lexical block's pending `defer` cleanups, in the order they were
+## encountered.  Each `cleanups` entry is one already-lowered defer's statement
+## sequence (a `defer expr` lowers to one expression statement; a `defer:` block
+## lowers to several).  On block exit and before every `return`, the groups are
+## flushed innermost-first and, within each group, in reverse encounter order —
+## mirroring Ruby's `active_defers`/`local_defers` + `cleanup_statements`.
+struct DeferGroup:
+    cleanups: vec.Vec[span[ir.Stmt]]
+
+
 ## A foreign function's lowering info: the C function it maps to, its return
 ## type, and its declared parameters (carrying `as cstr` boundary projections).
 struct ForeignInfo:
@@ -174,6 +184,11 @@ struct LowerCtx:
     # Emitted-once guards for shared runtime types.
     subscription_emitted: bool
     event_error_emitted: bool
+    # Stack of pending `defer` cleanup groups, one per open lexical block during
+    # function-body lowering.  `defer` appends its lowered cleanup to the top
+    # group; block exit and `return` flush the groups (innermost-first, each in
+    # reverse encounter order).  Mirrors Ruby's active_defers/local_defers.
+    defer_stack: vec.Vec[DeferGroup]
 
 
 ## Per-event runtime linkage information.  Each declared `event Name[N]`
@@ -469,7 +484,7 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[
     let ret_ty = if return_type != null: substitute_type_params(ctx, resolve_field_type_ref(ctx, unsafe: read(return_type)), sub) else: types.primitive("void")
     var saved_sub = ctx.type_substitution
     ctx.type_substitution = read(sub)
-    let body_ir = lower_block(ctx, body)
+    let body_ir = lower_function_body(ctx, body)
     ctx.type_substitution = saved_sub
     return ir.Function(
         name = name,
@@ -569,6 +584,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
             pending_generic_variants = vec.Vec[ir.VariantDecl].create(),
             subscription_emitted = false,
             event_error_emitted = false,
+            defer_stack = vec.Vec[DeferGroup].create(),
         )
         var di: ptr_uint = 0
         while di < analysis.source_file.declarations.len:
@@ -636,6 +652,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         pending_generic_variants = vec.Vec[ir.VariantDecl].create(),
         subscription_emitted = false,
         event_error_emitted = false,
+        defer_stack = vec.Vec[DeferGroup].create(),
     )
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -946,7 +963,7 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
         pi += 1
 
     let ret_ty = resolve_return_type(ctx, sig, m.return_type)
-    let body_stmts = lower_block(ctx, m.body)
+    let body_stmts = lower_function_body(ctx, m.body)
 
     return ir.Function(
         name = c_name,
@@ -1046,7 +1063,7 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
         pi += 1
 
     let ret_ty = resolve_return_type(ctx, sig, return_type)
-    let body_stmts = lower_block(ctx, body)
+    let body_stmts = lower_function_body(ctx, body)
 
     return ir.Function(
         name = name,
@@ -1176,9 +1193,100 @@ function main_param_is_span_str(ctx: ref[LowerCtx], params: span[ast.Param]) -> 
 #  Statement lowering
 # =============================================================================
 
+## Push a fresh (empty) defer group for a newly-opened lexical block.
+function push_defer_scope(ctx: ref[LowerCtx]) -> void:
+    ctx.defer_stack.push(DeferGroup(cleanups = vec.Vec[span[ir.Stmt]].create()))
+
+
+## Pop the innermost defer group when its block closes.
+function pop_defer_scope(ctx: ref[LowerCtx]) -> void:
+    let _dropped = ctx.defer_stack.pop()
+
+
+## Record one lowered `defer` cleanup (a statement sequence) in the innermost
+## open block's group, in encounter order.
+function record_defer(ctx: ref[LowerCtx], cleanup: span[ir.Stmt]) -> void:
+    let top = ctx.defer_stack.last() else:
+        fatal(c"lowering: defer outside any block scope")
+    unsafe:
+        read(top).cleanups.push(cleanup)
+
+
+## Append one defer group's cleanups in reverse encounter order (mirrors Ruby's
+## `local_defers.reverse.flat_map`).
+function flush_defer_group(group_ptr: ptr[DeferGroup], output: ref[vec.Vec[ir.Stmt]]) -> void:
+    unsafe:
+        let cleanups = read(group_ptr).cleanups
+        if cleanups.len() == 0:
+            return
+        var i = cleanups.len()
+        while i > 0:
+            i -= 1
+            let span_ptr = cleanups.get(i) else:
+                fatal(c"lowering: defer group missing cleanup")
+            append_span_stmts(output, read(span_ptr))
+
+
+## Flush the innermost open block's pending defers (reverse order).  Used at the
+## fall-through end of a non-terminating block.
+function flush_top_defers(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]) -> void:
+    let top = ctx.defer_stack.last() else:
+        return
+    flush_defer_group(top, output)
+
+
+## Flush every open block's pending defers, innermost-first, each in reverse
+## encounter order.  Used before a `return` so all active defers run.  Mirrors
+## Ruby's `cleanup_statements(local_defers, active_defers)` where active_defers
+## is the outer-to-inner concatenation and the whole is reversed.
+function flush_all_defers(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]) -> void:
+    var count = ctx.defer_stack.len()
+    while count > 0:
+        count -= 1
+        let group_ptr = ctx.defer_stack.get(count) else:
+            fatal(c"lowering: defer stack missing group")
+        flush_defer_group(group_ptr, output)
+
+
+## True when the innermost open block (or any enclosing block) has a pending
+## defer, so a `return` needs a cleanup preamble.
+function has_pending_defers(ctx: ref[LowerCtx]) -> bool:
+    var i: ptr_uint = 0
+    while i < ctx.defer_stack.len():
+        let group_ptr = ctx.defer_stack.get(i) else:
+            return false
+        unsafe:
+            if read(group_ptr).cleanups.len() > 0:
+                return true
+        i += 1
+    return false
+
+
+## True for a trivial return expression (a bare literal) whose value cannot be
+## invalidated by running defers, so it need not be hoisted into a temp before
+## the cleanup preamble.  Mirrors Ruby's `cleanup_safe_return_expression?`.
+function cleanup_safe_return_expr(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal:
+                return true
+            ast.Expr.expr_float_literal:
+                return true
+            ast.Expr.expr_string_literal:
+                return true
+            ast.Expr.expr_bool_literal:
+                return true
+            ast.Expr.expr_null_literal:
+                return true
+            _:
+                return false
+
+
 function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
     var stmts = vec.Vec[ir.Stmt].create()
+    push_defer_scope(ctx)
     let bp = body_ptr else:
+        pop_defer_scope(ctx)
         return stmts.as_span()
     unsafe:
         match read(bp):
@@ -1189,7 +1297,28 @@ function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.St
                     i += 1
             _:
                 lower_stmt(ctx, ref_of(stmts), bp)
+    # Run this block's defers on fall-through exit (skipped when the block
+    # already ends in a terminator such as return/break/continue/goto, whose
+    # lowering flushed the relevant defers itself).
+    if not stmts_terminate(stmts.as_span()):
+        flush_top_defers(ctx, ref_of(stmts))
+    pop_defer_scope(ctx)
     return stmts.as_span()
+
+
+## Lower a function/method/proc body with an isolated defer stack.  Generic
+## methods and functions are monomorphized lazily *during* the expression
+## lowering of an unrelated enclosing body, so they must not observe or flush the
+## enclosing body's pending defers.  This mirrors Ruby, where each function body
+## carries its defers in its own `local_env` rather than a shared context.  The
+## outer stack is saved, replaced by a fresh empty one for the duration of the
+## body, and restored afterwards.
+function lower_function_body(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
+    let saved = ctx.defer_stack
+    ctx.defer_stack = vec.Vec[DeferGroup].create()
+    let result = lower_block(ctx, body_ptr)
+    ctx.defer_stack = saved
+    return result
 
 
 function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
@@ -1197,11 +1326,13 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
         match read(sp):
             ast.Stmt.stmt_ret as r:
                 let value = r.value else:
+                    flush_all_defers(ctx, output)
                     output.push(ir.Stmt.stmt_return(value = null, line = r.line, source_path = ""))
                     return
                 # `return match ...`: a match expression has no direct C form, so
                 # hoist it into a synthetic temp local (a switch / if-chain that
-                # assigns each arm's value), then return the temp.
+                # assigns each arm's value), run any active defers, then return the
+                # temp.
                 match read(value):
                     ast.Expr.expr_match as me:
                         let ret_ty = current_return_type(ctx, value)
@@ -1211,12 +1342,28 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         output.push(ir.Stmt.stmt_local(name = temp, linkage_name = tc, ty = ret_ty, value = zero_init, line = 0, source_path = ""))
                         let result_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = ret_ty, pointer = false))
                         lower_match_expr_to_ref(ctx, output, me.scrutinee, me.arms, result_ref)
+                        flush_all_defers(ctx, output)
                         let ret_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = ret_ty, pointer = false))
                         output.push(ir.Stmt.stmt_return(value = ret_ref, line = r.line, source_path = ""))
                         return
                     _:
                         pass
+                # Plain `return expr`: when defers are active they must run after the
+                # return value is computed but before control leaves.  If the value
+                # is not a trivial literal, hoist it into a temp so running the
+                # defers cannot invalidate it (mirrors Ruby's return-value hoist +
+                # cleanup preamble).
                 let lowered = lower_expr(ctx, value)
+                if has_pending_defers(ctx) and not cleanup_safe_return_expr(value):
+                    let ret_ty = ir_expr_type(lowered)
+                    let rtemp = fresh_c_temp_name(ctx, "return_value")
+                    let rc = c_local_name(rtemp)
+                    output.push(ir.Stmt.stmt_local(name = rtemp, linkage_name = rc, ty = ret_ty, value = lowered, line = 0, source_path = ""))
+                    flush_all_defers(ctx, output)
+                    let rref = alloc_expr(ir.Expr.expr_name(name = rc, ty = ret_ty, pointer = false))
+                    output.push(ir.Stmt.stmt_return(value = rref, line = r.line, source_path = ""))
+                    return
+                flush_all_defers(ctx, output)
                 output.push(ir.Stmt.stmt_return(value = lowered, line = r.line, source_path = ""))
             ast.Stmt.stmt_local as loc:
                 match loc.destructure_bindings:
@@ -1345,13 +1492,20 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     i += 1
                 output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
             ast.Stmt.stmt_defer as d:
+                # A `defer` does not emit at its declaration site.  Lower its
+                # cleanup into its own statement span and record it in the
+                # innermost open block; the span is replayed on block exit and
+                # before every `return` (reverse order).  Mirrors Ruby's
+                # lower_defer_cleanup_expression / lower_defer_cleanup_body.
+                var cleanup = vec.Vec[ir.Stmt].create()
                 if d.expression != null:
-                    output.push(ir.Stmt.stmt_expression(
+                    cleanup.push(ir.Stmt.stmt_expression(
                         expression = lower_expr(ctx, ptr[ast.Expr]<-d.expression),
                         line = 0, source_path = "",
                     ))
                 if d.body != null:
-                    lower_stmt(ctx, output, ptr[ast.Stmt]<-d.body)
+                    lower_stmt(ctx, ref_of(cleanup), ptr[ast.Stmt]<-d.body)
+                record_defer(ctx, cleanup.as_span())
             _:
                 fatal(c"lowering: unsupported statement")
 
@@ -2739,7 +2893,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
         ci += 1
 
     # Append the original body.
-    let orig_body = lower_block(ctx, body)
+    let orig_body = lower_function_body(ctx, body)
     var bi: ptr_uint = 0
     while bi < orig_body.len:
         unsafe:
@@ -2830,7 +2984,7 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
     var ret_ty = types.primitive("void")
     if return_type != null:
         ret_ty = resolve_type_ref(ctx, return_type)
-    let body_stmts = lower_block(ctx, body)
+    let body_stmts = lower_function_body(ctx, body)
 
     ctx.locals = saved_locals
     ctx.temp_counter = saved_counter
@@ -5250,7 +5404,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
 
     var saved_sub = ctx.type_substitution
     ctx.type_substitution = read(sub)
-    let body_ir = lower_block(ctx, m.body)
+    let body_ir = lower_function_body(ctx, m.body)
     ctx.type_substitution = saved_sub
 
     return ir.Function(
