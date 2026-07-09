@@ -1,7 +1,7 @@
 # Self-Host Plan: Lowering + C-Backend
 
-Status: **Phase 8 COMPLETE (G1). Native-binary milestone REACHED: `mtc build projects/mtc` produces a runnable executable and the self-host builds ITSELF (stage-2 runs). Stage-2 aborts at runtime on real work — Phase 9 (bootstrap fixpoint / correctness) is next.**
-Last updated: 2026-07-09 (P8 done; native binary milestone reached; stage-2 runtime bug → Phase 9)
+Status: **Phase 9 IN PROGRESS. Native-binary milestone REACHED and the stage-2 runtime abort is FIXED. Stage-2 `lex` and `parse` are now BYTE-IDENTICAL to stage-1 across the entire self-host source (lexer + parser bootstrap fixpoint reached). Next: differential `check`.**
+Last updated: 2026-07-09 (P9: 3 correctness fixes landed — defer lowering, string-match-expr, string-escape decode; lex+parse fixpoint)
 
 
 > **Measurement note:** the self-host emit-c output now compiles cleanly WITHOUT the
@@ -86,11 +86,33 @@ started emitting — see §2). Commits `1fe8924f`…`24476860`:
 
 ---
 
-## 2. RESUME HERE — Phase 9 kickoff (as of 2026-07-09)
+## 2. RESUME HERE — Phase 9 in progress (as of 2026-07-09)
 
-**Phase 8 is COMPLETE and the native-binary milestone is REACHED.** The self-host builds
-itself into a runnable executable. The next work is **Phase 9 — correctness / bootstrap
-fixpoint**, and its concrete first target is a stage-2 runtime abort.
+**Phase 8 COMPLETE; native-binary milestone REACHED; the stage-2 runtime abort is FIXED.**
+Three correctness fixes have landed and stage-2 `lex` + `parse` are now **byte-identical to
+stage-1 across the whole self-host source**. The next target is differential **`check`**.
+
+### 2.0 Phase 9 fixes landed this session
+
+1. **defer lowering** (`2b073267`) — the self-host emitted every `defer` inline at its
+   declaration site instead of at block exit and before each `return`, so scope-bound
+   cleanups ran immediately. This was the direct cause of the `arena.to_cstr out of memory`
+   abort (`fs.read_text`'s arena `storage` was released right after creation). Implemented
+   Ruby's active_defers/local_defers model: a per-block `DeferGroup` stack on `LowerCtx`,
+   flushed (reverse order) on non-terminating block exit and (all open groups, innermost
+   first) before every `return`, with non-trivial return values hoisted into a temp.
+   `lower_function_body` isolates the stack per function/method/proc body so lazily-
+   monomorphized generic bodies do not flush the enclosing body's defers.
+2. **string-match-expr** (`4d6329e5`) — `lower_str_match_expr` emitted independent `if`s
+   with only the last arm carrying the wildcard as its `else`, so the last arm's `else`
+   clobbered any earlier match. `keyword_kind` therefore classified every keyword as
+   `identifier`. Rewrote it as a proper else-if chain (default as final else), mirroring
+   Ruby and the self-host's own statement-form `lower_string_match`.
+3. **string-escape decode** (`ae88ee59`) — `parse_string_content` only stripped quotes; it
+   never decoded escapes, so `c"...\n"` kept a literal backslash+n which the C backend then
+   re-escaped to `\\n`. Added escape decoding mirroring Ruby's `decode_escape`
+   (`\n \r \t \0 \" \' \\`; unknown `\x` drops the backslash), building into an arena-leaked
+   String.
 
 ### 2.1 Reproduce the current state (from a clean checkout)
 
@@ -98,45 +120,30 @@ fixpoint**, and its concrete first target is a stage-2 runtime abort.
 # 1. Build the self-host with the Ruby compiler (stage-1 binary).
 bin/mtc build projects/mtc --no-cache --no-debug-guards -o tmp/mtc-noguard
 
-# 2. Self-host emits its own C, which compiles to an object file with 0 errors
-#    (NOTE: no -Wno-implicit-function-declaration crutch needed any more).
+# 2. Self-host emits its own C, which compiles to an object file with 0 errors.
 tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root . > tmp/self.c
 cc -std=c11 -D_GNU_SOURCE -I std/c -c tmp/self.c -o /dev/null     # => 0 errors
 
-# 3. Self-host builds ITSELF into a native binary (stage-2). Writes
-#    projects/mtc/src/mtc/main — move it to tmp/mtc-stage2.
-tmp/mtc-noguard build projects/mtc/src/mtc/main.mt --root projects/mtc/src --root .
-mv projects/mtc/src/mtc/main tmp/mtc-stage2
+# 3. Self-host builds ITSELF into a native binary (stage-2). The self-host only
+#    needs -luv -lpthread -lm to link; build a debug stage-2 straight from the C:
+cc -std=c11 -D_GNU_SOURCE -O0 -I std/c tmp/self.c -o tmp/mtc-stage2 -luv -lpthread -lm
 
-# 4. Stage-2 RUNS and prints help, but ABORTS on real work:
-tmp/mtc-stage2                                   # prints help OK
-timeout 10 bash -c 'ulimit -v 2000000; tmp/mtc-stage2 lex tmp/hello.mt'
-#   => "arena.to_cstr out of memory" then abort (exit 134 / core dump)
+# 4. Stage-2 now RUNS real work. lex + parse are byte-identical to stage-1:
+timeout 10 bash -c 'ulimit -v 2000000; tmp/mtc-stage2 lex tmp/hello.mt'      # works
+diff <(tmp/mtc-noguard parse projects/mtc/src/mtc/lowering/lowering.mt) \
+     <(tmp/mtc-stage2  parse projects/mtc/src/mtc/lowering/lowering.mt)      # identical
 ```
 
-`bin/mtc test projects/mtc` => **172/172 pass**. `git` tree clean at `737bda2b`.
+`bin/mtc test projects/mtc` => **172/172 pass**.
 
-### 2.2 Phase 9 FIRST TARGET — stage-2 runtime abort
+### 2.2 Phase 9 NEXT TARGET — differential `check`
 
-The stage-2 binary (self-host compiled by self-host) aborts at runtime with
-`arena.to_cstr out of memory` as soon as it does real work (e.g. `lex`). This is a
-**correctness bug in the generated code / runtime**, NOT a build or link issue — it only
-surfaces when the self-built binary actually executes. It is exactly the bootstrap-fixpoint
-work of Phase 9.
-
-Investigation starting points (unverified hypotheses):
-- `arena.create(...)` / `arena.to_cstr` in `std/mem/arena.mt` — the arena allocation may be
-  getting a bogus (zero or huge) capacity, or `to_cstr` computes a wrong length. The message
-  is `arena.to_cstr out of memory` (arena.mt line ~124), meaning `alloc_bytes(text.len + 1)`
-  returned null → likely `text.len` is garbage (huge) OR the arena capacity was mis-sized.
-- Most likely root: a **generated-code miscompile** in a hot path exercised by `lex`/`check`
-  (e.g. a struct field offset, span length, or `str.len` computed wrong in the stage-1→C
-  lowering) — since the SAME source, compiled by Ruby, runs fine. Diff the behaviour:
-  Ruby-built `tmp/mtc-noguard lex X` works; stage-2 `tmp/mtc-stage2 lex X` aborts.
-- Recommended method: pick the smallest failing invocation (`lex` on a tiny file), run
-  stage-2 under `gdb`/`valgrind` (`--keep-c` the stage-2 C via `tmp/self.c` which IS the
-  stage-2 C source), find where `text.len` / arena capacity goes wrong, trace back to the
-  lowering/codegen construct that miscompiles.
+`lex` and `parse` reach the bootstrap fixpoint (stage-2 output == stage-1 output byte-for-byte
+on every self-host source file, including the 6.5k-line `lowering.mt`). Advance the
+differential up the pipeline: run `tmp/mtc-stage2 check <file> --root ...` vs the Ruby-built
+`tmp/mtc-noguard check ...` on self-host sources and diff. Each new divergence is the next
+stage-2 miscompile to localize (differential + `gdb` on `tmp/self.c`, which IS the stage-2 C
+source) and fix at its root in `lowering.mt` / `c_backend.mt`, mirroring Ruby.
 
 ### 2.3 Differential harness (Phase 9 method)
 
@@ -465,9 +472,10 @@ clean re-apply. When editing near function boundaries in the ~8.8k-line `lowerin
         KNOWN ISSUE (→ Phase 9): stage-2 aborts at runtime on real work (`arena.to_cstr out of memory`) —
         a correctness bug in the generated code / runtime, not a build/link issue. This is exactly the
         bootstrap-fixpoint work of Phase 9.
-- [ ] Phase 9 — correctness verification (differential C + bootstrap fixpoint). FIRST TARGET: the
-      stage-2 runtime abort (`arena.to_cstr out of memory` on `lex`) — likely an arena/allocation or
-      generated-code correctness bug surfaced only when the self-host binary actually runs.
+- [ ] Phase 9 — correctness verification (differential C + bootstrap fixpoint). IN PROGRESS:
+      stage-2 runtime abort FIXED (defer lowering); string-match-expr + string-escape decode
+      fixed. Stage-2 `lex` and `parse` are byte-identical to stage-1 across the whole self-host
+      source. NEXT: differential `check`, then `lower`/`emit-c`.
 - [ ] Phase 10 — debug-guard fix + build-mode/runtime parity
 
 ---
