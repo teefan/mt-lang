@@ -11994,14 +11994,15 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.Type
     let vptr_ty   = ptr_ty
 
     # -- constructor function --
-    let frame_named_ty = types.Type.ty_named(module_name = ctx.module_name, name = frame_c)
+    let frame_named_ty = types.Type.ty_named(module_name = "", name = frame_c)
+    let frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = single_ty_span(frame_named_ty))
     let size_expr = alloc_expr(ir.Expr.expr_sizeof(target_type = frame_named_ty, ty = ptr_ty))
     let alloc_call = alloc_expr(ir.Expr.expr_call(callee = "mt_async_alloc", arguments = single_expr_span(size_expr), ty = ptr_ty))
     var cb = vec.Vec[ir.Stmt].create()
-    cb.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = ptr_ty, value = alloc_call, line = 0, source_path = ""))
+    cb.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = alloc_call, ty = frame_ptr_ty)), line = 0, source_path = ""))
     cb.push(ir.Stmt.stmt_assignment(target = frame_ready,     operator = "=", value = bool_false))
     cb.push(ir.Stmt.stmt_assignment(target = frame_cancelled, operator = "=", value = bool_false))
-    let frame_val = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ptr_ty, pointer = false))
+    let frame_val = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = frame_ptr_ty, pointer = true))
     cb.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = resume_c, arguments = single_expr_span(frame_val), ty = void_t)), line = 0, source_path = ""))
     var tf = vec.Vec[ir.AggregateField].create()
     tf.push(ir.AggregateField(name = "frame",       value = frame_val))
@@ -12053,4 +12054,11 @@ function single_expr_span(e: ptr[ir.Expr]) -> span[ir.Expr]:
     var v = vec.Vec[ir.Expr].create()
     unsafe:
         v.push(read(e))
+    return v.as_span()
+
+
+## Build a single-element span of types.
+function single_ty_span(t: types.Type) -> span[types.Type]:
+    var v = vec.Vec[types.Type].create()
+    v.push(t)
     return v.as_span()
