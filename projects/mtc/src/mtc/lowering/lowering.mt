@@ -6617,10 +6617,26 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
     ctx.locals.clear()
     ctx.temp_counter = 0
 
+    # Build the receiver struct type using only the struct-level type args
+    # (the first N concrete args where N = struct_param_names.len).  Method-level
+    # type params extend concrete_args but are NOT part of the receiver.
+    var struct_args = vec.Vec[types.Type].create()
+    var si: ptr_uint = 0
+    while si < gm.struct_param_names.len and si < info.concrete_args.len:
+        unsafe:
+            struct_args.push(read(info.concrete_args.data + si))
+        si += 1
+    if struct_args.len == 0:
+        var z: ptr_uint = 0
+        while z < info.concrete_args.len:
+            unsafe:
+                struct_args.push(read(info.concrete_args.data + z))
+            z += 1
+
     let recv_struct_ty = qualify_type(ctx, types.Type.ty_imported(
         module_name = gm.owner_module,
         name = info.owner_name,
-        args = info.concrete_args,
+        args = struct_args.as_span(),
     ))
 
     var ir_params = vec.Vec[ir.Param].create()
