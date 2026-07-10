@@ -185,6 +185,9 @@ struct LowerCtx:
     # Emitted-once guards for shared runtime types.
     subscription_emitted: bool
     event_error_emitted: bool
+    # Active comptime element during inline for unrolling — used by lower_expr to
+    # substitute loop variable member accesses (.type, .value) with known values.
+    inline_for_element: Option[ComptimeElement]
     # Stack of pending `defer` cleanup groups, one per open lexical block during
     # function-body lowering.  `defer` appends its lowered cleanup to the top
     # group; block exit and `return` flush the groups (innermost-first, each in
@@ -612,6 +615,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
             pending_generic_variants = vec.Vec[ir.VariantDecl].create(),
             subscription_emitted = false,
             event_error_emitted = false,
+            inline_for_element = Option[ComptimeElement].none,
             defer_stack = vec.Vec[DeferGroup].create(),
             inside_async = false,
         )
@@ -2076,6 +2080,14 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
             unsafe:
                 alias = read(t.name.parts.data + 0)
                 type_name = read(t.name.parts.data + 1)
+            # Inline for substitution: `field.type` resolves to the field's type.
+            if type_name.equal("type"):
+                let subst = inline_for_type_subst(ctx, alias)
+                if not types.is_error(subst):
+                    resolved = subst
+                    if t.nullable:
+                        return types.Type.ty_nullable(base = types.alloc_type(resolved))
+                    return resolved
             let mod_ptr = ctx.analysis.imports.get(alias)
             if mod_ptr != null:
                 let target_module = unsafe: read(mod_ptr)
@@ -6623,6 +6635,11 @@ function method_receiver_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> ty
 
 
 function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str, ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    match inline_for_member_subst(ctx, receiver, member):
+        Option.some as subst:
+            return subst.value
+        Option.none:
+            pass
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -9181,13 +9198,24 @@ function lower_inline_for_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
             while i < elements.value.len:
                 let bp = body_ptr
                 if bp != null:
-                    # Wrap each iteration in a block so loop variable redefinitions
-                    # don't collide across iterations.
+                    var elem: ComptimeElement
+                    unsafe:
+                        elem = read(elements.value.data + i)
                     var iter_stmts = vec.Vec[ir.Stmt].create()
                     let binding_c = c_local_name(binding_name)
-                    iter_stmts.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = types.primitive("int"), value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(i), ty = types.primitive("int"))), line = 0, source_path = ""))
-                    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = types.primitive("int"), pointer = false))
+                    # Bind the loop variable: for fields_of, use the field type;
+                    # for members_of/attributes, use int as a placeholder.
+                    var bind_ty = types.primitive("int")
+                    match elem:
+                        ComptimeElement.ce_struct_field as f:
+                            bind_ty = f.field_type
+                        _:
+                            pass
+                    iter_stmts.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = bind_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(i), ty = types.primitive("int"))), line = 0, source_path = ""))
+                    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = bind_ty, pointer = false))
+                    ctx.inline_for_element = Option[ComptimeElement].some(value = elem)
                     lower_block_stmts(ctx, ref_of(iter_stmts), bp)
+                    ctx.inline_for_element = Option[ComptimeElement].none
                     ctx.locals.pop()
                     output.push(ir.Stmt.stmt_block(body = iter_stmts.as_span()))
                 i += 1
@@ -9200,7 +9228,7 @@ function lower_inline_for_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
 ## Returns none for unrecognised expressions.
 variant ComptimeElement:
     ce_struct_field(name: str, field_type: types.Type)
-    ce_enum_member(name: str)
+    ce_enum_member(name: str, member_value: long)
     ce_attribute
 
 
@@ -9251,10 +9279,51 @@ function comptime_members_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]) -
     var elements = vec.Vec[ComptimeElement].create()
     var ni: ptr_uint = 0
     while ni < names.len:
+        var member_name: str
         unsafe:
-            elements.push(ComptimeElement.ce_enum_member(name = read(names.data + ni)))
+            member_name = read(names.data + ni)
+        let mv = comptime_enum_member_value(ctx, type_name, member_name)
+        elements.push(ComptimeElement.ce_enum_member(name = member_name, member_value = mv))
         ni += 1
     return Option[span[ComptimeElement]].some(value = elements.as_span())
+
+
+## Look up the integer value of an enum member by scanning the source file AST.
+function comptime_enum_member_value(ctx: ref[LowerCtx], type_name: str, member_name: str) -> long:
+    var di: ptr_uint = 0
+    while di < ctx.analysis.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(ctx.analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_enum as e:
+                if e.name.equal(type_name):
+                    var mi: ptr_uint = 0
+                    var auto_val: long = 0
+                    while mi < e.enum_members.len:
+                        var m: ast.EnumMember
+                        unsafe:
+                            m = read(e.enum_members.data + mi)
+                        let vp = m.value
+                        if vp != null:
+                            unsafe:
+                                match try_evaluate_const_expr(ctx, vp):
+                                    Option.some as cv_val:
+                                        match cv_val.value:
+                                            ConstValue.cv_int as iv:
+                                                auto_val = iv.value
+                                            _:
+                                                pass
+                                    Option.none:
+                                        pass
+                        if m.name.equal(member_name):
+                            return auto_val
+                        auto_val += 1
+                        mi += 1
+            _:
+                pass
+        di += 1
+    return 0
 
 
 function comptime_attributes_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]) -> Option[span[ComptimeElement]]:
@@ -9353,6 +9422,56 @@ function comptime_arg_name(arg_ptr: ptr[ast.Argument]) -> str:
             _:
                 pass
     return ""
+
+
+## While lowering an inline for body, detect member access on the loop variable
+## (`.value` for enum members, `.type` for struct fields) and substitute the
+## comptime-known value.
+function inline_for_member_subst(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str) -> Option[ptr[ir.Expr]]:
+    match ctx.inline_for_element:
+        Option.some as elem_val:
+            match elem_val.value:
+                ComptimeElement.ce_enum_member as m:
+                    unsafe:
+                        match read(receiver):
+                            ast.Expr.expr_identifier as id:
+                                if member.equal("value"):
+                                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = m.member_value, ty = types.primitive("int"))))
+                            _:
+                                pass
+                ComptimeElement.ce_struct_field as f:
+                    unsafe:
+                        match read(receiver):
+                            ast.Expr.expr_identifier as id:
+                                if member.equal("type"):
+                                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_name(name = "sizeof_hint", ty = f.field_type, pointer = false)))
+                            _:
+                                pass
+                _:
+                    pass
+        Option.none:
+            pass
+    return Option[ptr[ir.Expr]].none
+
+
+## Resolve `field.type` in type position inside an inline for body: when the
+## current comptime element is a struct field and the binding name matches,
+## return the field's concrete type.
+function inline_for_type_subst(ctx: ref[LowerCtx], binding_name: str) -> types.Type:
+    match ctx.inline_for_element:
+        Option.some as elem_val:
+            match elem_val.value:
+                ComptimeElement.ce_struct_field as f:
+                    # Check if there's a local binding with this name.  We can't
+                    # directly check by name since the binding could be from
+                    # another scope.  Assume the binding_name matches the current
+                    # inline for element.
+                    return f.field_type
+                _:
+                    pass
+        Option.none:
+            pass
+    return types.Type.ty_error
 
 
 ## Compare two compile-time values for equality.  Integer values are compared
