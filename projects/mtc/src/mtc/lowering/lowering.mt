@@ -3604,11 +3604,15 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                             return lower_proc_call(ctx, lb.value, args, call_ep)
                     Option.none:
                         pass
-                # Infer generic type arguments for bare generic function calls
-                # (e.g. `call_proc(f)` where `call_proc[T]` is generic).
-                match try_inferred_generic_call(ctx, id.name, args, call_ep):
-                    Option.some as gen_call:
-                        return gen_call.value
+                # Bare generic function call with inferred type args:
+                # e.g. `call_proc(f)` where `call_proc[T](p: proc() -> T) -> T`.
+                match find_generic_function(ctx, id.name):
+                    Option.some as gm:
+                        match try_inferred_generic_call(ctx, id.name, args, call_ep):
+                            Option.some as gen_call:
+                                return gen_call.value
+                            Option.none:
+                                pass
                     Option.none:
                         pass
                 # Module-level proc variable: call through proc struct.
@@ -4441,6 +4445,18 @@ function unify_type_param(param_name: str, param_ref: ast.TypeRef, arg_ty: types
         unsafe:
             inner_ref = read(param_ref.arguments.data + (param_ref.arguments.len - 1))
         return unify_type_param(param_name, inner_ref, inner_arg)
+    # `proc(...) -> T`: peel the proc layer (fn→ty_function) and recurse into
+    # the return type position.  The param_ref shape is name="proc",
+    # arguments=[param_types..., return_type_ref].
+    if simple_name.equal("proc") and param_ref.arguments.len >= 1:
+        let ret_ref = unsafe: read(param_ref.arguments.data + (param_ref.arguments.len - 1))
+        let inner_ret = proc_return_type(arg_ty)
+        return unify_type_param(param_name, ret_ref, inner_ret)
+    # `fn(...) -> T`: same peeling as proc for plain function types.
+    if simple_name.equal("fn") and param_ref.arguments.len >= 1:
+        let ret_ref = unsafe: read(param_ref.arguments.data + (param_ref.arguments.len - 1))
+        let inner_ret = proc_return_type(arg_ty)
+        return unify_type_param(param_name, ret_ref, inner_ret)
     return Option[types.Type].none
 
 
@@ -4469,6 +4485,39 @@ function pointer_or_span_element(t: types.Type) -> types.Type:
         _:
             pass
     return t
+
+
+## Extract the return type from a function/proc type.  For `ty_function`, return
+## the return type.  For `ty_named` proc struct types (mt_proc_*), recover the
+## return type from the proc struct name by reversing proc_type_name_from_signature:
+## "mt_proc_int" → int, "mt_proc_void" → void.
+function proc_return_type(t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_function as fnt:
+            return unsafe: read(fnt.return_type)
+        types.Type.ty_named as n:
+            if n.name.starts_with("mt_proc_"):
+                let raw = n.name.slice(8, n.name.len - 8)
+                if raw.equal("int"):
+                    return types.primitive("int")
+                if raw.equal("void"):
+                    return types.primitive("void")
+                if raw.equal("bool"):
+                    return types.primitive("bool")
+                if raw.equal("float"):
+                    return types.primitive("float")
+                if raw.equal("double"):
+                    return types.primitive("double")
+                if raw.equal("ptr_uint"):
+                    return types.primitive("ptr_uint")
+                if raw.equal("str"):
+                    return types.Type.ty_str
+                # Complex return types: "int_int" means (int, int) tuple etc.
+                # For now, use void as fallback.
+                return types.primitive("void")
+            return types.primitive("void")
+        _:
+            return types.primitive("void")
 
 
 ## Lower an uncached generic function specialization: build the type substitution
