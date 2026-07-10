@@ -3403,6 +3403,25 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         if types.is_raw_pointer(base) or types.is_ref_type(base):
                             elem_ty = types.pointer_element(base)
                         return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = inner, ty = qualify_type(ctx, elem_ty)))
+                # `get(coll, index)` → recoverable array/span indexing returning
+                # `ptr[T]?` — null on out-of-bounds instead of aborting.
+                # Maps to IR checked_index / checked_span_index, mirroring Ruby.
+                if id.name.equal("get"):
+                    if args.len >= 2:
+                        let recv_val = unsafe: read(args.data + 0).arg_value
+                        let idx_val = unsafe: read(args.data + 1).arg_value
+                        let recv_ty = index_receiver_type(ctx, recv_val)
+                        let recv_ir = lower_expr(ctx, recv_val)
+                        let idx_ir = lower_expr(ctx, idx_val)
+                        var elem_ty = generic_first_arg(recv_ty)
+                        if types.is_error(elem_ty):
+                            elem_ty = expr_type(ctx, call_ep)
+                        if types.is_nullable_type(elem_ty):
+                            elem_ty = types.unwrap_nullable(elem_ty)
+                        if is_array_type(recv_ty):
+                            return alloc_expr(ir.Expr.expr_checked_index(receiver = recv_ir, index = idx_ir, receiver_type = recv_ty, ty = elem_ty))
+                        if is_span_type(recv_ty):
+                            return alloc_expr(ir.Expr.expr_checked_span_index(receiver = recv_ir, index = idx_ir, receiver_type = recv_ty, ty = elem_ty))
                 # Native `str(data = ..., len = ...)` construction -> mt_str
                 # aggregate literal (not a call to a `str` function).
                 if id.name.equal("str"):
