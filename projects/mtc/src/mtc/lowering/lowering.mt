@@ -7,12 +7,6 @@
 ## its C-name mangling (lowering/utils.rb), and root-main entry-point synthesis
 ## (lowering/async.rb `build_root_main_entrypoint`).
 ##
-## PHASE 1 scope: a single (root) module of plain, non-generic, non-async
-## functions over scalar types — enough to lower `function main() -> int:
-## return <expr>` with integer/bool literals, identifiers, unary/binary
-## operators, local `let`/`var` bindings, and direct function calls.  Structs,
-## generics, control flow, and multi-module assembly arrive in later phases.
-##
 ## Because the self-host analyzer does not yet produce Ruby's rich
 ## FunctionBinding objects (plan prerequisite #3), lowering here walks the AST
 ## directly and resolves types from the retained `Analysis` (`functions` sigs and
@@ -451,42 +445,6 @@ function dedup_append_functions(sink: ref[vec.Vec[ir.Function]], src: span[ir.Fu
         i += 1
 
 
-## Search a module's analysis for a function declaration by name.  Returns
-## `Option.none` when the function is not found in that module.
-function find_function_decl(name: str, module_analysis: analyzer.Analysis) -> Option[ast.Decl]:
-    var di: ptr_uint = 0
-    while di < module_analysis.source_file.declarations.len:
-        var d: ast.Decl
-        unsafe:
-            d = read(module_analysis.source_file.declarations.data + di)
-        match d:
-            ast.Decl.decl_function as f:
-                if f.name.equal(name):
-                    return Option[ast.Decl].some(value = d)
-            _:
-                pass
-        di += 1
-    return Option[ast.Decl].none
-
-
-## Search a module analysis for a function by name (used by the cross-module
-## specialization fallback).  Mirrors `find_function_decl`.
-function search_func_in_analysis(name: str, a: analyzer.Analysis) -> Option[ast.Decl]:
-    var di: ptr_uint = 0
-    while di < a.source_file.declarations.len:
-        var d: ast.Decl
-        unsafe:
-            d = read(a.source_file.declarations.data + di)
-        match d:
-            ast.Decl.decl_function as f:
-                if f.name.equal(name):
-                    return Option[ast.Decl].some(value = d)
-            _:
-                pass
-        di += 1
-    return Option[ast.Decl].none
-
-
 ## Search a source file's declarations for a function by name.  Unlike
 ## the analysis-based helpers, this reads the raw parsed source file directly.
 function find_func_in_source(sf: ast.SourceFile, name: str) -> Option[ast.Decl]:
@@ -634,6 +592,51 @@ function substitute_type_params(ctx: ref[LowerCtx], ty: types.Type, sub: ref[map
             return ty
 
 
+## Create a fully initialised LowerCtx for a single module.  Every field is
+## set explicitly so all code paths start from a known clean state.
+function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule]) -> LowerCtx:
+    return LowerCtx(
+        module_name = analysis.module_name,
+        analysis = analysis,
+        locals = vec.Vec[LocalBinding].create(),
+        temp_counter = 0,
+        foreign_map = map_mod.Map[str, ForeignInfo].create(),
+        extern_map = map_mod.Map[str, str].create(),
+        function_returns = map_mod.Map[str, types.Type].create(),
+        variants = map_mod.Map[str, VariantInfo].create(),
+        match_label_counter = 0,
+        program_returns = prog_returns,
+        prelude_arm_field_types = pl_field_types,
+        pending_specializations = vec.Vec[PendingSpecialization].create(),
+        specialization_cache = map_mod.Map[str, ir.Function].create(),
+        generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
+        generic_struct_instances = map_mod.Map[str, GenericReceiver].create(),
+        arm_payload_fields = map_mod.Map[str, VariantArmInfo].create(),
+        program_analyses = prog_analyses,
+        loaded_modules = lod_modules,
+        spec_in_progress = map_mod.Map[str, bool].create(),
+        type_substitution = map_mod.Map[str, types.Type].create(),
+        proc_counter = 0,
+        pending_synthetic_functions = vec.Vec[ir.Function].create(),
+        pending_env_structs = vec.Vec[ir.StructDecl].create(),
+        pending_dyn_structs = vec.Vec[ir.StructDecl].create(),
+        pending_dyn_vtable_structs = vec.Vec[ir.StructDecl].create(),
+        pending_dyn_wrappers = vec.Vec[ir.Function].create(),
+        pending_dyn_constants = vec.Vec[ir.Constant].create(),
+        dyn_generated_vtables = map_mod.Map[str, bool].create(),
+        str_buffer_structs = map_mod.Map[str, str].create(),
+        event_runtimes = map_mod.Map[str, EventRuntimeInfo].create(),
+        pending_event_structs = vec.Vec[ir.StructDecl].create(),
+        pending_event_functions = vec.Vec[ir.Function].create(),
+        pending_generic_variants = vec.Vec[ir.VariantDecl].create(),
+        subscription_emitted = false,
+        event_error_emitted = false,
+        inline_for_element = Option[ComptimeElement].none,
+        defer_stack = vec.Vec[DeferGroup].create(),
+        inside_async = false,
+    )
+
+
 ## Pre-scan every module's function declarations and record each one's resolved
 ## return type keyed by its C linkage name, so cross-module calls can look them
 ## up regardless of lowering order.
@@ -644,46 +647,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
             mi += 1
             continue
         var analysis = unsafe: read(a_ptr)
-        var ctx = LowerCtx(
-            module_name = analysis.module_name,
-            analysis = analysis,
-            locals = vec.Vec[LocalBinding].create(),
-            temp_counter = 0,
-            foreign_map = map_mod.Map[str, ForeignInfo].create(),
-            extern_map = map_mod.Map[str, str].create(),
-            function_returns = map_mod.Map[str, types.Type].create(),
-            variants = map_mod.Map[str, VariantInfo].create(),
-            match_label_counter = 0,
-            program_returns = ptr_of(read(sink)),
-            prelude_arm_field_types = ptr_of(read(prelude_arm_field_types)),
-            pending_specializations = vec.Vec[PendingSpecialization].create(),
-            specialization_cache = map_mod.Map[str, ir.Function].create(),
-            generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
-            generic_struct_instances = map_mod.Map[str, GenericReceiver].create(),
-            arm_payload_fields = map_mod.Map[str, VariantArmInfo].create(),
-            program_analyses = program.analyses.as_span(),
-            loaded_modules = program.modules.as_span(),
-            spec_in_progress = map_mod.Map[str, bool].create(),
-            type_substitution = map_mod.Map[str, types.Type].create(),
-            proc_counter = 0,
-            pending_synthetic_functions = vec.Vec[ir.Function].create(),
-            pending_env_structs = vec.Vec[ir.StructDecl].create(),
-            pending_dyn_structs = vec.Vec[ir.StructDecl].create(),
-            pending_dyn_vtable_structs = vec.Vec[ir.StructDecl].create(),
-            pending_dyn_wrappers = vec.Vec[ir.Function].create(),
-            pending_dyn_constants = vec.Vec[ir.Constant].create(),
-            dyn_generated_vtables = map_mod.Map[str, bool].create(),
-            str_buffer_structs = map_mod.Map[str, str].create(),
-            event_runtimes = map_mod.Map[str, EventRuntimeInfo].create(),
-            pending_event_structs = vec.Vec[ir.StructDecl].create(),
-            pending_event_functions = vec.Vec[ir.Function].create(),
-            pending_generic_variants = vec.Vec[ir.VariantDecl].create(),
-            subscription_emitted = false,
-            event_error_emitted = false,
-            inline_for_element = Option[ComptimeElement].none,
-            defer_stack = vec.Vec[DeferGroup].create(),
-            inside_async = false,
-        )
+        var ctx = new_lowering_context(analysis, ptr_of(read(sink)), ptr_of(read(prelude_arm_field_types)), program.analyses.as_span(), program.modules.as_span())
         var di: ptr_uint = 0
         while di < analysis.source_file.declarations.len:
             var d: ast.Decl
@@ -715,44 +679,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
 
 
 function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule]) -> ir.Program:
-    var ctx = LowerCtx(
-        module_name = analysis.module_name,
-        analysis = analysis,
-        locals = vec.Vec[LocalBinding].create(),
-        temp_counter = 0,
-        foreign_map = map_mod.Map[str, ForeignInfo].create(),
-        extern_map = map_mod.Map[str, str].create(),
-        function_returns = map_mod.Map[str, types.Type].create(),
-        variants = map_mod.Map[str, VariantInfo].create(),
-        match_label_counter = 0,
-        program_returns = ptr_of(read(program_returns)),
-        prelude_arm_field_types = ptr_of(read(prelude_arm_field_types)),
-        pending_specializations = vec.Vec[PendingSpecialization].create(),
-        specialization_cache = map_mod.Map[str, ir.Function].create(),
-        generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
-        generic_struct_instances = map_mod.Map[str, GenericReceiver].create(),
-        program_analyses = program_analyses,
-        loaded_modules = loaded_modules,
-        spec_in_progress = map_mod.Map[str, bool].create(),
-        type_substitution = map_mod.Map[str, types.Type].create(),
-        proc_counter = 0,
-        pending_synthetic_functions = vec.Vec[ir.Function].create(),
-        pending_env_structs = vec.Vec[ir.StructDecl].create(),
-        pending_dyn_structs = vec.Vec[ir.StructDecl].create(),
-        pending_dyn_vtable_structs = vec.Vec[ir.StructDecl].create(),
-        pending_dyn_wrappers = vec.Vec[ir.Function].create(),
-        pending_dyn_constants = vec.Vec[ir.Constant].create(),
-        dyn_generated_vtables = map_mod.Map[str, bool].create(),
-        str_buffer_structs = map_mod.Map[str, str].create(),
-        event_runtimes = map_mod.Map[str, EventRuntimeInfo].create(),
-        pending_event_structs = vec.Vec[ir.StructDecl].create(),
-        pending_event_functions = vec.Vec[ir.Function].create(),
-        pending_generic_variants = vec.Vec[ir.VariantDecl].create(),
-        subscription_emitted = false,
-        event_error_emitted = false,
-        defer_stack = vec.Vec[DeferGroup].create(),
-        inside_async = false,
-    )
+    var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules)
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
     collect_variants(ref_of(ctx), analysis.source_file.declarations)
@@ -1021,7 +948,7 @@ function standard_c_runtime_header(header_name: str) -> bool:
 function extending_receiver_type(module_name: str, type_name: str) -> types.Type:
     if type_name.equal("str"):
         return types.Type.ty_str
-    if is_primitive_name(type_name):
+    if is_builtin_type_name(type_name):
         return types.primitive(type_name)
     return types.Type.ty_imported(module_name = module_name, name = type_name, args = span[types.Type]())
 
@@ -2161,7 +2088,7 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
             let name = read(t.name.parts.data + 0)
             if name.equal("str"):
                 resolved = types.Type.ty_str
-            else if is_primitive_name(name):
+            else if is_builtin_type_name(name):
                 resolved = types.primitive(name)
             else if ctx.analysis.type_names.contains(name):
                 resolved = types.Type.ty_imported(module_name = ctx.module_name, name = name, args = span[types.Type]())
@@ -2794,7 +2721,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 let operand = lower_expr(ctx, un.operand)
                 let op_ty = ir_expr_type(operand)
                 if un.operator == "-":
-                    let vname = primitive_type_name(op_ty)
+                    let vname = nominal_type_name(op_ty)
                     if is_vec_math_name(vname):
                         return lower_vec_unary_neg(ctx, operand, vname)
                 return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = expr_type(ctx, ep)))
@@ -4929,7 +4856,7 @@ function qualified_member_c_name_ext(module_prefix: str, owner: str, member: str
 ## Ruby's `c_type_name`, which returns the bare name for primitives (a struct
 ## receiver instead yields `<module>_<Type>`).
 function is_primitive_or_str_name(name: str) -> bool:
-    return is_primitive_name(name) or name.equal("str")
+    return is_builtin_type_name(name) or name.equal("str")
 
 
 ## The C linkage name for a method on a primitive or `str` receiver, mirroring
@@ -8755,8 +8682,8 @@ function promoted_binary_operand_type(operator: str, left: types.Type, right: ty
     ):
         # Vector/matrix/quaternion arithmetic: same-type operations pass through;
         # scalar * vector uses the vector type; scalar / vector is unsupported.
-        let lp = primitive_type_name(left)
-        let rp = primitive_type_name(right)
+        let lp = nominal_type_name(left)
+        let rp = nominal_type_name(right)
         if is_vec_math_name(lp) and lp.equal(rp):
             return Option[types.Type].some(value = left)
         if is_vec_math_name(lp) and types.is_numeric(right) and operator.equal("*"):
@@ -8818,8 +8745,8 @@ function lower_vec_unary_neg(ctx: ref[LowerCtx], operand: ptr[ir.Expr], name: st
             field_ty = types.primitive("vec4")
         let field_access = alloc_expr(ir.Expr.expr_member(receiver = operand, member = fname, ty = field_ty))
         var neg_val: ptr[ir.Expr]
-        if is_vec_math_name(primitive_type_name(field_ty)):
-            neg_val = lower_vec_unary_neg(ctx, field_access, primitive_type_name(field_ty))
+        if is_vec_math_name(nominal_type_name(field_ty)):
+            neg_val = lower_vec_unary_neg(ctx, field_access, nominal_type_name(field_ty))
         else:
             neg_val = alloc_expr(ir.Expr.expr_unary(operator = "-", operand = field_access, ty = field_ty))
         fields.push(ir.AggregateField(name = fname, value = neg_val))
@@ -8827,7 +8754,7 @@ function lower_vec_unary_neg(ctx: ref[LowerCtx], operand: ptr[ir.Expr], name: st
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = ty, fields = fields.as_span()))
 
 
-function primitive_type_name(t: types.Type) -> str:
+function nominal_type_name(t: types.Type) -> str:
     match t:
         types.Type.ty_primitive as p:
             return p.name
@@ -9092,12 +9019,12 @@ function resolve_scalar_type_ref(declared: ptr[ast.TypeRef]) -> types.Type:
         let name = read(t.name.parts.data + 0)
         if name.equal("str"):
             return types.Type.ty_str
-        if is_primitive_name(name):
+        if is_builtin_type_name(name):
             return types.primitive(name)
         return types.Type.ty_error
 
 
-function is_primitive_name(name: str) -> bool:
+function is_builtin_type_name(name: str) -> bool:
     return (
         name.equal("bool") or name.equal("byte") or name.equal("ubyte") or name.equal("char")
         or name.equal("short") or name.equal("ushort") or name.equal("int") or name.equal("uint")
