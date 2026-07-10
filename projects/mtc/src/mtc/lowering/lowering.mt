@@ -2905,7 +2905,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
         return
     # Detect captures from loop body.
     var outer_len = ctx.locals.len()
-    let loop_body = lower_block(ctx, bd)
+    var loop_body = lower_block(ctx, bd)
     var names = map_mod.Map[str, bool].create()
     collect_ir_names(loop_body, ref_of(names))
     var pfor_captures = map_mod.Map[str, LocalBinding].create()
@@ -2927,10 +2927,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
             continue
         match find_local_before(ctx, nm, outer_len):
             Option.some as lb:
-                # Don't capture arrays — aggregate-literal field-init can't
-                # initialise array fields from other array variables.
-                if not is_array_type(lb.value.ty):
-                    pfor_captures.set(nm, lb.value)
+                pfor_captures.set(nm, lb.value)
             Option.none:
                 pass
     # Generate capture struct if needed.
@@ -2981,6 +2978,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
             unsafe:
                 pf_full.push(read(loop_body.data + lbi))
             lbi += 1
+        loop_body = pf_full.as_span()
     let worker = parallel_for_worker_fn(ctx, loop_body)
     var call_args = vec.Vec[ir.Expr].create()
     let start_expr = lower_expr(ctx, start_ptr)
@@ -2992,17 +2990,36 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
         call_args.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
     if pfor_has_captures:
         let pf_cap_ty = types.Type.ty_named(module_name = "", name = pfor_cap_name)
-        var pf_lit_fields = vec.Vec[ir.AggregateField].create()
+        let pf_cap_var = j2("__pf_cap_", pfor_uid)
+        var pf_setup = vec.Vec[ir.Stmt].create()
+        let pf_cap_ref = alloc_expr(ir.Expr.expr_name(name = pf_cap_var, ty = pf_cap_ty, pointer = false))
+        pf_setup.push(ir.Stmt.stmt_local(name = pf_cap_var, linkage_name = pf_cap_var, ty = pf_cap_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = pf_cap_ty)), line = 0, source_path = ""))
         var pf_iter3 = pfor_captures.entries()
         while pf_iter3.next():
             let pe3 = pf_iter3.current()
             let lb_ptr = pfor_captures.get(unsafe: read(pe3.key)) else:
                 fatal(c"lower_parallel_for: missing capture")
             let lb_val = unsafe: read(lb_ptr)
-            pf_lit_fields.push(ir.AggregateField(name = unsafe: read(pe3.key), value = alloc_expr(ir.Expr.expr_name(name = unsafe: read(pe3.key), ty = lb_val.ty, pointer = false))))
-        let pf_lit = alloc_expr(ir.Expr.expr_aggregate_literal(ty = pf_cap_ty, fields = pf_lit_fields.as_span()))
-        let pf_cap_var = j2("__pf_cap_", pfor_uid)
-        output.push(ir.Stmt.stmt_local(name = pf_cap_var, linkage_name = pf_cap_var, ty = pf_cap_ty, value = pf_lit, line = 0, source_path = ""))
+            let key = unsafe: read(pe3.key)
+            let outer_ref = alloc_expr(ir.Expr.expr_name(name = key, ty = lb_val.ty, pointer = false))
+            let field_ref = alloc_expr(ir.Expr.expr_member(receiver = pf_cap_ref, member = key, ty = lb_val.ty))
+            if is_array_type(lb_val.ty):
+                let field_addr = alloc_expr(ir.Expr.expr_address_of(expression = field_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(lb_val.ty))))
+                let outer_addr = alloc_expr(ir.Expr.expr_address_of(expression = outer_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(lb_val.ty))))
+                let sz = alloc_expr(ir.Expr.expr_sizeof(target_type = lb_val.ty, ty = types.primitive("ptr_uint")))
+                var mc_args = vec.Vec[ir.Expr].create()
+                unsafe:
+                    mc_args.push(read(field_addr))
+                    mc_args.push(read(outer_addr))
+                    mc_args.push(read(sz))
+                pf_setup.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = mc_args.as_span(), ty = types.primitive("void"))), line = 0, source_path = ""))
+            else:
+                pf_setup.push(ir.Stmt.stmt_assignment(target = field_ref, operator = "=", value = outer_ref))
+        var pf_setup_iter = pf_setup.iter()
+        while true:
+            let psp = pf_setup_iter.next() else:
+                break
+            output.push(unsafe: read(psp))
         let pf_data_ref = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = pf_cap_var, ty = pf_cap_ty, pointer = false)), ty = void_ptr_ty()))
         unsafe:
             call_args.push(read(pf_data_ref))
@@ -3041,8 +3058,7 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
             let nm = unsafe: read(np)
             match find_local_before(ctx, nm, outer_len):
                 Option.some as lb:
-                    if not is_array_type(lb.value.ty):
-                        all_captures.set(nm, lb.value)
+                    all_captures.set(nm, lb.value)
                 Option.none:
                     pass
         i += 1
@@ -3114,19 +3130,40 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
         unsafe:
             spawn_args.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
         if has_captures:
-            # Build capture aggregate literal and pass its address as data.
+            # Zero-init the capture struct, then assign each field individually.
+            # Array-typed fields use memcpy — C aggregate-literal field-init cannot
+            # initialise array fields from same-typed array variables.
             let cap_ty = types.Type.ty_named(module_name = "", name = cap_struct_name)
-            var cap_lit_fields = vec.Vec[ir.AggregateField].create()
+            let cap_var = j3("__cap_", cap_uid, j2("_", pw1_str(i)))
+            var cap_setup = vec.Vec[ir.Stmt].create()
+            let cap_ref = alloc_expr(ir.Expr.expr_name(name = cap_var, ty = cap_ty, pointer = false))
+            cap_setup.push(ir.Stmt.stmt_local(name = cap_var, linkage_name = cap_var, ty = cap_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = cap_ty)), line = 0, source_path = ""))
             var cap_iter3 = all_captures.entries()
             while cap_iter3.next():
                 let entry3 = cap_iter3.current()
                 let lb2_ptr = all_captures.get(unsafe: read(entry3.key)) else:
                     fatal(c"lower_parallel_block: missing capture")
                 let lb_val = unsafe: read(lb2_ptr)
-                cap_lit_fields.push(ir.AggregateField(name = unsafe: read(entry3.key), value = alloc_expr(ir.Expr.expr_name(name = unsafe: read(entry3.key), ty = lb_val.ty, pointer = false))))
-            let cap_lit = alloc_expr(ir.Expr.expr_aggregate_literal(ty = cap_ty, fields = cap_lit_fields.as_span()))
-            let cap_var = j3("__cap_", cap_uid, j2("_", pw1_str(i)))
-            output.push(ir.Stmt.stmt_local(name = cap_var, linkage_name = cap_var, ty = cap_ty, value = cap_lit, line = 0, source_path = ""))
+                let key = unsafe: read(entry3.key)
+                let outer_ref = alloc_expr(ir.Expr.expr_name(name = key, ty = lb_val.ty, pointer = false))
+                let field_ref = alloc_expr(ir.Expr.expr_member(receiver = cap_ref, member = key, ty = lb_val.ty))
+                if is_array_type(lb_val.ty):
+                    let field_addr = alloc_expr(ir.Expr.expr_address_of(expression = field_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(lb_val.ty))))
+                    let outer_addr = alloc_expr(ir.Expr.expr_address_of(expression = outer_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(lb_val.ty))))
+                    let sz = alloc_expr(ir.Expr.expr_sizeof(target_type = lb_val.ty, ty = types.primitive("ptr_uint")))
+                    var mc_args = vec.Vec[ir.Expr].create()
+                    unsafe:
+                        mc_args.push(read(field_addr))
+                        mc_args.push(read(outer_addr))
+                        mc_args.push(read(sz))
+                    cap_setup.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = mc_args.as_span(), ty = types.primitive("void"))), line = 0, source_path = ""))
+                else:
+                    cap_setup.push(ir.Stmt.stmt_assignment(target = field_ref, operator = "=", value = outer_ref))
+            var cs_iter = cap_setup.iter()
+            while true:
+                let csp = cs_iter.next() else:
+                    break
+                output.push(unsafe: read(csp))
             let cap_data_ref = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = cap_var, ty = cap_ty, pointer = false)), ty = void_ptr_ty()))
             unsafe:
                 spawn_args.push(read(cap_data_ref))
