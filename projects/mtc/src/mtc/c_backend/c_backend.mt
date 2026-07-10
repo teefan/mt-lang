@@ -1410,6 +1410,9 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
         let elem_name = c_type(unsafe: read(args.data + 0))
         let count_str = naming.type_c_key(unsafe: read(args.data + 1))
         return j4("mt_soa_", elem_name, "_", count_str)
+    # array[T, N] in type position (e.g. sizeof) → <elem>[<N>]
+    if name.equal("array") and args.len >= 2:
+        return j3(c_type(unsafe: read(args.data + 0)), "[", j2(naming.type_c_key(unsafe: read(args.data + 1)), "]"))
     # Generic variant: `<name>_<type0>_<type1>_...`.  The caller module prefix
     # is added by `qualified_c_name` when the type is `ty_imported`.
     # Prelude types (Option, Result) carry the prefix in their raw name from the
