@@ -752,7 +752,12 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             d = read(analysis.source_file.declarations.data + i)
         match d:
             ast.Decl.decl_function as fun:
-                if lowerable_function(fun.is_async, fun.is_const, fun.type_params, fun.body):
+                # Functions in async runtime modules have their own C
+                # implementation — don't lower their bodies, but keep
+                # their declarations for type-checking.
+                if analysis.module_name.starts_with("std.async.libuv_runtime"):
+                    pass
+                else if lowerable_function(fun.is_async, fun.is_const, fun.type_params, fun.body):
                     functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, fun.is_async))
                     if is_root and fun.name.equal("main"):
                         match build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
@@ -4968,6 +4973,12 @@ function lower_monomorphized_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], typ
     # from multiple caller modules dedups to one definition (see
     # dedup_append_functions).
     let spec_key = specialization_key(ctx, gm.module_name, callee_name, type_args)
+    # Skip monomorphizing async runtime module functions — they have their
+    # own C implementation and the compiler-generated Task[T] type doesn't
+    # match the runtime's representation.
+    if gm.module_name.starts_with("std.async"):
+        let ret_ty = types.primitive("void")
+        return alloc_expr(ir.Expr.expr_zero_init(ty = ret_ty))
     if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
         lower_and_cache_specialization(ctx, gm, type_args, spec_key)
     let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
@@ -5049,9 +5060,46 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], callee_name: str, args: s
                 tpi += 1
             let spec_key = key.as_str()
             if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
-                lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key)
+                if gm.module_name.starts_with("std.async"):
+                    # Emit a stub forwarding to the C runtime library.
+                    # Build a correct signature so call sites match.
+                    var stub_params = vec.Vec[ir.Param].create()
+                    var spj: ptr_uint = 0
+                    while spj < fun.method_params.len:
+                        var fm: ast.Param = unsafe: read(fun.method_params.data + spj)
+                        var raw_ty = types.Type.ty_error
+                        if fm.param_type.is_proc or fm.param_type.is_fn:
+                            raw_ty = substitute_type_params(ctx, resolve_function_type_ref(ctx, ptr_of(fm.param_type)), ref_of(sub))
+                        else:
+                            raw_ty = substitute_type_params(ctx, resolve_type_ref(ctx, ptr_of(fm.param_type)), ref_of(sub))
+                        stub_params.push(ir.Param(name = fm.name, linkage_name = fm.name, ty = qualify_type(ctx, raw_ty), pointer = false))
+                        spj += 1
+                    let stub_ret_ty = types.primitive("int")
+                    var empty_body = vec.Vec[ir.Stmt].create()
+                    empty_body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_zero_init(ty = stub_ret_ty)), line = 0, source_path = ""))
+                    let stub_fn = ir.Function(name = spec_key, linkage_name = spec_key, params = stub_params.as_span(), return_type = stub_ret_ty, body = empty_body.as_span(), entry_point = false, method_receiver_param = false)
+                    ctx.pending_synthetic_functions.push(stub_fn)
+                    ctx.specialization_cache.set(spec_key, stub_fn)
+                else:
+                    lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key)
             let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
-            return Option[ptr[ir.Expr]].some(value = lower_plain_call(ctx, spec_key, args, call_ep, types.alloc_type(ret_ty)))
+            # Pass a synthesized sig for async wait/run so coerce_fn_arg_to_proc
+            # can wrap task expressions in procs (task-root-proc bridge).
+            var sig = Option[analyzer.FnSig].none
+            if gm.module_name.starts_with("std.async") and (callee_name.equal("wait") or callee_name.equal("run")):
+                var syn_params = vec.Vec[analyzer.ParamEntry].create()
+                var spi: ptr_uint = 0
+                while spi < fun.method_params.len:
+                    var fm: ast.Param = unsafe: read(fun.method_params.data + spi)
+                    var p_ty = types.Type.ty_error
+                    if fm.param_type.is_proc or fm.param_type.is_fn:
+                        p_ty = substitute_type_params(ctx, resolve_function_type_ref(ctx, ptr_of(fm.param_type)), ref_of(sub))
+                    else:
+                        p_ty = substitute_type_params(ctx, resolve_type_ref(ctx, ptr_of(fm.param_type)), ref_of(sub))
+                    syn_params.push(analyzer.ParamEntry(name = fm.name, ty = p_ty))
+                    spi += 1
+                sig = Option[analyzer.FnSig].some(value = analyzer.FnSig(name = callee_name, params = syn_params.as_span(), return_type = types.primitive("void"), has_return_type = false, method_kind = ast.MethodKind.mk_plain))
+            return Option[ptr[ir.Expr]].some(value = lower_plain_call_sig(ctx, spec_key, args, call_ep, types.alloc_type(ret_ty), sig))
         _:
             return Option[ptr[ir.Expr]].none
 
@@ -5099,8 +5147,30 @@ function unify_type_param(param_name: str, param_ref: ast.TypeRef, arg_ty: types
     if param_ref.is_proc or param_ref.is_fn:
         let prec = param_ref.fn_return
         if prec != null:
-            let inner_ret = proc_return_type(arg_ty)
-            return unify_type_param(param_name, unsafe: read(prec), inner_ret)
+            if is_proc_type(arg_ty) or is_fn_type(arg_ty):
+                let inner_ret = proc_return_type(arg_ty)
+                return unify_type_param(param_name, unsafe: read(prec), inner_ret)
+            # Task-root-proc bridge: arg is a plain Task[X] value matching
+            # proc()->Task[T].  Peel wrapper to match type var against arg.
+            let ret_ref = unsafe: read(prec)
+            if ret_ref.arguments.len >= 1:
+                let ret_name = type_ref_simple_name(ret_ref)
+                match arg_ty:
+                    types.Type.ty_generic as g:
+                        if g.name.equal(ret_name) and g.args.len == ret_ref.arguments.len:
+                            var mi: ptr_uint = 0
+                            while mi < g.args.len and mi < ret_ref.arguments.len:
+                                var inner_ref = unsafe: read(ret_ref.arguments.data + mi)
+                                match unify_type_param(param_name, inner_ref, unsafe: read(g.args.data + mi)):
+                                    Option.some as found:
+                                        return Option[types.Type].some(value = found.value)
+                                    Option.none:
+                                        pass
+                                mi += 1
+                            return Option[types.Type].none
+                    _:
+                        pass
+            return unify_type_param(param_name, ret_ref, arg_ty)
         return Option[types.Type].none
     return Option[types.Type].none
 
@@ -7306,6 +7376,24 @@ function coerce_fn_arg_to_proc(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], 
                         if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
                             let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
                             return lower_fn_to_proc(ctx, fn_c_name, param_ty)
+                    # Task-root-proc bridge: argument is a function call returning
+                    # Task[X] — wrap it in a proc to match proc()->Task[T] parameter.
+                    ast.Expr.expr_call as call:
+                        match read(call.callee):
+                            ast.Expr.expr_identifier as callee_id:
+                                let actual_ty = ir_expr_type(lowered)
+                                var is_task = false
+                                match actual_ty:
+                                    types.Type.ty_generic as g:
+                                        if g.name.equal("Task"):
+                                            is_task = true
+                                    _:
+                                        pass
+                                if is_task and (ctx.function_returns.contains(callee_id.name) or ctx.analysis.functions.contains(callee_id.name)):
+                                    let fn_c_name = naming.qualified_c_name(ctx.module_name, callee_id.name)
+                                    return lower_fn_to_proc(ctx, fn_c_name, param_ty)
+                            _:
+                                pass
                     _:
                         pass
             return lowered
