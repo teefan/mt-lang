@@ -742,8 +742,10 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             ast.Decl.decl_struct as s:
                 # Skip generic structs — only their concrete specializations
                 # (emitted by `ensure_generic_struct_decl`) carry resolved
-                # field types.
-                if s.type_params.len == 0:
+                # field types.  Structs with only lifetime parameters (`@a`)
+                # are not generic in the monomorphization sense and should
+                # be emitted directly.
+                if not has_non_lifetime_type_params(s.type_params):
                     match lower_struct_decl(ref_of(ctx), s.name):
                         Option.some as sd:
                             structs.push(sd.value)
@@ -10249,3 +10251,17 @@ function lower_multi_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = loop_body.as_span())
     output.push(for_stmt)
+
+
+## True when a span of type parameters contains at least one non-lifetime
+## parameter (i.e. the struct/deferred type requires monomorphization).
+## Lifetime-only parameters (`@a`) are erased at the C level and the struct
+## can be emitted directly without specialization.
+function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
+    var i: ptr_uint = 0
+    while i < params.len:
+        unsafe:
+            if not read(params.data + i).is_lifetime:
+                return true
+        i += 1
+    return false
