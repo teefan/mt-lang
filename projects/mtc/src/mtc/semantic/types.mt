@@ -26,7 +26,7 @@ public variant Type:
     ty_var(name: str)
     ty_dyn(iface: str)
     ty_generic(name: str, args: span[Type])
-    ty_function(params: span[Type], return_type: ptr[Type], variadic: bool)
+    ty_function(params: span[Type], return_type: ptr[Type], variadic: bool, is_proc: bool)
     ty_literal_int(value: long)
     ty_tuple(elements: span[Type])
 

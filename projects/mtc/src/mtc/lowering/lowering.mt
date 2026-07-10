@@ -629,7 +629,7 @@ function substitute_type_params(ctx: ref[LowerCtx], ty: types.Type, sub: ref[map
                 unsafe:
                     fn_params.push(substitute_type_params(ctx, read(fnt.params.data + pi), sub))
                 pi += 1
-            return types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(substitute_type_params(ctx, unsafe: read(fnt.return_type), sub)), variadic = fnt.variadic)
+            return types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(substitute_type_params(ctx, unsafe: read(fnt.return_type), sub)), variadic = fnt.variadic, is_proc = fnt.is_proc)
         _:
             return ty
 
@@ -2244,6 +2244,7 @@ function resolve_function_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> 
         params = param_types.as_span(),
         return_type = types.alloc_type(ret),
         variadic = false,
+        is_proc = t.is_proc,
     )
 
 
@@ -2726,8 +2727,12 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                             let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
                             let fn_ty = expr_type(ctx, ep)
                             match fn_ty:
-                                types.Type.ty_function:
-                                    return lower_fn_to_proc(ctx, fn_c_name, fn_ty)
+                                types.Type.ty_function as fnt:
+                                    # Only wrap in proc struct when the expected type
+                                    # is a proc (is_proc == true).  For plain fn
+                                    # fields, pass the function pointer directly.
+                                    if fnt.is_proc:
+                                        return lower_fn_to_proc(ctx, fn_c_name, fn_ty)
                                 _:
                                     pass
                             return alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = fn_ty, pointer = false))
@@ -3212,7 +3217,7 @@ function proc_invoke_field_type(proc_ty: types.Type) -> types.Type:
                 unsafe:
                     all_params.push(read(fn_ty.params.data + i))
                 i += 1
-            return types.Type.ty_function(params = all_params.as_span(), return_type = fn_ty.return_type, variadic = false)
+            return types.Type.ty_function(params = all_params.as_span(), return_type = fn_ty.return_type, variadic = false, is_proc = true)
         _:
             return types.Type.ty_error
 
@@ -3221,7 +3226,7 @@ function proc_invoke_field_type(proc_ty: types.Type) -> types.Type:
 function proc_lifecycle_fn_type() -> types.Type:
     var params = vec.Vec[types.Type].create()
     params.push(types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))))
-    return types.Type.ty_function(params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false)
+    return types.Type.ty_function(params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
 ## fields `_0`, `_1`, ... and a `ty_tuple` type.  (Named tuples arrive later.)
 function lower_tuple_literal(ctx: ref[LowerCtx], elements: span[ast.Expr]) -> ptr[ir.Expr]:
     var fields = vec.Vec[ir.AggregateField].create()
@@ -4680,7 +4685,7 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, m
             pi += 1
         var ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: types.primitive("void")
         ret = substitute_interface_type_params(ret, type_args, type_params)
-        let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false)
+        let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false)
         fields.push(ir.Field(name = m.name, ty = fn_ty))
         mi += 1
     ctx.pending_dyn_vtable_structs.push(ir.StructDecl(name = vtable_type_c_name, linkage_name = vtable_type_c_name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
@@ -4824,7 +4829,7 @@ function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_typ
             fn_params.push(resolve_field_type_ref(ctx, p.param_type))
             pi += 1
         let ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: types.primitive("void")
-        let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false)
+        let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false)
         fields.push(ir.AggregateField(name = m.name, value = alloc_expr(ir.Expr.expr_name(name = wrapper_c_name, ty = fn_ty, pointer = false))))
         mi += 1
     ctx.pending_dyn_constants.push(ir.Constant(
@@ -6057,7 +6062,7 @@ function lower_listener_arg(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> ptr[ir.Ex
                 if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
                     let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
                     let void_ty = types.primitive("void")
-                    let void_fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false)
+                    let void_fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false)
                     return alloc_expr(ir.Expr.expr_cast(
                         target_type = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))),
                         expression = alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = void_fn_ty, pointer = false)),
@@ -8663,7 +8668,7 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                                     unsafe:
                                         param_types.push(read(s.value.params.data + pi).ty)
                                     pi += 1
-                                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false)
+                                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false)
                             Option.none:
                                 pass
                         return types.Type.ty_error

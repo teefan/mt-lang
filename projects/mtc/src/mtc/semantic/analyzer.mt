@@ -1091,7 +1091,7 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
         if fr != null:
             unsafe:
                 ret = resolve_type_at(ctx, read(fr), depth + 1)
-        let base = types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false)
+        let base = types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = t.is_proc)
         return wrap_nullable(base, t.nullable)
 
     if t.is_dyn:
@@ -2636,7 +2636,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr
                 let rt = pr.return_type
                 if rt != null:
                     ret = resolve_type(ctx, rt)
-                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false)
+                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true)
             ast.Expr.expr_if as ife:
                 let then_ty = infer_expr(ctx, scope, ife.then_expr)
                 let else_ty = infer_expr(ctx, scope, ife.else_expr)
@@ -2910,7 +2910,7 @@ function substitute_type(t: types.Type, subs: ref[map_mod.Map[str, types.Type]])
                     new_params.push(substitute_type(read(f.params.data + pi2), subs))
                 pi2 += 1
             let new_ret = substitute_type(unsafe: read(f.return_type), subs)
-            return types.Type.ty_function(params = new_params.as_span(), return_type = types.alloc_type(new_ret), variadic = f.variadic)
+            return types.Type.ty_function(params = new_params.as_span(), return_type = types.alloc_type(new_ret), variadic = f.variadic, is_proc = f.is_proc)
         _:
             return t
 
