@@ -2260,6 +2260,17 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
             if mod_ptr != null:
                 let target_module = unsafe: read(mod_ptr)
                 resolved = types.Type.ty_imported(module_name = target_module, name = type_name, args = span[types.Type]())
+            else:
+                # Not an import alias: may be a nested struct, e.g.
+                # `Rectangle.Edge`.  The bare name is stored in structs and
+                # emitted under that name (e.g. `language_baseline_Edge`).
+                var nested_key = string.String.create()
+                nested_key.append(alias)
+                nested_key.append(".")
+                nested_key.append(type_name)
+                let nkey = nested_key.as_str()
+                if ctx.analysis.structs.contains(nkey):
+                    resolved = types.Type.ty_imported(module_name = ctx.module_name, name = type_name, args = span[types.Type]())
         else if t.name.parts.len == 1:
             let name = read(t.name.parts.data + 0)
             if name.equal("str"):
@@ -3256,7 +3267,18 @@ function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str,
         let cap = unsafe: read(captures.data + ci2)
         let field = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty))
         let cap_val = alloc_expr(ir.Expr.expr_name(name = cap.c_name, ty = cap.ty, pointer = false))
-        body.push(ir.Stmt.stmt_assignment(target = field, operator = "=", value = cap_val))
+        if is_array_type(cap.ty):
+            let addr_of_field = alloc_expr(ir.Expr.expr_address_of(expression = field, ty = types.Type.ty_generic(name = "ptr", args = sp_type(cap.ty))))
+            let addr_of_arg = alloc_expr(ir.Expr.expr_address_of(expression = cap_val, ty = types.Type.ty_generic(name = "ptr", args = sp_type(cap.ty))))
+            let size_val = alloc_expr(ir.Expr.expr_sizeof(target_type = cap.ty, ty = uint_ty))
+            var memcpy_args = vec.Vec[ir.Expr].create()
+            unsafe:
+                memcpy_args.push(read(addr_of_field))
+                memcpy_args.push(read(addr_of_arg))
+                memcpy_args.push(read(size_val))
+            body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = memcpy_args.as_span(), ty = types.primitive("void"))), line = 0, source_path = ""))
+        else:
+            body.push(ir.Stmt.stmt_assignment(target = field, operator = "=", value = cap_val))
         ci2 += 1
 
     # return env
@@ -3707,9 +3729,15 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         if types.is_nullable_type(elem_ty):
                             elem_ty = types.unwrap_nullable(elem_ty)
                         if is_array_type(recv_ty):
-                            return alloc_expr(ir.Expr.expr_checked_index(receiver = recv_ir, index = idx_ir, receiver_type = recv_ty, ty = elem_ty))
+                            let checked = alloc_expr(ir.Expr.expr_checked_index(receiver = recv_ir, index = idx_ir, receiver_type = recv_ty, ty = elem_ty))
+                            let ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(qualify_type(ctx, elem_ty)))
+                            let nullable_ptr = types.Type.ty_nullable(base = types.alloc_type(ptr_ty))
+                            return alloc_expr(ir.Expr.expr_address_of(expression = checked, ty = nullable_ptr))
                         if is_span_type(recv_ty):
-                            return alloc_expr(ir.Expr.expr_checked_span_index(receiver = recv_ir, index = idx_ir, receiver_type = recv_ty, ty = elem_ty))
+                            let checked = alloc_expr(ir.Expr.expr_checked_span_index(receiver = recv_ir, index = idx_ir, receiver_type = recv_ty, ty = elem_ty))
+                            let ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(qualify_type(ctx, elem_ty)))
+                            let nullable_ptr = types.Type.ty_nullable(base = types.alloc_type(ptr_ty))
+                            return alloc_expr(ir.Expr.expr_address_of(expression = checked, ty = nullable_ptr))
                 # Native `str(data = ..., len = ...)` construction -> mt_str
                 # aggregate literal (not a call to a `str` function).
                 if id.name.equal("str"):
