@@ -65,6 +65,7 @@ public struct ModuleBinding:
     functions: map_mod.Map[str, FnSig]
     structs: map_mod.Map[str, span[FieldEntry]]
     value_types: map_mod.Map[str, types.Type]
+    type_aliases: map_mod.Map[str, bool]
     static_member_types: map_mod.Map[str, bool]
     member_keys: map_mod.Map[str, bool]
     method_sigs: map_mod.Map[str, FnSig]
@@ -74,6 +75,7 @@ public struct ModuleBinding:
     private_functions: map_mod.Map[str, FnSig]
     private_structs: map_mod.Map[str, span[FieldEntry]]
     private_value_types: map_mod.Map[str, types.Type]
+    private_type_aliases: map_mod.Map[str, bool]
     private_static_member_types: map_mod.Map[str, bool]
     private_member_keys: map_mod.Map[str, bool]
     private_method_sigs: map_mod.Map[str, FnSig]
@@ -1130,7 +1132,7 @@ function resolve_imported_type(ctx: ref[Context], name: ast.QualifiedName) -> Op
         return Option[types.Type].none
     unsafe:
         let binding = read(binding_ptr)
-        if binding.structs.contains(type_name) or binding.static_member_types.contains(type_name) or binding.interfaces.contains(type_name):
+        if binding.structs.contains(type_name) or binding.type_aliases.contains(type_name) or binding.static_member_types.contains(type_name) or binding.interfaces.contains(type_name):
             return Option[types.Type].some(value = types.Type.ty_imported(module_name = read(module_name_ptr), name = type_name, args = span[types.Type]()))
     return Option[types.Type].none
 
