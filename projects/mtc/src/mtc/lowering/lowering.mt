@@ -2965,6 +2965,15 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                         if id.name.equal("zero") and spec.arguments.len == 1:
                             let z_ty = resolve_type_ref(ctx, read(spec.arguments.data + 0).value)
                             return alloc_expr(ir.Expr.expr_zero_init(ty = z_ty))
+                        if id.name.equal("default") and spec.arguments.len == 1:
+                            let t_ty = qualify_type(ctx, resolve_type_ref(ctx, read(spec.arguments.data + 0).value))
+                            match resolve_method_info(ctx, t_ty, "default"):
+                                Option.some as smi:
+                                    if smi.value.method_kind == ast.MethodKind.mk_static:
+                                        var empty_args = span[ast.Argument]()
+                                        return lower_static_call_args(ctx, smi.value, empty_args)
+                                Option.none:
+                                    pass
                     _:
                         pass
                 return alloc_expr(ir.Expr.expr_name(name = "spec", ty = types.Type.ty_error, pointer = false))
@@ -4047,6 +4056,18 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                 if id.name.equal("zero") and type_args.len == 1:
                     let z_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
                     return alloc_expr(ir.Expr.expr_zero_init(ty = z_ty))
+                # Builtin `default[T]` → call T.default(), the zero-argument
+                # static method on the type.  The method must exist at check time
+                # (the analyzer already verified it).
+                if id.name.equal("default") and type_args.len == 1 and call_args.len == 0:
+                    let t_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
+                    match resolve_method_info(ctx, t_ty, "default"):
+                        Option.some as smi:
+                            if smi.value.method_kind == ast.MethodKind.mk_static:
+                                var nil_receiver = alloc_expr(ir.Expr.expr_null_literal(ty = t_ty))
+                                return lower_static_call_args(ctx, smi.value, call_args)
+                        Option.none:
+                            pass
                 if (
                     id.name.equal("attribute_arg") or id.name.equal("attribute_of")
                     or id.name.equal("field_of") or id.name.equal("callable_of")
