@@ -1514,6 +1514,25 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         let ret_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = ret_ty, pointer = false))
                         output.push(ir.Stmt.stmt_return(value = ret_ref, line = r.line, source_path = ""))
                         return
+                    ast.Expr.expr_call as outer_call:
+                        # Chain call: `return f(a)(b)` where `f(a)` returns a
+                        # proc/fn.  Hoist the inner call into a temp so the
+                        # outer call can reference both `.invoke` and `.env`.
+                        match read(outer_call.callee):
+                            ast.Expr.expr_call:
+                                let inner_result = lower_expr(ctx, outer_call.callee)
+                                let inner_ty = ir_expr_type(inner_result)
+                                if is_proc_type(inner_ty):
+                                    let chain_tmp = fresh_c_temp_name(ctx, "chain")
+                                    let ct = c_local_name(chain_tmp)
+                                    output.push(ir.Stmt.stmt_local(name = chain_tmp, linkage_name = ct, ty = inner_ty, value = inner_result, line = 0, source_path = ""))
+                                    let lb = LocalBinding(name = chain_tmp, c_name = ct, ty = inner_ty, pointer = false)
+                                    let proc_ret = lower_proc_call(ctx, lb, outer_call.args, value)
+                                    flush_all_defers(ctx, output)
+                                    output.push(ir.Stmt.stmt_return(value = proc_ret, line = r.line, source_path = ""))
+                                    return
+                            _:
+                                pass
                     _:
                         pass
                 # Plain `return expr`: when defers are active they must run after the
