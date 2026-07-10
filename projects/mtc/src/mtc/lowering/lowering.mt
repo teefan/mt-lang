@@ -3455,6 +3455,11 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     return lower_aggregate_literal(ctx, id.name, args)
                 if struct_exists_in_imports(ctx, id.name):
                     return lower_aggregate_literal(ctx, id.name, args)
+                # Native type constructors: vec3(x=..., y=..., z=...),
+                # mat4(col0=..., ...), quat(x=..., ...).  These are not in
+                # structs but are builtin aggregate types.
+                if is_builtin_type_name(id.name):
+                    return lower_aggregate_literal(ctx, id.name, args)
                 let foreign_ptr = ctx.foreign_map.get(id.name)
                 if foreign_ptr != null:
                     return lower_foreign_call(ctx, read(foreign_ptr), args, call_ep)
@@ -4461,7 +4466,9 @@ function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: spa
         fields.push(ir.AggregateField(name = field_name, value = value))
         i += 1
     var source_module = ctx.module_name
-    if not ctx.analysis.structs.contains(struct_name):
+    if is_builtin_type_name(struct_name):
+        source_module = ""
+    else if not ctx.analysis.structs.contains(struct_name):
         var import_values = ctx.analysis.imports.values()
         var found_module = false
         while not found_module:
@@ -4475,6 +4482,13 @@ function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: spa
                         found_module = true
                 Option.none:
                     pass
+    # Use ty_named for types with no module prefix (ty_imported always
+    # qualifies through module_c_prefix, which maps "" → "value").
+    if source_module.len == 0:
+        return alloc_expr(ir.Expr.expr_aggregate_literal(
+            ty = types.Type.ty_named(module_name = "", name = struct_name),
+            fields = fields.as_span(),
+        ))
     return alloc_expr(ir.Expr.expr_aggregate_literal(
         ty = types.Type.ty_imported(module_name = source_module, name = struct_name, args = span[types.Type]()),
         fields = fields.as_span(),
