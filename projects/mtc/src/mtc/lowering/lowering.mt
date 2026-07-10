@@ -252,6 +252,66 @@ function ensure_str_buffer_struct(ctx: ref[LowerCtx], sb_ty: types.Type) -> void
 ## dependency-first order (the root module is the last retained analysis) and the
 ## fragments are concatenated into one program — mirroring Ruby's
 ## `lower_modules` / `assemble_modules`.
+
+## Look up the backing C type name, following type aliases across modules.
+## For `type uv_handle_s = c.uv_handle_s` in `std.libuv`, this follows the
+## import to `std.c.libuv.uv_handle_s` and looks up its `c_name = "uv_handle_t"`.
+function lookup_decl_c_name_cross(analysis: analyzer.Analysis, tv: types.Type, type_name: str, analyses: span[analyzer.Analysis]) -> Option[str]:
+    # First try the current module's declarations.
+    match lookup_decl_c_name(analysis, type_name):
+        Option.some as cn:
+            return Option[str].some(value = cn.value)
+        Option.none:
+            pass
+    # If the type is an imported type, follow the import chain.
+    match tv:
+        types.Type.ty_imported as im:
+            # Skip std.c.* raw ABI types — they ARE the C types.
+            if im.module_name.starts_with("std.c."):
+                return lookup_decl_c_name_in_module(im.module_name, im.name, analyses)
+        _:
+            pass
+    return Option[str].none
+
+
+## Look up the backing c_name of a type in a specific module's analysis.
+function lookup_decl_c_name_in_module(module_name: str, type_name: str, analyses: span[analyzer.Analysis]) -> Option[str]:
+    var ai: ptr_uint = 0
+    while ai < analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(analyses.data + ai)
+        if a.module_name.equal(module_name):
+            return lookup_decl_c_name(a, type_name)
+        ai += 1
+    return Option[str].none
+
+
+## Look up the backing C type name (`= c"..."`) for a struct, opaque, or union
+## declaration by scanning the analysis' source file.  Returns `Option[str].none`
+## when no backing name was provided.
+function lookup_decl_c_name(analysis: analyzer.Analysis, type_name: str) -> Option[str]:
+    var i: ptr_uint = 0
+    while i < analysis.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(analysis.source_file.declarations.data + i)
+        match d:
+            ast.Decl.decl_struct as s:
+                if s.name.equal(type_name):
+                    return s.c_name
+            ast.Decl.decl_opaque as op:
+                if op.name.equal(type_name):
+                    return op.c_name
+            ast.Decl.decl_union as u:
+                if u.name.equal(type_name):
+                    return u.c_name
+            _:
+                pass
+        i += 1
+    return Option[str].none
+
+
 public function lower(program: loader.Program) -> ir.Program:
     let count = program.analyses.len()
     if count == 0:
@@ -322,7 +382,12 @@ public function lower(program: loader.Program) -> ir.Program:
             let tvp = ta_analysis.type_alias_types.get(kn) else:
                 break
             let tv = unsafe: read(tvp)
-            type_aliases.push(ir.TypeAlias(name = kn, qualified_name = naming.qualified_c_name(ta_analysis.module_name, kn), target_type = tv))
+            type_aliases.push(ir.TypeAlias(
+                name = kn,
+                qualified_name = naming.qualified_c_name(ta_analysis.module_name, kn),
+                target_type = tv,
+                backing_c_name = lookup_decl_c_name_cross(ta_analysis, tv, kn, program.analyses.as_span()),
+            ))
         tai += 1
 
     return ir.Program(

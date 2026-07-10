@@ -3650,8 +3650,12 @@ function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
         var ta: ir.TypeAlias
         unsafe:
             ta = read(program.type_aliases.data + ai)
-        let c_type_str = c_declaration(ta.target_type, ta.qualified_name)
-        emit_line(e, j3("typedef ", c_type_str, ";"))
+        match ta.backing_c_name:
+            Option.some as cname:
+                emit_line(e, j5("typedef ", cname.value, " ", ta.qualified_name, ";"))
+            Option.none:
+                let c_type_str = c_declaration(ta.target_type, ta.qualified_name)
+                emit_line(e, j3("typedef ", c_type_str, ";"))
         ai += 1
     if program.type_aliases.len > 0:
         emit_line(e, "")

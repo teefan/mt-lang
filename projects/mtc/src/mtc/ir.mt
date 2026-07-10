@@ -207,6 +207,7 @@ public struct TypeAlias:
     name: str
     qualified_name: str
     target_type: types.Type
+    backing_c_name: Option[str]
 ## result and a convenient base for incremental assembly.
 public function empty_program(module_name: str, source_path: str) -> Program:
     return Program(
