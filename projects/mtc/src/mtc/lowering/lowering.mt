@@ -3660,6 +3660,10 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     Option.some as lb:
                         if is_proc_type(lb.value.ty):
                             return lower_proc_call(ctx, lb.value, args, call_ep)
+                        if is_fn_type(lb.value.ty):
+                            var ret_ty = expr_type(ctx, call_ep)
+                            var ret_type_ptr = types.alloc_type(ret_ty)
+                            return lower_plain_call_sig(ctx, lb.value.c_name, args, call_ep, ret_type_ptr, empty_fn_sig())
                     Option.none:
                         pass
                 match find_generic_function(ctx, id.name):
@@ -6901,6 +6905,21 @@ function is_proc_type(t: types.Type) -> bool:
             return fnt.is_proc
         _:
             return false
+
+
+## True when a type is an fn (raw C function pointer), not a proc struct.
+function is_fn_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_function as fnt:
+            return not fnt.is_proc
+        _:
+            return false
+
+
+## An empty FnSig used when calling through an fn-typed local — the callee
+## is a function pointer already carrying the correct signature at the C level.
+function empty_fn_sig() -> Option[analyzer.FnSig]:
+    return Option[analyzer.FnSig].none
 
 
 ## Generate a shared proc struct type name for a given function type:
