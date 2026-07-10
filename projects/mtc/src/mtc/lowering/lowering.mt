@@ -9327,23 +9327,9 @@ function lower_inline_for_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
                     var elem: ComptimeElement
                     unsafe:
                         elem = read(elements.value.data + i)
-                    var iter_stmts = vec.Vec[ir.Stmt].create()
-                    let binding_c = c_local_name(binding_name)
-                    # Bind the loop variable: for fields_of, use the field type;
-                    # for members_of/attributes, use int as a placeholder.
-                    var bind_ty = types.primitive("int")
-                    match elem:
-                        ComptimeElement.ce_struct_field as f:
-                            bind_ty = f.field_type
-                        _:
-                            pass
-                    iter_stmts.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = bind_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(i), ty = types.primitive("int"))), line = 0, source_path = ""))
-                    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = bind_ty, pointer = false))
-                    ctx.inline_for_element = Option[ComptimeElement].some(value = elem)
-                    lower_block_stmts(ctx, ref_of(iter_stmts), bp)
-                    ctx.inline_for_element = Option[ComptimeElement].none
-                    ctx.locals.pop()
-                    output.push(ir.Stmt.stmt_block(body = iter_stmts.as_span()))
+                    # For struct fields: check if the body is a type-guard pattern
+                    # `if field.type != X: return false` and evaluate at comptime.
+                    lower_inline_for_iteration(ctx, output, binding_name, elem, bp)
                 i += 1
         Option.none:
             pass
@@ -9472,6 +9458,108 @@ function comptime_attributes_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]
     if elements.len() == 0:
         return Option[span[ComptimeElement]].none
     return Option[span[ComptimeElement]].some(value = elements.as_span())
+
+
+## Lower one iteration of an inline for loop.  For struct fields, detect and
+## handle `size_of(field.type)` and `field.type != X` patterns at comptime.
+## For enum members and attributes, emit the body with a dummy binding.
+function lower_inline_for_iteration(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], binding_name: str, elem: ComptimeElement, body_ptr: ptr[ast.Stmt]) -> void:
+    match elem:
+        ComptimeElement.ce_struct_field as f:
+            lower_inline_for_field_iter(ctx, output, binding_name, f.name, f.field_type, body_ptr)
+        _:
+            var iter_stmts = vec.Vec[ir.Stmt].create()
+            let binding_c = c_local_name(binding_name)
+            iter_stmts.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = types.primitive("int"), value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("int"))), line = 0, source_path = ""))
+            ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = types.primitive("int"), pointer = false))
+            ctx.inline_for_element = Option[ComptimeElement].some(value = elem)
+            lower_block_stmts(ctx, ref_of(iter_stmts), body_ptr)
+            ctx.inline_for_element = Option[ComptimeElement].none
+            ctx.locals.pop()
+            output.push(ir.Stmt.stmt_block(body = iter_stmts.as_span()))
+
+
+## Lower one inline for iteration over a struct field, handling size_of(field.type).
+function lower_inline_for_field_iter(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], binding_name: str, field_name: str, field_ty: types.Type, body_ptr: ptr[ast.Stmt]) -> void:
+    ctx.inline_for_element = Option[ComptimeElement].some(value = ComptimeElement.ce_struct_field(name = field_name, field_type = field_ty))
+    var iter_stmts = vec.Vec[ir.Stmt].create()
+    let binding_c = c_local_name(binding_name)
+    iter_stmts.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = field_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("int"))), line = 0, source_path = ""))
+    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = field_ty, pointer = false))
+    lower_inline_for_field_body(ctx, ref_of(iter_stmts), body_ptr, field_ty)
+    ctx.locals.pop()
+    ctx.inline_for_element = Option[ComptimeElement].none
+    output.push(ir.Stmt.stmt_block(body = iter_stmts.as_span()))
+
+
+function lower_inline_for_field_body(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], body: ptr[ast.Stmt], field_ty: types.Type) -> void:
+    var processed = false
+    unsafe:
+        match read(body):
+            ast.Stmt.stmt_block as blk:
+                lower_inline_for_field_stmts(ctx, output, blk.statements, field_ty)
+                processed = true
+            _:
+                pass
+    if not processed:
+        if not lower_inline_field_type_guard(ctx, output, body, field_ty):
+            lower_stmt(ctx, output, body)
+
+
+function lower_inline_for_field_stmts(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], stmts: span[ast.Stmt], field_ty: types.Type) -> void:
+    var i: ptr_uint = 0
+    while i < stmts.len:
+        unsafe:
+            lower_inline_for_field_body(ctx, output, stmts.data + i, field_ty)
+        i += 1
+
+
+## Try to lower `if field.type != X: return false` at comptime.
+function lower_inline_field_type_guard(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt], field_ty: types.Type) -> bool:
+    var br: ast.IfBranch
+    var body: ptr[ast.Stmt]?
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_if as iff:
+                if iff.branches.len != 1:
+                    return false
+                br = read(iff.branches.data + 0)
+            _:
+                return false
+    match extract_field_type_compare(ctx, br.condition, field_ty):
+        Option.some as matches:
+            if matches.value:
+                lower_block_stmts(ctx, output, br.body)
+            return true
+        Option.none:
+            return false
+
+
+function extract_field_type_compare(ctx: ref[LowerCtx], cond: ptr[ast.Expr], field_ty: types.Type) -> Option[bool]:
+    unsafe:
+        match read(cond):
+            ast.Expr.expr_binary_op as bin:
+                if bin.operator.equal("==") or bin.operator.equal("!="):
+                    let rhs_ty = comptime_expr_to_type(ctx, bin.right)
+                    if not types.is_error(rhs_ty):
+                        let equal = types.type_to_string(field_ty).equal(types.type_to_string(rhs_ty))
+                        if bin.operator.equal("=="):
+                            return Option[bool].some(value = equal)
+                        return Option[bool].some(value = not equal)
+            _:
+                pass
+    return Option[bool].none
+
+
+function comptime_expr_to_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier as id:
+                if types.is_numeric_name(id.name) or types.is_integer_name(id.name) or id.name.equal("float") or id.name.equal("double"):
+                    return types.primitive(id.name)
+            _:
+                pass
+    return types.Type.ty_error
 
 
 function comptime_attr_count(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> Option[ptr_uint]:
