@@ -729,6 +729,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
     var variants = vec.Vec[ir.VariantDecl].create()
     var globals = vec.Vec[ir.Global].create()
     var constants = vec.Vec[ir.Constant].create()
+    var pending_decls = vec.Vec[ast.Decl].create()
 
     var i: ptr_uint = 0
     while i < analysis.source_file.declarations.len:
@@ -806,9 +807,73 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 let ev_ty = types.Type.ty_named(module_name = "", name = naming.qualified_c_name(ctx.module_name, ev.name))
                 let ev_zero = alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
                 globals.push(ir.Global(name = ev.name, linkage_name = ev.name, ty = ev_ty, value = ev_zero))
+            ast.Decl.decl_when as w:
+                match try_evaluate_const_expr(ctx, w.discriminant):
+                    Option.some as dv:
+                        var bi: ptr_uint = 0
+                        var found = false
+                        while bi < w.branches.len and not found:
+                            let br = unsafe: read(w.branches.data + bi)
+                            match try_evaluate_const_expr(ctx, br.pattern):
+                                Option.some as pv:
+                                    if const_values_eq(dv.value, pv.value):
+                                        var ddi: ptr_uint = 0
+                                        while ddi < br.body.len:
+                                            unsafe:
+                                                pending_decls.push(read(br.body.data + ddi))
+                                            ddi += 1
+                                        found = true
+                                Option.none:
+                                    pass
+                            bi += 1
+                        if not found:
+                            pass
+                    Option.none:
+                        pass
             _:
                 pass
         i += 1
+
+    # Lower declarations collected from module-level `when` branches.
+    var w_iter = pending_decls.iter()
+    while true:
+        let w_ptr = w_iter.next() else:
+            break
+        var dd: ast.Decl
+        unsafe:
+            dd = read(w_ptr)
+        match dd:
+            ast.Decl.decl_function as fun:
+                if lowerable_function(fun.is_async, fun.is_const, fun.type_params, fun.body):
+                    functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, fun.is_async))
+                    if is_root and fun.name.equal("main"):
+                        match build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
+                            Option.some as entry:
+                                functions.push(entry.value)
+                            Option.none:
+                                pass
+            ast.Decl.decl_const as c:
+                var c_ty = resolve_type_ref(ctx, c.const_type)
+                var is_type_meta = false
+                match c_ty:
+                    types.Type.ty_type_meta:
+                        is_type_meta = true
+                    _:
+                        pass
+                if not is_type_meta:
+                    var cv = alloc_expr(ir.Expr.expr_zero_init(ty = c_ty))
+                    if c.value != null:
+                        cv = lower_expr(ctx, unsafe: ptr[ast.Expr]<-c.value)
+                    else if c.block_body != null:
+                        var empty_vars = map_mod.Map[str, long].create()
+                        match try_evaluate_const_body(ctx, ref_of(empty_vars), c.block_body):
+                            Option.some as body_val:
+                                cv = body_val.value
+                            Option.none:
+                                pass
+                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = cv))
+            _:
+                pass
 
     # Prepend generic struct declarations so they appear before the module's
     # own structs that may reference them as by-value fields.
@@ -11133,6 +11198,24 @@ function lower_multi_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
 ## parameter (i.e. the struct/deferred type requires monomorphization).
 ## Lifetime-only parameters (`@a`) are erased at the C level and the struct
 ## can be emitted directly without specialization.
+function const_values_eq(a: ConstValue, b: ConstValue) -> bool:
+    match a:
+        ConstValue.cv_int as ai:
+            match b:
+                ConstValue.cv_int as bi:
+                    return ai.value == bi.value
+                _:
+                    return false
+        ConstValue.cv_str as as_:
+            match b:
+                ConstValue.cv_str as bs:
+                    return as_.value.equal(bs.value)
+                _:
+                    return false
+        _:
+            return false
+
+
 function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
     var i: ptr_uint = 0
     while i < params.len:
