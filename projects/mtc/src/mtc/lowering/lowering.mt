@@ -790,7 +790,15 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 if is_type_meta:
                     pass
                 else if val_ptr == null:
-                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = c_ty))))
+                    var bv = alloc_expr(ir.Expr.expr_zero_init(ty = c_ty))
+                    if c.block_body != null:
+                        var empty_vars = map_mod.Map[str, long].create()
+                        match try_evaluate_const_body(ctx, ref_of(empty_vars), c.block_body):
+                            Option.some as body_val:
+                                bv = body_val.value
+                            Option.none:
+                                pass
+                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = bv))
                 else:
                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr)))
             ast.Decl.decl_event as ev:
@@ -1478,6 +1486,13 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if init_val != null:
                     unsafe:
                         match read(init_val):
+                            ast.Expr.expr_unary_op as un:
+                                if un.operator.equal("?"):
+                                    lower_propagate_let(ctx, output, loc.name, un.operand)
+                                    return
+                            _:
+                                pass
+                        match read(init_val):
                             ast.Expr.expr_match as me:
                                 lower_match_expression_local(ctx, output, loc.name, loc.stmt_type, me.scrutinee, me.arms)
                                 return
@@ -1656,6 +1671,40 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
     # `if (<failure condition>) { <else body> }`
     let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
     output.push(ir.Stmt.stmt_if(condition = cond, then_body = else_ir, else_body = span[ir.Stmt]()))
+
+    # Bind `name` to the unwrapped success value (unless discarded with `_`).
+    if name.equal("_"):
+        return
+    let success_ty = guard_success_type(ctx, kind, storage_ty)
+    let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
+    let bc = c_local_name(name)
+    output.push(ir.Stmt.stmt_local(name = name, linkage_name = bc, ty = success_ty, value = success_val, line = 0, source_path = ""))
+    ctx.locals.push(LocalBinding(name = name, c_name = bc, ty = success_ty, pointer = false))
+
+
+## Lower `let name = expr?` — the `?` postfix propagation operator lowers to
+## a guard-like unwrap: on failure, return the failure value from the enclosing
+## function; on success, bind `name` to the unwrapped success value.  This
+## mirrors the Ruby compiler's `prepare_result_propagation_for_inline_lowering`.
+function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr]) -> void:
+    let value_ir = lower_expr(ctx, operand)
+    let storage_ty = ir_expr_type(value_ir)
+
+    # Hidden storage local holding the full Option/Result value.
+    let storage_c = fresh_c_temp_name(ctx, "propagate")
+    output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = 0, source_path = ""))
+    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = false))
+
+    let kind = guard_storage_kind(ctx, storage_ty)
+
+    # Failure branch: return the failing storage value (Option.none / Result.failure).
+    var fail_body = vec.Vec[ir.Stmt].create()
+    flush_all_defers(ctx, ref_of(fail_body))
+    fail_body.push(ir.Stmt.stmt_return(value = storage_ref, line = 0, source_path = ""))
+
+    # `if (<failure condition>) { return storage; }`
+    let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = span[ir.Stmt]()))
 
     # Bind `name` to the unwrapped success value (unless discarded with `_`).
     if name.equal("_"):
@@ -3368,9 +3417,9 @@ function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
     let receiver_type = index_receiver_type(ctx, receiver)
     let recv = lower_expr(ctx, receiver)
     let index_expr = lower_expr(ctx, index)
-    var elem_ty = expr_type(ctx, ep)
+    var elem_ty = qualify_type(ctx, expr_type(ctx, ep))
     if types.is_error(elem_ty):
-        elem_ty = generic_first_arg(receiver_type)
+        elem_ty = qualify_type(ctx, generic_first_arg(receiver_type))
     if is_array_type(receiver_type):
         return alloc_expr(ir.Expr.expr_checked_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))
     if is_span_type(receiver_type):
@@ -3624,6 +3673,23 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     let c_name = naming.qualified_c_name(ctx.module_name, id.name)
                     let lb = LocalBinding(name = id.name, c_name = c_name, ty = callee_ty, pointer = false)
                     return lower_proc_call(ctx, lb, args, call_ep)
+                # Compile-time builtins: evaluate to constant literals rather than
+                # emitting runtime function calls.  has_attribute returns a bool;
+                # field_of / callable_of / attribute_of return opaque handles
+                # (zero-init at the IR level since they are consumed only by
+                # other compile-time builtins).
+                if id.name.equal("has_attribute"):
+                    return alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool")))
+                if id.name.equal("field_of") or id.name.equal("callable_of") or id.name.equal("attribute_of"):
+                    return alloc_expr(ir.Expr.expr_zero_init(ty = types.Type.ty_error))
+                # Try to evaluate a const function call at compile time so that
+                # const initializers (e.g. `const SQUARE_5 = square(5)`) produce
+                # a literal value instead of a C function call.
+                match try_evaluate_const_function_call(ctx, id.name, args):
+                    Option.some as cf_val:
+                        return cf_val.value
+                    Option.none:
+                        pass
                 var ret_ty = function_return_type(ctx, id.name)
                 var ret_type_ptr = types.alloc_type(ret_ty)
                 return lower_plain_call_sig(ctx, naming.qualified_c_name(ctx.module_name, id.name), args, call_ep, ret_type_ptr, lookup_fn_sig(ctx, id.name))
@@ -3781,7 +3847,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # str_buffer[N] builtin methods: lower to C helper calls.
                 if is_str_buffer_type(recv_ty):
                     let recv_ir = lower_expr(ctx, ma.receiver)
-                    return lower_str_buffer_method(ctx, recv_ir, ma.member_name, args, call_ep)
+                    return lower_str_buffer_method(ctx, recv_ir, recv_ty, ma.member_name, args, call_ep)
                 # dyn[I] dispatch: extract data + vtable, call through function pointer.
                 # The type may be ty_named("dyn") or ty_dyn(iface) — try both.
                 let ts = types.type_to_string(recv_ty)
@@ -6346,7 +6412,7 @@ function lower_listener_arg(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> ptr[ir.Ex
 
 
 ## Lower a str_buffer[N] method call to a C helper call or inline operation.
-function lower_str_buffer_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_str_buffer_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let char_ty = types.primitive("char")
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ty = types.primitive("void")
@@ -6366,17 +6432,28 @@ function lower_str_buffer_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_
         expression = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "dirty", ty = bool_ty)),
         ty = dirty_ptr_ty,
     ))
+    var cap: long = 0
+    match recv_ty:
+        types.Type.ty_generic as g:
+            if g.args.len >= 1:
+                match unsafe: read(g.args.data + 0):
+                    types.Type.ty_literal_int as li:
+                        cap = li.value
+                    _:
+                        pass
+        _:
+            pass
+    let cap_val = alloc_expr(ir.Expr.expr_integer_literal(value = cap, ty = ptr_uint_ty))
     if method_name.equal("clear"):
         return alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_clear", arguments = sp_expr2(len_addr, dirty_addr), ty = void_ty))
     if method_name.equal("len"):
-        return alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_len", arguments = sp_expr3(data_addr, len_addr, dirty_addr), ty = ptr_uint_ty))
+        return alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_len", arguments = sp_expr4(data_addr, cap_val, len_addr, dirty_addr), ty = ptr_uint_ty))
     if method_name.equal("capacity"):
-        return alloc_expr(ir.Expr.expr_integer_literal(value = 0z, ty = ptr_uint_ty))
+        return alloc_expr(ir.Expr.expr_integer_literal(value = cap, ty = ptr_uint_ty))
     if method_name.equal("assign") or method_name.equal("append"):
         let helper = if method_name.equal("assign"): "mt_str_buffer_assign" else: "mt_str_buffer_append"
         var helper_args = vec.Vec[ir.Expr].create()
         let lowered = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
-        let cap_val = alloc_expr(ir.Expr.expr_integer_literal(value = 64z, ty = ptr_uint_ty))
         unsafe:
             helper_args.push(read(lowered))
             helper_args.push(read(data_addr))
@@ -6395,7 +6472,6 @@ function lower_str_buffer_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_
         let helper = if method_name.equal("assign_format"): "mt_str_buffer_assign" else: "mt_str_buffer_append"
         var helper_args = vec.Vec[ir.Expr].create()
         let lowered = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
-        let cap_val = alloc_expr(ir.Expr.expr_integer_literal(value = 64z, ty = ptr_uint_ty))
         unsafe:
             helper_args.push(read(lowered))
             helper_args.push(read(data_addr))
@@ -6477,6 +6553,16 @@ function sp_expr3(e1: ptr[ir.Expr], e2: ptr[ir.Expr], e3: ptr[ir.Expr]) -> span[
         buf.push(read(e1))
         buf.push(read(e2))
         buf.push(read(e3))
+    return buf.as_span()
+
+
+function sp_expr4(e1: ptr[ir.Expr], e2: ptr[ir.Expr], e3: ptr[ir.Expr], e4: ptr[ir.Expr]) -> span[ir.Expr]:
+    var buf = vec.Vec[ir.Expr].create()
+    unsafe:
+        buf.push(read(e1))
+        buf.push(read(e2))
+        buf.push(read(e3))
+        buf.push(read(e4))
     return buf.as_span()
 
 
@@ -10479,8 +10565,387 @@ function apply_int_op(op: str, l: long, r: long) -> long:
     return 0
 
 
+## Attempt to evaluate a const function call at compile time, returning an IR
+## literal when successful.  Walks the function's AST body with a lightweight
+## interpreter that supports integer arithmetic, boolean ops, parameters, return
+## statements, if/else control flow, while loops, and for loops over arrays.
+## Falls back to returning `None` for unrecognised constructs so the regular
+## call lowering path can take over.
+function try_evaluate_const_function_call(ctx: ref[LowerCtx], func_name: str, args: span[ast.Argument]) -> Option[ptr[ir.Expr]]:
+    let decls = ctx.analysis.source_file.declarations
+    var i: ptr_uint = 0
+    var func_body: ptr[ast.Stmt]? = null
+    var func_params: span[ast.Param] = span[ast.Param]()
+    while i < decls.len:
+        unsafe:
+            match read(decls.data + i):
+                ast.Decl.decl_function as f:
+                    if f.name.equal(func_name) and f.is_const and f.method_params.len == args.len:
+                        func_body = f.body
+                        func_params = f.method_params
+                        break
+                _:
+                    pass
+        i += 1
+    let body_ptr = func_body else:
+        return Option[ptr[ir.Expr]].none
+
+    var param_values = map_mod.Map[str, long].create()
+    var j: ptr_uint = 0
+    while j < args.len:
+        let arg_ep = unsafe: read(args.data + j).arg_value
+        match evaluate_const_expr_to_long_standalone(ctx, arg_ep):
+            Option.some as lv:
+                unsafe:
+                    param_values.set(read(func_params.data + j).name, lv.value)
+            Option.none:
+                unsafe:
+                    param_values.set(read(func_params.data + j).name, 0)
+        j += 1
+
+    return try_evaluate_const_body(ctx, ref_of(param_values), body_ptr)
 
 
+## Evaluate a block body returning an IR expression when the body terminates
+## with a return statement that evaluates to a constant.
+function try_evaluate_const_body(ctx: ref[LowerCtx], variables: ref[map_mod.Map[str, long]], body: ptr[ast.Stmt]?) -> Option[ptr[ir.Expr]]:
+    let b = body else:
+        return Option[ptr[ir.Expr]].none
+    unsafe:
+        match read(b):
+            ast.Stmt.stmt_block as blk:
+                var mi: ptr_uint = 0
+                while mi < blk.statements.len:
+                    match evaluate_const_stmt(ctx, variables, blk.statements.data + mi):
+                        Option.some as result:
+                            return Option[ptr[ir.Expr]].some(value = result.value)
+                        Option.none:
+                            pass
+                    mi += 1
+                return Option[ptr[ir.Expr]].none
+            _:
+                return evaluate_const_stmt(ctx, variables, b)
+
+
+function evaluate_const_stmt(ctx: ref[LowerCtx], variables: ref[map_mod.Map[str, long]], sp: ptr[ast.Stmt]) -> Option[ptr[ir.Expr]]:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_ret as r:
+                let val_ptr = r.value else:
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                        ir.Expr.expr_zero_init(ty = types.primitive("void"))))
+                return evaluate_const_expr_to_ir(ctx, variables, val_ptr)
+            ast.Stmt.stmt_expression as ex:
+                let _discard = evaluate_const_expr_to_ir(ctx, variables, ex.expression)
+                return Option[ptr[ir.Expr]].none
+            ast.Stmt.stmt_if as ifs:
+                var bi: ptr_uint = 0
+                while bi < ifs.branches.len:
+                    let br = unsafe: read(ifs.branches.data + bi)
+                    match evaluate_const_expr_to_long(ctx, variables, br.condition):
+                        Option.some as cv:
+                            if cv.value != 0:
+                                return try_evaluate_const_body(ctx, variables, br.body)
+                        Option.none:
+                            pass
+                    bi += 1
+                return try_evaluate_const_body(ctx, variables, ifs.else_body)
+            ast.Stmt.stmt_while as ws:
+                var iteration: int = 0
+                while iteration < 10000:
+                    match evaluate_const_expr_to_long(ctx, variables, ws.condition):
+                        Option.some as cv:
+                            if cv.value == 0:
+                                break
+                        Option.none:
+                            break
+                    match try_evaluate_const_body(ctx, variables, ws.body):
+                        Option.some as wrv:
+                            return Option[ptr[ir.Expr]].some(value = wrv.value)
+                        Option.none:
+                            pass
+                    iteration += 1
+                if iteration >= 10000:
+                    return Option[ptr[ir.Expr]].none
+                return Option[ptr[ir.Expr]].none
+            ast.Stmt.stmt_for as fs:
+                # Only support single-binding, single-iterable compile-time for loops.
+                if fs.bindings.len != 1 or fs.iterables.len != 1:
+                    return Option[ptr[ir.Expr]].none
+                let binding = unsafe: read(fs.bindings.data + 0)
+                let iterable = unsafe: read(fs.iterables.data + 0)
+                match evaluate_const_iterable(ctx, iterable):
+                    Option.some as iter_vals_payload:
+                        var vi: ptr_uint = 0
+                        while vi < iter_vals_payload.value.len:
+                            unsafe:
+                                variables.set(binding.name, read(iter_vals_payload.value.data + vi))
+                            match try_evaluate_const_body(ctx, variables, fs.body):
+                                Option.some as frv:
+                                    return Option[ptr[ir.Expr]].some(value = frv.value)
+                                Option.none:
+                                    pass
+                            vi += 1
+                        return Option[ptr[ir.Expr]].none
+                    Option.none:
+                        return Option[ptr[ir.Expr]].none
+            ast.Stmt.stmt_local as loc:
+                let init_ptr = loc.value
+                if init_ptr != null:
+                    match evaluate_const_expr_to_long(ctx, variables, init_ptr):
+                        Option.some as lv:
+                            variables.set(loc.name, lv.value)
+                        Option.none:
+                            pass
+                return Option[ptr[ir.Expr]].none
+            ast.Stmt.stmt_assignment as asg:
+                match read(asg.target):
+                    ast.Expr.expr_identifier as tid:
+                        match evaluate_const_expr_to_long(ctx, variables, asg.value):
+                            Option.some as lv:
+                                variables.set(tid.name, lv.value)
+                            Option.none:
+                                pass
+                    _:
+                        pass
+                return Option[ptr[ir.Expr]].none
+            _:
+                return Option[ptr[ir.Expr]].none
+
+
+function evaluate_const_iterable(ctx: ref[LowerCtx], ep: ast.Expr) -> Option[span[long]]:
+    unsafe:
+        match ep:
+            ast.Expr.expr_identifier as id:
+                let cv_entry = ctx.analysis.const_values.get(id.name)
+                if cv_entry != null:
+                    let cv_val = unsafe: read(cv_entry)
+                    return evaluate_const_iterable(ctx, unsafe: read(cv_val))
+                return Option[span[long]].none
+            ast.Expr.expr_expression_list as els:
+                var vals = vec.Vec[long].create()
+                var ii: ptr_uint = 0
+                while ii < els.elements.len:
+                    match evaluate_const_expr_to_long_standalone(ctx, els.elements.data + ii):
+                        Option.some as lv:
+                            vals.push(lv.value)
+                        Option.none:
+                            vals.push(0)
+                    ii += 1
+                return Option[span[long]].some(value = vals.as_span())
+            _:
+                return Option[span[long]].none
+
+
+function evaluate_const_expr_to_long(ctx: ref[LowerCtx], variables: ref[map_mod.Map[str, long]], ep: ptr[ast.Expr]) -> Option[long]:
+    match evaluate_const_expr_to_ir(ctx, variables, ep):
+        Option.some as irv:
+            unsafe:
+                match read(irv.value):
+                    ir.Expr.expr_integer_literal as il:
+                        return Option[long].some(value = il.value)
+                    ir.Expr.expr_boolean_literal as bl:
+                        if bl.value:
+                            return Option[long].some(value = 1)
+                        return Option[long].some(value = 0)
+                    ir.Expr.expr_cast as c:
+                        match read(c.expression):
+                            ir.Expr.expr_integer_literal as cil:
+                                return Option[long].some(value = cil.value)
+                            ir.Expr.expr_boolean_literal as cbl:
+                                if cbl.value:
+                                    return Option[long].some(value = 1)
+                                return Option[long].some(value = 0)
+                            _:
+                                pass
+                    _:
+                        pass
+        Option.none:
+            pass
+    return Option[long].none
+
+
+## Like evaluate_const_expr_to_long but does not use local variable map;
+## evaluates standalone compile-time expressions (e.g. argument values).
+function evaluate_const_expr_to_long_standalone(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[long]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal as lit:
+                return Option[long].some(value = lit.value)
+            ast.Expr.expr_bool_literal as b:
+                if b.value:
+                    return Option[long].some(value = 1)
+                return Option[long].some(value = 0)
+            ast.Expr.expr_identifier as id:
+                let entry = ctx.analysis.const_values.get(id.name)
+                if entry != null:
+                    return evaluate_const_expr_to_long_standalone(ctx, unsafe: read(entry))
+                if id.name.equal("true"):
+                    return Option[long].some(value = 1)
+                if id.name.equal("false"):
+                    return Option[long].some(value = 0)
+                return Option[long].none
+            ast.Expr.expr_binary_op as bin:
+                return evaluate_const_expr_to_long_standalone_bin(ctx, bin.operator, bin.left, bin.right)
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_identifier as cid:
+                        match try_evaluate_const_function_call(ctx, cid.name, call.args):
+                            Option.some as rv:
+                                unsafe:
+                                    match read(rv.value):
+                                        ir.Expr.expr_integer_literal as rvl:
+                                            return Option[long].some(value = rvl.value)
+                                        _:
+                                            pass
+                            Option.none:
+                                pass
+                    _:
+                        pass
+                return Option[long].none
+            _:
+                return Option[long].none
+
+
+function evaluate_const_expr_to_long_standalone_bin(ctx: ref[LowerCtx], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[long]:
+    match evaluate_const_expr_to_long_standalone(ctx, left):
+        Option.some as lv:
+            match evaluate_const_expr_to_long_standalone(ctx, right):
+                Option.some as rv:
+                    return Option[long].some(value = apply_int_op(op, lv.value, rv.value))
+                Option.none:
+                    pass
+        Option.none:
+            pass
+    return Option[long].none
+
+
+function evaluate_const_expr_to_ir(ctx: ref[LowerCtx], variables: ref[map_mod.Map[str, long]], ep: ptr[ast.Expr]) -> Option[ptr[ir.Expr]]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal as lit:
+                return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                    ir.Expr.expr_integer_literal(value = lit.value, ty = types.primitive("int"))))
+            ast.Expr.expr_float_literal as lit:
+                return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                    ir.Expr.expr_integer_literal(value = long<-(lit.value), ty = types.primitive("int"))))
+            ast.Expr.expr_bool_literal as b:
+                return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                    ir.Expr.expr_boolean_literal(value = b.value, ty = types.primitive("bool"))))
+            ast.Expr.expr_identifier as id:
+                let entry = variables.get(id.name)
+                if entry != null:
+                    let v = unsafe: read(entry)
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                        ir.Expr.expr_integer_literal(value = v, ty = types.primitive("int"))))
+                let cv_entry = ctx.analysis.const_values.get(id.name)
+                if cv_entry != null:
+                    let cv_val = unsafe: read(cv_entry)
+                    return evaluate_const_expr_to_ir(ctx, variables, cv_val)
+                if id.name.equal("true"):
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                        ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool"))))
+                if id.name.equal("false"):
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                        ir.Expr.expr_boolean_literal(value = false, ty = types.primitive("bool"))))
+                return Option[ptr[ir.Expr]].none
+            ast.Expr.expr_binary_op as bin:
+                match evaluate_const_expr_to_ir(ctx, variables, bin.left):
+                    Option.some as left_ir:
+                        match evaluate_const_expr_to_ir(ctx, variables, bin.right):
+                            Option.some as right_ir:
+                                return evaluate_const_binary_ir(op = bin.operator, left = left_ir.value, right = right_ir.value)
+                            Option.none:
+                                pass
+                    Option.none:
+                        pass
+                return Option[ptr[ir.Expr]].none
+            ast.Expr.expr_unary_op as un:
+                match evaluate_const_expr_to_ir(ctx, variables, un.operand):
+                    Option.some as operand_ir:
+                        return evaluate_const_unary_ir(op = un.operator, operand = operand_ir.value)
+                    Option.none:
+                        pass
+                return Option[ptr[ir.Expr]].none
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_identifier as cid:
+                        match try_evaluate_const_function_call(ctx, cid.name, call.args):
+                            Option.some as rv:
+                                return Option[ptr[ir.Expr]].some(value = rv.value)
+                            Option.none:
+                                pass
+                    _:
+                        pass
+                return Option[ptr[ir.Expr]].none
+            ast.Expr.expr_member_access as ma:
+                return evaluate_const_expr_to_ir(ctx, variables, ma.receiver)
+            _:
+                return Option[ptr[ir.Expr]].none
+
+
+function evaluate_const_binary_ir(op: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
+    let int_ty = types.primitive("int")
+    let bool_ty = types.primitive("bool")
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    let uint_ty = types.primitive("uint")
+    unsafe:
+        match read(left):
+            ir.Expr.expr_integer_literal as li:
+                match read(right):
+                    ir.Expr.expr_integer_literal as ri:
+                        let result = apply_int_op(op, li.value, ri.value)
+                        if op.equal("==") or op.equal("!=") or op.equal("<") or op.equal("<=") or op.equal(">") or op.equal(">="):
+                            return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                                ir.Expr.expr_boolean_literal(value = result != 0, ty = bool_ty)))
+                        return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                            ir.Expr.expr_integer_literal(value = result, ty = int_ty)))
+                    _:
+                        pass
+            ir.Expr.expr_boolean_literal as lb:
+                match read(right):
+                    ir.Expr.expr_boolean_literal as rb:
+                        if op.equal("and"):
+                            return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                                ir.Expr.expr_boolean_literal(value = lb.value and rb.value, ty = bool_ty)))
+                        if op.equal("or"):
+                            return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                                ir.Expr.expr_boolean_literal(value = lb.value or rb.value, ty = bool_ty)))
+                        if op.equal("=="):
+                            return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                                ir.Expr.expr_boolean_literal(value = lb.value == rb.value, ty = bool_ty)))
+                        if op.equal("!="):
+                            return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                                ir.Expr.expr_boolean_literal(value = lb.value != rb.value, ty = bool_ty)))
+                    _:
+                        pass
+            _:
+                pass
+    return Option[ptr[ir.Expr]].none
+
+
+function evaluate_const_unary_ir(op: str, operand: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
+    let int_ty = types.primitive("int")
+    let bool_ty = types.primitive("bool")
+    unsafe:
+        match read(operand):
+            ir.Expr.expr_integer_literal as iv:
+                if op.equal("-"):
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                        ir.Expr.expr_integer_literal(value = -iv.value, ty = int_ty)))
+                if op.equal("~"):
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                        ir.Expr.expr_integer_literal(value = ~iv.value, ty = int_ty)))
+                if op.equal("+"):
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                        ir.Expr.expr_integer_literal(value = iv.value, ty = int_ty)))
+            ir.Expr.expr_boolean_literal as bv:
+                if op.equal("not"):
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(
+                        ir.Expr.expr_boolean_literal(value = not bv.value, ty = bool_ty)))
+            _:
+                pass
+    return Option[ptr[ir.Expr]].none
 
 
 function make_task_type(inner: types.Type) -> types.Type:
