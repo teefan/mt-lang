@@ -1,9 +1,9 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
 Status: **Self-compile fixpoint REACHED; general-program parity ACTIVE.**
-Baseline emits C without crashes; 9 C compilation errors remain (down from 271).
+Baseline emits C without crashes; 16 C compilation errors remain (all async runtime).
 
-Last updated: 2026-07-10 (session: Phase G complete — batches 2+3: 47→9, -81%)
+Last updated: 2026-07-11 (session: Phase G batch 4 — 9→16; type system foundations laid for async bridge)
 
 ---
 
@@ -142,24 +142,23 @@ Self-host source layout (`projects/mtc/src`, ≈32k LOC):
 ### Phase G — baseline parity gate — DONE (271→9, -97%)
 ### Phase H — final polish — ACTIVE
 
-### Remaining items (9 errors, 3 categories)
+### Remaining items (batch 4: 9→16, all async runtime regressions)
 
-1. **Tuple match/destructure** (3 errors) — match arms and destructure patterns need to
-   unify named and positional tuple field access. Named tuples now have distinct struct
-   types (`mt_tuple_int_int_x_y` vs `mt_tuple_int_int`), but destructure bindings and
-   match-arm patterns still produce positional field access.
-   - Fix: lower_match / lower_destructure need to inspect `ty_tuple.field_names` and route
-     field access through the correct named or positional fields.
+Batch 4 fixes resolved 8 of 9 errors (tuples, get(), async void fields, task type ordering,
+`std_async_Runtime` type alias, etc.) — verified via `cc -c` compile-only. The final
+error (`std_async_wait`) required generic constructor peeling in `unify_type_param` +
+task-root-proc bridge, which correctly enables `aio.wait(async_child())` type inference but
+also causes the async runtime (`std.async.libuv_runtime`) to be fully monomorphized,
+exposing 16 new C compilation errors in the runtime module itself.
 
-2. **Async void cascade** (5 errors) — full async CPS lowering for `Task[void]` structs
-   and async runtime type generation. The `import std.async` import triggers generation of
-   async runtime structs (`mt_task_void`, work-state types) that reference void/unresolved
-   fields. Needs the full Phase F CPS infrastructure.  Comprising:
-   - 4 async struct void errors + 1 `std_async_wait` implicit.
-
-3. **get() return-type cast** (1 error) — `val_ptr` (`int32_t*` from `unsafe: read(raw_p)`)
-   is added to the `int` return sum in `builtins_demo` without a cast.  Pre-existing
-   from before batch 2.
+| Category | Count | Root |
+|----------|-------|------|
+| `Task.frame` member accesses (C type field mismatch) | 4 | `mt_task_int` is emitted as `{value; ready;}` but runtime code accesses `.frame` — Task struct shape mismatch between compiler-generated and hand-written runtime |
+| `Runtime` type used as raw type name | 3 | `Runtime` appears unqualified in monomorphized output instead of `std_async_libuv_runtime_Runtime` |
+| lvalue/`&` operand on temp | 1 | Self-host generates `&<temp>` on a non-lvalue from runtime code |
+| libuv type name mismatches | 4 | `uv_close`, `uv_run_mode`, `uv_walk` — existing libuv runtime API compatibility issues |
+| Misc async function missing | 4 | `Task_ready`, `Task_take_result`, `Task_release` implicit declarations |
+| **Total** | **16** | All async runtime — the generic constructor peeling correctly triggers monomorphization of `std.async.libuv_runtime` functions (wait_on, run_on, sleep, etc.), exposing runtime C API mismatches
 
 ## 4. Differential harness
 
@@ -172,30 +171,33 @@ Self-host source layout (`projects/mtc/src`, ≈32k LOC):
 
 ---
 
-## 6. Resume context (2026-07-10, batch 3)
+## 6. Resume context (2026-07-11, batch 4)
 
 ### Committed (this session, in order)
 
 | Hash | Description | Delta |
 |------|-------------|-------|
-| `1953e805` | parallel captures — IR name scanner, capture struct gen, worker preamble, scalar + array via memcpy | 20→17 |
-| `e2c2718d` | array captures via memcpy + restore loop_body reassignment | 18→17 |
-| `b02e2a1e` | chain calls in return — hoist proc result to temp for f()(args) pattern | 17→15 |
-| `dc1139b4` | range index assignment — expand arr[0..2]=(e1,e2) into individual checked-index writes | 15→14 |
-| `4519fa58` | generic method-level type params + unify_type_param proc/fn detection + proc_return_type split | 13→10 |
-| `8b9db2bf` | fix receiver struct-args for methods with extra type params | 10→9 |
+| `510ff26a` | tuple member access types + ptr_of on ref + void struct fields + task type ordering | 9→3 |
+| `09527bb4` | type alias export via ModuleBinding + task-root-proc bridge + generic constructor peeling + coerce_fn_arg_to_proc call-expr | 3→16 (async regressions exposed) |
 
 ### Key files modified (cumulative)
 
-- `projects/mtc/src/mtc/lowering/lowering.mt` — parallel captures (~313 lines), chain calls, range index assignment, generic method-level params, unify_type_param proc/fn, proc_return_type split, receiver struct-args (~11,850 LOC)
-- `projects/mtc/src/mtc/semantic/types.mt` — `ty_tuple.field_names: Option[span[str]]`
-- `projects/mtc/src/mtc/c_backend/c_backend.mt` — tuple named field emission, array type in C type position
+- `projects/mtc/src/mtc/lowering/lowering.mt` — tuple field name/type derivation in `lower_member_access`/`lower_destructure`/`tuple_pattern_condition`, ptr_of on ref[T], generic constructor peeling in `unify_type_param`, task-root-proc bridge in `unify_type_param`, coerce_fn_arg_to_proc call-expr extension
+- `projects/mtc/src/mtc/c_backend/c_backend.mt` — void field filtering in `emit_struct`, moved `emit_task_structs` before struct definitions
+- `projects/mtc/src/mtc/semantic/analyzer.mt` — `type_aliases`/`private_type_aliases` fields in `ModuleBinding`, `resolve_imported_type` checks type_aliases
+- `projects/mtc/src/mtc/loader/binder.mt` — type alias export in `bind_module`
+
+### Infrastructure now in place (correct but triggers async runtime bugs)
+
+- **Generic constructor peeling**: `unify_type_param` can now unify `C[T] ↔ C[X]` for any generic wrapper (Task, Option, Result, etc.). This correctly enables type inference for `aio.wait(async_child())` but also monomorphizes the full `std.async.libuv_runtime` module.
+- **Task-root-proc bridge**: `unify_type_param` detects `proc() → Task[T]` params with non-proc `Task[X]` args and infers `T = X`. The bridge deduplication uses `is_proc_type(arg_ty)` to avoid hijacking already-proc-typed args.
+- **Type alias export**: `ModuleBinding.type_aliases` enables cross-module resolution of `type Runtime = backend.Runtime` chains.
+- **coerce_fn_arg_to_proc call-expr**: Detects `aio.wait(async_child())` pattern and wraps the function call in a proc.
 
 ### Next session prompts
 
-- **Tuple match/destructure** (3 errors): `lower_destructure` and match-arm field access need to inspect `ty_tuple.field_names` — if named, use those names; if `Option.none`, use `_0`/`_1`.
-- **Async void cascade** (5 errors): Phase F full CPS. Async runtime structs (`mt_task_void`, work-state types) generated by `std.async` import produce void fields. Needs the async lowering pipeline that Ruby has — task continuation splitting, yielded member access, async runtime struct emission with resolved types.
-- **get() return-type cast** (1 error): Pre-existing. `val_ptr` is `int32_t*` from `read(raw_p)` where `raw_p` is `ptr_of(handle)`. The `unsafe: read(raw_p)` produces `ptr[int]` (`int32_t*`), not `int`. The sum expression at the return site needs a cast or the baseline source has a type that resolves differently from what the Ruby compiler produces.
+- **Async runtime monomorphization**: The generic constructor peeling enables full monomorphization of `std.async.libuv_runtime` functions (wait_on, run_on, sleep, etc.). This exposes C API mismatches — `Task.frame` access on `mt_task_int {value; ready;}`, `Runtime` used unqualified, etc. Fixes are structural: either (a) align the Task struct shape with what runtime code expects, or (b) suppress monomorphization of the async runtime module functions.
+- **Alternative short path**: Gate the generic constructor peeling to ONLY apply inside the task-root-proc bridge (when the parent param is `proc()`/`fn()) rather than as a general unification rule. This avoids monomorphizing runtime functions while still enabling `aio.wait()` inference.
 
 ### Build/test commands
 
