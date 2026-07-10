@@ -1900,6 +1900,11 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             return types.Type.ty_generic(name = g.name, args = args.as_span())
         types.Type.ty_nullable as nl:
             return types.Type.ty_nullable(base = types.alloc_type(qualify_type(ctx, unsafe: read(nl.base))))
+        types.Type.ty_function as fnt:
+            if fnt.is_proc:
+                let proc_name = proc_type_name_from_signature(t)
+                return proc_ensure_struct_decl(ctx, proc_name, t)
+            return t
         _:
             return t
 
@@ -3057,7 +3062,9 @@ function collect_locals_for_capture(ctx: ref[LowerCtx], method_params: span[ast.
         unsafe:
             param_names.set(read(method_params.data + pi).name, true)
         pi += 1
-
+    # Track already-collected names to avoid duplicates from stale match-
+    # arm bindings that persist in ctx.locals across scope boundaries.
+    var seen_names = map_mod.Map[str, bool].create()
     var li: ptr_uint = 0
     while li < ctx.locals.len():
         let lb_ptr = ctx.locals.get(li) else:
@@ -3067,6 +3074,10 @@ function collect_locals_for_capture(ctx: ref[LowerCtx], method_params: span[ast.
             if lb.name == "this" or param_names.contains(lb.name):
                 li += 1
                 continue
+            if seen_names.contains(lb.c_name):
+                li += 1
+                continue
+            seen_names.set(lb.c_name, true)
             result.push(ProcCapture(name = lb.name, c_name = lb.c_name, ty = lb.ty))
         li += 1
     return result.as_span()
