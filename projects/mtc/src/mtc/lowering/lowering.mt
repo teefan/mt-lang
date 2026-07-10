@@ -3604,6 +3604,13 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                             return lower_proc_call(ctx, lb.value, args, call_ep)
                     Option.none:
                         pass
+                # Infer generic type arguments for bare generic function calls
+                # (e.g. `call_proc(f)` where `call_proc[T]` is generic).
+                match try_inferred_generic_call(ctx, id.name, args, call_ep):
+                    Option.some as gen_call:
+                        return gen_call.value
+                    Option.none:
+                        pass
                 # Module-level proc variable: call through proc struct.
                 # expr_type on the callee may not have the correct type if the
                 # analyzer only records the call expression type, so also check
