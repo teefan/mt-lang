@@ -1357,7 +1357,8 @@ function c_type(t: types.Type) -> str:
             fatal(j2("c_backend: unsupported C type: ", types.type_to_string(t)))
 
 
-## The C type name of a positional tuple (`(int, int)` -> `mt_tuple_int_int`).
+## The C type name of a tuple (`(int, int)` -> `mt_tuple_int_int`,
+## named `(x: int, y: int)` -> `mt_tuple_int_int_x_y`).
 function tuple_type_name(t: types.Type) -> str:
     var buf = string.String.create()
     buf.append("mt_tuple")
@@ -1369,6 +1370,16 @@ function tuple_type_name(t: types.Type) -> str:
                 unsafe:
                     buf.append(naming.type_c_key(read(tup.elements.data + i)))
                 i += 1
+            match tup.field_names:
+                Option.some as names:
+                    var ni: ptr_uint = 0
+                    while ni < names.value.len:
+                        buf.append("_")
+                        unsafe:
+                            buf.append(read(names.value.data + ni))
+                        ni += 1
+                Option.none:
+                    pass
         _:
             pass
     return buf.as_str()
@@ -1640,8 +1651,16 @@ function emit_tuple_type_def(e: ref[Emitter], t: types.Type) -> void:
         types.Type.ty_tuple as tup:
             var i: ptr_uint = 0
             while i < tup.elements.len:
+                var fname = tuple_field_name(i)
+                match tup.field_names:
+                    Option.some as names:
+                        if i < names.value.len:
+                            unsafe:
+                                fname = read(names.value.data + i)
+                    Option.none:
+                        pass
                 unsafe:
-                    emit_line(e, j4("  ", c_declaration(read(tup.elements.data + i), tuple_field_name(i)), ";", ""))
+                    emit_line(e, j4("  ", c_declaration(read(tup.elements.data + i), fname), ";", ""))
                 i += 1
         _:
             pass

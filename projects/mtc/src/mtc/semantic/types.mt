@@ -28,7 +28,7 @@ public variant Type:
     ty_generic(name: str, args: span[Type])
     ty_function(params: span[Type], return_type: ptr[Type], variadic: bool, is_proc: bool)
     ty_literal_int(value: long)
-    ty_tuple(elements: span[Type])
+    ty_tuple(elements: span[Type], field_names: Option[span[str]])
 
 
 public function alloc_type(value: Type) -> ptr[Type]:

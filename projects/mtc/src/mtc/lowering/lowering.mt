@@ -2170,7 +2170,7 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
             while i < t.arguments.len:
                 elems.push(resolve_type_ref(ctx, t.arguments.data + i))
                 i += 1
-            let result = types.Type.ty_tuple(elements = elems.as_span())
+            let result = types.Type.ty_tuple(elements = elems.as_span(), field_names = Option[span[str]].none)
             if t.nullable:
                 return types.Type.ty_nullable(base = types.alloc_type(result))
             return result
@@ -2948,7 +2948,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_index_access as ix:
                 return lower_index_access(ctx, ix.receiver, ix.index, ep)
             ast.Expr.expr_expression_list as lst:
-                return lower_tuple_literal(ctx, lst.elements)
+                return lower_tuple_literal_with_names(ctx, lst.elements)
             ast.Expr.expr_proc as pr:
                 return lower_proc_expression(ctx, pr.method_params, pr.return_type, pr.body, ep)
             ast.Expr.expr_await as aw:
@@ -3387,17 +3387,36 @@ function proc_lifecycle_fn_type() -> types.Type:
     params.push(types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))))
     return types.Type.ty_function(params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
 ## fields `_0`, `_1`, ... and a `ty_tuple` type.  (Named tuples arrive later.)
-function lower_tuple_literal(ctx: ref[LowerCtx], elements: span[ast.Expr]) -> ptr[ir.Expr]:
+function lower_tuple_literal_with_names(ctx: ref[LowerCtx], elements: span[ast.Expr]) -> ptr[ir.Expr]:
     var fields = vec.Vec[ir.AggregateField].create()
     var elem_types = vec.Vec[types.Type].create()
+    var fnames = vec.Vec[str].create()
+    var all_named = true
     var i: ptr_uint = 0
     while i < elements.len:
-        let lowered = unsafe: lower_expr(ctx, elements.data + i)
-        fields.push(ir.AggregateField(name = tuple_field_name(i), value = lowered))
+        var ep = unsafe: elements.data + i
+        var name: str = ""
+        unsafe:
+            match read(ep):
+                ast.Expr.expr_named as nm:
+                    name = nm.name
+                    ep = nm.value
+                _:
+                    all_named = false
+                    pass
+        let lowered = unsafe: lower_expr(ctx, ep)
+        let fname = if name != "": name else: tuple_field_name(i)
+        if name == "":
+            name = tuple_field_name(i)
+        fields.push(ir.AggregateField(name = name, value = lowered))
         elem_types.push(ir_expr_type(lowered))
+        fnames.push(name)
         i += 1
+    var tuple_field_names = Option[span[str]].none
+    if all_named:
+        tuple_field_names = Option[span[str]].some(value = fnames.as_span())
     return alloc_expr(ir.Expr.expr_aggregate_literal(
-        ty = types.Type.ty_tuple(elements = elem_types.as_span()),
+        ty = types.Type.ty_tuple(elements = elem_types.as_span(), field_names = tuple_field_names),
         fields = fields.as_span(),
     ))
 
