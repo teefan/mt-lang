@@ -1,9 +1,9 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **Self-compile fixpoint REACHED; general-program parity IN PROGRESS.**
-Baseline emits C without crashes (3,800+ lines); 271 C compilation errors remain (down from 288).
+Status: **Self-compile fixpoint REACHED; general-program parity ACTIVE.**
+Baseline emits C without crashes (3,707 lines); 136 C compilation errors remain (down from 271).
 
-Last updated: 2026-07-10 (sessions: Phases C2, E rendering, F serial async, G crashes→baseline emit-c, systematic fixes)
+Last updated: 2026-07-10 (sessions: Phase G systematic fixes, fn-proc, inline-for, type system)
 
 ---
 
@@ -12,63 +12,55 @@ Last updated: 2026-07-10 (sessions: Phases C2, E rendering, F serial async, G cr
 ### 1.1 What works (verified)
 
 - **Self-compile fixpoint.** stage-1 (Ruby-built self-host) → stage-2 (self-built) →
-  stage-3 (stage-2-built) all emit **byte-identical C** (~53,226 lines, 0 diffs) for the
-  self-host source (re-verified 2026-07-09 after Phase H naming fixes).
+  stage-3 (stage-2-built) all emit **byte-identical C** (~53,226 lines, 0 diffs).
 - **All 172 self-host in-language tests pass** (0 failures).
 - **`examples/language_baseline.mt`** survives the full self-host pipeline (lex→parse→check→
-  lower→emit-c) without crashes, producing **3,800+ lines of C**.
+  lower→emit-c) without crashes, producing **3,707 lines of C**.
 - Phases A/B/C1/D: `atomic[T]`, `emit`, `dyn[I]`, break/continue in match-in-loop — DONE.
-- **Events (Phase C2)** — DONE: per-event typed subscribe/emit wrapper functions with
-  `Option[mt_subscription]` return; guard patterns work; struct-field access avoids padding.
-- **Parallel for ptr-to-array rendering (Phase E)** — DONE: `c_declaration` renders
-  `ptr[array[T,N]]` as `T (*name)[N]`.
-- **Serial async (Phase F)** — PARTIAL (foundation DONE):
-  - Analyzer: `Task[T]` return type wrapping, Task field/method registration
-  - Lowering: return value wrapped in Task struct, `await` extracts `.value`, Task
-    constructor calls lowered to aggregate literals
-  - C backend: `typedef struct { T value; bool ready; } mt_task_T;` emission
-  - Chained async programs compile and run correctly
-  - Remaining: full CPS lowering (frame/resume/waiter), `std.async` runtime integration
-- **Type alias emission** — DONE: `type X = proc() -> T` now emits C `typedef`; 471
-  typedefs in baseline; ordered before struct definitions.
-- **Generic fn type substitution** — DONE: `substitute_type_params` handles `ty_function`,
-  fixing `T (*run_work)(void)` in struct fields.
-- **Vector/matrix builtins** — DONE: `vec2`..`quat` struct typedefs emitted unconditionally;
-  `is_primitive_name` updated to include them; vector math type inference in
-  `infer_binary` + `promoted_binary_operand_type`.
-- **Zero-init for struct types** — DONE: `render_zero_initializer` returns `{0}` for
-  vec/mat/quat types (not plain `0`).
-- **Array/tuple literal positional rendering** — DONE: aggregate initializers with `_0`,
-  `_1` field names render as positional `{val, val, ...}`.
+- **Events (Phase C2)** — DONE.
+- **Parallel for rendering (Phase E)** — DONE (ptr-to-array, captures deferred).
+- **Serial async (Phase F)** — PARTIAL (foundation DONE; full CPS needed).
+- Phase H parts: prelude variant naming, underscore normalization, pointer spacing — DONE.
 
-### 1.2 What does NOT work yet (the parity gap)
+### 1.2 Recent progress (session 2026-07-10)
 
-| Feature | Self-host symptom | Status |
-|---------|-------------------|--------|
-| ~~`atomic[T]`~~ | — | DONE (Phase A) |
-| ~~`emit`~~ | — | DONE (Phase B) |
-| ~~`dyn[I]`~~ | — | DONE (Phase C1) |
-| ~~`events`~~ | — | DONE (Phase C2) |
-| ~~`break/continue` in match-in-loop~~ | — | DONE behavioral (Phase D) |
-| ~~`ptr[array[T,N]]` rendering~~ | — | DONE (Phase E rendering) |
-| `parallel for` captures | capture infra needs re-application | DEFERRED (Phase E captures) |
-| `async` / `Task[T]` | serial approximation works; full CPS + runtime integration needed | PARTIAL (Phase F) |
-| `examples/language_baseline.mt` | emits C without crashes; 271 C compilation errors remain | IN PROGRESS (Phase G) |
-| Phase H polish | Option naming, format helpers, fixpoint | NOT STARTED |
+271 → 136 errors (-50%), commits `5e4afe3e` through `e88956df`:
 
-### 1.3 Remaining C compilation errors (271, down from 288)
+| Commit | What | Delta |
+|--------|------|-------|
+| `5e4afe3e` | Nested struct types, module-qualified type names, vec unary minus, variant match path, match expr type, duplicate vec defs | 271→228 |
+| `bc6fc7ac` | Inline for unrolling (fields_of, members_of, attributes_of) | 228→206 |
+| `790f0816` | Inline for member access substitution (field.type, member.value) | 206→201 |
+| `e168badf` | Libuv opaque `_s`→`_t` via cross-module c_name lookup | 201→155 |
+| `080bf55d` | T generic param in vtable/dyn structs | 155→147 |
+| `44bf8b0f` | SimpleRange custom iterator guard | 147→144 |
+| `03b98aa8` | Inline for type-guard `field.type != float` | 144→140 |
+| `bce4d312` | fn→proc coercion via `is_proc` on `ty_function` | 140→136 |
+| `e88956df` | Refactor lowering.mt (dedup, rename, extract factory) | 136 (no change) |
+
+### 1.3 Remaining C compilation errors (136, down from 271)
 
 | Category | Count | Root Cause |
 |----------|-------|------------|
-| fn→proc coercion in struct fields | 9 | `fn` fields wrapped in proc env structs |
-| Mask bare type names | 6 | Module qualification for local enums/flags |
-| Void variable declarations | 5 | Cascading from type resolution failures |
-| str→int type mismatch | 5 | Match expression common type wrong |
-| start/end member access | 8 | Nested struct `Rectangle.Edge` not resolved |
-| Option naming | 4 | Option_int vs std_option_Option_int (Phase H) |
-| Unary minus on vec | 4 | Needs vec negation lowering |
-| T in interface/dyn | 4 | Generic interface method params |
-| Other cascading | ~226 | From above root causes |
+| Subscripted value not array/pointer | 9 | SoA `particles[0].x` — struct index not lowered |
+| Option naming | 4 | Prelude variant methods use bare `Option_int` vs qualified `std_option_Option_int` |
+| invoke/env member access | 4 | Proc-typed array elements resolved as fn ptr — type alias `target_type` not qualified |
+| Buffer lifetime struct | 3 | `@a` lifetime struct has no C definition generated |
+| Subscription comparison | 3 | `mt_subscription == void*` — per-event wrapper needed |
+| Variant comparison | 5 | `TokenKind == TokenKind` not lowered to discriminator compare |
+| Array assignment | 3 | Proc capture env struct holds array member, assign fails |
+| Void variables | 7 | Cascading from type resolution failures (get(), .with(), nested struct) |
+| Redefinition of `s` | 2 | Proc capture naming collision from match arms |
+| Remaining libuv types | ~8 | `uv_tcp_flags` etc. — flags types not in c_name lookup; `sockaddr` needs `struct` prefix in fn-ptr |
+| Other cascading | ~88 | From above root causes |
+
+### 1.4 Type system changes (this session)
+
+- **`ty_function`** now carries `is_proc: bool` to distinguish `fn` from `proc`
+- **`ty_named`** now carries `module_name: str` for module-qualified C name generation
+- **`ir.TypeAlias`** now carries `backing_c_name: Option[str]` for libuv opaque type mapping
+- **`LowerCtx`** new fields: `inline_for_element`, `defer_stack`
+- All 12 `ty_function` constructors updated across analyzer + lowering
 
 ---
 
@@ -99,53 +91,43 @@ Self-host source layout (`projects/mtc/src`, ≈30k LOC):
 | Type system | `src/mtc/semantic/types.mt` | ~710 |
 | Loader | `src/mtc/loader/` | ~730 |
 | IR | `src/mtc/ir.mt` | ~230 |
-| Lowering | `src/mtc/lowering/lowering.mt` | ~9,480 |
+| Lowering | `src/mtc/lowering/lowering.mt` | ~10,040 |
 | C Backend | `src/mtc/c_backend/c_backend.mt` | ~3,880 |
 | Build driver | `src/mtc/build.mt` | ~160 |
 | C naming (shared) | `src/mtc/c_naming.mt` | ~137 |
 
-### 2.1 Key seams (reuse, don't re-derive)
+### 2.1 Key seams
 
-- **Monomorphization**: method calls route through `try_generic_method_call` →
-  `lower_monomorphized_method`.
-- **Naming**: `naming.type_c_key(ty)` is the single source of truth.
-- **Member typing** order: span `.data`/`.len` → `concrete_field_type` →
-  `arm_payload_field_type` → `imported_field_type` → analyzer `expr_type`.
-- **Match**: `lower_match` prefers `ir_expr_type(lower_expr(scrutinee))`.
-- **Prelude variants**: globally named — never module-prefix them.
-- **Cross-module call resolution**: variant-arm ctor → `imported_foreign_call` →
-  `imported_extern_call` → `try_inferred_generic_call` → plain qualified call.
-- **`defer`**: per-block `DeferGroup` stack; flushed reverse-order.
-- **`inside_async`**: tracked in `LowerCtx`; return values wrapped in `make_task_literal`;
-  `await` unwrapped via `unwrap_task_value`.
-- **Event helpers**: per-event typed IR functions built in `build_event_subscribe_fn` /
-  `build_event_emit_fn`; added to `pending_event_functions`.
-- **Type aliases**: `type_alias_types` in `Analysis` → `ir.TypeAlias` → C `typedef`.
-- **Vector math**: `is_vec_math_name` in both analyzer and lowering;
-  `render_zero_initializer` handles vec/mat/quat.
-- **Task types**: `make_task_type` / `make_task_literal` / `unwrap_task_value` in lowering;
-  `emit_task_structs` in C backend.
+- **Monomorphization**: `try_generic_method_call` → `lower_monomorphized_method`
+- **Naming**: `naming.type_c_key(ty)` is the single source of truth
+- **fn vs proc**: `ty_function.is_proc` distinguishes; `is_proc_type` checks it
+- **Proc struct conversion**: `qualify_type` converts `ty_function(is_proc=true)` to `ty_named(mt_proc_…)`
+- **Inline for**: `lower_inline_for_stmt` → `comptime_iterable_elements` → per-element unrolling
+- **Cross-module opaque**: `lookup_decl_c_name_cross` follows import chain for C type mapping
+- **LowerCtx factory**: `new_lowering_context(analysis, …)` single init point
+- **Naming conventions** (post-refactor): `nominal_type_name` (not `primitive_type_name`), `is_builtin_type_name` (not `is_primitive_name`)
+
+---
 
 ## 3. The plan to 100% parity
 
-### Phase A — `atomic[T]` — **DONE**
-### Phase B — `emit` — **DONE**
-### Phase C1 — `dyn[I]` — **DONE**
-### Phase C2 — `events` — **DONE**
-### Phase D — break/continue in match-in-loop — **DONE** (behavioral)
-### Phase E — parallel for captures — **PARTIAL** (rendering DONE; captures DEFERRED)
-### Phase F — async / Task[T] — **PARTIAL** (serial foundation DONE; full CPS needed)
-### Phase G — baseline parity gate — **IN PROGRESS** (emit-c works; 271 C errors remain)
-### Phase H — final polish — **NOT STARTED**
+### Phase A — `atomic[T]` — DONE
+### Phase B — `emit` — DONE
+### Phase C1 — `dyn[I]` — DONE
+### Phase C2 — `events` — DONE
+### Phase D — break/continue in match-in-loop — DONE
+### Phase E — parallel for captures — PARTIAL (rendering DONE; captures deferred)
+### Phase F — async / Task[T] — PARTIAL (serial foundation DONE; full CPS needed)
+### Phase G — baseline parity gate — ACTIVE (136 errors remain, down from 271)
+### Phase H — final polish — NOT STARTED
 
-### Recommended next actions
-1. **Continue Phase G**: Fix remaining C compilation errors to get baseline compiling and
-   running. Prioritize: Option naming (Phase H), Mask bare names, str type mismatch,
-   start/end member access.
-2. **Phase F completion**: Full CPS lowering for async (frame/resume/waiter/cancel),
-   `std.async` runtime integration.
-3. **Phase E captures**: Re-apply capture infra (collector, struct, init, unmarshal).
-4. **Phase H**: Option naming fixpoint, format helpers, string-literal-index stabilization.
+### Recommended next actions (priority order)
+
+1. **Proc type alias qualification** — `ty_function(is_proc=true)` in type alias `target_type` not converted to proc struct. Affects 4 invoke/env errors. Fix: qualify type alias target_type during collection.
+2. **Option naming consolidation** — Prelude variant methods use bare names vs module-qualified. Affects 4 errors. Fix: prelude variant base_c_name should use `std_option_` prefix.
+3. **SoA index access** — `SoA[T,N]` generates struct but `particles[0]` needs C-level accessor lowering. Affects 9 errors.
+4. **Variant comparison** — `TokenKind == TokenKind` needs discriminator-based lowering. Affects 5 errors.
+5. **Phase H** — format helpers, string-literal-index stabilization.
 
 ---
 
@@ -155,13 +137,9 @@ Self-host source layout (`projects/mtc/src`, ≈30k LOC):
 # Build stage-1 (Ruby-built self-host).
 bin/mtc build projects/mtc --no-cache --no-debug-guards -o tmp/mtc-noguard
 
-# Per-feature differential.
-diff <(bin/mtc              emit-c FEATURE.mt) \
-     <(tmp/mtc-noguard      emit-c FEATURE.mt --root .)
-
-# Baseline emit-c test.
+# Baseline emit-c + compile check.
 tmp/mtc-noguard emit-c examples/language_baseline.mt --root examples --root . > tmp/baseline.c
-cc -std=c11 -D_GNU_SOURCE -I std/c tmp/baseline.c -o tmp/baseline -luv -lpthread -lm
+cc -std=c11 -D_GNU_SOURCE -I std/c -c tmp/baseline.c -o /dev/null 2>&1 | grep "error:" | wc -l
 
 # Self-compile fixpoint check.
 tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root . > tmp/self.c
@@ -186,79 +164,36 @@ bin/mtc test projects/mtc
 
 ---
 
-## 6. Resume context (2026-07-10 sessions)
+## 6. Resume context (2026-07-10)
 
-### Committed in previous session (2026-07-09)
-- Phase A: `atomic[T]` (`4de40f43`)
-- Phase B: `emit` (`72f91f78`)
-- Phase C1: `dyn[I]` (`d3a46fd8`)
-- Phase D: break/continue in match-in-loop (`8b5f346a`)
-- Phase E: parallel for for-loop wrapper (`560209b4`)
-- Phase H: preamble parity, naming fixes, prelude variant prefix (`3ec4b921`, `6307aad2`, `362094ff`)
+### Committed (this session, in order)
 
-### Uncommitted changes (2026-07-10 sessions, working tree dirty)
+| Hash | Description |
+|------|-------------|
+| `5e4afe3e` | Nested struct types, module-qualified names, vec unary minus, variant match path, match expr type, duplicate vec defs |
+| `bc6fc7ac` | Inline for unrolling (fields_of, members_of, attributes_of) |
+| `790f0816` | Inline for member access substitution (field.type, member.value) |
+| `e168badf` | Libuv opaque `_s`→`_t` via cross-module c_name lookup |
+| `080bf55d` | T generic param in vtable/dyn structs and wrappers |
+| `44bf8b0f` | SimpleRange custom iterator guard (skip on non-array/span) |
+| `03b98aa8` | Inline for type-guard `field.type != float` comptime evaluation |
+| `bce4d312` | fn→proc coercion — `is_proc` on `ty_function`, qualify_type converts, `is_proc_type` checks |
+| `e88956df` | Refactor lowering.mt: remove dead code, extract factory, rename helpers |
 
-**Files modified:**
-- `projects/mtc/src/mtc/lowering/lowering.mt` — ~650 lines added
-- `projects/mtc/src/mtc/c_backend/c_backend.mt` — ~120 lines added
-- `projects/mtc/src/mtc/semantic/analyzer.mt` — ~70 lines added
-- `projects/mtc/src/mtc/ir.mt` — 2 fields + 1 struct added
+### Key files modified (cumulative)
 
-**Phases completed:**
-- **Phase C2 (events)**: Per-event wrappers, `Option[mt_subscription]` return, guard support
-- **Phase E (rendering)**: `c_declaration` ptr-to-array fix, operator precedence fix
-- **Phase F (serial async)**: Task wrapping, return/await, Task struct, Task constructor, builtins
-- **Phase G (baseline survive)**: 20+ crash fixes, baseline emits C without crashes
+- `projects/mtc/src/mtc/semantic/types.mt` — `is_proc` on `ty_function`, `module_name` on `ty_named`
+- `projects/mtc/src/mtc/semantic/analyzer.mt` — nested type registration, `ctx.module_name` propagation, `is_proc` setting
+- `projects/mtc/src/mtc/c_naming.mt` — `type_c_key` for module-qualified `ty_named`
+- `projects/mtc/src/mtc/c_backend/c_backend.mt` — `c_type` for module-qualified, `backing_c_name` in type aliases
+- `projects/mtc/src/mtc/ir.mt` — `backing_c_name` on `TypeAlias`
+- `projects/mtc/src/mtc/lowering/lowering.mt` — all fixes above + refactor (10,040 LOC)
 
-**Systematic fixes:**
-- Type alias emission (typedefs for proc/fn types)
-- Generic function type substitution in struct fields
-- Vector/matrix/quaternion builtin type definitions
-- Vector math type inference (analyzer + lowering)
-- Zero-init for struct types (vec/mat/quat)
-- Positional array/tuple literal rendering
-- `is_primitive_name` extended with vec/mat/quat/ivec names
+### Build/test commands
 
-**Key added functions in lowering.mt:**
-- `make_task_type` / `make_task_literal` / `unwrap_task_value`
-- `lower_task_constructor` / `lower_multi_for`
-- `is_vec_math_name` / `primitive_type_name` / `is_void_type_lowered`
-
-**Key added functions in c_backend.mt:**
-- `emit_task_structs` / `emit_task_struct_type` / `task_type_element`
-- `emit_type_aliases` / `emit_builtin_type_defs` / `collect_builtin_types`
-- `is_vec_math_name` / `is_void_type`
-
-**Key changes in analyzer.mt:**
-- `build_fn_sig` with `is_async` param + `make_task_type`
-- `register_task_methods` (take_result/release/set_waiter/cancel/ready)
-- Task field handling in `check_member`
-- `infer_binary` with vector math support
-
-**Current state (before commit):**
-- All 172 self-host tests pass (0 failures)
-- Baseline emits 3,804 lines of C without crashes
-- 271 C compilation errors remain (down from 288)
-- Build: `bin/mtc build projects/mtc --no-cache --no-debug-guards -o tmp/mtc-noguard`
-
-### Build/test commands (from project root)
 ```sh
-# Build stage-1 self-host (from Ruby)
 bin/mtc build projects/mtc --no-cache --no-debug-guards -o tmp/mtc-noguard
-
-# Run in-language tests
 bin/mtc test projects/mtc
-
-# Per-feature differential
-diff <(bin/mtc emit-c FEATURE.mt) <(tmp/mtc-noguard emit-c FEATURE.mt --root .)
-
-# Baseline emit-c + compile check
 tmp/mtc-noguard emit-c examples/language_baseline.mt --root examples --root . > tmp/baseline.c
-cc -std=c11 -D_GNU_SOURCE -I std/c tmp/baseline.c -o /dev/null -luv -lpthread -lm 2>&1 | grep "error:" | wc -l
-
-# Self-compile fixpoint check
-tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root . > tmp/self.c
-cc -std=c11 -D_GNU_SOURCE -I std/c tmp/self.c -o tmp/mtc-stage2 -luv -lpthread -lm
-diff <(tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root .) \
-     <(tmp/mtc-stage2  emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root .)
+cc -std=c11 -D_GNU_SOURCE -I std/c -c tmp/baseline.c -o /dev/null 2>&1 | grep "error:" | wc -l
 ```
