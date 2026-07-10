@@ -4353,7 +4353,8 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                             let c_name = naming.qualified_c_name(target_module, ma.member_name)
                             var ret_ty = cross_module_return_type(ctx, c_name, call_ep)
                             var ret_type_ptr = types.alloc_type(ret_ty)
-                            return lower_plain_call(ctx, c_name, args, call_ep, ret_type_ptr)
+                            var cross_sig = lookup_imported_fn_sig(ctx, target_module, ma.member_name)
+                            return lower_plain_call_sig(ctx, c_name, args, call_ep, ret_type_ptr, cross_sig)
                     ast.Expr.expr_specialization as spec:
                         # A generic variant arm constructor, e.g. `Option[int].some(value = 42)`.
                         if spec.arguments.len > 0:
@@ -6207,7 +6208,22 @@ function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr
         var arg: ast.Argument
         unsafe:
             arg = read(args.data + i)
-        let lowered = lower_expr(ctx, arg.arg_value)
+        var lowered = lower_expr(ctx, arg.arg_value)
+        # Coerce a bare function-identifier argument to proc when the lowered
+        # IR is a name expression with a fn-pointer type: wrap it in a proc
+        # struct so method calls with proc parameters receive the expected type.
+        unsafe:
+            match read(lowered):
+                ir.Expr.expr_name as nm:
+                    if is_fn_type(nm.ty):
+                        match read(arg.arg_value):
+                            ast.Expr.expr_identifier as fn_id:
+                                if ctx.function_returns.contains(fn_id.name) or ctx.analysis.functions.contains(fn_id.name):
+                                    lowered = lower_fn_to_proc(ctx, nm.name, nm.ty)
+                            _:
+                                pass
+                _:
+                    pass
         unsafe:
             ir_args.push(read(lowered))
         i += 1
@@ -6606,6 +6622,7 @@ function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, g
             arg = read(args.data + i)
         var lowered = lower_expr(ctx, arg.arg_value)
         lowered = coerce_arg_to_param(cached, param_offset + i, lowered)
+        lowered = coerce_monomorphized_arg_to_proc(ctx, cached, param_offset + i, lowered, arg.arg_value)
         unsafe:
             ir_args.push(read(lowered))
         i += 1
@@ -6631,6 +6648,35 @@ function coerce_arg_to_param(cached: ptr[ir.Function]?, param_index: ptr_uint, a
         # `*arg`: dereference the pointer argument to match the value parameter.
         return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = arg, ty = param.ty))
     return arg
+
+
+## Coerce a bare function argument to a proc struct when the monomorphized
+## parameter expects a proc type.  Mirrors coerce_fn_arg_to_proc but uses the
+## lowered function's parameter types.
+function coerce_monomorphized_arg_to_proc(ctx: ref[LowerCtx], cached: ptr[ir.Function]?, param_index: ptr_uint, lowered: ptr[ir.Expr], arg_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let fn_ptr = cached else:
+        return lowered
+    let spec_fn = unsafe: read(fn_ptr)
+    if param_index >= spec_fn.params.len:
+        return lowered
+    var param: ir.Param
+    unsafe:
+        param = read(spec_fn.params.data + param_index)
+    if not is_proc_type(param.ty):
+        return lowered
+    unsafe:
+        match read(lowered):
+            ir.Expr.expr_name as nm:
+                if is_fn_type(nm.ty):
+                    match read(arg_ast):
+                        ast.Expr.expr_identifier as fn_id:
+                            if ctx.function_returns.contains(fn_id.name) or ctx.analysis.functions.contains(fn_id.name):
+                                return lower_fn_to_proc(ctx, nm.name, nm.ty)
+                        _:
+                            pass
+            _:
+                pass
+    return lowered
 
 
 ## Lower and cache a monomorphized method body once, in the owner module's
@@ -9814,6 +9860,18 @@ function lookup_fn_sig(ctx: ref[LowerCtx], name: str) -> Option[analyzer.FnSig]:
         return Option[analyzer.FnSig].none
     unsafe:
         return Option[analyzer.FnSig].some(value = read(sig_ptr))
+
+
+## Look up a function's FnSig in an imported module's analysis.
+function lookup_imported_fn_sig(ctx: ref[LowerCtx], module_name: str, name: str) -> Option[analyzer.FnSig]:
+    match find_imported_analysis(ctx, module_name):
+        Option.some as imported:
+            let sig_ptr = imported.value.functions.get(name)
+            if sig_ptr == null:
+                return Option[analyzer.FnSig].none
+            return Option[analyzer.FnSig].some(value = unsafe: read(sig_ptr))
+        Option.none:
+            return Option[analyzer.FnSig].none
 
 
 function fn_sig_param_type(sig: Option[analyzer.FnSig], index: ptr_uint) -> types.Type:
