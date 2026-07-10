@@ -20,7 +20,6 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     var functions = map_mod.Map[str, analyzer.FnSig].create()
     var structs = map_mod.Map[str, span[analyzer.FieldEntry]].create()
     var value_types = map_mod.Map[str, types.Type].create()
-    var type_aliases = map_mod.Map[str, bool].create()
     var static_member_types = map_mod.Map[str, bool].create()
     var member_keys = map_mod.Map[str, bool].create()
     var method_sigs = map_mod.Map[str, analyzer.FnSig].create()
@@ -30,7 +29,6 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     var private_functions = map_mod.Map[str, analyzer.FnSig].create()
     var private_structs = map_mod.Map[str, span[analyzer.FieldEntry]].create()
     var private_value_types = map_mod.Map[str, types.Type].create()
-    var private_type_aliases = map_mod.Map[str, bool].create()
     var private_static_member_types = map_mod.Map[str, bool].create()
     var private_member_keys = map_mod.Map[str, bool].create()
     var private_method_sigs = map_mod.Map[str, analyzer.FnSig].create()
@@ -101,11 +99,6 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                 else:
                     private_static_member_types.set(vr.name, true)
                     export_arm_keys(ref_of(private_member_keys), vr.name, vr.variant_arms)
-            ast.Decl.decl_type_alias as ta:
-                if exports_all or ta.visibility:
-                    type_aliases.set(ta.name, true)
-                else:
-                    private_type_aliases.set(ta.name, true)
             ast.Decl.decl_extending_block as ex:
                 export_methods(ref_of(member_keys), ref_of(method_sigs), ref_of(private_member_keys), ref_of(private_method_sigs), analysis.method_sigs, ex.type_name, ex.methods, exports_all)
             ast.Decl.decl_interface as iface:
@@ -121,7 +114,6 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         functions = functions,
         structs = structs,
         value_types = value_types,
-        type_aliases = type_aliases,
         static_member_types = static_member_types,
         member_keys = member_keys,
         method_sigs = method_sigs,
@@ -131,7 +123,6 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         private_functions = private_functions,
         private_structs = private_structs,
         private_value_types = private_value_types,
-        private_type_aliases = private_type_aliases,
         private_static_member_types = private_static_member_types,
         private_member_keys = private_member_keys,
         private_method_sigs = private_method_sigs,
