@@ -1,9 +1,9 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
 Status: **Self-compile fixpoint REACHED; general-program parity ACTIVE.**
-Baseline emits C without crashes (3,469 lines); 49 C compilation errors remain (down from 271).
+Baseline emits C without crashes (3,468 lines); 47 C compilation errors remain (down from 271).
 
-Last updated: 2026-07-10 (session: Phase G complete — 18 commits, 271→49 errors, -82%)
+Last updated: 2026-07-10 (session: Phase G + proc/fn batch complete — 22 commits, 271→47 errors, -83%)
 
 ---
 
@@ -15,20 +15,24 @@ Last updated: 2026-07-10 (session: Phase G complete — 18 commits, 271→49 err
   stage-3 (stage-2-built) all emit **byte-identical C** (~53,226 lines, 0 diffs).
 - **All 172 self-host in-language tests pass** (0 failures).
 - **`examples/language_baseline.mt`** survives the full self-host pipeline (lex→parse→check→
-  lower→emit-c) without crashes, producing **3,469 lines of C**.
+  lower→emit-c) without crashes, producing **3,468 lines of C**.
 - Phases A/B/C1/D: `atomic[T]`, `emit`, `dyn[I]`, break/continue in match-in-loop — DONE.
 - **Events (Phase C2)** — DONE.
 - **Parallel for rendering (Phase E)** — DONE (ptr-to-array, captures deferred).
 - **Serial async (Phase F)** — PARTIAL (foundation DONE; full CPS needed).
-- **proc/fn sub-issues 1A/1C/1D/1E/1F** — DONE (6 of 7 proc sub-issues resolved).
-- **fn/proc struct field calls** — DONE (Callback_invoke, FnFilter_check).
+- **proc/fn sub-issues** — DONE (modvar_proc, fn→proc coercion, fn/proc field calls, shared structs, type alias, is_proc_type, void invoke, stale captures).
+- **`unify_type_param`** for proc/fn constructors — DONE (generic inference infrastructure).
 
 ### 1.2 Recent progress (session 2026-07-10)
 
-271 → 49 errors (-82%), 18 commits:
+271 → 47 errors (-83%), 22 commits:
 
 | Commit | What | Delta |
 |--------|------|-------|
+| `982c1123` | proc/fn param unification for generic inference | — |
+| `d665ca8a` | proc/fn type unification + proc_return_type extraction | — |
+| `7ea47fc2` | modvar_proc routing + fn→proc coercion at call boundary | 48→47 |
+| `4085dd9c` | inferred generic call routing + module_var_type | 48→47 |
 | `2f2791cc` | fn/proc struct field calls + modvar_proc routing | 51→49 |
 | `9a824d94` | is_proc_type, void invoke, stale captures, shared structs, type alias (5 sub-issues) | 57→51 |
 | `b43089de` | is_proc_type (1A), void invoke (1C), stale captures (1F) | 57→53 |
@@ -44,17 +48,17 @@ Last updated: 2026-07-10 (session: Phase G complete — 18 commits, 271→49 err
 | `aef89f3f` | SoA indexing — swap member+index + emit SoA struct defs | 116→106 |
 | `58281822` | std.c.* type aliases, variant equality, option naming (3 fixes) | 136→116 |
 
-### 1.3 Remaining C compilation errors (49, down from 271)
+### 1.3 Remaining C compilation errors (47, down from 271)
 
 | Category | Count | Root Cause |
 |----------|-------|------------|
-| Proc/fn type issues | ~10 | modvar_proc not proc-route; fn→proc coercion at call boundary (apply_int_op); call_proc generic not monomorphized; invoke/env on array elements typed as fn pointer |
-| Compile-time reflection | 3 | `has_attribute`, `field_of`, `square(5)` not constant-folded; emit function calls instead |
+| Proc/fn remnants | ~5 | IntGenerator array element typed as fn ptr (2); call_proc monomorphization (1); invoke/env cascading (2) |
+| Compile-time reflection | 3 | `has_attribute`, `field_of`, `square(5)` not constant-folded |
 | ? propagation | 2 | `expr?` not lowered to if-then-return pattern |
+| Tuple named fields | 4 | Named tuples generate positional structs |
 | Parallel for captures | 3 | `pa`/`pb`/`positions` not passed to worker functions |
-| Tuple named fields | 4 | Named tuples generate positional structs (no `.x`/`.y`) |
 | Str buffer API | 3 | `mt_str_buffer_len` argument mismatch |
-| Cascading void/unknown-type | ~24 | From above root causes (result void, value void, qualified void, F unknown, task_void) |
+| Cascading void/unknown-type | ~27 | From above root causes (result void, value void, qualified void, F unknown, task_void) |
 
 ### 1.4 Type system & architecture changes (this session)
 
@@ -65,7 +69,7 @@ Last updated: 2026-07-10 (session: Phase G complete — 18 commits, 271→49 err
 - **`Emitter`** new field: `variant_eq_set: Map[str, bool]` for tracking variant equality helpers
 - All 12 `ty_function` constructors updated across analyzer + lowering
 - **`c_backend.mt`** (~4,337 LOC): variant equality system, SoA struct emission, Option prefix handling, type alias filtering
-- **`lowering.mt`** (~10,511 LOC): vec/mat/quat binary ops, with() lowering, get() builtin, SoA index swap, vec field type resolution, lifetime struct check, type constant skip, proc capture dedup, proc type qualification, std.c.* alias skip, `is_proc_type(fnt.is_proc)`, `fallback_type` expr_proc, match-arm locals scoping, shared proc struct names (`mt_proc_*`), proc type alias qualification, fn/proc struct field call detection (`lower_fn_field_call`, `lower_proc_field_call`)
+- **`lowering.mt`** (~10,620 LOC): vec/mat/quat binary ops, with() lowering, get() builtin, SoA index swap, vec field type resolution, lifetime struct check, type constant skip, proc capture dedup, proc type qualification, std.c.* alias skip, `is_proc_type(fnt.is_proc)`, `fallback_type` expr_proc, match-arm locals scoping, shared proc struct names (`mt_proc_*`), proc type alias qualification, fn/proc struct field call detection, modvar_proc routing, fn→proc coercion (`coerce_fn_arg_to_proc`), proc/fn type unification (`unify_type_param` + `proc_return_type`)
 
 ---
 
@@ -96,7 +100,7 @@ Self-host source layout (`projects/mtc/src`, ≈32k LOC):
 | Type system | `src/mtc/semantic/types.mt` | ~710 |
 | Loader | `src/mtc/loader/` | ~730 |
 | IR | `src/mtc/ir.mt` | ~230 |
-| Lowering | `src/mtc/lowering/lowering.mt` | ~10,511 |
+| Lowering | `src/mtc/lowering/lowering.mt` | ~10,620 |
 | C Backend | `src/mtc/c_backend/c_backend.mt` | ~4,337 |
 | Build driver | `src/mtc/build.mt` | ~160 |
 | C naming (shared) | `src/mtc/c_naming.mt` | ~137 |
@@ -109,9 +113,12 @@ Self-host source layout (`projects/mtc/src`, ≈32k LOC):
 - **Proc struct conversion**: `qualify_type` converts `ty_function(is_proc=true)` to `ty_named(mt_proc_…)`
 - **Shared proc struct names**: `lower_proc_expression` uses `proc_type_name_from_signature` for the struct type name (not unique `__proc_N`)
 - **Proc field calls**: `lower_call` detects fn/proc struct fields via `concrete_field_type` + `analysis.structs`; `lower_fn_field_call` for direct fn ptr calls, `lower_proc_field_call` for proc invoke
+- **fn→proc coercion**: `coerce_fn_arg_to_proc` wraps bare fn refs in proc structs when expected param is proc
+- **Module-level proc vars**: `module_var_type` resolves types from AST; `lower_call` routes to `lower_proc_call`
 - **Match-arm locals scoping**: `lower_match` saves/restores `ctx.locals` to prevent stale arm bindings leaking into proc captures
 - **Type alias qualification**: proc-type aliases (`type X = proc(...)`) resolved to `ty_named(mt_proc_...)` in type alias collection
 - **Fallback type**: `fallback_type` handles `expr_proc` to reconstruct `ty_function(is_proc=true)` from the AST
+- **Generic type inference**: `unify_type_param` supports `proc(...)`/`fn(...)` type constructors; `proc_return_type` extracts return type from `ty_function` and `mt_proc_*` names
 - **Inline for**: `lower_inline_for_stmt` → `comptime_iterable_elements` → per-element unrolling
 - **Cross-module opaque**: `lookup_decl_c_name_cross` follows import chain for C type mapping
 - **LowerCtx factory**: `new_lowering_context(analysis, …)` single init point
@@ -138,24 +145,26 @@ Self-host source layout (`projects/mtc/src`, ≈32k LOC):
 ### Phase D — break/continue in match-in-loop — DONE
 ### Phase E — parallel for captures — PARTIAL (rendering DONE; captures deferred)
 ### Phase F — async / Task[T] — PARTIAL (serial foundation DONE; full CPS needed)
-### Phase G — baseline parity gate — COMPLETE (271→49, -82%)
+### Phase G — baseline parity gate — COMPLETE (271→47, -83%)
 ### Phase H — final polish — NOT STARTED
 
 ### Recommended next actions (priority order)
 
-1. **Compile-time constant folding** (3 errors) — `has_attribute`, `field_of`, `square(5)` emit function calls instead of computed values. Fix: extend `try_evaluate_const_expr` to handle builtin reflection calls and const-function invocation. Straightforward: special-case the builtin names in `lower_call` around line 3618, before the fallback to `lower_plain_call_sig`.
+1. **Compile-time constant folding** (3 errors) — `has_attribute`, `field_of`, `square(5)` emit function calls instead of computed values. Fix: special-case the builtin names in `lower_call` around line 3618, before the fallback to `lower_plain_call_sig`. Straightforward: evaluate at compile time and return literal IR nodes.
 
-2. **? propagation** (2 errors) — `expr?` not lowered to if-then-return pattern. Fix: in `lower_expr` for `expr_unary_op` with operator `"?"`, emit a temp variable assignment + kind check + early return. Or add `ir.Expr.expr_propagate` IR node.
+2. **? propagation** (2 errors) — `expr?` not lowered to if-then-return pattern. Fix: in `lower_expr` for `expr_unary_op` with operator `"?"`, emit temp + kind-check + early-return inline.
 
-3. **Tuple named fields** (4 errors) — Named tuples generate positional structs. Fix: extend `ty_tuple` with optional field names; use names in `lower_tuple_literal`.
+3. **IntGenerator array typing** (2 errors) — `let a = ops[0]` resolves element as fn ptr, not proc struct. Fix: trace `expr_type` / `ir_expr_type` for checked-index results to ensure qualification.
 
-4. **Parallel for captures** (3 errors) — Fix: detect captures in parallel worker bodies, generate capture structs, pass as data args.
+4. **Tuple named fields** (4 errors) — Named tuples generate positional structs. Fix: extend `ty_tuple` with optional field names.
 
-5. **Remaining proc/fn** (~10 errors) — modvar_proc call routing, fn→proc coercion at call boundary, call_proc monomorphization. Needs analyzer-level type promotion or call-site type checking.
+5. **Parallel for captures** (3 errors) — Fix: detect captures in worker bodies, pass as data args.
 
-6. **Str buffer API** (3 errors) — Fix argument counts in `lower_str_buffer_method`.
+6. **call_proc monomorphization** (1 error) — `try_inferred_generic_call` returns None; needs debugging of `find_generic_function` / `lower_and_cache_specialization_with_sub` chain.
 
-7. **Phase H** — format helpers, string-literal-index stabilization, async CPS, final edge cases.
+7. **Str buffer API** (3 errors) — Fix argument counts in `lower_str_buffer_method`.
+
+8. **Phase H** — format helpers, string-literal-index stabilization, async CPS, final edge cases.
 
 ---
 
@@ -212,6 +221,10 @@ bin/mtc test projects/mtc
 | `b43089de` | is_proc_type (1A), void invoke (1C), stale captures (1F) → (57→53) |
 | `9a824d94` | Shared struct names (1E), type alias qualification (1D) → (53→51) |
 | `2f2791cc` | fn/proc struct field calls + modvar_proc routing → (51→49) |
+| `4085dd9c` | inferred generic call routing + module_var_type → (48→47) |
+| `7ea47fc2` | modvar_proc routing + fn→proc coercion at call boundary → (48→47) |
+| `d665ca8a` | proc/fn type unification + proc_return_type extraction |
+| `982c1123` | proc/fn param unification for generic inference |
 
 ### Key files modified (cumulative)
 
@@ -220,9 +233,9 @@ bin/mtc test projects/mtc
 - `projects/mtc/src/mtc/c_naming.mt` — `type_c_key` for module-qualified `ty_named`
 - `projects/mtc/src/mtc/c_backend/c_backend.mt` — variant equality, SoA structs, option prefix, type alias filtering (~4,337 LOC)
 - `projects/mtc/src/mtc/ir.mt` — `backing_c_name` on `TypeAlias`
-- `projects/mtc/src/mtc/lowering/lowering.mt` — all fixes (~10,511 LOC)
+- `projects/mtc/src/mtc/lowering/lowering.mt` — all fixes (~10,620 LOC)
 - `docs/self-host-plan.md` — updated status and architecture seams
-- `docs/self-host-gap-analysis.md` — per-category detailed analysis of remaining 49 errors
+- `docs/self-host-gap-analysis.md` — per-category detailed analysis of remaining 47 errors
 
 ### Build/test commands
 
