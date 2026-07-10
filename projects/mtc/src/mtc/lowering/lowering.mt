@@ -2469,6 +2469,90 @@ function lower_array_as_span(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], array_
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = span_ty, fields = fields.as_span()))
 
 
+## Lower `.with(x = val, ...)` to an aggregate literal copy with specified
+## fields replaced.  Mirrors Ruby's :struct_with lowering.
+function lower_with_call(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], recv_ty: types.Type, args: span[ast.Argument]) -> ptr[ir.Expr]:
+    let recv = lower_expr(ctx, receiver)
+    let name = nominal_type_name(recv_ty)
+    var field_names = vec.Vec[str].create()
+    var field_types = vec.Vec[types.Type].create()
+    if is_vec_math_name(name):
+        vec_math_fields(name, ref_of(field_names), ref_of(field_types))
+    else:
+        var struct_name = name
+        if struct_name.len == 0:
+            match recv_ty:
+                types.Type.ty_named as n:
+                    struct_name = n.name
+                types.Type.ty_imported as im:
+                    struct_name = im.name
+                _:
+                    pass
+        if struct_name.len > 0:
+            if ctx.analysis.structs.contains(struct_name):
+                let fields_ptr = ctx.analysis.structs.get(struct_name) else:
+                    fatal(c"lower_with_call: struct not found")
+                let entries = unsafe: read(fields_ptr)
+                var ei: ptr_uint = 0
+                while ei < entries.len:
+                    let entry = unsafe: read(entries.data + ei)
+                    field_names.push(entry.name)
+                    field_types.push(entry.ty)
+                    ei += 1
+            else:
+                var import_values = ctx.analysis.imports.values()
+                var found = false
+                while not found:
+                    let target_ptr = import_values.next() else:
+                        break
+                    let target_module = unsafe: read(target_ptr)
+                    match find_imported_analysis(ctx, target_module):
+                        Option.some as imported:
+                            if imported.value.structs.contains(struct_name):
+                                let ifields_ptr = imported.value.structs.get(struct_name) else:
+                                    break
+                                let ientries = unsafe: read(ifields_ptr)
+                                var iei: ptr_uint = 0
+                                while iei < ientries.len:
+                                    let ientry = unsafe: read(ientries.data + iei)
+                                    field_names.push(ientry.name)
+                                    field_types.push(ientry.ty)
+                                    iei += 1
+                                found = true
+                        Option.none:
+                            pass
+    if field_names.len() == 0:
+        fatal(c"lower_with_call: cannot determine fields for type")
+    var arg_map = map_mod.Map[str, ptr[ir.Expr]].create()
+    var ai: ptr_uint = 0
+    while ai < args.len:
+        var a: ast.Argument
+        unsafe:
+            a = read(args.data + ai)
+        let aname = a.arg_name else:
+            fatal(c"lower_with_call: named arguments required")
+        arg_map.set(aname, lower_expr(ctx, a.arg_value))
+        ai += 1
+    var fields = vec.Vec[ir.AggregateField].create()
+    var fi: ptr_uint = 0
+    while fi < field_names.len():
+        let fn_ptr = field_names.get(fi) else:
+            break
+        let ft_ptr = field_types.get(fi) else:
+            break
+        let fname = unsafe: read(fn_ptr)
+        let ftype = unsafe: read(ft_ptr)
+        let fval_ptr = arg_map.get(fname)
+        var fval: ptr[ir.Expr]
+        if fval_ptr != null:
+            fval = unsafe: read(fval_ptr)
+        else:
+            fval = alloc_expr(ir.Expr.expr_member(receiver = recv, member = fname, ty = ftype))
+        fields.push(ir.AggregateField(name = fname, value = fval))
+        fi += 1
+    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = recv_ty, fields = fields.as_span()))
+
+
 ## Recover the declared length of a const/var array referenced by `receiver` by
 ## resolving its declaration's type annotation.  Returns 0 when the receiver is
 ## not a module-level const/var array identifier.
@@ -3625,6 +3709,10 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # fallback (mirrors Ruby's :array_as_span lowering).
                 if is_array_type(recv_ty) and ma.member_name.equal("as_span") and args.len == 0:
                     return lower_array_as_span(ctx, ma.receiver, recv_ty)
+                # Builtin `.with(x = val, ...)` — aggregate copy with specified
+                # fields replaced, mirroring Ruby's :struct_with lowering.
+                if ma.member_name.equal("with"):
+                    return lower_with_call(ctx, ma.receiver, recv_ty, args)
                 # Event builtin methods: must be checked before resolve_method_info
                 # because they ARE registered in method_sigs for sema validation.
                 if is_event_type(ctx, recv_ty):
