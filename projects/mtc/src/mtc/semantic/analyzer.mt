@@ -2437,7 +2437,10 @@ function check_local(ctx: ref[Context], scope: ref[Scope], is_let: bool, name: s
     if has_declared:
         scope_set(scope, name, declared)
     else if has_value:
-        scope_set(scope, name, narrowed)
+        if has_guard:
+            scope_set(scope, name, narrowed)
+        else:
+            scope_set(scope, name, value_type)
     else:
         scope_set(scope, name, types.Type.ty_error)
 
@@ -2586,9 +2589,9 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr
             ast.Expr.expr_unary_op as u:
                 return infer_unary(ctx, scope, u.operator, u.operand)
             ast.Expr.expr_prefix_cast as c:
-                let _inner = infer_expr(ctx, scope, c.expression)
+                let source = infer_expr(ctx, scope, c.expression)
                 let target = resolve_type(ctx, c.target_type)
-                if types.is_raw_pointer(target) and ctx.unsafe_depth == 0:
+                if types.is_raw_pointer(target) and ctx.unsafe_depth == 0 and not types.is_raw_pointer(source):
                     report(ctx, c.line, c.column, "pointer cast requires unsafe")
                 return target
             ast.Expr.expr_member_access as ma:
@@ -3333,12 +3336,14 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
                 return Option[FnSig].some(value = unsafe: read(sig_ptr))
             return Option[FnSig].none
         types.Type.ty_imported as im:
-            let binding_ptr = lookup_binding(ctx, im.module_name) else:
-                return Option[FnSig].none
-            unsafe:
-                let sig_ptr = read(binding_ptr).method_sigs.get(method_key(im.name, method_name))
-                if sig_ptr != null:
-                    return Option[FnSig].some(value = read(sig_ptr))
+            let bp = lookup_binding(ctx, im.module_name)
+            if bp != null:
+                let sp = unsafe: read(bp).method_sigs.get(method_key(im.name, method_name))
+                if sp != null:
+                    return Option[FnSig].some(value = unsafe: read(sp))
+            let sp = ctx.method_sigs.get(method_key(im.name, method_name))
+            if sp != null:
+                return Option[FnSig].some(value = unsafe: read(sp))
             return Option[FnSig].none
         types.Type.ty_var as v:
             return resolve_constraint_method(ctx, v.name, method_name)
@@ -3352,6 +3357,9 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
                 return str_buffer_method_sig(g.args, method_name)
             if g.name.equal("atomic"):
                 return atomic_method_sig(g.args, method_name)
+            let sig_ptr = ctx.method_sigs.get(method_key(g.name, method_name))
+            if sig_ptr != null:
+                return Option[FnSig].some(value = unsafe: read(sig_ptr))
             return Option[FnSig].none
         _:
             return Option[FnSig].none

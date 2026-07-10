@@ -2036,7 +2036,7 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             # Prelude variant instances (Option_str, Result_int_Error) and proc
             # typedefs (mt_proc_...) have global C names and must not be
             # module-prefixed.
-            if n.name.starts_with("Option_") or n.name.starts_with("Result_") or n.name.starts_with("mt_proc_"):
+            if is_prelude_variant_name(n.name) or n.name.starts_with("mt_proc_"):
                 return t
             # A bare type name may be a type imported from another module (e.g.
             # `Diag` used in `analyzer` but defined in `definite_assignment`).

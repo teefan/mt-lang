@@ -3649,8 +3649,13 @@ function try_parse_prefix_cast_expression(s: ref[ParserState]) -> Option[ptr[ast
                 return Option[ptr[ast.Expr]].none
     var expr_val = parse_unary(s)
     var node = alloc_expr(s)
+    var cast_line: ptr_uint = 0
+    var cast_column: ptr_uint = 0
     unsafe:
-        read(node) = ast.Expr.expr_prefix_cast(target_type = target_type, expression = expr_val, line = 0, column = 0)
+        cast_line = read(name_tok).line
+        cast_column = read(name_tok).column
+    unsafe:
+        read(node) = ast.Expr.expr_prefix_cast(target_type = target_type, expression = expr_val, line = cast_line, column = cast_column)
     return Option[ptr[ast.Expr]].some(value = node)
 
 

@@ -370,6 +370,8 @@ public function is_raw_pointer(t: Type) -> bool:
     match t:
         Type.ty_generic as g:
             return g.name.equal("ptr") or g.name.equal("const_ptr")
+        Type.ty_nullable as nl:
+            return is_raw_pointer(unsafe: read(nl.base))
         _:
             return false
 
