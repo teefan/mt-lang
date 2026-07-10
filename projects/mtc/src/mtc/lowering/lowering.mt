@@ -1618,6 +1618,22 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 ))
                 ctx.locals.push(LocalBinding(name = loc.name, c_name = c_name, ty = ty, pointer = false))
             ast.Stmt.stmt_assignment as asg:
+                # Lower `arr[start..end] = (e1, e2, ...)` — range index assignment.
+                # Expand into individual checked-index assignments, one per RHS element.
+                match read(asg.target):
+                    ast.Expr.expr_index_access as idx_target:
+                        match read(idx_target.index):
+                            ast.Expr.expr_range as rng:
+                                match read(asg.value):
+                                    ast.Expr.expr_expression_list as els:
+                                        lower_range_index_assignment(ctx, output, idx_target.receiver, rng.start_expr, els.elements)
+                                        return
+                                    _:
+                                        pass
+                            _:
+                                pass
+                    _:
+                        pass
                 # Desugar `read(x) = value` to `*x = value`.
                 var target_expr = asg.target
                 match is_read_call(target_expr):
@@ -3902,6 +3918,37 @@ function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
     if is_span_type(receiver_type):
         return alloc_expr(ir.Expr.expr_checked_span_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))
     return alloc_expr(ir.Expr.expr_index(receiver = recv, index = index_expr, ty = elem_ty))
+
+
+## Lower `arr[start..end] = (e1, e2, ...)` into individual checked-index
+## assignments.  The range start must be a uint-typed integer literal, and the
+## RHS expression list length must match the range width.
+function lower_range_index_assignment(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], receiver: ptr[ast.Expr], start_expr: ptr[ast.Expr], elements: span[ast.Expr]) -> void:
+    let receiver_type = index_receiver_type(ctx, receiver)
+    let recv = lower_expr(ctx, receiver)
+    var start_val: long = 0
+    unsafe:
+        match read(start_expr):
+            ast.Expr.expr_integer_literal as il:
+                start_val = il.value
+            _:
+                fatal(c"lower_range_index_assignment: start must be integer literal")
+    var elem_ty = qualify_type(ctx, generic_first_arg(receiver_type))
+    if types.is_error(elem_ty):
+        fatal(c"lower_range_index_assignment: cannot determine element type")
+    var i: ptr_uint = 0
+    while i < elements.len:
+        let index_expr = alloc_expr(ir.Expr.expr_integer_literal(value = start_val + long<-(i), ty = types.primitive("ptr_uint")))
+        var target_expr: ptr[ir.Expr]
+        if is_array_type(receiver_type):
+            target_expr = alloc_expr(ir.Expr.expr_checked_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))
+        else if is_span_type(receiver_type):
+            target_expr = alloc_expr(ir.Expr.expr_checked_span_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))
+        else:
+            target_expr = alloc_expr(ir.Expr.expr_index(receiver = recv, index = index_expr, ty = elem_ty))
+        let value_expr = lower_expr(ctx, unsafe: elements.data + i)
+        output.push(ir.Stmt.stmt_assignment(target = target_expr, operator = "=", value = value_expr))
+        i += 1
 
 
 ## The type of an index receiver: for a local/parameter identifier take its
