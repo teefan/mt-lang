@@ -2746,6 +2746,108 @@ function parallel_worker_fn(ctx: ref[LowerCtx], body_ir: span[ir.Stmt]) -> ir.Fu
         return_type = void_ty, body = body_ir, entry_point = false, method_receiver_param = false)
 
 
+## Collect all `ir.Expr.expr_name` references from a span of IR statements.
+function collect_ir_names(stmts: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]]) -> void:
+    var si: ptr_uint = 0
+    while si < stmts.len:
+        collect_ir_stmt_names(unsafe: read(stmts.data + si), seen)
+        si += 1
+
+
+function collect_ir_stmt_names(s: ir.Stmt, seen: ref[map_mod.Map[str, bool]]) -> void:
+    match s:
+        ir.Stmt.stmt_expression as ex:
+            collect_ir_expr_names(unsafe: read(ex.expression), seen)
+        ir.Stmt.stmt_assignment as asg:
+            collect_ir_expr_names(unsafe: read(asg.target), seen)
+            collect_ir_expr_names(unsafe: read(asg.value), seen)
+        ir.Stmt.stmt_local as loc:
+            collect_ir_expr_names(unsafe: read(loc.value), seen)
+        ir.Stmt.stmt_return as ret:
+            if ret.value != null:
+                collect_ir_expr_names(unsafe: read(unsafe: ptr[ir.Expr]<-ret.value), seen)
+        ir.Stmt.stmt_if as if_:
+            collect_ir_expr_names(unsafe: read(if_.condition), seen)
+            collect_ir_names(if_.then_body, seen)
+        ir.Stmt.stmt_block as blk:
+            collect_ir_names(blk.body, seen)
+        ir.Stmt.stmt_for as f:
+            collect_ir_expr_names(unsafe: read(f.condition), seen)
+            collect_ir_names(f.body, seen)
+        ir.Stmt.stmt_while as w:
+            collect_ir_expr_names(unsafe: read(w.condition), seen)
+            collect_ir_names(w.body, seen)
+        _:
+            pass
+
+
+function collect_ir_expr_names(ep: ir.Expr, seen: ref[map_mod.Map[str, bool]]) -> void:
+    match ep:
+        ir.Expr.expr_name as nm:
+            seen.set(nm.name, true)
+        ir.Expr.expr_member as m:
+            collect_ir_expr_names(unsafe: read(m.receiver), seen)
+        ir.Expr.expr_unary as u:
+            collect_ir_expr_names(unsafe: read(u.operand), seen)
+        ir.Expr.expr_binary as b:
+            collect_ir_expr_names(unsafe: read(b.left), seen)
+            collect_ir_expr_names(unsafe: read(b.right), seen)
+        ir.Expr.expr_index as ix:
+            collect_ir_expr_names(unsafe: read(ix.receiver), seen)
+            collect_ir_expr_names(unsafe: read(ix.index), seen)
+        ir.Expr.expr_checked_index as ci:
+            collect_ir_expr_names(unsafe: read(ci.receiver), seen)
+            collect_ir_expr_names(unsafe: read(ci.index), seen)
+        ir.Expr.expr_checked_span_index as cs:
+            collect_ir_expr_names(unsafe: read(cs.receiver), seen)
+            collect_ir_expr_names(unsafe: read(cs.index), seen)
+        ir.Expr.expr_address_of as ao:
+            collect_ir_expr_names(unsafe: read(ao.expression), seen)
+        ir.Expr.expr_call as call:
+            var ai: ptr_uint = 0
+            while ai < call.arguments.len:
+                collect_ir_expr_names(unsafe: read(call.arguments.data + ai), seen)
+                ai += 1
+        ir.Expr.expr_call_indirect as ci:
+            collect_ir_expr_names(unsafe: read(ci.callee), seen)
+            var cai: ptr_uint = 0
+            while cai < ci.arguments.len:
+                collect_ir_expr_names(unsafe: read(ci.arguments.data + cai), seen)
+                cai += 1
+        ir.Expr.expr_cast as c:
+            collect_ir_expr_names(unsafe: read(c.expression), seen)
+        ir.Expr.expr_aggregate_literal as al:
+            var al_i: ptr_uint = 0
+            while al_i < al.fields.len:
+                collect_ir_expr_names(unsafe: read(unsafe: read(al.fields.data + al_i).value), seen)
+                al_i += 1
+        ir.Expr.expr_array_literal as al:
+            var ali: ptr_uint = 0
+            while ali < al.elements.len:
+                collect_ir_expr_names(unsafe: read(al.elements.data + ali), seen)
+                ali += 1
+        ir.Expr.expr_variant_literal as vl:
+            var vli: ptr_uint = 0
+            while vli < vl.fields.len:
+                collect_ir_expr_names(unsafe: read(unsafe: read(vl.fields.data + vli).value), seen)
+                vli += 1
+        _:
+            pass
+
+
+## Find the LocalBinding for a name in ctx.locals, if it exists.
+function find_local(ctx: ref[LowerCtx], name: str) -> Option[LocalBinding]:
+    var li: ptr_uint = ctx.locals.len()
+    while li > 0:
+        li -= 1
+        let lb_ptr = ctx.locals.get(li) else:
+            fatal(c"find_local: missing local")
+        let item = unsafe: read(lb_ptr)
+        if item.name.equal(name):
+            return Option[LocalBinding].some(value = item)
+    return Option[LocalBinding].none
+
+
 ## Worker for mt_parallel_for: takes (void* data, intptr_t start, intptr_t end).
 function parallel_for_worker_fn(ctx: ref[LowerCtx], body_ir: span[ir.Stmt]) -> ir.Function:
     let void_ty = types.primitive("void")
@@ -2788,7 +2890,6 @@ function pw1_str(value: ptr_uint) -> str:
 function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body: ptr[ast.Stmt]?) -> void:
     if bindings.len == 0 or iterables.len == 0:
         return
-    # Extract range start/end from the iterable (must be a range expression)
     var start_ptr: ptr[ast.Expr]
     var end_ptr: ptr[ast.Expr]
     unsafe:
@@ -2800,13 +2901,87 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
                 fatal(c"lowering parallel for: only range iteration is supported")
     let void_ty = types.primitive("void")
     let long_ty = types.primitive("long")
-    # Lower the loop body (captured globals work via static linkage)
     let bd = body else:
         return
+    # Detect captures from loop body.
+    var outer_len = ctx.locals.len()
     let loop_body = lower_block(ctx, bd)
-    # Wrap in a worker function
+    var names = map_mod.Map[str, bool].create()
+    collect_ir_names(loop_body, ref_of(names))
+    var pfor_captures = map_mod.Map[str, LocalBinding].create()
+    var nm_iter = names.keys()
+    while true:
+        let np = nm_iter.next() else:
+            break
+        let nm = unsafe: read(np)
+        # Skip the loop binding itself (shadowed by the worker wrapper).
+        var skip = false
+        var bi: ptr_uint = 0
+        while bi < bindings.len:
+            unsafe:
+                if nm.equal(read(bindings.data + bi).name):
+                    skip = true
+                    break
+            bi += 1
+        if skip:
+            continue
+        match find_local_before(ctx, nm, outer_len):
+            Option.some as lb:
+                # Don't capture arrays — aggregate-literal field-init can't
+                # initialise array fields from other array variables.
+                if not is_array_type(lb.value.ty):
+                    pfor_captures.set(nm, lb.value)
+            Option.none:
+                pass
+    # Generate capture struct if needed.
+    parallel_cnt += 1
+    let pfor_uid = parallel_uid(ctx)
+    var pfor_has_captures = false
+    var pf_ck = pfor_captures.keys()
+    while true:
+        let cp = pf_ck.next() else:
+            break
+        pfor_has_captures = true
+        break
+    var pfor_cap_name: str = ""
+    if pfor_has_captures:
+        pfor_cap_name = j3("mt_pcap_", ctx.module_name, j2("_", pfor_uid))
+        var pf_fields = vec.Vec[ir.Field].create()
+        var pf_iter = pfor_captures.entries()
+        while pf_iter.next():
+            let pe = pf_iter.current()
+            let lb_ptr = pfor_captures.get(unsafe: read(pe.key)) else:
+                fatal(c"lower_parallel_for: missing capture")
+            let lb_val = unsafe: read(lb_ptr)
+            pf_fields.push(ir.Field(name = unsafe: read(pe.key), ty = lb_val.ty))
+        ctx.pending_env_structs.push(ir.StructDecl(name = pfor_cap_name, linkage_name = pfor_cap_name, fields = pf_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+        # Prepend capture-unpacking preamble.
+        var pf_pre = vec.Vec[ir.Stmt].create()
+        let pf_cap_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = pfor_cap_name)))
+        let pf_data_local = ir.Stmt.stmt_local(name = "__cap", linkage_name = "__cap", ty = pf_cap_ptr, value = alloc_expr(ir.Expr.expr_cast(target_type = pf_cap_ptr, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr_ty(), pointer = false)), ty = pf_cap_ptr)), line = 0, source_path = "")
+        pf_pre.push(pf_data_local)
+        let pf_cap_ref = alloc_expr(ir.Expr.expr_name(name = "__cap", ty = pf_cap_ptr, pointer = false))
+        var pf_iter2 = pfor_captures.entries()
+        while pf_iter2.next():
+            let pe2 = pf_iter2.current()
+            let ft_ptr = pfor_captures.get(unsafe: read(pe2.key)) else:
+                fatal(c"lower_parallel_for: missing capture")
+            let lb_v = unsafe: read(ft_ptr)
+            let field_ty = lb_v.ty
+            let field_expr = alloc_expr(ir.Expr.expr_member(receiver = pf_cap_ref, member = unsafe: read(pe2.key), ty = field_ty))
+            pf_pre.push(ir.Stmt.stmt_local(name = unsafe: read(pe2.key), linkage_name = unsafe: read(pe2.key), ty = field_ty, value = field_expr, line = 0, source_path = ""))
+        var pf_full = vec.Vec[ir.Stmt].create()
+        var pf_pre_iter = pf_pre.iter()
+        while true:
+            let psp = pf_pre_iter.next() else:
+                break
+            pf_full.push(unsafe: read(psp))
+        var lbi: ptr_uint = 0
+        while lbi < loop_body.len:
+            unsafe:
+                pf_full.push(read(loop_body.data + lbi))
+            lbi += 1
     let worker = parallel_for_worker_fn(ctx, loop_body)
-    # Emit: mt_parallel_for(start, end, step, worker, NULL)
     var call_args = vec.Vec[ir.Expr].create()
     let start_expr = lower_expr(ctx, start_ptr)
     let end_expr = lower_expr(ctx, end_ptr)
@@ -2815,7 +2990,25 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
         call_args.push(read(end_expr))
         call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = long_ty))))
         call_args.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
-        call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
+    if pfor_has_captures:
+        let pf_cap_ty = types.Type.ty_named(module_name = "", name = pfor_cap_name)
+        var pf_lit_fields = vec.Vec[ir.AggregateField].create()
+        var pf_iter3 = pfor_captures.entries()
+        while pf_iter3.next():
+            let pe3 = pf_iter3.current()
+            let lb_ptr = pfor_captures.get(unsafe: read(pe3.key)) else:
+                fatal(c"lower_parallel_for: missing capture")
+            let lb_val = unsafe: read(lb_ptr)
+            pf_lit_fields.push(ir.AggregateField(name = unsafe: read(pe3.key), value = alloc_expr(ir.Expr.expr_name(name = unsafe: read(pe3.key), ty = lb_val.ty, pointer = false))))
+        let pf_lit = alloc_expr(ir.Expr.expr_aggregate_literal(ty = pf_cap_ty, fields = pf_lit_fields.as_span()))
+        let pf_cap_var = j2("__pf_cap_", pfor_uid)
+        output.push(ir.Stmt.stmt_local(name = pf_cap_var, linkage_name = pf_cap_var, ty = pf_cap_ty, value = pf_lit, line = 0, source_path = ""))
+        let pf_data_ref = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = pf_cap_var, ty = pf_cap_ty, pointer = false)), ty = void_ptr_ty()))
+        unsafe:
+            call_args.push(read(pf_data_ref))
+    else:
+        unsafe:
+            call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
     ctx.pending_synthetic_functions.push(worker)
     output.push(ir.Stmt.stmt_expression(
         expression = alloc_expr(ir.Expr.expr_call(callee = "mt_parallel_for", arguments = call_args.as_span(), ty = void_ty)),
@@ -2829,16 +3022,117 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     if bodies.len < 2:
         return
     let void_ty = types.primitive("void")
-    # Generate worker for each body, emit spawn call
+    parallel_cnt += 1
+    let cap_uid = parallel_uid(ctx)
+    # Detect captures: names referenced in bodies that are outer-scope locals.
     var i: ptr_uint = 0
+    var all_captures = map_mod.Map[str, LocalBinding].create()
+    var body_irs = vec.Vec[span[ir.Stmt]].create()
+    var outer_len = ctx.locals.len()
     while i < bodies.len:
         var wb = lower_block(ctx, unsafe: ptr[ast.Stmt]<-(bodies.data + i))
+        body_irs.push(wb)
+        var names = map_mod.Map[str, bool].create()
+        collect_ir_names(wb, ref_of(names))
+        var nm_iter = names.keys()
+        while true:
+            let np = nm_iter.next() else:
+                break
+            let nm = unsafe: read(np)
+            match find_local_before(ctx, nm, outer_len):
+                Option.some as lb:
+                    if not is_array_type(lb.value.ty):
+                        all_captures.set(nm, lb.value)
+                Option.none:
+                    pass
+        i += 1
+    # Generate capture struct if any captures exist.
+    var has_captures = false
+    var ck_iter = all_captures.keys()
+    while true:
+        let ckp = ck_iter.next() else:
+            break
+        has_captures = true
+        break
+    var cap_struct_name: str = ""
+    var cap_body_irs = vec.Vec[span[ir.Stmt]].create()
+    if has_captures:
+        cap_struct_name = j3("mt_pcap_", ctx.module_name, j2("_", cap_uid))
+        var cap_fields = vec.Vec[ir.Field].create()
+        var cap_iter = all_captures.entries()
+        while cap_iter.next():
+            let entry = cap_iter.current()
+            let lb_ptr = all_captures.get(unsafe: read(entry.key)) else:
+                fatal(c"lower_parallel_block: missing capture binding")
+            let lb_val = unsafe: read(lb_ptr)
+            cap_fields.push(ir.Field(name = unsafe: read(entry.key), ty = lb_val.ty))
+        ctx.pending_env_structs.push(ir.StructDecl(name = cap_struct_name, linkage_name = cap_struct_name, fields = cap_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+        # Rewrite each body: prepend capture-unpacking preamble.
+        var body_ir_iter = body_irs.iter()
+        while true:
+            let bir_ptr = body_ir_iter.next() else:
+                break
+            var pre_body = vec.Vec[ir.Stmt].create()
+            let cap_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = cap_struct_name)))
+            let data_local = ir.Stmt.stmt_local(name = "__cap", linkage_name = "__cap", ty = cap_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = cap_ptr_ty, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr_ty(), pointer = false)), ty = cap_ptr_ty)), line = 0, source_path = "")
+            pre_body.push(data_local)
+            let cap_ref = alloc_expr(ir.Expr.expr_name(name = "__cap", ty = cap_ptr_ty, pointer = false))
+            var cap_iter2 = all_captures.entries()
+            while cap_iter2.next():
+                let entry2 = cap_iter2.current()
+                let ft2_ptr = all_captures.get(unsafe: read(entry2.key)) else:
+                    fatal(c"lower_parallel_block: missing capture")
+                let lb_v2 = unsafe: read(ft2_ptr)
+                let field_ty = lb_v2.ty
+                let field_expr = alloc_expr(ir.Expr.expr_member(receiver = cap_ref, member = unsafe: read(entry2.key), ty = field_ty))
+                pre_body.push(ir.Stmt.stmt_local(name = unsafe: read(entry2.key), linkage_name = unsafe: read(entry2.key), ty = field_ty, value = field_expr, line = 0, source_path = ""))
+            var full_body = vec.Vec[ir.Stmt].create()
+            var pre_iter = pre_body.iter()
+            while true:
+                let psp = pre_iter.next() else:
+                    break
+                full_body.push(unsafe: read(psp))
+            var bsi: ptr_uint = 0
+            let bir = unsafe: read(bir_ptr)
+            while bsi < bir.len:
+                unsafe:
+                    full_body.push(read(bir.data + bsi))
+                bsi += 1
+            cap_body_irs.push(full_body.as_span())
+    else:
+        cap_body_irs = body_irs
+
+    # Generate worker for each body (with capture preamble if applicable).
+    i = 0
+    while i < bodies.len:
+        let wbp = cap_body_irs.get(i) else:
+            fatal(c"lower_parallel_block: missing body IR")
+        let wb = unsafe: read(wbp)
         let worker = parallel_worker_fn(ctx, wb)
         ctx.pending_synthetic_functions.push(worker)
         var spawn_args = vec.Vec[ir.Expr].create()
         unsafe:
             spawn_args.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
-            spawn_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
+        if has_captures:
+            # Build capture aggregate literal and pass its address as data.
+            let cap_ty = types.Type.ty_named(module_name = "", name = cap_struct_name)
+            var cap_lit_fields = vec.Vec[ir.AggregateField].create()
+            var cap_iter3 = all_captures.entries()
+            while cap_iter3.next():
+                let entry3 = cap_iter3.current()
+                let lb2_ptr = all_captures.get(unsafe: read(entry3.key)) else:
+                    fatal(c"lower_parallel_block: missing capture")
+                let lb_val = unsafe: read(lb2_ptr)
+                cap_lit_fields.push(ir.AggregateField(name = unsafe: read(entry3.key), value = alloc_expr(ir.Expr.expr_name(name = unsafe: read(entry3.key), ty = lb_val.ty, pointer = false))))
+            let cap_lit = alloc_expr(ir.Expr.expr_aggregate_literal(ty = cap_ty, fields = cap_lit_fields.as_span()))
+            let cap_var = j3("__cap_", cap_uid, j2("_", pw1_str(i)))
+            output.push(ir.Stmt.stmt_local(name = cap_var, linkage_name = cap_var, ty = cap_ty, value = cap_lit, line = 0, source_path = ""))
+            let cap_data_ref = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = cap_var, ty = cap_ty, pointer = false)), ty = void_ptr_ty()))
+            unsafe:
+                spawn_args.push(read(cap_data_ref))
+        else:
+            unsafe:
+                spawn_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
         output.push(ir.Stmt.stmt_expression(
             expression = alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_run", arguments = spawn_args.as_span(), ty = void_ty)),
             line = 0, source_path = "",
@@ -2848,6 +3142,18 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
         expression = alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_wait", arguments = span[ir.Expr](), ty = void_ty)),
         line = 0, source_path = "",
     ))
+
+
+function find_local_before(ctx: ref[LowerCtx], name: str, limit: ptr_uint) -> Option[LocalBinding]:
+    var li: ptr_uint = 0
+    while li < limit and li < ctx.locals.len():
+        let lb_ptr = ctx.locals.get(li) else:
+            fatal(c"find_local_before: missing local")
+        let item = unsafe: read(lb_ptr)
+        if item.name.equal(name):
+            return Option[LocalBinding].some(value = item)
+        li += 1
+    return Option[LocalBinding].none
 
 
 ## Lower `gather h1, h2, ...`.  Each handle is joined via mt_detach_join.
