@@ -4029,11 +4029,16 @@ function task_type_element(t: types.Type) -> Option[types.Type]:
 
 function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -> void:
     let is_void = is_void_type(elem)
-    if is_void:
-        emit_line(e, j3("typedef struct { bool ready; } ", c_name, ";"))
-    else:
+    emit_line(e, j2("typedef struct ", c_name))
+    emit_line(e, "  void* frame;")
+    emit_line(e, "  bool (*ready)(void*);")
+    emit_line(e, "  void (*set_waiter)(void*, void*, void(*)(void*));")
+    emit_line(e, "  void (*release)(void*);")
+    if not is_void:
         let type_str = c_type(elem)
-        emit_line(e, j5("typedef struct { ", type_str, " value; bool ready; } ", c_name, ";"))
+        emit_line(e, j4("  ", type_str, " (*take_result)(void*);"))
+    emit_line(e, "  void (*cancel)(void*);")
+    emit_line(e, j2("} ", c_name))
     emit_line(e, "")
 
 
