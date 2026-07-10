@@ -1682,6 +1682,13 @@ function guard_variant_base(name: str) -> str:
 function guard_failure_condition(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type, storage_ref: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let bool_ty = types.primitive("bool")
     if kind.equal("nullable"):
+        # mt_subscription is a plain struct without nullable/null wrapper;
+        # failure is indicated by slot == 0.
+        let tn = named_type_name(storage_ty)
+        if tn.is_some() and tn.unwrap().equal("mt_subscription"):
+            let slot_expr = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "slot", ty = types.primitive("ptr_uint")))
+            let zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0z, ty = types.primitive("ptr_uint")))
+            return alloc_expr(ir.Expr.expr_binary(operator = "==", left = slot_expr, right = zero, ty = bool_ty))
         let null_lit = alloc_expr(ir.Expr.expr_null_literal(ty = storage_ty))
         return alloc_expr(ir.Expr.expr_binary(operator = "==", left = storage_ref, right = null_lit, ty = bool_ty))
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
