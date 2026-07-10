@@ -8935,8 +8935,11 @@ function lower_vec_binary_op(ctx: ref[LowerCtx], operator: str, left: ptr[ir.Exp
     var field_types = vec.Vec[types.Type].create()
     vec_math_fields(name, ref_of(field_names), ref_of(field_types))
     var fields = vec.Vec[ir.AggregateField].create()
-    let left_is_scalar = types.is_numeric(left_ty) and not is_vec_math_name(nominal_type_name(left_ty))
-    let right_is_scalar = types.is_numeric(right_ty) and not is_vec_math_name(nominal_type_name(right_ty))
+    # An operand is scalar if its type is NOT a known vec/mat/quat type.
+    # Using nominal_type_name instead of is_numeric handles float literals that
+    # the analyzer may not type correctly in this binary context.
+    let left_is_scalar = not is_vec_math_name(nominal_type_name(left_ty))
+    let right_is_scalar = not is_vec_math_name(nominal_type_name(right_ty))
     var i: ptr_uint = 0
     while i < field_names.len():
         let fn_ptr = field_names.get(i) else:
