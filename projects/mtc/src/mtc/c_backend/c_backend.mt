@@ -236,6 +236,11 @@ public function generate_c(program: ir.Program) -> string.String:
                 emit_union(ref_of(e), read(program.unions.data + i))
             emit_line(ref_of(e), "")
             i += 1
+
+        # Emit SoA struct definitions after regular structs (they reference
+        # element struct fields by C name).
+        emit_soa_types(ref_of(e), funcs, program)
+
         i = 0
         while i < tuple_types.len():
             let ty_ptr = tuple_types.get(i) else:
@@ -1389,6 +1394,11 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
     # Task[T] → mt_task_<T>
     if name.equal("Task") and args.len == 1:
         return j3("mt_task_", naming.type_c_key(unsafe: read(args.data + 0)), "")
+    # SoA[T, N] → mt_soa_<T>_N
+    if name.equal("SoA") and args.len >= 2:
+        let elem_name = c_type(unsafe: read(args.data + 0))
+        let count_str = naming.type_c_key(unsafe: read(args.data + 1))
+        return j4("mt_soa_", elem_name, "_", count_str)
     # Generic variant: `<name>_<type0>_<type1>_...`.  The caller module prefix
     # is added by `qualified_c_name` when the type is `ty_imported`.
     # Prelude types (Option, Result) carry the prefix in their raw name from the
@@ -1873,6 +1883,141 @@ function emit_union(e: ref[Emitter], u: ir.UnionDecl) -> void:
             emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
         i += 1
     emit_line(e, "};")
+
+
+## Emit SoA (Structure-of-Arrays) struct definitions for every SoA type used in
+## the program.  Each SoA struct has an array member per field of the element
+## struct, e.g. `mt_soa_Point_4 { float x[4]; float y[4]; float z[4]; }`.
+function emit_soa_types(e: ref[Emitter], funcs: span[ir.Function], program: ir.Program) -> void:
+    var seen = map_mod.Map[str, bool].create()
+    # Collect SoA types from function signatures, local types, and struct fields.
+    var fi: ptr_uint = 0
+    while fi < funcs.len:
+        unsafe:
+            collect_soa_from_function(e, read(funcs.data + fi), ref_of(seen), program)
+        fi += 1
+    # Also check struct fields and variants for SoA types.
+    var svi: ptr_uint = 0
+    while svi < program.structs.len:
+        unsafe:
+            let s = read(program.structs.data + svi)
+            var sfi: ptr_uint = 0
+            while sfi < s.fields.len:
+                collect_soa_from_type(e, read(s.fields.data + sfi).ty, ref_of(seen), program)
+                sfi += 1
+        svi += 1
+
+
+## Emit a single SoA struct definition.
+function emit_one_soa(e: ref[Emitter], elem_struct_name: str, count_str: str, structs: span[ir.StructDecl]) -> void:
+    let soa_name = j4("mt_soa_", elem_struct_name, "_", count_str)
+    emit_line(e, j3("typedef struct ", soa_name, " {"))
+    var svi: ptr_uint = 0
+    while svi < structs.len:
+        unsafe:
+            let s = read(structs.data + svi)
+            if s.linkage_name.equal(elem_struct_name):
+                var sfi: ptr_uint = 0
+                while sfi < s.fields.len:
+                    let f = read(s.fields.data + sfi)
+                    var decl_buf = string.String.create()
+                    decl_buf.append("  ")
+                    decl_buf.append(c_type(f.ty))
+                    decl_buf.append(" ")
+                    decl_buf.append(f.name)
+                    decl_buf.append("[")
+                    decl_buf.append(count_str)
+                    decl_buf.append("];")
+                    emit_line(e, decl_buf.as_str())
+                    sfi += 1
+        svi += 1
+    emit_line(e, j3("} ", soa_name, ";"))
+    emit_line(e, "")
+
+
+## Register an SoA type if it hasn't been emitted yet, keyed by its C name.
+function register_soa(e: ref[Emitter], elem_c_name: str, count_str: str, seen: ref[map_mod.Map[str, bool]]) -> bool:
+    let key = j3(elem_c_name, "_", count_str)
+    if seen.contains(key):
+        return false
+    seen.set(key, true)
+    return true
+
+
+## Walk a function's IR and register every SoA type found.
+function collect_soa_from_function(e: ref[Emitter], func: ir.Function, seen: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+    collect_soa_from_type(e, func.return_type, seen, program)
+    var pi: ptr_uint = 0
+    while pi < func.params.len:
+        unsafe:
+            collect_soa_from_type(e, read(func.params.data + pi).ty, seen, program)
+        pi += 1
+    collect_soa_from_stmts(e, func.body, seen, program)
+
+
+## Walk statements looking for SoA types (local decls, assignments, returns).
+function collect_soa_from_stmts(e: ref[Emitter], body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            match read(body.data + i):
+                ir.Stmt.stmt_local as loc:
+                    collect_soa_from_type(e, loc.ty, seen, program)
+                ir.Stmt.stmt_assignment as a:
+                    collect_soa_from_type(e, expr_result_type(a.target), seen, program)
+                ir.Stmt.stmt_return as r:
+                    let v = r.value else:
+                        i += 1
+                        continue
+                    collect_soa_from_type(e, expr_result_type(v), seen, program)
+                ir.Stmt.stmt_if as ifs:
+                    collect_soa_from_stmts(e, ifs.then_body, seen, program)
+                    if ifs.else_body.len > 0:
+                        collect_soa_from_stmts(e, ifs.else_body, seen, program)
+                ir.Stmt.stmt_while as w:
+                    collect_soa_from_stmts(e, w.body, seen, program)
+                ir.Stmt.stmt_for as fs:
+                    collect_soa_from_stmts(e, fs.body, seen, program)
+                _:
+                    pass
+        i += 1
+
+
+## Register an SoA type from a types.Type if it is `ty_generic(name="SoA", ...)`.
+function collect_soa_from_type(e: ref[Emitter], ty: types.Type, seen: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+    match ty:
+        types.Type.ty_generic as g:
+            if g.name.equal("SoA") and g.args.len >= 2:
+                let elem_ty = unsafe: read(g.args.data + 0)
+                let count_ty = unsafe: read(g.args.data + 1)
+                let elem_c_name = soa_element_c_name(elem_ty)
+                let count_str = naming.type_c_key(count_ty)
+                if elem_c_name.len > 0 and register_soa(e, elem_c_name, count_str, seen):
+                    emit_one_soa(e, elem_c_name, count_str, program.structs)
+            # Recurse into child types
+            if g.args.len > 0:
+                var ai: ptr_uint = 0
+                while ai < g.args.len:
+                    collect_soa_from_type(e, unsafe: read(g.args.data + ai), seen, program)
+                    ai += 1
+        types.Type.ty_named:
+            pass
+        _:
+            pass
+
+
+## The C struct name for the element type of an SoA.  For a named struct like
+## `Point`, the element type resolves to its qualified C name.
+function soa_element_c_name(ty: types.Type) -> str:
+    match ty:
+        types.Type.ty_named as n:
+            if n.module_name.len > 0:
+                return naming.qualified_c_name(n.module_name, n.name)
+            return n.name
+        types.Type.ty_imported as im:
+            return naming.qualified_c_name(im.module_name, im.name)
+        _:
+            return c_type(ty)
 
 
 ## True when any arm of a variant carries payload fields (so a `__data` union and

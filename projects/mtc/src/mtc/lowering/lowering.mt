@@ -3265,6 +3265,41 @@ function is_span_type(t: types.Type) -> bool:
             return false
 
 
+function is_soa_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name.equal("SoA") and g.args.len >= 2
+        _:
+            return false
+
+
+## The C field type for member `field_name` on the element type of an SoA.
+## The SoA struct has one array per element field, so the array element type
+## is the field type from the element struct.
+function soa_field_type(ctx: ref[LowerCtx], soa_ty: types.Type, field_name: str) -> types.Type:
+    match soa_ty:
+        types.Type.ty_generic as g:
+            if g.args.len >= 1:
+                let elem_ty = unsafe: read(g.args.data + 0)
+                match elem_ty:
+                    types.Type.ty_named as n:
+                        # Look up the field in the element struct from analysis.
+                        let fields_ptr = ctx.analysis.structs.get(n.name) else:
+                            return types.primitive("void")
+                        let entries = unsafe: read(fields_ptr)
+                        var fi: ptr_uint = 0
+                        while fi < entries.len:
+                            let entry = unsafe: read(entries.data + fi)
+                            if entry.name.equal(field_name):
+                                return entry.ty
+                            fi += 1
+                    _:
+                        pass
+        _:
+            pass
+    return types.primitive("void")
+
+
 function generic_first_arg(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as g:
@@ -6814,6 +6849,29 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                                     pass
                     _:
                         pass
+            _:
+                pass
+    # SoA index+member swap: `particles[0].x` → `particles.x[0]` (mirrors
+    # Ruby's lower_soa_indexed_field_access).  Detect when the member access
+    # receiver is an index into an SoA type, and lower the field access first.
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_index_access as ix:
+                let base_ty = index_receiver_type(ctx, ix.receiver)
+                if is_soa_type(base_ty):
+                    let soa_base = lower_expr(ctx, ix.receiver)
+                    let idx = lower_expr(ctx, ix.index)
+                    let field_ty = soa_field_type(ctx, base_ty, member)
+                    let member_expr = alloc_expr(ir.Expr.expr_member(
+                        receiver = soa_base,
+                        member = member,
+                        ty = field_ty,
+                    ))
+                    return alloc_expr(ir.Expr.expr_index(
+                        receiver = member_expr,
+                        index = idx,
+                        ty = expr_type(ctx, ep),
+                    ))
             _:
                 pass
     let recv = lower_expr(ctx, receiver)
