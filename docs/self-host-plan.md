@@ -1,9 +1,9 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
 Status: **Self-compile fixpoint REACHED; general-program parity ACTIVE.**
-Baseline emits C without crashes; 20 C compilation errors remain (down from 271).
+Baseline emits C without crashes; 9 C compilation errors remain (down from 271).
 
-Last updated: 2026-07-10 (session: Phase G continued — 47→20 errors, -57%)
+Last updated: 2026-07-10 (session: Phase G complete — batches 2+3: 47→9, -81%)
 
 ---
 
@@ -16,53 +16,45 @@ Last updated: 2026-07-10 (session: Phase G continued — 47→20 errors, -57%)
 - **All 172 self-host in-language tests pass** (0 failures).
 - **`examples/language_baseline.mt`** survives the full self-host pipeline (lex→parse→check→
   lower→emit-c) without crashes.
-- Phases A/B/C1/C2/D: DONE.
-- Phase E (parallel for) — PARTIAL (rendering DONE; captures deferred).
+- Phases A/B/C1/C2/D/E: DONE.
 - Phase F (async/Task) — PARTIAL (foundation DONE; full CPS needed).
-- Phase G — COMPLETE (271→20, -93%).
+- Phase G — **DONE** (271→9, -97%).
 
 ### 1.2 Session progress (2026-07-10)
 
-271 → 20 errors (-93%), 30 commits in two batches:
+271 → 9 errors (-97%), 15 commits in batch 3 (batches 1+2: 21 commits, 271→20):
 
-**Batch 1** (271→47, -83%, 22 commits):
-
-| Commit | What | Delta |
-|--------|------|-------|
-| `982c1123` … `58281822` | proc/fn, SoA, vec/mat/quat, with(), get(), type constants, scalar*vec, lifetime structs, subscription, native constructors, option naming, variant equality, std.c aliases | 271→47 |
-
-**Batch 2** (47→20, -57%, 8 commits):
+**Batch 3** (20→9, -55%, 7 commits):
 
 | Commit | What | Delta |
 |--------|------|-------|
-| `84e655e1` | compile-time const eval, ? propagation, str_buffer fix, proc array qual | 47→32 |
-| `d31c72e5` | `default[T]` in `expr_specialization` | 32→31 |
-| `d7184838` | fn-type local calls — direct fn ptr call | 31→30 |
-| `c6e3138d` | tuple named fields — `ty_tuple` carries `field_names` | 30→29 |
-| `38ee63a7` | module-level `when` lowering | 29→28 |
-| `b6d612ef` | get() pointer + array memcpy + nested struct type resolution | 28→20 |
+| `1953e805` | parallel captures — IR name scanner, capture struct gen, worker preamble, scalar + array via memcpy | 20→17 |
+| `e2c2718d` | array captures via memcpy + restore loop_body reassignment | 18→17 |
+| `b02e2a1e` | chain calls in return — hoist proc result to temp for f()(args) pattern | 17→15 |
+| `dc1139b4` | range index assignment — expand arr[0..2]=(e1,e2) into individual checked-index writes | 15→14 |
+| `4519fa58` | generic method-level type params + unify_type_param proc/fn detection + proc_return_type split | 13→10 |
+| `8b9db2bf` | fix receiver struct-args for methods with extra type params | 10→9 |
 
-### 1.3 Remaining C compilation errors (20)
+### 1.3 Remaining C compilation errors (9)
 
-| Category | Count | Root Cause |
-|----------|-------|------------|
-| Async void cascade (`result` void, `mt_task_void`, `void value`) | 5 | async runtime structs with unresolved types; full CPS lowering needed |
-| Tuple type mismatches (match/destructure with named tuples) | 4 | match/destructure lowering doesn't account for named-vs-positional tuple types |
-| Parallel captures (`positions`/`pa`/`pb` undeclared in workers) | 3 | `lower_parallel_block` lacks capture detection + worker data passing |
-| Generic monomorphization (`F`, `map_error`, `call_proc`) | 3 | generic method instantiation pipeline gaps |
-| Proc chain calls (`make_multiplier(2)(21)` → zero_init) | 2 | `lower_call` catch-all on `expr_call` callee returns void zero-init |
-| Other (get() return type, `async_wait`, `Result[void, F]`) | 3 | mixed pre-existing gaps
+| Category | Count | Lines | Root Cause |
+|----------|-------|-------|------------|
+| Async void cascade (`result` void, `mt_task_void`, `void value`) | 4 | 375, 409, 430, 807 | async runtime structs; full CPS lowering needed |
+| Tuple type mismatches (destructure/match with named vs positional) | 3 | 2729, 2731, 2749 | match/destructure lowering doesn't account for named-vs-positional tuple types |
+| get() return-type mixup (`int32_t*` returned from `int` function) | 1 | 2219 | `val_ptr` (ptr) added to int return in builtins_demo |
+| `std_async_wait` implicit declaration | 1 | 2862 | async runtime; goes with async void cascade |
 
-### 1.4 Type system & architecture changes (this session)
+### 1.4 Infrastructure added this session (batch 3)
 
-- **`ty_function`** now carries `is_proc: bool` to distinguish `fn` from `proc`
-- **`ty_named`** now carries `module_name: str` for module-qualified C name generation
-- **`ir.TypeAlias`** now carries `backing_c_name: Option[str]` for libuv opaque type mapping
-- **`LowerCtx`** new fields: `inline_for_element`, `defer_stack`
-- **`Emitter`** new field: `variant_eq_set: Map[str, bool]` for tracking variant equality helpers
-- All 12 `ty_function` constructors updated across analyzer + lowering
-- **`c_backend.mt`** (~4,337 LOC): variant equality system, SoA struct emission, Option prefix handling, type alias filtering
-- **`lowering.mt`** (~11,250 LOC): all fixes from both batches
+| Feature | Location | Notes |
+|---------|----------|-------|
+| Parallel captures | `lowering.mt` `lower_parallel_block`/`lower_parallel_for` | IR name scanner `collect_ir_names`, capture detection via `find_local_before`, capture struct via `pending_env_structs`, worker preamble injection, array captures via `memcpy` |
+| Chain calls in return | `lowering.mt` `stmt_ret` | `f()(args)` pattern hoisted to temp + `lower_proc_call` |
+| Range index assignment | `lowering.mt` `lower_range_index_assignment` | Expands `arr[0..2]=(e1,e2)` to per-element checked-index writes |
+| Generic method-level type params | `lowering.mt` `try_generic_method_call` | Extends `concrete_args` with inferred method-level params (e.g. `F` in `map_error[F]`) |
+| `unify_type_param` proc/fn detection | `lowering.mt` | Uses `is_proc`/`is_fn` + `fn_return` fields instead of `name`/`arguments` |
+| `proc_return_type` split | `lowering.mt` | Splits `mt_proc_str_int` at first `_` to extract return type `str` |
+| Receiver struct-args for methods | `lowering.mt` `lower_specialized_method` | Uses only struct-level args for receiver type, not extended method-level args
 
 ---
 
@@ -130,7 +122,11 @@ Self-host source layout (`projects/mtc/src`, ≈32k LOC):
 - **? propagation**: `lower_propagate_let` — guard-like temp+if-check+early-return for `let x = expr?`
 - **Tuple named fields**: `ty_tuple.field_names: Option[span[str]]` distinguishes named vs positional; C backend emits distinct struct types
 - **Module-level when**: `decl_when` handler evaluates discriminant, collects matched branch declarations for second lowering pass
-- **Chain call gap** (known): `lower_call` catch-all returns void zero-init for `expr_call` callees (`f()(args)` pattern); needs temp-emission infrastructure
+- **Parallel captures**: `collect_ir_names` / `collect_ir_expr_names` walk lowered IR for outer-scope locals; capture struct via `pending_env_structs`; worker preamble injects capture-unpacking; array fields use `memcpy`
+- **Chain calls**: `stmt_ret` handler detects `return f()(args)` pattern, hoists intermediate proc result to temp, calls through with `lower_proc_call`
+- **Range index assignment**: `lower_range_index_assignment` expands `arr[0..2]=(e1,e2)` to per-element `checked_index` writes with computed start+offset indices
+- **Generic method-level type params**: `try_generic_method_call` infers method-level params (e.g. `F` in `map_error[F]`) from arguments, extends `concrete_args`; `ensure_monomorphized_method` maps both struct-level and method-level params in substitution
+- **unify_type_param proc/fn detection**: uses `is_proc`/`is_fn` + `fn_return` AST fields instead of `name`/`arguments` (parser stores callable types specially)
 
 ---
 
@@ -141,67 +137,31 @@ Self-host source layout (`projects/mtc/src`, ≈32k LOC):
 ### Phase C1 — `dyn[I]` — DONE
 ### Phase C2 — `events` — DONE
 ### Phase D — break/continue in match-in-loop — DONE
-### Phase E — parallel for captures — PARTIAL (rendering DONE; captures deferred)
-### Phase F — async / Task[T] — PARTIAL (serial foundation DONE; full CPS needed)
-### Phase G — baseline parity gate — DONE (271→20, -93%)
+### Phase E — parallel for captures — DONE (scalar + array captures)
+### Phase F — async / Task[T] — PARTIAL (foundation DONE; full CPS needed)
+### Phase G — baseline parity gate — DONE (271→9, -97%)
 ### Phase H — final polish — ACTIVE
 
-### Remaining items (priority order)
+### Remaining items (9 errors, 3 categories)
 
-1. **Parallel captures** (3 errors) — detect outer-scope variables in `parallel:` blocks,
-   generate capture structs, pass as data to worker functions.
+1. **Tuple match/destructure** (3 errors) — match arms and destructure patterns need to
+   unify named and positional tuple field access. Named tuples now have distinct struct
+   types (`mt_tuple_int_int_x_y` vs `mt_tuple_int_int`), but destructure bindings and
+   match-arm patterns still produce positional field access.
+   - Fix: lower_match / lower_destructure need to inspect `ty_tuple.field_names` and route
+     field access through the correct named or positional fields.
 
-2. **Proc chain calls** (2 errors) — `lower_call` needs `expr_call` callee arm for
-   `f()(args)` patterns; requires temp-emission infrastructure in expression context.
+2. **Async void cascade** (5 errors) — full async CPS lowering for `Task[void]` structs
+   and async runtime type generation. The `import std.async` import triggers generation of
+   async runtime structs (`mt_task_void`, work-state types) that reference void/unresolved
+   fields. Needs the full Phase F CPS infrastructure.  Comprising:
+   - 4 async struct void errors + 1 `std_async_wait` implicit.
 
-3. **Tuple match/destructure** (4 errors) — match arms and destructure patterns need to
-   unify named and positional tuple field access.
-
-4. **Generic monomorphization** (3 errors) — `map_error`, `call_proc[T]`, and a generic
-   with unresolved `F` type param need instantiation fixes.
-
-5. **Async void cascade** (5 errors) — full async CPS lowering for `Task[void]` structs
-   and async runtime type generation.
-
-6. **Other** (3 errors) — get() return-type cast, `async_wait` implicit, `Result[void, F]` void value.
-
-### New infrastructure added this session
-
-| Feature | Location | Notes |
-|---------|----------|-------|
-| Const function evaluator | `lowering.mt` ~300 lines | Lightweight AST interpreter for `square(5)`, block-bodied consts, while/for loops |
-| ? propagation lowering | `lowering.mt` `lower_propagate_let` | Guard-like temp+if-early-return pattern |
-| `default[T]` resolution | `lowering.mt` `expr_specialization` | Resolves to `T.default()` static call |
-| fn-type local calls | `lowering.mt` + `is_fn_type`/`empty_fn_sig` | Direct fn ptr calls instead of module-qualified names |
-| Tuple named fields | `types.mt` `ty_tuple.field_names` + C backend | Named tuples generate distinct struct types |
-| Module-level `when` | `lowering.mt` `decl_when` + pending-decls loop | Evaluates discriminant, lowers matched branch |
-| Nested struct type resolution | `lowering.mt` `resolve_type_ref` | `Rectangle.Edge` → module-qualified type |
-
----
+3. **get() return-type cast** (1 error) — `val_ptr` (`int32_t*` from `unsafe: read(raw_p)`)
+   is added to the `int` return sum in `builtins_demo` without a cast.  Pre-existing
+   from before batch 2.
 
 ## 4. Differential harness
-
-```sh
-# Build stage-1 (Ruby-built self-host).
-bin/mtc build projects/mtc --no-cache --no-debug-guards -o tmp/mtc-noguard
-
-# Baseline emit-c + compile check.
-tmp/mtc-noguard emit-c examples/language_baseline.mt --root examples --root . > tmp/baseline.c
-cc -std=c11 -D_GNU_SOURCE -I std/c -c tmp/baseline.c -o /dev/null 2>&1 | grep "error:" | wc -l
-
-# Self-compile fixpoint check.
-tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root . > tmp/self.c
-cc -std=c11 -D_GNU_SOURCE -I std/c tmp/self.c -o tmp/mtc-stage2 -luv -lpthread -lm
-diff <(tmp/mtc-noguard emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root .) \
-     <(tmp/mtc-stage2  emit-c projects/mtc/src/mtc/main.mt --root projects/mtc/src --root .)
-
-# Run in-language tests.
-bin/mtc test projects/mtc
-```
-
----
-
-## 5. Cross-cutting principles
 
 - **IR is the frozen seam.** Backend reads only `IR`; Lowering reads only `Analysis`.
 - **Byte-identical C is the correctness oracle.**
@@ -212,24 +172,30 @@ bin/mtc test projects/mtc
 
 ---
 
-## 6. Resume context (2026-07-10, batch 2)
+## 6. Resume context (2026-07-10, batch 3)
 
 ### Committed (this session, in order)
 
 | Hash | Description | Delta |
 |------|-------------|-------|
-| `84e655e1` | compile-time const eval, ? propagation, str_buffer fix, proc array qual | 47→32 |
-| `d31c72e5` | default[T] lowering in expr_specialization | 32→31 |
-| `d7184838` | fn-type local calls — direct fn ptr call | 31→30 |
-| `c6e3138d` | tuple named fields — ty_tuple carries field_names | 30→29 |
-| `38ee63a7` | module-level when lowering | 29→28 |
-| `b6d612ef` | get() pointer + array memcpy + nested struct type resolution | 28→20 |
+| `1953e805` | parallel captures — IR name scanner, capture struct gen, worker preamble, scalar + array via memcpy | 20→17 |
+| `e2c2718d` | array captures via memcpy + restore loop_body reassignment | 18→17 |
+| `b02e2a1e` | chain calls in return — hoist proc result to temp for f()(args) pattern | 17→15 |
+| `dc1139b4` | range index assignment — expand arr[0..2]=(e1,e2) into individual checked-index writes | 15→14 |
+| `4519fa58` | generic method-level type params + unify_type_param proc/fn detection + proc_return_type split | 13→10 |
+| `8b9db2bf` | fix receiver struct-args for methods with extra type params | 10→9 |
 
 ### Key files modified (cumulative)
 
-- `projects/mtc/src/mtc/lowering/lowering.mt` — const function evaluator (~300 lines), ? propagation, str_buffer, proc array qual, default[T], fn-type local calls, get() pointer, array memcpy, nested struct, module when (~11,250 LOC)
+- `projects/mtc/src/mtc/lowering/lowering.mt` — parallel captures (~313 lines), chain calls, range index assignment, generic method-level params, unify_type_param proc/fn, proc_return_type split, receiver struct-args (~11,850 LOC)
 - `projects/mtc/src/mtc/semantic/types.mt` — `ty_tuple.field_names: Option[span[str]]`
-- `projects/mtc/src/mtc/c_backend/c_backend.mt` — tuple named field emission, array type in c_type
+- `projects/mtc/src/mtc/c_backend/c_backend.mt` — tuple named field emission, array type in C type position
+
+### Next session prompts
+
+- **Tuple match/destructure** (3 errors): `lower_destructure` and match-arm field access need to inspect `ty_tuple.field_names` — if named, use those names; if `Option.none`, use `_0`/`_1`.
+- **Async void cascade** (5 errors): Phase F full CPS. Async runtime structs (`mt_task_void`, work-state types) generated by `std.async` import produce void fields. Needs the async lowering pipeline that Ruby has — task continuation splitting, yielded member access, async runtime struct emission with resolved types.
+- **get() return-type cast** (1 error): Pre-existing. `val_ptr` is `int32_t*` from `read(raw_p)` where `raw_p` is `ptr_of(handle)`. The `unsafe: read(raw_p)` produces `ptr[int]` (`int32_t*`), not `int`. The sum expression at the return site needs a cast or the baseline source has a type that resolves differently from what the Ruby compiler produces.
 
 ### Build/test commands
 
