@@ -103,7 +103,7 @@ public function generate_c(program: ir.Program) -> string.String:
 
     # Emit the include set deduplicated (mirrors Ruby's `headers.uniq`).
     # `<stddef.h>` (offsetof) follows `<string.h>` to match Ruby's ordering.
-    let use_offsetof = functions_use_offsetof(funcs)
+    let use_offsetof = functions_use_offsetof(funcs) or constants_use_offsetof(program.constants)
     var seen_headers = map_mod.Map[str, bool].create()
     var i: ptr_uint = 0
     while i < program.includes.len:
@@ -116,6 +116,9 @@ public function generate_c(program: ir.Program) -> string.String:
                     seen_headers.set("<stddef.h>", true)
                     emit_line(ref_of(e), "#include <stddef.h>")
         i += 1
+    if use_offsetof and not seen_headers.contains("<stddef.h>"):
+        seen_headers.set("<stddef.h>", true)
+        emit_line(ref_of(e), "#include <stddef.h>")
     if (use_fatal or use_fatal_str or use_entry_argv) and not seen_headers.contains("<stdlib.h>"):
         seen_headers.set("<stdlib.h>", true)
         emit_line(ref_of(e), "#include <stdlib.h>")
@@ -1774,15 +1777,15 @@ function primitive_c_type(name: str) -> str:
     if name.equal("cstr"):
         return "const char*"
     if name.equal("vec2") or name.equal("ivec2"):
-        return name
+        return j2("mt_", name)
     if name.equal("vec3") or name.equal("ivec3"):
-        return name
+        return j2("mt_", name)
     if name.equal("vec4") or name.equal("ivec4"):
-        return name
+        return j2("mt_", name)
     if name.equal("mat3") or name.equal("mat4"):
-        return name
+        return j2("mt_", name)
     if name.equal("quat"):
-        return name
+        return j2("mt_", name)
     fatal(c"c_backend: unsupported primitive type")
 
 
@@ -4084,20 +4087,20 @@ function emit_builtin_type_defs(e: ref[Emitter], program: ir.Program) -> void:
         collect_builtin_types(ref_of(needed), ta.target_type)
         ti += 1
     if needed.contains("vec2"):
-        emit_line(e, "typedef struct { float x, y; } vec2;")
-        emit_line(e, "typedef struct { int32_t x, y; } ivec2;")
+        emit_line(e, "typedef struct mt_vec2 { float x; float y; } mt_vec2;")
+        emit_line(e, "typedef struct mt_ivec2 { int32_t x; int32_t y; } mt_ivec2;")
     if needed.contains("vec3") or needed.contains("mat3"):
-        emit_line(e, "typedef struct { float x, y, z; } vec3;")
-        emit_line(e, "typedef struct { int32_t x, y, z; } ivec3;")
+        emit_line(e, "typedef struct mt_vec3 { float x; float y; float z; } mt_vec3;")
+        emit_line(e, "typedef struct mt_ivec3 { int32_t x; int32_t y; int32_t z; } mt_ivec3;")
     if needed.contains("vec4") or needed.contains("mat4"):
-        emit_line(e, "typedef struct { float x, y, z, w; } vec4;")
-        emit_line(e, "typedef struct { int32_t x, y, z, w; } ivec4;")
+        emit_line(e, "typedef struct mt_vec4 { float x; float y; float z; float w; } mt_vec4;")
+        emit_line(e, "typedef struct mt_ivec4 { int32_t x; int32_t y; int32_t z; int32_t w; } mt_ivec4;")
     if needed.contains("mat3"):
-        emit_line(e, "typedef struct { vec3 col0, col1, col2; } mat3;")
+        emit_line(e, "typedef struct mt_mat3 { mt_vec3 col0; mt_vec3 col1; mt_vec3 col2; } mt_mat3;")
     if needed.contains("mat4"):
-        emit_line(e, "typedef struct { vec4 col0, col1, col2, col3; } mat4;")
+        emit_line(e, "typedef struct mt_mat4 { mt_vec4 col0; mt_vec4 col1; mt_vec4 col2; mt_vec4 col3; } mt_mat4;")
     if needed.contains("quat"):
-        emit_line(e, "typedef struct { float x, y, z, w; } quat;")
+        emit_line(e, "typedef struct mt_quat { float x; float y; float z; float w; } mt_quat;")
     if needed.contains("vec2") or needed.contains("vec3") or needed.contains("vec4"):
         emit_line(e, "")
     emit_line(e, "")
@@ -4153,8 +4156,19 @@ function includes_need_feature_macros(program: ir.Program) -> bool:
 function functions_use_offsetof(functions: span[ir.Function]) -> bool:
     var i: ptr_uint = 0
     while i < functions.len:
+        if stmts_use_offsetof(unsafe: read(functions.data + i).body):
+            return true
+        i += 1
+    return false
+
+
+## Check if any IR constant uses offsetof — constants are not in function
+## bodies so we must scan them separately.
+function constants_use_offsetof(constants: span[ir.Constant]) -> bool:
+    var i: ptr_uint = 0
+    while i < constants.len:
         unsafe:
-            if stmts_use_offsetof(read(functions.data + i).body):
+            if expr_uses_offsetof(read(constants.data + i).value):
                 return true
         i += 1
     return false

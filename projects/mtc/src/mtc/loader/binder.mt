@@ -22,6 +22,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     var value_types = map_mod.Map[str, types.Type].create()
     var static_member_types = map_mod.Map[str, bool].create()
     var type_aliases = map_mod.Map[str, bool].create()
+    var type_alias_types = map_mod.Map[str, types.Type].create()
     var member_keys = map_mod.Map[str, bool].create()
     var method_sigs = map_mod.Map[str, analyzer.FnSig].create()
     var interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create()
@@ -104,6 +105,10 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
             ast.Decl.decl_type_alias as ta:
                 if exports_all or ta.visibility:
                     type_aliases.set(ta.name, true)
+                    let resolved_ptr = analysis.type_alias_types.get(ta.name)
+                    if resolved_ptr != null:
+                        unsafe:
+                            type_alias_types.set(ta.name, read(resolved_ptr))
                 else:
                     private_type_aliases.set(ta.name, true)
             ast.Decl.decl_extending_block as ex:
@@ -122,6 +127,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         structs = structs,
         value_types = value_types,
         type_aliases = type_aliases,
+        type_alias_types = type_alias_types,
         static_member_types = static_member_types,
         member_keys = member_keys,
         method_sigs = method_sigs,
