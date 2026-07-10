@@ -202,6 +202,11 @@ public function generate_c(program: ir.Program) -> string.String:
             emit_line(ref_of(e), "")
             si += 1
 
+        # Emit type alias typedefs and builtin math structs before struct
+        # definitions, so struct fields can reference them.
+        emit_type_aliases(ref_of(e), program)
+        emit_builtin_type_defs(ref_of(e), program)
+
         # Emit struct and variant full definitions in a single dependency order,
         # since structs and variants can embed each other by value.
         var type_order = topo_sort_types(program.structs, ref_of(gen_variants), program.variants)
@@ -238,6 +243,10 @@ public function generate_c(program: ir.Program) -> string.String:
             i += 1
     else:
         emit_enums_block(ref_of(e), program)
+
+    # Emit Task struct definitions before function declarations so they can be
+    # used in return types and parameters.
+    emit_task_structs(ref_of(e), program)
 
     if funcs.len > 0:
         i = 0
@@ -1368,6 +1377,9 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
     # atomic[T] → _Atomic <c_type(T)>
     if name.equal("atomic") and args.len == 1:
         return j3("_Atomic ", c_type(unsafe: read(args.data + 0)), "")
+    # Task[T] → mt_task_<T>
+    if name.equal("Task") and args.len == 1:
+        return j3("mt_task_", naming.type_c_key(unsafe: read(args.data + 0)), "")
     # Generic variant: `<name>_<type0>_<type1>_...`.  The caller module prefix
     # is added by `qualified_c_name` when the type is `ty_imported`.
     if args.len > 0:
@@ -1713,6 +1725,16 @@ function primitive_c_type(name: str) -> str:
         return "void"
     if name.equal("cstr"):
         return "const char*"
+    if name.equal("vec2") or name.equal("ivec2"):
+        return name
+    if name.equal("vec3") or name.equal("ivec3"):
+        return name
+    if name.equal("vec4") or name.equal("ivec4"):
+        return name
+    if name.equal("mat3") or name.equal("mat4"):
+        return name
+    if name.equal("quat"):
+        return name
     fatal(c"c_backend: unsupported primitive type")
 
 
@@ -1754,7 +1776,8 @@ function c_fn_ptr_declarator(t: types.Type, name: str) -> str:
 ## (`int32_t xs[3]`); everything else in Phase 3 is a plain `TYPE NAME`.
 function c_declaration(t: types.Type, name: str) -> str:
     if is_array_type(t):
-        return j6(c_type(array_element_type(t)), " ", name, "[", long_to_str(array_length(t)), "]")
+        let inner_name = if name.len > 0 and name.byte_at(0) == '*': j3("(", name, ")") else: name
+        return j6(c_type(array_element_type(t)), " ", inner_name, "[", long_to_str(array_length(t)), "]")
     # Function-pointer types need declarator syntax: `ret_type (*name)(...)`.
     # Pointer/reference types: `T*` instead of `ptr_T`.
     # Generic variants: build `name_type0_type1_...` directly.
@@ -1762,11 +1785,17 @@ function c_declaration(t: types.Type, name: str) -> str:
         types.Type.ty_function:
             return c_fn_ptr_declarator(t, name)
         types.Type.ty_generic as g:
-            if g.name.equal("ptr") or g.name.equal("ref") and g.args.len >= 1:
-                let base = unsafe: c_type(read(g.args.data + (g.args.len - 1)))
+            if (g.name.equal("ptr") or g.name.equal("ref")) and g.args.len >= 1:
+                let inner = unsafe: read(g.args.data + (g.args.len - 1))
+                if is_array_type(inner):
+                    return c_declaration(inner, j2("*", name))
+                let base = unsafe: c_type(inner)
                 return j3(base, " *", name)
             if g.name.equal("const_ptr") and g.args.len == 1:
-                let base = unsafe: c_type(read(g.args.data + 0))
+                let inner = unsafe: read(g.args.data + 0)
+                if is_array_type(inner):
+                    return c_declaration(inner, j2("*", name))
+                let base = unsafe: c_type(inner)
                 return j4("const ", base, "*", name)
             if g.name.equal("str_buffer") and g.args.len >= 1:
                 let c_name = j3("mt_str_buffer_", naming.type_c_key(unsafe: read(g.args.data + 0)), "")
@@ -2840,6 +2869,8 @@ function render_zero_initializer(t: types.Type) -> str:
                 return "0.0"
             if p.name.equal("void"):
                 return "{ 0 }"
+            if is_vec_math_name(p.name):
+                return "{ 0 }"
             return "0"
         _:
             return "{ 0 }"
@@ -2859,15 +2890,19 @@ function render_zero_expression(t: types.Type) -> str:
 function render_aggregate_initializer(e: ref[Emitter], fields: span[ir.AggregateField]) -> str:
     var buf = string.String.create()
     buf.append("{ ")
+    # Detect positional fields (auto-generated names like _0, _1, ...) and render
+    # without the `.name = ` prefix so they work as array/tuple initializers.
+    let is_positional = fields.len > 0 and unsafe: read(fields.data + 0).name.starts_with("_")
     var i: ptr_uint = 0
     while i < fields.len:
         if i > 0:
             buf.append(", ")
         unsafe:
             let f = read(fields.data + i)
-            buf.append(".")
-            buf.append(f.name)
-            buf.append(" = ")
+            if not is_positional:
+                buf.append(".")
+                buf.append(f.name)
+                buf.append(" = ")
             buf.append(render_initializer(e, f.value))
         i += 1
     buf.append(" }")
@@ -2971,9 +3006,14 @@ function render_call(e: ref[Emitter], callee: str, arguments: span[ir.Expr]) -> 
 
 ## Render a call through a function-pointer expression: `(*callee)(args)`.
 function render_indirect_call(e: ref[Emitter], callee: ptr[ir.Expr], arguments: span[ir.Expr]) -> str:
-    var buf = string.String.create()
     let callee_text = unsafe: render_expression(e, callee)
+    let needs_wrap = not unsafe: is_postfix_expr(callee)
+    var buf = string.String.create()
+    if needs_wrap:
+        buf.append("(")
     buf.append(callee_text)
+    if needs_wrap:
+        buf.append(")")
     buf.append("(")
     var i: ptr_uint = 0
     while i < arguments.len:
@@ -3466,6 +3506,164 @@ function uses_parallel_runtime(program: ir.Program) -> bool:
                 return true
         i += 1
     return false
+
+
+function emit_task_structs(e: ref[Emitter], program: ir.Program) -> void:
+    var seen = map_mod.Map[str, bool].create()
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            let f = read(program.functions.data + i)
+            let task_elem = task_type_element(f.return_type)
+            if task_elem.is_some():
+                let elem = task_elem.unwrap()
+                var task_args = vec.Vec[types.Type].create()
+                task_args.push(elem)
+                let c_name = generic_c_type("Task", task_args.as_span())
+                if not seen.contains(c_name):
+                    seen.set(c_name, true)
+                    emit_task_struct_type(e, c_name, elem)
+            var pi: ptr_uint = 0
+            while pi < f.params.len:
+                let param = read(f.params.data + pi)
+                let pt_elem = task_type_element(param.ty)
+                if pt_elem.is_some():
+                    let pe = pt_elem.unwrap()
+                    var pt_args = vec.Vec[types.Type].create()
+                    pt_args.push(pe)
+                    let pc_name = generic_c_type("Task", pt_args.as_span())
+                    if not seen.contains(pc_name):
+                        seen.set(pc_name, true)
+                        emit_task_struct_type(e, pc_name, pe)
+                pi += 1
+        i += 1
+
+
+function task_type_element(t: types.Type) -> Option[types.Type]:
+    match t:
+        types.Type.ty_generic as g:
+            if g.name.equal("Task") and g.args.len == 1:
+                return Option[types.Type].some(value = unsafe: read(g.args.data + 0))
+            return Option[types.Type].none
+        _:
+            return Option[types.Type].none
+
+
+function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -> void:
+    let is_void = is_void_type(elem)
+    if is_void:
+        emit_line(e, j3("typedef struct { bool ready; } ", c_name, ";"))
+    else:
+        let type_str = c_type(elem)
+        emit_line(e, j5("typedef struct { ", type_str, " value; bool ready; } ", c_name, ";"))
+    emit_line(e, "")
+
+
+function is_vec_math_name(name: str) -> bool:
+    return (
+        name.equal("vec2") or name.equal("vec3") or name.equal("vec4")
+        or name.equal("ivec2") or name.equal("ivec3") or name.equal("ivec4")
+        or name.equal("mat3") or name.equal("mat4") or name.equal("quat")
+    )
+
+
+function is_void_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_primitive as p:
+            return p.name.equal("void")
+        _:
+            return false
+
+
+function emit_builtin_type_defs(e: ref[Emitter], program: ir.Program) -> void:
+    var needed = map_mod.Map[str, bool].create()
+    var fi: ptr_uint = 0
+    while fi < program.functions.len:
+        var f: ir.Function
+        unsafe:
+            f = read(program.functions.data + fi)
+        collect_builtin_types(ref_of(needed), f.return_type)
+        var pi: ptr_uint = 0
+        while pi < f.params.len:
+            unsafe:
+                collect_builtin_types(ref_of(needed), read(f.params.data + pi).ty)
+            pi += 1
+        fi += 1
+    # Also scan struct fields and type aliases
+    var si: ptr_uint = 0
+    while si < program.structs.len:
+        var s: ir.StructDecl
+        unsafe:
+            s = read(program.structs.data + si)
+        var sfi: ptr_uint = 0
+        while sfi < s.fields.len:
+            unsafe:
+                collect_builtin_types(ref_of(needed), read(s.fields.data + sfi).ty)
+            sfi += 1
+        si += 1
+    var ti: ptr_uint = 0
+    while ti < program.type_aliases.len:
+        var ta: ir.TypeAlias
+        unsafe:
+            ta = read(program.type_aliases.data + ti)
+        collect_builtin_types(ref_of(needed), ta.target_type)
+        ti += 1
+    if needed.contains("vec2"):
+        emit_line(e, "typedef struct { float x, y; } vec2;")
+        emit_line(e, "typedef struct { int32_t x, y; } ivec2;")
+    if needed.contains("vec3"):
+        emit_line(e, "typedef struct { float x, y, z; } vec3;")
+        emit_line(e, "typedef struct { int32_t x, y, z; } ivec3;")
+    if needed.contains("vec4"):
+        emit_line(e, "typedef struct { float x, y, z, w; } vec4;")
+        emit_line(e, "typedef struct { int32_t x, y, z, w; } ivec4;")
+    if needed.contains("mat3"):
+        emit_line(e, "typedef struct { vec3 col0, col1, col2; } mat3;")
+    if needed.contains("mat4"):
+        emit_line(e, "typedef struct { vec4 col0, col1, col2, col3; } mat4;")
+    if needed.contains("quat"):
+        emit_line(e, "typedef struct { float x, y, z, w; } quat;")
+    if needed.contains("vec2") or needed.contains("vec3") or needed.contains("vec4"):
+        emit_line(e, "")
+    # Always emit builtin math types — they're always potentially needed
+    emit_line(e, "typedef struct { float x, y; } vec2;")
+    emit_line(e, "typedef struct { int32_t x, y; } ivec2;")
+    emit_line(e, "typedef struct { float x, y, z; } vec3;")
+    emit_line(e, "typedef struct { int32_t x, y, z; } ivec3;")
+    emit_line(e, "typedef struct { float x, y, z, w; } vec4;")
+    emit_line(e, "typedef struct { int32_t x, y, z, w; } ivec4;")
+    emit_line(e, "typedef struct { vec3 col0, col1, col2; } mat3;")
+    emit_line(e, "typedef struct { vec4 col0, col1, col2, col3; } mat4;")
+    emit_line(e, "typedef struct { float x, y, z, w; } quat;")
+    emit_line(e, "")
+
+
+function collect_builtin_types(needed: ref[map_mod.Map[str, bool]], t: types.Type) -> void:
+    match t:
+        types.Type.ty_primitive as p:
+            if p.name.equal("vec2") or p.name.equal("ivec2") or p.name.equal("vec3") or p.name.equal("ivec3") or p.name.equal("vec4") or p.name.equal("ivec4") or p.name.equal("mat3") or p.name.equal("mat4") or p.name.equal("quat"):
+                needed.set(p.name, true)
+        types.Type.ty_generic as g:
+            var gi: ptr_uint = 0
+            while gi < g.args.len:
+                unsafe:
+                    collect_builtin_types(needed, read(g.args.data + gi))
+                gi += 1
+        _:
+            pass
+
+
+function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
+    var ai: ptr_uint = 0
+    while ai < program.type_aliases.len:
+        var ta: ir.TypeAlias
+        unsafe:
+            ta = read(program.type_aliases.data + ai)
+        let c_type_str = c_declaration(ta.target_type, ta.qualified_name)
+        emit_line(e, j3("typedef ", c_type_str, ";"))
+        ai += 1
+    if program.type_aliases.len > 0:
+        emit_line(e, "")
 
 
 ## True when the include set contains the fs/tls support headers, which pull in

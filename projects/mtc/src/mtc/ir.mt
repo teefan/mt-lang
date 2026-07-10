@@ -199,10 +199,14 @@ public struct Program:
     variants: span[VariantDecl]
     static_asserts: span[StaticAssert]
     functions: span[Function]
+    type_aliases: span[TypeAlias]
     source_path: str
 
 
-## An empty program carrying just a module name — the Phase 0 lowering stub
+public struct TypeAlias:
+    name: str
+    qualified_name: str
+    target_type: types.Type
 ## result and a convenient base for incremental assembly.
 public function empty_program(module_name: str, source_path: str) -> Program:
     return Program(

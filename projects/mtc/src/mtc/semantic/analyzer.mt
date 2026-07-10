@@ -84,6 +84,7 @@ struct Context:
     value_names: map_mod.Map[str, bool]
     type_names: map_mod.Map[str, bool]
     type_aliases: map_mod.Map[str, ptr[ast.TypeRef]]
+    type_alias_types: map_mod.Map[str, types.Type]
     alias_types: map_mod.Map[str, types.Type]
     structs: map_mod.Map[str, span[FieldEntry]]
     method_keys: map_mod.Map[str, bool]
@@ -139,6 +140,7 @@ public struct Analysis:
     types: map_mod.Map[str, types.Type]
     attribute_applications: map_mod.Map[str, span[ast.AttributeApplication]]
     events: map_mod.Map[str, EventInfo]
+    type_alias_types: map_mod.Map[str, types.Type]
 
 
 public function check_source_file(file: ast.SourceFile) -> Analysis:
@@ -153,6 +155,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         value_names = map_mod.Map[str, bool].create(),
         type_names = map_mod.Map[str, bool].create(),
         type_aliases = map_mod.Map[str, ptr[ast.TypeRef]].create(),
+        type_alias_types = map_mod.Map[str, types.Type].create(),
         alias_types = map_mod.Map[str, types.Type].create(),
         structs = map_mod.Map[str, span[FieldEntry]].create(),
         method_keys = map_mod.Map[str, bool].create(),
@@ -194,6 +197,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
     collect_enum_variant_members(ref_of(ctx), source)
     collect_interfaces(ref_of(ctx), source)
     register_event_methods(ref_of(ctx))
+    register_task_methods(ref_of(ctx))
     declare_values_and_functions(ref_of(ctx), source)
     declare_values_and_functions_extra(ref_of(ctx), when_extra)
     check_functions(ref_of(ctx), source)
@@ -227,6 +231,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         types = ctx.types,
         attribute_applications = build_attr_app_spans(ref_of(ctx)),
         events = ctx.event_types,
+        type_alias_types = ctx.type_alias_types,
     )
 
 
@@ -297,6 +302,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
             ast.Decl.decl_type_alias as ta:
                 declare_type(ctx, ta.name, ta.line, ta.column)
                 ctx.type_aliases.set(ta.name, ta.target)
+                ctx.type_alias_types.set(ta.name, resolve_type(ctx, ta.target))
             ast.Decl.decl_event as ev:
                 declare_type(ctx, ev.name, ev.line, ev.column)
                 ctx.types.set(ev.name, types.Type.ty_named(name = ev.name))
@@ -570,7 +576,7 @@ function declare_values_and_functions_extra(ctx: ref[Context], extra: span[ast.D
                     ctx.const_values.set(c.name, val)
             ast.Decl.decl_function as fun:
                 if declare_value(ctx, fun.name, fun.line, fun.column):
-                    ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type, ast.MethodKind.mk_plain))
+                    ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type, ast.MethodKind.mk_plain, fun.is_async))
             _:
                 pass
         i += 1
@@ -814,7 +820,7 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                     ctx.method_keys.set(key, true)
                     enter_type_params(ctx, m.type_params)
                     if m.method_kind != ast.MethodKind.mk_static or not ctx.method_sigs.contains(key):
-                        ctx.method_sigs.set(key, build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind))
+                        ctx.method_sigs.set(key, build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind, false))
                     ctx.type_params.clear()
                     if m.type_params.len > 0:
                         ctx.method_type_params.set(key, m.type_params)
@@ -947,7 +953,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                     # in scope, so parameter/return patterns carry ty_var(T) for
                     # call-site unification. Record the constraints for validation.
                     enter_type_params(ctx, fun.type_params)
-                    ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type, ast.MethodKind.mk_plain))
+                    ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type, ast.MethodKind.mk_plain, fun.is_async))
                     ctx.type_params.clear()
                     if fun.type_params.len > 0:
                         ctx.function_type_params.set(fun.name, fun.type_params)
@@ -980,7 +986,7 @@ function dup_message(kind: str, name: str) -> str:
     return buf.as_str()
 
 
-function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, method_kind: ast.MethodKind) -> FnSig:
+function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, method_kind: ast.MethodKind, is_async: bool) -> FnSig:
     var param_entries = vec.Vec[ParamEntry].create()
     var i: ptr_uint = 0
     while i < params.len:
@@ -990,11 +996,17 @@ function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], ret
         param_entries.push(ParamEntry(name = p.name, ty = resolve_type_value(ctx, p.param_type)))
         i += 1
     let rt = return_type
+    var final_ret = types.primitive("void")
     if rt != null:
+        final_ret = resolve_type(ctx, rt)
+        if is_async:
+            final_ret = make_task_type(final_ret)
         return FnSig(name = name, params = param_entries.as_span(),
-            return_type = resolve_type(ctx, rt), has_return_type = true, method_kind = method_kind)
+            return_type = final_ret, has_return_type = true, method_kind = method_kind)
+    if is_async:
+        final_ret = make_task_type(final_ret)
     return FnSig(name = name, params = param_entries.as_span(),
-        return_type = types.primitive("void"), has_return_type = false, method_kind = method_kind)
+        return_type = final_ret, has_return_type = false, method_kind = method_kind)
 
 
 # =============================================================================
@@ -1315,7 +1327,7 @@ function check_conformance_methods(ctx: ref[Context], type_name: str, iface_name
         if actual_ptr == null:
             report(ctx, line, column, missing_method_message(type_name, iface_name, m.name))
         else:
-            let required = build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind)
+            let required = build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind, false)
             unsafe:
                 if not sigs_compatible(required, read(actual_ptr)):
                     report(ctx, line, column, method_mismatch_message(type_name, iface_name, m.name))
@@ -2641,7 +2653,37 @@ function infer_binary(ctx: ref[Context], scope: ref[Scope], op: str, left: ptr[a
         return lt
     if types.is_raw_pointer(rt) and not types.is_raw_pointer(lt):
         return rt
+    # Vector/matrix/quaternion arithmetic: same-type yields that type;
+    # scalar * vec yields vec; vec * scalar yields vec.
+    let lt_name = primitive_type_name_static(lt)
+    let rt_name = primitive_type_name_static(rt)
+    if is_vec_math_name(lt_name) and lt_name.equal(rt_name):
+        return lt
+    if is_vec_math_name(lt_name) and types.is_numeric(rt):
+        return lt
+    if is_vec_math_name(rt_name) and types.is_numeric(lt):
+        return rt
     return types.Type.ty_error
+
+
+function is_vec_math_name(name: str) -> bool:
+    return (
+        name.equal("vec2") or name.equal("vec3") or name.equal("vec4")
+        or name.equal("ivec2") or name.equal("ivec3") or name.equal("ivec4")
+        or name.equal("mat3") or name.equal("mat4") or name.equal("quat")
+    )
+
+
+function primitive_type_name_static(t: types.Type) -> str:
+    match t:
+        types.Type.ty_primitive as p:
+            return p.name
+        types.Type.ty_named as n:
+            return n.name
+        types.Type.ty_imported as im:
+            return im.name
+        _:
+            return ""
 
 
 function is_comparison_op(op: str) -> bool:
@@ -3363,7 +3405,7 @@ function resolve_constraint_method(ctx: ref[Context], var_name: str, method_name
                 Option.some as methods:
                     match interface_method_named(methods.value, method_name):
                         Option.some as m:
-                            return Option[FnSig].some(value = build_fn_sig(ctx, m.value.name, m.value.method_params, m.value.return_type, m.value.method_kind))
+                            return Option[FnSig].some(value = build_fn_sig(ctx, m.value.name, m.value.method_params, m.value.return_type, m.value.method_kind, false))
                         Option.none:
                             pass
                 Option.none:
@@ -3568,6 +3610,9 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
         types.Type.ty_var as v:
             return check_type_var_member(ctx, v.name, member, is_method_call, line, column)
         types.Type.ty_generic as g:
+            if g.name.equal("Task") and g.args.len >= 1:
+                if member.equal("frame") or member.equal("value") or member.equal("ready"):
+                    return types.Type.ty_error
             if g.name.equal("span"):
                 if member.equal("data") or member.equal("len"):
                     return types.Type.ty_error
@@ -4023,3 +4068,17 @@ function reserved_local_message(name: str) -> str:
     buf.append(name)
     buf.append(" shadows a reserved type name")
     return buf.as_str()
+
+
+function make_task_type(inner: types.Type) -> types.Type:
+    var args = vec.Vec[types.Type].create()
+    args.push(inner)
+    return types.Type.ty_generic(name = "Task", args = args.as_span())
+
+
+function register_task_methods(ctx: ref[Context]) -> void:
+    ctx.method_keys.set(method_key("Task", "take_result"), true)
+    ctx.method_keys.set(method_key("Task", "release"), true)
+    ctx.method_keys.set(method_key("Task", "set_waiter"), true)
+    ctx.method_keys.set(method_key("Task", "cancel"), true)
+    ctx.method_keys.set(method_key("Task", "ready"), true)
