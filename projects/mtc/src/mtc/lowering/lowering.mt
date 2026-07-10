@@ -3604,8 +3604,6 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                             return lower_proc_call(ctx, lb.value, args, call_ep)
                     Option.none:
                         pass
-                # Bare generic function call with inferred type args:
-                # e.g. `call_proc(f)` where `call_proc[T](p: proc() -> T) -> T`.
                 match find_generic_function(ctx, id.name):
                     Option.some as gm:
                         match try_inferred_generic_call(ctx, id.name, args, call_ep):
