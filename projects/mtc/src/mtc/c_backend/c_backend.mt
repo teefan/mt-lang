@@ -210,6 +210,11 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_type_aliases(ref_of(e), program)
         emit_builtin_type_defs(ref_of(e), program)
 
+        # Emit Task struct definitions before struct definitions so that proc
+        # structs (e.g. mt_proc_Task_void) that reference Task types in their
+        # invoke field types can compile.
+        emit_task_structs(ref_of(e), program)
+
         # Emit struct and variant full definitions in a single dependency order,
         # since structs and variants can embed each other by value.
         var type_order = topo_sort_types(program.structs, ref_of(gen_variants), program.variants)
@@ -251,10 +256,6 @@ public function generate_c(program: ir.Program) -> string.String:
             i += 1
     else:
         emit_enums_block(ref_of(e), program)
-
-    # Emit Task struct definitions before function declarations so they can be
-    # used in return types and parameters.
-    emit_task_structs(ref_of(e), program)
 
     if funcs.len > 0:
         i = 0
@@ -1891,7 +1892,10 @@ function emit_struct(e: ref[Emitter], s: ir.StructDecl) -> void:
     while i < s.fields.len:
         unsafe:
             let f = read(s.fields.data + i)
-            emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
+            # Skip void-typed fields — C does not allow fields of type void
+            # (e.g. `void result;` in WorkState[void] from async runtime).
+            if not is_void_type(f.ty):
+                emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
         i += 1
     emit_line(e, "};")
 

@@ -1971,6 +1971,16 @@ function lower_destructure(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bi
             Option.none:
                 member_name = tuple_field_name(i)
                 member_ty = tuple_element_type(val_ty, i)
+                match val_ty:
+                    types.Type.ty_tuple as tup:
+                        match tup.field_names:
+                            Option.some as fnames:
+                                if i < fnames.value.len:
+                                    member_name = unsafe: read(fnames.value.data + i)
+                            Option.none:
+                                pass
+                    _:
+                        pass
         let receiver = alloc_expr(ir.Expr.expr_name(name = temp, ty = val_ty, pointer = false))
         let member = alloc_expr(ir.Expr.expr_member(receiver = receiver, member = member_name, ty = member_ty))
         let binding_c = c_local_name(binding)
@@ -4116,6 +4126,20 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                             ir.Expr.expr_name as nm:
                                 if nm.pointer:
                                     return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = result_ty, pointer = true))
+                                # ref[T] is already a pointer in C, so ptr_of/const_ptr_of
+                                # on a ref variable returns the variable directly as a raw
+                                # pointer to the referent; ref_of returns it as-is.
+                                if types.is_ref_type(nm.ty):
+                                    let ref_elem = types.pointer_element(nm.ty)
+                                    let elem_sp = sp_type(ref_elem)
+                                    var adjusted_ty = result_ty
+                                    if id.name.equal("ptr_of"):
+                                        adjusted_ty = types.Type.ty_generic(name = "ptr", args = elem_sp)
+                                    if id.name.equal("const_ptr_of"):
+                                        adjusted_ty = types.Type.ty_generic(name = "const_ptr", args = elem_sp)
+                                    if id.name.equal("ref_of"):
+                                        pass
+                                    return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = adjusted_ty, pointer = true))
                             ir.Expr.expr_unary as un:
                                 if un.operator.equal("*"):
                                     return un.operand
@@ -8009,10 +8033,24 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                             Option.some as ift:
                                 member_ty = ift.value
                             Option.none:
-                                if types.is_error(member_ty):
+                                if types.is_error(member_ty) or is_tuple_type(member_ty):
                                     if is_tuple_type(recv_ty):
-                                        let index = parse_tuple_member_index(member)
-                                        member_ty = tuple_element_type(recv_ty, index)
+                                        match recv_ty:
+                                            types.Type.ty_tuple as tup:
+                                                match tup.field_names:
+                                                    Option.some as fnames:
+                                                        var fi: ptr_uint = 0
+                                                        while fi < fnames.value.len:
+                                                            if unsafe: read(fnames.value.data + fi).equal(member):
+                                                                if fi < tup.elements.len:
+                                                                    member_ty = unsafe: read(tup.elements.data + fi)
+                                                                break
+                                                            fi += 1
+                                                    Option.none:
+                                                        let index = parse_tuple_member_index(member)
+                                                        member_ty = tuple_element_type(recv_ty, index)
+                                            _:
+                                                pass
     return alloc_expr(ir.Expr.expr_member(
         receiver = recv,
         member = member,
@@ -9006,16 +9044,27 @@ function tuple_pattern_condition(ctx: ref[LowerCtx], scrutinee_expr: ptr[ir.Expr
                 var elem: ast.Expr
                 unsafe:
                     elem = read(lst.elements.data + i)
-                if not expr_is_wildcard(elem):
-                    let elem_ty = tuple_element_type(scrutinee_ty, i)
-                    let field = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = tuple_field_name(i), ty = elem_ty))
-                    let elem_expr = lower_expr(ctx, unsafe: ptr[ast.Expr]<-(lst.elements.data + i))
-                    let cmp = alloc_expr(ir.Expr.expr_binary(operator = "==", left = field, right = elem_expr, ty = types.primitive("bool")))
-                    let existing = cond
-                    if existing == null:
-                        cond = cmp
-                    else:
-                        cond = alloc_expr(ir.Expr.expr_binary(operator = "and", left = existing, right = cmp, ty = types.primitive("bool")))
+                    if not expr_is_wildcard(elem):
+                        let elem_ty = tuple_element_type(scrutinee_ty, i)
+                        var member_name = tuple_field_name(i)
+                        match scrutinee_ty:
+                            types.Type.ty_tuple as tup:
+                                match tup.field_names:
+                                    Option.some as fnames:
+                                        if i < fnames.value.len:
+                                            member_name = unsafe: read(fnames.value.data + i)
+                                    Option.none:
+                                        pass
+                            _:
+                                pass
+                        let field = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = member_name, ty = elem_ty))
+                        let elem_expr = lower_expr(ctx, unsafe: ptr[ast.Expr]<-(lst.elements.data + i))
+                        let cmp = alloc_expr(ir.Expr.expr_binary(operator = "==", left = field, right = elem_expr, ty = types.primitive("bool")))
+                        let existing = cond
+                        if existing == null:
+                            cond = cmp
+                        else:
+                            cond = alloc_expr(ir.Expr.expr_binary(operator = "and", left = existing, right = cmp, ty = types.primitive("bool")))
                 i += 1
         _:
             pass
