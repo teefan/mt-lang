@@ -5924,17 +5924,6 @@ struct MethodInfo:
     return_type: types.Type
 
 
-## HACK: qualified_member_c_name but with an explicit module prefix.
-function qualified_member_c_name_ext(module_prefix: str, owner: str, member: str) -> str:
-    var buf = string.String.create()
-    buf.append(module_prefix)
-    buf.append("_")
-    buf.append(owner)
-    buf.append("_")
-    buf.append(member)
-    return buf.as_str()
-
-
 ## True when `name` names a primitive type or `str` — the receiver types whose
 ## methods use a bare `<type>_<method>` C name with no module prefix.  Mirrors
 ## Ruby's `c_type_name`, which returns the bare name for primitives (a struct

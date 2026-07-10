@@ -1,9 +1,9 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **Self-compile fixpoint REACHED; baseline C compiles with 0 errors.**
+Status: **Phase H DONE. Package build support, runtime links, dead code cleanup complete.**
 172 self-host in-language tests pass (0 failures).
 
-Last updated: 2026-07-11 (session: Phase G batch 4 — 9→0, baseline parity gate REACHED)
+Last updated: 2026-07-11 (session: Phase H — package build + cleanup completed)
 
 ---
 
@@ -142,9 +142,33 @@ Self-host source layout (`projects/mtc/src`, ≈32k LOC):
 ### Phase E — parallel for captures — DONE (scalar + array captures)
 ### Phase F — async / Task[T] — DONE (bridge approach, stubs for runtime functions)
 ### Phase G — baseline parity gate — **DONE (0 errors)**
-### Phase H — final polish — ACTIVE
+### Phase H — final polish — **DONE**
 
-### Batch 4 fixes (9→0, 3 commits)
+### Batch 5 fixes (3 items, 1 commit pending)
+
+| Item | What | Status |
+|------|------|--------|
+| Package build | `main.mt`: `resolve_package_entry` + `effective_source_path` + TOML string reader — `build`/`check`/`lower`/`emit-c` now handle directory targets | DONE |
+| Runtime links | `collect_link_flags` already picks up `-luv` via `link "uv"` directives; async stubs are sequential (no actual libuv dep yet) | VERIFIED OK |
+| Dead code | Removed `qualified_member_c_name_ext` (zero callers, HACK-commented) from `lowering.mt` | DONE |
+
+### Key files modified (batch 5)
+
+- `projects/mtc/src/mtc/main.mt` — added `read_toml_str`, `resolve_package_entry`, `effective_source_path`; updated `build_command`, `check_command`, `lower_command`, `emit_c_command`; updated help text
+- `projects/mtc/src/mtc/lowering/lowering.mt` — removed dead `qualified_member_c_name_ext`
+
+### Known remaining issues (pre-existing)
+
+- **C type naming**: Self-host generates incorrect C type names for Option/Result variants in cross-module contexts (e.g. `mtc_parser_parser_std_option_Option_str` instead of `std_option_Option_str`). The baseline example compiles cleanly, but the full mtc project has semantic analyzer gaps around prelude type method resolution.
+- **Self-host check on full project**: 12 semantic errors found when self-host checks `projects/mtc` — prelude `Option.is_some`/`.is_none`/`.unwrap` not recognized on cross-module generic receiver types.
+
+### Resume context (2026-07-11, batch 5 complete)
+
+### Committed
+
+| Hash | Description |
+|------|-------------|
+| (pending) | Phase H: package build support (directory targets + TOML parsing) + dead code removal |
 
 | Commit | What | Delta |
 |--------|------|-------|

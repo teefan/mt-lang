@@ -88,10 +88,10 @@ function print_help() -> void:
     stdio.print_line("commands:")
     stdio.print_line("  lex   <file>  print the lexer token stream")
     stdio.print_line("  parse <file>  parse source and print AST")
-    stdio.print_line("  check <file> [--root DIR]...  type-check a file and its imports")
-    stdio.print_line("  lower <file> [--root DIR]...  lower to IR and print it")
-    stdio.print_line("  emit-c <file> [--root DIR]...  compile to C and print it")
-    stdio.print_line("  build <file> [--root DIR]...  compile and link a native binary")
+    stdio.print_line("  check <file|dir> [--root DIR]...  type-check a file/package and its imports")
+    stdio.print_line("  lower <file|dir> [--root DIR]...  lower to IR and print it")
+    stdio.print_line("  emit-c <file|dir> [--root DIR]...  compile to C and print it")
+    stdio.print_line("  build <file|dir> [--root DIR]...  compile and link a native binary")
     stdio.print_line("  help          print this help")
 
 
@@ -140,7 +140,8 @@ function parse_command(file_path: str) -> int:
 
 ## Type-check a source file and its transitive imports.  Imports are resolved
 ## against `--root DIR` module roots (repeatable); when none are given the root
-## defaults to the entry file's directory.
+## defaults to the entry file's directory.  Supports both `.mt` files and
+## package directory targets (reads package.toml for the entry point).
 function check_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
@@ -168,14 +169,21 @@ function check_command(args: span[str]) -> int:
         print_help()
         return 1
 
-    if roots.is_empty():
-        roots.push(path_ops.dirname(path))
+    var entry_path_owner = string.String.create()
+    var source_root_owner = string.String.create()
+    let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+        return 1
 
-    var program = loader.check_program(path, roots.as_span(), resolver.Platform.linux)
+    if roots.is_empty():
+        roots.push(path_ops.dirname(effective))
+
+    var program = loader.check_program(effective, roots.as_span(), resolver.Platform.linux)
     defer program.release()
 
     if program.diagnostic_count() == 0:
-        stdio.print_format(c"checked %.*s: ok\n", int<-(path.len), path.data)
+        stdio.print_format(c"checked %.*s: ok\n", int<-(effective.len), effective.data)
+        entry_path_owner.release()
+        source_root_owner.release()
         return 0
 
     print_program_diagnostics(ref_of(program))
@@ -244,13 +252,19 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]]) -> Opti
 
 
 ## Lower a checked program to IR and print it (`mtc lower`).
+## Supports both `.mt` files and package directory targets.
 function lower_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
     let path = parse_source_operand(args, ref_of(roots)) else:
         return 1
 
-    var program = loader.check_program(path, roots.as_span(), resolver.Platform.linux)
+    var entry_path_owner = string.String.create()
+    var source_root_owner = string.String.create()
+    let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+        return 1
+
+    var program = loader.check_program(effective, roots.as_span(), resolver.Platform.linux)
     defer program.release()
 
     let ir_program = lowering.lower(program)
@@ -258,17 +272,25 @@ function lower_command(args: span[str]) -> int:
     defer rendered.release()
     let text = rendered.as_str()
     stdio.print_format(c"%.*s", int<-(text.len), text.data)
+    entry_path_owner.release()
+    source_root_owner.release()
     return 0
 
 
 ## Compile a checked program to C and print it (`mtc emit-c`).
+## Supports both `.mt` files and package directory targets.
 function emit_c_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
     let path = parse_source_operand(args, ref_of(roots)) else:
         return 1
 
-    var program = loader.check_program(path, roots.as_span(), resolver.Platform.linux)
+    var entry_path_owner = string.String.create()
+    var source_root_owner = string.String.create()
+    let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+        return 1
+
+    var program = loader.check_program(effective, roots.as_span(), resolver.Platform.linux)
     defer program.release()
 
     let ir_program = lowering.lower(program)
@@ -276,36 +298,215 @@ function emit_c_command(args: span[str]) -> int:
     defer c_source.release()
     let text = c_source.as_str()
     stdio.print_format(c"%.*s", int<-(text.len), text.data)
+    entry_path_owner.release()
+    source_root_owner.release()
     return 0
 
 
-## Build a program (`mtc build`).  Phase 1: lower to IR, generate C, and invoke
-## the C compiler to produce a native binary (no cache / packages yet).
+## Extract a string value from a TOML document at the given section and key.
+## Handles [section] headers and key = "value" assignments with double-quoted
+## string values.  Comments (#) and blank lines are skipped.
+function read_toml_str(source: str, section: str, key: str) -> Option[string.String]:
+    var current: Option[str] = Option[str].none
+    var pos: ptr_uint = 0
+    let end_pos = source.len
+    while pos < end_pos:
+        let b = source.byte_at(pos)
+        if b == 10:
+            pos += 1
+            continue
+        if b == 13:
+            pos += 1
+            if pos < end_pos and source.byte_at(pos) == 10:
+                pos += 1
+            continue
+        if b == 35:
+            pos = skip_line(source, pos)
+            continue
+        if b == 91:
+            let close = find_byte(source, pos + 1, ubyte<-91, ubyte<-93) else:
+                pos = skip_line(source, pos)
+                continue
+            let sec_name = source.slice(pos + 1, close - pos - 1)
+            current = Option[str].some(value= sec_name)
+            pos = close + 1
+            continue
+        if b == 9 or b == 32:
+            pos += 1
+            continue
+        match current:
+            Option.some as sec:
+                if sec.value.equal(section):
+                    let eq = find_byte(source, pos, ubyte<-91, ubyte<-61) else:
+                        pos = skip_line(source, pos)
+                        continue
+                    let key_end = trim_right(source, pos, eq)
+                    let line_key = source.slice(pos, key_end - pos)
+                    if line_key.equal(key):
+                        let val_start = skip_ws_to(source, eq + 1, ubyte<-34) else:
+                            pos = skip_line(source, pos)
+                            continue
+                        let val_end = find_byte(source, val_start + 1, ubyte<-91, ubyte<-34) else:
+                            pos = skip_line(source, pos)
+                            continue
+                        return Option[string.String].some(value= string.String.from_str(
+                            source.slice(val_start + 1, val_end - val_start - 1)
+                        ))
+                pos = skip_line(source, pos)
+            Option.none:
+                pos = skip_line(source, pos)
+
+    return Option[string.String].none
+
+
+function skip_line(source: str, pos: ptr_uint) -> ptr_uint:
+    var cur = pos
+    let end_pos = source.len
+    while cur < end_pos:
+        if source.byte_at(cur) == 10:
+            return cur + 1
+        cur += 1
+    return end_pos
+
+
+function find_byte(source: str, start: ptr_uint, t1: ubyte, needle: ubyte) -> Option[ptr_uint]:
+    var pos = start
+    let end_pos = source.len
+    while pos < end_pos:
+        let b = source.byte_at(pos)
+        if b == 10 or b == t1:
+            return Option[ptr_uint].none
+        if b == needle:
+            return Option[ptr_uint].some(value= pos)
+        pos += 1
+    return Option[ptr_uint].none
+
+
+function skip_ws_to(source: str, start: ptr_uint, target: ubyte) -> Option[ptr_uint]:
+    var pos = start
+    let end_pos = source.len
+    while pos < end_pos:
+        let b = source.byte_at(pos)
+        if b == target:
+            return Option[ptr_uint].some(value= pos)
+        if b == 10 or b == 13 or b == 35:
+            return Option[ptr_uint].none
+        if b != 9 and b != 32:
+            return Option[ptr_uint].none
+        pos += 1
+    return Option[ptr_uint].none
+
+
+function trim_right(source: str, start: ptr_uint, end: ptr_uint) -> ptr_uint:
+    var pos = end
+    while pos > start:
+        let b = source.byte_at(pos - 1)
+        if b != 32 and b != 9:
+            return pos
+        pos -= 1
+    return start
+
+
+## Resolve a directory target to its effective build entry path.  Reads
+## `<dir>/package.toml`, extracts `build.entry` (defaulting to `src/main.mt`),
+## and adds `<dir>/<source_root>` to `roots`.  The returned string borrows from
+## `entry_owner` — keep both alive for the duration of the build.
+function resolve_package_entry(dir: str, roots: ref[vec.Vec[str]], entry_owner: ref[string.String], source_root_owner: ref[string.String]) -> Option[str]:
+    var manifest_path = path_ops.join(dir, "package.toml")
+    defer manifest_path.release()
+    if not fs.is_file(manifest_path.as_str()):
+        stdio.print_format(
+            c"error: no package.toml found in %.*s\n",
+            int<-(dir.len), dir.data,
+        )
+        return Option[str].none
+
+    match fs.read_text(manifest_path.as_str()):
+        Result.failure:
+            stdio.print_format(
+                c"error: cannot read %.*s\n",
+                int<-(manifest_path.as_str().len), manifest_path.as_str().data,
+            )
+            return Option[str].none
+        Result.success as payload:
+            var source = payload.value
+            defer source.release()
+            let toml_text = source.as_str()
+
+            let entry_val = read_toml_str(toml_text, "build", "entry")
+            read(entry_owner) = string.String.from_str("src/main.mt")
+            match entry_val:
+                Option.some as e:
+                    read(entry_owner).release()
+                    read(entry_owner) = e.value
+                Option.none:
+                    pass
+
+            let root_val = read_toml_str(toml_text, "package", "source_root")
+            read(source_root_owner) = string.String.from_str("src")
+            match root_val:
+                Option.some as r:
+                    read(source_root_owner).release()
+                    read(source_root_owner) = r.value
+                Option.none:
+                    pass
+
+    var source_root_path = path_ops.join(dir, source_root_owner.as_str())
+    roots.push(source_root_path.as_str())
+    var entry_path = path_ops.join(dir, entry_owner.as_str())
+    read(entry_owner).release()
+    read(entry_owner) = entry_path
+    return Option[str].some(value= entry_owner.as_str())
+
+
+## Resolve the effective source path for a build target.  When `raw_path` is a
+## directory, discovers package.toml and extracts the build entry; returns the
+## resolved `.mt` file path.  When it is a plain file the path is returned
+## as-is.  `entry_owner` and `source_root_owner` hold any package-derived
+## borrows — keep both alive for the duration of the compilation.
+function effective_source_path(raw_path: str, roots: ref[vec.Vec[str]], entry_owner: ref[string.String], source_root_owner: ref[string.String]) -> Option[str]:
+    if fs.is_directory(raw_path):
+        return resolve_package_entry(raw_path, roots, entry_owner, source_root_owner)
+
+    return Option[str].some(value= raw_path)
+
+
+## Build a program (`mtc build`).  Supports both single `.mt` files and package
+## directory targets (reads package.toml for the entry point).
 function build_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
     let path = parse_source_operand(args, ref_of(roots)) else:
         return 1
 
-    var program = loader.check_program(path, roots.as_span(), resolver.Platform.linux)
+    var entry_path_owner = string.String.create()
+    var source_root_owner = string.String.create()
+    let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+        return 1
+
+    var program = loader.check_program(effective, roots.as_span(), resolver.Platform.linux)
     defer program.release()
 
-    let output_path = default_output_path(path)
+    let output_path = default_output_path(effective)
     match build_driver.build(program, output_path, "cc", roots.as_span()):
         Result.success as built:
             var output = built.value
             defer output.release()
             stdio.print_format(
                 c"built %.*s -> %.*s\n",
-                int<-(path.len), path.data,
+                int<-(effective.len), effective.data,
                 int<-(output.as_str().len), output.as_str().data,
             )
+            entry_path_owner.release()
+            source_root_owner.release()
             return 0
         Result.failure as failure:
             var message = failure.error
             defer message.release()
             let text = message.as_str()
             stdio.print_format(c"error: %.*s\n", int<-(text.len), text.data)
+            entry_path_owner.release()
+            source_root_owner.release()
             return 1
 
 
