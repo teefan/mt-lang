@@ -384,10 +384,20 @@ public function lower(program: loader.Program) -> ir.Program:
             let tv = unsafe: read(tvp)
             if type_is_from_std_c(tv):
                 continue
+            # Qualify proc type aliases to the shared proc struct name so
+            # that e.g. `type IntGenerator = proc() -> int` emits a typedef
+            # to `mt_proc_int` instead of a raw function pointer.
+            var qualified_tv = tv
+            match tv:
+                types.Type.ty_function as fnt:
+                    if fnt.is_proc:
+                        qualified_tv = types.Type.ty_named(module_name = "", name = proc_type_name_from_signature(tv))
+                _:
+                    pass
             type_aliases.push(ir.TypeAlias(
                 name = kn,
                 qualified_name = naming.qualified_c_name(ta_analysis.module_name, kn),
-                target_type = tv,
+                target_type = qualified_tv,
                 backing_c_name = lookup_decl_c_name_cross(ta_analysis, tv, kn, program.analyses.as_span()),
             ))
         tai += 1
@@ -2954,8 +2964,13 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
     let has_captures = captures.len > 0
 
     # Proc struct type: { env, invoke, release, retain }.
+    # Use the shared proc struct name (mt_proc_<ret>) so that proc-typed
+    # fields, params, and expressions all unify to the same C struct type.
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-    let struct_name = proc_prefix
+    let shared_name = proc_type_name_from_signature(proc_ty)
+    let struct_name = shared_name
+    # Register the shared struct declaration (no-op if already emitted).
+    let _proc_struct_ty = proc_ensure_struct_decl(ctx, struct_name, proc_ty)
 
     var struct_fields = vec.Vec[ir.Field].create()
     struct_fields.push(ir.Field(name = "env", ty = void_ptr))
