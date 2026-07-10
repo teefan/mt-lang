@@ -555,17 +555,31 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[
         var p: ast.Param
         unsafe:
             p = read(params.data + pi)
-        let p_ty = substitute_type_params(ctx, resolve_field_type_ref(ctx, p.param_type), sub)
+        # For proc/fn types, resolve via ty_function first so that type params
+        # get substituted *before* proc struct conversion (otherwise unresolved
+        # params leak into struct names like mt_proc_T).
+        var fn_tref = p.param_type
+        var p_ty: types.Type
+        if fn_tref.is_proc or fn_tref.is_fn:
+            let fn_type = resolve_function_type_ref(ctx, ptr_of(fn_tref))
+            let substituted = substitute_type_params(ctx, fn_type, sub)
+            p_ty = qualify_type(ctx, substituted)
+        else:
+            p_ty = qualify_type(ctx, substitute_type_params(ctx, resolve_field_type_ref(ctx, fn_tref), sub))
         let p_c = c_local_name(p.name)
         let p_ptr = is_pointer_or_ref_type(p_ty)
         ir_params.push(ir.Param(name = p.name, linkage_name = p_c, ty = p_ty, pointer = p_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = p_c, ty = p_ty, pointer = p_ptr))
         pi += 1
-    # For return type, use `resolve_field_type_ref` (which returns ty_named for
-    # type params) rather than `resolve_type_ref` (which returns ty_error for
-    # names not in type_names).  Type params are added to the type scope per
-    # function body, not to the global type_names map.
-    let ret_ty = if return_type != null: substitute_type_params(ctx, resolve_field_type_ref(ctx, unsafe: read(return_type)), sub) else: types.primitive("void")
+    var ret_ty = types.primitive("void")
+    if return_type != null:
+        let rt_raw = unsafe: read(unsafe: ptr[ast.TypeRef]<-return_type)
+        if rt_raw.is_proc or rt_raw.is_fn:
+            let fn_type = resolve_function_type_ref(ctx, unsafe: ptr[ast.TypeRef]<-return_type)
+            let substituted = substitute_type_params(ctx, fn_type, sub)
+            ret_ty = qualify_type(ctx, substituted)
+        else:
+            ret_ty = qualify_type(ctx, substitute_type_params(ctx, resolve_field_type_ref(ctx, rt_raw), sub))
     var saved_sub = ctx.type_substitution
     ctx.type_substitution = read(sub)
     let body_ir = lower_function_body(ctx, body)
@@ -5055,18 +5069,15 @@ function unify_type_param(param_name: str, param_ref: ast.TypeRef, arg_ty: types
         unsafe:
             inner_ref = read(param_ref.arguments.data + (param_ref.arguments.len - 1))
         return unify_type_param(param_name, inner_ref, inner_arg)
-    # `proc(...) -> T`: peel the proc layer (fn→ty_function) and recurse into
-    # the return type position.  The param_ref shape is name="proc",
-    # arguments=[param_types..., return_type_ref].
-    if simple_name.equal("proc") and param_ref.arguments.len >= 1:
-        let ret_ref = unsafe: read(param_ref.arguments.data + (param_ref.arguments.len - 1))
-        let inner_ret = proc_return_type(arg_ty)
-        return unify_type_param(param_name, ret_ref, inner_ret)
-    # `fn(...) -> T`: same peeling as proc for plain function types.
-    if simple_name.equal("fn") and param_ref.arguments.len >= 1:
-        let ret_ref = unsafe: read(param_ref.arguments.data + (param_ref.arguments.len - 1))
-        let inner_ret = proc_return_type(arg_ty)
-        return unify_type_param(param_name, ret_ref, inner_ret)
+    # `proc(...) -> T`: peel the proc layer (fn_params/fn_return fields, not
+    # `name`/`arguments` since the parser stores callable types specially) and
+    # recurse into the return type position.
+    if param_ref.is_proc or param_ref.is_fn:
+        let prec = param_ref.fn_return
+        if prec != null:
+            let inner_ret = proc_return_type(arg_ty)
+            return unify_type_param(param_name, unsafe: read(prec), inner_ret)
+        return Option[types.Type].none
     return Option[types.Type].none
 
 
@@ -5108,26 +5119,48 @@ function proc_return_type(t: types.Type) -> types.Type:
         types.Type.ty_named as n:
             if n.name.starts_with("mt_proc_"):
                 let raw = n.name.slice(8, n.name.len - 8)
-                if raw.equal("int"):
-                    return types.primitive("int")
-                if raw.equal("void"):
-                    return types.primitive("void")
-                if raw.equal("bool"):
-                    return types.primitive("bool")
-                if raw.equal("float"):
-                    return types.primitive("float")
-                if raw.equal("double"):
-                    return types.primitive("double")
-                if raw.equal("ptr_uint"):
-                    return types.primitive("ptr_uint")
-                if raw.equal("str"):
-                    return types.Type.ty_str
-                # Complex return types: "int_int" means (int, int) tuple etc.
-                # For now, use void as fallback.
-                return types.primitive("void")
+                # Extract the return type (first underscore-separated component).
+                # For mt_proc_int → "int", mt_proc_str_int → "str".
+                match raw.find_substring("_"):
+                    Option.some as us_pos:
+                        let ret_name = raw.slice(0, us_pos.value)
+                        return recognize_type_name(ret_name)
+                    Option.none:
+                        return recognize_type_name(raw)
             return types.primitive("void")
         _:
             return types.primitive("void")
+
+
+## Map a single-word C type name (int, void, str, etc.) to a Type.
+function recognize_type_name(name: str) -> types.Type:
+    if name.equal("int") or name.equal("long") or name.equal("short") or name.equal("byte"):
+        return types.primitive(name)
+    if name.equal("uint") or name.equal("ulong") or name.equal("ushort") or name.equal("ubyte"):
+        return types.primitive(name)
+    if name.equal("float") or name.equal("double"):
+        return types.primitive(name)
+    if name.equal("bool"):
+        return types.primitive("bool")
+    if name.equal("void"):
+        return types.primitive("void")
+    if name.equal("char"):
+        return types.primitive("char")
+    if name.equal("ptr_uint"):
+        return types.primitive("ptr_uint")
+    if name.equal("ptr_int"):
+        return types.primitive("ptr_int")
+    if name.equal("str"):
+        return types.Type.ty_str
+    if name.equal("mt_str"):
+        return types.Type.ty_str
+    if name.equal("const_ptr_void"):
+        return types.Type.ty_generic(name = "const_ptr", args = sp_type(types.primitive("void")))
+    if name.equal("mt_span_ubyte"):
+        return types.Type.ty_generic(name = "span", args = sp_type(types.primitive("ubyte")))
+    if name.equal("mt_span_int"):
+        return types.Type.ty_generic(name = "span", args = sp_type(types.primitive("int")))
+    return types.primitive("void")
 
 
 ## Lower an uncached generic function specialization: build the type substitution
@@ -6415,7 +6448,29 @@ function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method
     let gm = find_generic_method(ctx, info.owner_name, method_name) else:
         return Option[ptr[ir.Expr]].none
     if gm.method.type_params.len > 0:
-        return Option[ptr[ir.Expr]].none
+        # Method has its own type parameters (e.g. `map_error[F]`).
+        # Infer each from the argument types and extend the concrete args.
+        var extended_args = vec.Vec[types.Type].create()
+        var ai: ptr_uint = 0
+        while ai < info.concrete_args.len:
+            unsafe:
+                extended_args.push(read(info.concrete_args.data + ai))
+            ai += 1
+        var tpi: ptr_uint = 0
+        var all_inferred = true
+        while tpi < gm.method.type_params.len:
+            var tp: ast.TypeParam
+            unsafe:
+                tp = read(gm.method.type_params.data + tpi)
+            let inferred = infer_type_param_from_args(ctx, tp.name, gm.method.method_params, args) else:
+                all_inferred = false
+                break
+            extended_args.push(inferred)
+            tpi += 1
+        if not all_inferred:
+            return Option[ptr[ir.Expr]].none
+        let extended_info = GenericReceiver(owner_name = info.owner_name, concrete_args = extended_args.as_span())
+        return Option[ptr[ir.Expr]].some(value = lower_monomorphized_method(ctx, extended_info, gm, method_name, receiver, args))
     return Option[ptr[ir.Expr]].some(value = lower_monomorphized_method(ctx, info, gm, method_name, receiver, args))
 
 
@@ -6425,10 +6480,15 @@ function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method
 ## no module qualifier (`Option_str_unwrap`), matching how prelude variant
 ## instances are named globally elsewhere.
 function monomorphized_method_c_name(owner_module: str, info: GenericReceiver, method_name: str) -> str:
+    var buf = string.String.create()
     if is_prelude_variant_name(info.owner_name):
-        return j3(generic_struct_c_name(info.owner_name, info.concrete_args), "_", method_name)
-    let struct_c = naming.qualified_c_name(owner_module, generic_struct_c_name(info.owner_name, info.concrete_args))
-    return j3(struct_c, "_", method_name)
+        buf.append(generic_struct_c_name(info.owner_name, info.concrete_args))
+    else:
+        let struct_c = naming.qualified_c_name(owner_module, generic_struct_c_name(info.owner_name, info.concrete_args))
+        buf.append(struct_c)
+    buf.append("_")
+    buf.append(method_name)
+    return buf.as_str()
 
 
 ## Lower a monomorphized method call: ensure the specialized method body exists,
@@ -6504,6 +6564,14 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     while pi < gm.struct_param_names.len and pi < info.concrete_args.len:
         unsafe:
             sub.set(read(gm.struct_param_names.data + pi), read(info.concrete_args.data + pi))
+        pi += 1
+    # Map method-level type params (e.g. `F` in `map_error[F]`) to the remaining
+    # concrete args after the struct-level args.
+    var mi: ptr_uint = 0
+    while mi < gm.method.type_params.len and pi < info.concrete_args.len:
+        unsafe:
+            sub.set(read(gm.method.type_params.data + mi).name, read(info.concrete_args.data + pi))
+        mi += 1
         pi += 1
 
     var saved_module = ctx.module_name
