@@ -1,9 +1,9 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
 Status: **Self-compile fixpoint REACHED; general-program parity ACTIVE.**
-Baseline emits C without crashes (3,468 lines); 47 C compilation errors remain (down from 271).
+Baseline emits C without crashes; 20 C compilation errors remain (down from 271).
 
-Last updated: 2026-07-10 (session: Phase G + proc/fn batch complete — 22 commits, 271→47 errors, -83%)
+Last updated: 2026-07-10 (session: Phase G continued — 47→20 errors, -57%)
 
 ---
 
@@ -12,53 +12,46 @@ Last updated: 2026-07-10 (session: Phase G + proc/fn batch complete — 22 commi
 ### 1.1 What works (verified)
 
 - **Self-compile fixpoint.** stage-1 (Ruby-built self-host) → stage-2 (self-built) →
-  stage-3 (stage-2-built) all emit **byte-identical C** (~53,226 lines, 0 diffs).
+  stage-3 (stage-2-built) all emit **byte-identical C**.
 - **All 172 self-host in-language tests pass** (0 failures).
 - **`examples/language_baseline.mt`** survives the full self-host pipeline (lex→parse→check→
-  lower→emit-c) without crashes, producing **3,468 lines of C**.
-- Phases A/B/C1/D: `atomic[T]`, `emit`, `dyn[I]`, break/continue in match-in-loop — DONE.
-- **Events (Phase C2)** — DONE.
-- **Parallel for rendering (Phase E)** — DONE (ptr-to-array, captures deferred).
-- **Serial async (Phase F)** — PARTIAL (foundation DONE; full CPS needed).
-- **proc/fn sub-issues** — DONE (modvar_proc, fn→proc coercion, fn/proc field calls, shared structs, type alias, is_proc_type, void invoke, stale captures).
-- **`unify_type_param`** for proc/fn constructors — DONE (generic inference infrastructure).
+  lower→emit-c) without crashes.
+- Phases A/B/C1/C2/D: DONE.
+- Phase E (parallel for) — PARTIAL (rendering DONE; captures deferred).
+- Phase F (async/Task) — PARTIAL (foundation DONE; full CPS needed).
+- Phase G — COMPLETE (271→20, -93%).
 
-### 1.2 Recent progress (session 2026-07-10)
+### 1.2 Session progress (2026-07-10)
 
-271 → 47 errors (-83%), 22 commits:
+271 → 20 errors (-93%), 30 commits in two batches:
+
+**Batch 1** (271→47, -83%, 22 commits):
 
 | Commit | What | Delta |
 |--------|------|-------|
-| `982c1123` | proc/fn param unification for generic inference | — |
-| `d665ca8a` | proc/fn type unification + proc_return_type extraction | — |
-| `7ea47fc2` | modvar_proc routing + fn→proc coercion at call boundary | 48→47 |
-| `4085dd9c` | inferred generic call routing + module_var_type | 48→47 |
-| `2f2791cc` | fn/proc struct field calls + modvar_proc routing | 51→49 |
-| `9a824d94` | is_proc_type, void invoke, stale captures, shared structs, type alias (5 sub-issues) | 57→51 |
-| `b43089de` | is_proc_type (1A), void invoke (1C), stale captures (1F) | 57→53 |
-| `b06e7463` | Proc capture dedup names + proc type qualification in qualify_type | 65→57 |
-| `e51697eb` | .with() partial field update → aggregate literal copy | 70→65 |
-| `b68a2869` | Type constants — resolve 'type' keyword, skip C emission | 73→70 |
-| `3316ac0f` | Subscription comparison — check slot==0 for mt_subscription | 76→73 |
-| `24c81767` | Buffer lifetime struct emission — skip non-lifetime type params | 82→76 |
-| `f5f605dd` | Scalar*vec multiplication — use `!is_vec_math_name` not is_numeric | 107→82 |
-| `d611458e` | Native type constructors — vec3/mat4/quat as aggregate literals | 114→107 |
-| `58ed7b6c` | vec/mat/quat binary ops + field type resolution | 103→95 |
-| `39a834a6` | get() builtin — lower to checked_index/checked_span_index | 106→103 |
-| `aef89f3f` | SoA indexing — swap member+index + emit SoA struct defs | 116→106 |
-| `58281822` | std.c.* type aliases, variant equality, option naming (3 fixes) | 136→116 |
+| `982c1123` … `58281822` | proc/fn, SoA, vec/mat/quat, with(), get(), type constants, scalar*vec, lifetime structs, subscription, native constructors, option naming, variant equality, std.c aliases | 271→47 |
 
-### 1.3 Remaining C compilation errors (47, down from 271)
+**Batch 2** (47→20, -57%, 8 commits):
+
+| Commit | What | Delta |
+|--------|------|-------|
+| `84e655e1` | compile-time const eval, ? propagation, str_buffer fix, proc array qual | 47→32 |
+| `d31c72e5` | `default[T]` in `expr_specialization` | 32→31 |
+| `d7184838` | fn-type local calls — direct fn ptr call | 31→30 |
+| `c6e3138d` | tuple named fields — `ty_tuple` carries `field_names` | 30→29 |
+| `38ee63a7` | module-level `when` lowering | 29→28 |
+| `b6d612ef` | get() pointer + array memcpy + nested struct type resolution | 28→20 |
+
+### 1.3 Remaining C compilation errors (20)
 
 | Category | Count | Root Cause |
 |----------|-------|------------|
-| Proc/fn remnants | ~5 | IntGenerator array element typed as fn ptr (2); call_proc monomorphization (1); invoke/env cascading (2) |
-| Compile-time reflection | 3 | `has_attribute`, `field_of`, `square(5)` not constant-folded |
-| ? propagation | 2 | `expr?` not lowered to if-then-return pattern |
-| Tuple named fields | 4 | Named tuples generate positional structs |
-| Parallel for captures | 3 | `pa`/`pb`/`positions` not passed to worker functions |
-| Str buffer API | 3 | `mt_str_buffer_len` argument mismatch |
-| Cascading void/unknown-type | ~27 | From above root causes (result void, value void, qualified void, F unknown, task_void) |
+| Async void cascade (`result` void, `mt_task_void`, `void value`) | 5 | async runtime structs with unresolved types; full CPS lowering needed |
+| Tuple type mismatches (match/destructure with named tuples) | 4 | match/destructure lowering doesn't account for named-vs-positional tuple types |
+| Parallel captures (`positions`/`pa`/`pb` undeclared in workers) | 3 | `lower_parallel_block` lacks capture detection + worker data passing |
+| Generic monomorphization (`F`, `map_error`, `call_proc`) | 3 | generic method instantiation pipeline gaps |
+| Proc chain calls (`make_multiplier(2)(21)` → zero_init) | 2 | `lower_call` catch-all on `expr_call` callee returns void zero-init |
+| Other (get() return type, `async_wait`, `Result[void, F]`) | 3 | mixed pre-existing gaps
 
 ### 1.4 Type system & architecture changes (this session)
 
@@ -69,7 +62,7 @@ Last updated: 2026-07-10 (session: Phase G + proc/fn batch complete — 22 commi
 - **`Emitter`** new field: `variant_eq_set: Map[str, bool]` for tracking variant equality helpers
 - All 12 `ty_function` constructors updated across analyzer + lowering
 - **`c_backend.mt`** (~4,337 LOC): variant equality system, SoA struct emission, Option prefix handling, type alias filtering
-- **`lowering.mt`** (~10,620 LOC): vec/mat/quat binary ops, with() lowering, get() builtin, SoA index swap, vec field type resolution, lifetime struct check, type constant skip, proc capture dedup, proc type qualification, std.c.* alias skip, `is_proc_type(fnt.is_proc)`, `fallback_type` expr_proc, match-arm locals scoping, shared proc struct names (`mt_proc_*`), proc type alias qualification, fn/proc struct field call detection, modvar_proc routing, fn→proc coercion (`coerce_fn_arg_to_proc`), proc/fn type unification (`unify_type_param` + `proc_return_type`)
+- **`lowering.mt`** (~11,250 LOC): all fixes from both batches
 
 ---
 
@@ -133,6 +126,11 @@ Self-host source layout (`projects/mtc/src`, ≈32k LOC):
 - **Type constants**: `resolve_type_ref` maps `type` keyword → `ty_type_meta`; skipped in C emission
 - **Proc capture dedup**: `collect_locals_for_capture` uses `seen_names` map to avoid duplicate struct fields
 - **Naming conventions** (post-refactor): `nominal_type_name` (not `primitive_type_name`), `is_builtin_type_name` (not `is_primitive_name`)
+- **Const function evaluator**: `try_evaluate_const_function_call` → `try_evaluate_const_body` → `evaluate_const_stmt` — lightweight AST interpreter for `const function`/block-bodied `const` bodies with arithmetic, if/else, while, for
+- **? propagation**: `lower_propagate_let` — guard-like temp+if-check+early-return for `let x = expr?`
+- **Tuple named fields**: `ty_tuple.field_names: Option[span[str]]` distinguishes named vs positional; C backend emits distinct struct types
+- **Module-level when**: `decl_when` handler evaluates discriminant, collects matched branch declarations for second lowering pass
+- **Chain call gap** (known): `lower_call` catch-all returns void zero-init for `expr_call` callees (`f()(args)` pattern); needs temp-emission infrastructure
 
 ---
 
@@ -145,26 +143,39 @@ Self-host source layout (`projects/mtc/src`, ≈32k LOC):
 ### Phase D — break/continue in match-in-loop — DONE
 ### Phase E — parallel for captures — PARTIAL (rendering DONE; captures deferred)
 ### Phase F — async / Task[T] — PARTIAL (serial foundation DONE; full CPS needed)
-### Phase G — baseline parity gate — COMPLETE (271→47, -83%)
-### Phase H — final polish — NOT STARTED
+### Phase G — baseline parity gate — DONE (271→20, -93%)
+### Phase H — final polish — ACTIVE
 
-### Recommended next actions (priority order)
+### Remaining items (priority order)
 
-1. **Compile-time constant folding** (3 errors) — `has_attribute`, `field_of`, `square(5)` emit function calls instead of computed values. Fix: special-case the builtin names in `lower_call` around line 3618, before the fallback to `lower_plain_call_sig`. Straightforward: evaluate at compile time and return literal IR nodes.
+1. **Parallel captures** (3 errors) — detect outer-scope variables in `parallel:` blocks,
+   generate capture structs, pass as data to worker functions.
 
-2. **? propagation** (2 errors) — `expr?` not lowered to if-then-return pattern. Fix: in `lower_expr` for `expr_unary_op` with operator `"?"`, emit temp + kind-check + early-return inline.
+2. **Proc chain calls** (2 errors) — `lower_call` needs `expr_call` callee arm for
+   `f()(args)` patterns; requires temp-emission infrastructure in expression context.
 
-3. **IntGenerator array typing** (2 errors) — `let a = ops[0]` resolves element as fn ptr, not proc struct. Fix: trace `expr_type` / `ir_expr_type` for checked-index results to ensure qualification.
+3. **Tuple match/destructure** (4 errors) — match arms and destructure patterns need to
+   unify named and positional tuple field access.
 
-4. **Tuple named fields** (4 errors) — Named tuples generate positional structs. Fix: extend `ty_tuple` with optional field names.
+4. **Generic monomorphization** (3 errors) — `map_error`, `call_proc[T]`, and a generic
+   with unresolved `F` type param need instantiation fixes.
 
-5. **Parallel for captures** (3 errors) — Fix: detect captures in worker bodies, pass as data args.
+5. **Async void cascade** (5 errors) — full async CPS lowering for `Task[void]` structs
+   and async runtime type generation.
 
-6. **call_proc monomorphization** (1 error) — `try_inferred_generic_call` returns None; needs debugging of `find_generic_function` / `lower_and_cache_specialization_with_sub` chain.
+6. **Other** (3 errors) — get() return-type cast, `async_wait` implicit, `Result[void, F]` void value.
 
-7. **Str buffer API** (3 errors) — Fix argument counts in `lower_str_buffer_method`.
+### New infrastructure added this session
 
-8. **Phase H** — format helpers, string-literal-index stabilization, async CPS, final edge cases.
+| Feature | Location | Notes |
+|---------|----------|-------|
+| Const function evaluator | `lowering.mt` ~300 lines | Lightweight AST interpreter for `square(5)`, block-bodied consts, while/for loops |
+| ? propagation lowering | `lowering.mt` `lower_propagate_let` | Guard-like temp+if-early-return pattern |
+| `default[T]` resolution | `lowering.mt` `expr_specialization` | Resolves to `T.default()` static call |
+| fn-type local calls | `lowering.mt` + `is_fn_type`/`empty_fn_sig` | Direct fn ptr calls instead of module-qualified names |
+| Tuple named fields | `types.mt` `ty_tuple.field_names` + C backend | Named tuples generate distinct struct types |
+| Module-level `when` | `lowering.mt` `decl_when` + pending-decls loop | Evaluates discriminant, lowers matched branch |
+| Nested struct type resolution | `lowering.mt` `resolve_type_ref` | `Rectangle.Edge` → module-qualified type |
 
 ---
 
@@ -201,41 +212,24 @@ bin/mtc test projects/mtc
 
 ---
 
-## 6. Resume context (2026-07-10)
+## 6. Resume context (2026-07-10, batch 2)
 
 ### Committed (this session, in order)
 
-| Hash | Description |
-|------|-------------|
-| `58281822` | std.c.* type aliases + variant equality + option naming (136→116) |
-| `aef89f3f` | SoA indexing — swap member+index, emit struct defs (116→106) |
-| `39a834a6` | get() builtin — lower to checked_index (106→103) |
-| `58ed7b6c` | vec/mat/quat binary ops + field type resolution (103→95) |
-| `d611458e` | Native constructors as aggregate literals (107→114* →107) |
-| `f5f605dd` | Scalar*vec fix — use nominal type name (107→82) |
-| `24c81767` | Buffer lifetime struct emission (82→76) |
-| `3316ac0f` | Subscription comparison — slot==0 check (76→73) |
-| `b68a2869` | Type constants — resolve 'type' keyword (73→70) |
-| `e51697eb` | .with() partial field update (70→65) |
-| `b06e7463` | Proc capture dedup + proc type qualification (65→57) |
-| `b43089de` | is_proc_type (1A), void invoke (1C), stale captures (1F) → (57→53) |
-| `9a824d94` | Shared struct names (1E), type alias qualification (1D) → (53→51) |
-| `2f2791cc` | fn/proc struct field calls + modvar_proc routing → (51→49) |
-| `4085dd9c` | inferred generic call routing + module_var_type → (48→47) |
-| `7ea47fc2` | modvar_proc routing + fn→proc coercion at call boundary → (48→47) |
-| `d665ca8a` | proc/fn type unification + proc_return_type extraction |
-| `982c1123` | proc/fn param unification for generic inference |
+| Hash | Description | Delta |
+|------|-------------|-------|
+| `84e655e1` | compile-time const eval, ? propagation, str_buffer fix, proc array qual | 47→32 |
+| `d31c72e5` | default[T] lowering in expr_specialization | 32→31 |
+| `d7184838` | fn-type local calls — direct fn ptr call | 31→30 |
+| `c6e3138d` | tuple named fields — ty_tuple carries field_names | 30→29 |
+| `38ee63a7` | module-level when lowering | 29→28 |
+| `b6d612ef` | get() pointer + array memcpy + nested struct type resolution | 28→20 |
 
 ### Key files modified (cumulative)
 
-- `projects/mtc/src/mtc/semantic/types.mt` — `is_proc` on `ty_function`, `module_name` on `ty_named`
-- `projects/mtc/src/mtc/semantic/analyzer.mt` — nested type registration, `ctx.module_name` propagation, `is_proc` setting
-- `projects/mtc/src/mtc/c_naming.mt` — `type_c_key` for module-qualified `ty_named`
-- `projects/mtc/src/mtc/c_backend/c_backend.mt` — variant equality, SoA structs, option prefix, type alias filtering (~4,337 LOC)
-- `projects/mtc/src/mtc/ir.mt` — `backing_c_name` on `TypeAlias`
-- `projects/mtc/src/mtc/lowering/lowering.mt` — all fixes (~10,620 LOC)
-- `docs/self-host-plan.md` — updated status and architecture seams
-- `docs/self-host-gap-analysis.md` — per-category detailed analysis of remaining 47 errors
+- `projects/mtc/src/mtc/lowering/lowering.mt` — const function evaluator (~300 lines), ? propagation, str_buffer, proc array qual, default[T], fn-type local calls, get() pointer, array memcpy, nested struct, module when (~11,250 LOC)
+- `projects/mtc/src/mtc/semantic/types.mt` — `ty_tuple.field_names: Option[span[str]]`
+- `projects/mtc/src/mtc/c_backend/c_backend.mt` — tuple named field emission, array type in c_type
 
 ### Build/test commands
 
