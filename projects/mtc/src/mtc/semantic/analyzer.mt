@@ -112,6 +112,7 @@ struct Context:
     diagnostics: vec.Vec[SemanticDiagnostic]
     uses_parallel_for: bool
     event_types: map_mod.Map[str, EventInfo]
+    module_name: str
 
 
 public struct Analysis:
@@ -183,6 +184,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
         uses_parallel_for = false,
         event_types = map_mod.Map[str, EventInfo].create(),
+        module_name = module_name,
     )
     let source = expand_emit_declarations(file)
     collect_import_aliases(ref_of(ctx), source)
@@ -281,23 +283,24 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
         match d:
             ast.Decl.decl_struct as s:
                 declare_type(ctx, s.name, s.line, s.column)
-                ctx.types.set(s.name, types.Type.ty_named(name = s.name))
+                ctx.types.set(s.name, types.Type.ty_named(module_name = ctx.module_name, name = s.name))
                 ctx.implemented.set(s.name, s.impl_list)
+                register_nested_struct_types(ctx, s.nested_types, s.name)
             ast.Decl.decl_union as u:
                 declare_type(ctx, u.name, u.line, u.column)
-                ctx.types.set(u.name, types.Type.ty_named(name = u.name))
+                ctx.types.set(u.name, types.Type.ty_named(module_name = ctx.module_name, name = u.name))
             ast.Decl.decl_enum as e:
                 declare_type(ctx, e.name, e.line, e.column)
-                ctx.types.set(e.name, types.Type.ty_named(name = e.name))
+                ctx.types.set(e.name, types.Type.ty_named(module_name = ctx.module_name, name = e.name))
             ast.Decl.decl_flags as fl:
                 declare_type(ctx, fl.name, fl.line, fl.column)
-                ctx.types.set(fl.name, types.Type.ty_named(name = fl.name))
+                ctx.types.set(fl.name, types.Type.ty_named(module_name = ctx.module_name, name = fl.name))
             ast.Decl.decl_variant as vr:
                 declare_type(ctx, vr.name, vr.line, vr.column)
-                ctx.types.set(vr.name, types.Type.ty_named(name = vr.name))
+                ctx.types.set(vr.name, types.Type.ty_named(module_name = ctx.module_name, name = vr.name))
             ast.Decl.decl_opaque as op:
                 declare_type(ctx, op.name, op.line, op.column)
-                ctx.types.set(op.name, types.Type.ty_named(name = op.name))
+                ctx.types.set(op.name, types.Type.ty_named(module_name = ctx.module_name, name = op.name))
                 ctx.implemented.set(op.name, op.opaque_implements)
             ast.Decl.decl_type_alias as ta:
                 declare_type(ctx, ta.name, ta.line, ta.column)
@@ -305,7 +308,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 ctx.type_alias_types.set(ta.name, resolve_type(ctx, ta.target))
             ast.Decl.decl_event as ev:
                 declare_type(ctx, ev.name, ev.line, ev.column)
-                ctx.types.set(ev.name, types.Type.ty_named(name = ev.name))
+                ctx.types.set(ev.name, types.Type.ty_named(module_name = ctx.module_name, name = ev.name))
                 ctx.event_types.set(ev.name, EventInfo(name = ev.name, capacity = ev.capacity, payload_type = ev.payload_type))
             _:
                 pass
@@ -317,6 +320,30 @@ function declare_type(ctx: ref[Context], name: str, line: ptr_uint, column: ptr_
         report(ctx, line, column, dup_message("type", name))
         return
     ctx.type_names.set(name, true)
+
+
+function register_nested_struct_types(ctx: ref[Context], nested: span[ast.Decl], parent_name: str) -> void:
+    var i: ptr_uint = 0
+    while i < nested.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(nested.data + i)
+        match d:
+            ast.Decl.decl_struct as s:
+                var qualified = string.String.create()
+                qualified.append(parent_name)
+                qualified.append(".")
+                qualified.append(s.name)
+                let qname = qualified.as_str()
+                declare_type(ctx, qname, s.line, s.column)
+                if not ctx.type_names.contains(s.name):
+                    declare_type(ctx, s.name, s.line, s.column)
+                ctx.types.set(qname, types.Type.ty_named(module_name = ctx.module_name, name = qname))
+                ctx.types.set(s.name, types.Type.ty_named(module_name = ctx.module_name, name = s.name))
+                register_nested_struct_types(ctx, s.nested_types, qname)
+            _:
+                pass
+        i += 1
 
 
 ## Expand module-level `when` blocks: for each `when CONST:`, resolve the
@@ -555,6 +582,7 @@ function collect_struct_fields_extra(ctx: ref[Context], extra: span[ast.Decl]) -
         match d:
             ast.Decl.decl_struct as s:
                 ctx.structs.set(s.name, resolve_field_entries(ctx, s.struct_fields))
+                collect_nested_struct_fields(ctx, s.nested_types, s.name)
             _:
                 pass
         i += 1
@@ -595,7 +623,7 @@ function install_prelude_types(ctx: ref[Context]) -> void:
 function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: str) -> void:
     if ctx.type_names.contains(name):
         return
-    ctx.types.set(name, types.Type.ty_named(name = name))
+    ctx.types.set(name, types.Type.ty_named(module_name = "", name = name))
     ctx.static_member_types.set(name, true)
     ctx.match_case_types.set(name, true)
     ctx.method_keys.set(method_key(name, arm_a), true)
@@ -778,6 +806,29 @@ function collect_struct_fields(ctx: ref[Context], file: ast.SourceFile) -> void:
         match d:
             ast.Decl.decl_struct as s:
                 ctx.structs.set(s.name, resolve_field_entries(ctx, s.struct_fields))
+                collect_nested_struct_fields(ctx, s.nested_types, s.name)
+            _:
+                pass
+        i += 1
+
+
+function collect_nested_struct_fields(ctx: ref[Context], nested: span[ast.Decl], parent_name: str) -> void:
+    var i: ptr_uint = 0
+    while i < nested.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(nested.data + i)
+        match d:
+            ast.Decl.decl_struct as s:
+                var qualified = string.String.create()
+                qualified.append(parent_name)
+                qualified.append(".")
+                qualified.append(s.name)
+                let qname = qualified.as_str()
+                ctx.structs.set(qname, resolve_field_entries(ctx, s.struct_fields))
+                if not ctx.structs.contains(s.name):
+                    ctx.structs.set(s.name, resolve_field_entries(ctx, s.struct_fields))
+                collect_nested_struct_fields(ctx, s.nested_types, qname)
             _:
                 pass
         i += 1
@@ -963,7 +1014,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                 declare_value(ctx, ff.name, ff.line, 1)
             ast.Decl.decl_event as ev:
                 if declare_value(ctx, ev.name, ev.line, ev.column):
-                    ctx.value_types.set(ev.name, types.Type.ty_named(name = ev.name))
+                    ctx.value_types.set(ev.name, types.Type.ty_named(module_name = "", name = ev.name))
             _:
                 pass
         i += 1
@@ -1044,7 +1095,7 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
         return wrap_nullable(base, t.nullable)
 
     if t.is_dyn:
-        return wrap_nullable(types.Type.ty_named(name = "dyn"), t.nullable)
+        return wrap_nullable(types.Type.ty_named(module_name = "", name = "dyn"), t.nullable)
 
     if t.is_tuple:
         return types.Type.ty_error
@@ -1133,7 +1184,7 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
             i += 1
         return types.Type.ty_generic(name = name, args = args.as_span())
     if ctx.type_names.contains(name):
-        return types.Type.ty_named(name = name)
+        return types.Type.ty_named(module_name = "", name = name)
     # Unknown / imported / type-parameter names are permissive.
     return types.Type.ty_error
 
@@ -1253,7 +1304,7 @@ function collect_interfaces(ctx: ref[Context], file: ast.SourceFile) -> void:
         match d:
             ast.Decl.decl_interface as iface:
                 ctx.interfaces.set(iface.name, iface.interface_methods)
-                ctx.types.set(iface.name, types.Type.ty_named(name = iface.name))
+                ctx.types.set(iface.name, types.Type.ty_named(module_name = "", name = iface.name))
             _:
                 pass
         i += 1
@@ -3155,7 +3206,7 @@ function check_member_call(ctx: ref[Context], scope: ref[Scope], receiver: ptr[a
     match static_type_receiver(ctx, scope, receiver):
         Option.some as tn:
             check_static_member(ctx, tn.value, method_name, line, column)
-            return types.Type.ty_named(name = tn.value)
+            return types.Type.ty_named(module_name = ctx.module_name, name = tn.value)
         Option.none:
             pass
 
@@ -3245,7 +3296,7 @@ function static_struct_receiver_type(ctx: ref[Context], scope: ref[Scope], recei
                 if scope_get(scope, id.name) != null:
                     return Option[types.Type].none
                 if ctx.structs.contains(id.name):
-                    return Option[types.Type].some(value = types.Type.ty_named(name = id.name))
+                    return Option[types.Type].some(value = types.Type.ty_named(module_name = "", name = id.name))
                 return Option[types.Type].none
             ast.Expr.expr_member_access as inner:
                 match read(inner.receiver):
@@ -3441,7 +3492,7 @@ function resolve_member_access(ctx: ref[Context], scope: ref[Scope], receiver: p
                     match static_type_receiver(ctx, scope, receiver):
                         Option.some as tn:
                             check_static_member(ctx, tn.value, member, line, column)
-                            return types.Type.ty_named(name = tn.value)
+                            return types.Type.ty_named(module_name = ctx.module_name, name = tn.value)
                         Option.none:
                             let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
                             return check_member(ctx, recv, member, is_method_call, line, column)
@@ -3511,7 +3562,7 @@ function try_construction(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.
                 if fieldsp == null:
                     return Option[types.Type].none
                 check_construction(ctx, scope, id.name, read(fieldsp), args, id.line, id.column)
-                return Option[types.Type].some(value = types.Type.ty_named(name = id.name))
+                return Option[types.Type].some(value = types.Type.ty_named(module_name = "", name = id.name))
             _:
                 return Option[types.Type].none
 

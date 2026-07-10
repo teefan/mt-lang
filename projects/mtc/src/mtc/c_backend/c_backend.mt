@@ -1321,7 +1321,8 @@ function c_type(t: types.Type) -> str:
                 return im.name
             return naming.qualified_c_name(im.module_name, im.name)
         types.Type.ty_named as n:
-            # Bare named types (prelude, local), mirrored as-is.
+            if n.module_name.len > 0:
+                return naming.qualified_c_name(n.module_name, n.name)
             return n.name
         types.Type.ty_var as v:
             # Unresolved type parameter — should have been substituted during
@@ -3611,10 +3612,10 @@ function emit_builtin_type_defs(e: ref[Emitter], program: ir.Program) -> void:
     if needed.contains("vec2"):
         emit_line(e, "typedef struct { float x, y; } vec2;")
         emit_line(e, "typedef struct { int32_t x, y; } ivec2;")
-    if needed.contains("vec3"):
+    if needed.contains("vec3") or needed.contains("mat3"):
         emit_line(e, "typedef struct { float x, y, z; } vec3;")
         emit_line(e, "typedef struct { int32_t x, y, z; } ivec3;")
-    if needed.contains("vec4"):
+    if needed.contains("vec4") or needed.contains("mat4"):
         emit_line(e, "typedef struct { float x, y, z, w; } vec4;")
         emit_line(e, "typedef struct { int32_t x, y, z, w; } ivec4;")
     if needed.contains("mat3"):
@@ -3625,16 +3626,6 @@ function emit_builtin_type_defs(e: ref[Emitter], program: ir.Program) -> void:
         emit_line(e, "typedef struct { float x, y, z, w; } quat;")
     if needed.contains("vec2") or needed.contains("vec3") or needed.contains("vec4"):
         emit_line(e, "")
-    # Always emit builtin math types — they're always potentially needed
-    emit_line(e, "typedef struct { float x, y; } vec2;")
-    emit_line(e, "typedef struct { int32_t x, y; } ivec2;")
-    emit_line(e, "typedef struct { float x, y, z; } vec3;")
-    emit_line(e, "typedef struct { int32_t x, y, z; } ivec3;")
-    emit_line(e, "typedef struct { float x, y, z, w; } vec4;")
-    emit_line(e, "typedef struct { int32_t x, y, z, w; } ivec4;")
-    emit_line(e, "typedef struct { vec3 col0, col1, col2; } mat3;")
-    emit_line(e, "typedef struct { vec4 col0, col1, col2, col3; } mat4;")
-    emit_line(e, "typedef struct { float x, y, z, w; } quat;")
     emit_line(e, "")
 
 

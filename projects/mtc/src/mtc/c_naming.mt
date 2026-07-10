@@ -84,6 +84,12 @@ public function type_c_key(t: types.Type) -> str:
         types.Type.ty_type_meta:
             return "type"
         types.Type.ty_named as n:
+            if n.module_name.len > 0:
+                var buf = string.String.create()
+                buf.append(module_c_prefix(n.module_name))
+                buf.append("_")
+                buf.append(sanitize_identifier(n.name))
+                return buf.as_str()
             return sanitize_identifier(n.name)
         types.Type.ty_var as v:
             return sanitize_identifier(v.name)

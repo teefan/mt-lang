@@ -725,6 +725,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                             structs.push(sd.value)
                         Option.none:
                             pass
+                    lower_nested_struct_decls(ref_of(ctx), s.nested_types, s.name, ref_of(structs))
             ast.Decl.decl_union as u:
                 unions.push(lower_union_decl(ref_of(ctx), u.name, u.union_fields))
             ast.Decl.decl_variant as vr:
@@ -748,7 +749,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr)))
             ast.Decl.decl_event as ev:
                 ensure_event_runtime(ctx, ev.name)
-                let ev_ty = types.Type.ty_named(name = naming.qualified_c_name(ctx.module_name, ev.name))
+                let ev_ty = types.Type.ty_named(module_name = "", name = naming.qualified_c_name(ctx.module_name, ev.name))
                 let ev_zero = alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
                 globals.push(ir.Global(name = ev.name, linkage_name = ev.name, ty = ev_ty, value = ev_zero))
             _:
@@ -1690,7 +1691,7 @@ function guard_success_projection(ctx: ref[LowerCtx], kind: str, storage_ty: typ
         return storage_ref
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
     let success_arm = if kind.equal("result"): "success" else: "some"
-    let payload_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, success_arm))
+    let payload_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, success_arm))
     let data_member = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = payload_ty))
     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = success_arm, ty = payload_ty))
     return alloc_expr(ir.Expr.expr_member(receiver = arm_data, member = "value", ty = success_ty))
@@ -1701,7 +1702,7 @@ function guard_success_projection(ctx: ref[LowerCtx], kind: str, storage_ty: typ
 ## the else body resolves the name.
 function emit_result_failure_binding(ctx: ref[LowerCtx], else_stmts: ref[vec.Vec[ir.Stmt]], storage_ty: types.Type, storage_ref: ptr[ir.Expr], error_name: str) -> void:
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
-    let payload_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, "failure"))
+    let payload_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, "failure"))
     var error_ty = types.primitive("void")
     let args = variant_type_args(storage_ty)
     if args.len >= 2:
@@ -1835,7 +1836,7 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
                 let concrete_name = naming.qualified_c_name(im.module_name, generic_struct_c_name(im.name, resolved_args))
                 ensure_generic_struct_decl_named(ctx, im.name, span[ast.TypeArgument](), resolved_args, concrete_name)
                 ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = im.name, concrete_args = resolved_args))
-                return types.Type.ty_named(name = concrete_name)
+                return types.Type.ty_named(module_name = "", name = concrete_name)
             return t
         types.Type.ty_generic as g:
             var args = vec.Vec[types.Type].create()
@@ -1871,7 +1872,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
         let concrete_name = naming.qualified_c_name(ctx.module_name, generic_struct_c_name(name, args))
         ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
         ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = name, concrete_args = args))
-        return types.Type.ty_named(name = concrete_name)
+        return types.Type.ty_named(module_name = "", name = concrete_name)
     # Try imported modules — search both public and private structs,
     # and fall back to extracting from the AST directly.
     var import_values = ctx.analysis.imports.values()
@@ -1888,7 +1889,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
                     let concrete_name = naming.qualified_c_name(target_module, generic_struct_c_name(name, args))
                     ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
                     ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = name, concrete_args = args))
-                    return types.Type.ty_named(name = concrete_name)
+                    return types.Type.ty_named(module_name = "", name = concrete_name)
             Option.none:
                 pass
     return types.Type.ty_error
@@ -1989,7 +1990,7 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
             break
         unsafe:
             if read(vp).linkage_name.equal(c_name):
-                return types.Type.ty_named(name = c_name)
+                return types.Type.ty_named(module_name = "", name = c_name)
         si += 1
     var arms = vec.Vec[ir.VariantArm].create()
     if name.equal("Option") and args.len >= 1:
@@ -2014,7 +2015,7 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
         name = c_name, linkage_name = c_name,
         arms = arms.as_span(), source_module = Option[str].none,
     ))
-    return types.Type.ty_named(name = c_name)
+    return types.Type.ty_named(module_name = "", name = c_name)
 
 ## True when `name` is a pointer-like generic type handled directly by C.
 function is_builtin_pointer_generic(name: str) -> bool:
@@ -2089,7 +2090,7 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
                 if concrete_ptr != null:
                     resolved = unsafe: read(concrete_ptr)
                 else:
-                    resolved = types.Type.ty_named(name = name)
+                    resolved = types.Type.ty_named(module_name = "", name = name)
         if t.nullable and not types.is_error(resolved):
             return types.Type.ty_nullable(base = types.alloc_type(resolved))
         return resolved
@@ -2700,6 +2701,11 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = result_ty))
             ast.Expr.expr_unary_op as un:
                 let operand = lower_expr(ctx, un.operand)
+                let op_ty = ir_expr_type(operand)
+                if un.operator == "-":
+                    let vname = primitive_type_name(op_ty)
+                    if is_vec_math_name(vname):
+                        return lower_vec_unary_neg(ctx, operand, vname)
                 return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = expr_type(ctx, ep)))
             ast.Expr.expr_prefix_cast as pc:
                 let target_ty = qualify_type(ctx, resolve_type_ref(ctx, pc.target_type))
@@ -2834,7 +2840,7 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
         ctx.pending_synthetic_functions.push(build_capturing_retain(retain_str, env_type_name))
 
         # Call the setup function with captured locals as arguments.
-        let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(name = env_type_name)))
+        let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = env_type_name)))
         var setup_args = vec.Vec[ir.Expr].create()
         var si: ptr_uint = 0
         while si < captures.len:
@@ -2850,7 +2856,7 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
         fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = proc_invoke_field_type(proc_ty), pointer = false))))
         fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = false))))
         fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
-        return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(name = struct_name), fields = fields.as_span()))
+        return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(module_name = "", name = struct_name), fields = fields.as_span()))
 
     # No-capture path.
     ctx.pending_synthetic_functions.push(build_proc_invoke_fn(ctx, method_params, return_type, body_ptr, invoke_str))
@@ -2864,7 +2870,7 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
     fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = false))))
     fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
 
-    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(name = struct_name), fields = fields.as_span()))
+    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(module_name = "", name = struct_name), fields = fields.as_span()))
 
 
 ## Pack a single expression into a span.
@@ -2904,7 +2910,7 @@ function collect_locals_for_capture(ctx: ref[LowerCtx], method_params: span[ast.
 ## Takes captured values as parameters and returns a pointer to the initialized env.
 function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-    let env_ty_named = types.Type.ty_named(name = env_type_name)
+    let env_ty_named = types.Type.ty_named(module_name = "", name = env_type_name)
     let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(env_ty_named))
     let uint_ty = types.primitive("ptr_uint")
 
@@ -2953,7 +2959,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
     ctx.temp_counter = 0
 
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(name = env_type_name)))
+    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = env_type_name)))
 
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
@@ -3015,7 +3021,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
 ## Build a release function for capturing procs with ref-counting.
 function build_capturing_release(c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(name = env_type_name)))
+    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = env_type_name)))
     let uint_ty = types.primitive("ptr_uint")
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
@@ -3041,7 +3047,7 @@ function build_capturing_release(c_name: str, env_type_name: str, captures: span
 ## Build a retain function for capturing procs (increments ref_count).
 function build_capturing_retain(c_name: str, env_type_name: str) -> ir.Function:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(name = env_type_name)))
+    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = env_type_name)))
     let uint_ty = types.primitive("ptr_uint")
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
@@ -3372,7 +3378,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         # arguments.  Mirrors the Ruby resolver's `resolve_type_expression`
                         # + `static:<method>` associated-function path.
                         if struct_exists_in_imports(ctx, recv_id.name):
-                            let static_recv_ty = types.Type.ty_named(name = recv_id.name)
+                            let static_recv_ty = types.Type.ty_named(module_name = "", name = recv_id.name)
                             match resolve_method_info(ctx, static_recv_ty, ma.member_name):
                                 Option.some as smi:
                                     if smi.value.method_kind == ast.MethodKind.mk_static:
@@ -3528,7 +3534,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         si += 1
                     return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
                 # Method found — try method resolution with the recovered type name.
-                var resolved_ty = types.Type.ty_named(name = recv_name)
+                var resolved_ty = types.Type.ty_named(module_name = "", name = recv_name)
                 match resolve_method_info(ctx, resolved_ty, ma.member_name):
                     Option.some as mi:
                         return lower_method_resolved(ctx, mi.value, ma.receiver, args, call_ep)
@@ -4656,7 +4662,7 @@ function find_dyn_method(ctx: ref[LowerCtx], type_name: str, method_name: str, c
 ## Generate a vtable global constant of type `mt_vtable_{iface}`, holding pointers
 ## to the wrapper functions.
 function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_type_name: str, vtable_c_name: str, wrappers: ref[map_mod.Map[str, str]], methods: span[ast.InterfaceMethod]) -> void:
-    let const_ty = types.Type.ty_named(name = vtable_type_name)
+    let const_ty = types.Type.ty_named(module_name = "", name = vtable_type_name)
     var fields = vec.Vec[ir.AggregateField].create()
     var mi: ptr_uint = 0
     while mi < methods.len:
@@ -4699,7 +4705,7 @@ function lower_dyn_method_call(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_na
     # The iface name is embedded in the ty_dyn type: use ty_named to match c_type.
     let recv_ty = ir_expr_type(recv)
     let vtable_c_type = dyn_vtable_c_type(recv_ty)
-    var vtable_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(name = vtable_c_type)))
+    var vtable_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = vtable_c_type)))
     let vtable_cast = alloc_expr(ir.Expr.expr_cast(target_type = vtable_ptr_ty, expression = vtable_raw, ty = vtable_ptr_ty))
     let method_fn = alloc_expr(ir.Expr.expr_member(receiver = vtable_cast, member = method_name, ty = void_ptr))
     var call_args = vec.Vec[ir.Expr].create()
@@ -5796,7 +5802,7 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
     ))
     # Event struct: { slots: array[Slot, capacity] }
     let capacity_val: long = long<-(ev.capacity)
-    let slot_ty = types.Type.ty_named(name = slot_cn)
+    let slot_ty = types.Type.ty_named(module_name = "", name = slot_cn)
     let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(capacity_val)))
     ctx.pending_event_structs.push(ir.StructDecl(
         name = event_cn, linkage_name = event_cn,
@@ -5844,7 +5850,7 @@ function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: typ
     let bool_ty = types.primitive("bool")
     let ptr_uint_ty = types.primitive("ptr_uint")
     # Address of the event struct
-    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(name = info.event_c_name)))
+    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = info.event_c_name)))
     let recv_addr = alloc_expr(ir.Expr.expr_address_of(expression = recv, ty = event_ptr_ty))
     if method_name.equal("emit"):
         var call_args = vec.Vec[ir.Expr].create()
@@ -5861,7 +5867,7 @@ function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: typ
         let listener_val = lower_listener_arg(ctx, unsafe: read(args.data + 0).arg_value)
         unsafe:
             call_args.push(read(listener_val))
-        let sub_ty = types.Type.ty_named(name = "mt_subscription")
+        let sub_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
         return alloc_expr(ir.Expr.expr_call(callee = callee, arguments = call_args.as_span(), ty = sub_ty))
     if method_name.equal("unsubscribe"):
         var call_args = vec.Vec[ir.Expr].create()
@@ -6013,8 +6019,8 @@ function lower_expression_match(ctx: ref[LowerCtx], scrutinee: ptr[ast.Expr], ar
     # A genuine multi-arm match expression in a non-return position is not
     # supported inline (needs statement hoisting); `return match` is handled at
     # the statement boundary in `lower_stmt`.  Fall back to a placeholder.
-    let scrut_ty = expr_type(ctx, scrutinee)
-    return alloc_expr(ir.Expr.expr_name(name = "match_expr", ty = scrut_ty, pointer = false))
+    let result_ty = expr_type(ctx, ep)
+    return alloc_expr(ir.Expr.expr_name(name = "match_expr", ty = result_ty, pointer = false))
 
 
 ## Detect the `is`-operator desugaring shape: exactly two arms, where the first
@@ -6371,7 +6377,7 @@ function proc_ensure_struct_decl(ctx: ref[LowerCtx], struct_name: str, proc_ty: 
     # Skip when the proc type contains unresolved type variables (happens
     # inside generic function bodies where T is not yet substituted).
     if proc_type_has_type_var(proc_ty):
-        return types.Type.ty_named(name = struct_name)
+        return types.Type.ty_named(module_name = "", name = struct_name)
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     var struct_fields = vec.Vec[ir.Field].create()
     struct_fields.push(ir.Field(name = "env", ty = void_ptr))
@@ -6380,7 +6386,7 @@ function proc_ensure_struct_decl(ctx: ref[LowerCtx], struct_name: str, proc_ty: 
     struct_fields.push(ir.Field(name = "release", ty = lifecycle_ty))
     struct_fields.push(ir.Field(name = "retain", ty = lifecycle_ty))
     ctx.pending_env_structs.push(ir.StructDecl(name = struct_name, linkage_name = struct_name, fields = struct_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
-    return types.Type.ty_named(name = struct_name)
+    return types.Type.ty_named(module_name = "", name = struct_name)
 
 
 ## True when a function type's params or return type contain an unresolved
@@ -6827,6 +6833,26 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str) -> Option[ir.StructDec
     ))
 
 
+function lower_nested_struct_decls(ctx: ref[LowerCtx], nested: span[ast.Decl], parent_name: str, structs: ref[vec.Vec[ir.StructDecl]]) -> void:
+    var i: ptr_uint = 0
+    while i < nested.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(nested.data + i)
+        match d:
+            ast.Decl.decl_struct as s:
+                if s.type_params.len == 0:
+                    match lower_struct_decl(ctx, s.name):
+                        Option.some as sd:
+                            structs.push(sd.value)
+                        Option.none:
+                            pass
+                    lower_nested_struct_decls(ctx, s.nested_types, s.name, structs)
+            _:
+                pass
+        i += 1
+
+
 ## Lower a union declaration to an IR UnionDecl, resolving field types from the
 ## declaration (unions are not tracked in the analyzer's struct table).
 function lower_union_decl(ctx: ref[LowerCtx], name: str, fields: span[ast.Field]) -> ir.UnionDecl:
@@ -6899,7 +6925,7 @@ function sp_str(value: str) -> span[str]:
 ## concrete type from the generic call site.
 function sp_str_type(name: str) -> span[types.Type]:
     var buf = vec.Vec[types.Type].create()
-    buf.push(types.Type.ty_named(name = name))
+    buf.push(types.Type.ty_named(module_name = "", name = name))
     return buf.as_span()
 
 
@@ -7119,6 +7145,16 @@ function variant_base_c_name(ty: types.Type, module_name: str) -> str:
     return result
 
 
+## Map a prelude variant instance name like "Option_int" or "Result_int_int" to
+## its qualified C name like "std_option_Option_int" or "std_result_Result_int_int".
+function prelude_variant_c_name(name: str) -> str:
+    let base = prelude_variant_base(name) else:
+        return name
+    if base.equal("Option"):
+        return naming.qualified_c_name("std.option", name)
+    return naming.qualified_c_name("std.result", name)
+
+
 ## Look up a variant arm's field info by arm name.
 function variant_arm_info(info: VariantInfo, arm_name: str) -> Option[VariantArmInfo]:
     var i: ptr_uint = 0
@@ -7175,7 +7211,7 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
             if concrete_ptr != null:
                 resolved = unsafe: read(concrete_ptr)
             else:
-                resolved = types.Type.ty_named(name = name)
+                resolved = types.Type.ty_named(module_name = "", name = name)
     if tref.nullable and not types.is_error(resolved):
         return types.Type.ty_nullable(base = types.alloc_type(resolved))
     return resolved
@@ -7493,12 +7529,29 @@ function current_return_type(ctx: ref[LowerCtx], match_expr: ptr[ast.Expr]) -> t
     return types.primitive("int")
 
 
+## Infer the result type of a match expression from its first non-wildcard arm's
+## value, so `let x = match e: { a: "s", _: "t" }` types x as `str` instead of `int`.
+function infer_match_arm_type(ctx: ref[LowerCtx], arms: span[ast.MatchExprArm]) -> types.Type:
+    var i: ptr_uint = 0
+    while i < arms.len:
+        var arm: ast.MatchExprArm
+        unsafe:
+            arm = read(arms.data + i)
+        let vt = qualify_type(ctx, expr_type(ctx, arm.value))
+        if not types.is_error(vt) and not types.type_to_string(vt).equal("void"):
+            return vt
+        i += 1
+    return types.Type.ty_error
+
+
 function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, declared_type: ptr[ast.TypeRef]?, scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm]) -> void:
     let c_name = c_local_name(name)
     var ty = types.Type.ty_error
     let dt = declared_type
     if dt != null:
         ty = resolve_type_ref(ctx, dt)
+    if types.is_error(ty):
+        ty = infer_match_arm_type(ctx, arms)
     if types.is_error(ty):
         ty = types.primitive("int")
 
@@ -7740,7 +7793,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                 Option.some as bn:
                     let arm_name = variant_match_arm_name_from_pattern(pattern) else:
                         fatal(c"lowering: unsupported variant match expression pattern")
-                    let binding_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
+                    let binding_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, arm_name))
                     register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = binding_ty))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
@@ -7843,7 +7896,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             var stmts = vec.Vec[ir.Stmt].create()
             match arm.binding_name:
                 Option.some as bn:
-                    let binding_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
+                    let binding_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, arm_name))
                     register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = binding_ty))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
@@ -7921,7 +7974,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
             output.push(ir.Stmt.stmt_if(condition = tag_check, then_body = then_body.as_span(), else_body = span[ir.Stmt]()))
 
             var blk = vec.Vec[ir.Stmt].create()
-            let payload_ty = types.Type.ty_named(name = variant_arm_type_name(outer_c, arm_name))
+            let payload_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, arm_name))
             register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
             match variant_arm_info(info, arm_name):
                 Option.some as ai:
@@ -8281,16 +8334,11 @@ function generic_variant_name(t: types.Type) -> Option[str]:
 function variant_match_allowed(ctx: ref[LowerCtx], name: str) -> bool:
     if ctx.variants.contains(name):
         return true
-    # Check if the name starts with a known variant name (e.g. "Option_span_Field"
-    # starts with "Option", which is a registered variant).
-    var i: ptr_uint = 0
-    while i < name.len:
-        if name.byte_at(i) == '_':
-            if ctx.variants.contains(name.slice(0, i)):
-                return true
-            break
-        i += 1
-    return false
+    match prelude_variant_base(name):
+        Option.some:
+            return true
+        Option.none:
+            return false
 
 ## Extract the base prelude variant name from a qualified concrete variant name.
 ## "std_map_Option_std_map_RemovedEntry_ptr_uint_bool" → Some("Option").
@@ -8317,14 +8365,11 @@ function is_prelude_variant_name(name: str) -> bool:
     )
 
 
-## Extract the base variant name from a qualified name like "Option_span_Field" → "Option".
+## Extract the base variant name from a qualified name like "Option_span_Field" → "Option",
+## or "std_option_Option_int" → "Option".  Uses the same detection logic as
+## `is_prelude_variant_name` to handle multi-part qualified names.
 function variant_base_name(name: str) -> Option[str]:
-    var i: ptr_uint = 0
-    while i < name.len:
-        if name.byte_at(i) == '_':
-            return Option[str].some(value = name.slice(0, i))
-        i += 1
-    return Option[str].none
+    return prelude_variant_base(name)
 
 
 # =============================================================================
@@ -8579,6 +8624,56 @@ function is_vec_math_name(name: str) -> bool:
         or name.equal("ivec2") or name.equal("ivec3") or name.equal("ivec4")
         or name.equal("mat3") or name.equal("mat4") or name.equal("quat")
     )
+
+
+function lower_vec_unary_neg(ctx: ref[LowerCtx], operand: ptr[ir.Expr], name: str) -> ptr[ir.Expr]:
+    var field_names = vec.Vec[str].create()
+    var fields = vec.Vec[ir.AggregateField].create()
+    let ty = ir_expr_type(operand)
+    if name.equal("vec2") or name.equal("ivec2"):
+        field_names.push("x")
+        field_names.push("y")
+    else if name.equal("vec3") or name.equal("ivec3"):
+        field_names.push("x")
+        field_names.push("y")
+        field_names.push("z")
+    else if name.equal("vec4") or name.equal("ivec4") or name.equal("quat"):
+        field_names.push("x")
+        field_names.push("y")
+        field_names.push("z")
+        field_names.push("w")
+    else if name.equal("mat3"):
+        field_names.push("col0")
+        field_names.push("col1")
+        field_names.push("col2")
+    else if name.equal("mat4"):
+        field_names.push("col0")
+        field_names.push("col1")
+        field_names.push("col2")
+        field_names.push("col3")
+    else:
+        return alloc_expr(ir.Expr.expr_unary(operator = "-", operand = operand, ty = ty))
+    var i: ptr_uint = 0
+    while i < field_names.len():
+        let fname_ptr = field_names.get(i) else:
+            fatal(c"lowering: vec unary neg missing field name")
+        let fname = unsafe: read(fname_ptr)
+        var field_ty = types.primitive("float")
+        if name.starts_with("ivec"):
+            field_ty = types.primitive("int")
+        else if name.equal("mat3"):
+            field_ty = types.primitive("vec3")
+        else if name.equal("mat4"):
+            field_ty = types.primitive("vec4")
+        let field_access = alloc_expr(ir.Expr.expr_member(receiver = operand, member = fname, ty = field_ty))
+        var neg_val: ptr[ir.Expr]
+        if is_vec_math_name(primitive_type_name(field_ty)):
+            neg_val = lower_vec_unary_neg(ctx, field_access, primitive_type_name(field_ty))
+        else:
+            neg_val = alloc_expr(ir.Expr.expr_unary(operator = "-", operand = field_access, ty = field_ty))
+        fields.push(ir.AggregateField(name = fname, value = neg_val))
+        i += 1
+    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = ty, fields = fields.as_span()))
 
 
 function primitive_type_name(t: types.Type) -> str:

@@ -21,7 +21,7 @@ public variant Type:
     ty_error
     ty_type_meta
     ty_nullable(base: ptr[Type])
-    ty_named(name: str)
+    ty_named(name: str, module_name: str)
     ty_imported(module_name: str, name: str, args: span[Type])
     ty_var(name: str)
     ty_dyn(iface: str)
