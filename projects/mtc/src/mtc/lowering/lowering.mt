@@ -769,7 +769,17 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             ast.Decl.decl_const as c:
                 var c_ty = resolve_type_ref(ctx, c.const_type)
                 let val_ptr = c.value
-                if val_ptr == null:
+                # Type constants (->type) are compile-time only; they don't
+                # have a C representation (mirrors Ruby).
+                var is_type_meta = false
+                match c_ty:
+                    types.Type.ty_type_meta:
+                        is_type_meta = true
+                    _:
+                        pass
+                if is_type_meta:
+                    pass
+                else if val_ptr == null:
                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = c_ty))))
                 else:
                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr)))
@@ -2125,6 +2135,8 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
             let name = read(t.name.parts.data + 0)
             if name.equal("str"):
                 resolved = types.Type.ty_str
+            else if name.equal("type"):
+                resolved = types.Type.ty_type_meta
             else if is_builtin_type_name(name):
                 resolved = types.primitive(name)
             else if ctx.analysis.type_names.contains(name):
