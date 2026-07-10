@@ -6647,8 +6647,8 @@ function is_proc_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_named as n:
             return n.name.find_substring("__proc_").is_some() or n.name.starts_with("mt_proc_")
-        types.Type.ty_function:
-            return true
+        types.Type.ty_function as fnt:
+            return fnt.is_proc
         _:
             return false
 
@@ -7677,6 +7677,17 @@ function enum_source_module(ctx: ref[LowerCtx], ty: types.Type, default_module: 
             return default_module
 
 function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
+    # Save/restore locals so match-arm bindings (as name) and arm-body
+    # locals don't leak into subsequent code or proc captures.
+    let saved_locals = ctx.locals
+    ctx.locals = vec.Vec[LocalBinding].create()
+    var li: ptr_uint = 0
+    while li < saved_locals.len():
+        let lb_ptr = saved_locals.get(li) else:
+            break
+        unsafe:
+            ctx.locals.push(read(lb_ptr))
+        li += 1
     var scrutinee_ty = expr_type(ctx, scrutinee)
     # Prefer the lowered scrutinee's type: lowering resolves member/field types
     # (including Option-typed fields and read(ptr) rvalues) more accurately than
@@ -7690,26 +7701,31 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
 
     if type_name.is_some() and ctx.variants.contains(type_name.unwrap()):
         lower_variant_match(ctx, output, scrutinee, type_name.unwrap(), scrutinee_ty, arms)
+        ctx.locals = saved_locals
         return
 
     let gen_var = generic_variant_name(scrutinee_ty)
     if gen_var.is_some() and variant_match_allowed(ctx, gen_var.unwrap()):
         lower_variant_match(ctx, output, scrutinee, gen_var.unwrap(), scrutinee_ty, arms)
+        ctx.locals = saved_locals
         return
 
     # Integer scrutinee: switch over integer / char literal case values.
     if is_integer_scrutinee(scrutinee_ty):
         lower_scalar_match(ctx, output, scrutinee, arms)
+        ctx.locals = saved_locals
         return
 
     # String scrutinee: an if / else-if chain comparing with `equal`.
     if is_str_scrutinee(scrutinee_ty):
         lower_string_match(ctx, output, scrutinee, arms)
+        ctx.locals = saved_locals
         return
 
     let enum_name = type_name else:
         let ts = types.type_to_string(scrutinee_ty)
         if ts.equal("void") or ts.equal("<error>") or ts.starts_with("("):
+            ctx.locals = saved_locals
             return
         fatal(j2("lowering: match requires known type, got ", ts))
 
@@ -7739,6 +7755,7 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
         i += 1
 
     output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
+    ctx.locals = saved_locals
 
 
 ## True when a match scrutinee type is an integer (byte/short/int/long and the
@@ -8914,6 +8931,22 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                         return types.Type.ty_generic(name = tn.value, args = sp_type(types.Type.ty_error))
                     Option.none:
                         return types.Type.ty_error
+            # Proc expressions: reconstruct the ty_function(is_proc=true) from the
+            # AST so proc_invoke_field_type and callers can compute the correct
+            # invoke field type instead of falling to ty_error / void.
+            ast.Expr.expr_proc as pr:
+                var param_types = vec.Vec[types.Type].create()
+                var pi: ptr_uint = 0
+                while pi < pr.method_params.len:
+                    unsafe:
+                        let p = read(pr.method_params.data + pi)
+                        param_types.push(resolve_field_type_ref(ctx, p.param_type))
+                    pi += 1
+                var ret = types.primitive("void")
+                let rt = pr.return_type
+                if rt != null:
+                    ret = resolve_scalar_type_ref(rt)
+                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true)
             _:
                 return types.Type.ty_error
 
