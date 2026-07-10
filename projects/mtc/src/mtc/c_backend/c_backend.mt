@@ -39,6 +39,8 @@ struct Emitter:
     # Labels targeted by a `goto` in the current function; a `stmt_label` whose
     # name is absent is unused and skipped (mirrors Ruby's used_labels set).
     used_labels: map_mod.Map[str, bool]
+    # Variant C struct names whose equality helpers must be emitted.
+    variant_eq_set: map_mod.Map[str, bool]
 
 
 ## Local variant-arm metadata for prelude type collection (mirrors lowering's
@@ -57,6 +59,7 @@ public function generate_c(program: ir.Program) -> string.String:
         buffer = string.String.create(),
         str_lit_map = map_mod.Map[str, str].create(),
         used_labels = map_mod.Map[str, bool].create(),
+        variant_eq_set = map_mod.Map[str, bool].create(),
     )
 
     # Reachability pruning: emit only functions reachable from the entry points,
@@ -321,6 +324,11 @@ public function generate_c(program: ir.Program) -> string.String:
     # Emit builtin helpers (order/equal/hash) when used.
     if uses_builtin_helpers(program):
         emit_builtin_helpers(ref_of(e))
+
+    # Pre-scan functions for variant equality to know which helpers to emit.
+    scan_variant_equality(ref_of(e), funcs, program)
+    if e.variant_eq_set.len() > 0:
+        emit_variant_equality_helpers(ref_of(e), program)
 
     # Emit the argv → span[str] entry bridge helpers when the entry point uses them.
     if use_entry_argv:
@@ -1383,8 +1391,14 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
         return j3("mt_task_", naming.type_c_key(unsafe: read(args.data + 0)), "")
     # Generic variant: `<name>_<type0>_<type1>_...`.  The caller module prefix
     # is added by `qualified_c_name` when the type is `ty_imported`.
+    # Prelude types (Option, Result) carry the prefix in their raw name from the
+    # lowering (line 2008-2013), but `ty_generic` strips it.  Add it back here.
     if args.len > 0:
         var buf = string.String.create()
+        if name.equal("Option"):
+            buf.append("std_option_")
+        else if name.equal("Result"):
+            buf.append("std_result_")
         buf.append(name)
         var i: ptr_uint = 0
         while i < args.len:
@@ -2416,6 +2430,8 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                     if bin.operator == "!=":
                         return j2("!", call)
                     return call
+                if is_variant_equality(bin.operator, bin.left, bin.right, e):
+                    return render_variant_equality(e, bin.operator, bin.left, bin.right)
                 return render_binary(e, bin.operator, bin.left, bin.right)
             ir.Expr.expr_call as call:
                 return render_call(e, call.callee, call.arguments)
@@ -2824,6 +2840,10 @@ function render_variant_initializer(e: ref[Emitter], ty: types.Type, arm_name: s
     match ty:
         types.Type.ty_generic as g:
             var buf = string.String.create()
+            if g.name.equal("Option"):
+                buf.append("std_option_")
+            else if g.name.equal("Result"):
+                buf.append("std_result_")
             buf.append(g.name)
             var i: ptr_uint = 0
             while i < g.args.len:
@@ -2988,6 +3008,289 @@ function is_str_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr])
     if not (operator == "==" or operator == "!="):
         return false
     return is_str_type(expr_result_type(left)) and is_str_type(expr_result_type(right))
+
+
+## True when the binary expression is `==` / `!=` comparing two variant values.
+## The type must be pre-registered in `e.variant_eq_set` by `scan_variant_equality`.
+function is_variant_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr], e: ref[Emitter]) -> bool:
+    if not (operator == "==" or operator == "!="):
+        return false
+    let lt = expr_result_type(left)
+    let rt = expr_result_type(right)
+    if not types.type_to_string(lt).equal(types.type_to_string(rt)):
+        return false
+    return e.variant_eq_set.contains(variant_c_name_for_type(lt))
+
+
+## Return the C struct name for a type if it corresponds to a variant, or the
+## empty string otherwise.  Uses the same `c_type` path as variant struct
+## emission.
+function variant_c_name_for_type(ty: types.Type) -> str:
+    let name = c_type(ty)
+    # `c_type` for a variant type (ty_named / ty_imported) returns the qualified
+    # C struct name, e.g. `language_baseline_TokenKind`.  For primitive/str/etc.
+    # it returns something else — keep those out.
+    if name.equal("void") or name.equal("mt_str") or is_primitive_name_from_str(name):
+        return ""
+    return name
+
+
+## Render a variant equality expression as a call to the generated helper
+## (`mt_variant_eq_<variant_c_name>(left, right)`).  The leading `!` for `!=`
+## is inserted by the caller.
+function render_variant_equality(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
+    let variant_name = variant_c_name_for_type(expr_result_type(left))
+    let fn_name = variant_equality_helper_name(variant_name)
+    let call = j5(j2(fn_name, "("), render_expression(e, left), ", ", render_expression(e, right), ")")
+    if operator == "!=":
+        return j2("!", call)
+    return call
+
+
+## The static helper name for a variant type, e.g.
+## `mt_variant_eq_language_baseline_TokenKind`.
+function variant_equality_helper_name(variant_c_name: str) -> str:
+    return j3("mt_variant_eq_", variant_c_name, "")
+
+
+## Walk every reachable function's IR body and register every variant type
+## that participates in an `==` / `!=` comparison.  This populates
+## `e.variant_eq_set` before function emission so helper generation can run
+## first.
+function scan_variant_equality(e: ref[Emitter], funcs: span[ir.Function], program: ir.Program) -> void:
+    var var_lookup = map_mod.Map[str, ir.VariantDecl].create()
+    # Build lookup: variant linkage_name → VariantDecl
+    var svi: ptr_uint = 0
+    while svi < program.variants.len:
+        unsafe:
+            let vd = read(program.variants.data + svi)
+            var_lookup.set(vd.linkage_name, vd)
+        svi += 1
+    # Register each variant type found in equality comparisons.
+    var fi: ptr_uint = 0
+    while fi < funcs.len:
+        unsafe:
+            scan_stmts_for_variant_eq(e, read(funcs.data + fi).body, ref_of(var_lookup))
+        fi += 1
+
+
+function scan_stmts_for_variant_eq(e: ref[Emitter], body: span[ir.Stmt], var_lookup: ref[map_mod.Map[str, ir.VariantDecl]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            let stmt_ptr = body.data + i
+            match read(stmt_ptr):
+                ir.Stmt.stmt_local as loc:
+                    scan_expr_for_variant_eq(e, loc.value, var_lookup)
+                ir.Stmt.stmt_expression as es:
+                    scan_expr_for_variant_eq(e, es.expression, var_lookup)
+                ir.Stmt.stmt_assignment as a:
+                    scan_expr_for_variant_eq(e, a.target, var_lookup)
+                    scan_expr_for_variant_eq(e, a.value, var_lookup)
+                ir.Stmt.stmt_return as r:
+                    let v = r.value else:
+                        i += 1
+                        continue
+                    scan_expr_for_variant_eq(e, v, var_lookup)
+                ir.Stmt.stmt_if as ifs:
+                    scan_expr_for_variant_eq(e, ifs.condition, var_lookup)
+                    scan_stmts_for_variant_eq(e, ifs.then_body, var_lookup)
+                    let eb = ifs.else_body
+                    if eb.len > 0:
+                        scan_stmts_for_variant_eq(e, eb, var_lookup)
+                ir.Stmt.stmt_switch as sw:
+                    scan_expr_for_variant_eq(e, sw.expression, var_lookup)
+                    var ci: ptr_uint = 0
+                    while ci < sw.cases.len:
+                        scan_stmts_for_variant_eq(e, unsafe: read(sw.cases.data + ci).body, var_lookup)
+                        ci += 1
+                ir.Stmt.stmt_while as w:
+                    scan_expr_for_variant_eq(e, w.condition, var_lookup)
+                    scan_stmts_for_variant_eq(e, w.body, var_lookup)
+                ir.Stmt.stmt_for as fs:
+                    scan_expr_for_variant_eq(e, fs.condition, var_lookup)
+                    scan_stmts_for_variant_eq(e, fs.body, var_lookup)
+                ir.Stmt.stmt_label:
+                    pass
+                _:
+                    pass
+        i += 1
+
+
+function scan_expr_for_variant_eq(e: ref[Emitter], ep: ptr[ir.Expr], var_lookup: ref[map_mod.Map[str, ir.VariantDecl]]) -> void:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_binary as bin:
+                if bin.operator == "==" or bin.operator == "!=":
+                    let lt = expr_result_type(bin.left)
+                    let name = variant_c_name_for_type(lt)
+                    if name.len > 0 and var_lookup.contains(name):
+                        e.variant_eq_set.set(name, true)
+                scan_expr_for_variant_eq(e, bin.left, var_lookup)
+                scan_expr_for_variant_eq(e, bin.right, var_lookup)
+            ir.Expr.expr_unary as un:
+                scan_expr_for_variant_eq(e, un.operand, var_lookup)
+            ir.Expr.expr_call as call:
+                var ci: ptr_uint = 0
+                while ci < call.arguments.len:
+                    unsafe:
+                        scan_expr_for_variant_eq(e, call.arguments.data + ci, var_lookup)
+                    ci += 1
+            ir.Expr.expr_call_indirect as ci:
+                scan_expr_for_variant_eq(e, ci.callee, var_lookup)
+                var ai: ptr_uint = 0
+                while ai < ci.arguments.len:
+                    unsafe:
+                        scan_expr_for_variant_eq(e, ci.arguments.data + ai, var_lookup)
+                    ai += 1
+            ir.Expr.expr_member as m:
+                scan_expr_for_variant_eq(e, m.receiver, var_lookup)
+            ir.Expr.expr_cast as c:
+                scan_expr_for_variant_eq(e, c.expression, var_lookup)
+            ir.Expr.expr_conditional as cond:
+                scan_expr_for_variant_eq(e, cond.condition, var_lookup)
+                scan_expr_for_variant_eq(e, cond.then_expression, var_lookup)
+                scan_expr_for_variant_eq(e, cond.else_expression, var_lookup)
+            ir.Expr.expr_index as ix:
+                scan_expr_for_variant_eq(e, ix.receiver, var_lookup)
+                scan_expr_for_variant_eq(e, ix.index, var_lookup)
+            ir.Expr.expr_address_of as a:
+                scan_expr_for_variant_eq(e, a.expression, var_lookup)
+            ir.Expr.expr_checked_index as ci:
+                scan_expr_for_variant_eq(e, ci.receiver, var_lookup)
+                scan_expr_for_variant_eq(e, ci.index, var_lookup)
+            ir.Expr.expr_checked_span_index as cs:
+                scan_expr_for_variant_eq(e, cs.receiver, var_lookup)
+                scan_expr_for_variant_eq(e, cs.index, var_lookup)
+            ir.Expr.expr_aggregate_literal as agg:
+                var fi: ptr_uint = 0
+                while fi < agg.fields.len:
+                    scan_expr_for_variant_eq(e, unsafe: read(agg.fields.data + fi).value, var_lookup)
+                    fi += 1
+            ir.Expr.expr_array_literal as arr:
+                var ei: ptr_uint = 0
+                while ei < arr.elements.len:
+                    unsafe:
+                        scan_expr_for_variant_eq(e, arr.elements.data + ei, var_lookup)
+                    ei += 1
+            _:
+                pass
+
+
+## Emit static `mt_variant_eq_<name>` helper functions for every variant type
+## registered during the pre-scan.  Each helper compares discriminants first,
+## then switches on the arm to compare payload fields.
+function emit_variant_equality_helpers(e: ref[Emitter], program: ir.Program) -> void:
+    var var_lookup = map_mod.Map[str, ir.VariantDecl].create()
+    var svi: ptr_uint = 0
+    while svi < program.variants.len:
+        unsafe:
+            let vd = read(program.variants.data + svi)
+            var_lookup.set(vd.linkage_name, vd)
+        svi += 1
+    var keys = e.variant_eq_set.keys()
+    while true:
+        let kp = keys.next() else:
+            break
+        let variant_name = unsafe: read(kp)
+        let vd_ptr = var_lookup.get(variant_name) else:
+            continue
+        let vd = unsafe: read(vd_ptr)
+        emit_variant_eq_helper(e, vd)
+        emit_line(e, "")
+
+
+## Emit one `mt_variant_eq_<name>` function for a single variant declaration.
+function emit_variant_eq_helper(e: ref[Emitter], vd: ir.VariantDecl) -> void:
+    let outer_c = vd.linkage_name
+    let fn_name = variant_equality_helper_name(outer_c)
+    let struct_ty = j3("struct ", outer_c, "")
+
+    e.buffer.append(j5("static bool ", fn_name, "(", struct_ty, " left, "))
+    e.buffer.append(struct_ty)
+    e.buffer.append(" right) {")
+    e.buffer.push_byte(10)
+
+    # Compare discriminants first.
+    e.buffer.append("  if (left.kind != right.kind) return false;")
+    e.buffer.push_byte(10)
+
+    # Switch on left.kind.
+    e.buffer.append("  switch (left.kind) {")
+    e.buffer.push_byte(10)
+
+    var ai: ptr_uint = 0
+    while ai < vd.arms.len:
+        var arm: ir.VariantArm
+        unsafe:
+            arm = read(vd.arms.data + ai)
+        let kind_name = j4(outer_c, "_kind_", arm.name, "")
+        e.buffer.append(j3("    case ", kind_name, ":"))
+        e.buffer.push_byte(10)
+
+        if arm.fields.len > 0:
+            e.buffer.append("      {")
+            e.buffer.push_byte(10)
+            var fi: ptr_uint = 0
+            while fi < arm.fields.len:
+                var field: ir.Field
+                unsafe:
+                    field = read(arm.fields.data + fi)
+                let left_expr = j5("left.data.", arm.name, ".", field.name, "")
+                let right_expr = j5("right.data.", arm.name, ".", field.name, "")
+                emit_variant_field_compare(e, left_expr, right_expr, field.ty)
+                fi += 1
+            e.buffer.append("      }")
+            e.buffer.push_byte(10)
+
+        e.buffer.append("      break;")
+        e.buffer.push_byte(10)
+        ai += 1
+
+    e.buffer.append("  }")
+    e.buffer.push_byte(10)
+    e.buffer.append("  return true;")
+    e.buffer.push_byte(10)
+    e.buffer.append("}")
+    e.buffer.push_byte(10)
+
+
+## Emit a comparison check for one variant payload field.  Recursively handles
+## nested variant types by calling their own equality helpers.
+function emit_variant_field_compare(e: ref[Emitter], left_expr: str, right_expr: str, field_ty: types.Type) -> void:
+    # Compute a temporary variable name for the condition
+    if is_str_type(field_ty):
+        e.buffer.append(j5("      if (!mt_str_equal(", left_expr, ", ", right_expr, ")) return false;"))
+    else:
+        match field_ty:
+            types.Type.ty_primitive:
+                e.buffer.append(j5("      if (", left_expr, " != ", right_expr, ") return false;"))
+            types.Type.ty_named:
+                let cname = c_type(field_ty)
+                if e.variant_eq_set.contains(cname):
+                    let helper = variant_equality_helper_name(cname)
+                    e.buffer.append(j3("      if (!", helper, "("))
+                    e.buffer.append(left_expr)
+                    e.buffer.append(", ")
+                    e.buffer.append(right_expr)
+                    e.buffer.append(")) return false;")
+                else:
+                    e.buffer.append(j5("      if (", left_expr, " != ", right_expr, ") return false;"))
+            _:
+                e.buffer.append(j5("      if (", left_expr, " != ", right_expr, ") return false;"))
+        e.buffer.push_byte(10)
+
+
+## True when `name` is a known primitive type name (mirrors types.mt
+## `is_primitive_name` usage).  Used to filter out non-variant types.
+function is_primitive_name_from_str(name: str) -> bool:
+    return (
+        name.equal("bool") or name.equal("byte") or name.equal("short") or name.equal("int")
+        or name.equal("long") or name.equal("ubyte") or name.equal("ushort") or name.equal("uint")
+        or name.equal("ulong") or name.equal("ptr_int") or name.equal("ptr_uint") or name.equal("float")
+        or name.equal("double") or name.equal("void") or name.equal("str") or name.equal("cstr")
+        or name.equal("char")
+    )
 
 
 function render_call(e: ref[Emitter], callee: str, arguments: span[ir.Expr]) -> str:

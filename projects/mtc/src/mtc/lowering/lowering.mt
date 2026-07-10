@@ -362,12 +362,18 @@ public function lower(program: loader.Program) -> ir.Program:
         dedup_append_functions(ref_of(functions), fragment.functions, ref_of(seen_functions))
         i += 1
 
-    # Collect type aliases from all modules
+    # Collect type aliases from all non-raw modules. Raw (external) modules
+    # define C-level types that already exist — we never emit typedefs for
+    # them. Similarly skip non-raw-module aliases whose target is a std.c.*
+    # type, because the target already has a valid C name.
     var tai: ptr_uint = 0
     while tai < program.analyses.len():
         let ta_ptr = program.analyses.get(tai) else:
             break
         var ta_analysis = unsafe: read(ta_ptr)
+        if is_raw_module(ta_analysis.module_kind):
+            tai += 1
+            continue
         var ta_keys = ta_analysis.type_alias_types.keys()
         while true:
             let kp = ta_keys.next() else:
@@ -376,6 +382,8 @@ public function lower(program: loader.Program) -> ir.Program:
             let tvp = ta_analysis.type_alias_types.get(kn) else:
                 break
             let tv = unsafe: read(tvp)
+            if type_is_from_std_c(tv):
+                continue
             type_aliases.push(ir.TypeAlias(
                 name = kn,
                 qualified_name = naming.qualified_c_name(ta_analysis.module_name, kn),
@@ -406,6 +414,26 @@ function is_raw_module(kind: ast.ModuleKind) -> bool:
     match kind:
         ast.ModuleKind.module_raw:
             return true
+        _:
+            return false
+
+
+## True when a type originates from a std.c.* raw-ABI module (so its C name
+## already exists in the external headers and we must not emit a typedef for
+## it). Mirrors Ruby's skipping of raw-module type aliases.
+function type_is_from_std_c(tv: types.Type) -> bool:
+    match tv:
+        types.Type.ty_imported as im:
+            return im.module_name.starts_with("std.c.")
+        types.Type.ty_named as n:
+            return n.module_name.starts_with("std.c.")
+        types.Type.ty_generic as g:
+            var i: ptr_uint = 0
+            while i < g.args.len:
+                if type_is_from_std_c(unsafe: read(g.args.data + i)):
+                    return true
+                i += 1
+            return false
         _:
             return false
 
@@ -7200,6 +7228,10 @@ function variant_base_c_name(ty: types.Type, module_name: str) -> str:
     match ty:
         types.Type.ty_generic as g:
             var buf = string.String.create()
+            if g.name.equal("Option"):
+                buf.append("std_option_")
+            else if g.name.equal("Result"):
+                buf.append("std_result_")
             buf.append(g.name)
             var i: ptr_uint = 0
             while i < g.args.len:
