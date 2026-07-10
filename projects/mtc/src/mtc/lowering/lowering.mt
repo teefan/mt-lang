@@ -4460,12 +4460,19 @@ function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], 
     let arg_value = lower_expr(ctx, arg.arg_value)
     let arg_type = expr_type(ctx, arg.arg_value)
     let concrete_type = if types.is_ref_type(arg_type): types.pointer_element(arg_type) else: arg_type
-    let iface_name = unsafe: analyzer.qname_to_str(read(iface_type_ref).name)
+    let iface_type_ref_val = unsafe: read(iface_type_ref)
+    let iface_name = unsafe: analyzer.qname_to_str(iface_type_ref_val.name)
+    # Resolve type arguments from the dyn[...] type (e.g. dyn[Mapper[int]] → [int]).
+    var type_args = vec.Vec[types.Type].create()
+    var tgi: ptr_uint = 0
+    while tgi < iface_type_ref_val.arguments.len:
+        type_args.push(resolve_type_ref(ctx, unsafe: ptr[ast.TypeRef]<-iface_type_ref_val.arguments.data + tgi))
+        tgi += 1
     match find_interface_analysis(ctx, iface_name):
         Option.some as ia:
             let methods = ia.value.methods
             let concrete_name = canonical_type_name(ctx.module_name, concrete_type)
-            let vtable_name = ensure_dyn_vtable(ctx, concrete_name, concrete_type, iface_name, methods, ia.value.module_name)
+            let vtable_name = ensure_dyn_vtable(ctx, concrete_name, concrete_type, iface_name, methods, ia.value.module_name, type_args.as_span(), ia.value.type_params)
             var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
             let vtable_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
             return alloc_expr(ir.Expr.expr_aggregate_literal(
@@ -4490,6 +4497,7 @@ function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], 
 struct InterfaceAnalysis:
     module_name: str
     methods: span[ast.InterfaceMethod]
+    type_params: span[ast.TypeParam]
 
 
 ## Find an interface's definition across all loaded modules.  Searches the current
@@ -4510,7 +4518,7 @@ function find_interface_analysis(ctx: ref[LowerCtx], iface_name: str) -> Option[
                     Option.some as imported:
                         let m_ptr = imported.value.interfaces.get(rest)
                         if m_ptr != null:
-                            return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(module_name = mod_name, methods = unsafe: read(m_ptr)))
+                            return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(module_name = mod_name, methods = unsafe: read(m_ptr), type_params = interface_type_params(imported.value.source_file, rest)))
                     Option.none:
                         pass
                 return Option[InterfaceAnalysis].none
@@ -4520,7 +4528,7 @@ function find_interface_analysis(ctx: ref[LowerCtx], iface_name: str) -> Option[
     # Bare name: search current module then all imported modules.
     let m_ptr = ctx.analysis.interfaces.get(iface_name)
     if m_ptr != null:
-        return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(module_name = ctx.module_name, methods = unsafe: read(m_ptr)))
+        return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(module_name = ctx.module_name, methods = unsafe: read(m_ptr), type_params = interface_type_params(ctx.analysis.source_file, iface_name)))
     var import_values = ctx.analysis.imports.values()
     while true:
         let target_ptr = import_values.next() else:
@@ -4532,7 +4540,7 @@ function find_interface_analysis(ctx: ref[LowerCtx], iface_name: str) -> Option[
                 if i_ptr != null:
                     # Is the interface public in that module?
                     if not module_has_private_interface(imported.value.source_file, iface_name):
-                        return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(module_name = target_module, methods = unsafe: read(i_ptr)))
+                        return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(module_name = target_module, methods = unsafe: read(i_ptr), type_params = interface_type_params(imported.value.source_file, iface_name)))
             Option.none:
                 pass
     return Option[InterfaceAnalysis].none
@@ -4554,20 +4562,37 @@ function module_has_private_interface(file: ast.SourceFile, iface_name: str) -> 
     return false
 
 
+## Extract type parameters from an interface declaration in the source file AST.
+function interface_type_params(file: ast.SourceFile, iface_name: str) -> span[ast.TypeParam]:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + di)
+        match d:
+            ast.Decl.decl_interface as iface:
+                if iface.name.equal(iface_name):
+                    return iface.type_params
+            _:
+                pass
+        di += 1
+    return span[ast.TypeParam]()
+
+
 ## Ensure a vtable for the given concrete type and interface exists.  Generates the
 ## vtable struct type declaration once per interface, and the wrapper functions +
 ## global vtable constant once per (type, interface) pair.  Returns the vtable global name.
-function ensure_dyn_vtable(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], iface_module_name: str) -> str:
+function ensure_dyn_vtable(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], iface_module_name: str, type_args: span[types.Type], type_params: span[ast.TypeParam]) -> str:
     let vtable_c_name = j5("mt_vtable_", concrete_name, "_", iface_name, "")
     if ctx.dyn_generated_vtables.contains(vtable_c_name):
         return vtable_c_name
 
-    # Ensure the vtable struct type exists (once per interface).
+    # Ensure the vtable struct type exists (once per interface), with type subsitution.
     let vtable_type_c_name = j3("mt_vtable_", iface_name, "")
-    ensure_dyn_vtable_struct(ctx, vtable_type_c_name, methods)
+    ensure_dyn_vtable_struct(ctx, vtable_type_c_name, methods, type_args, type_params)
 
     # Generate wrapper functions and vtable constant.
-    var wrappers = gen_dyn_vtable_wrappers(ctx, concrete_name, concrete_type, iface_name, methods, iface_module_name)
+    var wrappers = gen_dyn_vtable_wrappers(ctx, concrete_name, concrete_type, iface_name, methods, iface_module_name, type_args, type_params)
     gen_dyn_vtable_constant(ctx, iface_name, vtable_type_c_name, vtable_c_name, ref_of(wrappers), methods)
 
     # Ensure the dyn struct type exists (once per interface).
@@ -4575,6 +4600,33 @@ function ensure_dyn_vtable(ctx: ref[LowerCtx], concrete_name: str, concrete_type
 
     ctx.dyn_generated_vtables.set(vtable_c_name, true)
     return vtable_c_name
+
+
+## Substitute interface type parameters in a type used by a vtable method signature.
+## When type_params is [T] and type_args is [int], `ty_var("T")` → `int`.
+function substitute_interface_type_params(t: types.Type, type_args: span[types.Type], type_params: span[ast.TypeParam]) -> types.Type:
+    match t:
+        types.Type.ty_var as v:
+            return substitute_type_arg_by_name(t, v.name, type_args, type_params)
+        types.Type.ty_named as n:
+            return substitute_type_arg_by_name(t, n.name, type_args, type_params)
+        _:
+            return t
+
+
+## If `name` matches a type param, return the corresponding type arg.
+## Otherwise return the original type.
+function substitute_type_arg_by_name(t: types.Type, name: str, type_args: span[types.Type], type_params: span[ast.TypeParam]) -> types.Type:
+    var pi: ptr_uint = 0
+    while pi < type_params.len:
+        var tp: ast.TypeParam
+        unsafe:
+            tp = read(type_params.data + pi)
+        if tp.name.equal(name) and pi < type_args.len:
+            unsafe:
+                return read(type_args.data + pi)
+        pi += 1
+    return t
 
 
 ## Ensure the dyn struct type `mt_dyn_{iface}` exists.
@@ -4595,7 +4647,7 @@ function ensure_dyn_struct_type(ctx: ref[LowerCtx], iface_name: str) -> void:
 
 ## Ensure the vtable struct type `mt_vtable_{iface}` exists.  Fields are function
 ## pointer types so the C backend can render calls through them directly.
-function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, methods: span[ast.InterfaceMethod]) -> void:
+function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> void:
     var iter = ctx.pending_dyn_vtable_structs.iter()
     while true:
         let s_ptr = iter.next() else:
@@ -4616,9 +4668,12 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, m
             var p: ast.Param
             unsafe:
                 p = read(m.method_params.data + pi)
-            fn_params.push(resolve_field_type_ref(ctx, p.param_type))
+            var param_ty = resolve_field_type_ref(ctx, p.param_type)
+            param_ty = substitute_interface_type_params(param_ty, type_args, type_params)
+            fn_params.push(param_ty)
             pi += 1
-        let ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: types.primitive("void")
+        var ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: types.primitive("void")
+        ret = substitute_interface_type_params(ret, type_args, type_params)
         let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false)
         fields.push(ir.Field(name = m.name, ty = fn_ty))
         mi += 1
@@ -4627,7 +4682,7 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, m
 
 ## Generate wrapper functions for each interface method, calling through to the
 ## concrete type's method implementation.  Returns a map from method name to wrapper C name.
-function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], iface_module_name: str) -> map_mod.Map[str, str]:
+function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], iface_module_name: str, type_args: span[types.Type], type_params: span[ast.TypeParam]) -> map_mod.Map[str, str]:
     var wrappers = map_mod.Map[str, str].create()
     var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     let concrete_type_name = named_type_name(concrete_type) else:
@@ -4647,10 +4702,10 @@ function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concret
             var p: ast.Param
             unsafe:
                 p = read(m.method_params.data + pi)
-            let p_ty = resolve_field_type_ref(ctx, p.param_type)
+            let p_ty = substitute_interface_type_params(resolve_field_type_ref(ctx, p.param_type), type_args, type_params)
             wrapper_params.push(ir.Param(name = p.name, linkage_name = c_local_name(p.name), ty = p_ty, pointer = false))
             pi += 1
-        let ret_ty = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: types.primitive("void")
+        let ret_ty = if m.return_type != null: substitute_interface_type_params(resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)), type_args, type_params) else: types.primitive("void")
         # Find the method info for the concrete type's method (search all modules).
         var method_info_opt: Option[DynMethodLookup]
         match concrete_type:
@@ -4687,7 +4742,7 @@ function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concret
                     unsafe:
                         p = read(m.method_params.data + pi)
                     unsafe:
-                        call_args.push(read(alloc_expr(ir.Expr.expr_name(name = c_local_name(p.name), ty = resolve_field_type_ref(ctx, p.param_type), pointer = false))))
+                        call_args.push(read(alloc_expr(ir.Expr.expr_name(name = c_local_name(p.name), ty = substitute_interface_type_params(resolve_field_type_ref(ctx, p.param_type), type_args, type_params), pointer = false))))
                     pi += 1
                 let call_ret_ty = if types.is_void(ret_ty): types.primitive("void") else: ret_ty
                 body_stmts.push(ir.Stmt.stmt_return(
