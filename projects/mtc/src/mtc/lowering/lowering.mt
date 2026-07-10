@@ -2381,6 +2381,12 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     let iterable_type = index_receiver_type(ctx, iterable)
     let element_type = generic_first_arg(iterable_type)
     let is_arr = is_array_type(iterable_type)
+    # If the iterable is neither array nor span, the element type will be error.
+    # For custom iterables (with iter() protocol), skip the loop rather than
+    # generating broken span access.  Fully lowering the iterator protocol is
+    # deferred.
+    if types.is_error(element_type) and not is_arr:
+        return
     let ptr_uint_ty = types.primitive("ptr_uint")
 
     let items_c = fresh_c_temp_name(ctx, "for_items")
