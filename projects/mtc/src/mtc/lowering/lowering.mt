@@ -3605,7 +3605,12 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     Option.none:
                         pass
                 # Module-level proc variable: call through proc struct.
-                let callee_ty = expr_type(ctx, callee)
+                # expr_type on the callee may not have the correct type if the
+                # analyzer only records the call expression type, so also check
+                # the identifier against the source file's variable declarations.
+                var callee_ty = expr_type(ctx, callee)
+                if not is_proc_type(callee_ty):
+                    callee_ty = module_var_type(ctx, id.name)
                 if is_proc_type(callee_ty):
                     let c_name = naming.qualified_c_name(ctx.module_name, id.name)
                     let lb = LocalBinding(name = id.name, c_name = c_name, ty = callee_ty, pointer = false)
@@ -6446,6 +6451,7 @@ function lower_plain_call_sig(ctx: ref[LowerCtx], c_name: str, args: span[ast.Ar
             arg = read(args.data + i)
         var lowered = lower_expr(ctx, arg.arg_value)
         lowered = coerce_arg_to_ref_param(sig, i, lowered)
+        lowered = coerce_fn_arg_to_proc(ctx, sig, i, lowered, arg.arg_value)
         unsafe:
             ir_args.push(read(lowered))
         i += 1
@@ -6483,6 +6489,34 @@ function coerce_arg_to_ref_param(sig: Option[analyzer.FnSig], index: ptr_uint, a
             ))
         Option.none:
             return arg
+
+
+## Coerce a bare function name argument to a proc struct when the
+## corresponding parameter expects a proc type.  Mirrors the implicit
+## fn→proc wrapping the analyzer accepts at call sites.
+function coerce_fn_arg_to_proc(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], index: ptr_uint, lowered: ptr[ir.Expr], arg_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    match sig:
+        Option.some as s:
+            if index >= s.value.params.len:
+                return lowered
+            var param_ty: types.Type
+            unsafe:
+                let param = read(s.value.params.data + index)
+                param_ty = param.ty
+            if not is_proc_type(param_ty):
+                return lowered
+            # Check if the argument is a bare function identifier.
+            unsafe:
+                match read(arg_ast):
+                    ast.Expr.expr_identifier as id:
+                        if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
+                            let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
+                            return lower_fn_to_proc(ctx, fn_c_name, param_ty)
+                    _:
+                        pass
+            return lowered
+        Option.none:
+            return lowered
 
 
 ## Lower a foreign function call to a direct call on its mapped C function,
@@ -7665,6 +7699,26 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
     if tref.nullable and not types.is_error(resolved):
         return types.Type.ty_nullable(base = types.alloc_type(resolved))
     return resolved
+
+
+## Look up the resolved type of a module-level variable declared in the source
+## file.  Used when `expr_type(ctx, callee)` fails for proc variables.
+function module_var_type(ctx: ref[LowerCtx], name: str) -> types.Type:
+    var di: ptr_uint = 0
+    while di < ctx.analysis.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(ctx.analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_var as v:
+                if v.name.equal(name):
+                    let tref = v.var_type
+                    if tref != null:
+                        return resolve_type_ref(ctx, tref)
+            _:
+                pass
+        di += 1
+    return types.Type.ty_error
 
 
 # =============================================================================
