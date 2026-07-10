@@ -2703,6 +2703,21 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 var left = lower_expr(ctx, bin.left)
                 var right = lower_expr(ctx, bin.right)
                 var result_ty = expr_type(ctx, ep)
+                # Vector/matrix/quaternion binary arithmetic: lower to
+                # component-wise aggregate literal BEFORE type promotion, so
+                # scalar operands are not cast to the vector result type.
+                # Only apply when at least one operand is an actual vector type
+                # (the analyzer may mis-type float sub-expressions as vec3
+                # inside methods on vec types).
+                let lt = ir_expr_type(left)
+                let rt = ir_expr_type(right)
+                let rn = nominal_type_name(result_ty)
+                if is_vec_math_name(rn) and (
+                    is_vec_math_name(nominal_type_name(lt)) or is_vec_math_name(nominal_type_name(rt))
+                ) and (
+                    bin.operator == "+" or bin.operator == "-" or bin.operator == "*" or bin.operator == "/"
+                ):
+                    return lower_vec_binary_op(ctx, bin.operator, left, right, result_ty, rn)
                 # Pointer arithmetic (`p + i` / `p - i`) yields the pointer
                 # operand's concrete type; the analyzer's generically-recorded
                 # type may have dropped its arguments inside a monomorphized body.
@@ -6909,6 +6924,27 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
         member_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("char")))
     else if is_str_typed(recv_ty) and member.equal("len"):
         member_ty = types.primitive("ptr_uint")
+    # vec/mat/quat field types: the analyzer doesn't record these reliably
+    # since these are builtin types, not declared structs.
+    else if is_vec_math_name(nominal_type_name(recv_ty)):
+        let vname = nominal_type_name(recv_ty)
+        var field_names = vec.Vec[str].create()
+        var field_types = vec.Vec[types.Type].create()
+        vec_math_fields(vname, ref_of(field_names), ref_of(field_types))
+        var fi: ptr_uint = 0
+        var found = false
+        while fi < field_names.len():
+            let fn_ptr = field_names.get(fi) else:
+                fatal(c"lower_member_access: missing vec field name")
+            if unsafe: read(fn_ptr).equal(member):
+                let ft_ptr = field_types.get(fi) else:
+                    fatal(c"lower_member_access: missing vec field type")
+                member_ty = unsafe: read(ft_ptr)
+                found = true
+                break
+            fi += 1
+        if not found:
+            pass
     else:
         # Prefer the receiver's concrete (monomorphized) struct field type: the
         # analyzer records member types generically (e.g. Node[K,V] -> Node with
@@ -8815,43 +8851,18 @@ function is_vec_math_name(name: str) -> bool:
 
 function lower_vec_unary_neg(ctx: ref[LowerCtx], operand: ptr[ir.Expr], name: str) -> ptr[ir.Expr]:
     var field_names = vec.Vec[str].create()
+    var field_types = vec.Vec[types.Type].create()
+    vec_math_fields(name, ref_of(field_names), ref_of(field_types))
     var fields = vec.Vec[ir.AggregateField].create()
     let ty = ir_expr_type(operand)
-    if name.equal("vec2") or name.equal("ivec2"):
-        field_names.push("x")
-        field_names.push("y")
-    else if name.equal("vec3") or name.equal("ivec3"):
-        field_names.push("x")
-        field_names.push("y")
-        field_names.push("z")
-    else if name.equal("vec4") or name.equal("ivec4") or name.equal("quat"):
-        field_names.push("x")
-        field_names.push("y")
-        field_names.push("z")
-        field_names.push("w")
-    else if name.equal("mat3"):
-        field_names.push("col0")
-        field_names.push("col1")
-        field_names.push("col2")
-    else if name.equal("mat4"):
-        field_names.push("col0")
-        field_names.push("col1")
-        field_names.push("col2")
-        field_names.push("col3")
-    else:
-        return alloc_expr(ir.Expr.expr_unary(operator = "-", operand = operand, ty = ty))
     var i: ptr_uint = 0
     while i < field_names.len():
         let fname_ptr = field_names.get(i) else:
             fatal(c"lowering: vec unary neg missing field name")
+        let ft_ptr = field_types.get(i) else:
+            fatal(c"lowering: vec unary neg missing field type")
         let fname = unsafe: read(fname_ptr)
-        var field_ty = types.primitive("float")
-        if name.starts_with("ivec"):
-            field_ty = types.primitive("int")
-        else if name.equal("mat3"):
-            field_ty = types.primitive("vec3")
-        else if name.equal("mat4"):
-            field_ty = types.primitive("vec4")
+        let field_ty = unsafe: read(ft_ptr)
         let field_access = alloc_expr(ir.Expr.expr_member(receiver = operand, member = fname, ty = field_ty))
         var neg_val: ptr[ir.Expr]
         if is_vec_math_name(nominal_type_name(field_ty)):
@@ -8861,6 +8872,86 @@ function lower_vec_unary_neg(ctx: ref[LowerCtx], operand: ptr[ir.Expr], name: st
         fields.push(ir.AggregateField(name = fname, value = neg_val))
         i += 1
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = ty, fields = fields.as_span()))
+
+
+## Populate `field_names` and `field_types` for a vector/math type name.
+## Mirrors the field set used by `lower_vec_unary_neg` and `lower_vec_binary_op`.
+function vec_math_fields(name: str, names: ref[vec.Vec[str]], ftypes: ref[vec.Vec[types.Type]]) -> void:
+    if name.equal("vec2") or name.equal("ivec2"):
+        names.push("x")
+        names.push("y")
+    else if name.equal("vec3") or name.equal("ivec3"):
+        names.push("x")
+        names.push("y")
+        names.push("z")
+    else if name.equal("vec4") or name.equal("ivec4") or name.equal("quat"):
+        names.push("x")
+        names.push("y")
+        names.push("z")
+        names.push("w")
+    else if name.equal("mat3"):
+        names.push("col0")
+        names.push("col1")
+        names.push("col2")
+    else if name.equal("mat4"):
+        names.push("col0")
+        names.push("col1")
+        names.push("col2")
+        names.push("col3")
+    var fi: ptr_uint = 0
+    while fi < names.len():
+        var ft = types.primitive("float")
+        if name.starts_with("ivec"):
+            ft = types.primitive("int")
+        else if name.equal("mat3"):
+            ft = types.primitive("vec3")
+        else if name.equal("mat4"):
+            ft = types.primitive("vec4")
+        ftypes.push(ft)
+        fi += 1
+
+
+## Lower a binary arithmetic operator on vector/matrix/quaternion types to a
+## component-wise aggregate literal.  Mirrors Ruby's lower_vector_binary_op /
+## lower_aggregate_binary_op.
+function lower_vec_binary_op(ctx: ref[LowerCtx], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr], result_ty: types.Type, name: str) -> ptr[ir.Expr]:
+    let left_ty = ir_expr_type(left)
+    let right_ty = ir_expr_type(right)
+    var field_names = vec.Vec[str].create()
+    var field_types = vec.Vec[types.Type].create()
+    vec_math_fields(name, ref_of(field_names), ref_of(field_types))
+    var fields = vec.Vec[ir.AggregateField].create()
+    let left_is_scalar = types.is_numeric(left_ty) and not is_vec_math_name(nominal_type_name(left_ty))
+    let right_is_scalar = types.is_numeric(right_ty) and not is_vec_math_name(nominal_type_name(right_ty))
+    var i: ptr_uint = 0
+    while i < field_names.len():
+        let fn_ptr = field_names.get(i) else:
+            fatal(c"lowering: vec binary missing field name")
+        let ft_ptr = field_types.get(i) else:
+            fatal(c"lowering: vec binary missing field type")
+        let fname = unsafe: read(fn_ptr)
+        let ftype = unsafe: read(ft_ptr)
+        var left_field: ptr[ir.Expr]
+        var right_field: ptr[ir.Expr]
+        if left_is_scalar:
+            left_field = left
+        else:
+            left_field = alloc_expr(ir.Expr.expr_member(receiver = left, member = fname, ty = ftype))
+        if right_is_scalar:
+            right_field = right
+        else:
+            right_field = alloc_expr(ir.Expr.expr_member(receiver = right, member = fname, ty = ftype))
+        # If the field type is itself a vec/mat type (e.g. mat4 column is vec4),
+        # recurse to lower the inner operation component-wise.
+        var field_val: ptr[ir.Expr]
+        let ftype_name = nominal_type_name(ftype)
+        if is_vec_math_name(ftype_name):
+            field_val = lower_vec_binary_op(ctx, operator, left_field, right_field, ftype, ftype_name)
+        else:
+            field_val = alloc_expr(ir.Expr.expr_binary(operator = operator, left = left_field, right = right_field, ty = ftype))
+        fields.push(ir.AggregateField(name = fname, value = field_val))
+        i += 1
+    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = result_ty, fields = fields.as_span()))
 
 
 function nominal_type_name(t: types.Type) -> str:
