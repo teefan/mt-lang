@@ -3604,6 +3604,12 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                             return lower_proc_call(ctx, lb.value, args, call_ep)
                     Option.none:
                         pass
+                # Module-level proc variable: call through proc struct.
+                let callee_ty = expr_type(ctx, callee)
+                if is_proc_type(callee_ty):
+                    let c_name = naming.qualified_c_name(ctx.module_name, id.name)
+                    let lb = LocalBinding(name = id.name, c_name = c_name, ty = callee_ty, pointer = false)
+                    return lower_proc_call(ctx, lb, args, call_ep)
                 var ret_ty = function_return_type(ctx, id.name)
                 var ret_type_ptr = types.alloc_type(ret_ty)
                 return lower_plain_call_sig(ctx, naming.qualified_c_name(ctx.module_name, id.name), args, call_ep, ret_type_ptr, lookup_fn_sig(ctx, id.name))
@@ -3769,6 +3775,40 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     let recv_ir = lower_expr(ctx, ma.receiver)
                     return lower_dyn_method_call(ctx, recv_ir, ma.member_name, args, call_ep)
                 # Fallback: treat as a direct C call with the member as callee.
+                # But first, check if the member is an fn/proc struct field — if so,
+                # lower as a direct field access call instead of a method call.
+                var is_fn_proc_field = false
+                var found_ft: types.Type = types.primitive("void")
+                match concrete_field_type(ctx, recv_ty, ma.member_name):
+                    Option.some as ft:
+                        found_ft = ft.value
+                    Option.none:
+                        # Not in generic_struct_decls; try analysis.structs for
+                        # non-generic (local) structs.
+                        let struct_name = named_type_name(recv_ty)
+                        if struct_name.is_some():
+                            let raw_fields = ctx.analysis.structs.get(struct_name.unwrap())
+                            if raw_fields != null:
+                                let entries = unsafe: read(raw_fields)
+                                var ei: ptr_uint = 0
+                                while ei < entries.len:
+                                    let entry = unsafe: read(entries.data + ei)
+                                    if entry.name.equal(ma.member_name):
+                                        found_ft = entry.ty
+                                        break
+                                    ei += 1
+                match found_ft:
+                    types.Type.ty_function as field_fn:
+                        if field_fn.is_proc:
+                            let recv_ir = lower_expr(ctx, ma.receiver)
+                            let field_expr = alloc_expr(ir.Expr.expr_member(receiver = recv_ir, member = ma.member_name, ty = found_ft))
+                            return lower_proc_field_call(ctx, field_expr, args, call_ep)
+                        else:
+                            let recv_ir = lower_expr(ctx, ma.receiver)
+                            let field_expr = alloc_expr(ir.Expr.expr_member(receiver = recv_ir, member = ma.member_name, ty = found_ft))
+                            return lower_fn_field_call(ctx, field_expr, args, call_ep)
+                    _:
+                        pass
                 var recv_type_name = named_type_name(recv_ty)
                 if recv_type_name.is_none():
                     recv_type_name = try_spec_type_name(ma.receiver)
@@ -6777,6 +6817,44 @@ function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Ar
     # this as p.invoke(arg0, arg1, ...), a direct call through the member.
     let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "invoke", ty = expr_type(ctx, call_ep)))
     return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = expr_type(ctx, call_ep)))
+
+
+## Lower a call through a proc-typed struct field: `s.field(args)` compiles to
+## `s.field.invoke(s.field.env, args)`, analogously to lower_proc_call but for
+## struct field receivers instead of local bindings.
+function lower_proc_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let env_member = alloc_expr(ir.Expr.expr_member(receiver = field_expr, member = "env", ty = void_ptr))
+    var invoke_args = vec.Vec[ir.Expr].create()
+    unsafe:
+        invoke_args.push(read(env_member))
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        let lowered = lower_expr(ctx, arg.arg_value)
+        unsafe:
+            invoke_args.push(read(lowered))
+        i += 1
+    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = field_expr, member = "invoke", ty = expr_type(ctx, call_ep)))
+    return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = expr_type(ctx, call_ep)))
+
+
+## Lower a call through an fn-typed struct field: `s.field(args)` compiles to
+## a direct call through the function pointer `s.field(args)`.
+function lower_fn_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    var call_args = vec.Vec[ir.Expr].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        let lowered = lower_expr(ctx, arg.arg_value)
+        unsafe:
+            call_args.push(read(lowered))
+        i += 1
+    return alloc_expr(ir.Expr.expr_call_indirect(callee = field_expr, arguments = call_args.as_span(), ty = expr_type(ctx, call_ep)))
 
 
 ## The resolved return type of a module function: recorded during pre-scan
