@@ -12302,6 +12302,8 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.Type
         ctor_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = "state", ty = int_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = int_ty))))
     ctor_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = resume_c, arguments = single_expr_span(cframe), ty = void_t)), line = 0, source_path = ""))
     var tf = vec.Vec[ir.AggregateField].create()
+    if not is_void_ret:
+        tf.push(ir.AggregateField(name = "value", value = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = "result", ty = res_ty))))
     tf.push(ir.AggregateField(name = "frame",       value = cframe))
     tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = ready_lk,  ty = ptr_void_type(), pointer = false))))
     tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = waiter_lk, ty = ptr_void_type(), pointer = false))))
