@@ -233,7 +233,7 @@ module MilkTea
 
     def visit_generic_instance(type)
       case type.name
-      when "ptr", "const_ptr", "ref"
+      when "ptr", "const_ptr", "own", "ref"
         @sendable = false
       when "array"
         el = type.arguments.first

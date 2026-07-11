@@ -94,7 +94,7 @@ module MilkTea
 
     def generic_layout(type, stack)
       case type.name
-      when "ptr", "const_ptr", "ref"
+      when "ptr", "const_ptr", "own", "ref"
         [POINTER_SIZE, POINTER_SIZE]
       when "array"
         return unless array_type?(type)
@@ -214,7 +214,7 @@ module MilkTea
       return true if base.is_a?(Types::Function) || base.is_a?(Types::Proc) || base.is_a?(Types::Opaque)
       return true if base.is_a?(Types::Primitive) && base.name == "cstr"
 
-      base.is_a?(Types::GenericInstance) && %w[ptr const_ptr ref].include?(base.name)
+      base.is_a?(Types::GenericInstance) && %w[ptr const_ptr own ref].include?(base.name)
     end
 
     def nullable_opt_layout_fields(base)

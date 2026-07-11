@@ -368,7 +368,7 @@ module MilkTea
     end
 
     def pointer_type?(type)
-      mutable_pointer_type?(type) || const_pointer_type?(type)
+      mutable_pointer_type?(type) || const_pointer_type?(type) || own_type?(type)
     end
 
     def mutable_pointer_type?(type)
@@ -377,6 +377,14 @@ module MilkTea
 
     def const_pointer_type?(type)
       type.is_a?(Types::GenericInstance) && type.name == "const_ptr" && type.arguments.length == 1
+    end
+
+    def own_type?(type)
+      type.is_a?(Types::GenericInstance) && type.name == "own" && type.arguments.length == 1
+    end
+
+    def owned_referent_type(type)
+      type.arguments.first if own_type?(type)
     end
 
     def ref_type?(type)
@@ -516,6 +524,9 @@ module MilkTea
         error.call("const_ptr requires exactly one type argument") unless arguments.length == 1
         error.call("const_ptr type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
         error.call("const_ptr cannot target ref types") if contains_ref_type?(arguments.first)
+      when "own"
+        error.call("own requires exactly one type argument") unless arguments.length == 1
+        error.call("own type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
       when "ref"
         unless [1, 2].include?(arguments.length)
           error.call("ref requires exactly one type argument")

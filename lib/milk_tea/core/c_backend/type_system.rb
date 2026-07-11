@@ -79,7 +79,7 @@ module MilkTea
               return [proc_type_name(type), name]
             end
 
-            if mutable_pointer_type?(type)
+            if mutable_pointer_type?(type) || own_type?(type)
               return c_declaration_parts(type.arguments.first, "*#{name}")
             end
 
@@ -260,6 +260,10 @@ module MilkTea
               raise CBackendError, "const_ptr requires exactly one type argument" unless type.arguments.length == 1
 
               "const #{c_type(type.arguments.first)}*"
+            when "own"
+              raise CBackendError, "own requires exactly one type argument" unless type.arguments.length == 1
+
+              "#{c_type(type.arguments.first)}*"
             when "ref"
               raise CBackendError, "ref requires at least one type argument" unless [1, 2].include?(type.arguments.length)
 
@@ -283,16 +287,20 @@ module MilkTea
             type.is_a?(Types::GenericInstance) && type.name == "const_ptr" && type.arguments.length == 1
           end
 
+          def own_type?(type)
+            type.is_a?(Types::GenericInstance) && type.name == "own" && type.arguments.length == 1
+          end
+
           def pointer_type?(type)
             mutable_pointer_type?(type)
           end
 
           def c_backend_pointer_like_type?(type)
-            pointer_type?(type) || const_pointer_type?(type) || (type.is_a?(Types::Primitive) && type.name == "cstr") || type.is_a?(Types::Function) || type.is_a?(Types::Proc) || type.is_a?(Types::Opaque)
+            pointer_type?(type) || const_pointer_type?(type) || own_type?(type) || (type.is_a?(Types::Primitive) && type.name == "cstr") || type.is_a?(Types::Function) || type.is_a?(Types::Proc) || type.is_a?(Types::Opaque)
           end
 
           def raw_pointer_type?(type)
-            mutable_pointer_type?(type) || const_pointer_type?(type)
+            mutable_pointer_type?(type) || const_pointer_type?(type) || own_type?(type)
           end
 
           def ref_type?(type)
