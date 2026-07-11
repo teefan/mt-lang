@@ -57,7 +57,7 @@ module MilkTea
           when Types::Nullable
             owner_type = owner_type.base
           when Types::GenericInstance
-            if %w[ptr const_ptr ref].include?(owner_type.name) && owner_type.arguments.length == 1
+            if %w[ptr const_ptr own ref].include?(owner_type.name) && owner_type.arguments.length == 1
               owner_type = owner_type.arguments.first
             else
               break
