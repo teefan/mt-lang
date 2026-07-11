@@ -28,7 +28,7 @@ function take_owned_bytes(data: ptr[ubyte]?, len: ptr_uint) -> bytes.Bytes:
 
         return bytes.Bytes.empty()
 
-    return bytes.Bytes(data = data, len = len)
+    return unsafe: bytes.Bytes(data = own[ubyte]<-data, len = len)
 
 
 function take_error(raw: c.mt_zlib_error, fallback: str) -> Error:

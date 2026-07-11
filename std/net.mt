@@ -1289,7 +1289,7 @@ function stream_read_take_payload(state: ptr[ReadState]) -> bytes.Bytes:
     unsafe:
         read(state).buffer = null
         read(state).received_bytes = 0
-    return bytes.Bytes(data = buffer, len = received_bytes)
+    return unsafe: bytes.Bytes(data = own[ubyte]<-buffer, len = received_bytes)
 
 
 function stop_stream_read(
