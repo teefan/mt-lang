@@ -3147,7 +3147,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
 
 
 ## Lower `parallel: stmt1; stmt2; ...`.  Each statement becomes a worker
-## function, dispatched via mt_spawn_run, then mt_spawn_wait.
+## function, dispatched via mt_spawn_all.
 function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bodies: span[ast.Stmt]) -> void:
     if bodies.len < 2:
         return
@@ -3231,7 +3231,10 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     else:
         cap_body_irs = body_irs
 
-    # Generate worker for each body (with capture preamble if applicable).
+    # Generate workers, accumulate spawn items, emit mt_spawn_all.
+    let spawn_item_ty = types.Type.ty_named(module_name = "", name = "mt_spawn_item")
+    var spawn_items = vec.Vec[ir.Expr].create()
+    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     i = 0
     while i < bodies.len:
         let wbp = cap_body_irs.get(i) else:
@@ -3239,13 +3242,8 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
         let wb = unsafe: read(wbp)
         let worker = parallel_worker_fn(ctx, wb)
         ctx.pending_synthetic_functions.push(worker)
-        var spawn_args = vec.Vec[ir.Expr].create()
-        unsafe:
-            spawn_args.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
+        var item_data: ptr[ir.Expr]
         if has_captures:
-            # Zero-init the capture struct, then assign each field individually.
-            # Array-typed fields use memcpy — C aggregate-literal field-init cannot
-            # initialise array fields from same-typed array variables.
             let cap_ty = types.Type.ty_named(module_name = "", name = cap_struct_name)
             let cap_var = j3("__cap_", cap_uid, j2("_", pw1_str(i)))
             var cap_setup = vec.Vec[ir.Stmt].create()
@@ -3277,19 +3275,27 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
                 let csp = cs_iter.next() else:
                     break
                 output.push(unsafe: read(csp))
-            let cap_data_ref = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = cap_var, ty = cap_ty, pointer = false)), ty = void_ptr_ty()))
-            unsafe:
-                spawn_args.push(read(cap_data_ref))
+            item_data = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = cap_var, ty = cap_ty, pointer = false)), ty = void_ptr_ty))
         else:
-            unsafe:
-                spawn_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
-        output.push(ir.Stmt.stmt_expression(
-            expression = alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_run", arguments = spawn_args.as_span(), ty = void_ty)),
-            line = 0, source_path = "",
-        ))
+            item_data = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))
+        var item_fields = vec.Vec[ir.AggregateField].create()
+        item_fields.push(ir.AggregateField(name = "work", value = alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
+        item_fields.push(ir.AggregateField(name = "data", value = item_data))
+        let item_agg = alloc_expr(ir.Expr.expr_aggregate_literal(ty = spawn_item_ty, fields = item_fields.as_span()))
+        unsafe:
+            spawn_items.push(read(item_agg))
         i += 1
+    let item_count = bodies.len
+    let spawn_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(spawn_item_ty, types.literal_int(long<-item_count)))
+    let tasks_var = "__mt_tasks"
+    let tasks_arr = alloc_expr(ir.Expr.expr_array_literal(ty = spawn_arr_ty, elements = spawn_items.as_span()))
+    output.push(ir.Stmt.stmt_local(name = tasks_var, linkage_name = tasks_var, ty = spawn_arr_ty, value = tasks_arr, line = 0, source_path = ""))
+    var sa_args = vec.Vec[ir.Expr].create()
+    unsafe:
+        sa_args.push(read(alloc_expr(ir.Expr.expr_name(name = tasks_var, ty = spawn_arr_ty, pointer = false))))
+        sa_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-item_count, ty = types.primitive("int")))))
     output.push(ir.Stmt.stmt_expression(
-        expression = alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_wait", arguments = span[ir.Expr](), ty = void_ty)),
+        expression = alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_all", arguments = sa_args.as_span(), ty = void_ty)),
         line = 0, source_path = "",
     ))
 

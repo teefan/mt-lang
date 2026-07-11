@@ -4171,7 +4171,7 @@ function uses_parallel_runtime(program: ir.Program) -> bool:
 
             let f = read(program.functions.data + i)
 
-            if body_calls(f.body, "mt_parallel_for") or body_calls(f.body, "mt_spawn_run") or body_calls(f.body, "mt_detach_run") or body_calls(f.body, "mt_detach_join"):
+            if body_calls(f.body, "mt_parallel_for") or body_calls(f.body, "mt_spawn_all") or body_calls(f.body, "mt_detach_run") or body_calls(f.body, "mt_detach_join"):
 
                 return true
 
@@ -5258,13 +5258,6 @@ function emit_parallel_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  for (int t = 0; t < nworkers; t++) {")
     emit_line(e, "    uv_thread_join(&threads[t]);")
     emit_line(e, "  }")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static void mt_spawn_run(void (*work)(void*), void* data) {")
-    emit_line(e, "  work(data);")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static void mt_spawn_wait(void) {")
     emit_line(e, "}")
     emit_line(e, "")
     emit_line(e, "typedef struct {")
