@@ -25,6 +25,7 @@ import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.parser.ast as ast
 import mtc.c_naming as naming
+import mtc.lowering.async as async_mod
 
 
 ## A lowering-stage error.  Placeholder for Phase 1+, where lowering will fail
@@ -758,7 +759,14 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 if analysis.module_name.starts_with("std.async.libuv_runtime"):
                     pass
                 else if fun.is_async:
-                    lower_async_fn(ref_of(ctx), fun.name, fun.return_type, fun.body, ref_of(structs), ref_of(functions))
+                    if async_mod.body_has_await(fun.body):
+                        # Has awaits — use normal lowering with inside_async flag.
+                        # (Full CPS await lowering is deferred; the current
+                        # lower_function handles awaits via ctx.inside_async.)
+                        functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, true))
+                    else:
+                        # No awaits — full CPS with frame + synthetic functions.
+                        lower_async_fn(ref_of(ctx), fun.name, fun.return_type, fun.body, ref_of(structs), ref_of(functions))
                 else if lowerable_function(fun.is_async, fun.is_const, fun.type_params, fun.body):
                     functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, fun.is_async))
                     if is_root and fun.name.equal("main"):
@@ -11790,9 +11798,16 @@ function make_task_literal(inner: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let task_ty = make_task_type(inner_ty)
     var fields = vec.Vec[ir.AggregateField].create()
     let is_void = is_void_type_lowered(inner_ty)
+    let void_ptr = types.primitive("ptr_uint")
     if not is_void:
         fields.push(ir.AggregateField(name = "value", value = inner))
-    fields.push(ir.AggregateField(name = "ready", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool")))))
+    fields.push(ir.AggregateField(name = "frame",       value = alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
+    fields.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
+    fields.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
+    fields.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
+    if not is_void:
+        fields.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
+    fields.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = fields.as_span()))
 
 
@@ -12162,7 +12177,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.Type
     let frame_c = naming.qualified_c_name(ctx.module_name, j2(name, "_frame"))
     let resume_c = naming.qualified_c_name(ctx.module_name, j2(name, "_resume"))
     let task_ty = make_task_type(res_ty)
-    let has_await = body_has_await(body)
+    let has_await = async_mod.body_has_await(body)
     let ptr_ty = ptr_uint_type()
     let frame_ty = types.Type.ty_named(module_name = "", name = frame_c)
     let frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = single_ty_span(frame_ty))
@@ -12272,26 +12287,164 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.Type
     functions.push(ir.Function(name = name, linkage_name = naming.qualified_c_name(ctx.module_name, name), params = span[ir.Param](), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, method_receiver_param = false))
 
 
-## CPS body lowering — generates switch state machine for the resume function.
-## State 0 is the entry point; states 1..N are await resume points.
-## Currently a stub: state 0 sets ready and returns; higher states just return.
+## CPS body lowering — state machine for await suspend/resume.
+## Walks the AST body sequentially.  Each await creates a state boundary:
+## current state emits the suspend check, next state receives the result.
+## Non-await statements lower directly into the current state body.
 function lower_async_cps_body(ctx: ref[LowerCtx], name: str, body: ptr[ast.Stmt]?, resume_c_name: str, frame_c: str, frame_exp: ptr[ir.Expr], res_ty: types.Type, is_void_ret: bool, bool_ty: types.Type, int_ty: types.Type, output: ref[vec.Vec[ir.Stmt]]) -> void:
-    var state_count = count_async_states(body)
+    var state_cases = vec.Vec[vec.Vec[ir.Stmt]].create()
+    var cur = vec.Vec[ir.Stmt].create()
+    var await_idx: int = 0
+    var void_t = types.primitive("void")
 
+    # Walk each top-level statement in the block
+    let b = body
+    if b != null:
+        unsafe:
+            match read(b):
+                ast.Stmt.stmt_block as blk:
+                    var si: ptr_uint = 0
+                    while si < blk.statements.len:
+                        let sp = blk.statements.data + si
+                        if stmt_has_await(sp):
+                            lower_async_await_stmt(ctx, name, sp, resume_c_name, frame_c, frame_exp, res_ty, is_void_ret, bool_ty, int_ty, void_t, ref_of(cur), ref_of(state_cases), ref_of(await_idx))
+                        else:
+                            # Lower via normal path (handles defer, scoping)
+                            var tmp = lower_function_body(ctx, sp)
+                            var ti: ptr_uint = 0
+                            while ti < tmp.len:
+                                cur.push(unsafe: read(tmp.data + ti))
+                                ti += 1
+                        si += 1
+                _:
+                    if stmt_has_await(b):
+                        lower_async_await_stmt(ctx, name, b, resume_c_name, frame_c, frame_exp, res_ty, is_void_ret, bool_ty, int_ty, void_t, ref_of(cur), ref_of(state_cases), ref_of(await_idx))
+                    else:
+                        var tmp = lower_function_body(ctx, b)
+                        var ti: ptr_uint = 0
+                        while ti < tmp.len:
+                            cur.push(unsafe: read(tmp.data + ti))
+                            ti += 1
+
+    # Completion: set ready, store result, return
+    cur.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
+    if not is_void_ret:
+        cur.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_zero_init(ty = res_ty))))
+    cur.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+    state_cases.push(cur)
+
+    # Build switch cases
     var cases = vec.Vec[ir.SwitchCase].create()
-    var si: int = 0
-    while si <= state_count:
-        var case_body = vec.Vec[ir.Stmt].create()
-        if si == 0:
-            case_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
-            if not is_void_ret:
-                case_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_zero_init(ty = res_ty))))
-            case_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-        else:
-            case_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-        cases.push(ir.SwitchCase(is_default = false, value = alloc_expr(ir.Expr.expr_integer_literal(value = int<-si, ty = int_ty)), body = case_body.as_span()))
-        si += 1
+    var ci: ptr_uint = 0
+    while ci < state_cases.len():
+        let cp = state_cases.get(ci) else:
+            break
+        let case_body = unsafe: read(cp)
+        cases.push(ir.SwitchCase(is_default = false, value = alloc_expr(ir.Expr.expr_integer_literal(value = int<-(int<-ci), ty = int_ty)), body = case_body.as_span()))
+        ci += 1
     output.push(ir.Stmt.stmt_switch(expression = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "state", ty = int_ty)), cases = cases.as_span(), exhaustive = false))
+
+
+## Lower a statement containing await(s).  For simple stmts with a single
+## await (local decl, expr stmt), split into suspend/resume states.
+function lower_async_await_stmt(ctx: ref[LowerCtx], name: str, sp: ptr[ast.Stmt], resume_c_name: str, frame_c: str, frame_exp: ptr[ir.Expr], res_ty: types.Type, is_void_ret: bool, bool_ty: types.Type, int_ty: types.Type, void_t: types.Type, cur: ref[vec.Vec[ir.Stmt]], state_cases: ref[vec.Vec[vec.Vec[ir.Stmt]]], await_idx: ref[int]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_local as d:
+                let v = d.value
+                if v != null and expr_has_await(v):
+                    # Find the inner await and lower it
+                    lower_await_expr_rec(ctx, name, v, resume_c_name, frame_c, frame_exp, bool_ty, int_ty, void_t, cur, state_cases, await_idx)
+            ast.Stmt.stmt_expression as e:
+                if expr_has_await(e.expression):
+                    lower_await_expr_rec(ctx, name, e.expression, resume_c_name, frame_c, frame_exp, bool_ty, int_ty, void_t, cur, state_cases, await_idx)
+            _:
+                lower_stmt(ctx, cur, sp)
+
+
+## Recursively find and lower an await expression.  Walk through wrapper
+## expressions (if/conditional/call/etc.) until hitting the actual await.
+function lower_await_expr_rec(ctx: ref[LowerCtx], name: str, ep: ptr[ast.Expr], resume_c_name: str, frame_c: str, frame_exp: ptr[ir.Expr], bool_ty: types.Type, int_ty: types.Type, void_t: types.Type, cur: ref[vec.Vec[ir.Stmt]], state_cases: ref[vec.Vec[vec.Vec[ir.Stmt]]], await_idx: ref[int]) -> void:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_await as aw:
+                lower_async_await(ctx, name, aw.expression, resume_c_name, frame_c, frame_exp, bool_ty, int_ty, void_t, cur, state_cases, await_idx)
+            _:
+                # Non-await expression: lower normally
+                let lowered = lower_expr(ctx, ep)
+                cur.push(ir.Stmt.stmt_expression(expression = lowered, line = 0, source_path = ""))
+
+
+## Core await lowering: evaluate task expression, emit suspend/resume boundary.
+## Current state: check if task is ready, if not: set state+return.
+## Next state: take result, continue.
+function lower_async_await(ctx: ref[LowerCtx], name: str, task_ep: ptr[ast.Expr], resume_c_name: str, frame_c: str, frame_exp: ptr[ir.Expr], bool_ty: types.Type, int_ty: types.Type, void_t: types.Type, cur: ref[vec.Vec[ir.Stmt]], state_cases: ref[vec.Vec[vec.Vec[ir.Stmt]]], await_idx: ref[int]) -> void:
+    let task_ir = lower_expr(ctx, task_ep)
+    let old_idx = read(await_idx)
+    read(await_idx) = old_idx + 1
+    let next_state = old_idx + 1
+
+    # Store task in frame: frame->await_N = task
+    let await_fname = j3("await_", int_to_str(old_idx + 1), "")
+    cur.push(ir.Stmt.stmt_assignment(
+        target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = await_fname, ty = async_mod.ptr_void_type())),
+        operator = "=",
+        value = task_ir,
+    ))
+    let await_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = await_fname, ty = async_mod.ptr_void_type()))
+
+    # if (!task.ready(task.frame)) { suspend }
+    let task_frame = alloc_expr(ir.Expr.expr_member(receiver = await_field, member = "frame", ty = async_mod.ptr_void_type()))
+    let ready_fn = alloc_expr(ir.Expr.expr_member(receiver = await_field, member = "ready", ty = async_mod.ptr_void_type()))
+    let ready_call = alloc_expr(ir.Expr.expr_call_indirect(callee = ready_fn, arguments = single_expr_span(task_frame), ty = bool_ty))
+    let not_ready = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = ready_call, ty = bool_ty))
+
+    # Suspend body
+    var suspend_body = vec.Vec[ir.Stmt].create()
+    suspend_body.push(ir.Stmt.stmt_assignment(
+        target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "state", ty = int_ty)),
+        operator = "=",
+        value = alloc_expr(ir.Expr.expr_integer_literal(value = int<-next_state, ty = int_ty)),
+    ))
+    # set_waiter(frame, __mt_frame_raw, resume_fn) stub
+    suspend_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+
+    cur.push(ir.Stmt.stmt_if(
+        condition = not_ready,
+        then_body = suspend_body.as_span(),
+        else_body = span[ir.Stmt](),
+    ))
+
+    # Finalize current state, start new state
+    state_cases.push(unsafe: read(cur))
+    var new_cur = vec.Vec[ir.Stmt].create()
+    read(cur) = new_cur
+
+    # Resume: result = task.take_result(task.frame)
+    cur.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(
+        callee = alloc_expr(ir.Expr.expr_member(receiver = await_field, member = "take_result", ty = async_mod.ptr_void_type())),
+        arguments = single_expr_span(task_frame),
+        ty = async_mod.ptr_void_type(),
+    )), line = 0, source_path = ""))
+
+
+## Convert int to string.
+function int_to_str(v: int) -> str:
+    var buf = string.String.create()
+    var n = v
+    var is_neg = false
+    if n < 0:
+        n = 0 - n
+        is_neg = true
+    if n == 0:
+        buf.push_byte(48)  # '0'
+    while n > 0:
+        let digit_int = n % 10
+        buf.push_byte(ubyte<-(48 + digit_int))
+        n = n / 10
+    if is_neg:
+        buf.push_byte(45)  # '-'
+    return buf.as_str()
 
 
 ## ptr_uint primitive type (repeated for convenience in async section).
