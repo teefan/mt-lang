@@ -1,6 +1,6 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **CLI complete, self-compile deterministic, 172/172 tests pass, `-I` flag parity.**
+Status: **CLI complete, self-compile deterministic, 172/172 tests pass, `-I` flag parity, `own[T]` integrated across stdlib + mtc.**
 Last updated: 2026-07-11
 
 ---
@@ -20,9 +20,20 @@ Last updated: 2026-07-11
 
 | What | Description |
 |------|-------------|
+| `own[T]` integration | Implicit `own→ptr` coercion, safe operations (read, indexing, arithmetic), `heap.resize` returns `own[T]`. Stdlib fields (Cell, Vec, Deque, Map, LinkedMap, Arena, Bytes, net.ReadState) converted to `own`. `alloc_expr`/`alloc_stmt`/`alloc_decl` in mtc return `own[T]`. |
+| `unsafe` reduction | parser.mt: 275→190 (-31%), lowering.mt: 624→616 (-8). Total ~101 `unsafe` blocks removed across mtc. |
+| Lint: `prefer-own-ptr` | New lint hint detects bindings only used inside `unsafe` with explicit `ptr[T]` annotations or `heap.*alloc` sources. Strict pre-filter (excludes borrowed container pointers). 35 candidates flagged in mtc, 14 converted. |
+| Lint: `redundant-cast` extended | Detects and auto-fixes `ptr[T]<-own_ptr` casts (implicit own→ptr coercion makes them redundant). Also strips wrapping `unsafe:` when the cast was the only unsafe op. |
 | `&(&roots)` double-address bug | `ref_of(roots)` produced `&&roots` in destructuring calls because `expr_type` returned `void` for builtin calls and `coerce_arg_to_ref_param` added a second `&`. Fixed by computing the result type from the argument's type in the `ref_of` handler. |
 | CLI `-I` flag | `--root` accept both `-I` and `--root` for compatibility with Ruby mtc. Test runner now emits `-I` flags correctly. |
 | `--no-cache` flag | Accepted (no-op) in `build` and `run` commands for CLI compatibility. |
+
+### 0.2a Known stale / needing rebuild
+
+| What | Description |
+|------|-------------|
+| mtc binary | The pre-built `bin/mtc` does not include `own[T]` source changes (alloc_expr return types). `mtc test projects/mtc -I .` may fail with build errors; rebuild with `bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc` to get current. |
+| `mtc lint` | Ruby compiler supports `mtc lint` with full rule suite. Self-host mtc does NOT implement `lint` CLI command — still deferred (see §3). |
 
 ### 0.3 CLI coverage
 
@@ -35,17 +46,19 @@ mtc format <file> [--check|--write]      Parse + pretty-print
 mtc help                                 Print help
 ```
 
+NOTE: `mtc lint` is available in the Ruby compiler but NOT implemented in self-host mtc (deferred, see §3). The Ruby linter has 35+ rules including the new `prefer-own-ptr` and extended `redundant-cast` for own→ptr detection.
+
 ### 0.4 Module sizes
 
 | Module | Lines |
 |--------|-------|
-| `lowering/lowering.mt` | 12,321 |
-| `c_backend/c_backend.mt` | 4,626 |
-| `parser/parser.mt` | 3,928 |
-| `semantic/analyzer.mt` | 3,847 |
-| `main.mt` (CLI) | 1,191 |
+| `lowering/lowering.mt` | 12,265 |
+| `c_backend/c_backend.mt` | 4,628 |
+| `parser/parser.mt` | 3,843 |
+| `semantic/analyzer.mt` | 3,855 |
+| `main.mt` (CLI) | 1,197 |
 | **Extracted modules** | |
-| `lowering/utils.mt` | 222 |
+| `lowering/utils.mt` | 220 |
 | `lowering/async.mt` | 291 |
 | `semantic/diagnostics.mt` | 277 |
 | `semantic/scope.mt` | 88 |
