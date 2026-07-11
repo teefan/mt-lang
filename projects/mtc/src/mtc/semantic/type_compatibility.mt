@@ -92,8 +92,25 @@ public function types_compatible(expected: types.Type, actual: types.Type, sourc
                                 unsafe: read(ag.args.data + 0),
                                 null,
                             )
-                    _:
-                        pass
+                _:
+                    pass
+        _:
+            pass
+
+    # 8a  own[T]  →  ptr[T] / const_ptr[T]   (owning-to-raw pointer coercion).
+    match actual:
+        types.Type.ty_generic as ag:
+            if ag.name == "own":
+                match expected:
+                    types.Type.ty_generic as eg:
+                        if (eg.name == "ptr" or eg.name == "const_ptr") and eg.args.len >= 1 and ag.args.len >= 1:
+                            return types_compatible(
+                                unsafe: read(eg.args.data + 0),
+                                unsafe: read(ag.args.data + 0),
+                                null,
+                            )
+                _:
+                    pass
         _:
             pass
 

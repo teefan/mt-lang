@@ -167,9 +167,20 @@ module MilkTea
     end
 
     def mutable_to_const_pointer_compatibility?(actual_type, expected_type)
+      return mutable_to_const_pointer_compatibility?(actual_type.base, expected_type.base) if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
       return mutable_to_const_pointer_compatibility?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
       return false if actual_type.is_a?(Types::Nullable)
-      return false unless mutable_pointer_type?(actual_type) && const_pointer_type?(expected_type)
+      return false unless (mutable_pointer_type?(actual_type) || own_type?(actual_type)) && const_pointer_type?(expected_type)
+
+      pointee_type(actual_type) == pointee_type(expected_type)
+    end
+
+    def own_to_raw_pointer_compatibility?(actual_type, expected_type)
+      return own_to_raw_pointer_compatibility?(actual_type.base, expected_type.base) if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
+      return own_to_raw_pointer_compatibility?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
+      return false if actual_type.is_a?(Types::Nullable)
+      return false unless own_type?(actual_type)
+      return false unless mutable_pointer_type?(expected_type) || const_pointer_type?(expected_type)
 
       pointee_type(actual_type) == pointee_type(expected_type)
     end

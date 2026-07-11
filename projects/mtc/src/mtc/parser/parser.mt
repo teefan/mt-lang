@@ -512,13 +512,13 @@ function append_escaped_byte(buf: ref[string.String], ch: ubyte) -> void:
 # =============================================================================
 
 function alloc_expr(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
-    return unsafe: ptr[ast.Expr]<-heap_mod.must_alloc[ast.Expr](1)
+\1heap.must_alloc[ast.Expr](1)
 
 function alloc_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
-    return unsafe: ptr[ast.Stmt]<-heap_mod.must_alloc[ast.Stmt](1)
+\1heap.must_alloc[ast.Stmt](1)
 
 function alloc_decl(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
-    return unsafe: ptr[ast.Decl]<-heap_mod.must_alloc[ast.Decl](1)
+\1heap.must_alloc[ast.Decl](1)
 
 
 # =============================================================================
@@ -1142,7 +1142,7 @@ function parse_type_ref(s: ref[pstate.ParserState]) -> ptr[ast.TypeRef]:
             lt_cn = read(lt_tok).column
         consume_name(s, c"expected lifetime name after @")
         let lt_name = previous_lexeme(s)
-        var node = unsafe: ptr[ast.TypeRef]<-heap_mod.must_alloc[ast.TypeRef](1)
+\1heap.must_alloc[ast.TypeRef](1)
         unsafe:
             read(node) = ast.TypeRef(
                 name = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef](), line = lt_ln, column = lt_cn),
@@ -1195,7 +1195,7 @@ function parse_callable_type_ref(s: ref[pstate.ParserState], is_proc_val: bool) 
     consume(s, tk.TokenKind.rparen, c"expected ')' after callable type params")
     consume(s, tk.TokenKind.arrow, c"expected '->' after callable type params")
     var ret_type = parse_type_ref(s)
-    var node = unsafe: ptr[ast.TypeRef]<-heap_mod.must_alloc[ast.TypeRef](1)
+\1heap.must_alloc[ast.TypeRef](1)
     var params_span = params_vec.as_span()
     unsafe:
         read(node) = ast.TypeRef(
@@ -1244,7 +1244,7 @@ function parse_dyn_type_ref(s: ref[pstate.ParserState]) -> ptr[ast.TypeRef]:
     var iface_qname = ast.QualifiedName(parts = parts_vec.as_span(), type_arguments = iface_args, line = ln, column = cn)
     consume(s, tk.TokenKind.rbracket, c"expected ']' after dyn interface")
     var nullable = match_kind(s, tk.TokenKind.question)
-    var node = unsafe: ptr[ast.TypeRef]<-heap_mod.must_alloc[ast.TypeRef](1)
+\1heap.must_alloc[ast.TypeRef](1)
     unsafe:
         read(node) = ast.TypeRef(
             name = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef](), line = ln, column = cn),
@@ -1285,7 +1285,7 @@ function parse_tuple_or_parenthesized_type(s: ref[pstate.ParserState]) -> ptr[as
         consume(s, tk.TokenKind.rparen, c"expected ')' after tuple type elements")
         var nullable = match_kind(s, tk.TokenKind.question)
         var types_span = types_vec.as_span()
-        var node = unsafe: ptr[ast.TypeRef]<-heap_mod.must_alloc[ast.TypeRef](1)
+\1heap.must_alloc[ast.TypeRef](1)
         unsafe:
             read(node) = ast.TypeRef(
                 name = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef](), line = ln, column = cn),
@@ -1346,7 +1346,7 @@ function parse_named_type_ref(s: ref[pstate.ParserState], allow_nullable: bool) 
     var name_parts_span = part_names.as_span()
     var type_args_span = type_args_vec.as_span()
     var qname = ast.QualifiedName(parts = name_parts_span, type_arguments = type_args_span, line = ln, column = cn)
-    var node = unsafe: ptr[ast.TypeRef]<-heap_mod.must_alloc[ast.TypeRef](1)
+\1heap.must_alloc[ast.TypeRef](1)
     unsafe:
         read(node) = ast.TypeRef(
             name = qname, arguments = type_args_span, nullable = nullable,
@@ -1362,7 +1362,7 @@ function parse_named_type_ref(s: ref[pstate.ParserState], allow_nullable: bool) 
 function parse_type_argument(s: ref[pstate.ParserState]) -> ptr[ast.TypeRef]:
     if match_kind(s, tk.TokenKind.integer):
         let lex = previous_lexeme(s)
-        var node = unsafe: ptr[ast.TypeRef]<-heap_mod.must_alloc[ast.TypeRef](1)
+\1heap.must_alloc[ast.TypeRef](1)
         var parts = vec.Vec[str].create()
         parts.push(lex)
         var span_parts = parts.as_span()
@@ -1379,7 +1379,7 @@ function parse_type_argument(s: ref[pstate.ParserState]) -> ptr[ast.TypeRef]:
         return node
     if match_kind(s, tk.TokenKind.float_literal):
         let lex = previous_lexeme(s)
-        var node = unsafe: ptr[ast.TypeRef]<-heap_mod.must_alloc[ast.TypeRef](1)
+\1heap.must_alloc[ast.TypeRef](1)
         var parts = vec.Vec[str].create()
         parts.push(lex)
         var span_parts = parts.as_span()
@@ -3374,7 +3374,7 @@ function parse_type_alias(s: ref[pstate.ParserState], visibility: bool) -> ptr[a
 function make_int_type_ref(s: ref[pstate.ParserState], ln: ptr_uint, cn: ptr_uint) -> ptr[ast.TypeRef]:
     var parts = vec.Vec[str].create()
     parts.push("int")
-    var node = unsafe: ptr[ast.TypeRef]<-heap_mod.must_alloc[ast.TypeRef](1)
+\1heap.must_alloc[ast.TypeRef](1)
     unsafe:
         read(node) = ast.TypeRef(
             name = ast.QualifiedName(parts = parts.as_span(), type_arguments = span[ast.TypeRef](), line = ln, column = cn),

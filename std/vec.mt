@@ -1,7 +1,7 @@
 import std.mem.heap as heap
 
 public struct Vec[T]:
-    data: ptr[T]?
+    data: own[T]?
     len: ptr_uint
     capacity: ptr_uint
 
@@ -130,7 +130,7 @@ extending Vec[T]:
 
         var copied: ptr[T]? = null
         if needs_growth:
-            copied = unsafe: ptr[T]<-heap.must_alloc[T](values.len)
+            copied = heap.must_alloc[T](values.len)
             unsafe:
                 let copied_ptr = ptr[T]<-copied
                 var index: ptr_uint = 0

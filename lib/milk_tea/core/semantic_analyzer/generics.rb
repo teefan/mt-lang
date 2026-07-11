@@ -262,6 +262,11 @@ module MilkTea
           return
         end
 
+        if own_type?(actual_type) && (mutable_pointer_type?(pattern_type) || const_pointer_type?(pattern_type))
+          collect_type_substitutions(pointee_type(pattern_type), owned_referent_type(actual_type), substitutions, function_name)
+          return
+        end
+
         return unless actual_type.is_a?(Types::GenericInstance)
         return unless actual_type.name == pattern_type.name && actual_type.arguments.length == pattern_type.arguments.length
 

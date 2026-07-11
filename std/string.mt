@@ -159,7 +159,7 @@ extending String:
 
         var copied: ptr[ubyte]? = null
         if needs_growth:
-            copied = unsafe: ptr[ubyte]<-heap.must_alloc[ubyte](suffix.len)
+            copied = heap.must_alloc[ubyte](suffix.len)
             unsafe: heap.copy_bytes(copied, ptr[ubyte]<-suffix.data, suffix.len)
 
         this.reserve(new_len)

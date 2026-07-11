@@ -27,7 +27,7 @@ public struct Entries[K, V]:
     started: bool
 
 public struct LinkedMap[K, V]:
-    buckets: ptr[ptr[Node[K, V]]?]?
+    buckets: own[ptr[Node[K, V]]?]?
     len: ptr_uint
     capacity: ptr_uint
     head: ptr[Node[K, V]]?

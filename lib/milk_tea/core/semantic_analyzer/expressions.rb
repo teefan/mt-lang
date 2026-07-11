@@ -63,7 +63,7 @@ module MilkTea
 
           return referenced_type(binding.type) if allow_ref_identifier && ref_type?(binding.type)
           if allow_pointer_identifier && pointer_type?(binding.type)
-            require_unsafe!("raw pointer dereference requires unsafe")
+            require_unsafe!("raw pointer dereference requires unsafe") unless own_type?(binding.type)
             raise_sema_error("cannot assign through read-only raw pointer #{binding.type}") if require_mutable_pointer && const_pointer_type?(binding.type)
 
             return binding.type

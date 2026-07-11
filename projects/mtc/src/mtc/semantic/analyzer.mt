@@ -2928,7 +2928,10 @@ function unify(pattern: types.Type, actual: types.Type, subs: ref[map_mod.Map[st
             else:
                 match actual:
                     types.Type.ty_generic as ag:
-                        if pg.name == ag.name and pg.args.len == ag.args.len:
+                        if (pg.name == "ptr" or pg.name == "const_ptr") and ag.name == "own" and pg.args.len >= 1 and ag.args.len >= 1:
+                            unsafe:
+                                unify(read(pg.args.data + 0), read(ag.args.data + 0), subs)
+                        else if pg.name == ag.name and pg.args.len == ag.args.len:
                             var i: ptr_uint = 0
                             while i < pg.args.len:
                                 unsafe:

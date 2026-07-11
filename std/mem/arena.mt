@@ -3,7 +3,7 @@ import std.mem.heap as heap
 public type Mark = ptr_uint
 
 public struct Arena:
-    memory: ptr[ubyte]?
+    memory: own[ubyte]?
     capacity: ptr_uint
     alignment: ptr_uint
     offset: ptr_uint
@@ -30,7 +30,7 @@ public function create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) ->
         )
 
     return unsafe: Arena(
-            memory = ptr[ubyte]<-memory,
+            memory = own[ubyte]<-memory,
             capacity = capacity_bytes,
             alignment = normalized_alignment,
             offset = 0
@@ -85,10 +85,9 @@ extending Arena:
         if size_bytes > this.capacity - aligned_offset:
             return null
 
-        unsafe:
-            let result = backing + aligned_offset
-            this.offset = aligned_offset + size_bytes
-            return result
+        let result = backing + aligned_offset
+        this.offset = aligned_offset + size_bytes
+        return result
 
 
     public editable function alloc[T](count: ptr_uint) -> ptr[T]?:

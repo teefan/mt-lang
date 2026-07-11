@@ -1,7 +1,7 @@
 import std.mem.heap as heap
 
 public struct Deque[T]:
-    data: ptr[T]?
+    data: own[T]?
     head: ptr_uint
     len: ptr_uint
     capacity: ptr_uint

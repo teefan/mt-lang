@@ -34,7 +34,7 @@ public struct Entries[K, V]:
     node: ptr[Node[K, V]]?
 
 public struct Map[K, V]:
-    buckets: ptr[ptr[Node[K, V]]?]?
+    buckets: own[ptr[Node[K, V]]?]?
     len: ptr_uint
     capacity: ptr_uint
 
@@ -186,7 +186,7 @@ extending Map[K, V]:
             else:
                 new_capacity *= 2
 
-        let new_buckets = unsafe: ptr[ptr[Node[K, V]]?]<-heap.must_alloc_zeroed[ptr[Node[K, V]]?](new_capacity)
+        let new_buckets = heap.must_alloc_zeroed[ptr[Node[K, V]]?](new_capacity)
         let old_buckets = this.buckets
         let old_capacity = this.capacity
 
@@ -230,7 +230,7 @@ extending Map[K, V]:
         unsafe:
             let bucket_ptr = ptr[ptr[Node[K, V]]?]<-current_buckets
             let index = Map[K, V].bucket_index(key_hash, this.capacity)
-            let node = unsafe: ptr[Node[K, V]]<-heap.must_alloc[Node[K, V]](1)
+            let node = heap.must_alloc[Node[K, V]](1)
             let node_ptr = ptr[Node[K, V]]<-node
             read(node_ptr) = Node[K, V](
                 hash = key_hash,
