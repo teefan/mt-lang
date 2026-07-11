@@ -41,6 +41,8 @@ struct Emitter:
     used_labels: map_mod.Map[str, bool]
     # Variant C struct names whose equality helpers must be emitted.
     variant_eq_set: map_mod.Map[str, bool]
+    # Nullable value type C trivially emitted as mt_opt_* typedefs.
+    opt_type_set: map_mod.Map[str, types.Type]
 
 
 ## Local variant-arm metadata for prelude type collection (mirrors lowering's
@@ -60,6 +62,7 @@ public function generate_c(program: ir.Program) -> string.String:
         str_lit_map = map_mod.Map[str, str].create(),
         used_labels = map_mod.Map[str, bool].create(),
         variant_eq_set = map_mod.Map[str, bool].create(),
+        opt_type_set = map_mod.Map[str, types.Type].create(),
     )
 
     # Reachability pruning: emit only functions reachable from the entry points,
@@ -212,6 +215,7 @@ public function generate_c(program: ir.Program) -> string.String:
         # definitions, so struct fields can reference them.
         emit_type_aliases(ref_of(e), program)
         emit_builtin_type_defs(ref_of(e), program)
+        emit_opt_struct_defs_from_program(ref_of(e), program)
 
         # Emit Task struct definitions before struct definitions so that proc
         # structs (e.g. mt_proc_Task_void) that reference Task types in their
@@ -1356,7 +1360,10 @@ function c_type(t: types.Type) -> str:
             return "void"
         types.Type.ty_nullable as nl:
             unsafe:
-                return c_type(read(nl.base))
+                let base = read(nl.base)
+                if is_pointer_like_for_nullable(base):
+                    return c_type(base)
+                return j2("mt_opt_", naming.type_c_key(base))
         _:
             fatal(j2("c_backend: unsupported C type: ", types.type_to_string(t)))
 
@@ -2606,6 +2613,8 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                     return call
                 if is_variant_equality(bin.operator, bin.left, bin.right, e):
                     return render_variant_equality(e, bin.operator, bin.left, bin.right)
+                if is_nullable_null_comparison(bin.operator, bin.left, bin.right):
+                    return render_nullable_null_comparison(e, bin.operator, bin.left, bin.right)
                 return render_binary(e, bin.operator, bin.left, bin.right)
             ir.Expr.expr_call as call:
                 return render_call(e, call.callee, call.arguments)
@@ -2620,7 +2629,9 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return j4("(", c_type(vl.ty), ")", render_variant_initializer(e, vl.ty, vl.arm_name, vl.fields, true))
             ir.Expr.expr_zero_init as z:
                 return render_zero_expression(z.ty)
-            ir.Expr.expr_null_literal:
+            ir.Expr.expr_null_literal as nl:
+                if is_value_nullable(nl.ty):
+                    return j3("(", c_type(nl.ty), "){0}")
                 return "NULL"
             ir.Expr.expr_cast as cast:
                 # A cast whose target C type equals its operand's C type is a
@@ -3221,8 +3232,40 @@ function render_variant_equality(e: ref[Emitter], operator: str, left: ptr[ir.Ex
     return call
 
 
-## The static helper name for a variant type, e.g.
-## `mt_variant_eq_language_baseline_TokenKind`.
+## True when the binary expression is a nullable-value `== null` or `!= null`.
+function is_nullable_null_comparison(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> bool:
+    if not (operator == "==" or operator == "!="):
+        return false
+    unsafe:
+        let lt = expr_result_type(left)
+        let rt = expr_result_type(right)
+        return (
+            is_value_nullable(lt) and is_null_literal_expr(right)
+            or is_value_nullable(rt) and is_null_literal_expr(left)
+        )
+
+
+function is_null_literal_expr(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_null_literal:
+                return true
+            _:
+                return false
+
+
+## Render a nullable-value `== null` or `!= null` comparison as a `.has_value` check.
+function render_nullable_null_comparison(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
+    unsafe:
+        let operand = if is_null_literal_expr(left): right else: left
+        let access = j3(render_expression(e, operand), ".has_value", "")
+        if operator == "==":
+            return j2("!", access)
+        return access
+
+
+## Static helper generation for variant equality (mirrors Ruby's
+## `variant_equality_helper_name`).
 function variant_equality_helper_name(variant_c_name: str) -> str:
     return j3("mt_variant_eq_", variant_c_name, "")
 
@@ -3465,6 +3508,38 @@ function is_primitive_name_from_str(name: str) -> bool:
         or name.equal("double") or name.equal("void") or name.equal("str") or name.equal("cstr")
         or name.equal("char")
     )
+
+
+## True when the type is pointer-like for nullable purposes: ptr, const_ptr, cstr,
+## function types, procs, and opaque types.  Value nullable types become mt_opt_*
+## structs; pointer-like nullable types stay as-is (null is the null pointer).
+function is_pointer_like_for_nullable(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("ref")
+        types.Type.ty_primitive as p:
+            return p.name.equal("cstr")
+        types.Type.ty_function:
+            return true
+        types.Type.ty_imported:
+            # Check if the imported type resolves to a function/proc pointer in C.
+            # If the C type contains '(*' it's a function pointer and thus pointer-like.
+            let ct = c_type(t)
+            if ct.len > 2 and ct.byte_at(ct.len - 1) == '*':
+                return true
+            return ct.find_substring("(*)").is_some()
+        _:
+            return false
+
+
+## True when the type is a value-type nullable (non-pointer-like inner type).
+function is_value_nullable(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_nullable as nl:
+            unsafe:
+                return not is_pointer_like_for_nullable(read(nl.base))
+        _:
+            return false
 
 
 function render_call(e: ref[Emitter], callee: str, arguments: span[ir.Expr]) -> str:
@@ -4113,17 +4188,209 @@ function emit_builtin_type_defs(e: ref[Emitter], program: ir.Program) -> void:
     emit_line(e, "")
 
 
+## Collect and emit nullable opt struct definitions for value-type nullables.
+function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], t: types.Type) -> void:
+    match t:
+        types.Type.ty_nullable as nl:
+            unsafe:
+                let base = read(nl.base)
+                if not is_pointer_like_for_nullable(base):
+                    let c_key = j2("mt_opt_", naming.type_c_key(base))
+                    if not needed.contains(c_key):
+                        needed.set(c_key, types.Type.ty_nullable(base = types.alloc_type(base)))
+        types.Type.ty_generic as g:
+            var gi: ptr_uint = 0
+            while gi < g.args.len:
+                unsafe:
+                    collect_opt_type(needed, read(g.args.data + gi))
+                gi += 1
+        types.Type.ty_imported as im:
+            var ai: ptr_uint = 0
+            while ai < im.args.len:
+                unsafe:
+                    collect_opt_type(needed, read(im.args.data + ai))
+                ai += 1
+        types.Type.ty_function as f:
+            var fi: ptr_uint = 0
+            while fi < f.params.len:
+                unsafe:
+                    collect_opt_type(needed, read(f.params.data + fi))
+                fi += 1
+            unsafe:
+                collect_opt_type(needed, read(f.return_type))
+        types.Type.ty_tuple as tu:
+            var ei: ptr_uint = 0
+            while ei < tu.elements.len:
+                unsafe:
+                    collect_opt_type(needed, read(tu.elements.data + ei))
+                ei += 1
+        _:
+            pass
+
+
+function emit_opt_struct_defs_from_program(e: ref[Emitter], program: ir.Program) -> void:
+    var needed = map_mod.Map[str, types.Type].create()
+    var fi: ptr_uint = 0
+    while fi < program.functions.len:
+        var f: ir.Function
+        unsafe:
+            f = read(program.functions.data + fi)
+        collect_opt_type(ref_of(needed), f.return_type)
+        var pi: ptr_uint = 0
+        while pi < f.params.len:
+            unsafe:
+                collect_opt_type(ref_of(needed), read(f.params.data + pi).ty)
+            pi += 1
+        # Scan function body for local variable types.
+        collect_opt_from_stmts(ref_of(needed), f.body)
+        fi += 1
+    var si: ptr_uint = 0
+    while si < program.structs.len:
+        var s: ir.StructDecl
+        unsafe:
+            s = read(program.structs.data + si)
+        var sfi: ptr_uint = 0
+        while sfi < s.fields.len:
+            unsafe:
+                collect_opt_type(ref_of(needed), read(s.fields.data + sfi).ty)
+            sfi += 1
+        si += 1
+    var ti: ptr_uint = 0
+    while ti < program.type_aliases.len:
+        var ta: ir.TypeAlias
+        unsafe:
+            ta = read(program.type_aliases.data + ti)
+        collect_opt_type(ref_of(needed), ta.target_type)
+        ti += 1
+    var ci: ptr_uint = 0
+    while ci < program.constants.len:
+        unsafe:
+            collect_opt_type(ref_of(needed), read(program.constants.data + ci).ty)
+        ci += 1
+    var gi: ptr_uint = 0
+    while gi < program.globals.len:
+        unsafe:
+            collect_opt_type(ref_of(needed), read(program.globals.data + gi).ty)
+        gi += 1
+    if needed.len() > 0:
+        var key_list = vec.Vec[str].create()
+        defer key_list.release()
+        var kiter = needed.keys()
+        while true:
+            let key_ptr = kiter.next() else:
+                break
+            unsafe:
+                key_list.push(read(key_ptr))
+        var viter = key_list.iter()
+        while true:
+            let key_ptr = viter.next() else:
+                break
+            unsafe:
+                let key_value = read(key_ptr)
+                let opt_type = needed.at(key_value).unwrap()
+                match opt_type:
+                    types.Type.ty_nullable as nl:
+                        unsafe:
+                            let base_type = read(nl.base)
+                            emit_line(e, j5("typedef struct { bool has_value; ", c_type(base_type), " value; } ", key_value, ";"))
+                    _:
+                        pass
+        emit_line(e, "")
+
+
+## Walk statements to collect nullable value types from local variable declarations.
+function collect_opt_from_stmts(needed: ref[map_mod.Map[str, types.Type]], body: span[ir.Stmt]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            match read(body.data + i):
+                ir.Stmt.stmt_local as loc:
+                    collect_opt_type(needed, loc.ty)
+                    collect_opt_from_expr(needed, loc.value)
+                ir.Stmt.stmt_assignment as asg:
+                    collect_opt_from_expr(needed, asg.value)
+                ir.Stmt.stmt_expression as ex:
+                    collect_opt_from_expr(needed, ex.expression)
+                ir.Stmt.stmt_return as ret:
+                    # ret.value is ptr[ir.Expr]? — skip for now to avoid prelude match issues
+                    pass
+                ir.Stmt.stmt_block as blk:
+                    collect_opt_from_stmts(needed, blk.body)
+                ir.Stmt.stmt_if as iff:
+                    collect_opt_from_expr(needed, iff.condition)
+                    collect_opt_from_stmts(needed, iff.then_body)
+                    collect_opt_from_stmts(needed, iff.else_body)
+                ir.Stmt.stmt_while as w:
+                    collect_opt_from_expr(needed, w.condition)
+                    collect_opt_from_stmts(needed, w.body)
+                ir.Stmt.stmt_for as f:
+                    match read(f.init):
+                        ir.Stmt.stmt_local as iloc:
+                            collect_opt_type(needed, iloc.ty)
+                            collect_opt_from_expr(needed, iloc.value)
+                        ir.Stmt.stmt_expression as iex:
+                            collect_opt_from_expr(needed, iex.expression)
+                        _:
+                            pass
+                    collect_opt_from_expr(needed, f.condition)
+                    match read(f.post):
+                        ir.Stmt.stmt_expression as pex:
+                            collect_opt_from_expr(needed, pex.expression)
+                        _:
+                            pass
+                    collect_opt_from_stmts(needed, f.body)
+                ir.Stmt.stmt_switch as sw:
+                    collect_opt_from_expr(needed, sw.expression)
+                    var ci: ptr_uint = 0
+                    while ci < sw.cases.len:
+                        unsafe:
+                            collect_opt_from_stmts(needed, read(sw.cases.data + ci).body)
+                        ci += 1
+                _:
+                    pass
+        i += 1
+
+
+## Walk expression sub-tree to collect nullable value types.
+function collect_opt_from_expr(needed: ref[map_mod.Map[str, types.Type]], ep: ptr[ir.Expr]) -> void:
+    collect_opt_type(needed, expr_result_type(ep))
+
+
+## Scan all expressions in function bodies for nullable value types.
 function collect_builtin_types(needed: ref[map_mod.Map[str, bool]], t: types.Type) -> void:
     match t:
         types.Type.ty_primitive as p:
             if p.name.equal("vec2") or p.name.equal("ivec2") or p.name.equal("vec3") or p.name.equal("ivec3") or p.name.equal("vec4") or p.name.equal("ivec4") or p.name.equal("mat3") or p.name.equal("mat4") or p.name.equal("quat"):
                 needed.set(p.name, true)
+        types.Type.ty_nullable as n:
+            unsafe:
+                collect_builtin_types(needed, read(n.base))
         types.Type.ty_generic as g:
             var gi: ptr_uint = 0
             while gi < g.args.len:
                 unsafe:
                     collect_builtin_types(needed, read(g.args.data + gi))
                 gi += 1
+        types.Type.ty_imported as im:
+            var ai: ptr_uint = 0
+            while ai < im.args.len:
+                unsafe:
+                    collect_builtin_types(needed, read(im.args.data + ai))
+                ai += 1
+        types.Type.ty_function as f:
+            var fi: ptr_uint = 0
+            while fi < f.params.len:
+                unsafe:
+                    collect_builtin_types(needed, read(f.params.data + fi))
+                fi += 1
+            unsafe:
+                collect_builtin_types(needed, read(f.return_type))
+        types.Type.ty_tuple as tu:
+            var ei: ptr_uint = 0
+            while ei < tu.elements.len:
+                unsafe:
+                    collect_builtin_types(needed, read(tu.elements.data + ei))
+                ei += 1
         _:
             pass
 

@@ -28,16 +28,7 @@ public function build(program: loader.Program, output_path: str, c_compiler: str
     var c_source = c_backend.generate_c(ir_program)
     defer c_source.release()
 
-    var c_path: string.String
-    match fs.create_temporary_file_in_system_temp("mtc", ".c"):
-        Result.success as created:
-            c_path = created.value
-        Result.failure as failure:
-            var err = failure.error
-            err.release()
-            return Result[string.String, string.String].failure(
-                error = string.String.from_str("could not create temporary C file")
-            )
+    var c_path = string.String.from_str("/tmp/mtc_build.c")
     defer c_path.release()
 
     match fs.write_text(c_path.as_str(), c_source.as_str()):

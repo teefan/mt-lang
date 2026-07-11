@@ -5507,18 +5507,18 @@ function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], 
             let concrete_name = canonical_type_name(ctx.module_name, concrete_type)
             let vtable_name = ensure_dyn_vtable(ctx, concrete_name, concrete_type, iface_name, methods, ia.value.module_name, type_args.as_span(), ia.value.type_params)
             var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-            let vtable_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+            var const_void_ptr = types.Type.ty_generic(name = "const_ptr", args = sp_type(types.primitive("void")))
             return alloc_expr(ir.Expr.expr_aggregate_literal(
                 ty = types.Type.ty_dyn(iface = iface_name),
                 fields = sp_fields2(
                     ir.AggregateField(name = "data", value = alloc_expr(ir.Expr.expr_cast(target_type = void_ptr, expression = arg_value, ty = void_ptr))),
                     ir.AggregateField(name = "vtable", value = alloc_expr(ir.Expr.expr_cast(
-                        target_type = void_ptr,
+                        target_type = const_void_ptr,
                         expression = alloc_expr(ir.Expr.expr_address_of(
                             expression = alloc_expr(ir.Expr.expr_name(name = vtable_name, ty = void_ptr, pointer = false)),
                             ty = void_ptr,
                         )),
-                        ty = void_ptr,
+                        ty = const_void_ptr,
                     ))),
                 ),
             ))
@@ -5672,9 +5672,10 @@ function ensure_dyn_struct_type(ctx: ref[LowerCtx], iface_name: str) -> void:
         if unsafe: read(s_ptr).linkage_name.equal(name):
             return
     var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    var const_void_ptr = types.Type.ty_generic(name = "const_ptr", args = sp_type(types.primitive("void")))
     var fields = vec.Vec[ir.Field].create()
     fields.push(ir.Field(name = "data", ty = void_ptr))
-    fields.push(ir.Field(name = "vtable", ty = void_ptr))
+    fields.push(ir.Field(name = "vtable", ty = const_void_ptr))
     ctx.pending_dyn_structs.push(ir.StructDecl(name = name, linkage_name = name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
 
 

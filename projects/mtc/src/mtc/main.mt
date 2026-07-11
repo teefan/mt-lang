@@ -10,6 +10,7 @@ import std.str
 import std.string as string
 import std.vec as vec
 import std.stdio as stdio
+import std.process as process
 
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.token as token_mod
@@ -72,6 +73,12 @@ function main(args: span[str]) -> int:
             return 1
         return build_command(args)
 
+    if cmd == "run":
+        if args.len < 2:
+            print_help()
+            return 1
+        return run_command(args)
+
     if cmd == "help":
         print_help()
         return 0
@@ -91,7 +98,8 @@ function print_help() -> void:
     stdio.print_line("  check <file|dir> [--root DIR]...  type-check a file/package and its imports")
     stdio.print_line("  lower <file|dir> [--root DIR]...  lower to IR and print it")
     stdio.print_line("  emit-c <file|dir> [--root DIR]...  compile to C and print it")
-    stdio.print_line("  build <file|dir> [--root DIR]...  compile and link a native binary")
+    stdio.print_line("  build <file|dir> [--root DIR]... [-o OUTPUT] [--keep-c PATH]  compile and link a native binary")
+    stdio.print_line("  run   <file|dir> [--root DIR]... [-o OUTPUT]                     build and execute a program")
     stdio.print_line("  help          print this help")
 
 
@@ -476,7 +484,31 @@ function effective_source_path(raw_path: str, roots: ref[vec.Vec[str]], entry_ow
 function build_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
-    let path = parse_source_operand(args, ref_of(roots)) else:
+    var output_override: Option[str] = Option[str].none
+    var keep_c_path: Option[str] = Option[str].none
+    var filtered = vec.Vec[str].create()
+    defer filtered.release()
+    filtered.push("build")
+    var ai: ptr_uint = 1
+    while ai < args.len:
+        let arg = args[ai]
+        if arg == "-o":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: -o requires an output path")
+                return 1
+            output_override = Option[str].some(value= args[ai + 1])
+            ai += 2
+            continue
+        if arg == "--keep-c":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --keep-c requires a path")
+                return 1
+            keep_c_path = Option[str].some(value= args[ai + 1])
+            ai += 2
+            continue
+        filtered.push(arg)
+        ai += 1
+    let path = parse_source_operand(filtered.as_span(), ref_of(roots)) else:
         return 1
 
     var entry_path_owner = string.String.create()
@@ -487,11 +519,20 @@ function build_command(args: span[str]) -> int:
     var program = loader.check_program(effective, roots.as_span(), resolver.Platform.linux)
     defer program.release()
 
-    let output_path = default_output_path(effective)
-    match build_driver.build(program, output_path, "cc", roots.as_span()):
+    if keep_c_path.is_some():
+        keep_c_to_file(program, keep_c_path.unwrap())
+
+    var output_path: string.String
+    if output_override.is_some():
+        output_path = string.String.from_str(output_override.unwrap())
+    else:
+        output_path = default_output_path(effective)
+
+    match build_driver.build(program, output_path.as_str(), "cc", roots.as_span()):
         Result.success as built:
             var output = built.value
             defer output.release()
+            output_path.release()
             stdio.print_format(
                 c"built %.*s -> %.*s\n",
                 int<-(effective.len), effective.data,
@@ -505,6 +546,100 @@ function build_command(args: span[str]) -> int:
             defer message.release()
             let text = message.as_str()
             stdio.print_format(c"error: %.*s\n", int<-(text.len), text.data)
+            output_path.release()
+            entry_path_owner.release()
+            source_root_owner.release()
+            return 1
+
+
+## Run a program (`mtc run`).  Builds and then executes the binary.
+function run_command(args: span[str]) -> int:
+    var roots = vec.Vec[str].create()
+    defer roots.release()
+    var output_override: Option[str] = Option[str].none
+    var program_args = vec.Vec[str].create()
+    defer program_args.release()
+    var filtered = vec.Vec[str].create()
+    defer filtered.release()
+    filtered.push("run")
+    var ai: ptr_uint = 1
+    var seen_dashdash = false
+    while ai < args.len:
+        let arg = args[ai]
+        if seen_dashdash:
+            program_args.push(args[ai])
+            ai += 1
+            continue
+        if arg == "--":
+            seen_dashdash = true
+            ai += 1
+            continue
+        if arg == "-o":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: -o requires an output path")
+                return 1
+            output_override = Option[str].some(value= args[ai + 1])
+            ai += 2
+            continue
+        filtered.push(arg)
+        ai += 1
+    let path = parse_source_operand(filtered.as_span(), ref_of(roots)) else:
+        return 1
+
+    var entry_path_owner = string.String.create()
+    var source_root_owner = string.String.create()
+    let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+        return 1
+    var program = loader.check_program(effective, roots.as_span(), resolver.Platform.linux)
+    defer program.release()
+
+    var output_path: string.String
+    if output_override.is_some():
+        output_path = string.String.from_str(output_override.unwrap())
+    else:
+        output_path = default_output_path(effective)
+
+    match build_driver.build(program, output_path.as_str(), "cc", roots.as_span()):
+        Result.success as built:
+            var built_path = built.value
+            defer built_path.release()
+            var owned_output = string.String.from_str(output_path.as_str())
+            output_path.release()
+            defer owned_output.release()
+            entry_path_owner.release()
+            source_root_owner.release()
+
+            var cmd = vec.Vec[str].create()
+            defer cmd.release()
+            cmd.push(owned_output.as_str())
+            var pai: ptr_uint = 0
+            while pai < program_args.len():
+                let pa_ptr = program_args.get(pai) else:
+                    break
+                unsafe:
+                    cmd.push(read(pa_ptr))
+                pai += 1
+
+            match process.capture(cmd.as_span()):
+                Result.success as captured:
+                    let stdout_text_opt = captured.value.stdout_text()
+                    if stdout_text_opt.is_some():
+                        let stdout_text = stdout_text_opt.unwrap()
+                        stdio.print_format(c"%.*s", int<-(stdout_text.len), stdout_text.data)
+                    let stderr_text_opt = captured.value.stderr_text()
+                    if stderr_text_opt.is_some():
+                        let stderr_text = stderr_text_opt.unwrap()
+                        stdio.print_format(c"%.*s", int<-(stderr_text.len), stderr_text.data)
+                    return 0
+                Result.failure:
+                    stdio.print_format(c"error: cannot execute '%.*s'\n", int<-(owned_output.as_str().len), owned_output.as_str().data)
+                    return 1
+        Result.failure as failure:
+            var message = failure.error
+            defer message.release()
+            let text = message.as_str()
+            stdio.print_format(c"error: %.*s\n", int<-(text.len), text.data)
+            output_path.release()
             entry_path_owner.release()
             source_root_owner.release()
             return 1
@@ -512,17 +647,33 @@ function build_command(args: span[str]) -> int:
 
 ## The default output path for a source build: the source path with its `.mt`
 ## extension removed (matching the Ruby CLI's direct-source-build behaviour).
-function default_output_path(path: str) -> str:
+function default_output_path(path: str) -> string.String:
     if path.ends_with(".mt"):
-        return path.slice(0, path.len - 3)
+        return string.String.from_str(path.slice(0, path.len - 3))
     return j2_path(path, ".out")
 
 
-function j2_path(a: str, b: str) -> str:
+function keep_c_to_file(program: loader.Program, output_path_str: str) -> void:
+    let ir_program = lowering.lower(program)
+    var c_source = c_backend.generate_c(ir_program)
+    defer c_source.release()
+    match fs.write_text(output_path_str, c_source.as_str()):
+        Result.success:
+            stdio.print_format(c"saved C to %.*s\n", int<-(output_path_str.len), output_path_str.data)
+        Result.failure as failure:
+            var err = failure.error
+            defer err.release()
+            stdio.print_format(
+                c"warning: could not write C to %.*s\n",
+                int<-(output_path_str.len), output_path_str.data,
+            )
+
+
+function j2_path(a: str, b: str) -> string.String:
     var buf = string.String.create()
     buf.append(a)
     buf.append(b)
-    return buf.as_str()
+    return buf
 
 
 function lex_command(file_path: str, machine: bool) -> int:
