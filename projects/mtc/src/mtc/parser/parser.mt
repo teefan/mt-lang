@@ -1717,7 +1717,7 @@ function parse_while_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     var condition = parse_expression(s)
     consume_or_sync(s, tk.TokenKind.colon, c"expected ':' after while condition")
     var is_inline = false
-    var body = alloc_stmt(s)
+    var body: ptr[ast.Stmt] = alloc_stmt(s)
     if match_kind(s, tk.TokenKind.newline):
         consume(s, tk.TokenKind.indent, c"expected indented while body")
         var body_span = parse_block_body(s)
@@ -1915,7 +1915,7 @@ function parse_unsafe_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     unsafe:
         ln = read(start_tok).line
         cn = read(start_tok).column
-    var body = alloc_stmt(s)
+    var body: ptr[ast.Stmt] = alloc_stmt(s)
     if match_kind(s, tk.TokenKind.colon):
         if match_kind(s, tk.TokenKind.newline):
             consume(s, tk.TokenKind.indent, c"expected indented unsafe body")
@@ -2769,50 +2769,58 @@ function parse_primary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     else if match_kind(s, tk.TokenKind.tk_fields_of):
         let tok = previous_token(s)
         var node = alloc_expr(s)
-        let t = read(tok)
-        read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
         return node
     else if match_kind(s, tk.TokenKind.tk_members_of):
         let tok = previous_token(s)
         var node = alloc_expr(s)
-        let t = read(tok)
-        read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
         return node
     else if match_kind(s, tk.TokenKind.tk_attributes_of):
         let tok = previous_token(s)
         var node = alloc_expr(s)
-        let t = read(tok)
-        read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
         return node
     else if match_kind(s, tk.TokenKind.tk_field_of):
         let tok = previous_token(s)
         var node = alloc_expr(s)
-        let t = read(tok)
-        read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
         return node
     else if match_kind(s, tk.TokenKind.tk_callable_of):
         let tok = previous_token(s)
         var node = alloc_expr(s)
-        let t = read(tok)
-        read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
         return node
     else if match_kind(s, tk.TokenKind.tk_attribute_of):
         let tok = previous_token(s)
         var node = alloc_expr(s)
-        let t = read(tok)
-        read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
         return node
     else if match_kind(s, tk.TokenKind.tk_has_attribute):
         let tok = previous_token(s)
         var node = alloc_expr(s)
-        let t = read(tok)
-        read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
         return node
     else if match_kind(s, tk.TokenKind.tk_attribute_arg):
         let tok = previous_token(s)
         var node = alloc_expr(s)
-        let t = read(tok)
-        read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        unsafe:
+            let t = read(tok)
+            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
         return node
     else if match_kind(s, tk.TokenKind.lparen):
         let start_tok = previous_token(s)

@@ -92,8 +92,8 @@ public function types_compatible(expected: types.Type, actual: types.Type, sourc
                                 unsafe: read(ag.args.data + 0),
                                 null,
                             )
-                _:
-                    pass
+                    _:
+                        pass
         _:
             pass
 
@@ -109,8 +109,8 @@ public function types_compatible(expected: types.Type, actual: types.Type, sourc
                                 unsafe: read(ag.args.data + 0),
                                 null,
                             )
-                _:
-                    pass
+                    _:
+                        pass
         _:
             pass
 
