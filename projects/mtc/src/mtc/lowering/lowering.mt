@@ -4169,7 +4169,14 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 if id.name.equal("ptr_of") or id.name.equal("ref_of") or id.name.equal("const_ptr_of"):
                     if args.len == 1:
                         let inner = lower_expr(ctx, read(args.data + 0).arg_value)
-                        let result_ty = expr_type(ctx, call_ep)
+                        let inner_ty = ir_expr_type(inner)
+                        var result_ty = expr_type(ctx, call_ep)
+                        # When expr_type returns void or error (e.g. the analyzer
+                        # did not record a type for the builtin), compute the
+                        # correct result type from the argument's type.
+                        let outer_kind = if id.name.equal("ptr_of"): "ptr" else: if id.name.equal("ref_of"): "ref" else: "const_ptr"
+                        if types.is_error(result_ty) or types.is_void(result_ty):
+                            result_ty = types.Type.ty_generic(name = outer_kind, args = sp_type(inner_ty))
                         # When the argument is already a pointer/ref value (e.g. a
                         # `ref[T]` parameter, which is a pointer in C), taking its
                         # address again would produce `T**`.  Use the pointer value
@@ -4938,6 +4945,19 @@ function is_pointer_or_ref_type(t: types.Type) -> bool:
             return g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("ref")
         _:
             return false
+
+
+## The type-constructor name ("ref", "ptr", "const_ptr") for a builtin
+## address-of function, or an empty string when `func_name` is not one.
+function builtin_addr_type_name(func_name: str) -> str:
+    if func_name.equal("ref_of"):
+        return "ref"
+    if func_name.equal("ptr_of"):
+        return "ptr"
+    if func_name.equal("const_ptr_of"):
+        return "const_ptr"
+    return ""
+
 
 function is_raw_type_param_name(name: str) -> bool:
     return name.equal("T") or name.equal("U") or name.equal("K") or name.equal("V") or name.equal("E")
@@ -10044,6 +10064,16 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
             ast.Expr.expr_call as call:
                 match read(call.callee):
                     ast.Expr.expr_identifier as id:
+                        # Builtin address-of / pointer-of: infer the correct
+                        # result type from the argument's type instead of
+                        # falling to void (#1194).
+                        if call.args.len > 0:
+                            let inner_kind = id.name
+                            let inner_type_name = builtin_addr_type_name(inner_kind)
+                            if inner_type_name.len > 0:
+                                let inner_ty = fallback_type(ctx, unsafe: read(call.args.data + 0).arg_value)
+                                if not types.is_error(inner_ty) and not types.is_void(inner_ty):
+                                    return types.Type.ty_generic(name = inner_type_name, args = sp_type(inner_ty))
                         let foreign_ptr = ctx.foreign_map.get(id.name)
                         if foreign_ptr != null:
                             return read(foreign_ptr).return_ty

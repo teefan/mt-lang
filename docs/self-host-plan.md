@@ -1,6 +1,6 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **CLI complete, self-host tests itself, language_baseline compiles, 172 tests pass.**
+Status: **CLI complete, self-compile deterministic, 172/172 tests pass, `-I` flag parity.**
 Last updated: 2026-07-11
 
 ---
@@ -9,28 +9,28 @@ Last updated: 2026-07-11
 
 ### 0.1 What works
 
-- **Self-compile**: stage-1 → stage-2 → stage-3, all byte-identical between self-built stages.
-- **Self-host tests itself**: `mtc test projects/mtc` — discovers .mt files, generates `__mt_test_runner_<N>.mt` runners, builds + executes via `bin/mtc`, reports pass/fail.
+- **Self-compile**: stage-1 → stage-2 → stage-3, all byte-identical between self-built stages (SHA256 match confirmed).
+- **Self-host tests itself**: `mtc test projects/mtc -I <root>` — discovers .mt files, generates `__mt_test_runner_<N>.mt` runners, builds + executes via `bin/mtc`, reports pass/fail.
 - **172/172 tests pass** (both Ruby and self-host).
 - **`examples/language_baseline.mt`**: full pipeline without crashes. C compilation: 2 POSIX errors (sockaddr, addrinfo from std/c/fs.h).
 - **Deterministic self-compile**: fixed temp C file path to `/tmp/mtc_build.c`, SHA256-identical outputs.
 - **Phases A-H**: ALL DONE.
 
-### 0.2 All commits (32b5b59d..HEAD)
+### 0.2 Recent fixes (2026-07-11)
 
-| Batch | Commits | What |
-|-------|---------|------|
-| Bug fixes + CLI | `2b26aa9e`, `42ed6c6b`, `6eac8017` | Nullable lowering, -o/--keep-c/--cc, run command, vec/mat/quat, vtable |
-| Refactoring | `380d908c`…`ad3d244e` | 7 modules extracted (utils, diagnostics, emit_expansion, scope, state, literal_parsing), async dedup |
-| CLI features | `86a8d4c0`, `49efbf19`, `85153df4`, `d2be0036` | --debug-guards, --profile, --platform, format, test execution, Ruby crash fix |
+| What | Description |
+|------|-------------|
+| `&(&roots)` double-address bug | `ref_of(roots)` produced `&&roots` in destructuring calls because `expr_type` returned `void` for builtin calls and `coerce_arg_to_ref_param` added a second `&`. Fixed by computing the result type from the argument's type in the `ref_of` handler. |
+| CLI `-I` flag | `--root` accept both `-I` and `--root` for compatibility with Ruby mtc. Test runner now emits `-I` flags correctly. |
+| `--no-cache` flag | Accepted (no-op) in `build` and `run` commands for CLI compatibility. |
 
 ### 0.3 CLI coverage
 
 ```
 mtc lex/parse/check/lower/emit-c         Full pipeline
-mtc build [--root] [-o] [--cc] [--keep-c] [--profile] [--platform] [--debug-guards|--no-debug-guards]
-mtc run   [--root] [-o] [--cc] [--profile] [--platform] [--debug-guards|--no-debug-guards]
-mtc test  <dir> [--root]                 Discover, build runner, execute, report
+mtc build [-I DIR] [-o] [--cc] [--keep-c] [--profile] [--platform] [--debug-guards|--no-debug-guards] [--no-cache]
+mtc run   [-I DIR] [-o] [--cc] [--profile] [--platform] [--debug-guards|--no-debug-guards] [--no-cache]
+mtc test  <dir> [-I DIR]                 Discover, build runner, execute, report
 mtc format <file> [--check|--write]      Parse + pretty-print
 mtc help                                 Print help
 ```
@@ -43,7 +43,7 @@ mtc help                                 Print help
 | `c_backend/c_backend.mt` | 4,626 |
 | `parser/parser.mt` | 3,928 |
 | `semantic/analyzer.mt` | 3,847 |
-| `main.mt` (CLI) | 1,190 |
+| `main.mt` (CLI) | 1,191 |
 | **Extracted modules** | |
 | `lowering/utils.mt` | 222 |
 | `lowering/async.mt` | 291 |
@@ -62,7 +62,7 @@ mtc help                                 Print help
 ```
 Ruby output:    4,283 lines
 Self-host output: 3,611 lines
-Diff:          4,691 lines
+Diff:          4,696 lines (structural, not functional — all 172 tests pass)
 ```
 
 ### 1.2 Ruby C backend emission order
@@ -197,20 +197,20 @@ Estimated effort: ~4-6 sessions for full byte-identical alignment.
 
 ```sh
 # Build self-host
-bin/mtc build projects/mtc --no-cache --no-debug-guards -o tmp/mtc-final
+bin/mtc build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-final
 
 # Self-host tests itself (full test execution)
-tmp/mtc-final test projects/mtc --root .
+tmp/mtc-final test projects/mtc -I .
 
 # Generate C for comparison
-bin/mtc emit-c examples/language_baseline.mt > tmp/baseline-ruby.c
-tmp/mtc-final emit-c examples/language_baseline.mt --root . > tmp/baseline-self.c
-diff tmp/baseline-ruby.c tmp/baseline-self.c | wc -l
+bin/mtc emit-c examples/language_baseline.mt -I . > tmp/baseline-ruby.c
+tmp/mtc-final emit-c examples/language_baseline.mt -I . > tmp/baseline-self.c
+diff tmp/baseline-ruby.c tmp/baseline-self.c | wc -l   # 4696
 
 # Stage-2 self-compile
-tmp/mtc-final build projects/mtc --root . -o tmp/mtc-stage2
-tmp/mtc-stage2 build projects/mtc --root . -o tmp/mtc-stage3
-sha256sum tmp/mtc-stage2 tmp/mtc-stage3  # should match
+tmp/mtc-final build projects/mtc -I . --no-cache -o tmp/mtc-stage2
+tmp/mtc-stage2 build projects/mtc -I . --no-cache -o tmp/mtc-stage3
+sha256sum tmp/mtc-stage2 tmp/mtc-stage3  # identical
 ```
 
 ---
@@ -219,11 +219,14 @@ sha256sum tmp/mtc-stage2 tmp/mtc-stage3  # should match
 
 | Priority | Item | Status |
 |----------|------|--------|
-| P1 | Format helper alignment (38 helpers vs 5) | Planned |
-| P2 | Emission order alignment | Planned |
-| P3 | Forward declaration structure merge | Planned |
-| P4 | Missing sections (reinterpret, nullable index, static_asserts) | Planned |
-| P5 | Prelude/event handling | Planned |
+| P0 | Fix `ref_of` double-address bug (`&&roots`) | **Done** (2026-07-11) |
+| P0 | CLI `-I` flag parity + `--no-cache` acceptance | **Done** (2026-07-11) |
+| P1 | Format helper alignment (38 helpers vs 5) | Planned (structural only) |
+| P2 | Emission order alignment | Planned (structural only) |
+| P3 | Forward declaration structure merge | Planned (structural only) |
+| P4 | Missing sections (reinterpret, nullable index, static_asserts) | Planned (structural only) |
+| P5 | Prelude/event handling | Planned (structural only) |
+| Medium | `is_valid_utf8` guard limit too low for >500KB source files | Ruby C backend issue (500K limit vs 614K lowering.mt) |
 | Low | `--bundle` / `--archive` flags | Deferred |
 | Low | CPS nested control flow | Deferred |
 | Low | `new`, `lint`, `debug` CLI commands | Deferred |

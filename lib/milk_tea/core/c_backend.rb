@@ -32,6 +32,12 @@ module MilkTea
     INDENT = "  "
     ARRAY_OUT_PARAM_NAME = "__mt_out"
 
+    # Max iterations for loop guard counters before aborting.
+    # Set high enough that legitimate data-bound loops (e.g. is_valid_utf8
+    # scanning a 600 KB source file) never trigger a false positive, yet low
+    # enough that a genuinely infinite loop fires a clear fatal within ~1 s.
+    LOOP_GUARD_MAX_ITERATIONS = 50_000_000
+
     def self.emit(program, emit_line_directives: true, debug_guards: false)
       new(program, emit_line_directives:, debug_guards:).emit
     end

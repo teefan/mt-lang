@@ -104,11 +104,11 @@ function print_help() -> void:
     stdio.print_line("commands:")
     stdio.print_line("  lex   <file>  print the lexer token stream")
     stdio.print_line("  parse <file>  parse source and print AST")
-    stdio.print_line("  check <file|dir> [--root DIR]...  type-check a file/package and its imports")
-    stdio.print_line("  lower <file|dir> [--root DIR]...  lower to IR and print it")
-    stdio.print_line("  emit-c <file|dir> [--root DIR]...  compile to C and print it")
-    stdio.print_line("  build <file|dir> [--root DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards]")
-    stdio.print_line("  run   <file|dir> [--root DIR]... [-o OUTPUT] [--cc CC] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards]")
+    stdio.print_line("  check <file|dir> [-I DIR]...  type-check a file/package and its imports")
+    stdio.print_line("  lower <file|dir> [-I DIR]...  lower to IR and print it")
+    stdio.print_line("  emit-c <file|dir> [-I DIR]...  compile to C and print it")
+    stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards]")
+    stdio.print_line("  run   <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards]")
     stdio.print_line("  test  <dir>                                       discover and run @[test] functions")
     stdio.print_line("  format <file> [--check|--write]                  format source and print, check, or write back")
     stdio.print_line("  help          print this help")
@@ -158,8 +158,8 @@ function parse_command(file_path: str) -> int:
 
 
 ## Type-check a source file and its transitive imports.  Imports are resolved
-## against `--root DIR` module roots (repeatable); when none are given the root
-## defaults to the entry file's directory.  Supports both `.mt` files and
+## against `-I DIR` / `--root DIR` module roots (repeatable); when none are given
+## the root defaults to the entry file's directory.  Supports both `.mt` files and
 ## package directory targets (reads package.toml for the entry point).
 function check_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
@@ -169,9 +169,9 @@ function check_command(args: span[str]) -> int:
     var i: ptr_uint = 1
     while i < args.len:
         let arg = args[i]
-        if arg == "--root":
+        if arg.equal("--root") or arg.equal("-I"):
             if i + 1 >= args.len:
-                stdio.print_line("error: --root requires a directory")
+                stdio.print_line("error: -I requires a directory")
                 return 1
             roots.push(args[i + 1])
             i += 2
@@ -236,7 +236,7 @@ function report_check_summary(count: ptr_uint) -> void:
         stdio.print_format(c"error: could not check due to %d errors\n", int<-(count))
 
 
-## Parse the `[--root DIR]... <source>` argument tail shared by the lower,
+## Parse the `[-I DIR]... <source>` argument tail shared by the lower,
 ## emit-c, and build commands.  Fills `roots` (defaulting to the source
 ## directory when none is given) and returns the source path, or none after
 ## printing an error / usage.
@@ -245,9 +245,9 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]]) -> Opti
     var i: ptr_uint = 1
     while i < args.len:
         let arg = args[i]
-        if arg == "--root":
+        if arg.equal("--root") or arg.equal("-I"):
             if i + 1 >= args.len:
-                stdio.print_line("error: --root requires a directory")
+                stdio.print_line("error: -I requires a directory")
                 return Option[str].none
             roots.push(args[i + 1])
             i += 2
@@ -507,36 +507,39 @@ function build_command(args: span[str]) -> int:
     var ai: ptr_uint = 1
     while ai < args.len:
         let arg = args[ai]
-        if arg == "-o":
+        if arg.equal("-o"):
             if ai + 1 >= args.len:
                 stdio.print_line("error: -o requires an output path")
                 return 1
             output_override = Option[str].some(value= args[ai + 1])
             ai += 2
             continue
-        if arg == "--keep-c":
+        if arg.equal("--keep-c"):
             if ai + 1 >= args.len:
                 stdio.print_line("error: --keep-c requires a path")
                 return 1
             keep_c_path = Option[str].some(value= args[ai + 1])
             ai += 2
             continue
-        if arg == "--cc":
+        if arg.equal("--cc"):
             if ai + 1 >= args.len:
                 stdio.print_line("error: --cc requires a compiler name")
                 return 1
             c_compiler = args[ai + 1]
             ai += 2
             continue
-        if arg == "--debug-guards":
+        if arg.equal("--debug-guards"):
             debug_guards = true
             ai += 1
             continue
-        if arg == "--no-debug-guards":
+        if arg.equal("--no-debug-guards"):
             debug_guards = false
             ai += 1
             continue
-        if arg == "--profile":
+        if arg.equal("--no-cache"):
+            ai += 1
+            continue
+        if arg.equal("--profile"):
             if ai + 1 >= args.len:
                 stdio.print_line("error: --profile requires a profile name (debug or release)")
                 return 1
@@ -656,6 +659,9 @@ function run_command(args: span[str]) -> int:
             continue
         if arg == "--no-debug-guards":
             debug_guards = false
+            ai += 1
+            continue
+        if arg.equal("--no-cache"):
             ai += 1
             continue
         if arg == "--profile":
@@ -955,9 +961,9 @@ function test_command(args: span[str]) -> int:
     var ai: ptr_uint = 1
     while ai < args.len:
         let arg = args[ai]
-        if arg == "--root":
+        if arg.equal("--root") or arg.equal("-I"):
             if ai + 1 >= args.len:
-                stdio.print_line("error: --root requires a directory")
+                stdio.print_line("error: -I requires a directory")
                 return 1
             roots.push(args[ai + 1])
             ai += 2
@@ -1147,6 +1153,7 @@ function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[pt
             build_cmd.push(runner_path_str.as_str())
             var bri: ptr_uint = 0
             while bri < roots.len():
+                build_cmd.push("-I")
                 unsafe:
                     build_cmd.push(read(ptr[str]<-roots.data + bri))
                 bri += 1
