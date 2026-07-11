@@ -10462,14 +10462,14 @@ function lookup_qualified_constant(ctx: ref[LowerCtx], name: str) -> Option[str]
 # =============================================================================
 
 function alloc_expr(value: ir.Expr) -> ptr[ir.Expr]:
-heap.must_alloc[ir.Expr](1)
+    var node = heap_mod.must_alloc[ir.Expr](1)
     unsafe:
         read(node) = value
     return node
 
 
 function alloc_stmt(value: ir.Stmt) -> ptr[ir.Stmt]:
-heap.must_alloc[ir.Stmt](1)
+    var node = heap_mod.must_alloc[ir.Stmt](1)
     unsafe:
         read(node) = value
     return node

@@ -880,6 +880,9 @@ module MilkTea
           inner_type = resolve_expr_type(cast_expr.expression)
           if cast_type && inner_type
             emit_redundant_cast(cast_expr, target_name, "cast to same type is redundant") if same_resolved_type?(cast_type, inner_type)
+            if own_to_pointer_cast_redundant?(inner_type, cast_type)
+              emit_redundant_cast(cast_expr, target_name, "implicit own->ptr coercion makes this cast redundant")
+            end
             return
           end
         end
@@ -929,6 +932,15 @@ module MilkTea
         return true if left.equal?(right)
 
         left.to_s == right.to_s
+      end
+
+      def own_to_pointer_cast_redundant?(inner_type, cast_type)
+        return false unless inner_type.is_a?(Types::GenericInstance) && inner_type.name == "own"
+        return false unless cast_type.is_a?(Types::GenericInstance)
+        return false unless %w[ptr const_ptr].include?(cast_type.name)
+        return false unless inner_type.arguments.length == 1 && cast_type.arguments.length == 1
+
+        inner_type.arguments.first.to_s == cast_type.arguments.first.to_s
       end
 
       def emit_redundant_cast(cast_expr, target_name, reason)

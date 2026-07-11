@@ -219,7 +219,18 @@ module MilkTea
         type_ref = line[start...arrow]
         return [] unless type_ref.match?(/\A[A-Za-z_][A-Za-z0-9_\[\]\.,\s@]*\z/)
 
-        [FixEdit.new(start_line: line_idx, start_char: start, end_line: line_idx, end_char: arrow + 2, new_text: "")]
+        # When the cast is inside an `unsafe:` expression, also remove the
+        # `unsafe: ` wrapper. Look backward from the cast for `unsafe:`.
+        new_start = start
+        unsafe_keyword = line.rindex("unsafe:", new_start)
+        if unsafe_keyword
+          prefix = line[unsafe_keyword...new_start]
+          if prefix.match?(/\Aunsafe:\s*\z/)
+            new_start = unsafe_keyword
+          end
+        end
+
+        [FixEdit.new(start_line: line_idx, start_char: new_start, end_line: line_idx, end_char: arrow + 2, new_text: "")]
       end
     end
   end
