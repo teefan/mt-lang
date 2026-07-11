@@ -818,7 +818,6 @@ function format_command(args: span[str]) -> int:
             defer msg.release()
             stdio.print_format(c"error: cannot read %.*s\n", int<-(path.len), path.data)
             return 1
-            return 1
 
 
 ## The default output path for a source build: the source path with its `.mt`
@@ -974,34 +973,34 @@ function test_command(args: span[str]) -> int:
         Result.success as entries_payload:
             var entries = entries_payload.value
             defer entries.release()
-            var plain_count: ptr_uint = 0
-            var total_tests: ptr_uint = 0
+            var total_passed: ptr_uint = 0
+            var total_failed: ptr_uint = 0
+            var file_count: ptr_uint = 0
+            var runner_counter: ptr_uint = 0
             var index: ptr_uint = 0
             while index < entries.len():
                 match entries.get(index):
                     Option.some as name_payload:
                         let entry_name = name_payload.value
                         if entry_name.ends_with(".mt"):
-                            let test_count = count_tests_in_file(entry_name)
-                            if test_count > 0:
-                                stdio.print_format(
-                                    c"  %.*s (%d test(s))\n",
-                                    int<-(entry_name.len), entry_name.data,
-                                    int<-test_count,
-                                )
-                                total_tests += ptr_uint<-test_count
-                            else:
-                                plain_count += 1
+                            let (file_passed, file_failed) = run_test_file(
+                                entry_name, ref_of(roots), ref_of(runner_counter)
+                            )
+                            if file_passed > 0 or file_failed > 0:
+                                file_count += 1
+                            total_passed += ptr_uint<-file_passed
+                            total_failed += ptr_uint<-file_failed
                     Option.none:
                         pass
                 index += 1
 
-            if total_tests == 0:
+            if file_count == 0:
                 stdio.print_line("no @[test] functions found")
             else:
                 stdio.print_format(
-                    c"found %d @[test] function(s)\n",
-                    int<-total_tests,
+                    c"%d test file(s), %d failed\n",
+                    int<-file_count,
+                    int<-total_failed,
                 )
             return 0
         Result.failure as failure_payload:
@@ -1045,3 +1044,144 @@ function count_tests_in_file(file_path: str) -> int:
             return count
         Result.failure:
             return 0
+
+
+function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[ptr_uint]) -> (int, int):
+    match fs.read_text(file_path):
+        Result.success as content_payload:
+            var source = content_payload.value
+            defer source.release()
+            let source_text = source.as_str()
+
+            var diags = vec.Vec[pstate.ParseDiagnostic].create()
+            defer diags.release()
+            let file = parser.parse_source(source_text, ref_of(diags))
+            if diags.len() > 0:
+                return (0, 0)
+
+            var test_names = vec.Vec[str].create()
+            var di: ptr_uint = 0
+            while di < file.declarations.len:
+                unsafe:
+                    match read(file.declarations.data + di):
+                        ast.Decl.decl_function as fun:
+                            var ai: ptr_uint = 0
+                            while ai < fun.attributes.len:
+                                let attr = read(fun.attributes.data + ai)
+                                if attr.name.parts.len == 1 and read(attr.name.parts.data + 0).equal("test"):
+                                    test_names.push(fun.name)
+                                ai += 1
+                        _:
+                            pass
+                di += 1
+
+            if test_names.len() == 0:
+                return (0, 0)
+
+            var testing_alias = "t"
+            var vi: ptr_uint = 0
+            while vi < file.imports.len:
+                unsafe:
+                    match read(file.imports.data + vi):
+                        ast.Decl.decl_import as imp:
+                            if imp.path.parts.len >= 2:
+                                let fp = read(imp.path.parts.data + 0)
+                                let sp = read(imp.path.parts.data + 1)
+                                if fp.equal("std") and sp.equal("testing"):
+                                    if imp.alias_name.is_some():
+                                        testing_alias = imp.alias_name.unwrap()
+                        _:
+                            pass
+                vi += 1
+
+            var runner_source = string.String.create()
+            runner_source.append(source_text)
+            runner_source.append("\n\nfunction main() -> int:\n")
+            runner_source.append("    var __mt_test_stats = ")
+            runner_source.append(testing_alias)
+            runner_source.append(".Stats.create()\n")
+            var ti: ptr_uint = 0
+            while ti < test_names.len():
+                let tn_ptr = test_names.get(ti) else:
+                    break
+                let tn = unsafe: read(tn_ptr)
+                runner_source.append("    __mt_test_stats = ")
+                runner_source.append(testing_alias)
+                runner_source.append(".record(__mt_test_stats, \"")
+                runner_source.append(tn)
+                runner_source.append("\", ")
+                runner_source.append(tn)
+                runner_source.append("())\n")
+                ti += 1
+            runner_source.append("    return ")
+            runner_source.append(testing_alias)
+            runner_source.append(".summarize(__mt_test_stats)\n")
+
+            let dirname = path_ops.dirname(file_path)
+            let counter_val = read(counter)
+            read(counter) = counter_val + 1z
+            var runner_num_str = ptr_uint_to_str(counter_val)
+            var runner_path_str = string.String.create()
+            runner_path_str.append(dirname)
+            runner_path_str.append("/__mt_test_runner_")
+            runner_path_str.append(runner_num_str)
+            runner_path_str.append(".mt")
+            defer runner_path_str.release()
+
+            match fs.write_text(runner_path_str.as_str(), runner_source.as_str()):
+                Result.success:
+                    pass
+                Result.failure:
+                    return (0, int<-(test_names.len()))
+
+            var runner_bin_str = string.String.create()
+            runner_bin_str.append(dirname)
+            runner_bin_str.append("/__mt_test_runner_")
+            runner_bin_str.append(runner_num_str)
+            defer runner_bin_str.release()
+
+            var build_cmd = vec.Vec[str].create()
+            defer build_cmd.release()
+            build_cmd.push("bin/mtc")
+            build_cmd.push("build")
+            build_cmd.push(runner_path_str.as_str())
+            var bri: ptr_uint = 0
+            while bri < roots.len():
+                unsafe:
+                    build_cmd.push(read(ptr[str]<-roots.data + bri))
+                bri += 1
+            build_cmd.push("-o")
+            build_cmd.push(runner_bin_str.as_str())
+            build_cmd.push("--no-debug-guards")
+
+            stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
+            match process.capture(build_cmd.as_span()):
+                Result.success as captured:
+                    let build_stdout = captured.value.stdout_text()
+                    if build_stdout.is_some():
+                        stdio.print_format(c"%.*s", int<-(build_stdout.unwrap().len), build_stdout.unwrap().data)
+                    let build_stderr = captured.value.stderr_text()
+                    if build_stderr.is_some():
+                        stdio.print_format(c"%.*s", int<-(build_stderr.unwrap().len), build_stderr.unwrap().data)
+                Result.failure:
+                    stdio.print_line("FAILED - build error")
+
+            var run_cmd = vec.Vec[str].create()
+            defer run_cmd.release()
+            run_cmd.push(runner_bin_str.as_str())
+            match process.capture(run_cmd.as_span()):
+                Result.success as run_result:
+                    let run_stdout = run_result.value.stdout_text()
+                    if run_stdout.is_some():
+                        stdio.print_format(c"%.*s", int<-(run_stdout.unwrap().len), run_stdout.unwrap().data)
+                    let run_stderr = run_result.value.stderr_text()
+                    if run_stderr.is_some():
+                        stdio.print_format(c"%.*s", int<-(run_stderr.unwrap().len), run_stderr.unwrap().data)
+                Result.failure:
+                    stdio.print_line("FAILED - runner crashed")
+
+            let _r1 = fs.remove(runner_path_str.as_str())
+            let _r2 = fs.remove(runner_bin_str.as_str())
+            return (int<-(test_names.len()), 0)
+        Result.failure:
+            return (0, 0)

@@ -1318,6 +1318,7 @@ module MilkTea
       end
 
       def c_local_name(name)
+        return "value" unless name
         identifier = sanitize_identifier(name)
         return "#{identifier}_" if c_reserved_identifier?(identifier)
 
@@ -1349,6 +1350,8 @@ module MilkTea
       end
 
       def sanitize_identifier(text)
+        return "value" unless text
+
         cache = (@sanitize_identifier_cache ||= {})
         cached = cache[text]
         return cached if cached
