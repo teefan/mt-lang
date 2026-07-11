@@ -1881,7 +1881,7 @@ function is_nullable_pointer_like(t: types.Type) -> bool:
                 let base = read(nl.base)
                 match base:
                     types.Type.ty_generic as g:
-                        return g.name == "ptr" or g.name == "const_ptr" or g.name == "ref"
+                        return g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref"
                     types.Type.ty_primitive as p:
                         return p.name == "cstr"
                     types.Type.ty_function:
@@ -10462,14 +10462,14 @@ function lookup_qualified_constant(ctx: ref[LowerCtx], name: str) -> Option[str]
 # =============================================================================
 
 function alloc_expr(value: ir.Expr) -> ptr[ir.Expr]:
-    var node = heap_mod.must_alloc[ir.Expr](1)
+    var node = unsafe: ptr[ir.Expr]<-heap_mod.must_alloc[ir.Expr](1)
     unsafe:
         read(node) = value
     return node
 
 
 function alloc_stmt(value: ir.Stmt) -> ptr[ir.Stmt]:
-    var node = heap_mod.must_alloc[ir.Stmt](1)
+    var node = unsafe: ptr[ir.Stmt]<-heap_mod.must_alloc[ir.Stmt](1)
     unsafe:
         read(node) = value
     return node

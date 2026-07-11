@@ -1447,7 +1447,7 @@ module MilkTea
       end
 
       def pointer_like_type?(type)
-        pointer_type?(type) || (type.is_a?(Types::Primitive) && type.name == "cstr") || type.is_a?(Types::Function) || type.is_a?(Types::Proc) || type.is_a?(Types::Opaque)
+        pointer_type?(type) || own_type?(type) || (type.is_a?(Types::Primitive) && type.name == "cstr") || type.is_a?(Types::Function) || type.is_a?(Types::Proc) || type.is_a?(Types::Opaque)
       end
   end
 end

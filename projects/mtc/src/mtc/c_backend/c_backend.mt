@@ -1385,6 +1385,8 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
         return j2(c_type(unsafe: read(args.data + 0)), "*")
     if name == "const_ptr" and args.len == 1:
         return j3("const ", c_type(unsafe: read(args.data + 0)), "*")
+    if name == "own" and args.len == 1:
+        return j2(c_type(unsafe: read(args.data + 0)), "*")
     if name == "ref" and args.len >= 1:
         return j2(c_type(unsafe: read(args.data + (args.len - 1))), "*")
     # str_buffer[N] → mt_str_buffer_N
@@ -1823,7 +1825,7 @@ function c_declaration(t: types.Type, name: str) -> str:
         types.Type.ty_function:
             return c_fn_ptr_declarator(t, name)
         types.Type.ty_generic as g:
-            if (g.name == "ptr" or g.name == "ref") and g.args.len >= 1:
+            if (g.name == "ptr" or g.name == "own" or g.name == "ref") and g.args.len >= 1:
                 let inner = unsafe: read(g.args.data + (g.args.len - 1))
                 if is_array_type(inner):
                     return c_declaration(inner, j2("*", name))
@@ -2203,7 +2205,7 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
             # Pointer-like generics need only a forward declaration, not a
             # by-value dependency.
             if (
-                g.name == "ptr" or g.name == "const_ptr" or g.name == "ref"
+                g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref"
                 or g.name == "span" or g.name == "str_buffer" or g.name == "atomic"
                 or g.name == "Task" or g.name == "SoA"
             ):
@@ -3154,7 +3156,7 @@ function pointer_member_receiver(ep: ptr[ir.Expr]) -> bool:
 function is_ptr_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name == "ptr" and g.args.len == 1
+            return (g.name == "ptr" or g.name == "own") and g.args.len == 1
         _:
             return false
 
@@ -3496,7 +3498,7 @@ function is_primitive_name_from_str(name: str) -> bool:
 function is_pointer_like_for_nullable(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name == "ptr" or g.name == "const_ptr" or g.name == "ref"
+            return g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref"
         types.Type.ty_primitive as p:
             return p.name == "cstr"
         types.Type.ty_function:

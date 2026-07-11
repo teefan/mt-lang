@@ -32,7 +32,7 @@ public variant Type:
 
 
 public function alloc_type(value: Type) -> ptr[Type]:
-    var node = heap.must_alloc[Type](1)
+    var node = unsafe: ptr[Type]<-heap.must_alloc[Type](1)
     unsafe:
         read(node) = value
     return node

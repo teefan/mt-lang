@@ -137,7 +137,7 @@ public function release_bytes(memory: ptr[void]?) -> void:
     libc.free(memory)
 
 
-public function alloc[T](count: ptr_uint) -> ptr[T]?:
+public function alloc[T](count: ptr_uint) -> own[T]?:
     let alignment = ptr_uint<-align_of(T)
     if alignment > minimum_alignment:
         return null
@@ -149,10 +149,10 @@ public function alloc[T](count: ptr_uint) -> ptr[T]?:
     let memory = alloc_bytes(count * element_size) else:
         return null
 
-    return unsafe: ptr[T]<-memory
+    return unsafe: own[T]<-memory
 
 
-public function must_alloc[T](count: ptr_uint) -> ptr[T]:
+public function must_alloc[T](count: ptr_uint) -> own[T]:
     if count == 0:
         fatal(c"heap.must_alloc requires count > 0")
 
@@ -166,10 +166,10 @@ public function must_alloc[T](count: ptr_uint) -> ptr[T]:
     let memory = alloc[T](count) else:
         fatal(c"heap.must_alloc out of memory")
 
-    return unsafe: ptr[T]<-memory
+    return memory
 
 
-public function alloc_aligned[T](count: ptr_uint) -> ptr[T]?:
+public function alloc_aligned[T](count: ptr_uint) -> own[T]?:
     let element_size = ptr_uint<-size_of(T)
     if mul_overflows(count, element_size):
         return null
@@ -177,10 +177,10 @@ public function alloc_aligned[T](count: ptr_uint) -> ptr[T]?:
     let memory = alloc_bytes_aligned(count * element_size, align_of(T)) else:
         return null
 
-    return unsafe: ptr[T]<-memory
+    return unsafe: own[T]<-memory
 
 
-public function must_alloc_aligned[T](count: ptr_uint) -> ptr[T]:
+public function must_alloc_aligned[T](count: ptr_uint) -> own[T]:
     if count == 0:
         fatal(c"heap.must_alloc_aligned requires count > 0")
 
@@ -191,10 +191,10 @@ public function must_alloc_aligned[T](count: ptr_uint) -> ptr[T]:
     let memory = alloc_aligned[T](count) else:
         fatal(c"heap.must_alloc_aligned out of memory")
 
-    return unsafe: ptr[T]<-memory
+    return memory
 
 
-public function alloc_zeroed[T](count: ptr_uint) -> ptr[T]?:
+public function alloc_zeroed[T](count: ptr_uint) -> own[T]?:
     let alignment = ptr_uint<-align_of(T)
     if alignment > minimum_alignment:
         return null
@@ -202,10 +202,10 @@ public function alloc_zeroed[T](count: ptr_uint) -> ptr[T]?:
     let memory = alloc_zeroed_bytes(count, size_of(T)) else:
         return null
 
-    return unsafe: ptr[T]<-memory
+    return unsafe: own[T]<-memory
 
 
-public function must_alloc_zeroed[T](count: ptr_uint) -> ptr[T]:
+public function must_alloc_zeroed[T](count: ptr_uint) -> own[T]:
     if count == 0:
         fatal(c"heap.must_alloc_zeroed requires count > 0")
 
@@ -219,7 +219,7 @@ public function must_alloc_zeroed[T](count: ptr_uint) -> ptr[T]:
     let memory = alloc_zeroed[T](count) else:
         fatal(c"heap.must_alloc_zeroed out of memory")
 
-    return unsafe: ptr[T]<-memory
+    return memory
 
 
 public function resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]?:
