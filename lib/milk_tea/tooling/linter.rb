@@ -39,6 +39,7 @@ module MilkTea
       prefer-let
       prefer-let-else
       prefer-or-pattern
+      prefer-own-ptr
       prefer-struct-with
       prefer-try
       prefer-var-else
@@ -752,6 +753,8 @@ module MilkTea
       @declared_directional_functions = {}
       @generic_function_depth = 0
       @current_function_stack = []
+      @unsafe_depth = 0
+      @binding_ptr_unsafe_uses = Hash.new { |h, k| h[k] = { safe: 0, unsafe: 0 } }
       @reserved_primitive_name_fixes = []
       @lint_tier = self.class.normalize_lint_tier(lint_tier)
       @max_line_length = max_line_length&.to_i&.positive? ? max_line_length.to_i : Formatter::DEFAULT_MAX_LINE_LENGTH
