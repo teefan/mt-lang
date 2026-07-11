@@ -1300,17 +1300,15 @@ function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[
         let argv_expr = alloc_expr(ir.Expr.expr_name(name = "argv", ty = char_ptr_ptr, pointer = false))
         let items_addr = alloc_expr(ir.Expr.expr_address_of(expression = items_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(items_ty))))
         var bridge_args = vec.Vec[ir.Expr].create()
-        unsafe:
-            bridge_args.push(read(argc_expr))
-            bridge_args.push(read(argv_expr))
-            bridge_args.push(read(items_addr))
+        bridge_args.push(read(argc_expr))
+        bridge_args.push(read(argv_expr))
+        bridge_args.push(read(items_addr))
         let bridge_call = alloc_expr(ir.Expr.expr_call(callee = "mt_entry_argv_to_span_str", arguments = bridge_args.as_span(), ty = span_str_ty))
         body.push(ir.Stmt.stmt_local(name = "__mt_args", linkage_name = "__mt_args", ty = span_str_ty, value = bridge_call, line = 0, source_path = ""))
         let args_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_args", ty = span_str_ty, pointer = false))
 
         var call_args = vec.Vec[ir.Expr].create()
-        unsafe:
-            call_args.push(read(args_ref))
+        call_args.push(read(args_ref))
         let call = alloc_expr(ir.Expr.expr_call(callee = user_linkage, arguments = call_args.as_span(), ty = user_return))
 
         # Capture the user result, free the argv strings, then return.
@@ -3120,10 +3118,9 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
                 let outer_addr = alloc_expr(ir.Expr.expr_address_of(expression = outer_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(lb_val.ty))))
                 let sz = alloc_expr(ir.Expr.expr_sizeof(target_type = lb_val.ty, ty = types.primitive("ptr_uint")))
                 var mc_args = vec.Vec[ir.Expr].create()
-                unsafe:
-                    mc_args.push(read(field_addr))
-                    mc_args.push(read(outer_addr))
-                    mc_args.push(read(sz))
+                mc_args.push(read(field_addr))
+                mc_args.push(read(outer_addr))
+                mc_args.push(read(sz))
                 pf_setup.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = mc_args.as_span(), ty = types.primitive("void"))), line = 0, source_path = ""))
             else:
                 pf_setup.push(ir.Stmt.stmt_assignment(target = field_ref, operator = "=", value = outer_ref))
@@ -3133,8 +3130,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
                 break
             output.push(unsafe: read(psp))
         let pf_data_ref = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = pf_cap_var, ty = pf_cap_ty, pointer = false)), ty = void_ptr_ty()))
-        unsafe:
-            call_args.push(read(pf_data_ref))
+        call_args.push(read(pf_data_ref))
     else:
         unsafe:
             call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
@@ -3264,10 +3260,9 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
                     let outer_addr = alloc_expr(ir.Expr.expr_address_of(expression = outer_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(lb_val.ty))))
                     let sz = alloc_expr(ir.Expr.expr_sizeof(target_type = lb_val.ty, ty = types.primitive("ptr_uint")))
                     var mc_args = vec.Vec[ir.Expr].create()
-                    unsafe:
-                        mc_args.push(read(field_addr))
-                        mc_args.push(read(outer_addr))
-                        mc_args.push(read(sz))
+                    mc_args.push(read(field_addr))
+                    mc_args.push(read(outer_addr))
+                    mc_args.push(read(sz))
                     cap_setup.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = mc_args.as_span(), ty = types.primitive("void"))), line = 0, source_path = ""))
                 else:
                     cap_setup.push(ir.Stmt.stmt_assignment(target = field_ref, operator = "=", value = outer_ref))
@@ -3277,8 +3272,7 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
                     break
                 output.push(unsafe: read(csp))
             let cap_data_ref = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = cap_var, ty = cap_ty, pointer = false)), ty = void_ptr_ty()))
-            unsafe:
-                spawn_args.push(read(cap_data_ref))
+            spawn_args.push(read(cap_data_ref))
         else:
             unsafe:
                 spawn_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
@@ -5917,8 +5911,7 @@ function lower_dyn_method_call(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_na
     let vtable_cast = alloc_expr(ir.Expr.expr_cast(target_type = vtable_ptr_ty, expression = vtable_raw, ty = vtable_ptr_ty))
     let method_fn = alloc_expr(ir.Expr.expr_member(receiver = vtable_cast, member = method_name, ty = void_ptr))
     var call_args = vec.Vec[ir.Expr].create()
-    unsafe:
-        call_args.push(read(data))
+    call_args.push(read(data))
     var i: ptr_uint = 0
     while i < args.len:
         var arg: ast.Argument
@@ -6895,8 +6888,7 @@ function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type)
                 let pname = jstr_i("arg_", pi)
                 inv_params.push(ir.Param(name = pname, linkage_name = pname, ty = p_ty, pointer = false))
                 let arg_expr = alloc_expr(ir.Expr.expr_name(name = pname, ty = p_ty, pointer = false))
-                unsafe:
-                    call_args.push(read(arg_expr))
+                call_args.push(read(arg_expr))
                 pi += 1
             var ret_ty = types.primitive("void")
             unsafe:

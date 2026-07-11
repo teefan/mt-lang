@@ -106,13 +106,13 @@ public function sp_expr(expr: ptr[ir.Expr]) -> span[ir.Expr]:
 #  IR allocation
 # =============================================================================
 
-public function alloc_expr(value: ir.Expr) -> ptr[ir.Expr]:
+public function alloc_expr(value: ir.Expr) -> own[ir.Expr]:
     var node = heap_mod.must_alloc[ir.Expr](1)
     read(node) = value
     return node
 
 
-public function alloc_stmt(value: ir.Stmt) -> ptr[ir.Stmt]:
+public function alloc_stmt(value: ir.Stmt) -> own[ir.Stmt]:
     var node = heap_mod.must_alloc[ir.Stmt](1)
     read(node) = value
     return node

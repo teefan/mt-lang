@@ -511,13 +511,13 @@ function append_escaped_byte(buf: ref[string.String], ch: ubyte) -> void:
 #  AST node allocation
 # =============================================================================
 
-function alloc_expr(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
+function alloc_expr(s: ref[pstate.ParserState]) -> own[ast.Expr]:
     return heap_mod.must_alloc[ast.Expr](1)
 
-function alloc_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
+function alloc_stmt(s: ref[pstate.ParserState]) -> own[ast.Stmt]:
     return heap_mod.must_alloc[ast.Stmt](1)
 
-function alloc_decl(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
+function alloc_decl(s: ref[pstate.ParserState]) -> own[ast.Decl]:
     return heap_mod.must_alloc[ast.Decl](1)
 
 
