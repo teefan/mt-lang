@@ -50,7 +50,7 @@ function take_owned_bytes(data: ptr[char]?, len: ptr_uint) -> bytes.Bytes:
 
         return bytes.Bytes.empty()
 
-    return unsafe: bytes.Bytes(data = ptr[ubyte]<-data, len = len)
+    return unsafe: bytes.Bytes(data = own[ubyte]<-ptr[ubyte]<-data, len = len)
 
 
 function take_error(raw: c.mt_fs_error, fallback: str) -> Error:

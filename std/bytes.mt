@@ -2,7 +2,7 @@ import std.mem.heap as heap
 import std.str as text
 
 public struct Bytes:
-    data: ptr[ubyte]?
+    data: own[ubyte]?
     len: ptr_uint
 
 
@@ -28,11 +28,10 @@ extending Bytes:
 
 
     public function as_span() -> span[ubyte]:
-        if this.data == null and this.len != 0:
-            fatal(c"bytes.Bytes.as_span missing storage")
+        let data = this.data else:
+            return span[ubyte](data = zero[ptr[ubyte]], len = 0)
 
-        unsafe:
-            return span[ubyte](data = ptr[ubyte]<-this.data, len = this.len)
+        return span[ubyte](data = data, len = this.len)
 
 
     public function as_str() -> Option[str]:
