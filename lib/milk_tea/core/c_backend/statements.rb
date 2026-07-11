@@ -93,7 +93,7 @@ module MilkTea
                   guard_name = "__mt_loop_#{@loop_guard_id}"
                   lines = ["#{indent}{ uintptr_t #{guard_name} = 0;"]
                   lines << "#{indent}while (#{emit_expression(statement.condition)}) {"
-                  guard = "#{INDENT * (level + 1)}if (++#{guard_name} > 500000) mt_fatal(\"loop iteration limit exceeded in #{function.linkage_name}\");"
+                  guard = "#{INDENT * (level + 1)}if (++#{guard_name} > #{LOOP_GUARD_MAX_ITERATIONS}) mt_fatal(\"loop iteration limit exceeded in #{function.linkage_name}\");"
                   lines << guard
                   lines.concat(emit_statement_sequence(body, level + 1, function:, used_labels:, loop_continue_label: body_continue_label, loop_break_label: body_break_label))
                   lines << "#{indent}}"
@@ -115,7 +115,7 @@ module MilkTea
                   guard_name = "__mt_loop_#{@loop_guard_id}"
                   lines = ["#{indent}{ uintptr_t #{guard_name} = 0;"]
                   lines << "#{indent}for (#{emit_for_clause_statement(statement.init)}; #{emit_expression(statement.condition)}; #{emit_for_clause_statement(statement.post)}) {"
-                  guard = "#{INDENT * (level + 1)}if (++#{guard_name} > 500000) mt_fatal(\"loop iteration limit exceeded in #{function.linkage_name}\");"
+                  guard = "#{INDENT * (level + 1)}if (++#{guard_name} > #{LOOP_GUARD_MAX_ITERATIONS}) mt_fatal(\"loop iteration limit exceeded in #{function.linkage_name}\");"
                   lines << guard
                   lines.concat(emit_statement_sequence(body, level + 1, function:, used_labels:, loop_continue_label: body_continue_label, loop_break_label: body_break_label))
                   lines << "#{indent}}"
