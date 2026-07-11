@@ -5191,46 +5191,97 @@ function expr_uses_offsetof(ep: ptr[ir.Expr]) -> bool:
 
 function emit_parallel_helpers(e: ref[Emitter]) -> void:
 
-    emit_line(e, "static void mt_parallel_for(intptr_t start, intptr_t end, intptr_t step, void (*worker)(void*, intptr_t, intptr_t), void* data) {")
-
-    emit_line(e, "  for (intptr_t i = start; i < end; i += step) {")
-
-    emit_line(e, "    worker(data, i, end);")
-
+    emit_line(e, "typedef struct {")
+    emit_line(e, "  void (*work)(void* data, int64_t start, int64_t end);")
+    emit_line(e, "  void* data;")
+    emit_line(e, "  int64_t start;")
+    emit_line(e, "  int64_t end;")
+    emit_line(e, "} mt_pfor_chunk;")
+    emit_line(e, "")
+    emit_line(e, "static void mt_pfor_runner(void* arg) {")
+    emit_line(e, "  mt_pfor_chunk* chunk = (mt_pfor_chunk*)arg;")
+    emit_line(e, "  chunk->work(chunk->data, chunk->start, chunk->end);")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void mt_parallel_for(void (*work)(void* data, int64_t start, int64_t end), void* data, int64_t count) {")
+    emit_line(e, "  if (count <= 0) return;")
+    emit_line(e, "  uv_cpu_info_t* cpu_info;")
+    emit_line(e, "  int ncpu = 1;")
+    emit_line(e, "  if (uv_cpu_info(&cpu_info, &ncpu) == 0) {")
+    emit_line(e, "    uv_free_cpu_info(cpu_info, ncpu);")
     emit_line(e, "  }")
-
+    emit_line(e, "  if (ncpu < 1) ncpu = 1;")
+    emit_line(e, "  if (ncpu > 64) ncpu = 64;")
+    emit_line(e, "  if (count < (int64_t)ncpu) ncpu = (int)count;")
+    emit_line(e, "  int64_t chunk_size = (count + ncpu - 1) / ncpu;")
+    emit_line(e, "  mt_pfor_chunk chunks[64];")
+    emit_line(e, "  uv_thread_t threads[64];")
+    emit_line(e, "  int nworkers = 0;")
+    emit_line(e, "  for (int t = 1; t < ncpu; t++) {")
+    emit_line(e, "    int64_t s = t * chunk_size;")
+    emit_line(e, "    int64_t e = s + chunk_size;")
+    emit_line(e, "    if (e > count) e = count;")
+    emit_line(e, "    if (s >= count) break;")
+    emit_line(e, "    chunks[nworkers].work = work;")
+    emit_line(e, "    chunks[nworkers].data = data;")
+    emit_line(e, "    chunks[nworkers].start = s;")
+    emit_line(e, "    chunks[nworkers].end = e;")
+    emit_line(e, "    uv_thread_create(&threads[nworkers], mt_pfor_runner, &chunks[nworkers]);")
+    emit_line(e, "    nworkers++;")
+    emit_line(e, "  }")
+    emit_line(e, "  int64_t first_end = chunk_size < count ? chunk_size : count;")
+    emit_line(e, "  work(data, 0, first_end);")
+    emit_line(e, "  for (int t = 0; t < nworkers; t++) {")
+    emit_line(e, "    uv_thread_join(&threads[t]);")
+    emit_line(e, "  }")
     emit_line(e, "}")
-
     emit_line(e, "")
-
+    emit_line(e, "typedef struct {")
+    emit_line(e, "  void (*work)(void* data);")
+    emit_line(e, "  void* data;")
+    emit_line(e, "} mt_spawn_item;")
+    emit_line(e, "")
+    emit_line(e, "static void mt_spawn_item_runner(void* arg) {")
+    emit_line(e, "  mt_spawn_item* item = (mt_spawn_item*)arg;")
+    emit_line(e, "  item->work(item->data);")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void mt_spawn_all(mt_spawn_item* items, int count) {")
+    emit_line(e, "  if (count <= 0) return;")
+    emit_line(e, "  uv_thread_t threads[64];")
+    emit_line(e, "  int nworkers = 0;")
+    emit_line(e, "  for (int t = 1; t < count && nworkers < 63; t++) {")
+    emit_line(e, "    uv_thread_create(&threads[nworkers], mt_spawn_item_runner, &items[t]);")
+    emit_line(e, "    nworkers++;")
+    emit_line(e, "  }")
+    emit_line(e, "  items[0].work(items[0].data);")
+    emit_line(e, "  for (int t = 0; t < nworkers; t++) {")
+    emit_line(e, "    uv_thread_join(&threads[t]);")
+    emit_line(e, "  }")
+    emit_line(e, "}")
+    emit_line(e, "")
     emit_line(e, "static void mt_spawn_run(void (*work)(void*), void* data) {")
-
     emit_line(e, "  work(data);")
-
     emit_line(e, "}")
-
     emit_line(e, "")
-
     emit_line(e, "static void mt_spawn_wait(void) {")
-
     emit_line(e, "}")
-
     emit_line(e, "")
-
-    emit_line(e, "static void* mt_detach_run(void (*work)(void*), void* data) {")
-
-    emit_line(e, "  work(data);")
-
-    emit_line(e, "  return NULL;")
-
+    emit_line(e, "typedef struct {")
+    emit_line(e, "  uv_thread_t thread;")
+    emit_line(e, "} mt_detach_handle;")
+    emit_line(e, "")
+    emit_line(e, "static void* mt_detach_run(void (*work)(void*), void* cap) {")
+    emit_line(e, "  mt_detach_handle* h = (mt_detach_handle*)malloc(sizeof(mt_detach_handle));")
+    emit_line(e, "  uv_thread_create(&h->thread, work, cap);")
+    emit_line(e, "  return h;")
     emit_line(e, "}")
-
     emit_line(e, "")
-
     emit_line(e, "static void mt_detach_join(void* handle) {")
-
-    emit_line(e, "  (void)handle;")
-
+    emit_line(e, "  if (!handle) return;")
+    emit_line(e, "  mt_detach_handle* h = (mt_detach_handle*)handle;")
+    emit_line(e, "  uv_thread_join(&h->thread);")
+    emit_line(e, "  free(h);")
     emit_line(e, "}")
 
 

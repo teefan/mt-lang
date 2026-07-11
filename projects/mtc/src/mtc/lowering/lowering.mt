@@ -2960,14 +2960,14 @@ function find_local(ctx: ref[LowerCtx], name: str) -> Option[LocalBinding]:
     return Option[LocalBinding].none
 
 
-## Worker for mt_parallel_for: takes (void* data, intptr_t start, intptr_t end).
+## Worker for mt_parallel_for: takes (void* data, int64_t start, int64_t end).
 function parallel_for_worker_fn(ctx: ref[LowerCtx], body_ir: span[ir.Stmt]) -> ir.Function:
     let void_ty = types.primitive("void")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let long_ty = types.primitive("long")
     parallel_cnt += 1
     let uid = parallel_uid(ctx)
-    let name = j2("mt_p_work_", uid)
+    let name = j2("mt_pfor_work_", uid)
     # Wrap body in a for-loop: for (let i = mt_pfor_start; i < mt_pfor_end; i += 1) { body }
     let index_c = "i"
     let index_ref = alloc_expr(ir.Expr.expr_name(name = index_c, ty = long_ty, pointer = false))
@@ -3092,13 +3092,12 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
             lbi += 1
         loop_body = pf_full.as_span()
     let worker = parallel_for_worker_fn(ctx, loop_body)
-    var call_args = vec.Vec[ir.Expr].create()
     let start_expr = lower_expr(ctx, start_ptr)
     let end_expr = lower_expr(ctx, end_ptr)
+    # Compute count = end - start.
+    let count_expr = alloc_expr(ir.Expr.expr_binary(operator = "-", left = end_expr, right = start_expr, ty = long_ty))
+    var call_args = vec.Vec[ir.Expr].create()
     unsafe:
-        call_args.push(read(start_expr))
-        call_args.push(read(end_expr))
-        call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = long_ty))))
         call_args.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
     if pfor_has_captures:
         let pf_cap_ty = types.Type.ty_named(module_name = "", name = pfor_cap_name)
@@ -3138,6 +3137,8 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
     else:
         unsafe:
             call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
+    unsafe:
+        call_args.push(read(count_expr))
     ctx.pending_synthetic_functions.push(worker)
     output.push(ir.Stmt.stmt_expression(
         expression = alloc_expr(ir.Expr.expr_call(callee = "mt_parallel_for", arguments = call_args.as_span(), ty = void_ty)),
