@@ -4,6 +4,10 @@
 ## Guards), §9 (Expressions), §10 (Type System), and §13 (Safety And
 ## Conversion Rules).
 ##
+## Uses own[T] for heap allocation exercises.
+
+import std.mem.heap as heap
+##
 ## Each function exercises a specific scenario.  The entrypoint `main`
 ## calls them all and returns a status code where 0 indicates all
 ## checks passed.
@@ -244,7 +248,22 @@ function align_of_for_ptr() -> ptr_uint:
     return align_of(ptr[int])
 
 # ---------------------------------------------------------------------------
-# 20  Entrypoint
+# 21  own[T] — owning heap pointer (auto-deref, nullable, storable)
+# ---------------------------------------------------------------------------
+
+function own_basic_alloc() -> own[int]:
+    let p = heap.must_alloc[int](1)
+    return p
+
+function own_nullable_flow() -> int:
+    var p: own[int]? = heap.alloc[int](1)
+    defer heap.release(unsafe: ptr[int]<-p)
+    if p != null:
+        return 0
+    return -1
+
+# ---------------------------------------------------------------------------
+# 22  Entrypoint
 # ---------------------------------------------------------------------------
 
 function main() -> int:

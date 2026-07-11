@@ -975,6 +975,12 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 
 - `ptr[T]`
 - `const_ptr[T]`
+- `own[T]`
+  - owning heap pointer: like `ptr[T]` but auto-dereferences (no `unsafe: read()` needed for field/method access)
+  - nullable: `own[T]?` lowers to a nullable `T*`; `null` is the absent value
+  - storable in struct/variant fields and returnable from functions — unlike `ref[T]`, `own[T]` has no non-owning restriction
+  - created via `heap.must_alloc[T](count)` (returns `own[T]`) or `heap.alloc[T](count)` (returns `own[T]?`); freed via `heap.release(ptr)`
+  - compiles to plain `T*` in C, with auto-deref handled at the language level
 - `ref[T]`
   - receiver-modifier type: passes a stored value by reference, allowing methods to mutate the underlying storage
   - functions like `append(output: ref[string.String], text: str)` receive a safe pointer to stored data
@@ -996,7 +1002,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 ### 6.3 Nullability
 
 - nullable form: `T?`, valid for any type
-- for pointer-like bases (`ptr[T]`, `const_ptr[T]`, `cstr`, `fn(...)`, `proc(...)`, opaque), `T?` is a nullable pointer with `null` as the absent value
+- for pointer-like bases (`ptr[T]`, `const_ptr[T]`, `own[T]`, `cstr`, `fn(...)`, `proc(...)`, opaque), `T?` is a nullable pointer with `null` as the absent value
 - for non-pointer value bases (`int`, `bool`, `float`, structs, ...), `T?` is stored inline by value as a tagged optional (a presence flag plus the value); it copies by value with no hidden heap allocation or pointer aliasing
 - `null` expresses absence in any nullable context; the explicit typed `null[...]` form's target must be pointer-like
 - in nullable pointer-like contexts, use `null` instead of `zero[ptr[T]]`

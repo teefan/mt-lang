@@ -1485,7 +1485,28 @@ function lifetime_demo() -> void:
     buffer_advance(ref_of(buf))
 
 # =============================================================================
-# 28  struct.with() partial field update
+# 28  own[T] — owning heap pointer with auto-deref
+# =============================================================================
+
+# --- own[T] struct field, nullable, heap alloc, member access
+
+function create_owned() -> own[int]:
+    let p = zero[own[int]]
+    return p
+
+function use_owned(p: own[int]) -> int:
+    return unsafe: read(p) + 1
+
+# --- own[int]? — nullable owning pointer
+
+function nullable_owned_demo() -> int:
+    var p: own[int]? = null
+    if p == null:
+        return 0
+    return 1
+
+# =============================================================================
+## 29  struct.with() partial field update
 # =============================================================================
 
 function with_demo() -> Vec2:
@@ -1493,7 +1514,7 @@ function with_demo() -> Vec2:
     return v.with(x = 10.0)
 
 # =============================================================================
-# 29  Named arguments
+## 29  Named arguments
 # =============================================================================
 
 function configure(host: str, port: int, debug: bool) -> void:
@@ -1505,7 +1526,7 @@ function named_args_demo() -> int:
     return 1
 
 # =============================================================================
-# 30  dyn[InterfaceName] — runtime interface values
+# 31  dyn[InterfaceName] — runtime interface values
 # =============================================================================
 
 interface Shape:
@@ -1544,7 +1565,7 @@ function dyn_generic_demo() -> int:
     return m.map(21)
 
 # =============================================================================
-# 31  Tuples — positional, named, destructuring
+# 32  Tuples — positional, named, destructuring
 # =============================================================================
 
 function tuple_demo() -> int:
@@ -1605,7 +1626,7 @@ function get_coords() -> (int, int):
     return (50, 60)
 
 # =============================================================================
-# 32  Nested structs
+# 33  Nested structs
 # =============================================================================
 
 function nested_struct_demo() -> float:
@@ -1625,7 +1646,7 @@ function nested_struct_demo() -> float:
     return r.x + r.y + (r.top_edge.end - r.top_edge.start)
 
 # =============================================================================
-# 33  atomic[T]
+# 34  atomic[T]
 # =============================================================================
 
 function atomic_demo() -> int:
@@ -1636,7 +1657,7 @@ function atomic_demo() -> int:
     return int<-(prev) + value
 
 # =============================================================================
-# 34  Entrypoint
+# 35  Entrypoint
 # =============================================================================
 
 function main() -> int:

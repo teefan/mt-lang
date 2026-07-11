@@ -734,6 +734,7 @@ Type constructors:
 
 - `ptr[T]`
 - `const_ptr[T]`
+- `own[T]` — owning heap pointer: auto-dereferences like `ref` but storable, returnable, and nullable. Created via `heap.must_alloc[T](count)`. Compiles to `T*`.
 - `ref[T]`
 - `span[T]`
 - `array[T, N]`
@@ -753,7 +754,7 @@ When a `span[T]` is expected, an addressable `array[T, N]` value may be passed d
 Nullability:
 
 - Nullable form is `T?` and is valid for any type.
-- For pointer-like bases (`ptr[T]`, `const_ptr[T]`, `cstr`, `fn(...)`, `proc(...)`, opaque), `T?` is a nullable pointer and `null` is the absent value.
+- For pointer-like bases (`ptr[T]`, `const_ptr[T]`, `own[T]`, `cstr`, `fn(...)`, `proc(...)`, opaque), `T?` is a nullable pointer and `null` is the absent value.
 - For non-pointer value bases (`int`, `bool`, `float`, structs, ...), `T?` is stored inline by value as a tagged optional (a presence flag plus the value). It copies by value with no hidden heap allocation or pointer aliasing.
 - Use `null` for absence in any nullable context.
 - In nullable pointer-like contexts, prefer `null` over `zero[ptr[T]]`.
