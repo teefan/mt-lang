@@ -166,7 +166,19 @@ Diff:          4,696 lines (structural, not functional — all 172 tests pass)
 
 **P1 — Format helper alignment (~111 diff lines):** **DONE.** Self-host now uses Ruby-equivalent two-pass approach (38 helpers, measure-allocate-append) instead of builder approach (5 helpers, grow buffer). Lowering (`lower_format_string_local`) and C backend (`emit_format_string_helpers`) both aligned. Baseline C output diff unchanged (~4,696) because format strings in language_baseline.mt are const-folded; validated via 172 integration tests.
 
-**P2 — Runtime helpers (~800 diff lines):** **NOT STARTED.** Requires both lowering AND C backend changes for each runtime category (async/parallel/detach/spawn/events). The two compilers generate fundamentally different IR — self-host calls different helper APIs (e.g., `mt_spawn_run`+`mt_spawn_wait` vs Ruby's `mt_spawn_all`). Estimated 2-3 sessions per category for full alignment.
+**P2 — Runtime helpers (~800 diff lines):** **MOSTLY DONE.**
+
+Done:
+- Parallel for: `mt_parallel_for(work, data, count)` with `mt_pfor_chunk`/`mt_pfor_runner` (libuv chunk distribution)
+- Spawn: `mt_spawn_all(items, count)` with `mt_spawn_item`/`mt_spawn_item_runner` (libuv threading)
+- Detach: `mt_detach_run(work, cap)`/`mt_detach_join(handle)` with `mt_detach_handle` (libuv threading)
+- Worker naming: `mt_pfor_work_*` matches Ruby
+
+Remaining (82 diff lines):
+- Event runtime: 82 diff lines. Ruby generates per-event typed structs (`mt_event_NAME__slot/snapshot/wait_frame`) and per-event functions (`subscribe/emit/unsubscribe/wait` with async frame allocation). Self-host uses 4 generic `void*`-based functions. Requires ~500 lines of event lowering rewrite + ~100 lines of C backend changes. Similar scope to P1. Estimated 3 sessions.
+- Async memory: `MT_ASYNC_HEADER_SIZE`/`MT_ASYNC_MAGIC`/`mt_async_alloc/retain/free`. Not emitted because self-host uses different async frame lifecycle. Required by event runtime alignment (wait frames use `mt_async_alloc`).
+
+C output diff after P2: 4,696 → 4,576 (-120).
 
 **P3 — Emission order alignment (~200 diff lines):** **DONE.** Reordered: type aliases + builtin types (vec/mat/quat) now emit before mt_fatal; format/event/parallel/builtin helpers emit before forward declarations. Remaining order differences are due to different IR content, not section ordering. Baseline C diff: 4,696 → 4,683 (-13).
 
