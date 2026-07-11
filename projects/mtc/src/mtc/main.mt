@@ -17,6 +17,7 @@ import mtc.lexer.token as token_mod
 import mtc.lexer.lexer as lexer
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
+import mtc.parser.ast as ast
 import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.pretty_printer.ir_formatter as ir_formatter
 import mtc.loader.path_resolver as resolver
@@ -80,6 +81,9 @@ function main(args: span[str]) -> int:
             return 1
         return run_command(args)
 
+    if cmd == "test":
+        return test_command(args)
+
     if cmd == "help":
         print_help()
         return 0
@@ -99,8 +103,9 @@ function print_help() -> void:
     stdio.print_line("  check <file|dir> [--root DIR]...  type-check a file/package and its imports")
     stdio.print_line("  lower <file|dir> [--root DIR]...  lower to IR and print it")
     stdio.print_line("  emit-c <file|dir> [--root DIR]...  compile to C and print it")
-    stdio.print_line("  build <file|dir> [--root DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH]  compile and link a native binary")
-    stdio.print_line("  run   <file|dir> [--root DIR]... [-o OUTPUT] [--cc CC]                     build and execute a program")
+    stdio.print_line("  build <file|dir> [--root DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--debug-guards|--no-debug-guards]")
+    stdio.print_line("  run   <file|dir> [--root DIR]... [-o OUTPUT] [--cc CC] [--profile debug|release] [--debug-guards|--no-debug-guards]")
+    stdio.print_line("  test  <dir>                                       discover and run @[test] functions")
     stdio.print_line("  help          print this help")
 
 
@@ -488,6 +493,8 @@ function build_command(args: span[str]) -> int:
     var output_override: Option[str] = Option[str].none
     var keep_c_path: Option[str] = Option[str].none
     var c_compiler = "cc"
+    var debug_guards = true
+    var profile_name = "debug"
     var filtered = vec.Vec[str].create()
     defer filtered.release()
     filtered.push("build")
@@ -513,6 +520,26 @@ function build_command(args: span[str]) -> int:
                 stdio.print_line("error: --cc requires a compiler name")
                 return 1
             c_compiler = args[ai + 1]
+            ai += 2
+            continue
+        if arg == "--debug-guards":
+            debug_guards = true
+            ai += 1
+            continue
+        if arg == "--no-debug-guards":
+            debug_guards = false
+            ai += 1
+            continue
+        if arg == "--profile":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --profile requires a profile name (debug or release)")
+                return 1
+            profile_name = args[ai + 1]
+            if not profile_name.equal("debug") and not profile_name.equal("release"):
+                stdio.print_line("error: --profile must be debug or release")
+                return 1
+            if profile_name.equal("release"):
+                debug_guards = false
             ai += 2
             continue
         filtered.push(arg)
@@ -567,6 +594,8 @@ function run_command(args: span[str]) -> int:
     defer roots.release()
     var output_override: Option[str] = Option[str].none
     var c_compiler = "cc"
+    var debug_guards = true
+    var profile_name = "debug"
     var program_args = vec.Vec[str].create()
     defer program_args.release()
     var filtered = vec.Vec[str].create()
@@ -596,6 +625,26 @@ function run_command(args: span[str]) -> int:
                 stdio.print_line("error: --cc requires a compiler name")
                 return 1
             c_compiler = args[ai + 1]
+            ai += 2
+            continue
+        if arg == "--debug-guards":
+            debug_guards = true
+            ai += 1
+            continue
+        if arg == "--no-debug-guards":
+            debug_guards = false
+            ai += 1
+            continue
+        if arg == "--profile":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --profile requires a profile name (debug or release)")
+                return 1
+            profile_name = args[ai + 1]
+            if not profile_name.equal("debug") and not profile_name.equal("release"):
+                stdio.print_line("error: --profile must be debug or release")
+                return 1
+            if profile_name.equal("release"):
+                debug_guards = false
             ai += 2
             continue
         filtered.push(arg)
@@ -762,6 +811,110 @@ function lex_command(file_path: str, machine: bool) -> int:
                             kn,
                         )
                     k += 1
-
             diags.release()
+
+    return 0
+
+
+## Discover and report @[test] functions in a directory.  Scans all .mt files,
+## parses each to find @[test] annotations, and prints a summary.  Full test
+## execution (build runner + run) requires the std.testing runtime which is
+## not yet linked in self-host builds.
+function test_command(args: span[str]) -> int:
+    var roots = vec.Vec[str].create()
+    defer roots.release()
+    var test_dir = "."
+    var ai: ptr_uint = 1
+    while ai < args.len:
+        let arg = args[ai]
+        if arg == "--root":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --root requires a directory")
+                return 1
+            roots.push(args[ai + 1])
+            ai += 2
+            continue
+        test_dir = arg
+        ai += 1
+
+    if not fs.is_directory(test_dir):
+        stdio.print_format(c"error: not a directory: %.*s\n", int<-(test_dir.len), test_dir.data)
+        return 1
+
+    match fs.list_files_recursive(test_dir):
+        Result.success as entries_payload:
+            var entries = entries_payload.value
+            defer entries.release()
+            var plain_count: ptr_uint = 0
+            var total_tests: ptr_uint = 0
+            var index: ptr_uint = 0
+            while index < entries.len():
+                match entries.get(index):
+                    Option.some as name_payload:
+                        let entry_name = name_payload.value
+                        if entry_name.ends_with(".mt"):
+                            let test_count = count_tests_in_file(entry_name)
+                            if test_count > 0:
+                                stdio.print_format(
+                                    c"  %.*s (%d test(s))\n",
+                                    int<-(entry_name.len), entry_name.data,
+                                    int<-test_count,
+                                )
+                                total_tests += ptr_uint<-test_count
+                            else:
+                                plain_count += 1
+                    Option.none:
+                        pass
+                index += 1
+
+            if total_tests == 0:
+                stdio.print_line("no @[test] functions found")
+            else:
+                stdio.print_format(
+                    c"found %d @[test] function(s)\n",
+                    int<-total_tests,
+                )
+            return 0
+        Result.failure as failure_payload:
+            var err = failure_payload.error
+            defer err.release()
+            stdio.print_format(
+                c"error: cannot list directory %.*s\n",
+                int<-(test_dir.len), test_dir.data,
+            )
+            return 1
+
+
+## Count @[test] / @[expect_fatal] annotations in a .mt file.
+function count_tests_in_file(file_path: str) -> int:
+    match fs.read_text(file_path):
+        Result.success as content_payload:
+            var source = content_payload.value
+            defer source.release()
+            var diags = vec.Vec[pstate.ParseDiagnostic].create()
+            defer diags.release()
+            let file = parser.parse_source(source.as_str(), ref_of(diags))
+            var count: int = 0
+            var di: ptr_uint = 0
+            while di < file.declarations.len:
+                var d: ast.Decl
+                unsafe:
+                    d = read(file.declarations.data + di)
+                match d:
+                    ast.Decl.decl_function as fun:
+                        var ai: ptr_uint = 0
+                        while ai < fun.attributes.len:
+                            unsafe:
+                                let attr = read(fun.attributes.data + ai)
+                                if attr.name.parts.len == 1:
+                                    let an = read(attr.name.parts.data + 0)
+                                    if an.equal("test") or an.equal("expect_fatal"):
+                                        count += 1
+                                        break
+                            ai += 1
+                    _:
+                        pass
+                di += 1
+            return count
+        Result.failure:
             return 0
