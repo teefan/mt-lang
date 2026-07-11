@@ -755,6 +755,7 @@ module MilkTea
       @current_function_stack = []
       @unsafe_depth = 0
       @binding_ptr_unsafe_uses = Hash.new { |h, k| h[k] = { safe: 0, unsafe: 0 } }
+      @ptr_candidates = Set.new
       @reserved_primitive_name_fixes = []
       @lint_tier = self.class.normalize_lint_tier(lint_tier)
       @max_line_length = max_line_length&.to_i&.positive? ? max_line_length.to_i : Formatter::DEFAULT_MAX_LINE_LENGTH
