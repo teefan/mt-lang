@@ -80,6 +80,7 @@ examples/**/*.bmp
 third_party/**/*
 projects/**/build
 projects/**/tmp
+__mt_test_*
 
 # Vendored tool binaries built into bin/
 /bin/tracy-profiler
