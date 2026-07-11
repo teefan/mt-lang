@@ -35,6 +35,7 @@ module MilkTea
         return true if external_pointer_null && external_typed_null_pointer_compatibility?(actual_type, expected_type)
         return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
         return true if mutable_to_const_pointer_compatibility?(actual_type, expected_type)
+        return true if own_to_raw_pointer_compatibility?(actual_type, expected_type)
         return true if string_literal_cstr_compatibility?(expression, expected_type)
         return true if exact_compile_time_numeric_compatibility?(actual_type, expression, expected_type, scopes:)
         return true if integer_to_char_compatibility?(actual_type, expected_type) &&
@@ -199,13 +200,13 @@ module MilkTea
 
       def pointer_arithmetic_result(operator, left_type, right_type)
         if pointer_type?(left_type) && integer_type?(right_type)
-          require_unsafe!("pointer arithmetic requires unsafe")
+          require_unsafe!("pointer arithmetic requires unsafe") unless own_type?(left_type)
 
           return left_type if operator == "+" || operator == "-"
         end
 
         if operator == "+" && integer_type?(left_type) && pointer_type?(right_type)
-          require_unsafe!("pointer arithmetic requires unsafe")
+          require_unsafe!("pointer arithmetic requires unsafe") unless own_type?(right_type)
 
           return right_type
         end

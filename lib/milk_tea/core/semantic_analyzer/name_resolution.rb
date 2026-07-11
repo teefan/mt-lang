@@ -930,7 +930,7 @@ module MilkTea
         end
 
         if pointer_type?(receiver_type)
-          require_unsafe!("pointer indexing requires unsafe")
+          require_unsafe!("pointer indexing requires unsafe") unless own_type?(receiver_type)
 
           return pointee_type(receiver_type)
         end
@@ -1294,7 +1294,7 @@ module MilkTea
 
         pointee = pointee_type(handle_type)
         if pointee
-          require_unsafe!("raw pointer dereference requires unsafe")
+          require_unsafe!("raw pointer dereference requires unsafe") unless own_type?(handle_type)
 
           return pointee
         end
@@ -1316,7 +1316,7 @@ module MilkTea
         return referenced_type(receiver_type) if ref_type?(receiver_type)
         return receiver_type unless pointer_type?(receiver_type)
 
-        require_unsafe!("raw pointer dereference requires unsafe")
+        require_unsafe!("raw pointer dereference requires unsafe") unless own_type?(receiver_type)
         if require_mutable_pointer && const_pointer_type?(receiver_type)
           raise_sema_error("cannot assign through read-only raw pointer #{receiver_type}")
         end
@@ -1330,7 +1330,7 @@ module MilkTea
 
         return receiver_type if member_name && lookup_method(receiver_type, member_name)
 
-        require_unsafe!("raw pointer dereference requires unsafe")
+        require_unsafe!("raw pointer dereference requires unsafe") unless own_type?(receiver_type)
 
         pointee_type(receiver_type)
       end

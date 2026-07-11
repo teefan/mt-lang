@@ -15,7 +15,7 @@ extending Bytes:
         if source.len == 0:
             return Bytes.empty()
 
-        let data = unsafe: ptr[ubyte]<-heap.must_alloc[ubyte](source.len)
+        let data = heap.must_alloc[ubyte](source.len)
         heap.copy_bytes(data, source.data, source.len)
 
         return Bytes(data = data, len = source.len)

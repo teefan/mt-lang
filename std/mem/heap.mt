@@ -222,7 +222,7 @@ public function must_alloc_zeroed[T](count: ptr_uint) -> own[T]:
     return memory
 
 
-public function resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]?:
+public function resize[T](memory: ptr[T]?, count: ptr_uint) -> own[T]?:
     let alignment = ptr_uint<-align_of(T)
     if alignment > minimum_alignment:
         return null
@@ -235,16 +235,16 @@ public function resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]?:
         let resized = resize_bytes(null, count * element_size) else:
             return null
 
-        return unsafe: ptr[T]<-resized
+        return unsafe: own[T]<-resized
 
     unsafe:
         let resized = resize_bytes(ptr[void]<-memory, count * element_size) else:
             return null
 
-        return ptr[T]<-resized
+        return own[T]<-resized
 
 
-public function must_resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]:
+public function must_resize[T](memory: ptr[T]?, count: ptr_uint) -> own[T]:
     if count == 0:
         fatal(c"heap.must_resize requires count > 0")
 
@@ -258,7 +258,7 @@ public function must_resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]:
     let resized = resize[T](memory, count) else:
         fatal(c"heap.must_resize out of memory")
 
-    return unsafe: ptr[T]<-resized
+    return resized
 
 
 ## Frees a typed heap allocation. The caller's binding is NOT nulled — a

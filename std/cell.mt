@@ -5,13 +5,12 @@ import std.mem.heap as heap
 ## This is the intended escape hatch for shared mutable proc state.
 ## Allocation stays visible at the call site via `cell.alloc(...)`.
 public struct Cell[T]:
-    storage: ptr[T]?
+    storage: own[T]?
 
 
 public function alloc[T](value: T) -> Cell[T]:
     let storage = heap.must_alloc[T](1)
-    unsafe:
-        read(storage) = value
+    read(storage) = value
     return Cell[T](storage = storage)
 
 
@@ -20,25 +19,30 @@ extending Cell[T]:
         let storage = this.storage else:
             fatal(c"cell.Cell.as_ptr released cell")
 
-        return unsafe: ptr[T]<-storage
+        return storage
 
 
     public function get() -> T:
-        unsafe:
-            return read(this.as_ptr())
+        let storage = this.storage else:
+            fatal(c"cell.Cell.get released cell")
+
+        return read(storage)
 
 
     public function set(value: T) -> void:
-        unsafe:
-            read(this.as_ptr()) = value
+        let storage = this.storage else:
+            fatal(c"cell.Cell.set released cell")
+
+        read(storage) = value
 
 
     public function replace(value: T) -> T:
-        unsafe:
-            let storage = this.as_ptr()
-            let previous = read(storage)
-            read(storage) = value
-            return previous
+        let storage = this.storage else:
+            fatal(c"cell.Cell.replace released cell")
+
+        let previous = read(storage)
+        read(storage) = value
+        return previous
 
 
     public function update(body: proc(value: T) -> T) -> T:
