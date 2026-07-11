@@ -191,7 +191,9 @@ module MilkTea
             check_prefer_try(statement.expression, statement.arms)
           end
         when AST::UnsafeStmt
+          @unsafe_depth += 1
           with_scope { visit_statement_list(statement.body) }
+          @unsafe_depth -= 1
         when AST::ForStmt
           visit_expression(statement.iterable)
           with_scope do
@@ -284,7 +286,9 @@ module MilkTea
             check_prefer_or_pattern(expression.arms, body_of: ->(arm) { arm.value })
           end
         when AST::UnsafeExpr
+          @unsafe_depth += 1
           visit_expression(expression.expression)
+          @unsafe_depth -= 1
         when AST::ProcExpr
           with_scope do
             fallback_line = expression.respond_to?(:line) ? expression.line : nil
@@ -507,17 +511,27 @@ module MilkTea
         @scopes.reverse_each do |scope|
           binding = scope[name]
           next unless binding
-  
+
           binding.used = true
+          track_binding_unsafe_use(name)
           record_reserved_primitive_identifier_use(binding, identifier)
           return
         end
-  
+
         binding = @module_bindings[name]
         return unless binding
-  
+
         binding.used = true
         record_reserved_primitive_identifier_use(binding, identifier)
+      end
+
+      def track_binding_unsafe_use(name)
+        uses = @binding_ptr_unsafe_uses[name]
+        if @unsafe_depth > 0
+          uses[:unsafe] += 1
+        else
+          uses[:safe] += 1
+        end
       end
       def emit_scope_warnings(scope)
         scope.each_value do |binding|
@@ -544,6 +558,20 @@ module MilkTea
                 message: "variable '#{binding.name}' is never reassigned, prefer 'let'",
                 severity: :hint,
                 symbol_name: binding.name
+              )
+            end
+
+            uses = @binding_ptr_unsafe_uses[binding.name]
+            if binding.binding_kind != :param && uses[:unsafe] > 0 && uses[:safe] == 0
+              @warnings << Warning.new(
+                path: @path,
+                line: binding.line,
+                column: binding.column,
+                length: binding.name.length,
+                code: "prefer-own-ptr",
+                message: "binding '#{binding.name}' is only used inside unsafe — consider converting its type from ptr to own for auto-deref",
+                severity: :hint,
+                symbol_name: binding.name,
               )
             end
           end
