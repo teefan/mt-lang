@@ -12214,12 +12214,34 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.Type
     if has_await:
         lower_async_cps_body(ctx, name, body, resume_c, frame_c, frame_exp, res_ty, is_void_ret, bool_ty, int_ty, ref_of(resume_body))
     else:
-        # Waiter wake: if(frame->waiter), call it
-        async_waiter_wake(ctx, ref_of(resume_body), frame_exp, bool_ty, ptr_void_type())
-        resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = bool_true))
-        if not is_void_ret:
-            resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_zero_init(ty = res_ty))))
-        resume_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+        # Lower original body (handles defers, locals, return values),
+        # then replace each return with: store result → waiter wake → ready → return.
+        var body_ir = lower_function_body(ctx, body)
+        var bi: ptr_uint = 0
+        while bi < body_ir.len:
+            var stmt: ir.Stmt
+            unsafe:
+                stmt = read(body_ir.data + bi)
+            match stmt:
+                ir.Stmt.stmt_return as ret:
+                    # Store return value in frame->result
+                    if not is_void_ret:
+                        let rv = ret.value
+                        if rv != null:
+                            resume_body.push(ir.Stmt.stmt_assignment(
+                                target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)),
+                                operator = "=",
+                                value = rv,
+                            ))
+                    # Waiter wake
+                    async_waiter_wake(ctx, ref_of(resume_body), frame_exp, bool_ty, async_mod.ptr_void_type())
+                    # Set ready
+                    resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = bool_true))
+                    # Return void
+                    resume_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+                _:
+                    resume_body.push(stmt)
+            bi += 1
     functions.push(ir.Function(name = j2(name, "_resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable linkage names --
