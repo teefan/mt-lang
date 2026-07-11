@@ -154,6 +154,7 @@ module MilkTea
           )
           check_redundant_type_annotation(statement)
           flag_redundant_widening_cast(statement.value) if statement.type && statement.value
+          record_ptr_candidate(statement)
         when AST::Assignment
           visit_expression(statement.value)          # visit RHS first — reads in RHS count against dead-assignment
           mark_assignment_target_reads(statement.target, statement.operator) # compound: marks target as read
@@ -562,7 +563,7 @@ module MilkTea
             end
 
             uses = @binding_ptr_unsafe_uses[binding.name]
-            if binding.binding_kind != :param && uses[:unsafe] > 0 && uses[:safe] == 0
+            if binding.binding_kind != :param && uses[:unsafe] > 0 && uses[:safe] == 0 && @ptr_candidates.include?(binding.name)
               @warnings << Warning.new(
                 path: @path,
                 line: binding.line,
@@ -602,6 +603,48 @@ module MilkTea
           severity: :hint,
           symbol_name: statement.name,
         )
+      end
+
+      def record_ptr_candidate(statement)
+        return unless statement.is_a?(AST::LocalDecl)
+        return unless statement.value
+
+        if statement.type && statement.type.is_a?(AST::TypeRef)
+          type_text = type_ref_source(statement.type)
+          return unless type_text&.include?("ptr[")
+        else
+          value = statement.value
+          unless heap_alloc_call?(value)
+            alloc_name = alloc_wrapper_name(value)
+            return unless alloc_name
+          end
+        end
+
+        @ptr_candidates.add(statement.name)
+      end
+
+      def heap_alloc_call?(expr)
+        return false unless expr.is_a?(AST::Call)
+        return false unless expr.callee.is_a?(AST::MemberAccess)
+
+        %w[must_alloc alloc must_alloc_zeroed must_resize].include?(expr.callee.member)
+      end
+
+      def alloc_wrapper_name(expr)
+        return nil unless expr.is_a?(AST::Call)
+        return nil unless expr.callee.is_a?(AST::Identifier)
+
+        name = expr.callee.name
+        %w[alloc_expr alloc_stmt alloc_decl].include?(name) ? name : nil
+      end
+
+      def type_ref_source(type_node)
+        return nil unless type_node.is_a?(AST::TypeRef)
+        return nil if type_node.name.parts.empty?
+
+        type_node.name.parts.last
+      rescue StandardError
+        nil
       end
 
       def type_ref_name(type_node)
