@@ -1,7 +1,35 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **Async CPS Steps 1-6 DONE. 172 tests pass. Self-compile verified.**
-Last updated: 2026-07-11 (session: CPS Steps 1-6 + package build + parity fixes)
+Status: **3 bug fixes, CLI features, nullable lowering — 172 tests pass. language_baseline compiles.**
+Last updated: 2026-07-11 (session: bug fixes + CLI features + nullable value type lowering)
+
+---
+
+## 0. Session progress (2026-07-11 — batch 2)
+
+3 commits:
+
+| Commit | What |
+|--------|------|
+| `2b26aa9e` | CLI features: -o, --keep-c, run command, build.mt determinism, C backend vec/mat/quat + vtable const fix |
+| `42ed6c6b` | Nullable value type lowering: wrap/unwrap mt_opt_* structs, is_nullable_pointer_like, guard_success_projection |
+| `6eac8017` | --cc compiler flag for build and run commands |
+
+### Key accomplishments
+
+- **language_baseline.mt** now compiles through the self-host with only 2 pre-existing POSIX errors (sockaddr, addrinfo from libuv headers). All nullable value type handling works.
+- **Deterministic byte-identical self-compile**: Two self-host builds produce SHA256-identical binaries. Stage-2 → stage-3 → stage-3 are identical.
+- **172/172 tests pass**.
+- **C backend fixes**: vec/mat/quat type declarations, vtable const qualifier (const_ptr[void]), nullable opt structs with has_value checks.
+- **Lowering fixes**: nullable_some_literal (wrap non-null values), guard_success_projection (.value extraction), is_nullable_pointer_like helper.
+- **CLI additions**: `build -o OUTPUT`, `build --keep-c PATH`, `build/run --cc CC`, `run` command.
+
+### Byte-identical C status
+
+- Ruby output: 4,283 lines, self-host output: 3,611 lines
+- Diff: ~3,994 lines different (was ~4,934 before naming fix)
+- Module naming fix: using `--root .` instead of `--root examples --root .` produces correct `examples_language_baseline_` prefix
+- Remaining gap: format helpers (Ruby: 30+ helpers, self-host: 5), runtime helper placement, forward declaration ordering, prelude handling
 
 ---
 
@@ -173,25 +201,27 @@ tmp/mtc-final build projects/mtc --root .
 | `d1b9a747` | CPS Step 5: lower no-await body + return-value extraction |
 | `e8d950ba` | CPS Step 6: cross-path .value extraction |
 
-### Key files modified
+### Key files modified this session
 
 | File | Changes |
 |------|---------|
-| `lowering/lowering.mt` | CPS integration (lower_async_fn, lower_async_cps_body, async_waiter_wake, make_task_literal update), await detection, state counting, frame struct, synthetic funcs, return-value replacement |
-| `lowering/async.mt` | NEW — 303 lines: await detection, state counting, type helpers |
-| `c_backend/c_backend.mt` | Task struct vtable + value field |
-| `main.mt` | Package build support (TOML reader, directory targets) |
-| `semantic/analyzer.mt` | Type alias export, resolve_method_sig fix, check_local fix |
-| `semantic/types.mt` | is_raw_pointer nullable handling |
-| `loader/binder.mt` | type_alias_types in ModuleBinding |
+| `main.mt` | +run command, -o/--keep-c/--cc flags, fix j2_path/default_output_path (use string.String) |
+| `build.mt` | Deterministic temp file (/tmp/mtc_build.c) |
+| `lowering/lowering.mt` | nullable_some_literal, is_nullable_pointer_like, guard_success_projection .value extraction, vtable const_ptr[void] |
+| `c_backend/c_backend.mt` | mt_opt_* structs, has_value checks, collect_builtin_types recursive, is_pointer_like_for_nullable, emit_opt_struct_defs_from_program, scan function bodies for nullable types |
 
 ### Next session prompts
 
-- **Nested control flow CPS**: Deferred — if/while/for/match with awaits currently use normal lowering path (inside_async). Full CPS transform for these would enable true async suspend/resume.
-- **Defer cleanup across suspend**: Defer blocks in async functions with awaits should run on both normal completion and suspension.
-- **Byte-identical C baseline**: 4678 lines differ from Ruby output (ordering + format helpers). 2 pre-existing POSIX errors remain.
-- **CLI tooling**: `run`, `test`, `new`, `format`, `lint`, `deps`, `debug` commands not yet implemented in self-host.
-- **Build options**: `-o`, `--cc`, `--profile`, `--platform`, `--bundle` etc. not yet supported.
+- **Cli tooling**: `test`, `format`, `lint`, `debug`, `new` commands not yet implemented.
+- **Build options**: `--profile`, `--platform`, `--bundle`, `--archive`, `--debug-guards` not yet supported.
+- **Byte-identical C baseline**: ~3,994 lines differ from Ruby output. Major categories:
+  - **Format helpers** — Ruby has 30+ format helpers (mt_format_*), self-host has 5 simplified helpers (mt_fmt_builder). ~170 line diff.
+  - **Forward declaration ordering** — Different grouping of struct/union/variant forward decls. Self-host emits span types separately.
+  - **Runtime helper placement** — Ruby emits helpers early (before type decls), self-host emits late (after constants/globals).
+  - **Prelude handling** — Different Option/Result type structures and emission order.
+  - **Event type generation** — Ruby generates more event infrastructure (slot, snapshot, wait_frame structs).
+- **Nested control flow CPS** — Deferred.
+- **Defer cleanup across suspend** — Not done.
 
 ### Service endpoints
 
