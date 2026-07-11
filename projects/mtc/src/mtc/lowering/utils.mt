@@ -108,15 +108,13 @@ public function sp_expr(expr: ptr[ir.Expr]) -> span[ir.Expr]:
 
 public function alloc_expr(value: ir.Expr) -> ptr[ir.Expr]:
     var node = heap_mod.must_alloc[ir.Expr](1)
-    unsafe:
-        read(node) = value
+    read(node) = value
     return node
 
 
 public function alloc_stmt(value: ir.Stmt) -> ptr[ir.Stmt]:
     var node = heap_mod.must_alloc[ir.Stmt](1)
-    unsafe:
-        read(node) = value
+    read(node) = value
     return node
 
 
