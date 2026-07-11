@@ -143,7 +143,10 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_fatal_helper(ref_of(e))
         emit_line(ref_of(e), "")
 
-    if use_fatal_str:
+    if use_fatal:
+        emit_fatal_str_helper(ref_of(e))
+        emit_line(ref_of(e), "")
+    else if use_fatal_str:
         emit_fatal_str_helper(ref_of(e))
         emit_line(ref_of(e), "")
 

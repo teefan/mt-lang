@@ -5112,7 +5112,7 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], callee_name: str, args: s
                 let inferred = infer_type_param_from_args(ctx, tp.name, fun.method_params, args) else:
                     return Option[ptr[ir.Expr]].none
                 sub.set(tp.name, inferred)
-                key.append("_")
+                key.append("__")
                 key.append(naming.type_c_key(inferred))
                 tpi += 1
             let spec_key = key.as_str()
@@ -6012,7 +6012,10 @@ function primitive_method_c_name(type_name: str, method_name: str, is_static: bo
 function method_link_name(module_name: str, type_name: str, method_name: str, is_static: bool) -> str:
     if is_primitive_or_str_name(type_name):
         return primitive_method_c_name(type_name, method_name, is_static)
-    return naming.qualified_member_c_name(module_name, type_name, method_name)
+    var name = naming.qualified_member_c_name(module_name, type_name, method_name)
+    if is_static:
+        return j2(name, "_static")
+    return name
 
 
 ## The C linkage name for a resolved method call.  Prelude variants (Option,
