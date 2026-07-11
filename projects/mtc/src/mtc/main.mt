@@ -16,6 +16,7 @@ import mtc.lexer.token_kinds as tk
 import mtc.lexer.token as token_mod
 import mtc.lexer.lexer as lexer
 import mtc.parser.parser as parser
+import mtc.parser.state as pstate
 import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.pretty_printer.ir_formatter as ir_formatter
 import mtc.loader.path_resolver as resolver
@@ -117,7 +118,7 @@ function parse_command(file_path: str) -> int:
             defer content.release()
 
             let source = content.as_str()
-            var diags = vec.Vec[parser.ParseDiagnostic].create()
+            var diags = vec.Vec[pstate.ParseDiagnostic].create()
             defer diags.release()
             let file = parser.parse_source(source, ref_of(diags))
 

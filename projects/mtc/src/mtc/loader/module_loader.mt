@@ -17,6 +17,7 @@ import std.vec as vec
 
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
+import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
 import mtc.loader.binder as binder
 import mtc.loader.path_resolver as resolver
@@ -30,7 +31,7 @@ public struct LoadedModule:
     path: string.String
     source: string.String
     source_file: ast.SourceFile
-    parse_diagnostics: vec.Vec[parser.ParseDiagnostic]
+    parse_diagnostics: vec.Vec[pstate.ParseDiagnostic]
 
 
 ## A diagnostic aggregated across the whole program, tagged with the source-file
@@ -248,7 +249,7 @@ function parse_all(
             return
         Result.success as payload:
             var source = payload.value
-            var parse_diagnostics = vec.Vec[parser.ParseDiagnostic].create()
+            var parse_diagnostics = vec.Vec[pstate.ParseDiagnostic].create()
             let source_file = parser.parse_source(source.as_str(), ref_of(parse_diagnostics))
             let module_name = resolver.infer_module_name(key, roots)
 

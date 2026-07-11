@@ -17,102 +17,47 @@ import mtc.lexer.token as token_mod
 import mtc.lexer.lexer as lexer
 import mtc.parser.token_stream as ts
 import mtc.parser.ast as ast
+import mtc.parser.state as pstate
 
 
-## Diagnostic with position info — survives function scope (value type).
-public struct ParseDiagnostic:
-    line: ptr_uint
-    column: ptr_uint
-    message: cstr
-    lexeme: str
-    kind: str
-
-const MAX_LOOP_STEPS: ptr_uint = 100000
-
+## Diagnostic with position info — re-exported from parser/state.mt.
 
 # =============================================================================
-#  Parser state
+#  Parser state (now in parser/state.mt)
 # =============================================================================
 
-struct ParserState:
-    stream: ts.TokenStream
-    source: str
-    step_counter: ptr_uint
-    in_inline_block_body: bool
-    recovery_errors: ptr[vec.Vec[ParseDiagnostic]]?
-    known_type_names: map_mod.Map[str, bool]
-    known_import_aliases: map_mod.Map[str, bool]
-    known_generic_callable_names: map_mod.Map[str, bool]
-    current_type_param_names: vec.Vec[str]
-    suppress_errors: bool
-    error_suppressed: bool
+function step(s: ref[pstate.ParserState]) -> void:
+    pstate.step(s)
+
+function peek(s: ref[pstate.ParserState]) -> ptr[token_mod.Token]?:
+    return pstate.peek(s)
+
+function advance(s: ref[pstate.ParserState]) -> void:
+    pstate.advance(s)
+
+function previous(s: ref[pstate.ParserState]) -> ptr[token_mod.Token]?:
+    return pstate.previous(s)
+
+function previous_token(s: ref[pstate.ParserState]) -> ptr[token_mod.Token]:
+    return pstate.previous_token(s)
+
+function check(s: ref[pstate.ParserState], kind: tk.TokenKind) -> bool:
+    return pstate.check(s, kind)
+
+function match_kind(s: ref[pstate.ParserState], kind: tk.TokenKind) -> bool:
+    return pstate.match_kind(s, kind)
+
+function consume(s: ref[pstate.ParserState], kind: tk.TokenKind, msg: cstr) -> void:
+    pstate.consume(s, kind, msg)
+
+function parser_error_naked(s: ref[pstate.ParserState], msg: cstr) -> void:
+    pstate.parser_error_naked(s, msg)
+
+function parser_error_at(s: ref[pstate.ParserState], msg: cstr, line: ptr_uint, col: ptr_uint, lexeme: str, kind: str) -> void:
+    pstate.parser_error_at(s, msg, line, col, lexeme, kind)
 
 
-# =============================================================================
-#  Loop guard
-# =============================================================================
-
-function step(s: ref[ParserState]) -> void:
-    s.step_counter += 1
-    if s.step_counter > MAX_LOOP_STEPS:
-        let tok = peek(s) else:
-            fatal(c"parse loop guard: exceeded max iterations (no token)")
-        unsafe:
-            let t = read(tok)
-            let lexeme = token_mod.token_lexeme(t, s.source)
-            let kn = token_mod.kind_name(t.kind)
-            var buf: str_buffer[256]
-            buf.assign("parse loop guard: stuck at L")
-            buf.append_format(f"#{int<-(t.line)}")
-            buf.append(":C")
-            buf.append_format(f"#{int<-(t.column)}")
-            buf.append(" lexeme='")
-            buf.append(lexeme)
-            buf.append("' kind=")
-            buf.append(kn)
-            fatal(buf.as_cstr())
-
-
-# =============================================================================
-#  Token access helpers
-# =============================================================================
-
-function peek(s: ref[ParserState]) -> ptr[token_mod.Token]?:
-    return ts.peek(ref_of(s.stream))
-
-function advance(s: ref[ParserState]) -> void:
-    ts.advance(ref_of(s.stream))
-
-function previous(s: ref[ParserState]) -> ptr[token_mod.Token]?:
-    return ts.previous(ref_of(s.stream))
-
-function previous_token(s: ref[ParserState]) -> ptr[token_mod.Token]:
-    let tok = previous(s) else:
-        fatal(c"parser bug: previous token is null")
-    return tok
-
-function check(s: ref[ParserState], kind: tk.TokenKind) -> bool:
-    return ts.check(ref_of(s.stream), kind)
-
-function match_kind(s: ref[ParserState], kind: tk.TokenKind) -> bool:
-    return ts.match_kind(ref_of(s.stream), kind)
-
-function consume(s: ref[ParserState], kind: tk.TokenKind, msg: cstr) -> void:
-    if check(s, kind):
-        advance(s)
-        return
-    let tok = peek(s) else:
-        parser_error_naked(s, msg)
-        return
-    unsafe:
-        let t = read(tok)
-        let lexeme = token_mod.token_lexeme(t, s.source)
-        let kn = token_mod.kind_name(t.kind)
-        parser_error_at(s, msg, t.line, t.column, lexeme, kn)
-    advance(s)
-
-
-function consume_or_sync(s: ref[ParserState], kind: tk.TokenKind, msg: cstr) -> void:
+function consume_or_sync(s: ref[pstate.ParserState], kind: tk.TokenKind, msg: cstr) -> void:
     if check(s, kind):
         advance(s)
         return
@@ -127,40 +72,7 @@ function consume_or_sync(s: ref[ParserState], kind: tk.TokenKind, msg: cstr) -> 
     synchronize_to_statement_boundary(s)
 
 
-function parser_error_naked(s: ref[ParserState], msg: cstr) -> void:
-    let tok = peek(s) else:
-        parser_error_at(s, msg, 0, 0, "", "")
-        return
-    unsafe:
-        let t = read(tok)
-        let lexeme = token_mod.token_lexeme(t, s.source)
-        let kn = token_mod.kind_name(t.kind)
-        parser_error_at(s, msg, t.line, t.column, lexeme, kn)
-
-
-function parser_error_at(s: ref[ParserState], msg: cstr, line: ptr_uint, col: ptr_uint, lexeme: str, kind: str) -> void:
-    # During speculative specialization parsing, swallow errors and record that
-    # one occurred so the caller can revert to index parsing (mirrors Ruby's
-    # `rescue ParseError` in try_parse_specialization).
-    if s.suppress_errors:
-        s.error_suppressed = true
-        return
-    unsafe:
-        let errs_ptr = read(s).recovery_errors
-        if errs_ptr == null:
-            var buf: str_buffer[300]
-            buf.assign_format(f"L#{int<-(line)}:#{int<-(col)} lexeme='")
-            buf.append(lexeme)
-            buf.append("' kind=")
-            buf.append(kind)
-            fatal(buf.as_cstr())
-        var errs = read(errs_ptr)
-        let diag = ParseDiagnostic(line = line, column = col, message = msg, lexeme = lexeme, kind = kind)
-        errs.push(diag)
-        read(errs_ptr) = errs
-
-
-function skip_to_sync_point(s: ref[ParserState]) -> void:
+function skip_to_sync_point(s: ref[pstate.ParserState]) -> void:
     var depth: int = 0
     if not eof(s):
         advance(s)
@@ -182,7 +94,7 @@ function skip_to_sync_point(s: ref[ParserState]) -> void:
         advance(s)
 
 
-function synchronize_to_statement_boundary(s: ref[ParserState]) -> void:
+function synchronize_to_statement_boundary(s: ref[pstate.ParserState]) -> void:
     while not eof(s):
         if check(s, tk.TokenKind.indent):
             recover_statement_block_body(s)
@@ -197,7 +109,7 @@ function synchronize_to_statement_boundary(s: ref[ParserState]) -> void:
         advance(s)
 
 
-function recover_statement_block_body(s: ref[ParserState]) -> void:
+function recover_statement_block_body(s: ref[pstate.ParserState]) -> void:
     if check(s, tk.TokenKind.indent):
         advance(s)
     skip_newlines(s)
@@ -213,7 +125,7 @@ function recover_statement_block_body(s: ref[ParserState]) -> void:
         advance(s)
 
 
-function synchronize_to_match_arm_boundary(s: ref[ParserState]) -> void:
+function synchronize_to_match_arm_boundary(s: ref[pstate.ParserState]) -> void:
     while not eof(s):
         if check(s, tk.TokenKind.dedent):
             return
@@ -225,7 +137,7 @@ function synchronize_to_match_arm_boundary(s: ref[ParserState]) -> void:
         advance(s)
 
 
-function recover_match_arm_block(s: ref[ParserState]) -> void:
+function recover_match_arm_block(s: ref[pstate.ParserState]) -> void:
     if check(s, tk.TokenKind.indent):
         advance(s)
     skip_newlines(s)
@@ -242,7 +154,7 @@ function recover_match_arm_block(s: ref[ParserState]) -> void:
         advance(s)
 
 
-function synchronize_to_top_level_boundary(s: ref[ParserState]) -> void:
+function synchronize_to_top_level_boundary(s: ref[pstate.ParserState]) -> void:
     var seen_newline = false
     while not eof(s):
         if check(s, tk.TokenKind.newline):
@@ -260,7 +172,7 @@ function synchronize_to_top_level_boundary(s: ref[ParserState]) -> void:
                     return
         advance(s)
 
-function is_declaration_start(s: ref[ParserState]) -> bool:
+function is_declaration_start(s: ref[pstate.ParserState]) -> bool:
     return (
         check(s, tk.TokenKind.tk_const) or check(s, tk.TokenKind.tk_var)
         or check(s, tk.TokenKind.tk_function) or check(s, tk.TokenKind.tk_public)
@@ -276,22 +188,22 @@ function is_declaration_start(s: ref[ParserState]) -> bool:
         or check(s, tk.TokenKind.tk_static)
     )
 
-function eof(s: ref[ParserState]) -> bool:
+function eof(s: ref[pstate.ParserState]) -> bool:
     return ts.eof(ref_of(s.stream))
 
-function skip_newlines(s: ref[ParserState]) -> void:
+function skip_newlines(s: ref[pstate.ParserState]) -> void:
     ts.skip_newlines(ref_of(s.stream))
 
-function check_name(s: ref[ParserState]) -> bool:
+function check_name(s: ref[pstate.ParserState]) -> bool:
     return check(s, tk.TokenKind.identifier)
 
-function match_name(s: ref[ParserState]) -> bool:
+function match_name(s: ref[pstate.ParserState]) -> bool:
     if check_name(s):
         advance(s)
         return true
     return false
 
-function consume_name(s: ref[ParserState], msg: cstr) -> void:
+function consume_name(s: ref[pstate.ParserState], msg: cstr) -> void:
     let tok = peek(s) else:
         parser_error_naked(s, msg)
         return
@@ -305,7 +217,7 @@ function consume_name(s: ref[ParserState], msg: cstr) -> void:
             return
     advance(s)
 
-function consume_name_allowing_keywords(s: ref[ParserState], msg: cstr) -> void:
+function consume_name_allowing_keywords(s: ref[pstate.ParserState], msg: cstr) -> void:
     if check_name(s):
         advance(s)
         return
@@ -325,7 +237,7 @@ function consume_name_allowing_keywords(s: ref[ParserState], msg: cstr) -> void:
         parser_error_at(s, msg, t.line, t.column, lexeme, kn)
         skip_to_sync_point(s)
 
-function consume_end_of_statement(s: ref[ParserState]) -> void:
+function consume_end_of_statement(s: ref[pstate.ParserState]) -> void:
     if s.in_inline_block_body:
         return
     if not check(s, tk.TokenKind.newline):
@@ -338,7 +250,7 @@ function is_keyword_token(tok: token_mod.Token) -> bool:
     # Tokens that are truly identifiers have TokenKind.identifier.
     return tok.kind >= tk.TokenKind.tk_align_of
 
-function previous_lexeme(s: ref[ParserState]) -> str:
+function previous_lexeme(s: ref[pstate.ParserState]) -> str:
     let tok = previous(s) else:
         return ""
     unsafe:
@@ -375,7 +287,7 @@ function is_builtin_type_name(name: str) -> bool:
     return false
 
 
-function known_type_like_name(s: ref[ParserState], name: str) -> bool:
+function known_type_like_name(s: ref[pstate.ParserState], name: str) -> bool:
     if s.known_type_names.contains(name):
         return true
     if s.known_import_aliases.contains(name):
@@ -390,7 +302,7 @@ function known_type_like_name(s: ref[ParserState], name: str) -> bool:
     return false
 
 
-function check_next(s: ref[ParserState], kind: tk.TokenKind) -> bool:
+function check_next(s: ref[pstate.ParserState], kind: tk.TokenKind) -> bool:
     return ts.check_next(ref_of(s.stream), kind)
 
 
@@ -416,7 +328,7 @@ function block_expression(expr: ptr[ast.Expr]?) -> bool:
         return e is ast.Expr.expr_proc or e is ast.Expr.expr_match
 
 
-function matching_rbracket_index(s: ref[ParserState], start_index: ptr_uint) -> Option[ptr_uint]:
+function matching_rbracket_index(s: ref[pstate.ParserState], start_index: ptr_uint) -> Option[ptr_uint]:
     var depth: int = 0
     var index = start_index
     let token_count = s.stream.tokens.len()
@@ -439,7 +351,7 @@ function matching_rbracket_index(s: ref[ParserState], start_index: ptr_uint) -> 
 #  Name seeding — pre-scans tokens to populate known-name maps
 # =============================================================================
 
-function seed_known_names(s: ref[ParserState]) -> void:
+function seed_known_names(s: ref[pstate.ParserState]) -> void:
     let names = builtin_type_names()
     var ni: ptr_uint = 0
     while ni < names.len:
@@ -513,7 +425,7 @@ function seed_known_names(s: ref[ParserState]) -> void:
         index += 1
 
 
-function seed_import_alias(s: ref[ParserState], start_index: ptr_uint) -> ptr_uint:
+function seed_import_alias(s: ref[pstate.ParserState], start_index: ptr_uint) -> ptr_uint:
     var cursor = start_index
     var last_part: Option[str] = Option[str].none
     let token_count = s.stream.tokens.len()
@@ -546,8 +458,8 @@ function seed_import_alias(s: ref[ParserState], start_index: ptr_uint) -> ptr_ui
 #  Generic comma-separated list helper
 # =============================================================================
 
-function parse_comma_separated_until(s: ref[ParserState], closing_type: tk.TokenKind,
-                                      parse_item: proc(session: ref[ParserState]) -> void) -> void:
+function parse_comma_separated_until(s: ref[pstate.ParserState], closing_type: tk.TokenKind,
+                                      parse_item: proc(session: ref[pstate.ParserState]) -> void) -> void:
     if check(s, closing_type):
         return
     while true:
@@ -937,13 +849,13 @@ function parse_char_value(lexeme: str) -> ubyte:
 #  AST node allocation
 # =============================================================================
 
-function alloc_expr(s: ref[ParserState]) -> ptr[ast.Expr]:
+function alloc_expr(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     return heap_mod.must_alloc[ast.Expr](1)
 
-function alloc_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function alloc_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     return heap_mod.must_alloc[ast.Stmt](1)
 
-function alloc_decl(s: ref[ParserState]) -> ptr[ast.Decl]:
+function alloc_decl(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
     return heap_mod.must_alloc[ast.Decl](1)
 
 
@@ -953,7 +865,7 @@ function alloc_decl(s: ref[ParserState]) -> ptr[ast.Decl]:
 
 public function parse(source: str) -> bool:
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
-    var state = ParserState(
+    var state = pstate.ParserState(
         stream = ts.create(lexer.lex_reporting(source, ref_of(lex_diags))),
         source = source,
         step_counter = 0,
@@ -972,9 +884,9 @@ public function parse(source: str) -> bool:
     return source_file_decl_count(file) > 0
 
 
-public function parse_reporting(source: str, errors: ref[vec.Vec[ParseDiagnostic]]) -> (bool, ptr_uint):
+public function parse_reporting(source: str, errors: ref[vec.Vec[pstate.ParseDiagnostic]]) -> (bool, ptr_uint):
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
-    var state = ParserState(
+    var state = pstate.ParserState(
         stream = ts.create(lexer.lex_reporting(source, ref_of(lex_diags))),
         source = source,
         step_counter = 0,
@@ -997,9 +909,9 @@ public function parse_reporting(source: str, errors: ref[vec.Vec[ParseDiagnostic
 ## errors into `errors`.  Used by the CLI `parse` command and the pretty
 ## printer.  The backing buffers of the produced spans are intentionally
 ## leaked (arena-style): the compiler processes one file per run and exits.
-public function parse_source(source: str, errors: ref[vec.Vec[ParseDiagnostic]]) -> ast.SourceFile:
+public function parse_source(source: str, errors: ref[vec.Vec[pstate.ParseDiagnostic]]) -> ast.SourceFile:
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
-    var state = ParserState(
+    var state = pstate.ParserState(
         stream = ts.create(lexer.lex_reporting(source, ref_of(lex_diags))),
         source = source,
         step_counter = 0,
@@ -1025,7 +937,7 @@ function source_file_decl_count(file: ast.SourceFile) -> ptr_uint:
 #  Source file
 # =============================================================================
 
-function parse_source_file(s: ref[ParserState]) -> ast.SourceFile:
+function parse_source_file(s: ref[pstate.ParserState]) -> ast.SourceFile:
     skip_newlines(s)
 
     if check(s, tk.TokenKind.tk_external) and not check_next(s, tk.TokenKind.tk_function):
@@ -1058,7 +970,7 @@ function parse_source_file(s: ref[ParserState]) -> ast.SourceFile:
     )
 
 
-function parse_raw_module_body(s: ref[ParserState]) -> ast.SourceFile:
+function parse_raw_module_body(s: ref[pstate.ParserState]) -> ast.SourceFile:
     var imports = vec.Vec[ast.Decl].create()
     var directives = vec.Vec[ast.Decl].create()
     var declarations = vec.Vec[ast.Decl].create()
@@ -1089,7 +1001,7 @@ function parse_raw_module_body(s: ref[ParserState]) -> ast.SourceFile:
     )
 
 
-function parse_external_declaration(s: ref[ParserState]) -> ptr[ast.Decl]:
+function parse_external_declaration(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
     if match_kind(s, tk.TokenKind.tk_const):
         return parse_const_decl(s, span[ast.AttributeApplication](), false)
     else if match_kind(s, tk.TokenKind.tk_type):
@@ -1119,7 +1031,7 @@ function parse_external_declaration(s: ref[ParserState]) -> ptr[ast.Decl]:
         return decl_error_sentinel(s)
 
 
-function decl_error_sentinel(s: ref[ParserState]) -> ptr[ast.Decl]:
+function decl_error_sentinel(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
     var err = alloc_expr(s)
     unsafe:
         read(err) = ast.Expr.expr_error(line = 0, column = 0, message = "declaration error")
@@ -1133,7 +1045,7 @@ function decl_error_sentinel(s: ref[ParserState]) -> ptr[ast.Decl]:
 #  Import
 # =============================================================================
 
-function parse_import(s: ref[ParserState]) -> ptr[ast.Decl]:
+function parse_import(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
     let tok = peek(s) else:
         return decl_error_sentinel(s)
     var ln: ptr_uint
@@ -1153,7 +1065,7 @@ function parse_import(s: ref[ParserState]) -> ptr[ast.Decl]:
     return node
 
 
-function parse_qualified_name(s: ref[ParserState]) -> ast.QualifiedName:
+function parse_qualified_name(s: ref[pstate.ParserState]) -> ast.QualifiedName:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -1174,7 +1086,7 @@ function parse_qualified_name(s: ref[ParserState]) -> ast.QualifiedName:
 #  Declaration dispatch
 # =============================================================================
 
-function parse_attribute_application(s: ref[ParserState]) -> ast.AttributeApplication:
+function parse_attribute_application(s: ref[pstate.ParserState]) -> ast.AttributeApplication:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -1190,7 +1102,7 @@ function parse_attribute_application(s: ref[ParserState]) -> ast.AttributeApplic
     return ast.AttributeApplication(name = name, arguments = arguments, line = ln, column = cn)
 
 
-function parse_attribute_applications(s: ref[ParserState]) -> span[ast.AttributeApplication]:
+function parse_attribute_applications(s: ref[pstate.ParserState]) -> span[ast.AttributeApplication]:
     var attrs = vec.Vec[ast.AttributeApplication].create()
     while match_kind(s, tk.TokenKind.at):
         consume(s, tk.TokenKind.lbracket, c"expected '[' after @")
@@ -1207,7 +1119,7 @@ function parse_attribute_applications(s: ref[ParserState]) -> span[ast.Attribute
     return attrs.as_span()
 
 
-function skip_attribute_content(s: ref[ParserState]) -> void:
+function skip_attribute_content(s: ref[pstate.ParserState]) -> void:
     var depth: int = 1
     while not eof(s) and depth > 0:
         step(s)
@@ -1225,11 +1137,11 @@ function skip_attribute_content(s: ref[ParserState]) -> void:
 #  External file support
 # =============================================================================
 
-function external_file_header(s: ref[ParserState]) -> bool:
+function external_file_header(s: ref[pstate.ParserState]) -> bool:
     return check(s, tk.TokenKind.tk_external) and ts.check_next(ref_of(s.stream), tk.TokenKind.newline)
 
 
-function parse_raw_module_directive(s: ref[ParserState]) -> ptr[ast.Decl]:
+function parse_raw_module_directive(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -1264,7 +1176,7 @@ function parse_raw_module_directive(s: ref[ParserState]) -> ptr[ast.Decl]:
     return decl_error_sentinel(s)
 
 
-function parse_declaration(s: ref[ParserState]) -> ptr[ast.Decl]:
+function parse_declaration(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
     let attrs = parse_attribute_applications(s)
     let visibility = match_kind(s, tk.TokenKind.tk_public)
     if visibility:
@@ -1320,7 +1232,7 @@ function parse_declaration(s: ref[ParserState]) -> ptr[ast.Decl]:
         return decl_error_sentinel(s)
 
 
-function parse_union_decl(s: ref[ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+function parse_union_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -1351,7 +1263,7 @@ function parse_union_decl(s: ref[ParserState], attrs: span[ast.AttributeApplicat
 #  Declarations
 # =============================================================================
 
-function parse_const_decl(s: ref[ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+function parse_const_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -1382,7 +1294,7 @@ function parse_const_decl(s: ref[ParserState], attrs: span[ast.AttributeApplicat
     return node
 
 
-function parse_var_decl(s: ref[ParserState], visibility: bool) -> ptr[ast.Decl]:
+function parse_var_decl(s: ref[pstate.ParserState], visibility: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -1406,7 +1318,7 @@ function parse_var_decl(s: ref[ParserState], visibility: bool) -> ptr[ast.Decl]:
     return node
 
 
-function parse_function_def(s: ref[ParserState], attrs: span[ast.AttributeApplication], visibility: bool,
+function parse_function_def(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool,
                             is_async: bool, is_const: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
@@ -1435,7 +1347,7 @@ function parse_function_def(s: ref[ParserState], attrs: span[ast.AttributeApplic
 
 ## Parse `= c"name"` optional C-name suffix used by struct/union/opaque in
 ## external files.  Returns none when absent.
-function parse_optional_c_name(s: ref[ParserState]) -> Option[str]:
+function parse_optional_c_name(s: ref[pstate.ParserState]) -> Option[str]:
     if match_kind(s, tk.TokenKind.equal):
         if match_kind(s, tk.TokenKind.cstring):
             return Option[str].some(value = parse_string_content(previous_lexeme(s), true))
@@ -1444,7 +1356,7 @@ function parse_optional_c_name(s: ref[ParserState]) -> Option[str]:
     return Option[str].none
 
 
-function parse_declaration_type_params(s: ref[ParserState]) -> span[ast.TypeParam]:
+function parse_declaration_type_params(s: ref[pstate.ParserState]) -> span[ast.TypeParam]:
     var params = vec.Vec[ast.TypeParam].create()
     while not eof(s):
         if check(s, tk.TokenKind.rbracket):
@@ -1483,7 +1395,7 @@ function parse_declaration_type_params(s: ref[ParserState]) -> span[ast.TypePara
     return params.as_span()
 
 
-function parse_type_param_constraints(s: ref[ParserState], constraints: ref[vec.Vec[ast.TypeParamConstraint]]) -> void:
+function parse_type_param_constraints(s: ref[pstate.ParserState], constraints: ref[vec.Vec[ast.TypeParamConstraint]]) -> void:
     while true:
         let iface = parse_qualified_name(s)
         # Skip generic type-arguments on a constraint (Ruby renders the bare name).
@@ -1507,14 +1419,14 @@ function str_prepend_at(name: str) -> str:
     return buf.as_str()
 
 
-function with_type_param_scope(s: ref[ParserState], body: proc(session: ref[ParserState]) -> void) -> void:
+function with_type_param_scope(s: ref[pstate.ParserState], body: proc(session: ref[pstate.ParserState]) -> void) -> void:
     var saved_count = s.current_type_param_names.len()
     body(s)
     while s.current_type_param_names.len() > saved_count:
         s.current_type_param_names.pop()
 
 
-function parse_params(s: ref[ParserState]) -> span[ast.Param]:
+function parse_params(s: ref[pstate.ParserState]) -> span[ast.Param]:
     var params = vec.Vec[ast.Param].create()
     consume(s, tk.TokenKind.lparen, c"expected '('")
     while not eof(s) and not check(s, tk.TokenKind.rparen):
@@ -1547,7 +1459,7 @@ function parse_params(s: ref[ParserState]) -> span[ast.Param]:
     return result
 
 
-function parse_type_ref(s: ref[ParserState]) -> ptr[ast.TypeRef]:
+function parse_type_ref(s: ref[pstate.ParserState]) -> ptr[ast.TypeRef]:
     # fn(...) -> T
     if match_kind(s, tk.TokenKind.tk_fn):
         return parse_callable_type_ref(s, false)
@@ -1588,7 +1500,7 @@ function parse_type_ref(s: ref[ParserState]) -> ptr[ast.TypeRef]:
     return parse_named_type_ref(s, true)
 
 
-function parse_callable_type_ref(s: ref[ParserState], is_proc_val: bool) -> ptr[ast.TypeRef]:
+function parse_callable_type_ref(s: ref[pstate.ParserState], is_proc_val: bool) -> ptr[ast.TypeRef]:
     let start_tok = peek(s) else:
         fatal(c"unexpected eof in callable type")
     var ln: ptr_uint
@@ -1636,7 +1548,7 @@ function parse_callable_type_ref(s: ref[ParserState], is_proc_val: bool) -> ptr[
     return node
 
 
-function parse_dyn_type_ref(s: ref[ParserState]) -> ptr[ast.TypeRef]:
+function parse_dyn_type_ref(s: ref[pstate.ParserState]) -> ptr[ast.TypeRef]:
     let start_tok = previous_token(s)
     var ln: ptr_uint
     var cn: ptr_uint
@@ -1684,7 +1596,7 @@ function parse_dyn_type_ref(s: ref[ParserState]) -> ptr[ast.TypeRef]:
     return node
 
 
-function parse_tuple_or_parenthesized_type(s: ref[ParserState]) -> ptr[ast.TypeRef]:
+function parse_tuple_or_parenthesized_type(s: ref[pstate.ParserState]) -> ptr[ast.TypeRef]:
     let start_tok = peek(s) else:
         fatal(c"unexpected eof in tuple type")
     var ln: ptr_uint
@@ -1727,7 +1639,7 @@ function parse_tuple_or_parenthesized_type(s: ref[ParserState]) -> ptr[ast.TypeR
     return first_type
 
 
-function parse_named_type_ref(s: ref[ParserState], allow_nullable: bool) -> ptr[ast.TypeRef]:
+function parse_named_type_ref(s: ref[pstate.ParserState], allow_nullable: bool) -> ptr[ast.TypeRef]:
     let tok = peek(s) else:
         fatal(c"unexpected eof in type ref")
     var ln: ptr_uint
@@ -1785,7 +1697,7 @@ function parse_named_type_ref(s: ref[ParserState], allow_nullable: bool) -> ptr[
     return node
 
 
-function parse_type_argument(s: ref[ParserState]) -> ptr[ast.TypeRef]:
+function parse_type_argument(s: ref[pstate.ParserState]) -> ptr[ast.TypeRef]:
     if match_kind(s, tk.TokenKind.integer):
         let lex = previous_lexeme(s)
         var node = heap_mod.must_alloc[ast.TypeRef](1)
@@ -1825,7 +1737,7 @@ function parse_type_argument(s: ref[ParserState]) -> ptr[ast.TypeRef]:
     return parse_type_ref(s)
 
 
-function parse_block(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_block(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     consume(s, tk.TokenKind.colon, c"expected ':' before block")
     consume(s, tk.TokenKind.newline, c"expected newline before block body")
     skip_newlines(s)
@@ -1838,7 +1750,7 @@ function parse_block(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_block_body(s: ref[ParserState]) -> span[ast.Stmt]:
+function parse_block_body(s: ref[pstate.ParserState]) -> span[ast.Stmt]:
     var stmts = vec.Vec[ast.Stmt].create()
     skip_newlines(s)
     while not check(s, tk.TokenKind.dedent) and not eof(s):
@@ -1860,7 +1772,7 @@ function parse_block_body(s: ref[ParserState]) -> span[ast.Stmt]:
 #  Statements
 # =============================================================================
 
-function parse_statement(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_statement(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     if match_kind(s, tk.TokenKind.tk_let):
         return parse_local_decl(s, true)
     else if match_kind(s, tk.TokenKind.tk_var):
@@ -1946,14 +1858,14 @@ function parse_statement(s: ref[ParserState]) -> ptr[ast.Stmt]:
         return parse_expression_stmt(s)
 
 
-function stmt_error_sentinel(s: ref[ParserState], msg: cstr) -> ptr[ast.Stmt]:
+function stmt_error_sentinel(s: ref[pstate.ParserState], msg: cstr) -> ptr[ast.Stmt]:
     var node = alloc_stmt(s)
     unsafe:
         read(node) = ast.Stmt.stmt_error(line = 0, column = 0, message = "parse error")
     return node
 
 
-function parse_local_decl(s: ref[ParserState], is_let: bool) -> ptr[ast.Stmt]:
+function parse_local_decl(s: ref[pstate.ParserState], is_let: bool) -> ptr[ast.Stmt]:
     let tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in local decl")
     var ln: ptr_uint
@@ -2039,7 +1951,7 @@ function parse_local_decl(s: ref[ParserState], is_let: bool) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_destructure_bindings(s: ref[ParserState]) -> Option[span[str]]:
+function parse_destructure_bindings(s: ref[pstate.ParserState]) -> Option[span[str]]:
     consume(s, tk.TokenKind.lparen, c"expected '('")
     var bindings = vec.Vec[str].create()
     while true:
@@ -2065,7 +1977,7 @@ function parse_destructure_bindings(s: ref[ParserState]) -> Option[span[str]]:
     return Option[span[str]].some(value = result)
 
 
-function parse_if_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_if_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in if")
     var start_ln: ptr_uint
@@ -2094,7 +2006,7 @@ function parse_if_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_if_branch_body(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_if_branch_body(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     consume_or_sync(s, tk.TokenKind.colon, c"expected ':' after if condition")
     if match_kind(s, tk.TokenKind.newline):
         consume(s, tk.TokenKind.indent, c"expected indented body")
@@ -2111,7 +2023,7 @@ function parse_if_branch_body(s: ref[ParserState]) -> ptr[ast.Stmt]:
         return result
 
 
-function parse_else_branch_body(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_else_branch_body(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     consume(s, tk.TokenKind.colon, c"expected ':' after else")
     if match_kind(s, tk.TokenKind.newline):
         consume(s, tk.TokenKind.indent, c"expected indented else body")
@@ -2128,7 +2040,7 @@ function parse_else_branch_body(s: ref[ParserState]) -> ptr[ast.Stmt]:
         return result
 
 
-function parse_block_or_inline_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_block_or_inline_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     if match_kind(s, tk.TokenKind.newline):
         consume(s, tk.TokenKind.indent, c"expected indented body")
         var body_span = parse_block_body(s)
@@ -2145,7 +2057,7 @@ function parse_block_or_inline_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
         return result
 
 
-function parse_while_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_while_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in while")
     var ln: ptr_uint
@@ -2173,7 +2085,7 @@ function parse_while_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_for_stmt(s: ref[ParserState], threaded: bool) -> ptr[ast.Stmt]:
+function parse_for_stmt(s: ref[pstate.ParserState], threaded: bool) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in for")
     var ln: ptr_uint
@@ -2216,7 +2128,7 @@ function parse_for_stmt(s: ref[ParserState], threaded: bool) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_match_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_match_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     var scrutinee = parse_expression(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after match expression")
     var is_expr_form = not check(s, tk.TokenKind.newline)
@@ -2251,7 +2163,7 @@ function parse_match_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function is_wildcard_match(s: ref[ParserState]) -> bool:
+function is_wildcard_match(s: ref[pstate.ParserState]) -> bool:
     if not check_name(s):
         return false
     let tok = peek(s) else:
@@ -2265,7 +2177,7 @@ function is_wildcard_match(s: ref[ParserState]) -> bool:
         return false
 
 
-function parse_match_arm_into(s: ref[ParserState], arms: ref[vec.Vec[ast.MatchArm]]) -> void:
+function parse_match_arm_into(s: ref[pstate.ParserState], arms: ref[vec.Vec[ast.MatchArm]]) -> void:
     var is_wild = false
     var patterns = vec.Vec[ptr[ast.Expr]].create()
     if match_kind(s, tk.TokenKind.tk_else):
@@ -2302,7 +2214,7 @@ function parse_match_arm_into(s: ref[ParserState], arms: ref[vec.Vec[ast.MatchAr
         i += 1
 
 
-function parse_return_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_return_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in return")
     var ln: ptr_uint
@@ -2321,7 +2233,7 @@ function parse_return_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_defer_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_defer_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in defer")
     var ln: ptr_uint
@@ -2351,7 +2263,7 @@ function parse_defer_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_unsafe_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_unsafe_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in unsafe")
     var ln: ptr_uint
@@ -2382,7 +2294,7 @@ function parse_unsafe_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_static_assert_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_static_assert_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     consume(s, tk.TokenKind.lparen, c"expected '(' after static_assert")
     var condition = parse_expression(s)
     consume(s, tk.TokenKind.comma, c"expected ',' after condition")
@@ -2395,7 +2307,7 @@ function parse_static_assert_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_expression_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_expression_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     var left = parse_expression(s)
     if (
         check(s, tk.TokenKind.equal) or check(s, tk.TokenKind.plus_equal)
@@ -2422,7 +2334,7 @@ function parse_expression_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_parallel_block(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_parallel_block(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in parallel")
     var ln: ptr_uint
@@ -2448,7 +2360,7 @@ function parse_parallel_block(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_gather_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_gather_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     var handles = vec.Vec[ast.Expr].create()
     var first = parse_expression(s)
     unsafe:
@@ -2465,7 +2377,7 @@ function parse_gather_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_pattern(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_pattern(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     if check(s, tk.TokenKind.colon) or check(s, tk.TokenKind.newline):
         var node = alloc_expr(s)
         unsafe:
@@ -2476,7 +2388,7 @@ function parse_pattern(s: ref[ParserState]) -> ptr[ast.Expr]:
     return parse_bitwise_xor(s)
 
 
-function parse_when_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_when_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in when")
     var ln: ptr_uint
@@ -2520,7 +2432,7 @@ function parse_when_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
 
 ## Flatten a block/inline statement pointer into a statement span for
 ## containers (like when-branch bodies) that store span[Stmt].
-function stmt_ptr_to_span(s: ref[ParserState], st: ptr[ast.Stmt]) -> span[ast.Stmt]:
+function stmt_ptr_to_span(s: ref[pstate.ParserState], st: ptr[ast.Stmt]) -> span[ast.Stmt]:
     unsafe:
         match read(st):
             ast.Stmt.stmt_block as b:
@@ -2531,7 +2443,7 @@ function stmt_ptr_to_span(s: ref[ParserState], st: ptr[ast.Stmt]) -> span[ast.St
                 return v.as_span()
 
 
-function parse_emit_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_emit_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in emit")
     var ln: ptr_uint
@@ -2546,7 +2458,7 @@ function parse_emit_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_inline_for_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_inline_for_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in inline for")
     var ln: ptr_uint
@@ -2588,7 +2500,7 @@ function parse_inline_for_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_inline_while_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_inline_while_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in inline while")
     var ln: ptr_uint
@@ -2611,7 +2523,7 @@ function parse_inline_while_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_inline_match_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_inline_match_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in inline match")
     var ln: ptr_uint
@@ -2637,7 +2549,7 @@ function parse_inline_match_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
     return node
 
 
-function parse_inline_if_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_inline_if_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     let start_tok = peek(s) else:
         return stmt_error_sentinel(s, c"unexpected eof in inline if")
     var start_ln: ptr_uint
@@ -2672,7 +2584,7 @@ function parse_inline_if_stmt(s: ref[ParserState]) -> ptr[ast.Stmt]:
 #  Expressions
 # =============================================================================
 
-function parse_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_expression(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     if match_kind(s, tk.TokenKind.tk_if):
         return parse_if_expression(s)
     if match_kind(s, tk.TokenKind.tk_match):
@@ -2682,7 +2594,7 @@ function parse_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
     return parse_range(s)
 
 
-function parse_range(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_range(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_or(s)
     if match_kind(s, tk.TokenKind.dot_dot):
         var right = parse_or(s)
@@ -2699,7 +2611,7 @@ function parse_range(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function parse_or(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_or(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_and(s)
     while match_kind(s, tk.TokenKind.tk_or):
         let op = previous_lexeme(s)
@@ -2711,7 +2623,7 @@ function parse_or(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function parse_and(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_and(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_not(s)
     while match_kind(s, tk.TokenKind.tk_and):
         let op = previous_lexeme(s)
@@ -2723,7 +2635,7 @@ function parse_and(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function parse_not(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_not(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     if match_kind(s, tk.TokenKind.tk_not):
         let op = previous_lexeme(s)
         var operand = parse_not(s)
@@ -2734,7 +2646,7 @@ function parse_not(s: ref[ParserState]) -> ptr[ast.Expr]:
     return parse_is(s)
 
 
-function parse_is(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_is(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_bitwise_or(s)
     # The arm pattern is parsed at `bitwise_or` precedence (not full expression),
     # so `e is A or e is B` groups as `(e is A) or (e is B)` — matching Ruby's
@@ -2746,7 +2658,7 @@ function parse_is(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function parse_bitwise_or(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_bitwise_or(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_bitwise_xor(s)
     while match_kind(s, tk.TokenKind.pipe):
         let op = previous_lexeme(s)
@@ -2758,7 +2670,7 @@ function parse_bitwise_or(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function parse_bitwise_xor(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_bitwise_xor(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_bitwise_and(s)
     while match_kind(s, tk.TokenKind.caret):
         let op = previous_lexeme(s)
@@ -2770,7 +2682,7 @@ function parse_bitwise_xor(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function parse_bitwise_and(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_bitwise_and(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_equality(s)
     while match_kind(s, tk.TokenKind.amp):
         let op = previous_lexeme(s)
@@ -2782,7 +2694,7 @@ function parse_bitwise_and(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function parse_equality(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_equality(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_comparison(s)
     while check(s, tk.TokenKind.equal_equal) or check(s, tk.TokenKind.bang_equal):
         advance(s)
@@ -2795,7 +2707,7 @@ function parse_equality(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function parse_comparison(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_comparison(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_shift(s)
     while (
         check(s, tk.TokenKind.less) or check(s, tk.TokenKind.less_equal)
@@ -2811,7 +2723,7 @@ function parse_comparison(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function parse_shift(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_shift(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_additive(s)
     while check(s, tk.TokenKind.shift_left) or check(s, tk.TokenKind.shift_right):
         advance(s)
@@ -2824,7 +2736,7 @@ function parse_shift(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function parse_additive(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_additive(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_multiplicative(s)
     while check(s, tk.TokenKind.plus) or check(s, tk.TokenKind.minus):
         advance(s)
@@ -2837,7 +2749,7 @@ function parse_additive(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function parse_multiplicative(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_multiplicative(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_unary(s)
     while check(s, tk.TokenKind.star) or check(s, tk.TokenKind.slash) or check(s, tk.TokenKind.percent):
         advance(s)
@@ -2850,7 +2762,7 @@ function parse_multiplicative(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function parse_unary(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_unary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     if match_kind(s, tk.TokenKind.tk_unsafe):
         return parse_unsafe_expression(s)
     if match_kind(s, tk.TokenKind.tk_await):
@@ -2896,7 +2808,7 @@ function parse_unary(s: ref[ParserState]) -> ptr[ast.Expr]:
     return parse_postfix(s)
 
 
-function parse_postfix(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_postfix(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_primary(s)
     while true:
         step(s)
@@ -2953,7 +2865,7 @@ function parse_postfix(s: ref[ParserState]) -> ptr[ast.Expr]:
     return left
 
 
-function postfix_bracket_starts_specialization(s: ref[ParserState], left: ptr[ast.Expr]) -> bool:
+function postfix_bracket_starts_specialization(s: ref[pstate.ParserState], left: ptr[ast.Expr]) -> bool:
     return specialization_target(left) and matching_rbracket_index(s, s.stream.current).is_some()
 
 
@@ -2963,7 +2875,7 @@ function specialization_target(left: ptr[ast.Expr]) -> bool:
         return e is ast.Expr.expr_identifier or e is ast.Expr.expr_member_access
 
 
-function try_parse_specialization(s: ref[ParserState], left: ptr[ast.Expr]) -> Option[ptr[ast.Expr]]:
+function try_parse_specialization(s: ref[pstate.ParserState], left: ptr[ast.Expr]) -> Option[ptr[ast.Expr]]:
     let saved = s.stream.current
     # Speculatively parse the bracket as type arguments; if any error occurs
     # (e.g. the bracket actually holds an index expression like `arr[(a)+1]`),
@@ -3044,7 +2956,7 @@ function builtin_specialization_target(callee: ptr[ast.Expr]) -> bool:
                 return false
 
 
-function generic_callable_specialization_target(s: ref[ParserState], callee: ptr[ast.Expr]) -> bool:
+function generic_callable_specialization_target(s: ref[pstate.ParserState], callee: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
@@ -3053,7 +2965,7 @@ function generic_callable_specialization_target(s: ref[ParserState], callee: ptr
                 return false
 
 
-function imported_member_specialization_target(s: ref[ParserState], callee: ptr[ast.Expr]) -> bool:
+function imported_member_specialization_target(s: ref[pstate.ParserState], callee: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(callee):
             ast.Expr.expr_member_access as ma:
@@ -3066,7 +2978,7 @@ function imported_member_specialization_target(s: ref[ParserState], callee: ptr[
                 return false
 
 
-function callee_known_type_like(s: ref[ParserState], callee: ptr[ast.Expr]) -> bool:
+function callee_known_type_like(s: ref[pstate.ParserState], callee: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
@@ -3078,7 +2990,7 @@ function callee_known_type_like(s: ref[ParserState], callee: ptr[ast.Expr]) -> b
 ## A definite type argument: a callable type, or a single name that is a known
 ## type-like name (builtin type, declared type, alias, import alias, or type
 ## parameter).  A bare integer such as the `0` in `xs[0]` is not definite.
-function definite_type_argument(s: ref[ParserState], arg: ptr[ast.TypeRef]) -> bool:
+function definite_type_argument(s: ref[pstate.ParserState], arg: ptr[ast.TypeRef]) -> bool:
     unsafe:
         let t = read(arg)
         if t.is_fn or t.is_proc:
@@ -3094,13 +3006,13 @@ function potential_named_literal_type_argument(arg: ptr[ast.TypeRef]) -> bool:
         return t.arguments.len == 0 and not t.nullable
 
 
-function explicit_specialization_argument(s: ref[ParserState], arg: ptr[ast.TypeRef]) -> bool:
+function explicit_specialization_argument(s: ref[pstate.ParserState], arg: ptr[ast.TypeRef]) -> bool:
     if definite_type_argument(s, arg):
         return true
     return potential_named_literal_type_argument(arg)
 
 
-function all_definite_type_args(s: ref[ParserState], args: span[ast.TypeArgument]) -> bool:
+function all_definite_type_args(s: ref[pstate.ParserState], args: span[ast.TypeArgument]) -> bool:
     var i: ptr_uint = 0
     while i < args.len:
         unsafe:
@@ -3110,7 +3022,7 @@ function all_definite_type_args(s: ref[ParserState], args: span[ast.TypeArgument
     return true
 
 
-function all_explicit_specialization_args(s: ref[ParserState], args: span[ast.TypeArgument]) -> bool:
+function all_explicit_specialization_args(s: ref[pstate.ParserState], args: span[ast.TypeArgument]) -> bool:
     var i: ptr_uint = 0
     while i < args.len:
         unsafe:
@@ -3135,7 +3047,7 @@ function all_call_args_named(call_args: span[ast.Argument]) -> bool:
 
 ## True when the `name[args]` form (no call) is a genuine type specialization
 ## rather than an index access.
-function specialization_value_target(s: ref[ParserState], callee: ptr[ast.Expr], args: span[ast.TypeArgument]) -> bool:
+function specialization_value_target(s: ref[pstate.ParserState], callee: ptr[ast.Expr], args: span[ast.TypeArgument]) -> bool:
     if is_identifier_named(callee, "zero") and all_explicit_specialization_args(s, args):
         return true
     if specialization_target(callee) and all_definite_type_args(s, args):
@@ -3148,7 +3060,7 @@ function specialization_value_target(s: ref[ParserState], callee: ptr[ast.Expr],
 
 
 ## True when the `name[args](call_args)` form is a genuine specialized call.
-function specialization_call_target(s: ref[ParserState], callee: ptr[ast.Expr], args: span[ast.TypeArgument], call_args: span[ast.Argument]) -> bool:
+function specialization_call_target(s: ref[pstate.ParserState], callee: ptr[ast.Expr], args: span[ast.TypeArgument], call_args: span[ast.Argument]) -> bool:
     if (is_identifier_named(callee, "default") or is_identifier_named(callee, "zero")) and not callee_known_type_like(s, callee) and not generic_callable_specialization_target(s, callee):
         return false
     if builtin_specialization_target(callee):
@@ -3162,7 +3074,7 @@ function specialization_call_target(s: ref[ParserState], callee: ptr[ast.Expr], 
     return specialization_target(callee) and all_definite_type_args(s, args)
 
 
-function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_primary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     if match_kind(s, tk.TokenKind.integer):
         let lex = previous_lexeme(s)
         let val = parse_int_literal(lex)
@@ -3448,7 +3360,7 @@ function parse_primary(s: ref[ParserState]) -> ptr[ast.Expr]:
 #  If expression
 # =============================================================================
 
-function parse_if_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_if_expression(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var condition = parse_expression(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after if condition")
     var then_expr = parse_expression(s)
@@ -3465,7 +3377,7 @@ function parse_if_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
 #  Match expression
 # =============================================================================
 
-function parse_match_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_match_expression(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var scrutinee = parse_expression(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after match expression")
     consume(s, tk.TokenKind.newline, c"expected newline after match header")
@@ -3478,7 +3390,7 @@ function parse_match_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
     return node
 
 
-function parse_match_expr_arms(s: ref[ParserState]) -> span[ast.MatchExprArm]:
+function parse_match_expr_arms(s: ref[pstate.ParserState]) -> span[ast.MatchExprArm]:
     var arms = vec.Vec[ast.MatchExprArm].create()
     skip_newlines(s)
     while not check(s, tk.TokenKind.dedent) and not eof(s):
@@ -3488,7 +3400,7 @@ function parse_match_expr_arms(s: ref[ParserState]) -> span[ast.MatchExprArm]:
     return result
 
 
-function parse_match_expr_arm_into(s: ref[ParserState], arms: ref[vec.Vec[ast.MatchExprArm]]) -> void:
+function parse_match_expr_arm_into(s: ref[pstate.ParserState], arms: ref[vec.Vec[ast.MatchExprArm]]) -> void:
     var is_wild = false
     var patterns = vec.Vec[ptr[ast.Expr]].create()
     if match_kind(s, tk.TokenKind.tk_else):
@@ -3523,7 +3435,7 @@ function parse_match_expr_arm_into(s: ref[ParserState], arms: ref[vec.Vec[ast.Ma
 #  Proc / fn expression
 # =============================================================================
 
-function parse_proc_expr_after_proc(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_proc_expr_after_proc(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var params = parse_params(s)
     var return_type: ptr[ast.TypeRef]? = null
     if match_kind(s, tk.TokenKind.arrow):
@@ -3535,7 +3447,7 @@ function parse_proc_expr_after_proc(s: ref[ParserState]) -> ptr[ast.Expr]:
     return node
 
 
-function parse_proc_body(s: ref[ParserState]) -> ptr[ast.Stmt]:
+function parse_proc_body(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     if match_kind(s, tk.TokenKind.colon):
         if match_kind(s, tk.TokenKind.newline):
             consume(s, tk.TokenKind.indent, c"expected indented proc body")
@@ -3562,7 +3474,7 @@ function parse_proc_body(s: ref[ParserState]) -> ptr[ast.Stmt]:
 #  Unsafe expression
 # =============================================================================
 
-function parse_unsafe_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
+function parse_unsafe_expression(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     let tok = previous_token(s)
     var ln: ptr_uint
     var cn: ptr_uint
@@ -3581,7 +3493,7 @@ function parse_unsafe_expression(s: ref[ParserState]) -> ptr[ast.Expr]:
 #  is-operator desugaring
 # =============================================================================
 
-function is_desugar(s: ref[ParserState], left: ptr[ast.Expr], pattern: ptr[ast.Expr]) -> ptr[ast.Expr]:
+function is_desugar(s: ref[pstate.ParserState], left: ptr[ast.Expr], pattern: ptr[ast.Expr]) -> ptr[ast.Expr]:
     # expr is Pattern → match expr: Pattern: true; _: false
     var true_expr = alloc_expr(s)
     unsafe:
@@ -3619,7 +3531,7 @@ function is_desugar(s: ref[ParserState], left: ptr[ast.Expr], pattern: ptr[ast.E
 #  Prefix cast: T<-expr
 # =============================================================================
 
-function try_parse_prefix_cast_expression(s: ref[ParserState]) -> Option[ptr[ast.Expr]]:
+function try_parse_prefix_cast_expression(s: ref[pstate.ParserState]) -> Option[ptr[ast.Expr]]:
     if not check_name(s):
         return Option[ptr[ast.Expr]].none
     let name_tok = peek(s) else:
@@ -3663,7 +3575,7 @@ function try_parse_prefix_cast_expression(s: ref[ParserState]) -> Option[ptr[ast
 #  Call arguments (producing)
 # =============================================================================
 
-function parse_call_args(s: ref[ParserState]) -> span[ast.Argument]:
+function parse_call_args(s: ref[pstate.ParserState]) -> span[ast.Argument]:
     var args = vec.Vec[ast.Argument].create()
     if check(s, tk.TokenKind.rparen):
         return span[ast.Argument]()
@@ -3694,7 +3606,7 @@ function parse_call_args(s: ref[ParserState]) -> span[ast.Argument]:
     return result
 
 
-function parse_struct_decl(s: ref[ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+function parse_struct_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -3741,7 +3653,7 @@ function parse_struct_decl(s: ref[ParserState], attrs: span[ast.AttributeApplica
     return node
 
 
-function parse_struct_member(s: ref[ParserState], attrs: span[ast.AttributeApplication]) -> ast.Field:
+function parse_struct_member(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication]) -> ast.Field:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -3761,7 +3673,7 @@ function parse_struct_member(s: ref[ParserState], attrs: span[ast.AttributeAppli
 ## Parse a comma-separated `implements A, B` list (the `implements` keyword is
 ## consumed by the caller).  Generic type-arguments on each name are skipped,
 ## matching Ruby's QualifiedName rendering.
-function parse_implements_list(s: ref[ParserState]) -> span[ast.QualifiedName]:
+function parse_implements_list(s: ref[pstate.ParserState]) -> span[ast.QualifiedName]:
     var list = vec.Vec[ast.QualifiedName].create()
     while true:
         list.push(parse_qualified_name(s))
@@ -3778,7 +3690,7 @@ function parse_implements_list(s: ref[ParserState]) -> span[ast.QualifiedName]:
     return list.as_span()
 
 
-function parse_type_alias(s: ref[ParserState], visibility: bool) -> ptr[ast.Decl]:
+function parse_type_alias(s: ref[pstate.ParserState], visibility: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -3797,7 +3709,7 @@ function parse_type_alias(s: ref[ParserState], visibility: bool) -> ptr[ast.Decl
     return node
 
 
-function make_int_type_ref(s: ref[ParserState], ln: ptr_uint, cn: ptr_uint) -> ptr[ast.TypeRef]:
+function make_int_type_ref(s: ref[pstate.ParserState], ln: ptr_uint, cn: ptr_uint) -> ptr[ast.TypeRef]:
     var parts = vec.Vec[str].create()
     parts.push("int")
     var node = heap_mod.must_alloc[ast.TypeRef](1)
@@ -3814,7 +3726,7 @@ function make_int_type_ref(s: ref[ParserState], ln: ptr_uint, cn: ptr_uint) -> p
     return node
 
 
-function make_int_literal(s: ref[ParserState], value: int) -> ptr[ast.Expr]:
+function make_int_literal(s: ref[pstate.ParserState], value: int) -> ptr[ast.Expr]:
     var node = alloc_expr(s)
     unsafe:
         read(node) = ast.Expr.expr_integer_literal(lexeme = int_to_dec(value), value = value)
@@ -3865,7 +3777,7 @@ function int_to_dec(value: int) -> str:
     return rev.as_str()
 
 
-function parse_enum_decl(s: ref[ParserState], is_flags: bool, attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+function parse_enum_decl(s: ref[pstate.ParserState], is_flags: bool, attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -3921,7 +3833,7 @@ function parse_enum_decl(s: ref[ParserState], is_flags: bool, attrs: span[ast.At
     return node
 
 
-function parse_variant_decl(s: ref[ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+function parse_variant_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -3956,7 +3868,7 @@ function parse_variant_decl(s: ref[ParserState], attrs: span[ast.AttributeApplic
     return node
 
 
-function parse_variant_arm_fields(s: ref[ParserState]) -> span[ast.Field]:
+function parse_variant_arm_fields(s: ref[pstate.ParserState]) -> span[ast.Field]:
     var fields = vec.Vec[ast.Field].create()
     while not check(s, tk.TokenKind.rparen) and not eof(s):
         let tok = peek(s)
@@ -3979,7 +3891,7 @@ function parse_variant_arm_fields(s: ref[ParserState]) -> span[ast.Field]:
     return fields.as_span()
 
 
-function parse_interface_decl(s: ref[ParserState], visibility: bool) -> ptr[ast.Decl]:
+function parse_interface_decl(s: ref[pstate.ParserState], visibility: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -4008,7 +3920,7 @@ function parse_interface_decl(s: ref[ParserState], visibility: bool) -> ptr[ast.
     return node
 
 
-function parse_interface_method(s: ref[ParserState]) -> ast.InterfaceMethod:
+function parse_interface_method(s: ref[pstate.ParserState]) -> ast.InterfaceMethod:
     var is_async = match_kind(s, tk.TokenKind.tk_async)
     var kind = ast.MethodKind.mk_plain
     if match_kind(s, tk.TokenKind.tk_editable):
@@ -4034,7 +3946,7 @@ function parse_interface_method(s: ref[ParserState]) -> ast.InterfaceMethod:
         method_kind = kind, is_async = is_async, attributes = span[ast.AttributeApplication](), line = ln, column = cn)
 
 
-function parse_opaque_decl(s: ref[ParserState], visibility: bool) -> ptr[ast.Decl]:
+function parse_opaque_decl(s: ref[pstate.ParserState], visibility: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -4056,7 +3968,7 @@ function parse_opaque_decl(s: ref[ParserState], visibility: bool) -> ptr[ast.Dec
     return node
 
 
-function parse_extending_block(s: ref[ParserState]) -> ptr[ast.Decl]:
+function parse_extending_block(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -4082,7 +3994,7 @@ function parse_extending_block(s: ref[ParserState]) -> ptr[ast.Decl]:
     return node
 
 
-function parse_extending_method(s: ref[ParserState]) -> ast.Method:
+function parse_extending_method(s: ref[pstate.ParserState]) -> ast.Method:
     let attrs = parse_attribute_applications(s)
     var visibility = match_kind(s, tk.TokenKind.tk_public)
     var is_async = match_kind(s, tk.TokenKind.tk_async)
@@ -4114,7 +4026,7 @@ function parse_extending_method(s: ref[ParserState]) -> ast.Method:
         is_async = is_async, attributes = attrs, line = ln, column = cn)
 
 
-function parse_extern_decl(s: ref[ParserState], attrs: span[ast.AttributeApplication]) -> ptr[ast.Decl]:
+function parse_extern_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication]) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     if tok != null:
@@ -4140,7 +4052,7 @@ function parse_extern_decl(s: ref[ParserState], attrs: span[ast.AttributeApplica
     return node
 
 
-function parse_foreign_decl(s: ref[ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+function parse_foreign_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     if tok != null:
@@ -4165,7 +4077,7 @@ function parse_foreign_decl(s: ref[ParserState], attrs: span[ast.AttributeApplic
     return node
 
 
-function parse_foreign_params(s: ref[ParserState]) -> (span[ast.ForeignParam], bool):
+function parse_foreign_params(s: ref[pstate.ParserState]) -> (span[ast.ForeignParam], bool):
     var params = vec.Vec[ast.ForeignParam].create()
     var variadic = false
     consume(s, tk.TokenKind.lparen, c"expected '('")
@@ -4200,7 +4112,7 @@ function parse_foreign_params(s: ref[ParserState]) -> (span[ast.ForeignParam], b
     return (params.as_span(), variadic)
 
 
-function parse_static_assert(s: ref[ParserState]) -> ptr[ast.Decl]:
+function parse_static_assert(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     if tok != null:
@@ -4218,7 +4130,7 @@ function parse_static_assert(s: ref[ParserState]) -> ptr[ast.Decl]:
     return node
 
 
-function parse_event_decl(s: ref[ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+function parse_event_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -4244,7 +4156,7 @@ function parse_event_decl(s: ref[ParserState], attrs: span[ast.AttributeApplicat
     return node
 
 
-function parse_when_decl(s: ref[ParserState]) -> ptr[ast.Decl]:
+function parse_when_decl(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -4288,7 +4200,7 @@ function parse_when_decl(s: ref[ParserState]) -> ptr[ast.Decl]:
     return node
 
 
-function parse_declaration_block(s: ref[ParserState]) -> span[ast.Decl]:
+function parse_declaration_block(s: ref[pstate.ParserState]) -> span[ast.Decl]:
     consume(s, tk.TokenKind.newline, c"expected newline")
     consume(s, tk.TokenKind.indent, c"expected indented body")
     skip_newlines(s)
@@ -4302,7 +4214,7 @@ function parse_declaration_block(s: ref[ParserState]) -> span[ast.Decl]:
     return decls.as_span()
 
 
-function parse_attribute_decl(s: ref[ParserState], visibility: bool) -> ptr[ast.Decl]:
+function parse_attribute_decl(s: ref[pstate.ParserState], visibility: bool) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -4331,7 +4243,7 @@ function parse_attribute_decl(s: ref[ParserState], visibility: bool) -> ptr[ast.
     return node
 
 
-function parse_signature(s: ref[ParserState]) -> span[ast.Param]:
+function parse_signature(s: ref[pstate.ParserState]) -> span[ast.Param]:
     var params = vec.Vec[ast.Param].create()
     consume(s, tk.TokenKind.lparen, c"expected '('")
     while not eof(s) and not check(s, tk.TokenKind.rparen):

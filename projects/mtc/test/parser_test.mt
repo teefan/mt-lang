@@ -4,10 +4,11 @@
 import std.testing as t
 import std.vec as vec
 import mtc.parser.parser as parser
+import mtc.parser.state as pstate
 
 
 function check_parse(source: str) -> t.Check:
-    var diags = vec.Vec[parser.ParseDiagnostic].create()
+    var diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer diags.release()
     let (ok, decl_count) = parser.parse_reporting(source, ref_of(diags))
     if not ok:
@@ -865,7 +866,7 @@ function test_parses_external_file_header() -> t.Check:
 
 
 function check_parse_fails(source: str) -> t.Check:
-    var diags = vec.Vec[parser.ParseDiagnostic].create()
+    var diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer diags.release()
     let (ok, decl_count) = parser.parse_reporting(source, ref_of(diags))
     if ok:

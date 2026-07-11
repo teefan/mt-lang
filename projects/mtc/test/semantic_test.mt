@@ -5,13 +5,14 @@ import std.testing as t
 import std.vec as vec
 
 import mtc.parser.parser as parser
+import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
 
 
 ## Parse then semantically analyze `source`, returning the diagnostic count.
 ## The source is expected to parse cleanly; only semantic diagnostics count.
 function diagnostic_count(source: str) -> ptr_uint:
-    var pdiags = vec.Vec[parser.ParseDiagnostic].create()
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
     defer pdiags.release()
     let file = parser.parse_source(source, ref_of(pdiags))
     if pdiags.len() > 0:
