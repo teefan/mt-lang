@@ -10,6 +10,7 @@ import mtc.parser.ast as ast
 import mtc.semantic.types as types
 import mtc.ir as ir
 import mtc.c_naming as naming
+import mtc.lowering.utils as utils
 
 
 # =============================================================================
@@ -22,7 +23,7 @@ public function body_has_await(sp: ptr[ast.Stmt]?) -> bool:
     return stmt_has_await(sp)
 
 
-function stmt_has_await(sp: ptr[ast.Stmt]?) -> bool:
+public function stmt_has_await(sp: ptr[ast.Stmt]?) -> bool:
     let p = sp else:
         return false
     unsafe:
@@ -78,7 +79,7 @@ function stmt_has_await(sp: ptr[ast.Stmt]?) -> bool:
                 return false
 
 
-function expr_has_await(ep: ptr[ast.Expr]?) -> bool:
+public function expr_has_await(ep: ptr[ast.Expr]?) -> bool:
     let p = ep else:
         return false
     unsafe:
@@ -233,8 +234,8 @@ function count_await_in_expr(ep: ptr[ast.Expr]?, count: ref[int]) -> void:
 public function build_async_frame(module_name: str, name: str, has_await: bool, result_type: types.Type) -> ir.StructDecl:
     let bool_ty = types.primitive("bool")
     let int_ty = types.primitive("int")
-    let ptr_void = types.Type.ty_generic(name = "ptr", args = single_ty_span(types.primitive("void")))
-    let frame_c = naming.qualified_c_name(module_name, j2(name, "_frame"))
+    let ptr_void = types.Type.ty_generic(name = "ptr", args = utils.sp_type(types.primitive("void")))
+    let frame_c = naming.qualified_c_name(module_name, utils.j2(name, "_frame"))
 
     var fields = vec.Vec[ir.Field].create()
     fields.push(ir.Field(name = "ready",          ty = bool_ty))
@@ -269,7 +270,7 @@ public function is_void_type(t: types.Type) -> bool:
 
 
 public function ptr_void_type() -> types.Type:
-    return types.Type.ty_generic(name = "ptr", args = single_ty_span(types.primitive("void")))
+    return types.Type.ty_generic(name = "ptr", args = utils.sp_type(types.primitive("void")))
 
 
 public function task_type(inner: types.Type) -> types.Type:
@@ -288,16 +289,3 @@ public function int_type() -> types.Type:
 
 public function void_type() -> types.Type:
     return types.primitive("void")
-
-
-function single_ty_span(t: types.Type) -> span[types.Type]:
-    var v = vec.Vec[types.Type].create()
-    v.push(t)
-    return v.as_span()
-
-
-function j2(a: str, b: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    return buf.as_str()

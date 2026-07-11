@@ -26,6 +26,7 @@ import mtc.semantic.types as types
 import mtc.parser.ast as ast
 import mtc.c_naming as naming
 import mtc.lowering.async as async_mod
+import mtc.lowering.utils as utils
 
 
 ## A lowering-stage error.  Placeholder for Phase 1+, where lowering will fail
@@ -1171,37 +1172,23 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
 
 ## A single-element `span[types.Type]` convenience helper.
 function sp_type(t: types.Type) -> span[types.Type]:
-    var buf = vec.Vec[types.Type].create()
-    buf.push(t)
-    return buf.as_span()
+    return utils.sp_type(t)
 
 
-## Sibling helpers for one-element spans of other common types.
 function sp_fields(field1: ir.AggregateField) -> span[ir.AggregateField]:
-    var buf = vec.Vec[ir.AggregateField].create()
-    buf.push(field1)
-    return buf.as_span()
+    return utils.sp_fields(field1)
 
 
 function sp_fields2(f1: ir.AggregateField, f2: ir.AggregateField) -> span[ir.AggregateField]:
-    var buf = vec.Vec[ir.AggregateField].create()
-    buf.push(f1)
-    buf.push(f2)
-    return buf.as_span()
+    return utils.sp_fields2(f1, f2)
 
 
 function sp_type2(t1: types.Type, t2: types.Type) -> span[types.Type]:
-    var buf = vec.Vec[types.Type].create()
-    buf.push(t1)
-    buf.push(t2)
-    return buf.as_span()
+    return utils.sp_type2(t1, t2)
 
 
 function sp_expr(expr: ptr[ir.Expr]) -> span[ir.Expr]:
-    var buf = vec.Vec[ir.Expr].create()
-    unsafe:
-        buf.push(read(expr))
-    return buf.as_span()
+    return utils.sp_expr(expr)
 
 
 ## A canonical string name for a concrete type, used as a vtable identifier suffix.
@@ -6943,48 +6930,23 @@ function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type)
 
 ## String concatenation helpers.
 function j2(a: str, b: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    return buf.as_str()
+    return utils.j2(a, b)
 
 
 function j3(a: str, b: str, c: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    return buf.as_str()
+    return utils.j3(a, b, c)
 
 
 function j4(a: str, b: str, c: str, d: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    buf.append(d)
-    return buf.as_str()
+    return utils.j4(a, b, c, d)
 
 
 function j5(a: str, b: str, c: str, d: str, e: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    buf.append(d)
-    buf.append(e)
-    return buf.as_str()
+    return utils.j5(a, b, c, d, e)
 
 
 function j6(a: str, b: str, c: str, d: str, e: str, f: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    buf.append(d)
-    buf.append(e)
-    buf.append(f)
-    return buf.as_str()
+    return utils.j6(a, b, c, d, e, f)
 
 
 ## Build a "arg_N" string from an integer index.
@@ -12001,216 +11963,6 @@ function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
 
 
 # =============================================================================
-#  Async CPS — Step 2: await detection + state count
-# =============================================================================
-
-function body_has_await(sp: ptr[ast.Stmt]?) -> bool:
-    let b = sp else:
-        return false
-    return stmt_has_await(sp)
-
-
-function stmt_has_await(sp: ptr[ast.Stmt]?) -> bool:
-    let p = sp else:
-        return false
-    unsafe:
-        match read(p):
-            ast.Stmt.stmt_ret as r:
-                let v = r.value
-                return v != null and expr_has_await(v)
-            ast.Stmt.stmt_assignment as a:
-                return expr_has_await(a.value)
-            ast.Stmt.stmt_local as d:
-                let v = d.value
-                return v != null and expr_has_await(v)
-            ast.Stmt.stmt_if as iff:
-                var bi: ptr_uint = 0
-                while bi < iff.branches.len:
-                    let br = unsafe: read(iff.branches.data + bi)
-                    if expr_has_await(br.condition) or stmt_has_await(br.body):
-                        return true
-                    bi += 1
-                return body_has_await(iff.else_body)
-            ast.Stmt.stmt_while as w:
-                return expr_has_await(w.condition) or body_has_await(w.body)
-            ast.Stmt.stmt_match as m:
-                if expr_has_await(m.scrutinee):
-                    return true
-                var ai: ptr_uint = 0
-                while ai < m.arms.len:
-                    if stmt_has_await(unsafe: read(m.arms.data + ai).body):
-                        return true
-                    ai += 1
-                return false
-            ast.Stmt.stmt_for as f:
-                var bi: ptr_uint = 0
-                while bi < f.iterables.len:
-                    if expr_has_await(unsafe: f.iterables.data + bi):
-                        return true
-                    bi += 1
-                return body_has_await(f.body)
-            ast.Stmt.stmt_block as blk:
-                var si: ptr_uint = 0
-                while si < blk.statements.len:
-                    if stmt_has_await(unsafe: blk.statements.data + si):
-                        return true
-                    si += 1
-                return false
-            ast.Stmt.stmt_unsafe as u:
-                return body_has_await(u.body)
-            ast.Stmt.stmt_defer as d:
-                return body_has_await(d.body) or (d.expression != null and expr_has_await(d.expression))
-            ast.Stmt.stmt_expression as e:
-                return expr_has_await(e.expression)
-            _:
-                return false
-
-
-function expr_has_await(ep: ptr[ast.Expr]?) -> bool:
-    let p = ep else:
-        return false
-    unsafe:
-        match read(p):
-            ast.Expr.expr_await:
-                return true
-            ast.Expr.expr_call as c:
-                if expr_has_await(c.callee):
-                    return true
-                var i: ptr_uint = 0
-                while i < c.args.len:
-                    if expr_has_await(unsafe: read(c.args.data + i).arg_value):
-                        return true
-                    i += 1
-                return false
-            ast.Expr.expr_binary_op as b:
-                return expr_has_await(b.left) or expr_has_await(b.right)
-            ast.Expr.expr_unary_op as u:
-                return expr_has_await(u.operand)
-            ast.Expr.expr_member_access as ma:
-                return expr_has_await(ma.receiver)
-            ast.Expr.expr_index_access as ix:
-                return expr_has_await(ix.receiver) or expr_has_await(ix.index)
-            ast.Expr.expr_prefix_cast as c:
-                return expr_has_await(c.expression)
-            ast.Expr.expr_if as c:
-                return expr_has_await(c.condition) or expr_has_await(c.then_expr) or expr_has_await(c.else_expr)
-            ast.Expr.expr_unsafe as u:
-                return expr_has_await(u.expression)
-            ast.Expr.expr_specialization as s:
-                return expr_has_await(s.callee)
-            _:
-                return false
-
-
-function count_async_states(sp: ptr[ast.Stmt]?) -> int:
-    var c: int = 0
-    count_await_in_stmt(sp, ref_of(c))
-    return c
-
-
-function count_await_in_stmt(sp: ptr[ast.Stmt]?, count: ref[int]) -> void:
-    let p = sp else:
-        return
-    unsafe:
-        match read(p):
-            ast.Stmt.stmt_ret as r:
-                let v = r.value
-                if v != null:
-                    count_await_in_expr(v, count)
-            ast.Stmt.stmt_assignment as a:
-                count_await_in_expr(a.value, count)
-            ast.Stmt.stmt_local as d:
-                let v = d.value
-                if v != null:
-                    count_await_in_expr(v, count)
-            ast.Stmt.stmt_if as iff:
-                var bi: ptr_uint = 0
-                while bi < iff.branches.len:
-                    let br = unsafe: read(iff.branches.data + bi)
-                    count_await_in_expr(br.condition, count)
-                    count_await_in_stmt(br.body, count)
-                    bi += 1
-                let eb = iff.else_body
-                if eb != null:
-                    count_await_in_stmt(eb, count)
-            ast.Stmt.stmt_while as w:
-                count_await_in_expr(w.condition, count)
-                let wb = w.body
-                if wb != null:
-                    count_await_in_stmt(wb, count)
-            ast.Stmt.stmt_match as m:
-                count_await_in_expr(m.scrutinee, count)
-                var ai: ptr_uint = 0
-                while ai < m.arms.len:
-                    count_await_in_stmt(unsafe: read(m.arms.data + ai).body, count)
-                    ai += 1
-            ast.Stmt.stmt_for as f:
-                var bi: ptr_uint = 0
-                while bi < f.iterables.len:
-                    count_await_in_expr(unsafe: f.iterables.data + bi, count)
-                    bi += 1
-                let fb = f.body
-                if fb != null:
-                    count_await_in_stmt(fb, count)
-            ast.Stmt.stmt_block as blk:
-                var si: ptr_uint = 0
-                while si < blk.statements.len:
-                    count_await_in_stmt(unsafe: blk.statements.data + si, count)
-                    si += 1
-            ast.Stmt.stmt_unsafe as u:
-                let ub = u.body
-                if ub != null:
-                    count_await_in_stmt(ub, count)
-            ast.Stmt.stmt_defer as d:
-                let db = d.body
-                if db != null:
-                    count_await_in_stmt(db, count)
-                if d.expression != null:
-                    count_await_in_expr(d.expression, count)
-            ast.Stmt.stmt_expression as e:
-                count_await_in_expr(e.expression, count)
-            _:
-                pass
-
-
-function count_await_in_expr(ep: ptr[ast.Expr]?, count: ref[int]) -> void:
-    let p = ep else:
-        return
-    unsafe:
-        match read(p):
-            ast.Expr.expr_await:
-                read(count) = read(count) + 1
-            ast.Expr.expr_call as c:
-                count_await_in_expr(c.callee, count)
-                var i: ptr_uint = 0
-                while i < c.args.len:
-                    count_await_in_expr(unsafe: read(c.args.data + i).arg_value, count)
-                    i += 1
-            ast.Expr.expr_binary_op as b:
-                count_await_in_expr(b.left, count)
-                count_await_in_expr(b.right, count)
-            ast.Expr.expr_unary_op as u:
-                count_await_in_expr(u.operand, count)
-            ast.Expr.expr_member_access as ma:
-                count_await_in_expr(ma.receiver, count)
-            ast.Expr.expr_index_access as ix:
-                count_await_in_expr(ix.receiver, count)
-                count_await_in_expr(ix.index, count)
-            ast.Expr.expr_prefix_cast as c:
-                count_await_in_expr(c.expression, count)
-            ast.Expr.expr_if as c:
-                count_await_in_expr(c.condition, count)
-                count_await_in_expr(c.then_expr, count)
-                count_await_in_expr(c.else_expr, count)
-            ast.Expr.expr_unsafe as u:
-                count_await_in_expr(u.expression, count)
-            ast.Expr.expr_specialization as s:
-                count_await_in_expr(s.callee, count)
-            _:
-                pass
-
-
-# =============================================================================
 #  Async CPS — Step 1: frame struct + synthetic functions (with await support)
 # =============================================================================
 
@@ -12386,7 +12138,7 @@ function lower_async_cps_body(ctx: ref[LowerCtx], name: str, body: ptr[ast.Stmt]
                     var si: ptr_uint = 0
                     while si < blk.statements.len:
                         let sp = blk.statements.data + si
-                        if stmt_has_await(sp):
+                        if async_mod.stmt_has_await(sp):
                             lower_async_await_stmt(ctx, name, sp, resume_c_name, frame_c, frame_exp, res_ty, is_void_ret, bool_ty, int_ty, void_t, ref_of(cur), ref_of(state_cases), ref_of(await_idx))
                         else:
                             # Lower via normal path (handles defer, scoping)
@@ -12397,7 +12149,7 @@ function lower_async_cps_body(ctx: ref[LowerCtx], name: str, body: ptr[ast.Stmt]
                                 ti += 1
                         si += 1
                 _:
-                    if stmt_has_await(b):
+                    if async_mod.stmt_has_await(b):
                         lower_async_await_stmt(ctx, name, b, resume_c_name, frame_c, frame_exp, res_ty, is_void_ret, bool_ty, int_ty, void_t, ref_of(cur), ref_of(state_cases), ref_of(await_idx))
                     else:
                         var tmp = lower_function_body(ctx, b)
@@ -12433,11 +12185,11 @@ function lower_async_await_stmt(ctx: ref[LowerCtx], name: str, sp: ptr[ast.Stmt]
         match read(sp):
             ast.Stmt.stmt_local as d:
                 let v = d.value
-                if v != null and expr_has_await(v):
+                if v != null and async_mod.expr_has_await(v):
                     # Find the inner await and lower it
                     lower_await_expr_rec(ctx, name, v, resume_c_name, frame_c, frame_exp, bool_ty, int_ty, void_t, cur, state_cases, await_idx)
             ast.Stmt.stmt_expression as e:
-                if expr_has_await(e.expression):
+                if async_mod.expr_has_await(e.expression):
                     lower_await_expr_rec(ctx, name, e.expression, resume_c_name, frame_c, frame_exp, bool_ty, int_ty, void_t, cur, state_cases, await_idx)
             _:
                 lower_stmt(ctx, cur, sp)
