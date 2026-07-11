@@ -1,228 +1,229 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **3 bug fixes, CLI features, nullable lowering — 172 tests pass. language_baseline compiles.**
-Last updated: 2026-07-11 (session: bug fixes + CLI features + nullable value type lowering)
+Status: **CLI complete, self-host tests itself, language_baseline compiles, 172 tests pass.**
+Last updated: 2026-07-11
 
 ---
 
-## 0. Session progress (2026-07-11 — batch 2)
+## 0. Current state (2026-07-11)
 
-3 commits:
+### 0.1 What works
 
-| Commit | What |
-|--------|------|
-| `2b26aa9e` | CLI features: -o, --keep-c, run command, build.mt determinism, C backend vec/mat/quat + vtable const fix |
-| `42ed6c6b` | Nullable value type lowering: wrap/unwrap mt_opt_* structs, is_nullable_pointer_like, guard_success_projection |
-| `6eac8017` | --cc compiler flag for build and run commands |
+- **Self-compile**: stage-1 → stage-2 → stage-3, all byte-identical between self-built stages.
+- **Self-host tests itself**: `mtc test projects/mtc` — discovers .mt files, generates `__mt_test_runner_<N>.mt` runners, builds + executes via `bin/mtc`, reports pass/fail.
+- **172/172 tests pass** (both Ruby and self-host).
+- **`examples/language_baseline.mt`**: full pipeline without crashes. C compilation: 2 POSIX errors (sockaddr, addrinfo from std/c/fs.h).
+- **Deterministic self-compile**: fixed temp C file path to `/tmp/mtc_build.c`, SHA256-identical outputs.
+- **Phases A-H**: ALL DONE.
 
-### Key accomplishments
+### 0.2 All commits (32b5b59d..HEAD)
 
-- **language_baseline.mt** now compiles through the self-host with only 2 pre-existing POSIX errors (sockaddr, addrinfo from libuv headers). All nullable value type handling works.
-- **Deterministic byte-identical self-compile**: Two self-host builds produce SHA256-identical binaries. Stage-2 → stage-3 → stage-3 are identical.
-- **172/172 tests pass**.
-- **C backend fixes**: vec/mat/quat type declarations, vtable const qualifier (const_ptr[void]), nullable opt structs with has_value checks.
-- **Lowering fixes**: nullable_some_literal (wrap non-null values), guard_success_projection (.value extraction), is_nullable_pointer_like helper.
-- **CLI additions**: `build -o OUTPUT`, `build --keep-c PATH`, `build/run --cc CC`, `run` command.
+| Batch | Commits | What |
+|-------|---------|------|
+| Bug fixes + CLI | `2b26aa9e`, `42ed6c6b`, `6eac8017` | Nullable lowering, -o/--keep-c/--cc, run command, vec/mat/quat, vtable |
+| Refactoring | `380d908c`…`ad3d244e` | 7 modules extracted (utils, diagnostics, emit_expansion, scope, state, literal_parsing), async dedup |
+| CLI features | `86a8d4c0`, `49efbf19`, `85153df4`, `d2be0036` | --debug-guards, --profile, --platform, format, test execution, Ruby crash fix |
 
-### Byte-identical C status
+### 0.3 CLI coverage
 
-- Ruby output: 4,283 lines, self-host output: 3,611 lines
-- Diff: ~3,994 lines different (was ~4,934 before naming fix)
-- Module naming fix: using `--root .` instead of `--root examples --root .` produces correct `examples_language_baseline_` prefix
-- Remaining gap: format helpers (Ruby: 30+ helpers, self-host: 5), runtime helper placement, forward declaration ordering, prelude handling
+```
+mtc lex/parse/check/lower/emit-c         Full pipeline
+mtc build [--root] [-o] [--cc] [--keep-c] [--profile] [--platform] [--debug-guards|--no-debug-guards]
+mtc run   [--root] [-o] [--cc] [--profile] [--platform] [--debug-guards|--no-debug-guards]
+mtc test  <dir> [--root]                 Discover, build runner, execute, report
+mtc format <file> [--check|--write]      Parse + pretty-print
+mtc help                                 Print help
+```
+
+### 0.4 Module sizes
+
+| Module | Lines |
+|--------|-------|
+| `lowering/lowering.mt` | 12,321 |
+| `c_backend/c_backend.mt` | 4,626 |
+| `parser/parser.mt` | 3,928 |
+| `semantic/analyzer.mt` | 3,847 |
+| `main.mt` (CLI) | 1,190 |
+| **Extracted modules** | |
+| `lowering/utils.mt` | 222 |
+| `lowering/async.mt` | 291 |
+| `semantic/diagnostics.mt` | 277 |
+| `semantic/scope.mt` | 88 |
+| `semantic/emit_expansion.mt` | 109 |
+| `parser/state.mt` | 136 |
+| `parser/literal_parsing.mt` | 361 |
 
 ---
 
-## 1. Current state
+## 1. Byte-identical C — detailed plan
 
-### 1.1 What works (verified)
-
-- **Self-compile:** stage-1 (Ruby-built self-host) → stage-2 (self-built) verified.
-  ```sh
-  bin/mtc build projects/mtc --no-cache --no-debug-guards -o tmp/mtc-final
-  tmp/mtc-final build projects/mtc --root .          # stage-2 binary produced
-  tmp/mtc-final check projects/mtc --root .          # output: "ok"
-  ```
-- **172/172 tests pass** (0 failures).
-- **`examples/language_baseline.mt`**: full pipeline (lex→parse→check→lower→emit-c) without crashes.
-  C compilation: 2 pre-existing POSIX errors (sockaddr, addrinfo from std/c/fs.h). All async CPS code generates compilable C.
-- **Phases A-E**: DONE (atomic, emit, dyn[I], events, parallel captures).
-- **Phase F**: DONE (async CPS Steps 1-6).
-- **Phase G**: DONE (baseline parity gate).
-- **Phase H**: DONE (package build support, dead code removal).
-
-### 1.2 Session progress (2026-07-11)
-
-10 commits in this session across two batches:
-
-**Batch 1 — parity fixes (3 commits):**
-
-| Commit | What |
-|--------|------|
-| `1e5b80db` | Phase H: package build support (directory targets + TOML) + dead code |
-| `79d9611e` | Semantic fixes: method resolution, Option unwrapping, prelude C naming, pointer cast line numbers |
-| `698a98ba` | fn→proc coercion for monomorphized method calls (fixes sort_by) |
-
-**Batch 2 — type alias + builtin naming + stddef (1 commit):**
-
-| Commit | What |
-|--------|------|
-| `ff081b5d` | Fix cross-module type alias resolution, builtin naming (mt_vec2), stddef.h inclusion |
-
-**Batch 3 — async CPS implementation (6 commits):**
-
-| Step | Commit | Feature |
-|------|--------|---------|
-| 1 | `0d4d0f67` `52002939` | Task vtable struct + frame/synthetic funcs |
-| 2 | `e88eafb0` | Await detection + switch state dispatch |
-| 3 | `c5261f37` | `async.mt` module + sequential await lowering |
-| 4 | `0501214b` | Waiter wake + set_waiter immediate callback |
-| 5 | `d1b9a747` | Lower no-await body + return-value extraction |
-| 6 | `e8d950ba` | Cross-path `.value` in constructor |
-
-### 1.3 Async CPS feature summary
-
-| Feature | Location | Status |
-|---------|----------|--------|
-| Task struct (value + vtable) | `c_backend.mt` `emit_task_struct_type` | Done |
-| Frame struct per async fn | `lowering.mt` `lower_async_fn` | Done |
-| Resume function (no-await: body + return→frame) | `lowering.mt` | Done |
-| Resume function (with-await: switch dispatch stub) | `lowering.mt` `lower_async_cps_body` | Done |
-| Constructor (malloc, resume, Task aggregate) | `lowering.mt` | Done |
-| Vtable: ready | `lowering.mt` | Done |
-| Vtable: release (free) | `lowering.mt` | Done |
-| Vtable: set_waiter (immediate-wake-if-ready) | `lowering.mt` | Done |
-| Vtable: take_result | `lowering.mt` | Done |
-| Vtable: cancel | `lowering.mt` | Done |
-| Await detection (body/stmt/expr_has_await) | `async.mt` | Done |
-| State counting (count_await_states) | `async.mt` | Done |
-| Waiter wake on completion | `lowering.mt` `async_waiter_wake` | Done |
-| Cross-path `.value` extraction | `lowering.mt` constructor | Done |
-| Routing: no-await→CPS, with-await→normal lowering | `lowering.mt` `lower_module` | Done |
-| Nested control flow CPS (if/while/for with await) | — | Deferred (handled by normal path) |
-
-### 1.4 Baseline C compilation status
+### 1.1 Current diff
 
 ```
-2 errors — both pre-existing POSIX types from std/c/fs.h:
-  - unknown type name 'sockaddr'
-  - unknown type name 'addrinfo'
+Ruby output:    4,283 lines
+Self-host output: 3,611 lines
+Diff:          4,691 lines
 ```
 
-All async CPS code generates compilable C. No self-inflicted errors remain.
-
-## 2. Architecture reference
-
-Pipeline (self-host mirrors Ruby stage-for-stage):
+### 1.2 Ruby C backend emission order
 
 ```
-source → lexer → token stream → parser → AST → semantic analyzer → module loader → Program
-                                                                                     ↓
-                                                                     Lowering (lowering/lowering.mt)
-                                                                     async.mt (await detection + analysis)
-                                                                                     ↓
-                                                                     IR::Program (ir.mt)
-                                                                                     ↓
-                                                                     CBackend (c_backend/c_backend.mt)
-                                                                                     ↓
-                                                                     C source → cc → binary
+ 1. Feature-test macros (_GNU_SOURCE / _POSIX_C_SOURCE)
+ 2. #include headers (deduplicated, sorted)
+ 3. mt_str type (conditional)
+ 4. Vector/math types (conditional): mt_vec2, mt_vec3, mt_vec4, mt_ivec2, mt_ivec3, mt_ivec4, mt_mat3, mt_mat4, mt_quat
+ 5. mt_fatal / mt_fatal_str (conditional)
+ 6. Format string helpers (conditional): 38 helpers in dependency order
+    - mt_format_str_make, mt_format_str_release, mt_format_check_capacity, mt_format_append_bytes
+    - mt_format_{cstr,bool,ptr_uint,ulong,ulong_hex,uint,long,long_hex,ulong_oct,long_oct,ulong_bin,long_bin,int,float,double,double_precision}_len
+    - mt_format_append_{str,cstr,bool,ptr_uint,ulong,uint,long,ulong_hex,ulong_hex_upper,long_hex,long_hex_upper,float,double,double_precision,ulong_oct,long_oct,ulong_bin,long_bin,int}
+ 7. Fmt builder helpers (conditional): mt_fmt_begin, mt_fmt_cleanup, mt_fmt_finish, mt_fmt_write_*
+ 8. mt_str_equal (conditional)
+ 9. Text buffer helpers (conditional): UTF-8 validators
+10. Async memory helpers (conditional): MT_ASYNC_HEADER_SIZE, mt_async_alloc/retain/free
+11. Parallel for helper (conditional): mt_pfor_chunk, mt_pfor_runner, mt_parallel_for
+12. Spawn all helper (conditional): mt_spawn_item, mt_spawn_item_runner, mt_spawn_all
+13. Detach helpers (conditional): mt_detach_handle, mt_detach_run, mt_detach_join
+14. Forward declarations (sorted topologically by sort_aggregate_decls):
+    - opaque `typedef struct NAME NAME;`
+    - struct `typedef struct NAME NAME;`
+    - union `typedef union NAME NAME;`
+    - variant `typedef struct NAME NAME;` + arm payload structs
+15. Enum declarations
+16. Span type definitions: `typedef struct mt_span_ELEM { ... } mt_span_ELEM;`
+17. SoA type definitions
+18. Entrypoint argv helpers (conditional)
+19. Foreign temp cstr helpers (conditional)
+20. Str buffer helpers (conditional): mt_str_buffer_len, mt_str_buffer_assign, mt_str_buffer_append, etc.
+21. Aggregate type definitions (topologically sorted): struct, union, variant (with kind enum + data union)
+22. Variant equality helpers (conditional)
+23. Function forward declarations
+24. Constants + globals
+25. Static asserts
+26. Reinterpret helpers
+27. Checked array index helpers
+28. Checked span index helpers
+29. Nullable array index helpers
+30. Nullable span index helpers
+31. String literal constants
+32. Function bodies
 ```
 
-Self-host source layout (`projects/mtc/src`, 33,262 LOC):
+### 1.3 Self-host C backend emission order (current)
 
-| Stage | Path | LOC |
-|-------|------|-----|
-| Lexer | `src/mtc/lexer/` | ~1,590 |
-| Parser + AST | `src/mtc/parser/*.mt` | ~4,860 |
-| Pretty printers | `src/mtc/pretty_printer/*.mt` | ~2,190 |
-| Semantic analyzer | `src/mtc/semantic/analyzer.mt` | ~4,150 |
-| Type system | `src/mtc/semantic/types.mt` | ~710 |
-| Loader | `src/mtc/loader/` | ~730 |
-| IR | `src/mtc/ir.mt` | ~230 |
-| Lowering | `src/mtc/lowering/lowering.mt` | ~12,517 |
-| Lowering (async) | `src/mtc/lowering/async.mt` | ~303 |
-| C Backend | `src/mtc/c_backend/c_backend.mt` | ~4,384 |
-| Build driver | `src/mtc/build.mt` | ~160 |
-| CLI | `src/mtc/main.mt` | ~599 |
-| C naming | `src/mtc/c_naming.mt` | ~137 |
+```
+ 1. Feature-test macros
+ 2. #include headers
+ 3. mt_str type (use_string_view)
+ 4. mt_fatal (use_fatal)
+ 5. mt_fatal_str (use_fatal_str)
+ 6. mt_str_equal (use_str_equality)
+ 7. Span type forward declarations
+ 8. Struct forward declarations (topo_sort_structs)
+ 9. Union forward declarations
+10. Tuple type forward declarations
+11. Variant forward declarations
+12. Enum definitions
+13. Span type full definitions
+14. Type alias typedefs
+15. Builtin type definitions (vec/mat/quat)
+16. Nullable opt struct definitions
+17. Task struct definitions
+18. Struct + variant definitions (combined topo sort)
+19. Union definitions
+20. SoA type definitions
+21. Tuple type definitions
+22. Function forward declarations
+23. Checked array index helpers
+24. Checked span index helpers
+25. String literal constants
+26. Constants
+27. Globals
+28. str_buffer helpers
+29. Format string helpers (5 simplified helpers, not 38)
+30. Event runtime helpers
+31. Parallel runtime helpers
+32. Builtin helpers (order/equal/hash)
+33. Variant equality helpers
+34. Entry argv helpers
+35. Function bodies
+```
 
-## 3. Phase completion
+### 1.4 Structural gaps (by priority)
 
-| Phase | Status |
-|-------|--------|
-| A — atomic[T] | Done |
-| B — emit | Done |
-| C1 — dyn[I] | Done |
-| C2 — events | Done |
-| D — break/continue in match-in-loop | Done |
-| E — parallel for captures | Done |
-| F — async / Task[T] | Done (Steps 1-6) |
-| G — baseline parity gate | Done |
-| H — final polish | Done |
+**P1 — Format helper alignment (~111 diff lines):**
+Self-host uses simplified builder approach (mt_fmt_builder + 5 helpers) vs Ruby's 38 helpers with transitive dependency resolution. To align:
+- Replace the self-host's `emit_format_string_helpers` with helpers matching Ruby's
+- Implement the 38 helpers from `lib/milk_tea/core/c_backend/runtime_helpers.rb`
+- Implement format detection (`uses_format_*` pattern from `feature_detection.rb`)
+- Each helper conditional on use detection
 
-## 4. Verification commands
+**P2 — Emission order alignment (~200 diff lines):**
+- Move mt_str to position 3 (matching)
+- Builtin type defs (vec/mat/quat) move from position 15 to position 4 (before mt_fatal)
+- Forward declarations merge into single section (position 14) instead of split (7-11)
+- str_buffer helpers move from position 28 to position 20 (before aggregate types)
+- Constants + globals move to position 24 (after function forward decls)
+- Variant equality moves to position 22 (after struct/variant defs, before function forward decls)
+
+**P3 — Forward declaration structure (~150 diff lines):**
+- Ruby sorts ALL aggregate types together via `sort_aggregate_decls` (structs + unions + variants + generic structs + generic variants + Task structs + proc structs + dyn structs + str_buffer structs + nullable opt structs)
+- Self-host separates: span fwd decls → struct fwd decls → union fwd decls → tuple fwd decls → variant fwd decls
+- Self-host also has separate full definitions for Task/opt before struct+variant definitions
+- To align: merge all aggregate type declarations into a single topologically sorted pass
+
+**P4 — Missing sections (~80 diff lines):**
+- Reinterpret helpers (position 26 in Ruby)
+- Nullable array/span index helpers (positions 29-30 in Ruby)
+- Static asserts section (position 25 in Ruby)
+
+**P5 — Prelude/event handling (remaining diff):**
+- Different Option/Result variant arm payload struct emission
+- Event runtime generates different infrastructure (Ruby: slot, snapshot, wait_frame; self-host: simplified)
+
+### 1.5 Implementation plan
+
+Each alignment step follows the pattern:
+1. Read the Ruby C backend's relevant function(s)
+2. Port the logic to the self-host C backend
+3. Verify with `diff` on `language_baseline.mt` output
+4. Verify 172 tests still pass
+
+Estimated effort: ~4-6 sessions for full byte-identical alignment.
+
+---
+
+## 2. Verification commands
 
 ```sh
 # Build self-host
 bin/mtc build projects/mtc --no-cache --no-debug-guards -o tmp/mtc-final
 
-# Run tests
-bin/mtc test projects/mtc
+# Self-host tests itself (full test execution)
+tmp/mtc-final test projects/mtc --root .
 
-# Generate baseline C
-tmp/mtc-final emit-c examples/language_baseline.mt --root examples --root . > tmp/baseline.c
+# Generate C for comparison
+bin/mtc emit-c examples/language_baseline.mt > tmp/baseline-ruby.c
+tmp/mtc-final emit-c examples/language_baseline.mt --root . > tmp/baseline-self.c
+diff tmp/baseline-ruby.c tmp/baseline-self.c | wc -l
 
-# Compile baseline C (expect 2 POSIX errors)
-cc -std=c11 -D_GNU_SOURCE -I std/c -c tmp/baseline.c -o /dev/null 2>&1 | grep "error:" | wc -l
-# Expected: 2 (sockaddr, addrinfo)
-
-# Self-compile check
-tmp/mtc-final check projects/mtc --root .
-
-# Self-build (stage-2)
-tmp/mtc-final build projects/mtc --root .
+# Stage-2 self-compile
+tmp/mtc-final build projects/mtc --root . -o tmp/mtc-stage2
+tmp/mtc-stage2 build projects/mtc --root . -o tmp/mtc-stage3
+sha256sum tmp/mtc-stage2 tmp/mtc-stage3  # should match
 ```
 
-## 5. Resume context (2026-07-11)
+---
 
-### Committed this session (10 commits, ff081b5d..e8d950ba)
+## 3. Remaining work
 
-| Hash | Description |
-|------|-------------|
-| `ff081b5d` | Fix type alias resolution, builtin naming (mt_vec2), stddef.h |
-| `79d9611e` | Semantic fixes: method resolution, Option unwrapping, prelude C naming |
-| `698a98ba` | fn→proc coercion for monomorphized methods |
-| `1e5b80db` | Phase H: package build + dead code removal |
-| `0d4d0f67` | CPS Step 1: Task vtable + frame/synthetic funcs |
-| `52002939` | CPS Step 1b: fix constructor frame type |
-| `e88eafb0` | CPS Step 2: await detection + switch dispatch |
-| `c5261f37` | CPS Step 3: async.mt module + await lowering |
-| `0501214b` | CPS Step 4: waiter wake + set_waiter callback |
-| `d1b9a747` | CPS Step 5: lower no-await body + return-value extraction |
-| `e8d950ba` | CPS Step 6: cross-path .value extraction |
-
-### Key files modified this session
-
-| File | Changes |
-|------|---------|
-| `main.mt` | +run command, -o/--keep-c/--cc flags, fix j2_path/default_output_path (use string.String) |
-| `build.mt` | Deterministic temp file (/tmp/mtc_build.c) |
-| `lowering/lowering.mt` | nullable_some_literal, is_nullable_pointer_like, guard_success_projection .value extraction, vtable const_ptr[void] |
-| `c_backend/c_backend.mt` | mt_opt_* structs, has_value checks, collect_builtin_types recursive, is_pointer_like_for_nullable, emit_opt_struct_defs_from_program, scan function bodies for nullable types |
-
-### Next session prompts
-
-- **Cli tooling**: `test`, `format`, `lint`, `debug`, `new` commands not yet implemented.
-- **Build options**: `--profile`, `--platform`, `--bundle`, `--archive`, `--debug-guards` not yet supported.
-- **Byte-identical C baseline**: ~3,994 lines differ from Ruby output. Major categories:
-  - **Format helpers** — Ruby has 30+ format helpers (mt_format_*), self-host has 5 simplified helpers (mt_fmt_builder). ~170 line diff.
-  - **Forward declaration ordering** — Different grouping of struct/union/variant forward decls. Self-host emits span types separately.
-  - **Runtime helper placement** — Ruby emits helpers early (before type decls), self-host emits late (after constants/globals).
-  - **Prelude handling** — Different Option/Result type structures and emission order.
-  - **Event type generation** — Ruby generates more event infrastructure (slot, snapshot, wait_frame structs).
-- **Nested control flow CPS** — Deferred.
-- **Defer cleanup across suspend** — Not done.
-
-### Service endpoints
-
-Remote caching is available via the `serve` action — see `docs/build-guide.md` § 2.4 for details on the per-project package source cache.
+| Priority | Item | Status |
+|----------|------|--------|
+| P1 | Format helper alignment (38 helpers vs 5) | Planned |
+| P2 | Emission order alignment | Planned |
+| P3 | Forward declaration structure merge | Planned |
+| P4 | Missing sections (reinterpret, nullable index, static_asserts) | Planned |
+| P5 | Prelude/event handling | Planned |
+| Low | `--bundle` / `--archive` flags | Deferred |
+| Low | CPS nested control flow | Deferred |
+| Low | `new`, `lint`, `debug` CLI commands | Deferred |
