@@ -201,7 +201,7 @@ function wrap(text: str, parent_precedence: int, current_precedence: int) -> str
 
 
 function binding_name(name: str, linkage_name: str) -> str:
-    if name.len == 0 or name.equal(linkage_name):
+    if name.len == 0 or name == linkage_name:
         return linkage_name
     return j3(name, " as ", linkage_name)
 
@@ -213,7 +213,7 @@ function render_type(t: types.Type) -> str:
 function is_ptr_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name.equal("ptr") and g.args.len == 1
+            return g.name == "ptr" and g.args.len == 1
         _:
             return false
 

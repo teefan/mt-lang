@@ -70,7 +70,7 @@ function check_stmt(stmt_ptr: ptr[ast.Stmt]?, assigned: ref[map_mod.Map[ptr_uint
                 truncate_scope(scopes, mark)
             ast.Stmt.stmt_local as l:
                 check_expr(l.value, assigned, binding_map, diags, scopes)
-                if not l.name.equal("_"):
+                if not l.name == "_":
                     mark_assigned(binding_map, assigned, l.name)
                     scopes.push(l.name)
             ast.Stmt.stmt_assignment as a:
@@ -155,7 +155,7 @@ function check_expr(ep: ptr[ast.Expr]?, assigned: ref[map_mod.Map[ptr_uint, bool
     unsafe:
         match read(ptr[ast.Expr]<-ep):
             ast.Expr.expr_identifier as id:
-                if not id.name.equal("_") and scope_has(scopes, id.name):
+                if not id.name == "_" and scope_has(scopes, id.name):
                     let bid = binding_map.get(id.name)
                     if bid != null:
                         let id_val = read(bid)
@@ -219,7 +219,7 @@ function scope_has(scopes: ref[vec.Vec[str]], name: str) -> bool:
         let p = scopes.get(i) else:
             break
         unsafe:
-            if read(p).equal(name):
+            if read(p) == name:
                 return true
         i += 1
     return false

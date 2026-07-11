@@ -188,7 +188,7 @@ function c_reserved_identifier(identifier: str) -> bool:
     var i: ptr_uint = 0
     while i < words.len:
         unsafe:
-            if read(words.data + i).equal(identifier):
+            if read(words.data + i) == identifier:
                 return true
         i += 1
     return false

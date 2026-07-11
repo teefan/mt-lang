@@ -421,7 +421,7 @@ function find_const_value_in_decls(decls: span[ast.Decl], const_name: str) -> Op
             d = read(decls.data + i)
         match d:
             ast.Decl.decl_const as c:
-                if c.name.equal(const_name):
+                if c.name == const_name:
                     let val = c.value else:
                         return Option[ptr[ast.Expr]].none
                     return Option[ptr[ast.Expr]].some(value = val)
@@ -455,7 +455,7 @@ function collect_when_branch_decls(branches: span[ast.WhenDeclBranch], chosen: s
             br = read(branches.data + i)
         match extract_when_member_name(br.pattern):
             Option.some as nm:
-                if nm.value.equal(chosen):
+                if nm.value == chosen:
                     copy_when_body_decls(br.body, output)
             Option.none:
                 pass
@@ -542,7 +542,7 @@ function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: 
     arms.push(arm_b)
     ctx.match_case_names.set(name, arms.as_span())
     # Method keys for common prelude methods (existence-only, no type-check).
-    if arm_a.equal("some"):
+    if arm_a == "some":
         ctx.method_keys.set(method_key(name, "is_some"), true)
         ctx.method_keys.set(method_key(name, "is_none"), true)
         ctx.method_keys.set(method_key(name, "unwrap"), true)
@@ -553,7 +553,7 @@ function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: 
         let bool_ty = types.primitive("bool")
         ctx.method_sigs.set(method_key(name, "is_some"), fn_sig_no_params(name, "is_some", bool_ty))
         ctx.method_sigs.set(method_key(name, "is_none"), fn_sig_no_params(name, "is_none", bool_ty))
-    else if arm_a.equal("success"):
+    else if arm_a == "success":
         ctx.method_keys.set(method_key(name, "is_success"), true)
         ctx.method_keys.set(method_key(name, "is_failure"), true)
         ctx.method_keys.set(method_key(name, "unwrap"), true)
@@ -658,12 +658,12 @@ function record_attr_apps(ctx: ref[Context], name: str, attrs: span[ast.Attribut
 
 
 function is_valid_attr_target(attr_name: str, target: str) -> bool:
-    if attr_name.equal("packed") or attr_name.equal("align"):
-        return target.equal("struct")
-    if attr_name.equal("deprecated"):
-        return target.equal("function") or target.equal("struct") or target.equal("const") or target.equal("enum") or target.equal("flags") or target.equal("union") or target.equal("variant") or target.equal("event")
-    if attr_name.equal("test") or attr_name.equal("expect_fatal"):
-        return target.equal("function")
+    if attr_name == "packed" or attr_name == "align":
+        return target == "struct"
+    if attr_name == "deprecated":
+        return target == "function" or target == "struct" or target == "const" or target == "enum" or target == "flags" or target == "union" or target == "variant" or target == "event"
+    if attr_name == "test" or attr_name == "expect_fatal":
+        return target == "function"
     return true
 
 
@@ -1082,7 +1082,7 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
     # Type aliases resolve to their (transitively resolved) target.
     if ctx.type_aliases.contains(name):
         return resolve_alias(ctx, name, depth)
-    if name.equal("str"):
+    if name == "str":
         return types.Type.ty_str
     if is_primitive_type_name(name):
         return types.primitive(name)
@@ -1134,25 +1134,25 @@ public function qname_to_str(q: ast.QualifiedName) -> str:
 
 function is_primitive_type_name(name: str) -> bool:
     return (
-        name.equal("bool") or name.equal("byte") or name.equal("ubyte") or name.equal("char")
-        or name.equal("short") or name.equal("ushort") or name.equal("int") or name.equal("uint")
-        or name.equal("long") or name.equal("ulong") or name.equal("ptr_int") or name.equal("ptr_uint")
-        or name.equal("float") or name.equal("double") or name.equal("void") or name.equal("cstr")
-        or name.equal("vec2") or name.equal("vec3") or name.equal("vec4")
-        or name.equal("ivec2") or name.equal("ivec3") or name.equal("ivec4")
-        or name.equal("mat3") or name.equal("mat4") or name.equal("quat")
+        name == "bool" or name == "byte" or name == "ubyte" or name == "char"
+        or name == "short" or name == "ushort" or name == "int" or name == "uint"
+        or name == "long" or name == "ulong" or name == "ptr_int" or name == "ptr_uint"
+        or name == "float" or name == "double" or name == "void" or name == "cstr"
+        or name == "vec2" or name == "vec3" or name == "vec4"
+        or name == "ivec2" or name == "ivec3" or name == "ivec4"
+        or name == "mat3" or name == "mat4" or name == "quat"
     )
 
 
 function is_reserved_name(name: str) -> bool:
-    return is_primitive_type_name(name) or name.equal("str")
+    return is_primitive_type_name(name) or name == "str"
 
 
 function is_generic_constructor_name(name: str) -> bool:
     return (
-        name.equal("ptr") or name.equal("const_ptr") or name.equal("ref") or name.equal("span")
-        or name.equal("array") or name.equal("str_buffer") or name.equal("atomic") or name.equal("Task")
-        or name.equal("Option") or name.equal("Result") or name.equal("SoA")
+        name == "ptr" or name == "const_ptr" or name == "ref" or name == "span"
+        or name == "array" or name == "str_buffer" or name == "atomic" or name == "Task"
+        or name == "Option" or name == "Result" or name == "SoA"
     )
 
 
@@ -1593,7 +1593,7 @@ function is_fatal_call(ep: ptr[ast.Expr]) -> bool:
             ast.Expr.expr_call as call:
                 match read(call.callee):
                     ast.Expr.expr_identifier as id:
-                        return id.name.equal("fatal")
+                        return id.name == "fatal"
                     _:
                         return false
             _:
@@ -1741,7 +1741,7 @@ function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags
             ast.Stmt.stmt_assignment as a:
                 let tt = infer_expr(ctx, scope, a.target)
                 let vt = infer_expr(ctx, scope, a.value)
-                if a.operator.equal("=") and incompatible_value(tt, vt, a.value):
+                if a.operator == "=" and incompatible_value(tt, vt, a.value):
                     report(ctx, a.line, a.column, assign_message(tt, vt))
                 check_assign_target_immutable(ctx, scope, a.target, a.line, a.column)
             _:
@@ -1765,10 +1765,10 @@ function flow_refinements(ctx: ref[Context], cond: ptr[ast.Expr], truthy: bool, 
     unsafe:
         match read(cond):
             ast.Expr.expr_unary_op as u:
-                if u.operator.equal("not"):
+                if u.operator == "not":
                     return flow_refinements(ctx, u.operand, not truthy, scope)
             ast.Expr.expr_binary_op as b:
-                if b.operator.equal("and"):
+                if b.operator == "and":
                     if truthy:
                         var left = flow_refinements(ctx, b.left, true, scope)
                         merge_refinements_into(ref_of(result), ref_of(left))
@@ -1779,7 +1779,7 @@ function flow_refinements(ctx: ref[Context], cond: ptr[ast.Expr], truthy: bool, 
                         var left = flow_refinements(ctx, b.left, false, scope)
                         merge_refinements_into(ref_of(result), ref_of(left))
                     return result
-                if b.operator.equal("or"):
+                if b.operator == "or":
                     if truthy:
                         var left = flow_refinements(ctx, b.left, true, scope)
                         merge_refinements_into(ref_of(result), ref_of(left))
@@ -1790,7 +1790,7 @@ function flow_refinements(ctx: ref[Context], cond: ptr[ast.Expr], truthy: bool, 
                         var right = flow_refinements(ctx, b.right, false, scope)
                         merge_refinements_into(ref_of(result), ref_of(right))
                     return result
-                if b.operator.equal("!=") or b.operator.equal("=="):
+                if b.operator == "!=" or b.operator == "==":
                     return null_test_refinements(ctx, cond, truthy, scope)
             _:
                 pass
@@ -1807,9 +1807,9 @@ function null_test_refinements(ctx: ref[Context], condp: ptr[ast.Expr], truthy: 
         match read(condp):
             ast.Expr.expr_binary_op as b:
                 var is_negated = false
-                if b.operator.equal("!="):
+                if b.operator == "!=":
                     is_negated = true
-                else if b.operator.equal("=="):
+                else if b.operator == "==":
                     is_negated = false
                 else:
                     return result
@@ -1934,12 +1934,12 @@ function collect_assigned_into(stmt_ptr: ptr[ast.Stmt]?, names: ref[map_mod.Map[
     unsafe:
         match read(stmt_ptr):
             ast.Stmt.stmt_local as l:
-                if not l.name.equal("_"):
+                if not l.name == "_":
                     names.set(l.name, true)
             ast.Stmt.stmt_assignment as a:
                 match read(a.target):
                     ast.Expr.expr_identifier as id:
-                        if not id.name.equal("_"):
+                        if not id.name == "_":
                             names.set(id.name, true)
                     _:
                         pass
@@ -2019,7 +2019,7 @@ function check_when_statement(ctx: ref[Context], scope: ref[sscope.Scope], chk: 
                     br = read(branches.data + i)
                 match extract_when_member_name(br.pattern):
                     Option.some as nm:
-                        if nm.value.equal(chosen.value):
+                        if nm.value == chosen.value:
                             check_stmt_span(ctx, scope, chk, br.body)
                             return
                     Option.none:
@@ -2144,7 +2144,7 @@ function check_case_match(ctx: ref[Context], type_name: str, arms: span[ast.Matc
 function span_contains_str(members: span[str], name: str) -> bool:
     var i: ptr_uint = 0
     while i < members.len:
-        if unsafe: read(members.data + i).equal(name):
+        if unsafe: read(members.data + i) == name:
             return true
         i += 1
     return false
@@ -2207,7 +2207,7 @@ function vec_contains_str(v: ref[vec.Vec[str]], s: str) -> bool:
         let p = v.get(i) else:
             break
         unsafe:
-            if read(p).equal(s):
+            if read(p) == s:
                 return true
         i += 1
     return false
@@ -2240,7 +2240,7 @@ function unwrap_nullable_type(t: types.Type) -> types.Type:
         types.Type.ty_nullable as n:
             return unsafe: read(n.base)
         types.Type.ty_generic as g:
-            if (g.name.equal("Option") or g.name.equal("Result")) and g.args.len >= 1:
+            if (g.name == "Option" or g.name == "Result") and g.args.len >= 1:
                 return unsafe: read(g.args.data + 0)
             return t
         _:
@@ -2354,11 +2354,11 @@ function specialization_kind(ctx: ref[Context], callee: ptr[ast.Expr], type_args
             ast.Expr.expr_identifier as id:
                 if is_hook_name(id.name):
                     return "hook"
-                if id.name.equal("reinterpret"):
+                if id.name == "reinterpret":
                     return "reinterpret"
-                if id.name.equal("zero"):
+                if id.name == "zero":
                     return "zero"
-                if id.name.equal("adapt"):
+                if id.name == "adapt":
                     return "adapt"
                 if ctx.functions.contains(id.name):
                     return "function"
@@ -2369,8 +2369,8 @@ function specialization_kind(ctx: ref[Context], callee: ptr[ast.Expr], type_args
 
 function is_builtin_call_name(name: str) -> bool:
     return (
-        name.equal("read") or name.equal("ptr_of") or name.equal("const_ptr_of") or name.equal("ref_of")
-        or name.equal("size_of") or name.equal("align_of") or name.equal("fatal")
+        name == "read" or name == "ptr_of" or name == "const_ptr_of" or name == "ref_of"
+        or name == "size_of" or name == "align_of" or name == "fatal"
     )
 
 
@@ -2420,7 +2420,7 @@ function evaluate_const_builtin_call(callee: ptr[ast.Expr]) -> Option[bool]:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
-                if id.name.equal("size_of") or id.name.equal("align_of"):
+                if id.name == "size_of" or id.name == "align_of":
                     return Option[bool].some(value = true)
             _:
                 pass
@@ -2559,7 +2559,7 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
     # Always infer both operands so nested calls in either side are checked.
     let lt = infer_expr(ctx, scope, left)
     let rt = infer_expr(ctx, scope, right)
-    if is_comparison_op(op) or op.equal("and") or op.equal("or"):
+    if is_comparison_op(op) or op == "and" or op == "or":
         return types.primitive("bool")
     if (types.is_raw_pointer(lt) or types.is_raw_pointer(rt)) and ctx.unsafe_depth == 0:
         report(ctx, 0, 0, "pointer arithmetic requires unsafe")
@@ -2573,7 +2573,7 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
     # scalar * vec yields vec; vec * scalar yields vec.
     let lt_name = primitive_type_name_static(lt)
     let rt_name = primitive_type_name_static(rt)
-    if is_vec_math_name(lt_name) and lt_name.equal(rt_name):
+    if is_vec_math_name(lt_name) and lt_name == rt_name:
         return lt
     if is_vec_math_name(lt_name) and types.is_numeric(rt):
         return lt
@@ -2584,9 +2584,9 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
 
 function is_vec_math_name(name: str) -> bool:
     return (
-        name.equal("vec2") or name.equal("vec3") or name.equal("vec4")
-        or name.equal("ivec2") or name.equal("ivec3") or name.equal("ivec4")
-        or name.equal("mat3") or name.equal("mat4") or name.equal("quat")
+        name == "vec2" or name == "vec3" or name == "vec4"
+        or name == "ivec2" or name == "ivec3" or name == "ivec4"
+        or name == "mat3" or name == "mat4" or name == "quat"
     )
 
 
@@ -2604,16 +2604,16 @@ function primitive_type_name_static(t: types.Type) -> str:
 
 function is_comparison_op(op: str) -> bool:
     return (
-        op.equal("==") or op.equal("!=") or op.equal("<") or op.equal("<=")
-        or op.equal(">") or op.equal(">=")
+        op == "==" or op == "!=" or op == "<" or op == "<="
+        or op == ">" or op == ">="
     )
 
 
 function infer_unary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, operand: ptr[ast.Expr]) -> types.Type:
     let ot = infer_expr(ctx, scope, operand)
-    if op.equal("not"):
+    if op == "not":
         return types.primitive("bool")
-    if op.equal("-"):
+    if op == "-":
         return ot
     return types.Type.ty_error
 
@@ -2672,13 +2672,13 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
     unsafe:
         match read(spec_callee):
             ast.Expr.expr_identifier as id:
-                if id.name.equal("zero") and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
+                if id.name == "zero" and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
                     return check_zero_call(ctx, type_args, id.line, id.column)
-                if id.name.equal("reinterpret") and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
+                if id.name == "reinterpret" and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
                     return check_reinterpret_call(ctx, type_args, id.line, id.column)
                 if is_hook_name(id.name) and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
                     return check_hook_call(ctx, id.name, type_args, id.line, id.column)
-                if id.name.equal("adapt") and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
+                if id.name == "adapt" and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
                     return check_adapt_call(ctx, type_args)
                 let tps_ptr = ctx.function_type_params.get(id.name)
                 if tps_ptr != null and scope_get(scope, id.name) == null:
@@ -2847,7 +2847,7 @@ function check_imported_constraint(ctx: ref[Context], struct_module: str, struct
         iface_name = read(constraint.interface_ref.parts.data + 1)
     let alias_module_ptr = ctx.import_aliases.get(alias) else:
         return
-    if not unsafe: read(alias_module_ptr).equal(struct_module):
+    if not unsafe: read(alias_module_ptr) == struct_module:
         return
     let binding_ptr = lookup_binding(ctx, struct_module) else:
         return
@@ -2865,7 +2865,7 @@ function impl_list_contains(impl_list: span[ast.QualifiedName], iface_name: str)
         var q: ast.QualifiedName
         unsafe:
             q = read(impl_list.data + i)
-        if qname_to_str(q).equal(iface_name):
+        if qname_to_str(q) == iface_name:
             return true
         i += 1
     return false
@@ -2880,7 +2880,7 @@ function impl_list_contains_bare(impl_list: span[ast.QualifiedName], iface_name:
         var q: ast.QualifiedName
         unsafe:
             q = read(impl_list.data + i)
-        if q.parts.len == 1 and qname_to_str(q).equal(iface_name):
+        if q.parts.len == 1 and qname_to_str(q) == iface_name:
             return true
         i += 1
     return false
@@ -2923,12 +2923,12 @@ function unify(pattern: types.Type, actual: types.Type, subs: ref[map_mod.Map[st
                     pass
             unify(unsafe: read(pn.base), inner_actual, subs)
         types.Type.ty_generic as pg:
-            if pg.name.equal("ref") and pg.args.len == 1:
+            if pg.name == "ref" and pg.args.len == 1:
                 unify(unsafe: read(pg.args.data + 0), unwrap_ref(actual), subs)
             else:
                 match actual:
                     types.Type.ty_generic as ag:
-                        if pg.name.equal(ag.name) and pg.args.len == ag.args.len:
+                        if pg.name == ag.name and pg.args.len == ag.args.len:
                             var i: ptr_uint = 0
                             while i < pg.args.len:
                                 unsafe:
@@ -2954,7 +2954,7 @@ function unify(pattern: types.Type, actual: types.Type, subs: ref[map_mod.Map[st
 
 
 function is_hook_name(name: str) -> bool:
-    return name.equal("hash") or name.equal("equal") or name.equal("order") or name.equal("default")
+    return name == "hash" or name == "equal" or name == "order" or name == "default"
 
 
 ## Check an associated-function hook call `hook[T](...)`.  Flags a missing hook
@@ -2978,11 +2978,11 @@ function check_hook_call(ctx: ref[Context], hook_name: str, type_args: span[ast.
         _:
             pass
 
-    if hook_name.equal("hash"):
+    if hook_name == "hash":
         return types.primitive("uint")
-    if hook_name.equal("equal"):
+    if hook_name == "equal":
         return types.primitive("bool")
-    if hook_name.equal("order"):
+    if hook_name == "order":
         return types.primitive("int")
     return arg_type
 
@@ -3091,7 +3091,7 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
 function unwrap_ref(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as g:
-            if g.name.equal("ref") and g.args.len == 1:
+            if g.name == "ref" and g.args.len == 1:
                 return unsafe: read(g.args.data + 0)
             return t
         _:
@@ -3139,7 +3139,7 @@ function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[sscope.
                             ast.Expr.expr_identifier as id:
                                 # `this` in a method body is implicitly ref,
                                 # never a local let binding.
-                                if id.name.equal("this"):
+                                if id.name == "this":
                                     return
                                 if scope_is_let(scope, id.name):
                                     report(ctx, line, column, editable_on_immutable_message(id.name, method_name))
@@ -3213,9 +3213,9 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
             return lookup_method_anywhere(ctx, p.name, method_name)
         # str_buffer[N] and atomic[T] builtin methods.
         types.Type.ty_generic as g:
-            if g.name.equal("str_buffer"):
+            if g.name == "str_buffer":
                 return str_buffer_method_sig(g.args, method_name)
-            if g.name.equal("atomic"):
+            if g.name == "atomic":
                 return atomic_method_sig(g.args, method_name)
             let sig_ptr = ctx.method_sigs.get(method_key(g.name, method_name))
             if sig_ptr != null:
@@ -3234,17 +3234,17 @@ function str_buffer_method_sig(args: span[types.Type], method_name: str) -> Opti
     let cstr_ty = types.primitive("cstr")
     var params = vec.Vec[ParamEntry].create()
     var return_type = void_ty
-    if method_name.equal("clear"):
+    if method_name == "clear":
         pass
-    else if method_name.equal("assign") or method_name.equal("append") or method_name.equal("assign_format") or method_name.equal("append_format"):
+    else if method_name == "assign" or method_name == "append" or method_name == "assign_format" or method_name == "append_format":
         params.push(ParamEntry(name = "text", ty = str_ty))
-    else if method_name.equal("len"):
+    else if method_name == "len":
         return_type = ptr_uint_ty
-    else if method_name.equal("capacity"):
+    else if method_name == "capacity":
         return_type = ptr_uint_ty
-    else if method_name.equal("as_str"):
+    else if method_name == "as_str":
         return_type = str_ty
-    else if method_name.equal("as_cstr"):
+    else if method_name == "as_cstr":
         return_type = cstr_ty
     else:
         return Option[FnSig].none
@@ -3269,12 +3269,12 @@ function atomic_method_sig(args: span[types.Type], method_name: str) -> Option[F
     var params = vec.Vec[ParamEntry].create()
     var return_type = void_ty
     var method_kind = ast.MethodKind.mk_plain
-    if method_name.equal("load"):
+    if method_name == "load":
         return_type = elem_ty
-    else if method_name.equal("store"):
+    else if method_name == "store":
         params.push(ParamEntry(name = "value", ty = elem_ty))
         method_kind = ast.MethodKind.mk_editable
-    else if method_name.equal("add") or method_name.equal("sub") or method_name.equal("exchange"):
+    else if method_name == "add" or method_name == "sub" or method_name == "exchange":
         params.push(ParamEntry(name = "value", ty = elem_ty))
         return_type = elem_ty
         method_kind = ast.MethodKind.mk_editable
@@ -3341,7 +3341,7 @@ function interface_method_named(methods: span[ast.InterfaceMethod], name: str) -
         var m: ast.InterfaceMethod
         unsafe:
             m = read(methods.data + i)
-        if m.name.equal(name):
+        if m.name == name:
             return Option[ast.InterfaceMethod].some(value = m)
         i += 1
     return Option[ast.InterfaceMethod].none
@@ -3483,7 +3483,7 @@ function field_type(fields: span[FieldEntry], name: str) -> ptr[types.Type]?:
     while i < fields.len:
         unsafe:
             let fe = read(fields.data + i)
-            if fe.name.equal(name):
+            if fe.name == name:
                 return ptr_of(read(fields.data + i).ty)
         i += 1
     return null
@@ -3493,7 +3493,7 @@ function has_field(fields: span[FieldEntry], name: str) -> bool:
     var i: ptr_uint = 0
     while i < fields.len:
         unsafe:
-            if read(fields.data + i).name.equal(name):
+            if read(fields.data + i).name == name:
                 return true
         i += 1
     return false
@@ -3516,10 +3516,10 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
                 var i: ptr_uint = 0
                 while i < fields.len:
                     let fe = read(fields.data + i)
-                    if fe.name.equal(member):
+                    if fe.name == member:
                         return fe.ty
                     i += 1
-            if member.equal("with") or has_method(ctx, n.name, member):
+            if member == "with" or has_method(ctx, n.name, member):
                 return types.Type.ty_error
             if is_method_call:
                 report(ctx, line, column, unknown_member_message("method", n.name, member))
@@ -3531,20 +3531,20 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
         types.Type.ty_var as v:
             return check_type_var_member(ctx, v.name, member, is_method_call, line, column)
         types.Type.ty_generic as g:
-            if g.name.equal("Task") and g.args.len >= 1:
-                if member.equal("frame") or member.equal("value") or member.equal("ready"):
+            if g.name == "Task" and g.args.len >= 1:
+                if member == "frame" or member == "value" or member == "ready":
                     return types.Type.ty_error
-            if g.name.equal("span"):
-                if member.equal("data") or member.equal("len"):
+            if g.name == "span":
+                if member == "data" or member == "len":
                     return types.Type.ty_error
-            if g.name.equal("ptr"):
+            if g.name == "ptr":
                 if has_method(ctx, g.name, member):
                     return types.Type.ty_error
                 return types.Type.ty_error
-            if g.name.equal("array"):
-                if member.equal("as_span"):
+            if g.name == "array":
+                if member == "as_span":
                     return types.Type.ty_error
-            if g.name.equal("span") or g.name.equal("array") or g.name.equal("ptr"):
+            if g.name == "span" or g.name == "array" or g.name == "ptr":
                 return types.Type.ty_error
             if has_method(ctx, g.name, member):
                 return types.Type.ty_error
@@ -3608,11 +3608,11 @@ function check_imported_member(ctx: ref[Context], module_name: str, type_name: s
             var i: ptr_uint = 0
             while i < fields.len:
                 let fe = read(fields.data + i)
-                if fe.name.equal(member):
+                if fe.name == member:
                     return fe.ty
                 i += 1
 
-        if member.equal("with") or binding_has_member(read(binding_ptr), type_name, member):
+        if member == "with" or binding_has_member(read(binding_ptr), type_name, member):
             return types.Type.ty_error
 
     if is_method_call:
@@ -3627,7 +3627,7 @@ function check_imported_member(ctx: ref[Context], module_name: str, type_name: s
 ## through to regular function/method dispatch.  `read(ptr)` and `ptr_of(x)` are
 ## side-effectful: they report an unsafe-context requirement when applicable.
 function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_name: str, args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> Option[types.Type]:
-    if callee_name.equal("read"):
+    if callee_name == "read":
         if args.len != 1:
             return Option[types.Type].none
         var arg: ast.Argument = unsafe: read(args.data + 0)
@@ -3637,18 +3637,18 @@ function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_na
         if types.is_raw_pointer(at) or types.is_ref_type(at):
             return Option[types.Type].some(value = types.pointer_element(at))
         return Option[types.Type].none
-    if callee_name.equal("ptr_of") or callee_name.equal("const_ptr_of") or callee_name.equal("ref_of"):
+    if callee_name == "ptr_of" or callee_name == "const_ptr_of" or callee_name == "ref_of":
         if args.len != 1:
             return Option[types.Type].none
         var arg: ast.Argument = unsafe: read(args.data + 0)
         let at = infer_expr(ctx, scope, arg.arg_value)
-        let kind = if callee_name.equal("ptr_of"): "ptr" else: if callee_name.equal("ref_of"): "ref" else: "const_ptr"
+        let kind = if callee_name == "ptr_of": "ptr" else: if callee_name == "ref_of": "ref" else: "const_ptr"
         return Option[types.Type].some(value = types.Type.ty_generic(name = string.String.from_str(kind).as_str(), args = alloc_one_type_arg(at)))
-    if callee_name.equal("size_of") or callee_name.equal("align_of"):
+    if callee_name == "size_of" or callee_name == "align_of":
         if args.len != 1:
             return Option[types.Type].none
         return Option[types.Type].some(value = types.primitive("ptr_uint"))
-    if callee_name.equal("fatal"):
+    if callee_name == "fatal":
         return Option[types.Type].some(value = types.Type.ty_error)
     return Option[types.Type].none
 

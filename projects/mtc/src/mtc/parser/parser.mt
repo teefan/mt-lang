@@ -2599,7 +2599,7 @@ function is_identifier_named(callee: ptr[ast.Expr], name: str) -> bool:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
-                return id.name.equal(name)
+                return id.name == name
             _:
                 return false
 
@@ -2609,10 +2609,10 @@ function builtin_specialization_target(callee: ptr[ast.Expr]) -> bool:
         match read(callee):
             ast.Expr.expr_identifier as id:
                 return (
-                    id.name.equal("array") or id.name.equal("reinterpret") or id.name.equal("span")
-                    or id.name.equal("zero") or id.name.equal("ptr") or id.name.equal("const_ptr")
-                    or id.name.equal("ref") or id.name.equal("adapt") or id.name.equal("equal")
-                    or id.name.equal("hash") or id.name.equal("order")
+                    id.name == "array" or id.name == "reinterpret" or id.name == "span"
+                    or id.name == "zero" or id.name == "ptr" or id.name == "const_ptr"
+                    or id.name == "ref" or id.name == "adapt" or id.name == "equal"
+                    or id.name == "hash" or id.name == "order"
                 )
             _:
                 return false

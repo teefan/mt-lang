@@ -29,7 +29,7 @@ public function is_numeric_literal_expr(ep: ptr[ast.Expr]?) -> bool:
             ast.Expr.expr_char_literal:
                 return true
             ast.Expr.expr_unary_op as u:
-                if u.operator.equal("-"):
+                if u.operator == "-":
                     return is_numeric_literal_expr(u.operand)
                 return false
             _:
@@ -83,10 +83,10 @@ public function types_compatible(expected: types.Type, actual: types.Type, sourc
     # 8  ptr[T]  →  const_ptr[T]   (mutable-to-const pointer coercion).
     match actual:
         types.Type.ty_generic as ag:
-            if ag.name.equal("ptr"):
+            if ag.name == "ptr":
                 match expected:
                     types.Type.ty_generic as eg:
-                        if eg.name.equal("const_ptr") and eg.args.len >= 1 and ag.args.len >= 1:
+                        if eg.name == "const_ptr" and eg.args.len >= 1 and ag.args.len >= 1:
                             return types_compatible(
                                 unsafe: read(eg.args.data + 0),
                                 unsafe: read(ag.args.data + 0),
@@ -100,10 +100,10 @@ public function types_compatible(expected: types.Type, actual: types.Type, sourc
     # 9  array[T, N]  →  span[T]   (fixed array coerces to slice).
     match actual:
         types.Type.ty_generic as ag2:
-            if ag2.name.equal("array"):
+            if ag2.name == "array":
                 match expected:
                     types.Type.ty_generic as eg2:
-                        if eg2.name.equal("span") and eg2.args.len >= 1 and ag2.args.len >= 1:
+                        if eg2.name == "span" and eg2.args.len >= 1 and ag2.args.len >= 1:
                             return types_compatible(
                                 unsafe: read(eg2.args.data + 0),
                                 unsafe: read(ag2.args.data + 0),
@@ -119,7 +119,7 @@ public function types_compatible(expected: types.Type, actual: types.Type, sourc
         types.Type.ty_str:
             match expected:
                 types.Type.ty_primitive as ep:
-                    if ep.name.equal("cstr"):
+                    if ep.name == "cstr":
                         return true
                 _:
                     pass

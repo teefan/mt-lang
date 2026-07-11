@@ -169,7 +169,7 @@ function check_command(args: span[str]) -> int:
     var i: ptr_uint = 1
     while i < args.len:
         let arg = args[i]
-        if arg.equal("--root") or arg.equal("-I"):
+        if arg == "--root" or arg == "-I":
             if i + 1 >= args.len:
                 stdio.print_line("error: -I requires a directory")
                 return 1
@@ -239,11 +239,11 @@ function report_check_summary(count: ptr_uint) -> void:
 ## Parse a `--platform NAME` / `--profile NAME` argument value into a
 ## Platform enum.  Prints an error and returns none when the name is invalid.
 function parse_platform_name(name: str) -> Option[resolver.Platform]:
-    if name.equal("linux"):
+    if name == "linux":
         return Option[resolver.Platform].some(value = resolver.Platform.linux)
-    if name.equal("windows"):
+    if name == "windows":
         return Option[resolver.Platform].some(value = resolver.Platform.windows)
-    if name.equal("wasm"):
+    if name == "wasm":
         return Option[resolver.Platform].some(value = resolver.Platform.wasm)
     stdio.print_line("error: --platform must be linux, windows, or wasm")
     return Option[resolver.Platform].none
@@ -258,7 +258,7 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]]) -> Opti
     var i: ptr_uint = 1
     while i < args.len:
         let arg = args[i]
-        if arg.equal("--root") or arg.equal("-I"):
+        if arg == "--root" or arg == "-I":
             if i + 1 >= args.len:
                 stdio.print_line("error: -I requires a directory")
                 return Option[str].none
@@ -368,13 +368,13 @@ function read_toml_str(source: str, section: str, key: str) -> Option[string.Str
             continue
         match current:
             Option.some as sec:
-                if sec.value.equal(section):
+                if sec.value == section:
                     let eq = find_byte(source, pos, ubyte<-91, ubyte<-61) else:
                         pos = skip_line(source, pos)
                         continue
                     let key_end = trim_right(source, pos, eq)
                     let line_key = source.slice(pos, key_end - pos)
-                    if line_key.equal(key):
+                    if line_key == key:
                         let val_start = skip_ws_to(source, eq + 1, ubyte<-34) else:
                             pos = skip_line(source, pos)
                             continue
@@ -520,51 +520,51 @@ function build_command(args: span[str]) -> int:
     var ai: ptr_uint = 1
     while ai < args.len:
         let arg = args[ai]
-        if arg.equal("-o"):
+        if arg == "-o":
             if ai + 1 >= args.len:
                 stdio.print_line("error: -o requires an output path")
                 return 1
             output_override = Option[str].some(value= args[ai + 1])
             ai += 2
             continue
-        if arg.equal("--keep-c"):
+        if arg == "--keep-c":
             if ai + 1 >= args.len:
                 stdio.print_line("error: --keep-c requires a path")
                 return 1
             keep_c_path = Option[str].some(value= args[ai + 1])
             ai += 2
             continue
-        if arg.equal("--cc"):
+        if arg == "--cc":
             if ai + 1 >= args.len:
                 stdio.print_line("error: --cc requires a compiler name")
                 return 1
             c_compiler = args[ai + 1]
             ai += 2
             continue
-        if arg.equal("--debug-guards"):
+        if arg == "--debug-guards":
             debug_guards = true
             ai += 1
             continue
-        if arg.equal("--no-debug-guards"):
+        if arg == "--no-debug-guards":
             debug_guards = false
             ai += 1
             continue
-        if arg.equal("--no-cache"):
+        if arg == "--no-cache":
             ai += 1
             continue
-        if arg.equal("--profile"):
+        if arg == "--profile":
             if ai + 1 >= args.len:
                 stdio.print_line("error: --profile requires a profile name (debug or release)")
                 return 1
             profile_name = args[ai + 1]
-            if not profile_name.equal("debug") and not profile_name.equal("release"):
+            if not profile_name == "debug" and not profile_name == "release":
                 stdio.print_line("error: --profile must be debug or release")
                 return 1
-            if profile_name.equal("release"):
+            if profile_name == "release":
                 debug_guards = false
             ai += 2
             continue
-        if arg.equal("--platform"):
+        if arg == "--platform":
             if ai + 1 >= args.len:
                 stdio.print_line("error: --platform requires linux, windows, or wasm")
                 return 1
@@ -643,48 +643,48 @@ function run_command(args: span[str]) -> int:
             program_args.push(args[ai])
             ai += 1
             continue
-        if arg.equal("--"):
+        if arg == "--":
             seen_dashdash = true
             ai += 1
             continue
-        if arg.equal("-o"):
+        if arg == "-o":
             if ai + 1 >= args.len:
                 stdio.print_line("error: -o requires an output path")
                 return 1
             output_override = Option[str].some(value= args[ai + 1])
             ai += 2
             continue
-        if arg.equal("--cc"):
+        if arg == "--cc":
             if ai + 1 >= args.len:
                 stdio.print_line("error: --cc requires a compiler name")
                 return 1
             c_compiler = args[ai + 1]
             ai += 2
             continue
-        if arg.equal("--debug-guards"):
+        if arg == "--debug-guards":
             debug_guards = true
             ai += 1
             continue
-        if arg.equal("--no-debug-guards"):
+        if arg == "--no-debug-guards":
             debug_guards = false
             ai += 1
             continue
-        if arg.equal("--no-cache"):
+        if arg == "--no-cache":
             ai += 1
             continue
-        if arg.equal("--profile"):
+        if arg == "--profile":
             if ai + 1 >= args.len:
                 stdio.print_line("error: --profile requires a profile name (debug or release)")
                 return 1
             profile_name = args[ai + 1]
-            if not profile_name.equal("debug") and not profile_name.equal("release"):
+            if not profile_name == "debug" and not profile_name == "release":
                 stdio.print_line("error: --profile must be debug or release")
                 return 1
-            if profile_name.equal("release"):
+            if profile_name == "release":
                 debug_guards = false
             ai += 2
             continue
-        if arg.equal("--platform"):
+        if arg == "--platform":
             if ai + 1 >= args.len:
                 stdio.print_line("error: --platform requires linux, windows, or wasm")
                 return 1
@@ -964,7 +964,7 @@ function test_command(args: span[str]) -> int:
     var ai: ptr_uint = 1
     while ai < args.len:
         let arg = args[ai]
-        if arg.equal("--root") or arg.equal("-I"):
+        if arg == "--root" or arg == "-I":
             if ai + 1 >= args.len:
                 stdio.print_line("error: -I requires a directory")
                 return 1
@@ -1043,7 +1043,7 @@ function count_tests_in_file(file_path: str) -> int:
                                 let attr = read(fun.attributes.data + ai)
                                 if attr.name.parts.len == 1:
                                     let an = read(attr.name.parts.data + 0)
-                                    if an.equal("test") or an.equal("expect_fatal"):
+                                    if an == "test" or an == "expect_fatal":
                                         count += 1
                                         break
                                 ai += 1
@@ -1077,7 +1077,7 @@ function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[pt
                             var ai: ptr_uint = 0
                             while ai < fun.attributes.len:
                                 let attr = read(fun.attributes.data + ai)
-                                if attr.name.parts.len == 1 and read(attr.name.parts.data + 0).equal("test"):
+                                if attr.name.parts.len == 1 and read(attr.name.parts.data + 0) == "test":
                                     test_names.push(fun.name)
                                 ai += 1
                         _:
@@ -1096,7 +1096,7 @@ function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[pt
                             if imp.path.parts.len >= 2:
                                 let fp = read(imp.path.parts.data + 0)
                                 let sp = read(imp.path.parts.data + 1)
-                                if fp.equal("std") and sp.equal("testing"):
+                                if fp == "std" and sp == "testing":
                                     if imp.alias_name.is_some():
                                         testing_alias = imp.alias_name.unwrap()
                         _:

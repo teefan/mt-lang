@@ -124,7 +124,7 @@ function collect_binding_ids(stmt_ptr: ptr[ast.Stmt]?, cfg: ref[Cfg]) -> void:
 ## Register a binding ID for `name` if one has not already been assigned.
 ## Discard bindings (`_`) are skipped.
 function ensure_binding_id(cfg: ref[Cfg], name: str) -> void:
-    if name.equal("_"):
+    if name == "_":
         return
     if cfg.binding_map.contains(name):
         return

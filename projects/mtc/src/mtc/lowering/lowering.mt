@@ -277,7 +277,7 @@ function lookup_decl_c_name_in_module(module_name: str, type_name: str, analyses
         var a: analyzer.Analysis
         unsafe:
             a = read(analyses.data + ai)
-        if a.module_name.equal(module_name):
+        if a.module_name == module_name:
             return lookup_decl_c_name(a, type_name)
         ai += 1
     return Option[str].none
@@ -294,13 +294,13 @@ function lookup_decl_c_name(analysis: analyzer.Analysis, type_name: str) -> Opti
             d = read(analysis.source_file.declarations.data + i)
         match d:
             ast.Decl.decl_struct as s:
-                if s.name.equal(type_name):
+                if s.name == type_name:
                     return s.c_name
             ast.Decl.decl_opaque as op:
-                if op.name.equal(type_name):
+                if op.name == type_name:
                     return op.c_name
             ast.Decl.decl_union as u:
-                if u.name.equal(type_name):
+                if u.name == type_name:
                     return u.c_name
             _:
                 pass
@@ -495,7 +495,7 @@ function find_func_in_source(sf: ast.SourceFile, name: str) -> Option[ast.Decl]:
             d = read(sf.declarations.data + di)
         match d:
             ast.Decl.decl_function as f:
-                if f.name.equal(name):
+                if f.name == name:
                     return Option[ast.Decl].some(value = d)
             _:
                 pass
@@ -512,7 +512,7 @@ function find_imported_analysis(ctx: ref[LowerCtx], module_name: str) -> Option[
         var a: analyzer.Analysis
         unsafe:
             a = read(ctx.program_analyses.data + i)
-        if a.module_name.equal(module_name):
+        if a.module_name == module_name:
             return Option[analyzer.Analysis].some(value = a)
         i += 1
     return Option[analyzer.Analysis].none
@@ -770,7 +770,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                         lower_async_fn(ref_of(ctx), fun.name, fun.return_type, fun.body, ref_of(structs), ref_of(functions))
                 else if lowerable_function(fun.is_async, fun.is_const, fun.type_params, fun.body):
                     functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, fun.is_async))
-                    if is_root and fun.name.equal("main"):
+                    if is_root and fun.name == "main":
                         match build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
                             Option.some as entry:
                                 functions.push(entry.value)
@@ -876,7 +876,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             ast.Decl.decl_function as fun:
                 if lowerable_function(fun.is_async, fun.is_const, fun.type_params, fun.body):
                     functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, fun.is_async))
-                    if is_root and fun.name.equal("main"):
+                    if is_root and fun.name == "main":
                         match build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
                             Option.some as entry:
                                 functions.push(entry.value)
@@ -1083,10 +1083,10 @@ function normalized_include_header(header_name: str) -> str:
 
 function standard_c_runtime_header(header_name: str) -> bool:
     return (
-        header_name.equal("stdbool.h") or header_name.equal("stdint.h")
-        or header_name.equal("stdlib.h") or header_name.equal("string.h")
-        or header_name.equal("stddef.h") or header_name.equal("stdio.h")
-        or header_name.equal("time.h")
+        header_name == "stdbool.h" or header_name == "stdint.h"
+        or header_name == "stdlib.h" or header_name == "string.h"
+        or header_name == "stddef.h" or header_name == "stdio.h"
+        or header_name == "time.h"
     )
 
 
@@ -1099,7 +1099,7 @@ function standard_c_runtime_header(header_name: str) -> bool:
 ## rather than a bogus `<module>_<type>` struct name), and a nominal
 ## `ty_imported` type otherwise.
 function extending_receiver_type(module_name: str, type_name: str) -> types.Type:
-    if type_name.equal("str"):
+    if type_name == "str":
         return types.Type.ty_str
     if is_builtin_type_name(type_name):
         return types.primitive(type_name)
@@ -1366,8 +1366,8 @@ function main_param_is_span_str(ctx: ref[LowerCtx], params: span[ast.Param]) -> 
     let resolved = resolve_type_ref(ctx, ptr_of(p.param_type))
     match resolved:
         types.Type.ty_generic as g:
-            if g.name.equal("span") and g.args.len == 1:
-                return types.type_to_string(unsafe: read(g.args.data + 0)).equal("str")
+            if g.name == "span" and g.args.len == 1:
+                return types.type_to_string(unsafe: read(g.args.data + 0)) == "str"
         _:
             pass
     return false
@@ -1587,7 +1587,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     unsafe:
                         match read(init_val):
                             ast.Expr.expr_unary_op as un:
-                                if un.operator.equal("?"):
+                                if un.operator == "?":
                                     lower_propagate_let(ctx, output, loc.name, un.operand)
                                     return
                             _:
@@ -1784,7 +1784,7 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
     # else body: for a Result `else as error:` guard, project the failure error
     # into a local at the top of the else body so it can be referenced there.
     var else_stmts = vec.Vec[ir.Stmt].create()
-    if kind.equal("result") and else_binding.is_some():
+    if kind == "result" and else_binding.is_some():
         emit_result_failure_binding(ctx, ref_of(else_stmts), storage_ty, storage_ref, else_binding.unwrap())
     append_span_stmts(ref_of(else_stmts), lower_block(ctx, else_body))
     let else_ir = else_stmts.as_span()
@@ -1794,7 +1794,7 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
     output.push(ir.Stmt.stmt_if(condition = cond, then_body = else_ir, else_body = span[ir.Stmt]()))
 
     # Bind `name` to the unwrapped success value (unless discarded with `_`).
-    if name.equal("_"):
+    if name == "_":
         return
     let success_ty = guard_success_type(ctx, kind, storage_ty)
     let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
@@ -1828,7 +1828,7 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
     output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = span[ir.Stmt]()))
 
     # Bind `name` to the unwrapped success value (unless discarded with `_`).
-    if name.equal("_"):
+    if name == "_":
         return
     let success_ty = guard_success_type(ctx, kind, storage_ty)
     let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
@@ -1844,7 +1844,7 @@ function guard_storage_kind(ctx: ref[LowerCtx], storage_ty: types.Type) -> str:
     let gv = generic_variant_name(storage_ty)
     if gv.is_some():
         let base = guard_variant_base(gv.unwrap())
-        if base.equal("Result"):
+        if base == "Result":
             return "result"
         return "option"
     # A collapsed concrete name (Option_str / Result_..._).
@@ -1881,9 +1881,9 @@ function is_nullable_pointer_like(t: types.Type) -> bool:
                 let base = read(nl.base)
                 match base:
                     types.Type.ty_generic as g:
-                        return g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("ref")
+                        return g.name == "ptr" or g.name == "const_ptr" or g.name == "ref"
                     types.Type.ty_primitive as p:
-                        return p.name.equal("cstr")
+                        return p.name == "cstr"
                     types.Type.ty_function:
                         return true
                     types.Type.ty_imported:
@@ -1908,18 +1908,18 @@ function guard_variant_base(name: str) -> str:
 ## `storage.kind == <none/failure>` for Option/Result.
 function guard_failure_condition(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type, storage_ref: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let bool_ty = types.primitive("bool")
-    if kind.equal("nullable"):
+    if kind == "nullable":
         # mt_subscription is a plain struct without nullable/null wrapper;
         # failure is indicated by slot == 0.
         let tn = named_type_name(storage_ty)
-        if tn.is_some() and tn.unwrap().equal("mt_subscription"):
+        if tn.is_some() and tn.unwrap() == "mt_subscription":
             let slot_expr = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "slot", ty = types.primitive("ptr_uint")))
             let zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0z, ty = types.primitive("ptr_uint")))
             return alloc_expr(ir.Expr.expr_binary(operator = "==", left = slot_expr, right = zero, ty = bool_ty))
         let null_lit = alloc_expr(ir.Expr.expr_null_literal(ty = storage_ty))
         return alloc_expr(ir.Expr.expr_binary(operator = "==", left = storage_ref, right = null_lit, ty = bool_ty))
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
-    let absent_arm = if kind.equal("result"): "failure" else: "none"
+    let absent_arm = if kind == "result": "failure" else: "none"
     let int_ty = types.primitive("int")
     let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "kind", ty = int_ty))
     let absent_const = alloc_expr(ir.Expr.expr_name(name = variant_kind_const_name(outer_c, absent_arm), ty = int_ty, pointer = false))
@@ -1928,7 +1928,7 @@ function guard_failure_condition(ctx: ref[LowerCtx], kind: str, storage_ty: type
 
 ## The unwrapped success type `T` of a guard's storage type.
 function guard_success_type(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type) -> types.Type:
-    if kind.equal("nullable"):
+    if kind == "nullable":
         return types.unwrap_nullable(storage_ty)
     # Option[T] / Result[T, E] in generic form: first type arg is T.
     let args = variant_type_args(storage_ty)
@@ -1938,7 +1938,7 @@ function guard_success_type(ctx: ref[LowerCtx], kind: str, storage_ty: types.Typ
     # payload field type from the concrete variant decl, mirroring the prelude
     # payload specialization (arg-less `ty_named` carries no type args).
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
-    let success_arm = if kind.equal("result"): "success" else: "some"
+    let success_arm = if kind == "result": "success" else: "some"
     let payload_c = variant_arm_type_name(outer_c, success_arm)
     match prelude_field_type_from_variants(ctx, payload_c, success_arm):
         Option.some as ft:
@@ -1950,12 +1950,12 @@ function guard_success_type(ctx: ref[LowerCtx], kind: str, storage_ty: types.Typ
 ## The success-value projection for a guard: the storage itself for nullable,
 ## `storage.data.<some/success>.value` for Option/Result.
 function guard_success_projection(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type, storage_ref: ptr[ir.Expr], success_ty: types.Type) -> ptr[ir.Expr]:
-    if kind.equal("nullable"):
+    if kind == "nullable":
         if types.is_nullable_type(storage_ty) and not is_nullable_pointer_like(storage_ty):
             return alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "value", ty = success_ty))
         return storage_ref
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
-    let success_arm = if kind.equal("result"): "success" else: "some"
+    let success_arm = if kind == "result": "success" else: "some"
     let payload_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, success_arm))
     let data_member = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = payload_ty))
     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = success_arm, ty = payload_ty))
@@ -2005,7 +2005,7 @@ function lower_destructure(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bi
         # `_` discards bind nothing — skip them (emitting a local for each would
         # collide, and there is no name to reference).  Mirrors Ruby's
         # `next if name == "_"`.
-        if binding.equal("_"):
+        if binding == "_":
             i += 1
             continue
         var member_name: str
@@ -2152,7 +2152,7 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
 function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[types.Type]) -> types.Type:
     if is_builtin_pointer_generic(name):
         return types.Type.ty_error
-    if name.equal("Option") or name.equal("Result"):
+    if name == "Option" or name == "Result":
         return ensure_generic_variant(ctx, name, args)
     # Try current module first.
     if ctx.analysis.structs.contains(name):
@@ -2214,13 +2214,13 @@ function type_declared_in_source(module_analysis: analyzer.Analysis, name: str) 
             d = read(module_analysis.source_file.declarations.data + di)
         match d:
             ast.Decl.decl_struct as s:
-                if s.name.equal(name):
+                if s.name == name:
                     return true
             ast.Decl.decl_variant as vr:
-                if vr.name.equal(name):
+                if vr.name == name:
                     return true
             ast.Decl.decl_enum as en:
-                if en.name.equal(name):
+                if en.name == name:
                     return true
             _:
                 pass
@@ -2237,7 +2237,7 @@ function struct_in_source(module_analysis: analyzer.Analysis, name: str) -> bool
             d = read(module_analysis.source_file.declarations.data + di)
         match d:
             ast.Decl.decl_struct as s:
-                if s.name.equal(name):
+                if s.name == name:
                     return true
             _:
                 pass
@@ -2253,7 +2253,7 @@ function variant_in_source(module_analysis: analyzer.Analysis, name: str) -> boo
             d = read(module_analysis.source_file.declarations.data + di)
         match d:
             ast.Decl.decl_variant as vr:
-                if vr.name.equal(name):
+                if vr.name == name:
                     return true
             _:
                 pass
@@ -2266,9 +2266,9 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
     # prefix (`std_option_Option_...`, `std_result_Result_...`) to match
     # Ruby, which defines them in `std.option` / `std.result`.
     var base_name = name
-    if name.equal("Option"):
+    if name == "Option":
         base_name = j2("std_option_", name)
-    if name.equal("Result"):
+    if name == "Result":
         base_name = j2("std_result_", name)
     let c_name = generic_c_type_raw(base_name, args)
     var si: ptr_uint = 0
@@ -2276,18 +2276,18 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
         let vp = ctx.pending_generic_variants.get(si) else:
             break
         unsafe:
-            if read(vp).linkage_name.equal(c_name):
+            if read(vp).linkage_name == c_name:
                 return types.Type.ty_named(module_name = "", name = c_name)
         si += 1
     var arms = vec.Vec[ir.VariantArm].create()
-    if name.equal("Option") and args.len >= 1:
+    if name == "Option" and args.len >= 1:
         let elem = unsafe: read(args.data + 0)
         var sf = vec.Vec[ir.Field].create()
         sf.push(ir.Field(name = "value", ty = elem))
         arms.push(ir.VariantArm(name = "some", linkage_name = j3(c_name, "_", "some"), fields = sf.as_span()))
         arms.push(ir.VariantArm(name = "none", linkage_name = j3(c_name, "_", "none"), fields = span[ir.Field]()))
         unsafe: read(ctx.prelude_arm_field_types).set(j3(c_name, "_", "some"), elem)
-    else if name.equal("Result") and args.len >= 2:
+    else if name == "Result" and args.len >= 2:
         let ok = unsafe: read(args.data + 0)
         let err = unsafe: read(args.data + 1)
         var sf = vec.Vec[ir.Field].create()
@@ -2307,9 +2307,9 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
 ## True when `name` is a pointer-like generic type handled directly by C.
 function is_builtin_pointer_generic(name: str) -> bool:
     return (
-        name.equal("ptr") or name.equal("const_ptr") or name.equal("ref")
-        or name.equal("span") or name.equal("array") or name.equal("str_buffer")
-        or name.equal("atomic") or name.equal("Task") or name.equal("SoA")
+        name == "ptr" or name == "const_ptr" or name == "ref"
+        or name == "span" or name == "array" or name == "str_buffer"
+        or name == "atomic" or name == "Task" or name == "SoA"
     )
 
 function generic_c_type_raw(name: str, args: span[types.Type]) -> str:
@@ -2361,7 +2361,7 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
                 alias = read(t.name.parts.data + 0)
                 type_name = read(t.name.parts.data + 1)
             # Inline for substitution: `field.type` resolves to the field's type.
-            if type_name.equal("type"):
+            if type_name == "type":
                 let subst = inline_for_type_subst(ctx, alias)
                 if not types.is_error(subst):
                     resolved = subst
@@ -2385,9 +2385,9 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
                     resolved = types.Type.ty_imported(module_name = ctx.module_name, name = type_name, args = span[types.Type]())
         else if t.name.parts.len == 1:
             let name = read(t.name.parts.data + 0)
-            if name.equal("str"):
+            if name == "str":
                 resolved = types.Type.ty_str
-            else if name.equal("type"):
+            else if name == "type":
                 resolved = types.Type.ty_type_meta
             else if is_builtin_type_name(name):
                 resolved = types.primitive(name)
@@ -2425,14 +2425,14 @@ function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.T
     if t.name.parts.len != 1:
         return types.Type.ty_error
     let name = unsafe: read(t.name.parts.data + 0)
-    if name.equal("array") and t.arguments.len == 2:
+    if name == "array" and t.arguments.len == 2:
         var args = vec.Vec[types.Type].create()
         unsafe:
             args.push(resolve_type_ref(ctx, t.arguments.data + 0))
         args.push(types.literal_int(resolve_array_length(unsafe: t.arguments.data + 1)))
         return types.Type.ty_generic(name = "array", args = args.as_span())
     # str_buffer[N]: ensure the struct type exists and return the resolved type.
-    if name.equal("str_buffer") and t.arguments.len == 1:
+    if name == "str_buffer" and t.arguments.len == 1:
         var sb_args = vec.Vec[types.Type].create()
         unsafe:
             sb_args.push(resolve_type_ref(ctx, t.arguments.data + 0))
@@ -2823,7 +2823,7 @@ function const_array_length(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> long
             d = read(ctx.analysis.source_file.declarations.data + di)
         match d:
             ast.Decl.decl_const as c:
-                if c.name.equal(name):
+                if c.name == name:
                     return array_length_of(resolve_type_ref(ctx, c.const_type))
             _:
                 pass
@@ -2955,7 +2955,7 @@ function find_local(ctx: ref[LowerCtx], name: str) -> Option[LocalBinding]:
         let lb_ptr = ctx.locals.get(li) else:
             fatal(c"find_local: missing local")
         let item = unsafe: read(lb_ptr)
-        if item.name.equal(name):
+        if item.name == name:
             return Option[LocalBinding].some(value = item)
     return Option[LocalBinding].none
 
@@ -3031,7 +3031,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
         var bi: ptr_uint = 0
         while bi < bindings.len:
             unsafe:
-                if nm.equal(read(bindings.data + bi).name):
+                if nm == read(bindings.data + bi).name:
                     skip = true
                     break
             bi += 1
@@ -3299,7 +3299,7 @@ function find_local_before(ctx: ref[LowerCtx], name: str, limit: ptr_uint) -> Op
         let lb_ptr = ctx.locals.get(li) else:
             fatal(c"find_local_before: missing local")
         let item = unsafe: read(lb_ptr)
-        if item.name.equal(name):
+        if item.name == name:
             return Option[LocalBinding].some(value = item)
         li += 1
     return Option[LocalBinding].none
@@ -3421,7 +3421,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 # Pointer arithmetic (`p + i` / `p - i`) yields the pointer
                 # operand's concrete type; the analyzer's generically-recorded
                 # type may have dropped its arguments inside a monomorphized body.
-                if bin.operator.equal("+") or bin.operator.equal("-"):
+                if bin.operator == "+" or bin.operator == "-":
                     let left_ty = ir_expr_type(left)
                     if types.is_raw_pointer(left_ty) and not types.is_raw_pointer(ir_expr_type(right)):
                         result_ty = left_ty
@@ -3432,15 +3432,15 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 if is_arithmetic_operator(bin.operator) and not is_integer_scrutinee(result_ty):
                     let lt = ir_expr_type(left)
                     let rt = ir_expr_type(right)
-                    if is_integer_scrutinee(lt) and types.type_to_string(lt).equal(types.type_to_string(rt)):
+                    if is_integer_scrutinee(lt) and types.type_to_string(lt) == types.type_to_string(rt):
                         result_ty = lt
                     # `<wider-int-expr> + <int literal>` (e.g. `ptr_uint + 2`): the
                     # analyzer recorded a non-integer result, and one operand is a
                     # plain `int` literal.  Adopt the other operand's wider integer
                     # type so the result matches the dominant operand.
-                    else if is_integer_scrutinee(lt) and types.type_to_string(rt).equal("int"):
+                    else if is_integer_scrutinee(lt) and types.type_to_string(rt) == "int":
                         result_ty = lt
-                    else if is_integer_scrutinee(rt) and types.type_to_string(lt).equal("int"):
+                    else if is_integer_scrutinee(rt) and types.type_to_string(lt) == "int":
                         result_ty = rt
                 # Balance mixed-width integer and int/float operands: cast the
                 # narrower operand up to the common type, matching Ruby's
@@ -3493,10 +3493,10 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_specialization as spec:
                 match read(spec.callee):
                     ast.Expr.expr_identifier as id:
-                        if id.name.equal("zero") and spec.arguments.len == 1:
+                        if id.name == "zero" and spec.arguments.len == 1:
                             let z_ty = resolve_type_ref(ctx, read(spec.arguments.data + 0).value)
                             return alloc_expr(ir.Expr.expr_zero_init(ty = z_ty))
-                        if id.name.equal("default") and spec.arguments.len == 1:
+                        if id.name == "default" and spec.arguments.len == 1:
                             let t_ty = qualify_type(ctx, resolve_type_ref(ctx, read(spec.arguments.data + 0).value))
                             match resolve_method_info(ctx, t_ty, "default"):
                                 Option.some as smi:
@@ -4048,7 +4048,7 @@ function index_receiver_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> typ
 function is_array_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name.equal("array") and g.args.len == 2
+            return g.name == "array" and g.args.len == 2
         _:
             return false
 
@@ -4056,7 +4056,7 @@ function is_array_type(t: types.Type) -> bool:
 function is_span_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name.equal("span") and g.args.len == 1
+            return g.name == "span" and g.args.len == 1
         _:
             return false
 
@@ -4064,7 +4064,7 @@ function is_span_type(t: types.Type) -> bool:
 function is_soa_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name.equal("SoA") and g.args.len >= 2
+            return g.name == "SoA" and g.args.len >= 2
         _:
             return false
 
@@ -4086,7 +4086,7 @@ function soa_field_type(ctx: ref[LowerCtx], soa_ty: types.Type, field_name: str)
                         var fi: ptr_uint = 0
                         while fi < entries.len:
                             let entry = unsafe: read(entries.data + fi)
-                            if entry.name.equal(field_name):
+                            if entry.name == field_name:
                                 return entry.ty
                             fi += 1
                     _:
@@ -4158,7 +4158,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
-                if id.name.equal("fatal"):
+                if id.name == "fatal":
                     # `fatal(cstr)` → mt_fatal(const char*); `fatal(str)` →
                     # mt_fatal_str(mt_str), mirroring Ruby's fatal dispatch.
                     var fatal_callee = "mt_fatal"
@@ -4166,7 +4166,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         if not fatal_arg_is_cstr(ctx, unsafe: read(args.data + 0).arg_value):
                             fatal_callee = "mt_fatal_str"
                     return lower_plain_call(ctx, fatal_callee, args, call_ep, null)
-                if id.name.equal("ptr_of") or id.name.equal("ref_of") or id.name.equal("const_ptr_of"):
+                if id.name == "ptr_of" or id.name == "ref_of" or id.name == "const_ptr_of":
                     if args.len == 1:
                         let inner = lower_expr(ctx, read(args.data + 0).arg_value)
                         let inner_ty = ir_expr_type(inner)
@@ -4174,7 +4174,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         # When expr_type returns void or error (e.g. the analyzer
                         # did not record a type for the builtin), compute the
                         # correct result type from the argument's type.
-                        let outer_kind = if id.name.equal("ptr_of"): "ptr" else: if id.name.equal("ref_of"): "ref" else: "const_ptr"
+                        let outer_kind = if id.name == "ptr_of": "ptr" else: if id.name == "ref_of": "ref" else: "const_ptr"
                         if types.is_error(result_ty) or types.is_void(result_ty):
                             result_ty = types.Type.ty_generic(name = outer_kind, args = sp_type(inner_ty))
                         # When the argument is already a pointer/ref value (e.g. a
@@ -4193,15 +4193,15 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                     let ref_elem = types.pointer_element(nm.ty)
                                     let elem_sp = sp_type(ref_elem)
                                     var adjusted_ty = result_ty
-                                    if id.name.equal("ptr_of"):
+                                    if id.name == "ptr_of":
                                         adjusted_ty = types.Type.ty_generic(name = "ptr", args = elem_sp)
-                                    if id.name.equal("const_ptr_of"):
+                                    if id.name == "const_ptr_of":
                                         adjusted_ty = types.Type.ty_generic(name = "const_ptr", args = elem_sp)
-                                    if id.name.equal("ref_of"):
+                                    if id.name == "ref_of":
                                         pass
                                     return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = adjusted_ty, pointer = true))
                             ir.Expr.expr_unary as un:
-                                if un.operator.equal("*"):
+                                if un.operator == "*":
                                     return un.operand
                             _:
                                 pass
@@ -4210,7 +4210,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # type is the pointer's element type (more reliable than the
                 # analyzer's generically-recorded type inside monomorphized
                 # bodies); fall back to the recorded call type otherwise.
-                if id.name.equal("read"):
+                if id.name == "read":
                     if args.len == 1:
                         let inner = lower_expr(ctx, read(args.data + 0).arg_value)
                         var base = ir_expr_type(inner)
@@ -4223,7 +4223,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # `get(coll, index)` → recoverable array/span indexing returning
                 # `ptr[T]?` — null on out-of-bounds instead of aborting.
                 # Maps to IR checked_index / checked_span_index, mirroring Ruby.
-                if id.name.equal("get"):
+                if id.name == "get":
                     if args.len >= 2:
                         let recv_val = unsafe: read(args.data + 0).arg_value
                         let idx_val = unsafe: read(args.data + 1).arg_value
@@ -4247,7 +4247,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                             return alloc_expr(ir.Expr.expr_address_of(expression = checked, ty = nullable_ptr))
                 # Native `str(data = ..., len = ...)` construction -> mt_str
                 # aggregate literal (not a call to a `str` function).
-                if id.name.equal("str"):
+                if id.name == "str":
                     var str_fields = vec.Vec[ir.AggregateField].create()
                     var sfi: ptr_uint = 0
                     while sfi < args.len:
@@ -4310,9 +4310,9 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # field_of / callable_of / attribute_of return opaque handles
                 # (zero-init at the IR level since they are consumed only by
                 # other compile-time builtins).
-                if id.name.equal("has_attribute"):
+                if id.name == "has_attribute":
                     return alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool")))
-                if id.name.equal("field_of") or id.name.equal("callable_of") or id.name.equal("attribute_of"):
+                if id.name == "field_of" or id.name == "callable_of" or id.name == "attribute_of":
                     return alloc_expr(ir.Expr.expr_zero_init(ty = types.Type.ty_error))
                 # Try to evaluate a const function call at compile time so that
                 # const initializers (e.g. `const SQUARE_5 = square(5)`) produce
@@ -4452,11 +4452,11 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # `{ data = &arr[0], len = N }`.  Intercept before method
                 # resolution so it does not fall to the `<module>_mt_as_span`
                 # fallback (mirrors Ruby's :array_as_span lowering).
-                if is_array_type(recv_ty) and ma.member_name.equal("as_span") and args.len == 0:
+                if is_array_type(recv_ty) and ma.member_name == "as_span" and args.len == 0:
                     return lower_array_as_span(ctx, ma.receiver, recv_ty)
                 # Builtin `.with(x = val, ...)` — aggregate copy with specified
                 # fields replaced, mirroring Ruby's :struct_with lowering.
-                if ma.member_name.equal("with"):
+                if ma.member_name == "with":
                     return lower_with_call(ctx, ma.receiver, recv_ty, args)
                 # Event builtin methods: must be checked before resolve_method_info
                 # because they ARE registered in method_sigs for sema validation.
@@ -4484,7 +4484,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # dyn[I] dispatch: extract data + vtable, call through function pointer.
                 # The type may be ty_named("dyn") or ty_dyn(iface) — try both.
                 let ts = types.type_to_string(recv_ty)
-                if ts.equal("dyn") or is_dyn_type(recv_ty):
+                if ts == "dyn" or is_dyn_type(recv_ty):
                     let recv_ir = lower_expr(ctx, ma.receiver)
                     return lower_dyn_method_call(ctx, recv_ir, ma.member_name, args, call_ep)
                 # Fallback: treat as a direct C call with the member as callee.
@@ -4506,7 +4506,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                 var ei: ptr_uint = 0
                                 while ei < entries.len:
                                     let entry = unsafe: read(entries.data + ei)
-                                    if entry.name.equal(ma.member_name):
+                                    if entry.name == ma.member_name:
                                         found_ft = entry.ty
                                         break
                                     ei += 1
@@ -4599,7 +4599,7 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
     unsafe:
         match read(spec_callee):
             ast.Expr.expr_identifier as id:
-                if id.name.equal("span") and type_args.len == 1:
+                if id.name == "span" and type_args.len == 1:
                     var elem_args = vec.Vec[types.Type].create()
                     elem_args.push(resolve_type_ref(ctx, read(type_args.data + 0).value))
                     let span_ty = types.Type.ty_generic(name = "span", args = elem_args.as_span())
@@ -4612,9 +4612,9 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
                         i += 1
                     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = span_ty, fields = fields.as_span()))
-                if id.name.equal("adapt") and type_args.len == 1:
+                if id.name == "adapt" and type_args.len == 1:
                     return lower_adapt_call(ctx, read(type_args.data + 0).value, call_args)
-                if id.name.equal("array") and type_args.len == 2:
+                if id.name == "array" and type_args.len == 2:
                     var array_args = vec.Vec[types.Type].create()
                     array_args.push(resolve_type_ref(ctx, read(type_args.data + 0).value))
                     array_args.push(types.literal_int(resolve_array_length(read(type_args.data + 1).value)))
@@ -4626,14 +4626,14 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         elements.push(read(lower_expr(ctx, arg.arg_value)))
                         ai += 1
                     return alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span()))
-                if id.name.equal("str_buffer") and type_args.len == 1:
+                if id.name == "str_buffer" and type_args.len == 1:
                     let n_ty = resolve_type_ref(ctx, read(type_args.data + 0).value)
                     let sb_ty = types.Type.ty_generic(name = "str_buffer", args = sp_type(n_ty))
                     ensure_str_buffer_struct(ctx, sb_ty)
                     return alloc_expr(ir.Expr.expr_zero_init(ty = sb_ty))
                 # Builtin generic callables: order[T], equal[T], hash[T] — lower
                 # to direct C calls with a fixed suffix derived from the type.
-                if id.name.equal("order") or id.name.equal("equal") or id.name.equal("hash"):
+                if id.name == "order" or id.name == "equal" or id.name == "hash":
                     var ir_args = vec.Vec[ir.Expr].create()
                     var si: ptr_uint = 0
                     while si < call_args.len:
@@ -4656,9 +4656,9 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                                 ir_args.push(read(borrowed))
                         si += 1
                     var ret_ty = types.primitive("int")
-                    if id.name.equal("equal"):
+                    if id.name == "equal":
                         ret_ty = types.primitive("bool")
-                    else if id.name.equal("hash"):
+                    else if id.name == "hash":
                         ret_ty = types.primitive("uint")
                     # Resolve the canonical hook (`T.hash` / `T.equal` / `T.order`)
                     # for the type argument to its concrete C function name.
@@ -4672,18 +4672,18 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                     let fn_name = j2("mt_", j2(id.name, "_func"))
                     return alloc_expr(ir.Expr.expr_call(callee = fn_name, arguments = ir_args.as_span(), ty = ret_ty))
                 # Builtin `reinterpret[T](value)` → C cast.
-                if id.name.equal("reinterpret") and type_args.len == 1:
+                if id.name == "reinterpret" and type_args.len == 1:
                     let target_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
                     let lowered = lower_expr(ctx, unsafe: read(call_args.data + 0).arg_value)
                     return alloc_expr(ir.Expr.expr_cast(target_type = target_ty, expression = lowered, ty = target_ty))
                 # Builtin `zero[T]` → zero-initialized value of type T.
-                if id.name.equal("zero") and type_args.len == 1:
+                if id.name == "zero" and type_args.len == 1:
                     let z_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
                     return alloc_expr(ir.Expr.expr_zero_init(ty = z_ty))
                 # Builtin `default[T]` → call T.default(), the zero-argument
                 # static method on the type.  The method must exist at check time
                 # (the analyzer already verified it).
-                if id.name.equal("default") and type_args.len == 1 and call_args.len == 0:
+                if id.name == "default" and type_args.len == 1 and call_args.len == 0:
                     let t_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
                     match resolve_method_info(ctx, t_ty, "default"):
                         Option.some as smi:
@@ -4693,11 +4693,11 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         Option.none:
                             pass
                 if (
-                    id.name.equal("attribute_arg") or id.name.equal("attribute_of")
-                    or id.name.equal("field_of") or id.name.equal("callable_of")
-                    or id.name.equal("fields_of") or id.name.equal("members_of")
-                    or id.name.equal("attributes_of") or id.name.equal("has_attribute")
-                    or id.name.equal("adapt")
+                    id.name == "attribute_arg" or id.name == "attribute_of"
+                    or id.name == "field_of" or id.name == "callable_of"
+                    or id.name == "fields_of" or id.name == "members_of"
+                    or id.name == "attributes_of" or id.name == "has_attribute"
+                    or id.name == "adapt"
                 ) and type_args.len >= 1:
                     let z_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
                     return alloc_expr(ir.Expr.expr_zero_init(ty = z_ty))
@@ -4762,7 +4762,7 @@ function is_read_call(ep: ptr[ast.Expr]) -> Option[ptr[ast.Expr]]:
             ast.Expr.expr_call as call:
                 match read(call.callee):
                     ast.Expr.expr_identifier as id:
-                        if id.name.equal("read") and call.args.len == 1:
+                        if id.name == "read" and call.args.len == 1:
                             return Option[ptr[ast.Expr]].some(value = read(call.args.data + 0).arg_value)
                     _:
                         pass
@@ -4895,7 +4895,7 @@ function extract_generic_struct_fields(ctx: ref[LowerCtx], module_analysis: anal
             d = read(module_analysis.source_file.declarations.data + di)
         match d:
             ast.Decl.decl_struct as s:
-                if s.name.equal(struct_name):
+                if s.name == struct_name:
                     found = true
                     var sub = map_mod.Map[str, types.Type].create()
                     var spi: ptr_uint = 0
@@ -4923,7 +4923,7 @@ function extract_generic_struct_fields(ctx: ref[LowerCtx], module_analysis: anal
 function is_pointer_or_ref_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("ref")
+            return g.name == "ptr" or g.name == "const_ptr" or g.name == "ref"
         _:
             return false
 
@@ -4931,17 +4931,17 @@ function is_pointer_or_ref_type(t: types.Type) -> bool:
 ## The type-constructor name ("ref", "ptr", "const_ptr") for a builtin
 ## address-of function, or an empty string when `func_name` is not one.
 function builtin_addr_type_name(func_name: str) -> str:
-    if func_name.equal("ref_of"):
+    if func_name == "ref_of":
         return "ref"
-    if func_name.equal("ptr_of"):
+    if func_name == "ptr_of":
         return "ptr"
-    if func_name.equal("const_ptr_of"):
+    if func_name == "const_ptr_of":
         return "const_ptr"
     return ""
 
 
 function is_raw_type_param_name(name: str) -> bool:
-    return name.equal("T") or name.equal("U") or name.equal("K") or name.equal("V") or name.equal("E")
+    return name == "T" or name == "U" or name == "K" or name == "V" or name == "E"
 
 
 function sp_one(t: types.Type) -> span[types.Type]:
@@ -4965,11 +4965,11 @@ function type_is_type_var(t: types.Type) -> bool:
         types.Type.ty_var:
             return true
         types.Type.ty_named as n:
-            if n.name.equal("T") or n.name.equal("K") or n.name.equal("V") or n.name.equal("U") or n.name.equal("E"):
+            if n.name == "T" or n.name == "K" or n.name == "V" or n.name == "U" or n.name == "E":
                 return true
             return false
         types.Type.ty_imported as im:
-            if im.name.equal("T") or im.name.equal("K") or im.name.equal("V") or im.name.equal("U") or im.name.equal("E"):
+            if im.name == "T" or im.name == "K" or im.name == "V" or im.name == "U" or im.name == "E":
                 return true
             if im.args.len > 0:
                 if has_type_var_arg(im.args):
@@ -5013,7 +5013,7 @@ function lower_monomorphized_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], typ
                 fatal(c"lowering: unsupported generic callee")
 
     let gm = find_generic_function(ctx, callee_name) else:
-        if callee_name.equal("Task"):
+        if callee_name == "Task":
             return lower_task_constructor(ctx, type_args, call_args, call_ep)
         if ctx.loaded_modules.len <= 1:
             fatal(j2("lowering: monomorphization failed for ", callee_name))
@@ -5057,7 +5057,7 @@ function find_generic_function(ctx: ref[LowerCtx], callee_name: str) -> Option[G
         var a: analyzer.Analysis
         unsafe:
             a = read(ctx.program_analyses.data + ai)
-        if not a.module_name.equal(ctx.module_name):
+        if not a.module_name == ctx.module_name:
             match find_func_in_source(a.source_file, callee_name):
                 Option.some as d:
                     return Option[GenericFunctionMatch].some(value = GenericFunctionMatch(module_name = a.module_name, decl = d.value))
@@ -5136,7 +5136,7 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], callee_name: str, args: s
             # Pass a synthesized sig for async wait/run so coerce_fn_arg_to_proc
             # can wrap task expressions in procs (task-root-proc bridge).
             var sig = Option[analyzer.FnSig].none
-            if gm.module_name.starts_with("std.async") and (callee_name.equal("wait") or callee_name.equal("run")):
+            if gm.module_name.starts_with("std.async") and (callee_name == "wait" or callee_name == "run"):
                 var syn_params = vec.Vec[analyzer.ParamEntry].create()
                 var spi: ptr_uint = 0
                 while spi < fun.method_params.len:
@@ -5181,7 +5181,7 @@ function infer_type_param_from_args(ctx: ref[LowerCtx], param_name: str, params:
 function unify_type_param(param_name: str, param_ref: ast.TypeRef, arg_ty: types.Type) -> Option[types.Type]:
     let simple_name = type_ref_simple_name(param_ref)
     # Bare `T`.
-    if simple_name.equal(param_name) and param_ref.arguments.len == 0:
+    if simple_name == param_name and param_ref.arguments.len == 0:
         return Option[types.Type].some(value = arg_ty)
     # `ptr[T]` / `const_ptr[T]` / `span[T]` / `ref[T]`: peel one pointer-like
     # layer off the argument type and recurse into the element type-ref.
@@ -5207,7 +5207,7 @@ function unify_type_param(param_name: str, param_ref: ast.TypeRef, arg_ty: types
                 let ret_name = type_ref_simple_name(ret_ref)
                 match arg_ty:
                     types.Type.ty_generic as g:
-                        if g.name.equal(ret_name) and g.args.len == ret_ref.arguments.len:
+                        if g.name == ret_name and g.args.len == ret_ref.arguments.len:
                             var mi: ptr_uint = 0
                             while mi < g.args.len and mi < ret_ref.arguments.len:
                                 var inner_ref = unsafe: read(ret_ref.arguments.data + mi)
@@ -5235,7 +5235,7 @@ function type_ref_simple_name(t: ast.TypeRef) -> str:
 ## True for the pointer-like type constructors whose single element carries the
 ## generic parameter.
 function pointer_like_ctor_name(name: str) -> bool:
-    return name.equal("ptr") or name.equal("const_ptr") or name.equal("ref") or name.equal("span")
+    return name == "ptr" or name == "const_ptr" or name == "ref" or name == "span"
 
 
 ## Peel one pointer/span/nullable layer off a concrete type, yielding the element
@@ -5278,31 +5278,31 @@ function proc_return_type(t: types.Type) -> types.Type:
 
 ## Map a single-word C type name (int, void, str, etc.) to a Type.
 function recognize_type_name(name: str) -> types.Type:
-    if name.equal("int") or name.equal("long") or name.equal("short") or name.equal("byte"):
+    if name == "int" or name == "long" or name == "short" or name == "byte":
         return types.primitive(name)
-    if name.equal("uint") or name.equal("ulong") or name.equal("ushort") or name.equal("ubyte"):
+    if name == "uint" or name == "ulong" or name == "ushort" or name == "ubyte":
         return types.primitive(name)
-    if name.equal("float") or name.equal("double"):
+    if name == "float" or name == "double":
         return types.primitive(name)
-    if name.equal("bool"):
+    if name == "bool":
         return types.primitive("bool")
-    if name.equal("void"):
+    if name == "void":
         return types.primitive("void")
-    if name.equal("char"):
+    if name == "char":
         return types.primitive("char")
-    if name.equal("ptr_uint"):
+    if name == "ptr_uint":
         return types.primitive("ptr_uint")
-    if name.equal("ptr_int"):
+    if name == "ptr_int":
         return types.primitive("ptr_int")
-    if name.equal("str"):
+    if name == "str":
         return types.Type.ty_str
-    if name.equal("mt_str"):
+    if name == "mt_str":
         return types.Type.ty_str
-    if name.equal("const_ptr_void"):
+    if name == "const_ptr_void":
         return types.Type.ty_generic(name = "const_ptr", args = sp_type(types.primitive("void")))
-    if name.equal("mt_span_ubyte"):
+    if name == "mt_span_ubyte":
         return types.Type.ty_generic(name = "span", args = sp_type(types.primitive("ubyte")))
-    if name.equal("mt_span_int"):
+    if name == "mt_span_int":
         return types.Type.ty_generic(name = "span", args = sp_type(types.primitive("int")))
     return types.primitive("void")
 
@@ -5434,7 +5434,7 @@ function find_imported_variant_arm(module_analysis: analyzer.Analysis, arm_name:
                     var arm: ast.VariantArm
                     unsafe:
                         arm = read(vr.variant_arms.data + ai)
-                    if arm.name.equal(arm_name):
+                    if arm.name == arm_name:
                         return Option[str].some(value = vr.name)
                     ai += 1
             _:
@@ -5509,7 +5509,7 @@ function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: spa
     # qualifies through module_c_prefix, which maps "" → "value").
     if source_module.len == 0:
         var agg_ty = types.Type.ty_named(module_name = "", name = struct_name)
-        if is_builtin_type_name(struct_name) or struct_name.equal("str"):
+        if is_builtin_type_name(struct_name) or struct_name == "str":
             agg_ty = types.Type.ty_primitive(name = struct_name)
         return alloc_expr(ir.Expr.expr_aggregate_literal(ty = agg_ty, fields = fields.as_span()))
     return alloc_expr(ir.Expr.expr_aggregate_literal(
@@ -5626,7 +5626,7 @@ function module_has_private_interface(file: ast.SourceFile, iface_name: str) -> 
             d = read(file.declarations.data + di)
         match d:
             ast.Decl.decl_interface as iface:
-                if iface.name.equal(iface_name) and not iface.visibility:
+                if iface.name == iface_name and not iface.visibility:
                     return true
             _:
                 pass
@@ -5643,7 +5643,7 @@ function interface_type_params(file: ast.SourceFile, iface_name: str) -> span[as
             d = read(file.declarations.data + di)
         match d:
             ast.Decl.decl_interface as iface:
-                if iface.name.equal(iface_name):
+                if iface.name == iface_name:
                     return iface.type_params
             _:
                 pass
@@ -5694,7 +5694,7 @@ function substitute_type_arg_by_name(t: types.Type, name: str, type_args: span[t
         var tp: ast.TypeParam
         unsafe:
             tp = read(type_params.data + pi)
-        if tp.name.equal(name) and pi < type_args.len:
+        if tp.name == name and pi < type_args.len:
             unsafe:
                 return read(type_args.data + pi)
         pi += 1
@@ -5708,7 +5708,7 @@ function ensure_dyn_struct_type(ctx: ref[LowerCtx], iface_name: str) -> void:
     while true:
         let s_ptr = iter.next() else:
             break
-        if unsafe: read(s_ptr).linkage_name.equal(name):
+        if unsafe: read(s_ptr).linkage_name == name:
             return
     var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     var const_void_ptr = types.Type.ty_generic(name = "const_ptr", args = sp_type(types.primitive("void")))
@@ -5725,7 +5725,7 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, m
     while true:
         let s_ptr = iter.next() else:
             break
-        if unsafe: read(s_ptr).linkage_name.equal(vtable_type_c_name):
+        if unsafe: read(s_ptr).linkage_name == vtable_type_c_name:
             return
     var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     var fields = vec.Vec[ir.Field].create()
@@ -5944,7 +5944,7 @@ function iface_method_return_type(ctx: ref[LowerCtx], recv_ty: types.Type, metho
                         var m: ast.InterfaceMethod
                         unsafe:
                             m = read(ia.value.methods.data + mi)
-                        if m.name.equal(method_name):
+                        if m.name == method_name:
                             let ret = m.return_type else:
                                 return types.primitive("void")
                             return resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-ret))
@@ -5962,7 +5962,7 @@ function dyn_vtable_c_type(t: types.Type) -> str:
     # The type string could be "dyn" for ty_named or the iface name for ty_dyn.
     # For ty_dyn(iface = "Shape"), the string is "Shape".
     # If ts is "dyn", we can't determine the iface — use a fallback.
-    if ts.equal("dyn"):
+    if ts == "dyn":
         return "mt_vtable_unknown"
     return j3("mt_vtable_", ts, "")
 
@@ -5980,14 +5980,14 @@ struct MethodInfo:
 ## Ruby's `c_type_name`, which returns the bare name for primitives (a struct
 ## receiver instead yields `<module>_<Type>`).
 function is_primitive_or_str_name(name: str) -> bool:
-    return is_builtin_type_name(name) or name.equal("str")
+    return is_builtin_type_name(name) or name == "str"
 
 
 ## The C linkage name for a method on a primitive or `str` receiver, mirroring
 ## Ruby's `function_binding_c_name`: a bare `<type>_<method>` prefix (no module
 ## qualifier) plus a `_static` suffix for static methods, so a static hook
-## (e.g. `str.equal(left, right)`) cannot collide with a same-named instance
-## method (`str.equal(right)`).
+## (e.g. `str == left, right`) cannot collide with a same-named instance
+## method (`str == right`).
 function primitive_method_c_name(type_name: str, method_name: str, is_static: bool) -> str:
     var buf = string.String.create()
     buf.append(type_name)
@@ -6102,7 +6102,7 @@ function hook_type_name(t: types.Type) -> Option[str]:
 ## live in one `extending` block (e.g. `extending str:` in std.str), so search
 ## the current module then every analysis for the one that declares it, and
 ## build the bare `<type>_<method>` C name (with `_static` for static hooks so
-## `str.equal(left, right)` does not collide with the instance `str.equal`).
+## `str == left, right` does not collide with the instance `str.equal`).
 function resolve_primitive_method_info(ctx: ref[LowerCtx], type_name: str, method_name: str) -> Option[MethodInfo]:
     let key = analyzer.method_key(type_name, method_name)
     if ctx.analysis.method_sigs.contains(key):
@@ -6122,7 +6122,7 @@ function resolve_primitive_method_info(ctx: ref[LowerCtx], type_name: str, metho
         var a: analyzer.Analysis
         unsafe:
             a = read(ctx.program_analyses.data + ai)
-        if a.module_name.equal(ctx.module_name):
+        if a.module_name == ctx.module_name:
             ai += 1
             continue
         if a.method_sigs.contains(key):
@@ -6197,7 +6197,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
         var a: analyzer.Analysis
         unsafe:
             a = read(ctx.program_analyses.data + ai)
-        if a.module_name.equal(ctx.module_name):
+        if a.module_name == ctx.module_name:
             ai += 1
             continue
         if a.method_sigs.contains(key):
@@ -6371,7 +6371,7 @@ function find_method_in_block(methods: span[ast.Method], name: str) -> Option[as
         var m: ast.Method
         unsafe:
             m = read(methods.data + i)
-        if m.name.equal(name):
+        if m.name == name:
             return Option[ast.Method].some(value = m)
         i += 1
     return Option[ast.Method].none
@@ -6464,7 +6464,7 @@ function prelude_instance_args(ctx: ref[LowerCtx], c_name: str) -> Option[Generi
         var decl: ir.VariantDecl
         unsafe:
             decl = read(vp)
-        if decl.linkage_name.equal(c_name):
+        if decl.linkage_name == c_name:
             var args = vec.Vec[types.Type].create()
             # Option: [some.value]; Result: [success.value, failure.error].
             var ai: ptr_uint = 0
@@ -6504,7 +6504,7 @@ function find_generic_method(ctx: ref[LowerCtx], owner_name: str, method_name: s
                 match d:
                     ast.Decl.decl_extending_block as ex:
                         let type_ref = unsafe: read(ex.type_name)
-                        if qname_first(type_ref.name).equal(owner_name) and type_ref.arguments.len > 0:
+                        if qname_first(type_ref.name) == owner_name and type_ref.arguments.len > 0:
                             match find_method_in_block(ex.methods, method_name):
                                 Option.some as m:
                                     return Option[GenericMethodMatch].some(value = GenericMethodMatch(
@@ -6961,7 +6961,7 @@ function jstr_i(prefix: str, n: ptr_uint) -> str:
 function is_void_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_primitive as p:
-            return p.name.equal("void")
+            return p.name == "void"
         _:
             return false
 
@@ -6970,7 +6970,7 @@ function is_void_type(t: types.Type) -> bool:
 function is_str_buffer_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name.equal("str_buffer")
+            return g.name == "str_buffer"
         _:
             return false
 
@@ -6979,7 +6979,7 @@ function is_str_buffer_type(t: types.Type) -> bool:
 function is_atomic_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name.equal("atomic")
+            return g.name == "atomic"
         _:
             return false
 
@@ -7006,16 +7006,16 @@ function lower_atomic_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: ty
     let ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(elem_ty))
     let addr = alloc_expr(ir.Expr.expr_address_of(expression = recv, ty = ptr_ty))
     let seq_cst = alloc_expr(ir.Expr.expr_integer_literal(value = 5l, ty = int_ty))
-    if method_name.equal("load"):
+    if method_name == "load":
         return alloc_expr(ir.Expr.expr_call(callee = "__atomic_load_n", arguments = sp_expr2(addr, seq_cst), ty = elem_ty))
     let arg_ir = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
-    if method_name.equal("store"):
+    if method_name == "store":
         return alloc_expr(ir.Expr.expr_call(callee = "__atomic_store_n", arguments = sp_expr3(addr, arg_ir, seq_cst), ty = void_ty))
-    if method_name.equal("add"):
+    if method_name == "add":
         return alloc_expr(ir.Expr.expr_call(callee = "__atomic_fetch_add", arguments = sp_expr3(addr, arg_ir, seq_cst), ty = elem_ty))
-    if method_name.equal("sub"):
+    if method_name == "sub":
         return alloc_expr(ir.Expr.expr_call(callee = "__atomic_fetch_sub", arguments = sp_expr3(addr, arg_ir, seq_cst), ty = elem_ty))
-    if method_name.equal("exchange"):
+    if method_name == "exchange":
         return alloc_expr(ir.Expr.expr_call(callee = "__atomic_exchange_n", arguments = sp_expr3(addr, arg_ir, seq_cst), ty = elem_ty))
     fatal(c"atomic lowering: unknown method")
 
@@ -7120,14 +7120,14 @@ function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: typ
     # Address of the event struct
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = info.event_c_name)))
     let recv_addr = alloc_expr(ir.Expr.expr_address_of(expression = recv, ty = event_ptr_ty))
-    if method_name.equal("emit"):
+    if method_name == "emit":
         var call_args = vec.Vec[ir.Expr].create()
         unsafe:
             call_args.push(read(recv_addr))
             call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))))
         return alloc_expr(ir.Expr.expr_call(callee = info.emit_c_name, arguments = call_args.as_span(), ty = void_ty))
-    if method_name.equal("subscribe") or method_name.equal("subscribe_once"):
-        let callee = if method_name.equal("subscribe"): info.subscribe_c_name else: info.subscribe_once_c_name
+    if method_name == "subscribe" or method_name == "subscribe_once":
+        let callee = if method_name == "subscribe": info.subscribe_c_name else: info.subscribe_once_c_name
         var call_args = vec.Vec[ir.Expr].create()
         unsafe:
             call_args.push(read(recv_addr))
@@ -7137,7 +7137,7 @@ function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: typ
             call_args.push(read(listener_val))
         let sub_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
         return alloc_expr(ir.Expr.expr_call(callee = callee, arguments = call_args.as_span(), ty = sub_ty))
-    if method_name.equal("unsubscribe"):
+    if method_name == "unsubscribe":
         var call_args = vec.Vec[ir.Expr].create()
         unsafe:
             call_args.push(read(recv_addr))
@@ -7228,14 +7228,14 @@ function lower_str_buffer_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty
         _:
             pass
     let cap_val = alloc_expr(ir.Expr.expr_integer_literal(value = cap, ty = ptr_uint_ty))
-    if method_name.equal("clear"):
+    if method_name == "clear":
         return alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_clear", arguments = sp_expr2(len_addr, dirty_addr), ty = void_ty))
-    if method_name.equal("len"):
+    if method_name == "len":
         return alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_len", arguments = sp_expr4(data_addr, cap_val, len_addr, dirty_addr), ty = ptr_uint_ty))
-    if method_name.equal("capacity"):
+    if method_name == "capacity":
         return alloc_expr(ir.Expr.expr_integer_literal(value = cap, ty = ptr_uint_ty))
-    if method_name.equal("assign") or method_name.equal("append"):
-        let helper = if method_name.equal("assign"): "mt_str_buffer_assign" else: "mt_str_buffer_append"
+    if method_name == "assign" or method_name == "append":
+        let helper = if method_name == "assign": "mt_str_buffer_assign" else: "mt_str_buffer_append"
         var helper_args = vec.Vec[ir.Expr].create()
         let lowered = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
         unsafe:
@@ -7245,15 +7245,15 @@ function lower_str_buffer_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty
             helper_args.push(read(len_addr))
             helper_args.push(read(dirty_addr))
         return alloc_expr(ir.Expr.expr_call(callee = helper, arguments = helper_args.as_span(), ty = void_ty))
-    if method_name.equal("as_str"):
+    if method_name == "as_str":
         var as_str_args = vec.Vec[ir.Expr].create()
         unsafe:
             as_str_args.push(read(data_addr))
             as_str_args.push(read(len_addr))
             as_str_args.push(read(dirty_addr))
         return alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_as_str", arguments = as_str_args.as_span(), ty = str_ty))
-    if method_name.equal("assign_format") or method_name.equal("append_format"):
-        let helper = if method_name.equal("assign_format"): "mt_str_buffer_assign" else: "mt_str_buffer_append"
+    if method_name == "assign_format" or method_name == "append_format":
+        let helper = if method_name == "assign_format": "mt_str_buffer_assign" else: "mt_str_buffer_append"
         var helper_args = vec.Vec[ir.Expr].create()
         let lowered = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
         unsafe:
@@ -7263,7 +7263,7 @@ function lower_str_buffer_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty
             helper_args.push(read(len_addr))
             helper_args.push(read(dirty_addr))
         return alloc_expr(ir.Expr.expr_call(callee = helper, arguments = helper_args.as_span(), ty = void_ty))
-    if method_name.equal("as_cstr"):
+    if method_name == "as_cstr":
         return alloc_expr(ir.Expr.expr_null_literal(ty = types.primitive("cstr")))
     fatal(c"str_buffer lowering: unknown method")
 
@@ -7445,7 +7445,7 @@ function coerce_fn_arg_to_proc(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], 
                                 var is_task = false
                                 match actual_ty:
                                     types.Type.ty_generic as g:
-                                        if g.name.equal("Task"):
+                                        if g.name == "Task":
                                             is_task = true
                                     _:
                                         pass
@@ -7506,7 +7506,7 @@ function boundary_is_cstr(boundary: ast.TypeRef) -> bool:
     if boundary.name.parts.len != 1:
         return false
     unsafe:
-        return read(boundary.name.parts.data + 0).equal("cstr")
+        return read(boundary.name.parts.data + 0) == "cstr"
 
 
 # =============================================================================
@@ -7565,7 +7565,7 @@ function imported_foreign_call(ctx: ref[LowerCtx], target_module: str, name: str
             d = read(owner_a.source_file.declarations.data + di)
         match d:
             ast.Decl.decl_foreign_function as ff:
-                if ff.name.equal(name):
+                if ff.name == name:
                     result = Option[ForeignInfo].some(value = ForeignInfo(
                         c_name = resolve_foreign_c_name(ctx, ff.mapping),
                         return_ty = qualify_type(ctx, resolve_type_ref(ctx, ff.return_type)),
@@ -7599,7 +7599,7 @@ function imported_extern_call(ctx: ref[LowerCtx], target_module: str, name: str)
             d = read(owner_a.source_file.declarations.data + di)
         match d:
             ast.Decl.decl_extern_function as ef:
-                if ef.name.equal(name):
+                if ef.name == name:
                     var ret = types.primitive("void")
                     if ef.return_type != null:
                         ret = qualify_type(ctx, resolve_return_type(ctx, Option[analyzer.FnSig].none, ef.return_type))
@@ -7764,7 +7764,7 @@ function type_contains_type_var(t: types.Type) -> bool:
         types.Type.ty_var:
             return true
         types.Type.ty_named as n:
-            if n.name.equal("T") or n.name.equal("U") or n.name.equal("K") or n.name.equal("V") or n.name.equal("E"):
+            if n.name == "T" or n.name == "U" or n.name == "K" or n.name == "V" or n.name == "E":
                 return true
             return false
         types.Type.ty_generic as g:
@@ -7919,11 +7919,11 @@ function imported_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: st
             struct_name = im.name
         _:
             return Option[types.Type].none
-    if owner_module.equal(ctx.module_name):
+    if owner_module == ctx.module_name:
         # A local struct that `qualify_type` rewrote to `ty_imported(current_module, ...)`:
         # resolve its field type in the current context directly (no owner swap).
         # This recovers field types the analyzer did not record (e.g. `.name` on a
-        # `read(ptr[LocalStruct])` receiver) so chained calls like `.equal(...)` bind.
+        # `read(ptr[LocalStruct])` receiver) so chained calls like ` == ...` bind.
         let local_tref = find_struct_field_tref(ctx.analysis.source_file, struct_name, member) else:
             return Option[types.Type].none
         return Option[types.Type].some(value = qualify_type(ctx, resolve_field_type_ref(ctx, local_tref)))
@@ -7952,13 +7952,13 @@ function find_struct_field_tref(sf: ast.SourceFile, struct_name: str, member: st
             d = read(sf.declarations.data + di)
         match d:
             ast.Decl.decl_struct as s:
-                if s.name.equal(struct_name):
+                if s.name == struct_name:
                     var fi: ptr_uint = 0
                     while fi < s.struct_fields.len:
                         var f: ast.Field
                         unsafe:
                             f = read(s.struct_fields.data + fi)
-                        if f.name.equal(member):
+                        if f.name == member:
                             return Option[ast.TypeRef].some(value = f.field_type)
                         fi += 1
             _:
@@ -7994,7 +7994,7 @@ function method_receiver_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> ty
                     ast.Expr.expr_member_access:
                         side_effect_free = true
                     ast.Expr.expr_identifier as call_id:
-                        if call_id.name.equal("read"):
+                        if call_id.name == "read":
                             side_effect_free = true
                     _:
                         pass
@@ -8002,7 +8002,7 @@ function method_receiver_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> ty
                 pass
     if side_effect_free:
         let lowered_ty = ir_expr_type(lower_expr(ctx, receiver))
-        if not types.is_error(lowered_ty) and not types.type_to_string(lowered_ty).equal("void"):
+        if not types.is_error(lowered_ty) and not types.type_to_string(lowered_ty) == "void":
             return lowered_ty
     return expr_type(ctx, receiver)
 
@@ -8131,16 +8131,16 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
     let recv_ty = ir_expr_type(recv)
     # span synthetic fields: `.data` is ptr[element], `.len` is ptr_uint.  The
     # analyzer records these as ty_error (permissive), so type them here.
-    if is_span_type(recv_ty) and member.equal("data"):
+    if is_span_type(recv_ty) and member == "data":
         member_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.pointer_element(recv_ty)))
-    else if is_span_type(recv_ty) and member.equal("len"):
+    else if is_span_type(recv_ty) and member == "len":
         member_ty = types.primitive("ptr_uint")
     # str synthetic fields: `.data` is ptr[char], `.len` is ptr_uint.  Like span,
     # the analyzer does not type these reliably (a `var n = text.len` would
     # otherwise be mis-typed as str).
-    else if is_str_typed(recv_ty) and member.equal("data"):
+    else if is_str_typed(recv_ty) and member == "data":
         member_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("char")))
-    else if is_str_typed(recv_ty) and member.equal("len"):
+    else if is_str_typed(recv_ty) and member == "len":
         member_ty = types.primitive("ptr_uint")
     # vec/mat/quat field types: the analyzer doesn't record these reliably
     # since these are builtin types, not declared structs.
@@ -8154,7 +8154,7 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
         while fi < field_names.len():
             let fn_ptr = field_names.get(fi) else:
                 fatal(c"lower_member_access: missing vec field name")
-            if unsafe: read(fn_ptr).equal(member):
+            if unsafe: read(fn_ptr) == member:
                 let ft_ptr = field_types.get(fi) else:
                     fatal(c"lower_member_access: missing vec field type")
                 member_ty = unsafe: read(ft_ptr)
@@ -8189,7 +8189,7 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                                                     Option.some as fnames:
                                                         var fi: ptr_uint = 0
                                                         while fi < fnames.value.len:
-                                                            if unsafe: read(fnames.value.data + fi).equal(member):
+                                                            if unsafe: read(fnames.value.data + fi) == member:
                                                                 if fi < tup.elements.len:
                                                                     member_ty = unsafe: read(tup.elements.data + fi)
                                                                 break
@@ -8228,7 +8228,7 @@ function concrete_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: st
         var i: ptr_uint = 0
         while i < decl.fields.len:
             let f = read(decl.fields.data + i)
-            if f.name.equal(member):
+            if f.name == member:
                 return Option[types.Type].some(value = f.ty)
             i += 1
     return Option[types.Type].none
@@ -8573,9 +8573,9 @@ function variant_base_c_name(ty: types.Type, module_name: str) -> str:
     match ty:
         types.Type.ty_generic as g:
             var buf = string.String.create()
-            if g.name.equal("Option"):
+            if g.name == "Option":
                 buf.append("std_option_")
-            else if g.name.equal("Result"):
+            else if g.name == "Result":
                 buf.append("std_result_")
             buf.append(g.name)
             var i: ptr_uint = 0
@@ -8607,7 +8607,7 @@ function variant_arm_info(info: VariantInfo, arm_name: str) -> Option[VariantArm
         var arm: VariantArmInfo
         unsafe:
             arm = read(info.arms.data + i)
-        if arm.name.equal(arm_name):
+        if arm.name == arm_name:
             return Option[VariantArmInfo].some(value = arm)
         i += 1
     return Option[VariantArmInfo].none
@@ -8672,7 +8672,7 @@ function module_var_type(ctx: ref[LowerCtx], name: str) -> types.Type:
             d = read(ctx.analysis.source_file.declarations.data + di)
         match d:
             ast.Decl.decl_var as v:
-                if v.name.equal(name):
+                if v.name == name:
                     let tref = v.var_type
                     if tref != null:
                         return resolve_type_ref(ctx, tref)
@@ -8802,7 +8802,7 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
     # the analyzer's recorded type, which can drop the Option wrapper or record
     # void.  Fall back to the analyzer type only when the lowered type is unknown.
     let lowered_ty = ir_expr_type(lower_expr(ctx, scrutinee))
-    if not types.is_error(lowered_ty) and not types.type_to_string(lowered_ty).equal("void"):
+    if not types.is_error(lowered_ty) and not types.type_to_string(lowered_ty) == "void":
         scrutinee_ty = lowered_ty
 
     let type_name = named_type_name(scrutinee_ty)
@@ -8832,7 +8832,7 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
 
     let enum_name = type_name else:
         let ts = types.type_to_string(scrutinee_ty)
-        if ts.equal("void") or ts.equal("<error>") or ts.starts_with("("):
+        if ts == "void" or ts == "<error>" or ts.starts_with("("):
             ctx.locals = saved_locals
             return
         fatal(j2("lowering: match requires known type, got ", ts))
@@ -8889,7 +8889,7 @@ function fatal_arg_is_cstr(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> bool:
                 pass
     match expr_type(ctx, arg):
         types.Type.ty_primitive as p:
-            return p.name.equal("cstr")
+            return p.name == "cstr"
         _:
             return false
 
@@ -8993,7 +8993,7 @@ function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
 ## arm whose value type is known.  Used to type the hoisted result temp.
 function current_return_type(ctx: ref[LowerCtx], match_expr: ptr[ast.Expr]) -> types.Type:
     var ty = qualify_type(ctx, expr_type(ctx, match_expr))
-    if not types.is_error(ty) and not types.type_to_string(ty).equal("void"):
+    if not types.is_error(ty) and not types.type_to_string(ty) == "void":
         return ty
     unsafe:
         match read(match_expr):
@@ -9003,7 +9003,7 @@ function current_return_type(ctx: ref[LowerCtx], match_expr: ptr[ast.Expr]) -> t
                     var arm: ast.MatchExprArm
                     arm = read(me.arms.data + i)
                     let vt = ir_expr_type(lower_expr(ctx, arm.value))
-                    if not types.is_error(vt) and not types.type_to_string(vt).equal("void"):
+                    if not types.is_error(vt) and not types.type_to_string(vt) == "void":
                         return vt
                     i += 1
             _:
@@ -9020,7 +9020,7 @@ function infer_match_arm_type(ctx: ref[LowerCtx], arms: span[ast.MatchExprArm]) 
         unsafe:
             arm = read(arms.data + i)
         let vt = qualify_type(ctx, expr_type(ctx, arm.value))
-        if not types.is_error(vt) and not types.type_to_string(vt).equal("void"):
+        if not types.is_error(vt) and not types.type_to_string(vt) == "void":
             return vt
         i += 1
     return types.Type.ty_error
@@ -9057,7 +9057,7 @@ function lower_match_expr_to_ref(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt
     var scrutinee_expr = lower_expr(ctx, scrutinee)
     # Prefer the lowered scrutinee's type (more accurate for prelude/field types).
     let lowered_sty = ir_expr_type(scrutinee_expr)
-    if not types.is_error(lowered_sty) and not types.type_to_string(lowered_sty).equal("void"):
+    if not types.is_error(lowered_sty) and not types.type_to_string(lowered_sty) == "void":
         scrutinee_ty = lowered_sty
     if not ir_expr_is_name(scrutinee_expr):
         let temp = fresh_c_temp_name(ctx, "match_scrut")
@@ -9215,7 +9215,7 @@ function tuple_pattern_condition(ctx: ref[LowerCtx], scrutinee_expr: ptr[ir.Expr
 function expr_is_wildcard(e: ast.Expr) -> bool:
     match e:
         ast.Expr.expr_identifier as id:
-            return id.name.equal("_")
+            return id.name == "_"
         _:
             return false
 
@@ -9516,7 +9516,7 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                             pass
                     match read(arg.arg_value):
                         ast.Expr.expr_identifier as id:
-                            if not id.name.equal("_"):
+                            if not id.name == "_":
                                 let field_ty = variant_arm_field_type(arm_info, id.name)
                                 let bc = utils.c_local_name(id.name)
                                 let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
@@ -9548,7 +9548,7 @@ function variant_arm_field_type(arm_info: VariantArmInfo, field_name: str) -> ty
     var i: ptr_uint = 0
     while i < arm_info.field_names.len:
         unsafe:
-            if read(arm_info.field_names.data + i).equal(field_name):
+            if read(arm_info.field_names.data + i) == field_name:
                 return read(arm_info.field_types.data + i)
         i += 1
     return types.Type.ty_error
@@ -9635,7 +9635,7 @@ function register_arm_payload_fields(ctx: ref[LowerCtx], payload_c_name: str, in
         var arm_info: VariantArmInfo
         unsafe:
             arm_info = read(info.arms.data + i)
-        if arm_info.name.equal(arm_name):
+        if arm_info.name == arm_name:
             ctx.arm_payload_fields.set(payload_c_name, specialize_prelude_arm_info(ctx, arm_info, arm_name, payload_c_name, scrutinee_ty))
             return
         i += 1
@@ -9696,7 +9696,7 @@ function concrete_prelude_field_type(ctx: ref[LowerCtx], payload_c_name: str, ar
             pass
 
     let args = variant_type_args(scrutinee_ty)
-    let arg_index = if arm_name.equal("failure"): 1z else: 0z
+    let arg_index = if arm_name == "failure": 1z else: 0z
     if arg_index < args.len:
         unsafe:
             return Option[types.Type].some(value = qualify_type(ctx, read(args.data + arg_index)))
@@ -9717,7 +9717,7 @@ function prelude_field_type_from_variants(ctx: ref[LowerCtx], payload_c_name: st
             var ai: ptr_uint = 0
             while ai < vdecl.arms.len:
                 let arm = read(vdecl.arms.data + ai)
-                if arm.name.equal(arm_name) and arm.linkage_name.equal(payload_c_name) and arm.fields.len > 0:
+                if arm.name == arm_name and arm.linkage_name == payload_c_name and arm.fields.len > 0:
                     return Option[types.Type].some(value = read(arm.fields.data + 0).ty)
                 ai += 1
         vi += 1
@@ -9740,7 +9740,7 @@ function variant_type_args(ty: types.Type) -> span[types.Type]:
 function is_phantom_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_named as n:
-            return n.name.equal("_phantom")
+            return n.name == "_phantom"
         _:
             return false
 
@@ -9760,7 +9760,7 @@ function arm_payload_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member:
     var i: ptr_uint = 0
     while i < arm_info.field_names.len:
         unsafe:
-            if read(arm_info.field_names.data + i).equal(member):
+            if read(arm_info.field_names.data + i) == member:
                 return Option[types.Type].some(value = read(arm_info.field_types.data + i))
         i += 1
     return Option[types.Type].none
@@ -9852,7 +9852,7 @@ function prelude_variant_base(name: str) -> Option[str]:
 ## or embedded in a qualified concrete name (e.g. "std_map_Option_...").
 function is_prelude_variant_name(name: str) -> bool:
     return (
-        name.equal("Option") or name.equal("Result")
+        name == "Option" or name == "Result"
         or name.starts_with("Option_") or name.starts_with("Result_")
         or name.contains_substring("_Option_") or name.contains_substring("_Result_")
     )
@@ -9960,7 +9960,7 @@ function import_qualified_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[
                         var ai: ptr_uint = 0
                         while ai < ctx.program_analyses.len:
                             var a: analyzer.Analysis = read(ctx.program_analyses.data + ai)
-                            if a.module_name.equal(target_module):
+                            if a.module_name == target_module:
                                 if a.structs.contains(ma.member_name) or a.type_names.contains(ma.member_name):
                                     return Option[types.Type].some(value = types.Type.ty_imported(module_name = target_module, name = ma.member_name, args = span[types.Type]()))
                             ai += 1
@@ -10137,11 +10137,11 @@ function promoted_binary_operand_type(operator: str, left: types.Type, right: ty
         # scalar * vector uses the vector type; scalar / vector is unsupported.
         let lp = nominal_type_name(left)
         let rp = nominal_type_name(right)
-        if is_vec_math_name(lp) and lp.equal(rp):
+        if is_vec_math_name(lp) and lp == rp:
             return Option[types.Type].some(value = left)
-        if is_vec_math_name(lp) and types.is_numeric(right) and operator.equal("*"):
+        if is_vec_math_name(lp) and types.is_numeric(right) and operator == "*":
             return Option[types.Type].some(value = left)
-        if is_vec_math_name(rp) and types.is_numeric(left) and operator.equal("*"):
+        if is_vec_math_name(rp) and types.is_numeric(left) and operator == "*":
             return Option[types.Type].some(value = right)
         return common_numeric_type(left, right)
     if operator == "%":
@@ -10151,9 +10151,9 @@ function promoted_binary_operand_type(operator: str, left: types.Type, right: ty
 
 function is_vec_math_name(name: str) -> bool:
     return (
-        name.equal("vec2") or name.equal("vec3") or name.equal("vec4")
-        or name.equal("ivec2") or name.equal("ivec3") or name.equal("ivec4")
-        or name.equal("mat3") or name.equal("mat4") or name.equal("quat")
+        name == "vec2" or name == "vec3" or name == "vec4"
+        or name == "ivec2" or name == "ivec3" or name == "ivec4"
+        or name == "mat3" or name == "mat4" or name == "quat"
     )
 
 
@@ -10185,23 +10185,23 @@ function lower_vec_unary_neg(ctx: ref[LowerCtx], operand: ptr[ir.Expr], name: st
 ## Populate `field_names` and `field_types` for a vector/math type name.
 ## Mirrors the field set used by `lower_vec_unary_neg` and `lower_vec_binary_op`.
 function vec_math_fields(name: str, names: ref[vec.Vec[str]], ftypes: ref[vec.Vec[types.Type]]) -> void:
-    if name.equal("vec2") or name.equal("ivec2"):
+    if name == "vec2" or name == "ivec2":
         names.push("x")
         names.push("y")
-    else if name.equal("vec3") or name.equal("ivec3"):
+    else if name == "vec3" or name == "ivec3":
         names.push("x")
         names.push("y")
         names.push("z")
-    else if name.equal("vec4") or name.equal("ivec4") or name.equal("quat"):
+    else if name == "vec4" or name == "ivec4" or name == "quat":
         names.push("x")
         names.push("y")
         names.push("z")
         names.push("w")
-    else if name.equal("mat3"):
+    else if name == "mat3":
         names.push("col0")
         names.push("col1")
         names.push("col2")
-    else if name.equal("mat4"):
+    else if name == "mat4":
         names.push("col0")
         names.push("col1")
         names.push("col2")
@@ -10211,9 +10211,9 @@ function vec_math_fields(name: str, names: ref[vec.Vec[str]], ftypes: ref[vec.Ve
         var ft = types.primitive("float")
         if name.starts_with("ivec"):
             ft = types.primitive("int")
-        else if name.equal("mat3"):
+        else if name == "mat3":
             ft = types.primitive("vec3")
-        else if name.equal("mat4"):
+        else if name == "mat4":
             ft = types.primitive("vec4")
         ftypes.push(ft)
         fi += 1
@@ -10323,7 +10323,7 @@ function wider_float_type(left: types.Type, right: types.Type) -> types.Type:
 
 
 function float_width_of(t: types.Type) -> int:
-    if prim_name(t).equal("double"):
+    if prim_name(t) == "double":
         return 64
     return 32
 
@@ -10372,7 +10372,7 @@ function enum_backing_or_self(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
 ## `module_name`, or none when no such declaration exists.  Scans the owning
 ## module's AST declarations (the analyzer keeps no separate backing table).
 function lookup_enum_backing(ctx: ref[LowerCtx], module_name: str, enum_name: str) -> Option[types.Type]:
-    if module_name.equal(ctx.module_name):
+    if module_name == ctx.module_name:
         return scan_enum_backing(ctx.analysis.source_file.declarations, enum_name)
     match find_imported_analysis(ctx, module_name):
         Option.some as a:
@@ -10391,10 +10391,10 @@ function scan_enum_backing(decls: span[ast.Decl], enum_name: str) -> Option[type
             d = read(decls.data + i)
         match d:
             ast.Decl.decl_enum as en:
-                if en.name.equal(enum_name):
+                if en.name == enum_name:
                     return Option[types.Type].some(value = enum_backing_type(en.backing_type))
             ast.Decl.decl_flags as fl:
-                if fl.name.equal(enum_name):
+                if fl.name == enum_name:
                     return Option[types.Type].some(value = enum_backing_type(fl.backing_type))
             _:
                 pass
@@ -10416,7 +10416,7 @@ function enum_backing_type(annotation: ptr[ast.TypeRef]?) -> types.Type:
 function is_int_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_primitive as p:
-            return p.name.equal("int")
+            return p.name == "int"
         _:
             return false
 
@@ -10430,7 +10430,7 @@ function lookup_local(ctx: ref[LowerCtx], name: str) -> Option[LocalBinding]:
         let lb_ptr = ctx.locals.get(i) else:
             break
         unsafe:
-            if read(lb_ptr).name.equal(name):
+            if read(lb_ptr).name == name:
                 return Option[LocalBinding].some(value = read(lb_ptr))
     return Option[LocalBinding].none
 
@@ -10490,7 +10490,7 @@ function resolve_scalar_type_ref(declared: ptr[ast.TypeRef]) -> types.Type:
         if t.name.parts.len != 1:
             return types.Type.ty_error
         let name = read(t.name.parts.data + 0)
-        if name.equal("str"):
+        if name == "str":
             return types.Type.ty_str
         if is_builtin_type_name(name):
             return types.primitive(name)
@@ -10499,13 +10499,13 @@ function resolve_scalar_type_ref(declared: ptr[ast.TypeRef]) -> types.Type:
 
 function is_builtin_type_name(name: str) -> bool:
     return (
-        name.equal("bool") or name.equal("byte") or name.equal("ubyte") or name.equal("char")
-        or name.equal("short") or name.equal("ushort") or name.equal("int") or name.equal("uint")
-        or name.equal("long") or name.equal("ulong") or name.equal("ptr_int") or name.equal("ptr_uint")
-        or name.equal("float") or name.equal("double") or name.equal("void") or name.equal("cstr")
-        or name.equal("vec2") or name.equal("vec3") or name.equal("vec4")
-        or name.equal("ivec2") or name.equal("ivec3") or name.equal("ivec4")
-        or name.equal("mat3") or name.equal("mat4") or name.equal("quat")
+        name == "bool" or name == "byte" or name == "ubyte" or name == "char"
+        or name == "short" or name == "ushort" or name == "int" or name == "uint"
+        or name == "long" or name == "ulong" or name == "ptr_int" or name == "ptr_uint"
+        or name == "float" or name == "double" or name == "void" or name == "cstr"
+        or name == "vec2" or name == "vec3" or name == "vec4"
+        or name == "ivec2" or name == "ivec3" or name == "ivec4"
+        or name == "mat3" or name == "mat4" or name == "quat"
     )
 
 
@@ -10602,7 +10602,7 @@ function fmt_append_helper_name(t: types.Type) -> str:
         types.Type.ty_str:
             return "mt_format_str_append_str"
         types.Type.ty_primitive as p:
-            if p.name.equal("float") or p.name.equal("double"):
+            if p.name == "float" or p.name == "double":
                 return "mt_format_str_append_float"
             return "mt_format_str_append_int"
         _:
@@ -10755,11 +10755,11 @@ function comptime_iterable_elements(ctx: ref[LowerCtx], iterable: ptr[ast.Expr])
             ast.Expr.expr_call as call:
                 match read(call.callee):
                     ast.Expr.expr_identifier as id:
-                        if id.name.equal("fields_of") and call.args.len == 1:
+                        if id.name == "fields_of" and call.args.len == 1:
                             return comptime_fields_of(ctx, call.args.data + 0)
-                        if id.name.equal("members_of") and call.args.len == 1:
+                        if id.name == "members_of" and call.args.len == 1:
                             return comptime_members_of(ctx, call.args.data + 0)
-                        if id.name.equal("attributes_of") and call.args.len >= 1:
+                        if id.name == "attributes_of" and call.args.len >= 1:
                             return comptime_attributes_of(ctx, call.args.data + 0)
                     _:
                         pass
@@ -10814,7 +10814,7 @@ function comptime_enum_member_value(ctx: ref[LowerCtx], type_name: str, member_n
             d = read(ctx.analysis.source_file.declarations.data + di)
         match d:
             ast.Decl.decl_enum as e:
-                if e.name.equal(type_name):
+                if e.name == type_name:
                     var mi: ptr_uint = 0
                     var auto_val: long = 0
                     while mi < e.enum_members.len:
@@ -10833,7 +10833,7 @@ function comptime_enum_member_value(ctx: ref[LowerCtx], type_name: str, member_n
                                                 pass
                                     Option.none:
                                         pass
-                        if m.name.equal(member_name):
+                        if m.name == member_name:
                             return auto_val
                         auto_val += 1
                         mi += 1
@@ -10944,11 +10944,11 @@ function extract_field_type_compare(ctx: ref[LowerCtx], cond: ptr[ast.Expr], fie
     unsafe:
         match read(cond):
             ast.Expr.expr_binary_op as bin:
-                if bin.operator.equal("==") or bin.operator.equal("!="):
+                if bin.operator == "==" or bin.operator == "!=":
                     let rhs_ty = comptime_expr_to_type(ctx, bin.right)
                     if not types.is_error(rhs_ty):
-                        let equal = types.type_to_string(field_ty).equal(types.type_to_string(rhs_ty))
-                        if bin.operator.equal("=="):
+                        let equal = types.type_to_string(field_ty) == types.type_to_string(rhs_ty)
+                        if bin.operator == "==":
                             return Option[bool].some(value = equal)
                         return Option[bool].some(value = not equal)
             _:
@@ -10960,7 +10960,7 @@ function comptime_expr_to_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.T
     unsafe:
         match read(ep):
             ast.Expr.expr_identifier as id:
-                if types.is_numeric_name(id.name) or types.is_integer_name(id.name) or id.name.equal("float") or id.name.equal("double"):
+                if types.is_numeric_name(id.name) or types.is_integer_name(id.name) or id.name == "float" or id.name == "double":
                     return types.primitive(id.name)
             _:
                 pass
@@ -10973,7 +10973,7 @@ function comptime_attr_count(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> Option[p
             ast.Expr.expr_call as call:
                 match read(call.callee):
                     ast.Expr.expr_identifier as cid:
-                        if cid.name.equal("field_of") and call.args.len == 2:
+                        if cid.name == "field_of" and call.args.len == 2:
                             return comptime_field_attr_count(ctx, call.args.data + 0, call.args.data + 1)
                     _:
                         pass
@@ -10991,7 +10991,7 @@ function comptime_field_attr_count(ctx: ref[LowerCtx], type_arg: ptr[ast.Argumen
         return Option[ptr_uint].none
     # Check if the struct field has attributes applied.
     # In the baseline, Labeled.value has @[rename("my_field")] — 1 attribute.
-    if type_name.equal("Labeled") and field_name.equal("value"):
+    if type_name == "Labeled" and field_name == "value":
         return Option[ptr_uint].some(value = 1)
     return Option[ptr_uint].some(value = 0)
 
@@ -11043,7 +11043,7 @@ function inline_for_member_subst(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], me
                     unsafe:
                         match read(receiver):
                             ast.Expr.expr_identifier as id:
-                                if member.equal("value"):
+                                if member == "value":
                                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = m.member_value, ty = types.primitive("int"))))
                             _:
                                 pass
@@ -11051,7 +11051,7 @@ function inline_for_member_subst(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], me
                     unsafe:
                         match read(receiver):
                             ast.Expr.expr_identifier as id:
-                                if member.equal("type"):
+                                if member == "type":
                                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_name(name = "sizeof_hint", ty = f.field_type, pointer = false)))
                             _:
                                 pass
@@ -11101,7 +11101,7 @@ function const_values_equal(l: ConstValue, r: ConstValue) -> bool:
         ConstValue.cv_str as ls:
             match r:
                 ConstValue.cv_str as rs:
-                    return ls.value.equal(rs.value)
+                    return ls.value == rs.value
                 _:
                     return false
         ConstValue.cv_type as lt:
@@ -11116,7 +11116,7 @@ function const_values_equal(l: ConstValue, r: ConstValue) -> bool:
 function types_are_equal(a: types.Type, b: types.Type) -> bool:
     let ta = types.type_to_string(a)
     let tb = types.type_to_string(b)
-    return ta.equal(tb)
+    return ta == tb
 
 
 ## Lower a span of statements (from a when branch) into the output vec.
@@ -11161,10 +11161,10 @@ function try_lookup_enum_value(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], memb
                         d = read(decls.data + i)
                     match d:
                         ast.Decl.decl_enum as en:
-                            if en.name.equal(id.name):
+                            if en.name == id.name:
                                 return find_enum_member_value(en.enum_members, member_name)
                         ast.Decl.decl_flags as fl:
-                            if fl.name.equal(id.name):
+                            if fl.name == id.name:
                                 return find_enum_member_value(fl.flags_members, member_name)
                         _:
                             pass
@@ -11175,7 +11175,7 @@ function try_lookup_enum_value(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], memb
                     var a: analyzer.Analysis
                     unsafe:
                         a = read(ctx.program_analyses.data + mi)
-                    if a.module_name.equal(id.name):
+                    if a.module_name == id.name:
                         var di: ptr_uint = 0
                         let adecls = a.source_file.declarations
                         while di < adecls.len:
@@ -11203,7 +11203,7 @@ function find_enum_member_value(members: span[ast.EnumMember], name: str) -> lon
         var m: ast.EnumMember
         unsafe:
             m = read(members.data + i)
-        if m.name.equal(name):
+        if m.name == name:
             let val_expr = m.value else:
                 return long<-(i)
             unsafe:
@@ -11233,9 +11233,9 @@ function try_evaluate_const_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Optio
                     unsafe:
                         let cv_val = read(cv_entry)
                         return try_evaluate_const_expr(ctx, cv_val)
-                if id.name.equal("true"):
+                if id.name == "true":
                     return Option[ConstValue].some(value = ConstValue.cv_bool(value = true))
-                if id.name.equal("false"):
+                if id.name == "false":
                     return Option[ConstValue].some(value = ConstValue.cv_bool(value = false))
                 return Option[ConstValue].none
             ast.Expr.expr_member_access as ma:
@@ -11263,13 +11263,13 @@ function evaluate_const_unary(ctx: ref[LowerCtx], op: str, operand: ptr[ast.Expr
         Option.some as val:
             match val.value:
                 ConstValue.cv_int as iv:
-                    if op.equal("-"):
+                    if op == "-":
                         return Option[ConstValue].some(value = ConstValue.cv_int(value = -iv.value))
-                    if op.equal("~"):
+                    if op == "~":
                         return Option[ConstValue].some(value = ConstValue.cv_int(value = ~iv.value))
                     return Option[ConstValue].none
                 ConstValue.cv_bool as bv:
-                    if op.equal("not"):
+                    if op == "not":
                         return Option[ConstValue].some(value = ConstValue.cv_bool(value = not bv.value))
                     return Option[ConstValue].none
                 _:
@@ -11301,13 +11301,13 @@ function const_binary_op(op: str, left_val: ConstValue, right_val: ConstValue) -
         ConstValue.cv_bool as lb:
             match right_val:
                 ConstValue.cv_bool as rb:
-                    if op.equal("and"):
+                    if op == "and":
                         return Option[ConstValue].some(value = ConstValue.cv_bool(value = lb.value and rb.value))
-                    if op.equal("or"):
+                    if op == "or":
                         return Option[ConstValue].some(value = ConstValue.cv_bool(value = lb.value or rb.value))
-                    if op.equal("=="):
+                    if op == "==":
                         return Option[ConstValue].some(value = ConstValue.cv_bool(value = lb.value == rb.value))
-                    if op.equal("!="):
+                    if op == "!=":
                         return Option[ConstValue].some(value = ConstValue.cv_bool(value = lb.value != rb.value))
                     return Option[ConstValue].none
                 _:
@@ -11315,19 +11315,19 @@ function const_binary_op(op: str, left_val: ConstValue, right_val: ConstValue) -
         ConstValue.cv_str as ls:
             match right_val:
                 ConstValue.cv_str as rs:
-                    if op.equal("=="):
-                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = ls.value.equal(rs.value)))
-                    if op.equal("!="):
-                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = not ls.value.equal(rs.value)))
+                    if op == "==":
+                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = ls.value == rs.value))
+                    if op == "!=":
+                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = not ls.value == rs.value))
                     return Option[ConstValue].none
                 _:
                     return Option[ConstValue].none
         ConstValue.cv_type as lt:
             match right_val:
                 ConstValue.cv_type as rt:
-                    if op.equal("=="):
+                    if op == "==":
                         return Option[ConstValue].some(value = ConstValue.cv_bool(value = types_are_equal(lt.ty, rt.ty)))
-                    if op.equal("!="):
+                    if op == "!=":
                         return Option[ConstValue].some(value = ConstValue.cv_bool(value = not types_are_equal(lt.ty, rt.ty)))
                     return Option[ConstValue].none
                 _:
@@ -11335,37 +11335,37 @@ function const_binary_op(op: str, left_val: ConstValue, right_val: ConstValue) -
 
 
 function apply_int_op(op: str, l: long, r: long) -> long:
-    if op.equal("+"):
+    if op == "+":
         return l + r
-    if op.equal("-"):
+    if op == "-":
         return l - r
-    if op.equal("*"):
+    if op == "*":
         return l * r
-    if op.equal("/"):
+    if op == "/":
         return l / r
-    if op.equal("%"):
+    if op == "%":
         return l % r
-    if op.equal("=="):
+    if op == "==":
         return long<-(l == r)
-    if op.equal("!="):
+    if op == "!=":
         return long<-(l != r)
-    if op.equal("<"):
+    if op == "<":
         return long<-(l < r)
-    if op.equal("<="):
+    if op == "<=":
         return long<-(l <= r)
-    if op.equal(">"):
+    if op == ">":
         return long<-(l > r)
-    if op.equal(">="):
+    if op == ">=":
         return long<-(l >= r)
-    if op.equal("<<"):
+    if op == "<<":
         return l << long<-(r)
-    if op.equal(">>"):
+    if op == ">>":
         return l >> long<-(r)
-    if op.equal("&"):
+    if op == "&":
         return l & r
-    if op.equal("|"):
+    if op == "|":
         return l | r
-    if op.equal("^"):
+    if op == "^":
         return l ^ r
     return 0
 
@@ -11385,7 +11385,7 @@ function try_evaluate_const_function_call(ctx: ref[LowerCtx], func_name: str, ar
         unsafe:
             match read(decls.data + i):
                 ast.Decl.decl_function as f:
-                    if f.name.equal(func_name) and f.is_const and f.method_params.len == args.len:
+                    if f.name == func_name and f.is_const and f.method_params.len == args.len:
                         func_body = f.body
                         func_params = f.method_params
                         break
@@ -11585,9 +11585,9 @@ function evaluate_const_expr_to_long_standalone(ctx: ref[LowerCtx], ep: ptr[ast.
                 let entry = ctx.analysis.const_values.get(id.name)
                 if entry != null:
                     return evaluate_const_expr_to_long_standalone(ctx, unsafe: read(entry))
-                if id.name.equal("true"):
+                if id.name == "true":
                     return Option[long].some(value = 1)
-                if id.name.equal("false"):
+                if id.name == "false":
                     return Option[long].some(value = 0)
                 return Option[long].none
             ast.Expr.expr_binary_op as bin:
@@ -11647,10 +11647,10 @@ function evaluate_const_expr_to_ir(ctx: ref[LowerCtx], variables: ref[map_mod.Ma
                 if cv_entry != null:
                     let cv_val = unsafe: read(cv_entry)
                     return evaluate_const_expr_to_ir(ctx, variables, cv_val)
-                if id.name.equal("true"):
+                if id.name == "true":
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(
                         ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool"))))
-                if id.name.equal("false"):
+                if id.name == "false":
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(
                         ir.Expr.expr_boolean_literal(value = false, ty = types.primitive("bool"))))
                 return Option[ptr[ir.Expr]].none
@@ -11700,7 +11700,7 @@ function evaluate_const_binary_ir(op: str, left: ptr[ir.Expr], right: ptr[ir.Exp
                 match read(right):
                     ir.Expr.expr_integer_literal as ri:
                         let result = apply_int_op(op, li.value, ri.value)
-                        if op.equal("==") or op.equal("!=") or op.equal("<") or op.equal("<=") or op.equal(">") or op.equal(">="):
+                        if op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">=":
                             return Option[ptr[ir.Expr]].some(value = alloc_expr(
                                 ir.Expr.expr_boolean_literal(value = result != 0, ty = bool_ty)))
                         return Option[ptr[ir.Expr]].some(value = alloc_expr(
@@ -11710,16 +11710,16 @@ function evaluate_const_binary_ir(op: str, left: ptr[ir.Expr], right: ptr[ir.Exp
             ir.Expr.expr_boolean_literal as lb:
                 match read(right):
                     ir.Expr.expr_boolean_literal as rb:
-                        if op.equal("and"):
+                        if op == "and":
                             return Option[ptr[ir.Expr]].some(value = alloc_expr(
                                 ir.Expr.expr_boolean_literal(value = lb.value and rb.value, ty = bool_ty)))
-                        if op.equal("or"):
+                        if op == "or":
                             return Option[ptr[ir.Expr]].some(value = alloc_expr(
                                 ir.Expr.expr_boolean_literal(value = lb.value or rb.value, ty = bool_ty)))
-                        if op.equal("=="):
+                        if op == "==":
                             return Option[ptr[ir.Expr]].some(value = alloc_expr(
                                 ir.Expr.expr_boolean_literal(value = lb.value == rb.value, ty = bool_ty)))
-                        if op.equal("!="):
+                        if op == "!=":
                             return Option[ptr[ir.Expr]].some(value = alloc_expr(
                                 ir.Expr.expr_boolean_literal(value = lb.value != rb.value, ty = bool_ty)))
                     _:
@@ -11735,17 +11735,17 @@ function evaluate_const_unary_ir(op: str, operand: ptr[ir.Expr]) -> Option[ptr[i
     unsafe:
         match read(operand):
             ir.Expr.expr_integer_literal as iv:
-                if op.equal("-"):
+                if op == "-":
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(
                         ir.Expr.expr_integer_literal(value = -iv.value, ty = int_ty)))
-                if op.equal("~"):
+                if op == "~":
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(
                         ir.Expr.expr_integer_literal(value = ~iv.value, ty = int_ty)))
-                if op.equal("+"):
+                if op == "+":
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(
                         ir.Expr.expr_integer_literal(value = iv.value, ty = int_ty)))
             ir.Expr.expr_boolean_literal as bv:
-                if op.equal("not"):
+                if op == "not":
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(
                         ir.Expr.expr_boolean_literal(value = not bv.value, ty = bool_ty)))
             _:
@@ -11780,7 +11780,7 @@ function make_task_literal(inner: ptr[ir.Expr]) -> ptr[ir.Expr]:
 function is_void_type_lowered(t: types.Type) -> bool:
     match t:
         types.Type.ty_primitive as p:
-            return p.name.equal("void")
+            return p.name == "void"
         _:
             return false
 
@@ -11790,7 +11790,7 @@ function unwrap_task_value(task_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let task_ty = ir_expr_type(task_expr)
     match task_ty:
         types.Type.ty_generic as g:
-            if g.name.equal("Task") and g.args.len == 1:
+            if g.name == "Task" and g.args.len == 1:
                 inner_ty = unsafe: read(g.args.data + 0)
         _:
             pass
@@ -11897,7 +11897,7 @@ function const_values_eq(a: ConstValue, b: ConstValue) -> bool:
         ConstValue.cv_str as as_:
             match b:
                 ConstValue.cv_str as bs:
-                    return as_.value.equal(bs.value)
+                    return as_.value == bs.value
                 _:
                     return false
         _:

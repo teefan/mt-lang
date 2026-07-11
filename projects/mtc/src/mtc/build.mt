@@ -144,7 +144,7 @@ function link_lib_seen(link_libs: ref[vec.Vec[string.String]], flag: str) -> boo
         let f_ptr = link_libs.get(i) else:
             break
         unsafe:
-            if read(f_ptr).as_str().equal(flag):
+            if read(f_ptr).as_str() == flag:
                 return true
         i += 1
     return false

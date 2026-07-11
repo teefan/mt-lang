@@ -54,9 +54,9 @@ public function literal_int(value: long) -> Type:
 
 public function is_numeric_name(name: str) -> bool:
     return (
-        name.equal("byte") or name.equal("short") or name.equal("int") or name.equal("long")
-        or name.equal("ubyte") or name.equal("ushort") or name.equal("uint") or name.equal("ulong")
-        or name.equal("ptr_int") or name.equal("ptr_uint") or name.equal("float") or name.equal("double")
+        name == "byte" or name == "short" or name == "int" or name == "long"
+        or name == "ubyte" or name == "ushort" or name == "uint" or name == "ulong"
+        or name == "ptr_int" or name == "ptr_uint" or name == "float" or name == "double"
     )
 
 
@@ -64,9 +64,9 @@ public function is_numeric_name(name: str) -> bool:
 ## pointer-sized).  Excludes char and the float types.
 public function is_integer_name(name: str) -> bool:
     return (
-        name.equal("byte") or name.equal("short") or name.equal("int") or name.equal("long")
-        or name.equal("ubyte") or name.equal("ushort") or name.equal("uint") or name.equal("ulong")
-        or name.equal("ptr_int") or name.equal("ptr_uint")
+        name == "byte" or name == "short" or name == "int" or name == "long"
+        or name == "ubyte" or name == "ushort" or name == "uint" or name == "ulong"
+        or name == "ptr_int" or name == "ptr_uint"
     )
 
 
@@ -81,7 +81,7 @@ public function is_error(t: Type) -> bool:
 public function is_bool(t: Type) -> bool:
     match t:
         Type.ty_primitive as p:
-            return p.name.equal("bool")
+            return p.name == "bool"
         _:
             return false
 
@@ -89,7 +89,7 @@ public function is_bool(t: Type) -> bool:
 public function is_void(t: Type) -> bool:
     match t:
         Type.ty_primitive as p:
-            return p.name.equal("void")
+            return p.name == "void"
         _:
             return false
 
@@ -195,7 +195,7 @@ const cat_other: int = 0
 function scalar_category(t: Type) -> int:
     match t:
         Type.ty_primitive as p:
-            if p.name.equal("bool"):
+            if p.name == "bool":
                 return cat_bool
             if is_numeric_name(p.name):
                 return cat_numeric
@@ -209,13 +209,13 @@ function scalar_category(t: Type) -> int:
 ## Width in bits of a fixed-width integer primitive, 0 for pointer-sized integer
 ## types and non-integers.  Mirrors Ruby’s Primitive#integer_width.
 public function integer_width(name: str) -> int:
-    if name.equal("byte") or name.equal("ubyte") or name.equal("char"):
+    if name == "byte" or name == "ubyte" or name == "char":
         return 8
-    if name.equal("short") or name.equal("ushort"):
+    if name == "short" or name == "ushort":
         return 16
-    if name.equal("int") or name.equal("uint"):
+    if name == "int" or name == "uint":
         return 32
-    if name.equal("long") or name.equal("ulong"):
+    if name == "long" or name == "ulong":
         return 64
     return 0
 
@@ -230,8 +230,8 @@ public function is_fixed_width_integer_name(name: str) -> bool:
 ## and non-integers return false.
 public function is_signed_integer_name(name: str) -> bool:
     return (
-        name.equal("byte") or name.equal("short") or name.equal("int")
-        or name.equal("long")
+        name == "byte" or name == "short" or name == "int"
+        or name == "long"
     )
 
 
@@ -261,7 +261,7 @@ public function type_equals(a: Type, b: Type) -> bool:
         Type.ty_primitive as pa:
             match b:
                 Type.ty_primitive as pb:
-                    return pa.name.equal(pb.name)
+                    return pa.name == pb.name
                 _:
                     return false
         Type.ty_nullable as na:
@@ -273,15 +273,15 @@ public function type_equals(a: Type, b: Type) -> bool:
         Type.ty_named as na:
             match b:
                 Type.ty_named as nb:
-                    return na.name.equal(nb.name)
+                    return na.name == nb.name
                 Type.ty_imported as ib:
-                    return na.name.equal(ib.name)
+                    return na.name == ib.name
                 _:
                     return false
         Type.ty_imported as ia:
             match b:
                 Type.ty_imported as ib:
-                    if not ia.module_name.equal(ib.module_name) or not ia.name.equal(ib.name):
+                    if not ia.module_name == ib.module_name or not ia.name == ib.name:
                         return false
                     if ia.args.len != ib.args.len:
                         return false
@@ -293,25 +293,25 @@ public function type_equals(a: Type, b: Type) -> bool:
                         i += 1
                     return true
                 Type.ty_named as nb:
-                    return ia.name.equal(nb.name) and ia.args.len == 0
+                    return ia.name == nb.name and ia.args.len == 0
                 _:
                     return false
         Type.ty_var as va:
             match b:
                 Type.ty_var as vb:
-                    return va.name.equal(vb.name)
+                    return va.name == vb.name
                 _:
                     return false
         Type.ty_dyn as da:
             match b:
                 Type.ty_dyn as db:
-                    return da.iface.equal(db.iface)
+                    return da.iface == db.iface
                 _:
                     return false
         Type.ty_generic as ga:
             match b:
                 Type.ty_generic as gb:
-                    if not ga.name.equal(gb.name):
+                    if not ga.name == gb.name:
                         return false
                     if ga.args.len != gb.args.len:
                         return false
@@ -369,7 +369,7 @@ public function type_equals(a: Type, b: Type) -> bool:
 public function is_raw_pointer(t: Type) -> bool:
     match t:
         Type.ty_generic as g:
-            return g.name.equal("ptr") or g.name.equal("const_ptr")
+            return g.name == "ptr" or g.name == "const_ptr"
         Type.ty_nullable as nl:
             return is_raw_pointer(unsafe: read(nl.base))
         _:
@@ -392,7 +392,7 @@ public function pointer_element(t: Type) -> Type:
 public function is_ref_type(t: Type) -> bool:
     match t:
         Type.ty_generic as g:
-            return g.name.equal("ref")
+            return g.name == "ref"
         _:
             return false
 
@@ -410,7 +410,7 @@ public function is_integer_type(t: Type) -> bool:
 public function is_float_type(t: Type) -> bool:
     match t:
         Type.ty_primitive as p:
-            return p.name.equal("float") or p.name.equal("double")
+            return p.name == "float" or p.name == "double"
         _:
             return false
 
@@ -419,7 +419,7 @@ public function is_float_type(t: Type) -> bool:
 public function is_char_type(t: Type) -> bool:
     match t:
         Type.ty_primitive as p:
-            return p.name.equal("char")
+            return p.name == "char"
         _:
             return false
 
@@ -532,7 +532,7 @@ function scalar_definitely_different(a: Type, b: Type) -> bool:
         Type.ty_primitive as pa:
             match b:
                 Type.ty_primitive as pb:
-                    return not pa.name.equal(pb.name)
+                    return not pa.name == pb.name
                 Type.ty_str:
                     return true
                 _:
@@ -557,7 +557,7 @@ function generic_definitely_different(a: Type, b: Type) -> bool:
                     # Different constructors stay permissive: mutable→const
                     # pointer and array→span coercions are legal, so a bare
                     # name mismatch is not proof of incompatibility.
-                    if not ga.name.equal(gb.name):
+                    if not ga.name == gb.name:
                         return false
                     if ga.args.len != gb.args.len:
                         return false
@@ -604,7 +604,7 @@ public function definitely_different(a: Type, b: Type) -> bool:
     if ka == kind_scalar and kb == kind_scalar:
         return scalar_definitely_different(a, b)
     if ka == kind_nominal and kb == kind_nominal:
-        return not nominal_key(a).equal(nominal_key(b))
+        return not nominal_key(a) == nominal_key(b)
     if ka == kind_generic and kb == kind_generic:
         return generic_definitely_different(a, b)
     # Cross-kind: only a nominal-vs-scalar pair is provably incompatible.  Any
@@ -692,7 +692,7 @@ public function definitely_incompatible(target: Type, source: Type) -> bool:
 public function is_definitely_non_bool(t: Type) -> bool:
     match t:
         Type.ty_primitive as p:
-            return not p.name.equal("bool")
+            return not p.name == "bool"
         Type.ty_str:
             return true
         _:

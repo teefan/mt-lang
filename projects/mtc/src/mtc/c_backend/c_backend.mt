@@ -116,7 +116,7 @@ public function generate_c(program: ir.Program) -> string.String:
             if not seen_headers.contains(header):
                 seen_headers.set(header, true)
                 emit_line(ref_of(e), j2("#include ", header))
-                if use_offsetof and header.equal("<string.h>") and not seen_headers.contains("<stddef.h>"):
+                if use_offsetof and header == "<string.h>" and not seen_headers.contains("<stddef.h>"):
                     seen_headers.set("<stddef.h>", true)
                     emit_line(ref_of(e), "#include <stddef.h>")
         i += 1
@@ -877,7 +877,7 @@ function collect_gv_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]],
                 gi += 1
             # Only emit variant decls for prelude types; user-generic structs
             # are handled by the lowering's `ensure_generic_struct_decl`.
-            if not g.name.equal("Option") and not g.name.equal("Result"):
+            if not g.name == "Option" and not g.name == "Result":
                 return
             # Skip when type args contain raw type parameters (inside generic bodies).
             if generic_has_type_param(g.args):
@@ -945,12 +945,12 @@ function prelude_variant_arm_info(name: str, args: span[types.Type]) -> GVInfo:
     let first_arg = if args.len > 0: unsafe: read(args.data + 0) else: default_ty
     let second_arg = if args.len > 1: unsafe: read(args.data + 1) else: default_ty
     var arms = vec.Vec[GVArmInfo].create()
-    if name.equal("Option"):
+    if name == "Option":
         var sf = vec.Vec[ir.Field].create()
         sf.push(ir.Field(name = "value", ty = first_arg))
         arms.push(GVArmInfo(name = "some", fields = sf.as_span()))
         arms.push(GVArmInfo(name = "none", fields = span[ir.Field]()))
-    else if name.equal("Result"):
+    else if name == "Result":
         var sf = vec.Vec[ir.Field].create()
         sf.push(ir.Field(name = "value", ty = first_arg))
         var ef = vec.Vec[ir.Field].create()
@@ -1066,7 +1066,7 @@ function expr_calls(ep: ptr[ir.Expr], name: str) -> bool:
     unsafe:
         match read(ep):
             ir.Expr.expr_call as call:
-                if call.callee.equal(name):
+                if call.callee == name:
                     return true
                 var i: ptr_uint = 0
                 while i < call.arguments.len:
@@ -1379,30 +1379,30 @@ function tuple_type_name(t: types.Type) -> str:
 ## C type for a generic instance: span -> mt_span_ELEM, ptr/const_ptr/ref ->
 ## pointer.  Arrays are declarators (handled by c_declaration), not plain types.
 function generic_c_type(name: str, args: span[types.Type]) -> str:
-    if name.equal("span") and args.len == 1:
+    if name == "span" and args.len == 1:
         return span_type_name(unsafe: read(args.data + 0))
-    if name.equal("ptr") and args.len == 1:
+    if name == "ptr" and args.len == 1:
         return j2(c_type(unsafe: read(args.data + 0)), "*")
-    if name.equal("const_ptr") and args.len == 1:
+    if name == "const_ptr" and args.len == 1:
         return j3("const ", c_type(unsafe: read(args.data + 0)), "*")
-    if name.equal("ref") and args.len >= 1:
+    if name == "ref" and args.len >= 1:
         return j2(c_type(unsafe: read(args.data + (args.len - 1))), "*")
     # str_buffer[N] → mt_str_buffer_N
-    if name.equal("str_buffer") and args.len >= 1:
+    if name == "str_buffer" and args.len >= 1:
         return j3("mt_str_buffer_", naming.type_c_key(unsafe: read(args.data + 0)), "")
     # atomic[T] → _Atomic <c_type(T)>
-    if name.equal("atomic") and args.len == 1:
+    if name == "atomic" and args.len == 1:
         return j3("_Atomic ", c_type(unsafe: read(args.data + 0)), "")
     # Task[T] → mt_task_<T>
-    if name.equal("Task") and args.len == 1:
+    if name == "Task" and args.len == 1:
         return j3("mt_task_", naming.type_c_key(unsafe: read(args.data + 0)), "")
     # SoA[T, N] → mt_soa_<T>_N
-    if name.equal("SoA") and args.len >= 2:
+    if name == "SoA" and args.len >= 2:
         let elem_name = c_type(unsafe: read(args.data + 0))
         let count_str = naming.type_c_key(unsafe: read(args.data + 1))
         return j4("mt_soa_", elem_name, "_", count_str)
     # array[T, N] in type position (e.g. sizeof) → <elem>[<N>]
-    if name.equal("array") and args.len >= 2:
+    if name == "array" and args.len >= 2:
         return j3(c_type(unsafe: read(args.data + 0)), "[", j2(naming.type_c_key(unsafe: read(args.data + 1)), "]"))
     # Generic variant: `<name>_<type0>_<type1>_...`.  The caller module prefix
     # is added by `qualified_c_name` when the type is `ty_imported`.
@@ -1410,9 +1410,9 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
     # lowering (line 2008-2013), but `ty_generic` strips it.  Add it back here.
     if args.len > 0:
         var buf = string.String.create()
-        if name.equal("Option"):
+        if name == "Option":
             buf.append("std_option_")
-        else if name.equal("Result"):
+        else if name == "Result":
             buf.append("std_result_")
         buf.append(name)
         var i: ptr_uint = 0
@@ -1518,7 +1518,7 @@ function maybe_add_span(t: types.Type, seen: ref[map_mod.Map[str, bool]], collec
 
 ## True when `name` is a single-letter type parameter used in generic bodies.
 function is_raw_type_param_name(name: str) -> bool:
-    return name.equal("T") or name.equal("U") or name.equal("K") or name.equal("V") or name.equal("E")
+    return name == "T" or name == "U" or name == "K" or name == "V" or name == "E"
 
 
 function span_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
@@ -1681,7 +1681,7 @@ function array_direct_initializer(ep: ptr[ir.Expr]) -> bool:
 function is_array_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name.equal("array") and g.args.len == 2
+            return g.name == "array" and g.args.len == 2
         _:
             return false
 
@@ -1689,7 +1689,7 @@ function is_array_type(t: types.Type) -> bool:
 function is_span_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name.equal("span") and g.args.len == 1
+            return g.name == "span" and g.args.len == 1
         _:
             return false
 
@@ -1731,47 +1731,47 @@ function is_str_type(t: types.Type) -> bool:
 
 
 function primitive_c_type(name: str) -> str:
-    if name.equal("bool"):
+    if name == "bool":
         return "bool"
-    if name.equal("byte"):
+    if name == "byte":
         return "int8_t"
-    if name.equal("ubyte"):
+    if name == "ubyte":
         return "uint8_t"
-    if name.equal("char"):
+    if name == "char":
         return "char"
-    if name.equal("short"):
+    if name == "short":
         return "int16_t"
-    if name.equal("ushort"):
+    if name == "ushort":
         return "uint16_t"
-    if name.equal("int"):
+    if name == "int":
         return "int32_t"
-    if name.equal("uint"):
+    if name == "uint":
         return "uint32_t"
-    if name.equal("long"):
+    if name == "long":
         return "int64_t"
-    if name.equal("ulong"):
+    if name == "ulong":
         return "uint64_t"
-    if name.equal("ptr_int"):
+    if name == "ptr_int":
         return "intptr_t"
-    if name.equal("ptr_uint"):
+    if name == "ptr_uint":
         return "uintptr_t"
-    if name.equal("float"):
+    if name == "float":
         return "float"
-    if name.equal("double"):
+    if name == "double":
         return "double"
-    if name.equal("void"):
+    if name == "void":
         return "void"
-    if name.equal("cstr"):
+    if name == "cstr":
         return "const char*"
-    if name.equal("vec2") or name.equal("ivec2"):
+    if name == "vec2" or name == "ivec2":
         return j2("mt_", name)
-    if name.equal("vec3") or name.equal("ivec3"):
+    if name == "vec3" or name == "ivec3":
         return j2("mt_", name)
-    if name.equal("vec4") or name.equal("ivec4"):
+    if name == "vec4" or name == "ivec4":
         return j2("mt_", name)
-    if name.equal("mat3") or name.equal("mat4"):
+    if name == "mat3" or name == "mat4":
         return j2("mt_", name)
-    if name.equal("quat"):
+    if name == "quat":
         return j2("mt_", name)
     fatal(c"c_backend: unsupported primitive type")
 
@@ -1823,19 +1823,19 @@ function c_declaration(t: types.Type, name: str) -> str:
         types.Type.ty_function:
             return c_fn_ptr_declarator(t, name)
         types.Type.ty_generic as g:
-            if (g.name.equal("ptr") or g.name.equal("ref")) and g.args.len >= 1:
+            if (g.name == "ptr" or g.name == "ref") and g.args.len >= 1:
                 let inner = unsafe: read(g.args.data + (g.args.len - 1))
                 if is_array_type(inner):
                     return c_declaration(inner, j2("*", name))
                 let base = unsafe: c_type(inner)
                 return j3(base, " *", name)
-            if g.name.equal("const_ptr") and g.args.len == 1:
+            if g.name == "const_ptr" and g.args.len == 1:
                 let inner = unsafe: read(g.args.data + 0)
                 if is_array_type(inner):
                     return c_declaration(inner, j2("*", name))
                 let base = unsafe: c_type(inner)
                 return j4("const ", base, "*", name)
-            if g.name.equal("str_buffer") and g.args.len >= 1:
+            if g.name == "str_buffer" and g.args.len >= 1:
                 let c_name = j3("mt_str_buffer_", naming.type_c_key(unsafe: read(g.args.data + 0)), "")
                 return j3(c_name, " ", name)
             return j3(generic_c_type(g.name, g.args), " ", name)
@@ -1932,7 +1932,7 @@ function emit_one_soa(e: ref[Emitter], elem_struct_name: str, count_str: str, st
     while svi < structs.len:
         unsafe:
             let s = read(structs.data + svi)
-            if s.linkage_name.equal(elem_struct_name):
+            if s.linkage_name == elem_struct_name:
                 var sfi: ptr_uint = 0
                 while sfi < s.fields.len:
                     let f = read(s.fields.data + sfi)
@@ -2003,7 +2003,7 @@ function collect_soa_from_stmts(e: ref[Emitter], body: span[ir.Stmt], seen: ref[
 function collect_soa_from_type(e: ref[Emitter], ty: types.Type, seen: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
     match ty:
         types.Type.ty_generic as g:
-            if g.name.equal("SoA") and g.args.len >= 2:
+            if g.name == "SoA" and g.args.len >= 2:
                 let elem_ty = unsafe: read(g.args.data + 0)
                 let count_ty = unsafe: read(g.args.data + 1)
                 let elem_c_name = soa_element_c_name(elem_ty)
@@ -2076,7 +2076,7 @@ function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
                 var fi: ptr_uint = 0
                 while fi < arm.fields.len:
                     let f = read(arm.fields.data + fi)
-                    if c_type(f.ty).equal(outer_c):
+                    if c_type(f.ty) == outer_c:
                         emit_line(e, j4("  ", c_declaration(f.ty, j2("*", f.name)), ";", ""))
                     else:
                         emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
@@ -2198,14 +2198,14 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
         types.Type.ty_nullable as nl:
             return by_value_dep_key(unsafe: read(nl.base))
         types.Type.ty_generic as g:
-            if g.name.equal("array") and g.args.len >= 1:
+            if g.name == "array" and g.args.len >= 1:
                 return by_value_dep_key(unsafe: read(g.args.data + 0))
             # Pointer-like generics need only a forward declaration, not a
             # by-value dependency.
             if (
-                g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("ref")
-                or g.name.equal("span") or g.name.equal("str_buffer") or g.name.equal("atomic")
-                or g.name.equal("Task") or g.name.equal("SoA")
+                g.name == "ptr" or g.name == "const_ptr" or g.name == "ref"
+                or g.name == "span" or g.name == "str_buffer" or g.name == "atomic"
+                or g.name == "Task" or g.name == "SoA"
             ):
                 return Option[str].none
             # A generic variant instance embedded by value (e.g.
@@ -3005,9 +3005,9 @@ function render_variant_initializer(e: ref[Emitter], ty: types.Type, arm_name: s
     match ty:
         types.Type.ty_generic as g:
             var buf = string.String.create()
-            if g.name.equal("Option"):
+            if g.name == "Option":
                 buf.append("std_option_")
-            else if g.name.equal("Result"):
+            else if g.name == "Result":
                 buf.append("std_result_")
             buf.append(g.name)
             var i: ptr_uint = 0
@@ -3049,11 +3049,11 @@ function render_zero_initializer(t: types.Type) -> str:
         types.Type.ty_str:
             return "{ 0 }"
         types.Type.ty_primitive as p:
-            if p.name.equal("bool"):
+            if p.name == "bool":
                 return "false"
-            if p.name.equal("float") or p.name.equal("double"):
+            if p.name == "float" or p.name == "double":
                 return "0.0"
-            if p.name.equal("void"):
+            if p.name == "void":
                 return "{ 0 }"
             if is_vec_math_name(p.name):
                 return "{ 0 }"
@@ -3154,7 +3154,7 @@ function pointer_member_receiver(ep: ptr[ir.Expr]) -> bool:
 function is_ptr_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name.equal("ptr") and g.args.len == 1
+            return g.name == "ptr" and g.args.len == 1
         _:
             return false
 
@@ -3182,7 +3182,7 @@ function is_variant_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Ex
         return false
     let lt = expr_result_type(left)
     let rt = expr_result_type(right)
-    if not types.type_to_string(lt).equal(types.type_to_string(rt)):
+    if not types.type_to_string(lt) == types.type_to_string(rt):
         return false
     return e.variant_eq_set.contains(variant_c_name_for_type(lt))
 
@@ -3195,7 +3195,7 @@ function variant_c_name_for_type(ty: types.Type) -> str:
     # `c_type` for a variant type (ty_named / ty_imported) returns the qualified
     # C struct name, e.g. `language_baseline_TokenKind`.  For primitive/str/etc.
     # it returns something else — keep those out.
-    if name.equal("void") or name.equal("mt_str") or is_primitive_name_from_str(name):
+    if name == "void" or name == "mt_str" or is_primitive_name_from_str(name):
         return ""
     return name
 
@@ -3482,11 +3482,11 @@ function emit_variant_field_compare(e: ref[Emitter], left_expr: str, right_expr:
 ## `is_primitive_name` usage).  Used to filter out non-variant types.
 function is_primitive_name_from_str(name: str) -> bool:
     return (
-        name.equal("bool") or name.equal("byte") or name.equal("short") or name.equal("int")
-        or name.equal("long") or name.equal("ubyte") or name.equal("ushort") or name.equal("uint")
-        or name.equal("ulong") or name.equal("ptr_int") or name.equal("ptr_uint") or name.equal("float")
-        or name.equal("double") or name.equal("void") or name.equal("str") or name.equal("cstr")
-        or name.equal("char")
+        name == "bool" or name == "byte" or name == "short" or name == "int"
+        or name == "long" or name == "ubyte" or name == "ushort" or name == "uint"
+        or name == "ulong" or name == "ptr_int" or name == "ptr_uint" or name == "float"
+        or name == "double" or name == "void" or name == "str" or name == "cstr"
+        or name == "char"
     )
 
 
@@ -3496,9 +3496,9 @@ function is_primitive_name_from_str(name: str) -> bool:
 function is_pointer_like_for_nullable(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("ref")
+            return g.name == "ptr" or g.name == "const_ptr" or g.name == "ref"
         types.Type.ty_primitive as p:
-            return p.name.equal("cstr")
+            return p.name == "cstr"
         types.Type.ty_function:
             return true
         types.Type.ty_imported:
@@ -3642,7 +3642,7 @@ function no_op_cast(ep: ptr[ir.Expr], target_ty: types.Type) -> bool:
     let source_ty = expr_result_type(ep)
     if types.is_error(source_ty):
         return false
-    return c_type(target_ty).equal(c_type(source_ty))
+    return c_type(target_ty) == c_type(source_ty)
 
 
 ## Render the operand of a cast, wrapping it in parentheses only when its
@@ -4070,7 +4070,7 @@ function emit_task_structs(e: ref[Emitter], program: ir.Program) -> void:
 function task_type_element(t: types.Type) -> Option[types.Type]:
     match t:
         types.Type.ty_generic as g:
-            if g.name.equal("Task") and g.args.len == 1:
+            if g.name == "Task" and g.args.len == 1:
                 return Option[types.Type].some(value = unsafe: read(g.args.data + 0))
             return Option[types.Type].none
         _:
@@ -4096,16 +4096,16 @@ function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -
 
 function is_vec_math_name(name: str) -> bool:
     return (
-        name.equal("vec2") or name.equal("vec3") or name.equal("vec4")
-        or name.equal("ivec2") or name.equal("ivec3") or name.equal("ivec4")
-        or name.equal("mat3") or name.equal("mat4") or name.equal("quat")
+        name == "vec2" or name == "vec3" or name == "vec4"
+        or name == "ivec2" or name == "ivec3" or name == "ivec4"
+        or name == "mat3" or name == "mat4" or name == "quat"
     )
 
 
 function is_void_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_primitive as p:
-            return p.name.equal("void")
+            return p.name == "void"
         _:
             return false
 
@@ -4335,7 +4335,7 @@ function collect_opt_from_expr(needed: ref[map_mod.Map[str, types.Type]], ep: pt
 function collect_builtin_types(needed: ref[map_mod.Map[str, bool]], t: types.Type) -> void:
     match t:
         types.Type.ty_primitive as p:
-            if p.name.equal("vec2") or p.name.equal("ivec2") or p.name.equal("vec3") or p.name.equal("ivec3") or p.name.equal("vec4") or p.name.equal("ivec4") or p.name.equal("mat3") or p.name.equal("mat4") or p.name.equal("quat"):
+            if p.name == "vec2" or p.name == "ivec2" or p.name == "vec3" or p.name == "ivec3" or p.name == "vec4" or p.name == "ivec4" or p.name == "mat3" or p.name == "mat4" or p.name == "quat":
                 needed.set(p.name, true)
         types.Type.ty_nullable as n:
             unsafe:
@@ -4394,7 +4394,7 @@ function includes_need_feature_macros(program: ir.Program) -> bool:
     while i < program.includes.len:
         unsafe:
             let h = read(program.includes.data + i).header
-            if h.equal("\"fs_support.h\"") or h.equal("\"tls_support.h\""):
+            if h == "\"fs_support.h\"" or h == "\"tls_support.h\"":
                 return true
         i += 1
     return false
