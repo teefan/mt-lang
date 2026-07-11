@@ -142,7 +142,7 @@ struct ReadState:
     waiter_registered: bool
     stream: ptr[TcpStreamState]?
     max_bytes: ptr_uint
-    buffer: ptr[ubyte]?
+    buffer: own[ubyte]?
     received_bytes: ptr_uint
     exact: bool
     released: bool
@@ -1269,7 +1269,7 @@ function stream_read_set_waiter(
 
 function stream_read_reset_buffer(state: ptr[ReadState]) -> void:
     let buffer = unsafe: read(state).buffer
-    if buffer != null[ptr[ubyte]]:
+    if buffer != null:
         heap.release(buffer)
 
     unsafe:
@@ -1289,7 +1289,7 @@ function stream_read_take_payload(state: ptr[ReadState]) -> bytes.Bytes:
     unsafe:
         read(state).buffer = null
         read(state).received_bytes = 0
-    return unsafe: bytes.Bytes(data = own[ubyte]<-buffer, len = received_bytes)
+    return bytes.Bytes(data = buffer, len = received_bytes)
 
 
 function stop_stream_read(
@@ -1307,7 +1307,7 @@ function stop_stream_read(
 
 function stream_read_cleanup_and_release(state: ptr[ReadState]) -> void:
     unsafe:
-        if read(state).buffer != null[ptr[ubyte]]:
+        if read(state).buffer != null:
             heap.release(read(state).buffer)
             read(state).buffer = null
             read(state).received_bytes = 0
