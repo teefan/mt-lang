@@ -852,6 +852,25 @@ function j2_path(a: str, b: str) -> string.String:
     return buf
 
 
+function ptr_uint_to_str(value: ptr_uint) -> str:
+    if value == 0:
+        return "0"
+    var buf = string.String.create()
+    var n = value
+    var digits = vec.Vec[ubyte].create()
+    while n > 0:
+        let d = n % 10
+        digits.push(ubyte<-(int<-d + 48))
+        n = n / 10
+    var di = digits.len()
+    while di > 0:
+        di -= 1
+        unsafe:
+            let dp = ptr[ubyte]<-digits.data
+            buf.push_byte(read(dp + di))
+    return buf.as_str()
+
+
 function lex_command(file_path: str, machine: bool) -> int:
     match fs.read_text(file_path):
         Result.failure:
@@ -1007,23 +1026,21 @@ function count_tests_in_file(file_path: str) -> int:
             var count: int = 0
             var di: ptr_uint = 0
             while di < file.declarations.len:
-                var d: ast.Decl
                 unsafe:
-                    d = read(file.declarations.data + di)
-                match d:
-                    ast.Decl.decl_function as fun:
-                        var ai: ptr_uint = 0
-                        while ai < fun.attributes.len:
-                            unsafe:
+                    var d = read(file.declarations.data + di)
+                    match d:
+                        ast.Decl.decl_function as fun:
+                            var ai: ptr_uint = 0
+                            while ai < fun.attributes.len:
                                 let attr = read(fun.attributes.data + ai)
                                 if attr.name.parts.len == 1:
                                     let an = read(attr.name.parts.data + 0)
                                     if an.equal("test") or an.equal("expect_fatal"):
                                         count += 1
                                         break
-                            ai += 1
-                    _:
-                        pass
+                                ai += 1
+                        _:
+                            pass
                 di += 1
             return count
         Result.failure:
