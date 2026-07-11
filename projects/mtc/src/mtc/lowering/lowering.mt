@@ -12183,11 +12183,12 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.Type
     let frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = single_ty_span(frame_ty))
 
     # -- frame struct --
+    var waiter_fn_ty = types.Type.ty_function(params = single_ty_span(ptr_void_type()), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
     var ff = vec.Vec[ir.Field].create()
     ff.push(ir.Field(name = "ready",          ty = bool_ty))
     ff.push(ir.Field(name = "cancelled",      ty = bool_ty))
     ff.push(ir.Field(name = "waiter_frame",   ty = ptr_void_type()))
-    ff.push(ir.Field(name = "waiter",         ty = ptr_void_type()))
+    ff.push(ir.Field(name = "waiter",         ty = waiter_fn_ty))
     if has_await:
         ff.push(ir.Field(name = "state",      ty = int_ty))
     if not is_void_ret:
@@ -12213,6 +12214,8 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.Type
     if has_await:
         lower_async_cps_body(ctx, name, body, resume_c, frame_c, frame_exp, res_ty, is_void_ret, bool_ty, int_ty, ref_of(resume_body))
     else:
+        # Waiter wake: if(frame->waiter), call it
+        async_waiter_wake(ctx, ref_of(resume_body), frame_exp, bool_ty, ptr_void_type())
         resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = bool_true))
         if not is_void_ret:
             resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_zero_init(ty = res_ty))))
@@ -12247,7 +12250,8 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.Type
     var sw_params = vec.Vec[ir.Param].create()
     sw_params.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ptr_void_type(), pointer = true))
     sw_params.push(ir.Param(name = "__mt_waiter_frame", linkage_name = "__mt_waiter_frame", ty = ptr_void_type(), pointer = true))
-    sw_params.push(ir.Param(name = "__mt_waiter_fn", linkage_name = "__mt_waiter_fn", ty = ptr_void_type(), pointer = false))
+    var waiter_cb_ty = types.Type.ty_function(params = single_ty_span(ptr_void_type()), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
+    sw_params.push(ir.Param(name = "__mt_waiter_fn", linkage_name = "__mt_waiter_fn", ty = waiter_cb_ty, pointer = true))
     functions.push(ir.Function(name = j2(name, "_set_waiter"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: take_result (fresh vec) --
@@ -12326,7 +12330,8 @@ function lower_async_cps_body(ctx: ref[LowerCtx], name: str, body: ptr[ast.Stmt]
                             cur.push(unsafe: read(tmp.data + ti))
                             ti += 1
 
-    # Completion: set ready, store result, return
+    # Completion: waiter wake, set ready, store result, return
+    async_waiter_wake(ctx, ref_of(cur), frame_exp, bool_ty, async_mod.ptr_void_type())
     cur.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
     if not is_void_ret:
         cur.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_zero_init(ty = res_ty))))
@@ -12445,6 +12450,21 @@ function int_to_str(v: int) -> str:
     if is_neg:
         buf.push_byte(45)  # '-'
     return buf.as_str()
+
+
+## Emit waiter wake: if frame->waiter is non-NULL, call it and null it.
+function async_waiter_wake(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], frame_exp: ptr[ir.Expr], bool_ty: types.Type, ptr_void_ty: types.Type) -> void:
+    let waiter_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = ptr_void_ty))
+    let null_void = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_void_ty))
+    let has_waiter = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = waiter_field, right = null_void, ty = bool_ty))
+    var wake_body = vec.Vec[ir.Stmt].create()
+    let waiter_frame_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter_frame", ty = ptr_void_ty))
+    # Null waiter before calling to prevent double-wake
+    wake_body.push(ir.Stmt.stmt_assignment(target = waiter_field, operator = "=", value = null_void))
+    # Call waiter(waiter_frame) via indirect call — cast waiter field to fn ptr
+    let waiter_fn_casted = alloc_expr(ir.Expr.expr_cast(target_type = ptr_void_ty, expression = waiter_field, ty = ptr_void_ty))
+    wake_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = waiter_fn_casted, arguments = single_expr_span(waiter_frame_field), ty = types.primitive("void"))), line = 0, source_path = ""))
+    output.push(ir.Stmt.stmt_if(condition = has_waiter, then_body = wake_body.as_span(), else_body = span[ir.Stmt]()))
 
 
 ## ptr_uint primitive type (repeated for convenience in async section).
