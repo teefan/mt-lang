@@ -98,8 +98,8 @@ function print_help() -> void:
     stdio.print_line("  check <file|dir> [--root DIR]...  type-check a file/package and its imports")
     stdio.print_line("  lower <file|dir> [--root DIR]...  lower to IR and print it")
     stdio.print_line("  emit-c <file|dir> [--root DIR]...  compile to C and print it")
-    stdio.print_line("  build <file|dir> [--root DIR]... [-o OUTPUT] [--keep-c PATH]  compile and link a native binary")
-    stdio.print_line("  run   <file|dir> [--root DIR]... [-o OUTPUT]                     build and execute a program")
+    stdio.print_line("  build <file|dir> [--root DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH]  compile and link a native binary")
+    stdio.print_line("  run   <file|dir> [--root DIR]... [-o OUTPUT] [--cc CC]                     build and execute a program")
     stdio.print_line("  help          print this help")
 
 
@@ -486,6 +486,7 @@ function build_command(args: span[str]) -> int:
     defer roots.release()
     var output_override: Option[str] = Option[str].none
     var keep_c_path: Option[str] = Option[str].none
+    var c_compiler = "cc"
     var filtered = vec.Vec[str].create()
     defer filtered.release()
     filtered.push("build")
@@ -504,6 +505,13 @@ function build_command(args: span[str]) -> int:
                 stdio.print_line("error: --keep-c requires a path")
                 return 1
             keep_c_path = Option[str].some(value= args[ai + 1])
+            ai += 2
+            continue
+        if arg == "--cc":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --cc requires a compiler name")
+                return 1
+            c_compiler = args[ai + 1]
             ai += 2
             continue
         filtered.push(arg)
@@ -528,7 +536,7 @@ function build_command(args: span[str]) -> int:
     else:
         output_path = default_output_path(effective)
 
-    match build_driver.build(program, output_path.as_str(), "cc", roots.as_span()):
+    match build_driver.build(program, output_path.as_str(), c_compiler, roots.as_span()):
         Result.success as built:
             var output = built.value
             defer output.release()
@@ -557,6 +565,7 @@ function run_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
     var output_override: Option[str] = Option[str].none
+    var c_compiler = "cc"
     var program_args = vec.Vec[str].create()
     defer program_args.release()
     var filtered = vec.Vec[str].create()
@@ -581,6 +590,13 @@ function run_command(args: span[str]) -> int:
             output_override = Option[str].some(value= args[ai + 1])
             ai += 2
             continue
+        if arg == "--cc":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --cc requires a compiler name")
+                return 1
+            c_compiler = args[ai + 1]
+            ai += 2
+            continue
         filtered.push(arg)
         ai += 1
     let path = parse_source_operand(filtered.as_span(), ref_of(roots)) else:
@@ -599,7 +615,7 @@ function run_command(args: span[str]) -> int:
     else:
         output_path = default_output_path(effective)
 
-    match build_driver.build(program, output_path.as_str(), "cc", roots.as_span()):
+    match build_driver.build(program, output_path.as_str(), c_compiler, roots.as_span()):
         Result.success as built:
             var built_path = built.value
             defer built_path.release()
