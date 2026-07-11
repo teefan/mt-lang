@@ -25,6 +25,7 @@ import mtc.semantic.expressions as exprs
 import mtc.semantic.control_flow.definite_assignment as da
 import mtc.semantic.diagnostics as diag
 import mtc.semantic.emit_expansion as emit_ex
+import mtc.semantic.scope as sscope
 
 
 public struct SemanticDiagnostic:
@@ -1377,84 +1378,28 @@ function infer_expr_noscope(ctx: ref[Context], ep: ptr[ast.Expr]) -> types.Type:
     return result
 
 
-struct Scope:
-    frames: vec.Vec[map_mod.Map[str, types.Type]]
-    let_bindings: vec.Vec[map_mod.Map[str, bool]]
+## Scope management — now in semantic/scope.mt.
 
+function scope_create() -> sscope.Scope:
+    return sscope.scope_create()
 
-function scope_create() -> Scope:
-    return Scope(
-        frames = vec.Vec[map_mod.Map[str, types.Type]].create(),
-        let_bindings = vec.Vec[map_mod.Map[str, bool]].create(),
-    )
+function scope_enter(scope: ref[sscope.Scope]) -> void:
+    sscope.scope_enter(scope)
 
+function scope_leave(scope: ref[sscope.Scope]) -> void:
+    sscope.scope_leave(scope)
 
-function scope_enter(scope: ref[Scope]) -> void:
-    scope.frames.push(map_mod.Map[str, types.Type].create())
-    scope.let_bindings.push(map_mod.Map[str, bool].create())
+function scope_set(scope: ref[sscope.Scope], name: str, ty: types.Type) -> void:
+    sscope.scope_set(scope, name, ty)
 
+function scope_get(scope: ref[sscope.Scope], name: str) -> ptr[types.Type]?:
+    return sscope.scope_get(scope, name)
 
-function scope_leave(scope: ref[Scope]) -> void:
-    match scope.frames.pop():
-        Option.some as frame:
-            var released = frame.value
-            released.release()
-        Option.none:
-            pass
-    match scope.let_bindings.pop():
-        Option.some as let_frame:
-            var released = let_frame.value
-            released.release()
-        Option.none:
-            pass
+function scope_is_let(scope: ref[sscope.Scope], name: str) -> bool:
+    return sscope.scope_is_let(scope, name)
 
-
-function scope_set(scope: ref[Scope], name: str, ty: types.Type) -> void:
-    let count = scope.frames.len()
-    if count == 0:
-        return
-    let frame_ptr = scope.frames.get(count - 1) else:
-        return
-    unsafe:
-        let _prev = read(frame_ptr).set(name, ty)
-
-
-## Search the frame stack from innermost to outermost for a binding.
-function scope_get(scope: ref[Scope], name: str) -> ptr[types.Type]?:
-    var index = scope.frames.len()
-    while index > 0:
-        index -= 1
-        let frame_ptr = scope.frames.get(index) else:
-            return null
-        unsafe:
-            let found = read(frame_ptr).get(name)
-            if found != null:
-                return found
-    return null
-
-
-## True when the name is bound via `let` (immutable) anywhere in the scope
-## stack.  An immutable binding may not appear as the target of an assignment
-## (= or compound-assignment).
-function scope_is_let(scope: ref[Scope], name: str) -> bool:
-    var index = scope.let_bindings.len()
-    while index > 0:
-        index -= 1
-        let frame_ptr = scope.let_bindings.get(index) else:
-            return false
-        if unsafe: read(frame_ptr).contains(name):
-            return true
-    return false
-
-
-function scope_set_let(scope: ref[Scope], name: str) -> void:
-    let count = scope.let_bindings.len()
-    if count == 0:
-        return
-    let frame_ptr = scope.let_bindings.get(count - 1) else:
-        return
-    unsafe:
-        let _prev = read(frame_ptr).set(name, true)
+function scope_set_let(scope: ref[sscope.Scope], name: str) -> void:
+    sscope.scope_set_let(scope, name)
 
 
 function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Method) -> void:
@@ -1668,7 +1613,7 @@ function check_flags(ret: types.Type, inside_loop: bool, inside_defer: bool, ins
     return CheckFlags(ret = ret, inside_loop = inside_loop, inside_defer = inside_defer, inside_parallel = inside_parallel)
 
 
-function check_body(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, body: ptr[ast.Stmt]?) -> void:
+function check_body(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, body: ptr[ast.Stmt]?) -> void:
     let b = body else:
         return
     scope_enter(scope)
@@ -1678,7 +1623,7 @@ function check_body(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, body:
 
 ## When `narrowed_name` is set, wrap the body check with a scope frame that
 ## shadows the variable with its non-nullable type.
-function apply_narrow_by_name(ctx: ref[Context], scope: ref[Scope], narrowed_name: Option[str], narrowed_ty: types.Type, chk: CheckFlags, body: ptr[ast.Stmt]?) -> void:
+function apply_narrow_by_name(ctx: ref[Context], scope: ref[sscope.Scope], narrowed_name: Option[str], narrowed_ty: types.Type, chk: CheckFlags, body: ptr[ast.Stmt]?) -> void:
     match narrowed_name:
         Option.some as nnm:
             scope_enter(scope)
@@ -1689,7 +1634,7 @@ function apply_narrow_by_name(ctx: ref[Context], scope: ref[Scope], narrowed_nam
             check_body(ctx, scope, chk, body)
 
 
-function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: ptr[ast.Stmt]) -> void:
+function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, sp: ptr[ast.Stmt]) -> void:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_block as blk:
@@ -1798,7 +1743,7 @@ function check_stmt(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, sp: p
                 pass
 
 
-function check_condition(ctx: ref[Context], scope: ref[Scope], cond: ptr[ast.Expr], keyword: str, line: ptr_uint, column: ptr_uint) -> void:
+function check_condition(ctx: ref[Context], scope: ref[sscope.Scope], cond: ptr[ast.Expr], keyword: str, line: ptr_uint, column: ptr_uint) -> void:
     let ct = infer_expr(ctx, scope, cond)
     if types.is_definitely_non_bool(ct):
         report(ctx, line, column, condition_message(keyword, ct))
@@ -1810,7 +1755,7 @@ function check_condition(ctx: ref[Context], scope: ref[Scope], cond: ptr[ast.Exp
 ##   * `not cond` — delegates with flipped truthy
 ##   * `a and b` — merges when truthy, left-only when falsy (short-circuit)
 ##   * `a or b` — left-only when truthy, merges when falsy (short-circuit)
-function flow_refinements(ctx: ref[Context], cond: ptr[ast.Expr], truthy: bool, scope: ref[Scope]) -> map_mod.Map[str, types.Type]:
+function flow_refinements(ctx: ref[Context], cond: ptr[ast.Expr], truthy: bool, scope: ref[sscope.Scope]) -> map_mod.Map[str, types.Type]:
     var result = map_mod.Map[str, types.Type].create()
     unsafe:
         match read(cond):
@@ -1850,7 +1795,7 @@ function flow_refinements(ctx: ref[Context], cond: ptr[ast.Expr], truthy: bool, 
 ## Null-test refinements: returns {name -> unwrapped_type} when the condition
 ## is `name != null` (truthy) or `name == null` (falsy), and the variable has
 ## a nullable type.
-function null_test_refinements(ctx: ref[Context], condp: ptr[ast.Expr], truthy: bool, scope: ref[Scope]) -> map_mod.Map[str, types.Type]:
+function null_test_refinements(ctx: ref[Context], condp: ptr[ast.Expr], truthy: bool, scope: ref[sscope.Scope]) -> map_mod.Map[str, types.Type]:
     var result = map_mod.Map[str, types.Type].create()
 
     unsafe:
@@ -1930,7 +1875,7 @@ function merge_refinements_into(existing: ref[map_mod.Map[str, types.Type]], inc
 
 ## Apply refinement bindings to the top scope frame, shadowing any existing
 ## bindings with the narrowed types.
-function apply_refinements_to_frame(scope: ref[Scope], refinements: ref[map_mod.Map[str, types.Type]]) -> void:
+function apply_refinements_to_frame(scope: ref[sscope.Scope], refinements: ref[map_mod.Map[str, types.Type]]) -> void:
     var entries = refinements.entries()
     while true:
         if not entries.next():
@@ -1942,7 +1887,7 @@ function apply_refinements_to_frame(scope: ref[Scope], refinements: ref[map_mod.
 
 ## Apply refinements directly to the current scope frame without entering a new
 ## one — for post-if refinements that persist beyond the if/else block.
-function apply_refinements_to_scope_frame(scope: ref[Scope], refinements: ref[map_mod.Map[str, types.Type]]) -> void:
+function apply_refinements_to_scope_frame(scope: ref[sscope.Scope], refinements: ref[map_mod.Map[str, types.Type]]) -> void:
     var entries = refinements.entries()
     while true:
         if not entries.next():
@@ -2059,7 +2004,7 @@ function intersect_post_refs(result: ref[map_mod.Map[str, types.Type]], branch: 
         to_remove.release()
 
 
-function check_when_statement(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
+function check_when_statement(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
     match evaluate_when_discriminant(ctx, discriminant, span[ast.Decl]()):
         Option.some as chosen:
             var i: ptr_uint = 0
@@ -2080,7 +2025,7 @@ function check_when_statement(ctx: ref[Context], scope: ref[Scope], chk: CheckFl
             pass
 
 
-function check_stmt_span(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, stmts: span[ast.Stmt]) -> void:
+function check_stmt_span(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, stmts: span[ast.Stmt]) -> void:
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
@@ -2094,7 +2039,7 @@ function check_stmt_span(ctx: ref[Context], scope: ref[Scope], chk: CheckFlags, 
 ##  * anything else  -> permissive
 ## Enum/variant checks bail out if any arm is not a plain `Type.case` pattern
 ## (e.g. payload destructuring), so guarded/complex matches never false-positive.
-function check_match(ctx: ref[Context], scope: ref[Scope], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
+function check_match(ctx: ref[Context], scope: ref[sscope.Scope], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
     # Infer the scrutinee type WITHOUT recording it (`infer_expr_inner`, not
     # `infer_expr`): this is a diagnostic-only pass and must not mutate the
     # `resolved_expr_types` map that lowering later consumes.
@@ -2275,7 +2220,7 @@ function vec_contains_int(v: ref[vec.Vec[int]], value: int) -> bool:
     return false
 
 
-function bind_for_names(scope: ref[Scope], bindings: span[ast.ForBinding]) -> void:
+function bind_for_names(scope: ref[sscope.Scope], bindings: span[ast.ForBinding]) -> void:
     var i: ptr_uint = 0
     while i < bindings.len:
         unsafe:
@@ -2298,7 +2243,7 @@ function unwrap_nullable_type(t: types.Type) -> types.Type:
 
 
 ## Flag an assignment whose target is a name bound by `let`, which is immutable.
-function check_assign_target_immutable(ctx: ref[Context], scope: ref[Scope], target: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
+function check_assign_target_immutable(ctx: ref[Context], scope: ref[sscope.Scope], target: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
@@ -2308,7 +2253,7 @@ function check_assign_target_immutable(ctx: ref[Context], scope: ref[Scope], tar
                 pass
 
 
-function check_local(ctx: ref[Context], scope: ref[Scope], is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, has_guard: bool, destructure_bindings: Option[span[str]], line: ptr_uint, column: ptr_uint) -> void:
+function check_local(ctx: ref[Context], scope: ref[sscope.Scope], is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, has_guard: bool, destructure_bindings: Option[span[str]], line: ptr_uint, column: ptr_uint) -> void:
     # Destructuring bindings are permissive in phase 1.
     match destructure_bindings:
         Option.some:
@@ -2365,7 +2310,7 @@ function check_local(ctx: ref[Context], scope: ref[Scope], is_let: bool, name: s
 #  Expression type inference (conservative)
 # =============================================================================
 
-function infer_expr(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr]) -> types.Type:
+function infer_expr(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[ast.Expr]) -> types.Type:
     let ty = infer_expr_inner(ctx, scope, ep)
     record_expr_type(ctx, ep, ty)
     return ty
@@ -2477,7 +2422,7 @@ function evaluate_const_builtin_call(callee: ptr[ast.Expr]) -> Option[bool]:
     return Option[bool].none
 
 
-function infer_expr_inner(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr]) -> types.Type:
+function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[ast.Expr]) -> types.Type:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal:
@@ -2593,7 +2538,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[Scope], ep: ptr[ast.Expr
                 return types.Type.ty_error
 
 
-function infer_identifier(ctx: ref[Context], scope: ref[Scope], name: str) -> types.Type:
+function infer_identifier(ctx: ref[Context], scope: ref[sscope.Scope], name: str) -> types.Type:
     let local = scope_get(scope, name)
     if local != null:
         unsafe:
@@ -2605,7 +2550,7 @@ function infer_identifier(ctx: ref[Context], scope: ref[Scope], name: str) -> ty
     return types.Type.ty_error
 
 
-function infer_binary(ctx: ref[Context], scope: ref[Scope], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> types.Type:
+function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> types.Type:
     # Always infer both operands so nested calls in either side are checked.
     let lt = infer_expr(ctx, scope, left)
     let rt = infer_expr(ctx, scope, right)
@@ -2659,7 +2604,7 @@ function is_comparison_op(op: str) -> bool:
     )
 
 
-function infer_unary(ctx: ref[Context], scope: ref[Scope], op: str, operand: ptr[ast.Expr]) -> types.Type:
+function infer_unary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, operand: ptr[ast.Expr]) -> types.Type:
     let ot = infer_expr(ctx, scope, operand)
     if op.equal("not"):
         return types.primitive("bool")
@@ -2672,7 +2617,7 @@ function infer_unary(ctx: ref[Context], scope: ref[Scope], op: str, operand: ptr
 ## function, check argument count and (positional) argument types.  When the
 ## callee names a local struct, treat it as a struct construction and validate
 ## named-field references instead.
-function infer_and_check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> types.Type:
+function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> types.Type:
     var arg_types = vec.Vec[types.Type].create()
     var any_named = false
     var i: ptr_uint = 0
@@ -2718,7 +2663,7 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[
 ## is a fully-known local struct, the required hook must exist.  Everything else
 ## (primitives, imported types, type variables, user generic functions) stays
 ## permissive.
-function check_specialization_call(ctx: ref[Context], scope: ref[Scope], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument]) -> types.Type:
+function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument]) -> types.Type:
     unsafe:
         match read(spec_callee):
             ast.Expr.expr_identifier as id:
@@ -3042,7 +2987,7 @@ function check_hook_call(ctx: ref[Context], hook_name: str, type_args: span[ast.
 ## type), or against an imported struct's fields (a cross-module construction).
 ## Anything else (local calls, unresolved aliases, non-exported members) is left
 ## to the local paths.
-function try_imported_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr], args: span[ast.Argument], arg_types: span[types.Type], any_named: bool) -> Option[types.Type]:
+function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument], arg_types: span[types.Type], any_named: bool) -> Option[types.Type]:
     unsafe:
         match read(callee):
             ast.Expr.expr_member_access as ma:
@@ -3080,7 +3025,7 @@ function try_imported_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast
 
 ## Resolve `alias.member` where `alias` is an imported module and `member` is one
 ## of its exported values, yielding the value's type.  None for anything else.
-function try_imported_member(ctx: ref[Context], scope: ref[Scope], receiver: ptr[ast.Expr], member: str) -> Option[types.Type]:
+function try_imported_member(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str) -> Option[types.Type]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -3111,7 +3056,7 @@ function lookup_binding(ctx: ref[Context], module_name: str) -> ptr[ModuleBindin
 ## only.  Struct static methods (`Counter.make(...)`, `lib.Adder.make(...)`) and
 ## value-receiver instance methods (`p.method(...)`) are resolved to a signature
 ## and argument-checked, with the method's return type flowing to the caller.
-function check_member_call(ctx: ref[Context], scope: ref[Scope], receiver: ptr[ast.Expr], method_name: str, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], method_name: str, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
     match imported_static_member(ctx, scope, receiver, method_name, line, column):
         Option.some as imported_static:
             return imported_static.value
@@ -3179,7 +3124,7 @@ function check_typed_method_call(ctx: ref[Context], receiver_type: types.Type, m
 
 ## When the receiver is a `let`-bound value and the method is `editable`, flag the
 ## call.  `ref` (borrow) and `var` (mutable) receivers are fine.
-function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[Scope], receiver_expr: ptr[ast.Expr], receiver_type: types.Type, method_name: str, line: ptr_uint, column: ptr_uint) -> void:
+function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[sscope.Scope], receiver_expr: ptr[ast.Expr], receiver_type: types.Type, method_name: str, line: ptr_uint, column: ptr_uint) -> void:
     match resolve_method_sig(ctx, receiver_type, method_name):
         Option.some as sig:
             match sig.value.method_kind:
@@ -3204,7 +3149,7 @@ function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[Scope],
 ## The struct type named by a static-method receiver: a bare local struct name
 ## (`Counter`) or an imported `alias.Struct`.  None for values, enum/variant type
 ## names (handled as static members), or unknown names.
-function static_struct_receiver_type(ctx: ref[Context], scope: ref[Scope], receiver: ptr[ast.Expr]) -> Option[types.Type]:
+function static_struct_receiver_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[types.Type]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -3400,7 +3345,7 @@ function interface_method_named(methods: span[ast.InterfaceMethod], name: str) -
 ## Dispatch a member access: a bare type-name receiver of an enum/flags/variant
 ## is a static member access (validate against members/arms/methods); anything
 ## else is an instance access (struct field/method or permissive).
-function resolve_member_access(ctx: ref[Context], scope: ref[Scope], receiver: ptr[ast.Expr], member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
     match try_imported_member(ctx, scope, receiver, member):
         Option.some as imported_value:
             return imported_value.value
@@ -3421,7 +3366,7 @@ function resolve_member_access(ctx: ref[Context], scope: ref[Scope], receiver: p
 ## Resolve `alias.Type.member` where `alias` is an imported module and `Type` is
 ## one of its exported enums/flags/variants: validate that `member` is a member
 ## of that type, flagging it otherwise.  None for anything else.
-function imported_static_member(ctx: ref[Context], scope: ref[Scope], receiver: ptr[ast.Expr], member: str, line: ptr_uint, column: ptr_uint) -> Option[types.Type]:
+function imported_static_member(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str, line: ptr_uint, column: ptr_uint) -> Option[types.Type]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_member_access as inner:
@@ -3450,7 +3395,7 @@ function binding_has_member(binding: ModuleBinding, type_name: str, member: str)
 
 ## Some(type name) when `receiver` is a bare identifier naming a locally-declared
 ## enum/flags/variant that is not shadowed by a local value.
-function static_type_receiver(ctx: ref[Context], scope: ref[Scope], receiver: ptr[ast.Expr]) -> Option[str]:
+function static_type_receiver(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[str]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -3472,7 +3417,7 @@ function check_static_member(ctx: ref[Context], type_name: str, member: str, lin
 ## When `callee` is a bare identifier naming a locally-declared struct (not
 ## shadowed by a local value), validate each named-field argument and return
 ## the constructed struct type.  Returns none for ordinary function calls.
-function try_construction(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> Option[types.Type]:
+function try_construction(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> Option[types.Type]:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
@@ -3487,7 +3432,7 @@ function try_construction(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.
                 return Option[types.Type].none
 
 
-function check_construction(ctx: ref[Context], scope: ref[Scope], struct_name: str, fields: span[FieldEntry], args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> void:
+function check_construction(ctx: ref[Context], scope: ref[sscope.Scope], struct_name: str, fields: span[FieldEntry], args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> void:
     var unnamed = false
     var i: ptr_uint = 0
     while i < args.len:
@@ -3676,7 +3621,7 @@ function check_imported_member(ctx: ref[Context], module_name: str, type_name: s
 ## size_of, align_of).  Returns `none` for anything else, so the call falls
 ## through to regular function/method dispatch.  `read(ptr)` and `ptr_of(x)` are
 ## side-effectful: they report an unsafe-context requirement when applicable.
-function try_builtin_call(ctx: ref[Context], scope: ref[Scope], callee_name: str, args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> Option[types.Type]:
+function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_name: str, args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> Option[types.Type]:
     if callee_name.equal("read"):
         if args.len != 1:
             return Option[types.Type].none
@@ -3712,7 +3657,7 @@ function alloc_one_type_arg(ty: types.Type) -> span[types.Type]:
 ## Check a call to a top-level function by identifier and yield its result type.
 ## For a generic function, type arguments are inferred from the call, validated
 ## against their constraints, and substituted into the return type.
-function check_call(ctx: ref[Context], scope: ref[Scope], callee: ptr[ast.Expr], args: span[ast.Argument], arg_types: span[types.Type], any_named: bool) -> types.Type:
+function check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument], arg_types: span[types.Type], any_named: bool) -> types.Type:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
