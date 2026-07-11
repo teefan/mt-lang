@@ -134,6 +134,10 @@ public function generate_c(program: ir.Program) -> string.String:
     if use_string_view:
         emit_string_type(ref_of(e))
         emit_line(ref_of(e), "")
+        # Emit type alias typedefs and builtin math structs before fatal/format
+        # helpers (mirrors Ruby emission order: vec/mat/quat before helpers).
+        emit_type_aliases(ref_of(e), program)
+        emit_builtin_type_defs(ref_of(e), program)
 
     if use_fatal:
         emit_fatal_helper(ref_of(e))
@@ -150,6 +154,24 @@ public function generate_c(program: ir.Program) -> string.String:
     var span_types = collect_span_types(funcs)
     collect_struct_span_types(program, ref_of(span_types))
     collect_variant_span_types(program, ref_of(span_types))
+
+    # Emit runtime helpers before forward declarations (mirrors Ruby order).
+
+    # Emit format string runtime helpers when used.
+    if uses_format_helpers(program):
+        emit_format_string_helpers(ref_of(e))
+
+    # Emit event runtime helpers when any event method calls are present.
+    if uses_event_runtime(program):
+        emit_event_helpers(ref_of(e))
+
+    # Emit parallel runtime helpers when any parallel/detach calls are present.
+    if uses_parallel_runtime(program):
+        emit_parallel_helpers(ref_of(e))
+
+    # Emit builtin helpers (order/equal/hash) when used.
+    if uses_builtin_helpers(program):
+        emit_builtin_helpers(ref_of(e))
 
     if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0 or program.variants.len > 0 or gen_variants.len() > 0:
         var sorted_structs = topo_sort_structs(program.structs)
@@ -212,10 +234,6 @@ public function generate_c(program: ir.Program) -> string.String:
             emit_line(ref_of(e), "")
             si += 1
 
-        # Emit type alias typedefs and builtin math structs before struct
-        # definitions, so struct fields can reference them.
-        emit_type_aliases(ref_of(e), program)
-        emit_builtin_type_defs(ref_of(e), program)
         emit_opt_struct_defs_from_program(ref_of(e), program)
 
         # Emit Task struct definitions before struct definitions so that proc
@@ -322,22 +340,6 @@ public function generate_c(program: ir.Program) -> string.String:
     # Emit str_buffer runtime helpers if any str_buffer struct is present.
     if has_str_buffer_structs(program):
         emit_str_buffer_helpers(ref_of(e))
-
-    # Emit format string runtime helpers when used.
-    if uses_format_helpers(program):
-        emit_format_string_helpers(ref_of(e))
-
-    # Emit event runtime helpers when any event method calls are present.
-    if uses_event_runtime(program):
-        emit_event_helpers(ref_of(e))
-
-    # Emit parallel runtime helpers when any parallel/detach calls are present.
-    if uses_parallel_runtime(program):
-        emit_parallel_helpers(ref_of(e))
-
-    # Emit builtin helpers (order/equal/hash) when used.
-    if uses_builtin_helpers(program):
-        emit_builtin_helpers(ref_of(e))
 
     # Pre-scan functions for variant equality to know which helpers to emit.
     scan_variant_equality(ref_of(e), funcs, program)
