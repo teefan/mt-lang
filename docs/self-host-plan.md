@@ -164,35 +164,15 @@ Diff:          4,696 lines (structural, not functional — all 172 tests pass)
 
 ### 1.4 Structural gaps (by priority)
 
-**P1 — Format helper alignment (~111 diff lines):**
-Self-host uses simplified builder approach (mt_fmt_builder + 5 helpers) vs Ruby's 38 helpers with transitive dependency resolution. To align:
-- Replace the self-host's `emit_format_string_helpers` with helpers matching Ruby's
-- Implement the 38 helpers from `lib/milk_tea/core/c_backend/runtime_helpers.rb`
-- Implement format detection (`uses_format_*` pattern from `feature_detection.rb`)
-- Each helper conditional on use detection
+**P1 — Format helper alignment (~111 diff lines):** **DONE.** Self-host now uses Ruby-equivalent two-pass approach (38 helpers, measure-allocate-append) instead of builder approach (5 helpers, grow buffer). Lowering (`lower_format_string_local`) and C backend (`emit_format_string_helpers`) both aligned. Baseline C output diff unchanged (~4,696) because format strings in language_baseline.mt are const-folded; validated via 172 integration tests.
 
-**P2 — Emission order alignment (~200 diff lines):**
-- Move mt_str to position 3 (matching)
-- Builtin type defs (vec/mat/quat) move from position 15 to position 4 (before mt_fatal)
-- Forward declarations merge into single section (position 14) instead of split (7-11)
-- str_buffer helpers move from position 28 to position 20 (before aggregate types)
-- Constants + globals move to position 24 (after function forward decls)
-- Variant equality moves to position 22 (after struct/variant defs, before function forward decls)
+**P2 — Runtime helpers (~800 diff lines):** **NOT STARTED.** Requires both lowering AND C backend changes for each runtime category (async/parallel/detach/spawn/events). The two compilers generate fundamentally different IR — self-host calls different helper APIs (e.g., `mt_spawn_run`+`mt_spawn_wait` vs Ruby's `mt_spawn_all`). Estimated 2-3 sessions per category for full alignment.
 
-**P3 — Forward declaration structure (~150 diff lines):**
-- Ruby sorts ALL aggregate types together via `sort_aggregate_decls` (structs + unions + variants + generic structs + generic variants + Task structs + proc structs + dyn structs + str_buffer structs + nullable opt structs)
-- Self-host separates: span fwd decls → struct fwd decls → union fwd decls → tuple fwd decls → variant fwd decls
-- Self-host also has separate full definitions for Task/opt before struct+variant definitions
-- To align: merge all aggregate type declarations into a single topologically sorted pass
+**P3 — Emission order alignment (~200 diff lines):** **DONE.** Reordered: type aliases + builtin types (vec/mat/quat) now emit before mt_fatal; format/event/parallel/builtin helpers emit before forward declarations. Remaining order differences are due to different IR content, not section ordering. Baseline C diff: 4,696 → 4,683 (-13).
 
-**P4 — Missing sections (~80 diff lines):**
-- Reinterpret helpers (position 26 in Ruby)
-- Nullable array/span index helpers (positions 29-30 in Ruby)
-- Static asserts section (position 25 in Ruby)
+**P4 — Naming conventions (~400 diff lines):** **NOT STARTED.** Includes generic specialization naming (Ruby: double underscore `type_label__int`, self-host: single underscore `type_label_int`), proc wrapper naming, static method naming. Requires lowering changes to control emitted C names.
 
-**P5 — Prelude/event handling (remaining diff):**
-- Different Option/Result variant arm payload struct emission
-- Event runtime generates different infrastructure (Ruby: slot, snapshot, wait_frame; self-host: simplified)
+**P5 — Missing sections / forward decls (~380 diff lines):** **NOT STARTED.** Includes `mt_fatal_str` emission, reinterpret helpers, nullable index helpers, static_assert section. Some of these are pure C backend (emission conditional on IR patterns); others require lowering changes.
 
 ### 1.5 Implementation plan
 
