@@ -3522,12 +3522,7 @@ function is_pointer_like_for_nullable(t: types.Type) -> bool:
         types.Type.ty_function:
             return true
         types.Type.ty_imported:
-            # Check if the imported type resolves to a function/proc pointer in C.
-            # If the C type contains '(*' it's a function pointer and thus pointer-like.
-            let ct = c_type(t)
-            if ct.len > 2 and ct.byte_at(ct.len - 1) == '*':
-                return true
-            return ct.find_substring("(*)").is_some()
+            return true
         _:
             return false
 

@@ -1637,6 +1637,11 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         ty = ir_expr_type(value_expr)
                         if types.is_error(ty):
                             ty = local_decl_type(ctx, loc.stmt_type, init)
+                # Wrap a non-nullable value into a value-type nullable's opt struct.
+                if types.is_nullable_type(ty) and not is_nullable_pointer_like(ty):
+                    let value_ty = ir_expr_type(value_expr)
+                    if not types.is_nullable_type(value_ty):
+                        value_expr = nullable_some_literal(ty, value_expr)
                 output.push(ir.Stmt.stmt_local(
                     name = loc.name,
                     linkage_name = c_name,
@@ -1865,6 +1870,43 @@ function guard_storage_kind(ctx: ref[LowerCtx], storage_ty: types.Type) -> str:
     return "nullable"
 
 
+## Wrap a non-nullable value in a nullable aggregate literal, producing
+## `{ has_value: true, value: <value_expr> }` for the mt_opt_* struct.
+function nullable_some_literal(nullable_ty: types.Type, value_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    let bool_ty = types.primitive("bool")
+    let true_lit = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))
+    return alloc_expr(ir.Expr.expr_aggregate_literal(
+        ty = nullable_ty,
+        fields = sp_fields2(
+            ir.AggregateField(name = "has_value", value = true_lit),
+            ir.AggregateField(name = "value", value = value_expr),
+        ),
+    ))
+
+
+## True when a nullable type has a pointer-like base (ptr, const_ptr, ref, cstr,
+## function, proc, opaque).  These use NULL as the absent sentinel.  Value-type
+## nullables (int?, bool?, struct?) use mt_opt_* structs with has_value tags.
+function is_nullable_pointer_like(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_nullable as nl:
+            unsafe:
+                let base = read(nl.base)
+                match base:
+                    types.Type.ty_generic as g:
+                        return g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("ref")
+                    types.Type.ty_primitive as p:
+                        return p.name.equal("cstr")
+                    types.Type.ty_function:
+                        return true
+                    types.Type.ty_imported:
+                        return true
+                    _:
+                        return false
+        _:
+            return false
+
+
 ## The base variant name from a possibly-qualified name (`Result_int_Error` →
 ## "Result"; `Result` → "Result").
 function guard_variant_base(name: str) -> str:
@@ -1922,6 +1964,8 @@ function guard_success_type(ctx: ref[LowerCtx], kind: str, storage_ty: types.Typ
 ## `storage.data.<some/success>.value` for Option/Result.
 function guard_success_projection(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type, storage_ref: ptr[ir.Expr], success_ty: types.Type) -> ptr[ir.Expr]:
     if kind.equal("nullable"):
+        if types.is_nullable_type(storage_ty) and not is_nullable_pointer_like(storage_ty):
+            return alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "value", ty = success_ty))
         return storage_ref
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
     let success_arm = if kind.equal("result"): "success" else: "some"
@@ -2057,6 +2101,13 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
                     return types.Type.ty_imported(module_name = owner.value, name = n.name, args = span[types.Type]())
                 Option.none:
                     pass
+            # Resolve type aliases to their target type so the C backend sees
+            # the concrete type (e.g. IntCallback → fn(...)) rather than an
+            # opaque ty_imported.
+            if ctx.analysis.type_alias_types.contains(n.name):
+                let resolved_ptr = ctx.analysis.type_alias_types.get(n.name) else:
+                    fatal(c"lowering: type alias lookup inconsistency")
+                return qualify_type(ctx, unsafe: read(resolved_ptr))
             return types.Type.ty_imported(module_name = ctx.module_name, name = n.name, args = span[types.Type]())
         types.Type.ty_imported as im:
             if is_raw_type_param_name(im.name):
