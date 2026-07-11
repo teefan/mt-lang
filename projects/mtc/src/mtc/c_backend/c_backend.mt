@@ -324,7 +324,7 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_str_buffer_helpers(ref_of(e))
 
     # Emit format string runtime helpers when used.
-    if uses_format_string(program):
+    if uses_format_helpers(program):
         emit_format_string_helpers(ref_of(e))
 
     # Emit event runtime helpers when any event method calls are present.
@@ -3870,71 +3870,116 @@ function emit_str_buffer_helpers(e: ref[Emitter]) -> void:
 #  Format string runtime helpers
 # =============================================================================
 
-function uses_format_string(program: ir.Program) -> bool:
-    # Detect by checking for mt_format_str_* calls in any function body.
+
+function uses_format_helpers(program: ir.Program) -> bool:
+    # Detect by checking for mt_format_append_bytes call in any function body.
     var i: ptr_uint = 0
     while i < program.functions.len:
         unsafe:
             let f = read(program.functions.data + i)
-            if body_calls(f.body, "mt_format_str_make") or body_calls(f.body, "mt_format_str_finish") or body_calls(f.body, "mt_format_str_append_str") or body_calls(f.body, "mt_format_str_append_int") or body_calls(f.body, "mt_format_str_append_float"):
+            if body_calls(f.body, "mt_format_append_bytes") or body_calls(f.body, "mt_format_str_make"):
                 return true
         i += 1
     return false
 
 
 function emit_format_string_helpers(e: ref[Emitter]) -> void:
-    # Format string builder struct: data pointer, len, capacity.
-    emit_line(e, "typedef struct {")
-    emit_line(e, "  char* data;")
-    emit_line(e, "  uintptr_t len;")
-    emit_line(e, "  uintptr_t cap;")
-    emit_line(e, "} mt_fmt_builder;")
-    emit_line(e, "")
-    emit_line(e, "static mt_fmt_builder mt_format_str_make(void) {")
-    emit_line(e, "  mt_fmt_builder b;")
-    emit_line(e, "  b.data = (char*)malloc(64);")
-    emit_line(e, "  b.len = 0;")
-    emit_line(e, "  b.cap = 64;")
-    emit_line(e, "  return b;")
+    emit_line(e, "static mt_str mt_format_str_make(uintptr_t len) {")
+    emit_line(e, "  char* data = (char*)malloc((size_t)(len + 1));")
+    emit_line(e, "  if (data == NULL) mt_fatal(\"format string allocation failed\");")
+    emit_line(e, "  data[len] = '\\0';")
+    emit_line(e, "  return (mt_str){ .data = data, .len = len };")
     emit_line(e, "}")
     emit_line(e, "")
-    emit_line(e, "#define mt_fmt_grow(b, need) do { \\")
-    emit_line(e, "  uintptr_t total = (b).len + (need); \\")
-    emit_line(e, "  if (total > (b).cap) { \\")
-    emit_line(e, "    uintptr_t nc = (b).cap < 16 ? 64 : (b).cap * 2; \\")
-    emit_line(e, "    while (nc < total) nc *= 2; \\")
-    emit_line(e, "    (b).data = (char*)realloc((b).data, nc); \\")
-    emit_line(e, "    (b).cap = nc; \\")
-    emit_line(e, "  } \\")
-    emit_line(e, "} while(0)")
-    emit_line(e, "")
-    emit_line(e, "static mt_str mt_format_str_append_str(mt_fmt_builder b, mt_str s) {")
-    emit_line(e, "  mt_fmt_grow(b, s.len);")
-    emit_line(e, "  memcpy(b.data + b.len, s.data, s.len);")
-    emit_line(e, "  b.len += s.len;")
-    emit_line(e, "  mt_str r = { b.data, b.len };")
-    emit_line(e, "  return r;")
+    emit_line(e, "static void mt_format_str_release(mt_str value) {")
+    emit_line(e, "  free(value.data);")
     emit_line(e, "}")
     emit_line(e, "")
-    emit_line(e, "static mt_str mt_format_str_append_int(mt_fmt_builder b, int32_t v) {")
-    emit_line(e, "  mt_fmt_grow(b, 24);")
-    emit_line(e, "  int n = snprintf(b.data + b.len, b.cap - b.len, \"%d\", v);")
-    emit_line(e, "  b.len += (uintptr_t)n;")
-    emit_line(e, "  mt_str r = { b.data, b.len };")
-    emit_line(e, "  return r;")
+    emit_line(e, "static void mt_format_check_capacity(mt_str target, uintptr_t offset, uintptr_t len) {")
+    emit_line(e, "  if (offset > target.len || len > target.len - offset) mt_fatal(\"format string append exceeds capacity\");")
     emit_line(e, "}")
     emit_line(e, "")
-    emit_line(e, "static mt_str mt_format_str_append_float(mt_fmt_builder b, double v) {")
-    emit_line(e, "  mt_fmt_grow(b, 48);")
-    emit_line(e, "  int n = snprintf(b.data + b.len, b.cap - b.len, \"%g\", v);")
-    emit_line(e, "  b.len += (uintptr_t)n;")
-    emit_line(e, "  mt_str r = { b.data, b.len };")
-    emit_line(e, "  return r;")
+    emit_line(e, "static uintptr_t mt_format_append_bytes(mt_str target, uintptr_t offset, const char* data, uintptr_t len) {")
+    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
+    emit_line(e, "  if (len > 0) memcpy(target.data + offset, data, (size_t)len);")
+    emit_line(e, "  offset += len;")
+    emit_line(e, "  target.data[offset] = '\\0';")
+    emit_line(e, "  return offset;")
     emit_line(e, "}")
     emit_line(e, "")
-    emit_line(e, "static mt_str mt_format_str_finish(mt_fmt_builder b) {")
-    emit_line(e, "  mt_str r = { b.data, b.len };")
-    emit_line(e, "  return r;")
+    emit_line(e, "static uintptr_t mt_format_ptr_uint_len(uintptr_t value) {")
+    emit_line(e, "  uintptr_t len = 1;")
+    emit_line(e, "  while (value >= 10) {")
+    emit_line(e, "    value /= 10;")
+    emit_line(e, "    len += 1;")
+    emit_line(e, "  }")
+    emit_line(e, "  return len;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static uintptr_t mt_format_ulong_hex_len(uint64_t value) {")
+    emit_line(e, "  int written = snprintf(NULL, 0, \"%llx\", (unsigned long long)value);")
+    emit_line(e, "  if (written < 0) mt_fatal(\"format string could not measure unsigned hex\");")
+    emit_line(e, "  return (uintptr_t)written;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static uintptr_t mt_format_long_hex_len(int64_t value) {")
+    emit_line(e, "  if (value < 0) return 1 + mt_format_ulong_hex_len(((uint64_t)(-(value + 1))) + 1);")
+    emit_line(e, "  return mt_format_ulong_hex_len((uint64_t)value);")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static uintptr_t mt_format_ulong_oct_len(uint64_t value) {")
+    emit_line(e, "  int written = snprintf(NULL, 0, \"%llo\", (unsigned long long)value);")
+    emit_line(e, "  if (written < 0) mt_fatal(\"format string could not measure unsigned octal\");")
+    emit_line(e, "  return (uintptr_t)written;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static uintptr_t mt_format_long_oct_len(int64_t value) {")
+    emit_line(e, "  if (value < 0) return 1 + mt_format_ulong_oct_len(((uint64_t)(-(value + 1))) + 1);")
+    emit_line(e, "  return mt_format_ulong_oct_len((uint64_t)value);")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static uintptr_t mt_format_ulong_bin_len(uint64_t value) {")
+    emit_line(e, "  uintptr_t len = 1;")
+    emit_line(e, "  while (value >= 2) {")
+    emit_line(e, "    value >>= 1;")
+    emit_line(e, "    len += 1;")
+    emit_line(e, "  }")
+    emit_line(e, "  return len;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static uintptr_t mt_format_long_bin_len(int64_t value) {")
+    emit_line(e, "  if (value < 0) return 1 + mt_format_ulong_bin_len(((uint64_t)(-(value + 1))) + 1);")
+    emit_line(e, "  return mt_format_ulong_bin_len((uint64_t)value);")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static uintptr_t mt_format_int_len(int32_t value) {")
+    emit_line(e, "  if (value < 0) return 1 + mt_format_ptr_uint_len((uintptr_t)(-((int64_t)value)));")
+    emit_line(e, "  return mt_format_ptr_uint_len((uintptr_t)value);")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static uintptr_t mt_format_append_str(mt_str target, uintptr_t offset, mt_str value) {")
+    emit_line(e, "  return mt_format_append_bytes(target, offset, value.data, value.len);")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static uintptr_t mt_format_append_ptr_uint(mt_str target, uintptr_t offset, uintptr_t value) {")
+    emit_line(e, "  uintptr_t len = mt_format_ptr_uint_len(value);")
+    emit_line(e, "  uintptr_t index = offset + len;")
+    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
+    emit_line(e, "  target.data[index] = '\\0';")
+    emit_line(e, "  do {")
+    emit_line(e, "    index -= 1;")
+    emit_line(e, "    target.data[index] = (char)('0' + (value % 10));")
+    emit_line(e, "    value /= 10;")
+    emit_line(e, "  } while (index > offset);")
+    emit_line(e, "  return offset + len;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static uintptr_t mt_format_append_int(mt_str target, uintptr_t offset, int32_t value) {")
+    emit_line(e, "  if (value < 0) {")
+    emit_line(e, "    offset = mt_format_append_bytes(target, offset, \"-\", 1);")
+    emit_line(e, "    return mt_format_append_ptr_uint(target, offset, (uintptr_t)(-((int64_t)value)));")
+    emit_line(e, "  }")
+    emit_line(e, "  return mt_format_append_ptr_uint(target, offset, (uintptr_t)value);")
     emit_line(e, "}")
 
 
@@ -3942,687 +3987,1372 @@ function emit_format_string_helpers(e: ref[Emitter]) -> void:
 #  Event runtime helpers
 # =============================================================================
 
+
+
 function uses_event_runtime(program: ir.Program) -> bool:
+
     var i: ptr_uint = 0
+
     while i < program.functions.len:
+
         unsafe:
+
             let f = read(program.functions.data + i)
+
             if body_calls(f.body, "mt_event_subscribe") or body_calls(f.body, "mt_event_subscribe_once") or body_calls(f.body, "mt_event_unsubscribe") or body_calls(f.body, "mt_event_emit"):
+
                 return true
+
         i += 1
+
     return false
+
+
+
 
 
 function emit_event_helpers(e: ref[Emitter]) -> void:
+
     emit_line(e, "typedef enum { mt_event_error_full = 0 } mt_event_error;")
+
     emit_line(e, "")
+
     emit_line(e, "static struct mt_subscription mt_event_subscribe(void* slots, uintptr_t capacity, void* listener) {")
+
     emit_line(e, "  struct mt_subscription out;")
+
     emit_line(e, "  for (uintptr_t i = 0; i < capacity; i++) {")
+
     emit_line(e, "    uintptr_t off = i * (2*sizeof(bool) + sizeof(uintptr_t) + sizeof(void*));")
+
     emit_line(e, "    bool* active = (bool*)((char*)slots + off);")
+
     emit_line(e, "    if (!*active) {")
+
     emit_line(e, "      *active = true;")
+
     emit_line(e, "      ((bool*)((char*)slots + off))[1] = false;")
+
     emit_line(e, "      *(uintptr_t*)((char*)slots + off + 2*sizeof(bool)) += 1;")
+
     emit_line(e, "      *(void**)((char*)slots + off + 2*sizeof(bool) + sizeof(uintptr_t)) = listener;")
+
     emit_line(e, "      out.slot = i;")
+
     emit_line(e, "      out.generation = *(uintptr_t*)((char*)slots + off + 2*sizeof(bool));")
+
     emit_line(e, "      return out;")
+
     emit_line(e, "    }")
+
     emit_line(e, "  }")
+
     emit_line(e, "  out.slot = ~(uintptr_t)0;")
+
     emit_line(e, "  out.generation = 0;")
+
     emit_line(e, "  return out;")
+
     emit_line(e, "}")
+
     emit_line(e, "")
+
     emit_line(e, "static struct mt_subscription mt_event_subscribe_once(void* slots, uintptr_t capacity, void* listener) {")
+
     emit_line(e, "  struct mt_subscription out;")
+
     emit_line(e, "  for (uintptr_t i = 0; i < capacity; i++) {")
+
     emit_line(e, "    uintptr_t off = i * (2*sizeof(bool) + sizeof(uintptr_t) + sizeof(void*));")
+
     emit_line(e, "    bool* active = (bool*)((char*)slots + off);")
+
     emit_line(e, "    if (!*active) {")
+
     emit_line(e, "      *active = true;")
+
     emit_line(e, "      ((bool*)((char*)slots + off))[1] = true;")
+
     emit_line(e, "      *(uintptr_t*)((char*)slots + off + 2*sizeof(bool)) += 1;")
+
     emit_line(e, "      *(void**)((char*)slots + off + 2*sizeof(bool) + sizeof(uintptr_t)) = listener;")
+
     emit_line(e, "      out.slot = i;")
+
     emit_line(e, "      out.generation = *(uintptr_t*)((char*)slots + off + 2*sizeof(bool));")
+
     emit_line(e, "      return out;")
+
     emit_line(e, "    }")
+
     emit_line(e, "  }")
+
     emit_line(e, "  out.slot = ~(uintptr_t)0;")
+
     emit_line(e, "  out.generation = 0;")
+
     emit_line(e, "  return out;")
+
     emit_line(e, "}")
+
     emit_line(e, "")
+
     emit_line(e, "static bool mt_event_unsubscribe(void* slots, uintptr_t capacity, struct mt_subscription sub) {")
+
     emit_line(e, "  if (sub.slot >= capacity) return false;")
+
     emit_line(e, "  uintptr_t off = sub.slot * (2*sizeof(bool) + sizeof(uintptr_t) + sizeof(void*));")
+
     emit_line(e, "  if (!*((bool*)((char*)slots + off))) return false;")
+
     emit_line(e, "  if (*(uintptr_t*)((char*)slots + off + 2*sizeof(bool)) != sub.generation) return false;")
+
     emit_line(e, "  *((bool*)((char*)slots + off)) = false;")
+
     emit_line(e, "  ((bool*)((char*)slots + off))[1] = false;")
+
     emit_line(e, "  return true;")
+
     emit_line(e, "}")
+
     emit_line(e, "")
+
     emit_line(e, "static void mt_event_emit(void* slots, uintptr_t capacity) {")
+
     emit_line(e, "  for (uintptr_t i = 0; i < capacity; i++) {")
+
     emit_line(e, "    uintptr_t off = i * (2*sizeof(bool) + sizeof(uintptr_t) + sizeof(void*));")
+
     emit_line(e, "    if (*((bool*)((char*)slots + off))) {")
+
     emit_line(e, "      void* listener = *(void**)((char*)slots + off + 2*sizeof(bool) + sizeof(uintptr_t));")
+
     emit_line(e, "      if (listener) {")
+
     emit_line(e, "        ((void (*)())listener)();")
+
     emit_line(e, "        if (((bool*)((char*)slots + off))[1]) {")
+
     emit_line(e, "          *((bool*)((char*)slots + off)) = false;")
+
     emit_line(e, "          ((bool*)((char*)slots + off))[1] = false;")
+
     emit_line(e, "        }")
+
     emit_line(e, "      }")
+
     emit_line(e, "    }")
+
     emit_line(e, "  }")
+
     emit_line(e, "}")
 
 
+
+
+
 # =============================================================================
+
 #  Parallel / detach runtime helpers
+
 # =============================================================================
+
+
 
 function uses_parallel_runtime(program: ir.Program) -> bool:
+
     var i: ptr_uint = 0
+
     while i < program.functions.len:
+
         unsafe:
+
             let f = read(program.functions.data + i)
+
             if body_calls(f.body, "mt_parallel_for") or body_calls(f.body, "mt_spawn_run") or body_calls(f.body, "mt_detach_run") or body_calls(f.body, "mt_detach_join"):
+
                 return true
+
         i += 1
+
     return false
+
+
+
 
 
 function emit_task_structs(e: ref[Emitter], program: ir.Program) -> void:
+
     var seen = map_mod.Map[str, bool].create()
+
     var i: ptr_uint = 0
+
     while i < program.functions.len:
+
         unsafe:
+
             let f = read(program.functions.data + i)
+
             let task_elem = task_type_element(f.return_type)
+
             if task_elem.is_some():
+
                 let elem = task_elem.unwrap()
+
                 var task_args = vec.Vec[types.Type].create()
+
                 task_args.push(elem)
+
                 let c_name = generic_c_type("Task", task_args.as_span())
+
                 if not seen.contains(c_name):
+
                     seen.set(c_name, true)
+
                     emit_task_struct_type(e, c_name, elem)
+
             var pi: ptr_uint = 0
+
             while pi < f.params.len:
+
                 let param = read(f.params.data + pi)
+
                 let pt_elem = task_type_element(param.ty)
+
                 if pt_elem.is_some():
+
                     let pe = pt_elem.unwrap()
+
                     var pt_args = vec.Vec[types.Type].create()
+
                     pt_args.push(pe)
+
                     let pc_name = generic_c_type("Task", pt_args.as_span())
+
                     if not seen.contains(pc_name):
+
                         seen.set(pc_name, true)
+
                         emit_task_struct_type(e, pc_name, pe)
+
                 pi += 1
+
         i += 1
+
+
+
 
 
 function task_type_element(t: types.Type) -> Option[types.Type]:
+
     match t:
+
         types.Type.ty_generic as g:
+
             if g.name == "Task" and g.args.len == 1:
+
                 return Option[types.Type].some(value = unsafe: read(g.args.data + 0))
+
             return Option[types.Type].none
+
         _:
+
             return Option[types.Type].none
+
+
+
 
 
 function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -> void:
+
     let is_void = is_void_type(elem)
+
     let type_str = c_type(elem)
+
     emit_line(e, j2("typedef struct {", ""))
+
     if not is_void:
+
         emit_line(e, j3("  ", type_str, " value;"))
+
     emit_line(e, "  void* frame;")
+
     emit_line(e, "  bool (*ready)(void*);")
+
     emit_line(e, "  void (*set_waiter)(void*, void*, void(*)(void*));")
+
     emit_line(e, "  void (*release)(void*);")
+
     if not is_void:
+
         emit_line(e, j3("  ", type_str, " (*take_result)(void*);"))
+
     emit_line(e, "  void (*cancel)(void*);")
+
     emit_line(e, j3("} ", c_name, ";"))
+
     emit_line(e, "")
+
+
+
 
 
 function is_vec_math_name(name: str) -> bool:
+
     return (
+
         name == "vec2" or name == "vec3" or name == "vec4"
+
         or name == "ivec2" or name == "ivec3" or name == "ivec4"
+
         or name == "mat3" or name == "mat4" or name == "quat"
+
     )
 
 
+
+
+
 function is_void_type(t: types.Type) -> bool:
+
     match t:
+
         types.Type.ty_primitive as p:
+
             return p.name == "void"
+
         _:
+
             return false
 
 
+
+
+
 function emit_builtin_type_defs(e: ref[Emitter], program: ir.Program) -> void:
+
     var needed = map_mod.Map[str, bool].create()
+
     var fi: ptr_uint = 0
+
     while fi < program.functions.len:
+
         var f: ir.Function
+
         unsafe:
+
             f = read(program.functions.data + fi)
+
         collect_builtin_types(ref_of(needed), f.return_type)
+
         var pi: ptr_uint = 0
+
         while pi < f.params.len:
+
             unsafe:
+
                 collect_builtin_types(ref_of(needed), read(f.params.data + pi).ty)
+
             pi += 1
+
         fi += 1
+
     # Also scan struct fields and type aliases
+
     var si: ptr_uint = 0
+
     while si < program.structs.len:
+
         var s: ir.StructDecl
+
         unsafe:
+
             s = read(program.structs.data + si)
+
         var sfi: ptr_uint = 0
+
         while sfi < s.fields.len:
+
             unsafe:
+
                 collect_builtin_types(ref_of(needed), read(s.fields.data + sfi).ty)
+
             sfi += 1
+
         si += 1
+
     var ti: ptr_uint = 0
+
     while ti < program.type_aliases.len:
+
         var ta: ir.TypeAlias
+
         unsafe:
+
             ta = read(program.type_aliases.data + ti)
+
         collect_builtin_types(ref_of(needed), ta.target_type)
+
         ti += 1
+
     if needed.contains("vec2"):
+
         emit_line(e, "typedef struct mt_vec2 { float x; float y; } mt_vec2;")
+
         emit_line(e, "typedef struct mt_ivec2 { int32_t x; int32_t y; } mt_ivec2;")
+
     if needed.contains("vec3") or needed.contains("mat3"):
+
         emit_line(e, "typedef struct mt_vec3 { float x; float y; float z; } mt_vec3;")
+
         emit_line(e, "typedef struct mt_ivec3 { int32_t x; int32_t y; int32_t z; } mt_ivec3;")
+
     if needed.contains("vec4") or needed.contains("mat4"):
+
         emit_line(e, "typedef struct mt_vec4 { float x; float y; float z; float w; } mt_vec4;")
+
         emit_line(e, "typedef struct mt_ivec4 { int32_t x; int32_t y; int32_t z; int32_t w; } mt_ivec4;")
+
     if needed.contains("mat3"):
+
         emit_line(e, "typedef struct mt_mat3 { mt_vec3 col0; mt_vec3 col1; mt_vec3 col2; } mt_mat3;")
+
     if needed.contains("mat4"):
+
         emit_line(e, "typedef struct mt_mat4 { mt_vec4 col0; mt_vec4 col1; mt_vec4 col2; mt_vec4 col3; } mt_mat4;")
+
     if needed.contains("quat"):
+
         emit_line(e, "typedef struct mt_quat { float x; float y; float z; float w; } mt_quat;")
+
     if needed.contains("vec2") or needed.contains("vec3") or needed.contains("vec4"):
+
         emit_line(e, "")
+
     emit_line(e, "")
+
+
+
 
 
 ## Collect and emit nullable opt struct definitions for value-type nullables.
+
 function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], t: types.Type) -> void:
+
     match t:
+
         types.Type.ty_nullable as nl:
+
             unsafe:
+
                 let base = read(nl.base)
+
                 if not is_pointer_like_for_nullable(base):
+
                     let c_key = j2("mt_opt_", naming.type_c_key(base))
+
                     if not needed.contains(c_key):
+
                         needed.set(c_key, types.Type.ty_nullable(base = types.alloc_type(base)))
+
         types.Type.ty_generic as g:
+
             var gi: ptr_uint = 0
+
             while gi < g.args.len:
+
                 unsafe:
+
                     collect_opt_type(needed, read(g.args.data + gi))
+
                 gi += 1
+
         types.Type.ty_imported as im:
+
             var ai: ptr_uint = 0
+
             while ai < im.args.len:
+
                 unsafe:
+
                     collect_opt_type(needed, read(im.args.data + ai))
+
                 ai += 1
+
         types.Type.ty_function as f:
+
             var fi: ptr_uint = 0
+
             while fi < f.params.len:
+
                 unsafe:
+
                     collect_opt_type(needed, read(f.params.data + fi))
+
                 fi += 1
+
             unsafe:
+
                 collect_opt_type(needed, read(f.return_type))
+
         types.Type.ty_tuple as tu:
+
             var ei: ptr_uint = 0
+
             while ei < tu.elements.len:
+
                 unsafe:
+
                     collect_opt_type(needed, read(tu.elements.data + ei))
+
                 ei += 1
+
         _:
+
             pass
+
+
+
 
 
 function emit_opt_struct_defs_from_program(e: ref[Emitter], program: ir.Program) -> void:
+
     var needed = map_mod.Map[str, types.Type].create()
+
     var fi: ptr_uint = 0
+
     while fi < program.functions.len:
+
         var f: ir.Function
+
         unsafe:
+
             f = read(program.functions.data + fi)
+
         collect_opt_type(ref_of(needed), f.return_type)
+
         var pi: ptr_uint = 0
+
         while pi < f.params.len:
+
             unsafe:
+
                 collect_opt_type(ref_of(needed), read(f.params.data + pi).ty)
+
             pi += 1
+
         # Scan function body for local variable types.
+
         collect_opt_from_stmts(ref_of(needed), f.body)
+
         fi += 1
+
     var si: ptr_uint = 0
+
     while si < program.structs.len:
+
         var s: ir.StructDecl
+
         unsafe:
+
             s = read(program.structs.data + si)
+
         var sfi: ptr_uint = 0
+
         while sfi < s.fields.len:
+
             unsafe:
+
                 collect_opt_type(ref_of(needed), read(s.fields.data + sfi).ty)
+
             sfi += 1
+
         si += 1
+
     var ti: ptr_uint = 0
+
     while ti < program.type_aliases.len:
+
         var ta: ir.TypeAlias
+
         unsafe:
+
             ta = read(program.type_aliases.data + ti)
+
         collect_opt_type(ref_of(needed), ta.target_type)
+
         ti += 1
+
     var ci: ptr_uint = 0
+
     while ci < program.constants.len:
+
         unsafe:
+
             collect_opt_type(ref_of(needed), read(program.constants.data + ci).ty)
+
         ci += 1
+
     var gi: ptr_uint = 0
+
     while gi < program.globals.len:
+
         unsafe:
+
             collect_opt_type(ref_of(needed), read(program.globals.data + gi).ty)
+
         gi += 1
+
     if needed.len() > 0:
+
         var key_list = vec.Vec[str].create()
+
         defer key_list.release()
+
         var kiter = needed.keys()
+
         while true:
+
             let key_ptr = kiter.next() else:
+
                 break
+
             unsafe:
+
                 key_list.push(read(key_ptr))
+
         var viter = key_list.iter()
+
         while true:
+
             let key_ptr = viter.next() else:
+
                 break
+
             unsafe:
+
                 let key_value = read(key_ptr)
+
                 let opt_type = needed.at(key_value).unwrap()
+
                 match opt_type:
+
                     types.Type.ty_nullable as nl:
+
                         unsafe:
+
                             let base_type = read(nl.base)
+
                             emit_line(e, j5("typedef struct { bool has_value; ", c_type(base_type), " value; } ", key_value, ";"))
+
                     _:
+
                         pass
+
         emit_line(e, "")
+
+
+
 
 
 ## Walk statements to collect nullable value types from local variable declarations.
+
 function collect_opt_from_stmts(needed: ref[map_mod.Map[str, types.Type]], body: span[ir.Stmt]) -> void:
+
     var i: ptr_uint = 0
+
     while i < body.len:
+
         unsafe:
+
             match read(body.data + i):
+
                 ir.Stmt.stmt_local as loc:
+
                     collect_opt_type(needed, loc.ty)
+
                     collect_opt_from_expr(needed, loc.value)
+
                 ir.Stmt.stmt_assignment as asg:
+
                     collect_opt_from_expr(needed, asg.value)
+
                 ir.Stmt.stmt_expression as ex:
+
                     collect_opt_from_expr(needed, ex.expression)
+
                 ir.Stmt.stmt_return as ret:
+
                     # ret.value is ptr[ir.Expr]? — skip for now to avoid prelude match issues
+
                     pass
+
                 ir.Stmt.stmt_block as blk:
+
                     collect_opt_from_stmts(needed, blk.body)
+
                 ir.Stmt.stmt_if as iff:
+
                     collect_opt_from_expr(needed, iff.condition)
+
                     collect_opt_from_stmts(needed, iff.then_body)
+
                     collect_opt_from_stmts(needed, iff.else_body)
+
                 ir.Stmt.stmt_while as w:
+
                     collect_opt_from_expr(needed, w.condition)
+
                     collect_opt_from_stmts(needed, w.body)
+
                 ir.Stmt.stmt_for as f:
+
                     match read(f.init):
+
                         ir.Stmt.stmt_local as iloc:
+
                             collect_opt_type(needed, iloc.ty)
+
                             collect_opt_from_expr(needed, iloc.value)
+
                         ir.Stmt.stmt_expression as iex:
+
                             collect_opt_from_expr(needed, iex.expression)
+
                         _:
+
                             pass
+
                     collect_opt_from_expr(needed, f.condition)
+
                     match read(f.post):
+
                         ir.Stmt.stmt_expression as pex:
+
                             collect_opt_from_expr(needed, pex.expression)
+
                         _:
+
                             pass
+
                     collect_opt_from_stmts(needed, f.body)
+
                 ir.Stmt.stmt_switch as sw:
+
                     collect_opt_from_expr(needed, sw.expression)
+
                     var ci: ptr_uint = 0
+
                     while ci < sw.cases.len:
+
                         unsafe:
+
                             collect_opt_from_stmts(needed, read(sw.cases.data + ci).body)
+
                         ci += 1
+
                 _:
+
                     pass
+
         i += 1
+
+
+
 
 
 ## Walk expression sub-tree to collect nullable value types.
+
 function collect_opt_from_expr(needed: ref[map_mod.Map[str, types.Type]], ep: ptr[ir.Expr]) -> void:
+
     collect_opt_type(needed, expr_result_type(ep))
 
 
+
+
+
 ## Scan all expressions in function bodies for nullable value types.
+
 function collect_builtin_types(needed: ref[map_mod.Map[str, bool]], t: types.Type) -> void:
+
     match t:
+
         types.Type.ty_primitive as p:
+
             if p.name == "vec2" or p.name == "ivec2" or p.name == "vec3" or p.name == "ivec3" or p.name == "vec4" or p.name == "ivec4" or p.name == "mat3" or p.name == "mat4" or p.name == "quat":
+
                 needed.set(p.name, true)
+
         types.Type.ty_nullable as n:
+
             unsafe:
+
                 collect_builtin_types(needed, read(n.base))
+
         types.Type.ty_generic as g:
+
             var gi: ptr_uint = 0
+
             while gi < g.args.len:
+
                 unsafe:
+
                     collect_builtin_types(needed, read(g.args.data + gi))
+
                 gi += 1
+
         types.Type.ty_imported as im:
+
             var ai: ptr_uint = 0
+
             while ai < im.args.len:
+
                 unsafe:
+
                     collect_builtin_types(needed, read(im.args.data + ai))
+
                 ai += 1
+
         types.Type.ty_function as f:
+
             var fi: ptr_uint = 0
+
             while fi < f.params.len:
+
                 unsafe:
+
                     collect_builtin_types(needed, read(f.params.data + fi))
+
                 fi += 1
+
             unsafe:
+
                 collect_builtin_types(needed, read(f.return_type))
+
         types.Type.ty_tuple as tu:
+
             var ei: ptr_uint = 0
+
             while ei < tu.elements.len:
+
                 unsafe:
+
                     collect_builtin_types(needed, read(tu.elements.data + ei))
+
                 ei += 1
+
         _:
+
             pass
 
 
+
+
+
 function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
+
     var ai: ptr_uint = 0
+
     while ai < program.type_aliases.len:
+
         var ta: ir.TypeAlias
+
         unsafe:
+
             ta = read(program.type_aliases.data + ai)
+
         match ta.backing_c_name:
+
             Option.some as cname:
+
                 emit_line(e, j5("typedef ", cname.value, " ", ta.qualified_name, ";"))
+
             Option.none:
+
                 let c_type_str = c_declaration(ta.target_type, ta.qualified_name)
+
                 emit_line(e, j3("typedef ", c_type_str, ";"))
+
         ai += 1
+
     if program.type_aliases.len > 0:
+
         emit_line(e, "")
 
 
+
+
+
 ## True when the include set contains the fs/tls support headers, which pull in
+
 ## POSIX APIs guarded by the _GNU_SOURCE / _POSIX_C_SOURCE feature-test macros.
+
 function includes_need_feature_macros(program: ir.Program) -> bool:
+
     var i: ptr_uint = 0
+
     while i < program.includes.len:
+
         unsafe:
+
             let h = read(program.includes.data + i).header
+
             if h == "\"fs_support.h\"" or h == "\"tls_support.h\"":
+
                 return true
+
         i += 1
+
     return false
+
+
+
 
 
 ## True when any lowered function references offset_of, which requires
+
 ## <stddef.h> (mirrors Ruby's program_uses_offsetof?).
+
 function functions_use_offsetof(functions: span[ir.Function]) -> bool:
+
     var i: ptr_uint = 0
+
     while i < functions.len:
+
         if stmts_use_offsetof(unsafe: read(functions.data + i).body):
+
             return true
+
         i += 1
+
     return false
+
+
+
 
 
 ## Check if any IR constant uses offsetof — constants are not in function
+
 ## bodies so we must scan them separately.
+
 function constants_use_offsetof(constants: span[ir.Constant]) -> bool:
+
     var i: ptr_uint = 0
+
     while i < constants.len:
+
         unsafe:
+
             if expr_uses_offsetof(read(constants.data + i).value):
+
                 return true
+
         i += 1
+
     return false
+
+
+
 
 
 function stmts_use_offsetof(body: span[ir.Stmt]) -> bool:
+
     var i: ptr_uint = 0
+
     while i < body.len:
+
         unsafe:
+
             if stmt_uses_offsetof(body.data + i):
+
                 return true
+
         i += 1
+
     return false
+
+
+
 
 
 function stmt_uses_offsetof(sp: ptr[ir.Stmt]) -> bool:
+
     unsafe:
+
         match read(sp):
+
             ir.Stmt.stmt_return as r:
+
                 let value = r.value else:
+
                     return false
+
                 return expr_uses_offsetof(value)
+
             ir.Stmt.stmt_local as loc:
+
                 return expr_uses_offsetof(loc.value)
+
             ir.Stmt.stmt_assignment as asg:
+
                 return expr_uses_offsetof(asg.target) or expr_uses_offsetof(asg.value)
+
             ir.Stmt.stmt_expression as ex:
+
                 return expr_uses_offsetof(ex.expression)
+
             ir.Stmt.stmt_block as blk:
+
                 return stmts_use_offsetof(blk.body)
+
             ir.Stmt.stmt_if as iff:
+
                 return expr_uses_offsetof(iff.condition) or stmts_use_offsetof(iff.then_body) or stmts_use_offsetof(iff.else_body)
+
             ir.Stmt.stmt_while as w:
+
                 return expr_uses_offsetof(w.condition) or stmts_use_offsetof(w.body)
+
             ir.Stmt.stmt_for as f:
+
                 return stmt_uses_offsetof(f.init) or expr_uses_offsetof(f.condition) or stmt_uses_offsetof(f.post) or stmts_use_offsetof(f.body)
+
             ir.Stmt.stmt_switch as sw:
+
                 if expr_uses_offsetof(sw.expression):
+
                     return true
+
                 var ci: ptr_uint = 0
+
                 while ci < sw.cases.len:
+
                     if stmts_use_offsetof(read(sw.cases.data + ci).body):
+
                         return true
+
                     ci += 1
+
                 return false
+
             ir.Stmt.stmt_static_assert as sa:
+
                 return expr_uses_offsetof(sa.condition) or expr_uses_offsetof(sa.message)
+
             _:
+
                 return false
+
+
+
 
 
 function expr_uses_offsetof(ep: ptr[ir.Expr]) -> bool:
+
     unsafe:
+
         match read(ep):
+
             ir.Expr.expr_offsetof:
+
                 return true
+
             ir.Expr.expr_member as m:
+
                 return expr_uses_offsetof(m.receiver)
+
             ir.Expr.expr_index as ix:
+
                 return expr_uses_offsetof(ix.receiver) or expr_uses_offsetof(ix.index)
+
             ir.Expr.expr_checked_index as ci:
+
                 return expr_uses_offsetof(ci.receiver) or expr_uses_offsetof(ci.index)
+
             ir.Expr.expr_checked_span_index as cs:
+
                 return expr_uses_offsetof(cs.receiver) or expr_uses_offsetof(cs.index)
+
             ir.Expr.expr_nullable_index as ni:
+
                 return expr_uses_offsetof(ni.receiver) or expr_uses_offsetof(ni.index)
+
             ir.Expr.expr_nullable_span_index as ns:
+
                 return expr_uses_offsetof(ns.receiver) or expr_uses_offsetof(ns.index)
+
             ir.Expr.expr_call as call:
+
                 var i: ptr_uint = 0
+
                 while i < call.arguments.len:
+
                     if expr_uses_offsetof(call.arguments.data + i):
+
                         return true
+
                     i += 1
+
                 return false
+
             ir.Expr.expr_call_indirect as call:
+
                 if expr_uses_offsetof(call.callee):
+
                     return true
+
                 var i: ptr_uint = 0
+
                 while i < call.arguments.len:
+
                     if expr_uses_offsetof(call.arguments.data + i):
+
                         return true
+
                     i += 1
+
                 return false
+
             ir.Expr.expr_unary as un:
+
                 return expr_uses_offsetof(un.operand)
+
             ir.Expr.expr_binary as bin:
+
                 return expr_uses_offsetof(bin.left) or expr_uses_offsetof(bin.right)
+
             ir.Expr.expr_conditional as cond:
+
                 return expr_uses_offsetof(cond.condition) or expr_uses_offsetof(cond.then_expression) or expr_uses_offsetof(cond.else_expression)
+
             ir.Expr.expr_reinterpret as rin:
+
                 return expr_uses_offsetof(rin.expression)
+
             ir.Expr.expr_cast as cast:
+
                 return expr_uses_offsetof(cast.expression)
+
             ir.Expr.expr_address_of as addr:
+
                 return expr_uses_offsetof(addr.expression)
+
             ir.Expr.expr_aggregate_literal as agg:
+
                 var i: ptr_uint = 0
+
                 while i < agg.fields.len:
+
                     if expr_uses_offsetof(read(agg.fields.data + i).value):
+
                         return true
+
                     i += 1
+
                 return false
+
             ir.Expr.expr_variant_literal as vl:
+
                 var i: ptr_uint = 0
+
                 while i < vl.fields.len:
+
                     if expr_uses_offsetof(read(vl.fields.data + i).value):
+
                         return true
+
                     i += 1
+
                 return false
+
             ir.Expr.expr_array_literal as arr:
+
                 var i: ptr_uint = 0
+
                 while i < arr.elements.len:
+
                     if expr_uses_offsetof(arr.elements.data + i):
+
                         return true
+
                     i += 1
+
                 return false
+
             _:
+
                 return false
+
+
+
 
 
 function emit_parallel_helpers(e: ref[Emitter]) -> void:
+
     emit_line(e, "static void mt_parallel_for(intptr_t start, intptr_t end, intptr_t step, void (*worker)(void*, intptr_t, intptr_t), void* data) {")
+
     emit_line(e, "  for (intptr_t i = start; i < end; i += step) {")
+
     emit_line(e, "    worker(data, i, end);")
+
     emit_line(e, "  }")
+
     emit_line(e, "}")
+
     emit_line(e, "")
+
     emit_line(e, "static void mt_spawn_run(void (*work)(void*), void* data) {")
+
     emit_line(e, "  work(data);")
+
     emit_line(e, "}")
+
     emit_line(e, "")
+
     emit_line(e, "static void mt_spawn_wait(void) {")
+
     emit_line(e, "}")
+
     emit_line(e, "")
+
     emit_line(e, "static void* mt_detach_run(void (*work)(void*), void* data) {")
+
     emit_line(e, "  work(data);")
+
     emit_line(e, "  return NULL;")
+
     emit_line(e, "}")
+
     emit_line(e, "")
+
     emit_line(e, "static void mt_detach_join(void* handle) {")
+
     emit_line(e, "  (void)handle;")
+
     emit_line(e, "}")
+
+
+
 
 
 function uses_builtin_helpers(program: ir.Program) -> bool:
+
     var i: ptr_uint = 0
+
     while i < program.functions.len:
+
         unsafe:
+
             let f = read(program.functions.data + i)
+
             if body_calls(f.body, "mt_order_func") or body_calls(f.body, "mt_equal_func") or body_calls(f.body, "mt_hash_func"):
+
                 return true
+
         i += 1
+
     return false
+
+
+
 
 
 function emit_builtin_helpers(e: ref[Emitter]) -> void:
+
     emit_line(e, "static int32_t mt_order_func(void const* a, void const* b) {")
+
     emit_line(e, "  intptr_t diff = (char const*)a - (char const*)b;")
+
     emit_line(e, "  return diff < 0 ? -1 : diff > 0 ? 1 : 0;")
+
     emit_line(e, "}")
+
     emit_line(e, "")
+
     emit_line(e, "static bool mt_equal_func(void const* a, void const* b) {")
+
     emit_line(e, "  return a == b;")
+
     emit_line(e, "}")
+
     emit_line(e, "")
+
     emit_line(e, "static uint32_t mt_hash_func(void const* value) {")
+
     emit_line(e, "  return (uint32_t)(uintptr_t)value;")
+
     emit_line(e, "}")
+
+
+
 
 
 ## True when the entry point uses the argv → span[str] bridge.
+
 function uses_entry_argv(program: ir.Program) -> bool:
+
     var i: ptr_uint = 0
+
     while i < program.functions.len:
+
         unsafe:
+
             let f = read(program.functions.data + i)
+
             if body_calls(f.body, "mt_entry_argv_to_span_str") or body_calls(f.body, "mt_free_entry_argv_strs"):
+
                 return true
+
         i += 1
+
     return false
 
 
+
+
+
 ## Emit the argv → span[str] entry bridge runtime helpers.  Mirrors Ruby's
+
 ## mt_entry_argv_to_span_str / mt_free_entry_argv_strs (runtime_helpers.rb).
+
 function emit_entry_argv_helpers(e: ref[Emitter]) -> void:
+
     emit_line(e, "static mt_span_str mt_entry_argv_to_span_str(int32_t argc, char** argv, mt_str** items_out) {")
+
     emit_line(e, "  uintptr_t len = argc > 1 ? (uintptr_t)(argc - 1) : 0;")
+
     emit_line(e, "  mt_str* items = NULL;")
+
     emit_line(e, "  uintptr_t index = 0;")
+
     emit_line(e, "  if (len > 0) {")
+
     emit_line(e, "    items = (mt_str*)malloc(len * sizeof(mt_str));")
+
     emit_line(e, "    if (items == NULL) abort();")
+
     emit_line(e, "  }")
+
     emit_line(e, "  while (index < len) {")
+
     emit_line(e, "    char* value = argv[index + 1];")
+
     emit_line(e, "    items[index] = (mt_str){ .data = value, .len = (uintptr_t)strlen(value) };")
+
     emit_line(e, "    index++;")
+
     emit_line(e, "  }")
+
     emit_line(e, "  *items_out = items;")
+
     emit_line(e, "  return (mt_span_str){ .data = items, .len = len };")
+
     emit_line(e, "}")
+
     emit_line(e, "")
+
     emit_line(e, "static void mt_free_entry_argv_strs(mt_str* items) {")
+
     emit_line(e, "  free(items);")
+
     emit_line(e, "}")

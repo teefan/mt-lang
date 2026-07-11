@@ -10513,17 +10513,17 @@ function is_builtin_type_name(name: str) -> bool:
 #  Format string lowering (f"...")
 # =============================================================================
 
-## Lower `let result = f"text #{expr} more"` into a sequence of builder calls:
-##   var __fmt_N = mt_format_str_make()
-##   mt_format_str_append_static(__fmt_N, "...")
-##   mt_format_str_append_EXPRTY(__fmt_N, expr)
-##   let result = mt_format_str_finish(__fmt_N, __fmt_N_capacity)
-## The builder is a stack-local struct with a data pointer, len, and capacity.
+## Lower `let result = f"text #{expr} more"` into a two-pass sequence:
+##   var __fmt_cap = <static text len>
+##   __fmt_cap = __fmt_cap + mt_format_int_len(expr)
+##   var result = mt_format_str_make(__fmt_cap)
+##   var __fmt_off: uintptr = 0
+##   __fmt_off = mt_format_append_str(result, __fmt_off, "...")
+##   __fmt_off = mt_format_append_int(result, __fmt_off, expr)
 function lower_format_string_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, parts: span[ast.FormatStringPart]) -> void:
     let c_name = utils.c_local_name(name)
     let str_ty = types.Type.ty_str
-    # For format strings with only static text, return the text as a literal.
-    # Otherwise, concatenate the parts using simple str operations.
+    let ptr_uint_ty = types.primitive("ptr_uint")
     var all_static = true
     var pi: ptr_uint = 0
     while pi < parts.len and all_static:
@@ -10538,7 +10538,6 @@ function lower_format_string_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.St
         pi += 1
     var value_expr: ptr[ir.Expr]
     if all_static:
-        # Concatenate all static text parts into one str.
         var buf = string.String.create()
         pi = 0
         while pi < parts.len:
@@ -10554,12 +10553,54 @@ function lower_format_string_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.St
         let combined = buf.as_str()
         value_expr = alloc_expr(ir.Expr.expr_string_literal(value = combined, ty = str_ty, cstring = false))
     else:
-        # Has interpolation: call the runtime format-string builder.
-        # Emit builder allocation, appends, and finish.
-        var builder_name = fresh_c_temp_name(ctx, "fmt_builder")
-        var builder_c = builder_name
-        let make_call = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_make", arguments = span[ir.Expr](), ty = str_ty))
-        output.push(ir.Stmt.stmt_local(name = builder_name, linkage_name = builder_c, ty = str_ty, value = make_call, line = 0, source_path = ""))
+        var cap_name = fresh_c_temp_name(ctx, "fmt_cap")
+        var cap_c = cap_name
+        var off_name = fresh_c_temp_name(ctx, "fmt_off")
+        var off_c = off_name
+        var result_name = utils.c_local_name(name)
+        var result_c = result_name
+        # Pass 1: compute total length.
+        var static_len: ptr_uint = 0
+        pi = 0
+        while pi < parts.len:
+            var part: ast.FormatStringPart
+            unsafe:
+                part = read(parts.data + pi)
+            match part:
+                ast.FormatStringPart.fmt_text as t:
+                    static_len += t.value.len
+                _:
+                    pass
+            pi += 1
+        let cap_init = alloc_expr(ir.Expr.expr_integer_literal(value = long<-static_len, ty = ptr_uint_ty))
+        output.push(ir.Stmt.stmt_local(name = cap_name, linkage_name = cap_c, ty = ptr_uint_ty, value = cap_init, line = 0, source_path = ""))
+        pi = 0
+        while pi < parts.len:
+            var part: ast.FormatStringPart
+            unsafe:
+                part = read(parts.data + pi)
+            match part:
+                ast.FormatStringPart.fmt_expr as ex:
+                    var interp_expr = lower_expr(ctx, ex.expression)
+                    var len_helper = fmt_len_helper_name(interp_expr)
+                    var len_args = vec.Vec[ir.Expr].create()
+                    unsafe:
+                        len_args.push(read(interp_expr))
+                    let len_call = alloc_expr(ir.Expr.expr_call(callee = len_helper, arguments = len_args.as_span(), ty = ptr_uint_ty))
+                    let cap_ref = alloc_expr(ir.Expr.expr_name(name = cap_c, ty = ptr_uint_ty, pointer = false))
+                    var add_call = alloc_expr(ir.Expr.expr_binary(operator = "+", left = cap_ref, right = len_call, ty = ptr_uint_ty))
+                    output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = cap_c, ty = ptr_uint_ty, pointer = false)), operator = "=", value = add_call))
+                _:
+                    pass
+            pi += 1
+        let cap_val = alloc_expr(ir.Expr.expr_name(name = cap_c, ty = ptr_uint_ty, pointer = false))
+        var make_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            make_args.push(read(cap_val))
+        let make_call = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_make", arguments = make_args.as_span(), ty = str_ty))
+        output.push(ir.Stmt.stmt_local(name = result_name, linkage_name = result_c, ty = str_ty, value = make_call, line = 0, source_path = ""))
+        let off_init = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))
+        output.push(ir.Stmt.stmt_local(name = off_name, linkage_name = off_c, ty = ptr_uint_ty, value = off_init, line = 0, source_path = ""))
         pi = 0
         while pi < parts.len:
             var part: ast.FormatStringPart
@@ -10569,44 +10610,48 @@ function lower_format_string_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.St
                 ast.FormatStringPart.fmt_text as t:
                     var append_args = vec.Vec[ir.Expr].create()
                     unsafe:
-                        append_args.push(read(alloc_expr(ir.Expr.expr_name(name = builder_c, ty = str_ty, pointer = false))))
+                        append_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))))
+                        append_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_c, ty = ptr_uint_ty, pointer = false))))
                     let lit_val = t.value
                     var text_expr = alloc_expr(ir.Expr.expr_string_literal(value = lit_val, ty = str_ty, cstring = false))
                     unsafe:
                         append_args.push(read(text_expr))
-                    let append_call = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_append_str", arguments = append_args.as_span(), ty = str_ty))
-                    output.push(ir.Stmt.stmt_expression(expression = append_call, line = 0, source_path = ""))
+                    let append_call = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = append_args.as_span(), ty = ptr_uint_ty))
+                    output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_c, ty = ptr_uint_ty, pointer = false)), operator = "=", value = append_call))
                 ast.FormatStringPart.fmt_expr as ex:
                     var interp_expr = lower_expr(ctx, ex.expression)
-                    let interp_ty = ir_expr_type(interp_expr)
-                    var helper = fmt_append_helper_name(interp_ty)
+                    var helper = fmt_append_helper_name(interp_expr)
                     var append_args = vec.Vec[ir.Expr].create()
                     unsafe:
-                        append_args.push(read(alloc_expr(ir.Expr.expr_name(name = builder_c, ty = str_ty, pointer = false))))
+                        append_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))))
+                        append_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_c, ty = ptr_uint_ty, pointer = false))))
                         append_args.push(read(interp_expr))
-                    let append_call = alloc_expr(ir.Expr.expr_call(callee = helper, arguments = append_args.as_span(), ty = str_ty))
-                    output.push(ir.Stmt.stmt_expression(expression = append_call, line = 0, source_path = ""))
+                    let append_call = alloc_expr(ir.Expr.expr_call(callee = helper, arguments = append_args.as_span(), ty = ptr_uint_ty))
+                    output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_c, ty = ptr_uint_ty, pointer = false)), operator = "=", value = append_call))
             pi += 1
-        var finish_args = vec.Vec[ir.Expr].create()
-        unsafe:
-            finish_args.push(read(alloc_expr(ir.Expr.expr_name(name = builder_c, ty = str_ty, pointer = false))))
-        value_expr = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_finish", arguments = finish_args.as_span(), ty = str_ty))
+        value_expr = alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))
     output.push(ir.Stmt.stmt_local(name = name, linkage_name = c_name, ty = str_ty, value = value_expr, line = 0, source_path = ""))
 
 
+## Map a type to its format-length helper name.
+function fmt_len_helper_name(expr: ptr[ir.Expr]) -> str:
+    return "mt_format_int_len"
+
+
 ## Map a type to its format-append helper name.
-function fmt_append_helper_name(t: types.Type) -> str:
+function fmt_append_helper_name(expr: ptr[ir.Expr]) -> str:
+    let t = ir_expr_type(expr)
     if types.is_integer_type(t):
-        return "mt_format_str_append_int"
+        return "mt_format_append_int"
     match t:
         types.Type.ty_str:
-            return "mt_format_str_append_str"
+            return "mt_format_append_str"
         types.Type.ty_primitive as p:
             if p.name == "float" or p.name == "double":
-                return "mt_format_str_append_float"
-            return "mt_format_str_append_int"
+                return "mt_format_append_int"
+            return "mt_format_append_int"
         _:
-            return "mt_format_str_append_int"
+            return "mt_format_append_int"
 
 
 # =============================================================================
