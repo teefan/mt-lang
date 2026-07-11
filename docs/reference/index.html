@@ -817,7 +817,7 @@ function main() -&gt; int:
 </div>
 
   <div class="callout tip">
-    <strong>Tip:</strong> This example covers imports, constants, <code>const function</code>, type aliases, enums, flags, structs (nested, attributed), variants, interfaces, <code>extending</code> methods, generics with constraints, value parameter generics, <code>Result</code> error handling with <code>?</code> and guard binding, events, closures (<code>proc</code>), <code>async</code>/<code>await</code>, concurrency (<code>parallel for</code>, <code>parallel:</code>, <code>detach</code> + <code>gather</code>, <code>atomic[T]</code>), native vector types, arrays, spans, collections, <code>for</code>/<code>while</code>/<code>match</code>/<code>if</code>, variant membership test (<code>is</code>), parallel <code>for</code>, <code>defer</code>, <code>unsafe</code>, <code>ref[T]</code>, <code>dyn[Interface]</code>, format strings, heredocs, <code>str_buffer</code>, compile-time reflection, <code>inline for</code>/<code>inline if</code>, <code>static_assert</code>, and explicit casts. See the sections below for full details on each feature.
+    <strong>Tip:</strong> This example covers imports, constants, <code>const function</code>, type aliases, enums, flags, structs (nested, attributed), variants, interfaces, <code>extending</code> methods, generics with constraints, value parameter generics, <code>Result</code> error handling with <code>?</code> and guard binding, events, closures (<code>proc</code>), <code>async</code>/<code>await</code>, concurrency (<code>parallel for</code>, <code>parallel:</code>, <code>detach</code> + <code>gather</code>, <code>atomic[T]</code>), native vector types, arrays, spans, collections, <code>for</code>/<code>while</code>/<code>match</code>/<code>if</code>, variant membership test (<code>is</code>), parallel <code>for</code>, <code>defer</code>, <code>unsafe</code>, <code>ref[T]</code>, <code>own[T]</code>, <code>dyn[Interface]</code>, format strings, heredocs, <code>str_buffer</code>, compile-time reflection, <code>inline for</code>/<code>inline if</code>, <code>static_assert</code>, and explicit casts. See the sections below for full details on each feature.
   </div>
 </section>
 
@@ -1250,6 +1250,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)</code></pre>
       <tr><th>Constructor</th><th>Description</th></tr>
       <tr><td><code>ptr[T]</code></td><td>Raw writable pointer</td></tr>
       <tr><td><code>const_ptr[T]</code></td><td>Raw read-only pointer</td></tr>
+      <tr><td><code>own[T]</code></td><td>Owning heap pointer — auto-dereferences like <code>ref</code> but storable, returnable, and nullable. Created via <code>heap.must_alloc[T](count)</code>. Compiles to <code>T*</code>.</td></tr>
       <tr><td><code>ref[T]</code></td><td>Safe non-null writable alias</td></tr>
       <tr><td><code>span[T]</code></td><td>Pointer + length view (<code>{ data, len }</code>)</td></tr>
       <tr><td><code>array[T, N]</code></td><td>Fixed-size array</td></tr>
@@ -1267,7 +1268,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)</code></pre>
   </div>
 
   <h3>Nullability</h3>
-  <p><code>T?</code> is valid for <strong>any type</strong>. For pointer-like bases (<code>ptr[T]</code>, <code>const_ptr[T]</code>, <code>cstr</code>, <code>fn(...)</code>, <code>proc(...)</code>, opaque), <code>T?</code> is a nullable pointer and <code>null</code> reuses the null pointer as the absent value. For non-pointer value bases (<code>int</code>, <code>bool</code>, <code>float</code>, structs), <code>T?</code> is stored inline by value as a tagged optional (a presence flag plus the value); it copies by value with no hidden heap allocation or pointer aliasing. Use <code>null</code> to express absence; use <code>zero[T]</code> for generic value-initialization. <code>zero[ptr[T]]</code> is rejected when the expected type is already a nullable pointer-like type — write <code>null</code> instead.</p>
+  <p><code>T?</code> is valid for <strong>any type</strong>. For pointer-like bases (<code>ptr[T]</code>, <code>const_ptr[T]</code>, <code>own[T]</code>, <code>cstr</code>, <code>fn(...)</code>, <code>proc(...)</code>, opaque), <code>T?</code> is a nullable pointer and <code>null</code> reuses the null pointer as the absent value. For non-pointer value bases (<code>int</code>, <code>bool</code>, <code>float</code>, structs), <code>T?</code> is stored inline by value as a tagged optional (a presence flag plus the value); it copies by value with no hidden heap allocation or pointer aliasing. Use <code>null</code> to express absence; use <code>zero[T]</code> for generic value-initialization. <code>zero[ptr[T]]</code> is rejected when the expected type is already a nullable pointer-like type — write <code>null</code> instead.</p>
   <p>At an FFI boundary, only pointer-like <code>T?</code> is allowed: <code>external</code> / <code>foreign function</code> parameters and returns reject a non-pointer value nullable such as <code>int?</code> — use <code>ptr[T]?</code> or pass an explicit struct.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>

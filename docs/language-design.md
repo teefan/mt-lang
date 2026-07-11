@@ -71,6 +71,7 @@ The intended reductions are deliberate:
 - raw character storage is `array[char, N]` or `span[char]`, not an alternate text object
 - safe single-object aliasing is `ref[T]`
 - raw writable pointers are `ptr[T]`
+- owning heap pointers are `own[T]` — auto-dereferences like `ref` but storable, returnable, and nullable. `heap.must_alloc[T](count)` returns `own[T]`. Compiles to `T*`.
 - raw read-only pointers are `const_ptr[T]`
 - sized many-element borrows are `span[T]`
 - pointer-like absence is `null`, not `zero[ptr[T]]` in typed nullable contexts
@@ -882,11 +883,10 @@ Heap allocation is always explicit and allocator-driven.
 ```mt
 import std.mem.heap as heap
 
-function spawn_enemy(start: Vec2) -> ptr[Enemy]:
+function spawn_enemy(start: Vec2) -> own[Enemy]:
 	let enemy = heap.must_alloc[Enemy](1)
-	unsafe:
-		enemy.position = start
-		enemy.health = 100
+	enemy.position = start
+	enemy.health = 100
 	return enemy
 ```
 
@@ -955,6 +955,7 @@ References are separate from methods:
 This gives the language clear aliasing tools instead of one overloaded surface:
 
 - `ref[T]` for safe aliasing of one mutable object
+- `own[T]` for owning heap pointers with auto-deref (storable, returnable, nullable)
 - `ptr[T]` / `ptr[T]?` for writable raw memory and FFI
 - `const_ptr[T]` / `const_ptr[T]?` for read-only raw memory and FFI
 - `span[T]` for sized borrowed views over raw pointer data
