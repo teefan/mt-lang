@@ -568,7 +568,7 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[
             p_ty = qualify_type(ctx, substituted)
         else:
             p_ty = qualify_type(ctx, substitute_type_params(ctx, resolve_field_type_ref(ctx, fn_tref), sub))
-        let p_c = c_local_name(p.name)
+        let p_c = utils.c_local_name(p.name)
         let p_ptr = is_pointer_or_ref_type(p_ty)
         ir_params.push(ir.Param(name = p.name, linkage_name = p_c, ty = p_ty, pointer = p_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = p_c, ty = p_ty, pointer = p_ptr))
@@ -1142,15 +1142,15 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
     var ir_params = vec.Vec[ir.Param].create()
     if m.method_kind != ast.MethodKind.mk_static:
         let recv_ty = if m.method_kind == ast.MethodKind.mk_editable: types.Type.ty_generic(name = "ptr", args = sp_type(receiver_ty)) else: receiver_ty
-        ir_params.push(ir.Param(name = "this", linkage_name = c_local_name("this"), ty = recv_ty, pointer = false))
-        ctx.locals.push(LocalBinding(name = "this", c_name = c_local_name("this"), ty = recv_ty, pointer = false))
+        ir_params.push(ir.Param(name = "this", linkage_name = utils.c_local_name("this"), ty = recv_ty, pointer = false))
+        ctx.locals.push(LocalBinding(name = "this", c_name = utils.c_local_name("this"), ty = recv_ty, pointer = false))
     var pi: ptr_uint = 0
     while pi < m.method_params.len:
         var p: ast.Param
         unsafe:
             p = read(m.method_params.data + pi)
         let param_ty = resolve_param_type(ctx, sig, pi, p.param_type)
-        let c_pname = c_local_name(p.name)
+        let c_pname = utils.c_local_name(p.name)
         let is_ptr = is_pointer_or_ref_type(param_ty)
         ir_params.push(ir.Param(name = p.name, linkage_name = c_pname, ty = param_ty, pointer = is_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = param_ty, pointer = is_ptr))
@@ -1236,7 +1236,7 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
         unsafe:
             p = read(params.data + pi)
         let param_ty = resolve_param_type(ctx, sig, pi, p.param_type)
-        let c_name = c_local_name(p.name)
+        let c_name = utils.c_local_name(p.name)
         let f_ptr = is_pointer_or_ref_type(param_ty)
         ir_params.push(ir.Param(name = p.name, linkage_name = c_name, ty = param_ty, pointer = f_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_name, ty = param_ty, pointer = f_ptr))
@@ -1521,7 +1521,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     ast.Expr.expr_match as me:
                         let ret_ty = current_return_type(ctx, value)
                         let temp = fresh_c_temp_name(ctx, "match_ret")
-                        let tc = c_local_name(temp)
+                        let tc = utils.c_local_name(temp)
                         let zero_init = alloc_expr(ir.Expr.expr_zero_init(ty = ret_ty))
                         output.push(ir.Stmt.stmt_local(name = temp, linkage_name = tc, ty = ret_ty, value = zero_init, line = 0, source_path = ""))
                         let result_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = ret_ty, pointer = false))
@@ -1540,7 +1540,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 let inner_ty = ir_expr_type(inner_result)
                                 if is_proc_type(inner_ty):
                                     let chain_tmp = fresh_c_temp_name(ctx, "chain")
-                                    let ct = c_local_name(chain_tmp)
+                                    let ct = utils.c_local_name(chain_tmp)
                                     output.push(ir.Stmt.stmt_local(name = chain_tmp, linkage_name = ct, ty = inner_ty, value = inner_result, line = 0, source_path = ""))
                                     let lb = LocalBinding(name = chain_tmp, c_name = ct, ty = inner_ty, pointer = false)
                                     let proc_ret = lower_proc_call(ctx, lb, outer_call.args, value)
@@ -1561,7 +1561,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if has_pending_defers(ctx) and not cleanup_safe_return_expr(value):
                     let ret_ty = ir_expr_type(wrapped)
                     let rtemp = fresh_c_temp_name(ctx, "return_value")
-                    let rc = c_local_name(rtemp)
+                    let rc = utils.c_local_name(rtemp)
                     output.push(ir.Stmt.stmt_local(name = rtemp, linkage_name = rc, ty = ret_ty, value = wrapped, line = 0, source_path = ""))
                     flush_all_defers(ctx, output)
                     let rref = alloc_expr(ir.Expr.expr_name(name = rc, ty = ret_ty, pointer = false))
@@ -1601,7 +1601,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 return
                             _:
                                 pass
-                let c_name = c_local_name(loc.name)
+                let c_name = utils.c_local_name(loc.name)
                 var ty: types.Type
                 var value_expr: ptr[ir.Expr]
                 let init = loc.value
@@ -1798,7 +1798,7 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
         return
     let success_ty = guard_success_type(ctx, kind, storage_ty)
     let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
-    let bc = c_local_name(name)
+    let bc = utils.c_local_name(name)
     output.push(ir.Stmt.stmt_local(name = name, linkage_name = bc, ty = success_ty, value = success_val, line = 0, source_path = ""))
     ctx.locals.push(LocalBinding(name = name, c_name = bc, ty = success_ty, pointer = false))
 
@@ -1832,7 +1832,7 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
         return
     let success_ty = guard_success_type(ctx, kind, storage_ty)
     let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
-    let bc = c_local_name(name)
+    let bc = utils.c_local_name(name)
     output.push(ir.Stmt.stmt_local(name = name, linkage_name = bc, ty = success_ty, value = success_val, line = 0, source_path = ""))
     ctx.locals.push(LocalBinding(name = name, c_name = bc, ty = success_ty, pointer = false))
 
@@ -1982,7 +1982,7 @@ function emit_result_failure_binding(ctx: ref[LowerCtx], else_stmts: ref[vec.Vec
     let data_member = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = payload_ty))
     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = "failure", ty = payload_ty))
     let error_val = alloc_expr(ir.Expr.expr_member(receiver = arm_data, member = "error", ty = error_ty))
-    let bc = c_local_name(error_name)
+    let bc = utils.c_local_name(error_name)
     else_stmts.push(ir.Stmt.stmt_local(name = error_name, linkage_name = bc, ty = error_ty, value = error_val, line = 0, source_path = ""))
     ctx.locals.push(LocalBinding(name = error_name, c_name = bc, ty = error_ty, pointer = false))
 
@@ -2029,7 +2029,7 @@ function lower_destructure(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bi
                         pass
         let receiver = alloc_expr(ir.Expr.expr_name(name = temp, ty = val_ty, pointer = false))
         let member = alloc_expr(ir.Expr.expr_member(receiver = receiver, member = member_name, ty = member_ty))
-        let binding_c = c_local_name(binding)
+        let binding_c = utils.c_local_name(binding)
         output.push(ir.Stmt.stmt_local(name = binding, linkage_name = binding_c, ty = member_ty, value = member, line = 0, source_path = ""))
         ctx.locals.push(LocalBinding(name = binding, c_name = binding_c, ty = member_ty, pointer = false))
         i += 1
@@ -2553,7 +2553,7 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
     if types.is_error(loop_type):
         loop_type = types.primitive("int")
 
-    let index_c = c_local_name(index_name)
+    let index_c = utils.c_local_name(index_name)
     let stop_c = fresh_c_temp_name(ctx, "for_stop")
     let _continue_label = fresh_c_temp_name(ctx, "loop_continue")
     let _break_label = fresh_c_temp_name(ctx, "loop_break")
@@ -2623,7 +2623,7 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     let _continue_label = fresh_c_temp_name(ctx, "loop_continue")
     let _break_label = fresh_c_temp_name(ctx, "loop_break")
 
-    let binding_c = c_local_name(binding_name)
+    let binding_c = utils.c_local_name(binding_name)
     ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = element_type, pointer = false))
     let body = lower_block(ctx, body_ptr)
 
@@ -3762,7 +3762,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
         unsafe:
             p = read(method_params.data + pi)
         let p_ty = resolve_field_type_ref(ctx, p.param_type)
-        let pc = c_local_name(p.name)
+        let pc = utils.c_local_name(p.name)
         params.push(ir.Param(name = p.name, linkage_name = pc, ty = p_ty, pointer = false))
         ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = false))
         pi += 1
@@ -3784,7 +3784,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
         let cap = unsafe: read(captures.data + ci)
         let env_ref = alloc_expr(ir.Expr.expr_name(name = env_local_name, ty = env_ptr_ty, pointer = false))
         let member = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty))
-        let bc = c_local_name(cap.name)
+        let bc = utils.c_local_name(cap.name)
         body_stmts.push(ir.Stmt.stmt_local(name = cap.name, linkage_name = bc, ty = cap.ty, value = member, line = 0, source_path = ""))
         ctx.locals.push(LocalBinding(name = cap.name, c_name = bc, ty = cap.ty, pointer = false))
         ci += 1
@@ -3873,7 +3873,7 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
         unsafe:
             p = read(method_params.data + pi)
         let p_ty = resolve_field_type_ref(ctx, p.param_type)
-        let pc = c_local_name(p.name)
+        let pc = utils.c_local_name(p.name)
         params.push(ir.Param(name = p.name, linkage_name = pc, ty = p_ty, pointer = false))
         ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = false))
         pi += 1
@@ -4771,14 +4771,6 @@ function is_read_call(ep: ptr[ast.Expr]) -> Option[ptr[ast.Expr]]:
     return Option[ptr[ast.Expr]].none
 
 
-function receiver_has_type_args(receiver_ty: types.Type) -> bool:
-    match receiver_ty:
-        types.Type.ty_imported as im:
-            return im.args.len > 0
-        _:
-            return false
-
-
 function all_call_args_named(args: span[ast.Argument]) -> bool:
     if args.len == 0:
         return false
@@ -4927,17 +4919,6 @@ function extract_generic_struct_fields(ctx: ref[LowerCtx], module_analysis: anal
         return Option[span[ir.Field]].none
     return Option[span[ir.Field]].some(value = ir_fields.as_span())
 
-
-function func_has_type_var(func: ir.Function) -> bool:
-    if has_type_var_arg(sp_one(func.return_type)):
-        return true
-    var i: ptr_uint = 0
-    while i < func.params.len:
-        unsafe:
-            if has_type_var_arg(sp_one(read(func.params.data + i).ty)):
-                return true
-        i += 1
-    return false
 
 function is_pointer_or_ref_type(t: types.Type) -> bool:
     match t:
@@ -5795,7 +5776,7 @@ function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concret
             unsafe:
                 p = read(m.method_params.data + pi)
             let p_ty = substitute_interface_type_params(resolve_field_type_ref(ctx, p.param_type), type_args, type_params)
-            wrapper_params.push(ir.Param(name = p.name, linkage_name = c_local_name(p.name), ty = p_ty, pointer = false))
+            wrapper_params.push(ir.Param(name = p.name, linkage_name = utils.c_local_name(p.name), ty = p_ty, pointer = false))
             pi += 1
         let ret_ty = if m.return_type != null: substitute_interface_type_params(resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)), type_args, type_params) else: types.primitive("void")
         # Find the method info for the concrete type's method (search all modules).
@@ -5834,7 +5815,7 @@ function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concret
                     unsafe:
                         p = read(m.method_params.data + pi)
                     unsafe:
-                        call_args.push(read(alloc_expr(ir.Expr.expr_name(name = c_local_name(p.name), ty = substitute_interface_type_params(resolve_field_type_ref(ctx, p.param_type), type_args, type_params), pointer = false))))
+                        call_args.push(read(alloc_expr(ir.Expr.expr_name(name = utils.c_local_name(p.name), ty = substitute_interface_type_params(resolve_field_type_ref(ctx, p.param_type), type_args, type_params), pointer = false))))
                     pi += 1
                 let call_ret_ty = if types.is_void(ret_ty): types.primitive("void") else: ret_ty
                 body_stmts.push(ir.Stmt.stmt_return(
@@ -6840,8 +6821,8 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
     var ir_params = vec.Vec[ir.Param].create()
     if m.method_kind != ast.MethodKind.mk_static:
         let recv_ty = if m.method_kind == ast.MethodKind.mk_editable: types.Type.ty_generic(name = "ptr", args = sp_type(recv_struct_ty)) else: recv_struct_ty
-        ir_params.push(ir.Param(name = "this", linkage_name = c_local_name("this"), ty = recv_ty, pointer = false))
-        ctx.locals.push(LocalBinding(name = "this", c_name = c_local_name("this"), ty = recv_ty, pointer = false))
+        ir_params.push(ir.Param(name = "this", linkage_name = utils.c_local_name("this"), ty = recv_ty, pointer = false))
+        ctx.locals.push(LocalBinding(name = "this", c_name = utils.c_local_name("this"), ty = recv_ty, pointer = false))
 
     var pi: ptr_uint = 0
     while pi < m.method_params.len:
@@ -6849,7 +6830,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
         unsafe:
             p = read(m.method_params.data + pi)
         let p_ty = qualify_type(ctx, substitute_type_params(ctx, resolve_field_type_ref(ctx, p.param_type), sub))
-        let c_pname = c_local_name(p.name)
+        let c_pname = utils.c_local_name(p.name)
         let is_ptr = is_pointer_or_ref_type(p_ty)
         ir_params.push(ir.Param(name = p.name, linkage_name = c_pname, ty = p_ty, pointer = is_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = p_ty, pointer = is_ptr))
@@ -8619,16 +8600,6 @@ function variant_base_c_name(ty: types.Type, module_name: str) -> str:
     return result
 
 
-## Map a prelude variant instance name like "Option_int" or "Result_int_int" to
-## its qualified C name like "std_option_Option_int" or "std_result_Result_int_int".
-function prelude_variant_c_name(name: str) -> str:
-    let base = prelude_variant_base(name) else:
-        return name
-    if base.equal("Option"):
-        return naming.qualified_c_name("std.option", name)
-    return naming.qualified_c_name("std.result", name)
-
-
 ## Look up a variant arm's field info by arm name.
 function variant_arm_info(info: VariantInfo, arm_name: str) -> Option[VariantArmInfo]:
     var i: ptr_uint = 0
@@ -9056,7 +9027,7 @@ function infer_match_arm_type(ctx: ref[LowerCtx], arms: span[ast.MatchExprArm]) 
 
 
 function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, declared_type: ptr[ast.TypeRef]?, scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm]) -> void:
-    let c_name = c_local_name(name)
+    let c_name = utils.c_local_name(name)
     var ty = types.Type.ty_error
     let dt = declared_type
     if dt != null:
@@ -9319,7 +9290,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                     register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = binding_ty))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
-                    let bc = c_local_name(bn.value)
+                    let bc = utils.c_local_name(bn.value)
                     body.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
                     ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
                 Option.none:
@@ -9422,7 +9393,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
                     register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = binding_ty))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
-                    let bc = c_local_name(bn.value)
+                    let bc = utils.c_local_name(bn.value)
                     stmts.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
                     ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
                 Option.none:
@@ -9509,7 +9480,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                         lower_variant_field_bindings(ctx, ref_of(blk), pattern, ai.value, payload_c, payload_ty)
                         match arm.binding_name:
                             Option.some as bn:
-                                let bc = c_local_name(bn.value)
+                                let bc = utils.c_local_name(bn.value)
                                 let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
                                 blk.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = payload_ty, value = payload_ref, line = 0, source_path = ""))
                                 ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = payload_ty, pointer = false))
@@ -9547,7 +9518,7 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                         ast.Expr.expr_identifier as id:
                             if not id.name.equal("_"):
                                 let field_ty = variant_arm_field_type(arm_info, id.name)
-                                let bc = c_local_name(id.name)
+                                let bc = utils.c_local_name(id.name)
                                 let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
                                 let field_expr = alloc_expr(ir.Expr.expr_member(receiver = payload_ref, member = id.name, ty = field_ty))
                                 blk.push(ir.Stmt.stmt_local(name = id.name, linkage_name = bc, ty = field_ty, value = field_expr, line = 0, source_path = ""))
@@ -10485,44 +10456,6 @@ function lookup_qualified_constant(ctx: ref[LowerCtx], name: str) -> Option[str]
 #  C-name mangling (mirrors lowering/utils.rb)
 # =============================================================================
 
-## C-safe local/parameter name: sanitized, with a trailing `_` when it collides
-## with a C reserved word.
-function c_local_name(name: str) -> str:
-    let identifier = naming.sanitize_identifier(name)
-    if c_reserved_identifier(identifier):
-        var buf = string.String.create()
-        buf.append(identifier)
-        buf.append("_")
-        return buf.as_str()
-    return identifier
-
-
-function c_reserved_identifier(identifier: str) -> bool:
-    let words = reserved_words()
-    var i: ptr_uint = 0
-    while i < words.len:
-        unsafe:
-            if read(words.data + i).equal(identifier):
-                return true
-        i += 1
-    return false
-
-
-const RESERVED_WORD_COUNT: ptr_uint = 44
-const RESERVED_WORDS: array[str, 44] = array[str, 44](
-    "auto", "break", "case", "char", "const", "continue", "default", "do",
-    "double", "else", "enum", "extern", "float", "for", "goto", "if", "inline",
-    "int", "long", "register", "restrict", "return", "short", "signed",
-    "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned",
-    "void", "volatile", "while", "_Alignas", "_Alignof", "_Atomic", "_Bool",
-    "_Complex", "_Generic", "_Imaginary", "_Noreturn", "_Static_assert",
-    "_Thread_local"
-)
-
-
-function reserved_words() -> span[str]:
-    return RESERVED_WORDS.as_span()
-
 
 # =============================================================================
 #  IR allocation
@@ -10587,7 +10520,7 @@ function is_builtin_type_name(name: str) -> bool:
 ##   let result = mt_format_str_finish(__fmt_N, __fmt_N_capacity)
 ## The builder is a stack-local struct with a data pointer, len, and capacity.
 function lower_format_string_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, parts: span[ast.FormatStringPart]) -> void:
-    let c_name = c_local_name(name)
+    let c_name = utils.c_local_name(name)
     let str_ty = types.Type.ty_str
     # For format strings with only static text, return the text as a literal.
     # Otherwise, concatenate the parts using simple str operations.
@@ -10941,7 +10874,7 @@ function lower_inline_for_iteration(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             lower_inline_for_field_iter(ctx, output, binding_name, f.name, f.field_type, body_ptr)
         _:
             var iter_stmts = vec.Vec[ir.Stmt].create()
-            let binding_c = c_local_name(binding_name)
+            let binding_c = utils.c_local_name(binding_name)
             iter_stmts.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = types.primitive("int"), value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("int"))), line = 0, source_path = ""))
             ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = types.primitive("int"), pointer = false))
             ctx.inline_for_element = Option[ComptimeElement].some(value = elem)
@@ -10955,7 +10888,7 @@ function lower_inline_for_iteration(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
 function lower_inline_for_field_iter(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], binding_name: str, field_name: str, field_ty: types.Type, body_ptr: ptr[ast.Stmt]) -> void:
     ctx.inline_for_element = Option[ComptimeElement].some(value = ComptimeElement.ce_struct_field(name = field_name, field_type = field_ty))
     var iter_stmts = vec.Vec[ir.Stmt].create()
-    let binding_c = c_local_name(binding_name)
+    let binding_c = utils.c_local_name(binding_name)
     iter_stmts.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = field_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("int"))), line = 0, source_path = ""))
     ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = field_ty, pointer = false))
     lower_inline_for_field_body(ctx, ref_of(iter_stmts), body_ptr, field_ty)
@@ -11071,17 +11004,6 @@ function comptime_element_type(ctx: ref[LowerCtx], elem: ComptimeElement) -> typ
             return types.Type.ty_error  # member_handle — opaque
         ComptimeElement.ce_attribute:
             return types.Type.ty_error  # attribute_handle — opaque
-
-
-function comptime_element_ir(ctx: ref[LowerCtx], elem: ComptimeElement, iterable: ptr[ast.Expr]) -> ptr[ir.Expr]:
-    var elem_ty = comptime_element_type(ctx, elem)
-    match elem:
-        ComptimeElement.ce_struct_field as f:
-            return alloc_expr(ir.Expr.expr_name(name = f.name, ty = elem_ty, pointer = false))
-        ComptimeElement.ce_enum_member as m:
-            return alloc_expr(ir.Expr.expr_name(name = m.name, ty = elem_ty, pointer = false))
-        ComptimeElement.ce_attribute:
-            return alloc_expr(ir.Expr.expr_name(name = "attr", ty = elem_ty, pointer = false))
 
 
 ## Extract the type name from a comptime argument like `Particle` or `Labeled`.
@@ -11915,7 +11837,7 @@ function lower_multi_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
         var bname: str
         unsafe:
             bname = read(bindings.data + bi).name
-        let binding_c = c_local_name(bname)
+        let binding_c = utils.c_local_name(bname)
         let elem_ptr = elem_types.get(bi) else:
             fatal(c"lower_multi_for: missing elem type")
         ctx.locals.push(LocalBinding(name = bname, c_name = binding_c, ty = unsafe: read(elem_ptr), pointer = false))
@@ -11928,7 +11850,7 @@ function lower_multi_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
         var bname: str
         unsafe:
             bname = read(bindings.data + bi).name
-        let binding_c = c_local_name(bname)
+        let binding_c = utils.c_local_name(bname)
         let elem_ptr = elem_types.get(bi) else:
             fatal(c"lower_multi_for: missing elem type")
         let elem_ty = unsafe: read(elem_ptr)

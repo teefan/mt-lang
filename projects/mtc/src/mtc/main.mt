@@ -236,6 +236,19 @@ function report_check_summary(count: ptr_uint) -> void:
         stdio.print_format(c"error: could not check due to %d errors\n", int<-(count))
 
 
+## Parse a `--platform NAME` / `--profile NAME` argument value into a
+## Platform enum.  Prints an error and returns none when the name is invalid.
+function parse_platform_name(name: str) -> Option[resolver.Platform]:
+    if name.equal("linux"):
+        return Option[resolver.Platform].some(value = resolver.Platform.linux)
+    if name.equal("windows"):
+        return Option[resolver.Platform].some(value = resolver.Platform.windows)
+    if name.equal("wasm"):
+        return Option[resolver.Platform].some(value = resolver.Platform.wasm)
+    stdio.print_line("error: --platform must be linux, windows, or wasm")
+    return Option[resolver.Platform].none
+
+
 ## Parse the `[-I DIR]... <source>` argument tail shared by the lower,
 ## emit-c, and build commands.  Fills `roots` (defaulting to the source
 ## directory when none is given) and returns the source path, or none after
@@ -551,20 +564,15 @@ function build_command(args: span[str]) -> int:
                 debug_guards = false
             ai += 2
             continue
-        if arg == "--platform":
+        if arg.equal("--platform"):
             if ai + 1 >= args.len:
                 stdio.print_line("error: --platform requires linux, windows, or wasm")
                 return 1
-            let plat = args[ai + 1]
-            if plat.equal("linux"):
-                platform = resolver.Platform.linux
-            else if plat.equal("windows"):
-                platform = resolver.Platform.windows
-            else if plat.equal("wasm"):
-                platform = resolver.Platform.wasm
-            else:
-                stdio.print_line("error: --platform must be linux, windows, or wasm")
-                return 1
+            match parse_platform_name(args[ai + 1]):
+                Option.some as plat:
+                    platform = plat.value
+                Option.none:
+                    return 1
             ai += 2
             continue
         filtered.push(arg)
@@ -635,36 +643,36 @@ function run_command(args: span[str]) -> int:
             program_args.push(args[ai])
             ai += 1
             continue
-        if arg == "--":
+        if arg.equal("--"):
             seen_dashdash = true
             ai += 1
             continue
-        if arg == "-o":
+        if arg.equal("-o"):
             if ai + 1 >= args.len:
                 stdio.print_line("error: -o requires an output path")
                 return 1
             output_override = Option[str].some(value= args[ai + 1])
             ai += 2
             continue
-        if arg == "--cc":
+        if arg.equal("--cc"):
             if ai + 1 >= args.len:
                 stdio.print_line("error: --cc requires a compiler name")
                 return 1
             c_compiler = args[ai + 1]
             ai += 2
             continue
-        if arg == "--debug-guards":
+        if arg.equal("--debug-guards"):
             debug_guards = true
             ai += 1
             continue
-        if arg == "--no-debug-guards":
+        if arg.equal("--no-debug-guards"):
             debug_guards = false
             ai += 1
             continue
         if arg.equal("--no-cache"):
             ai += 1
             continue
-        if arg == "--profile":
+        if arg.equal("--profile"):
             if ai + 1 >= args.len:
                 stdio.print_line("error: --profile requires a profile name (debug or release)")
                 return 1
@@ -676,20 +684,15 @@ function run_command(args: span[str]) -> int:
                 debug_guards = false
             ai += 2
             continue
-        if arg == "--platform":
+        if arg.equal("--platform"):
             if ai + 1 >= args.len:
                 stdio.print_line("error: --platform requires linux, windows, or wasm")
                 return 1
-            let plat = args[ai + 1]
-            if plat.equal("linux"):
-                platform = resolver.Platform.linux
-            else if plat.equal("windows"):
-                platform = resolver.Platform.windows
-            else if plat.equal("wasm"):
-                platform = resolver.Platform.wasm
-            else:
-                stdio.print_line("error: --platform must be linux, windows, or wasm")
-                return 1
+            match parse_platform_name(args[ai + 1]):
+                Option.some as plat:
+                    platform = plat.value
+                Option.none:
+                    return 1
             ai += 2
             continue
         filtered.push(arg)

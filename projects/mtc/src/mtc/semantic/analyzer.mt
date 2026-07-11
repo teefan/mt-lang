@@ -1429,6 +1429,7 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     ctx.inside_async = m.is_async
     check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), m.body)
     ctx.inside_async = false
+    check_definite_assignment(ctx, m.method_params, m.body)
     if rt != null and not types.is_void(ret):
         if not terminates_ptr(ctx, m.body):
             report(ctx, m.line, m.column, missing_return_message(m.name))
@@ -1462,7 +1463,15 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_
     ctx.inside_async = is_async
     check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), b)
     ctx.inside_async = false
-    var da_diags = da.check(params, b)
+    check_definite_assignment(ctx, params, b)
+    if rt != null and not types.is_void(ret):
+        if not terminates_ptr(ctx, b):
+            report(ctx, line, 1, missing_return_message(name))
+    ctx.type_params.clear()
+
+
+function check_definite_assignment(ctx: ref[Context], params: span[ast.Param], body: ptr[ast.Stmt]) -> void:
+    var da_diags = da.check(params, body)
     var di: ptr_uint = 0
     while di < da_diags.len():
         let d = da_diags.get(di) else:
@@ -1472,10 +1481,6 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_
             report(ctx, dd.line, dd.column, def_assign_message(dd.name))
         di += 1
     da_diags.release()
-    if rt != null and not types.is_void(ret):
-        if not terminates_ptr(ctx, b):
-            report(ctx, line, 1, missing_return_message(name))
-    ctx.type_params.clear()
 
 
 ## Register a generic body's type parameters so references to them resolve to
