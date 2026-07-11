@@ -25,6 +25,7 @@ import mtc.loader.module_loader as loader
 import mtc.lowering.lowering as lowering
 import mtc.c_backend.c_backend as c_backend
 import mtc.build as build_driver
+import mtc.pretty_printer.ast_formatter as fmt
 
 
 function main(args: span[str]) -> int:
@@ -84,6 +85,9 @@ function main(args: span[str]) -> int:
     if cmd == "test":
         return test_command(args)
 
+    if cmd == "format":
+        return format_command(args)
+
     if cmd == "help":
         print_help()
         return 0
@@ -103,9 +107,10 @@ function print_help() -> void:
     stdio.print_line("  check <file|dir> [--root DIR]...  type-check a file/package and its imports")
     stdio.print_line("  lower <file|dir> [--root DIR]...  lower to IR and print it")
     stdio.print_line("  emit-c <file|dir> [--root DIR]...  compile to C and print it")
-    stdio.print_line("  build <file|dir> [--root DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--debug-guards|--no-debug-guards]")
-    stdio.print_line("  run   <file|dir> [--root DIR]... [-o OUTPUT] [--cc CC] [--profile debug|release] [--debug-guards|--no-debug-guards]")
+    stdio.print_line("  build <file|dir> [--root DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards]")
+    stdio.print_line("  run   <file|dir> [--root DIR]... [-o OUTPUT] [--cc CC] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards]")
     stdio.print_line("  test  <dir>                                       discover and run @[test] functions")
+    stdio.print_line("  format <file> [--check|--write]                  format source and print, check, or write back")
     stdio.print_line("  help          print this help")
 
 
@@ -495,6 +500,7 @@ function build_command(args: span[str]) -> int:
     var c_compiler = "cc"
     var debug_guards = true
     var profile_name = "debug"
+    var platform = resolver.Platform.linux
     var filtered = vec.Vec[str].create()
     defer filtered.release()
     filtered.push("build")
@@ -542,6 +548,22 @@ function build_command(args: span[str]) -> int:
                 debug_guards = false
             ai += 2
             continue
+        if arg == "--platform":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --platform requires linux, windows, or wasm")
+                return 1
+            let plat = args[ai + 1]
+            if plat.equal("linux"):
+                platform = resolver.Platform.linux
+            else if plat.equal("windows"):
+                platform = resolver.Platform.windows
+            else if plat.equal("wasm"):
+                platform = resolver.Platform.wasm
+            else:
+                stdio.print_line("error: --platform must be linux, windows, or wasm")
+                return 1
+            ai += 2
+            continue
         filtered.push(arg)
         ai += 1
     let path = parse_source_operand(filtered.as_span(), ref_of(roots)) else:
@@ -552,7 +574,7 @@ function build_command(args: span[str]) -> int:
     let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
 
-    var program = loader.check_program(effective, roots.as_span(), resolver.Platform.linux)
+    var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
     if keep_c_path.is_some():
@@ -596,6 +618,7 @@ function run_command(args: span[str]) -> int:
     var c_compiler = "cc"
     var debug_guards = true
     var profile_name = "debug"
+    var platform = resolver.Platform.linux
     var program_args = vec.Vec[str].create()
     defer program_args.release()
     var filtered = vec.Vec[str].create()
@@ -647,6 +670,22 @@ function run_command(args: span[str]) -> int:
                 debug_guards = false
             ai += 2
             continue
+        if arg == "--platform":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --platform requires linux, windows, or wasm")
+                return 1
+            let plat = args[ai + 1]
+            if plat.equal("linux"):
+                platform = resolver.Platform.linux
+            else if plat.equal("windows"):
+                platform = resolver.Platform.windows
+            else if plat.equal("wasm"):
+                platform = resolver.Platform.wasm
+            else:
+                stdio.print_line("error: --platform must be linux, windows, or wasm")
+                return 1
+            ai += 2
+            continue
         filtered.push(arg)
         ai += 1
     let path = parse_source_operand(filtered.as_span(), ref_of(roots)) else:
@@ -656,7 +695,7 @@ function run_command(args: span[str]) -> int:
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
-    var program = loader.check_program(effective, roots.as_span(), resolver.Platform.linux)
+    var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
     var output_path: string.String
@@ -708,6 +747,77 @@ function run_command(args: span[str]) -> int:
             output_path.release()
             entry_path_owner.release()
             source_root_owner.release()
+            return 1
+
+
+## Format a source file: parse, pretty-print, and either print to stdout,
+## check for formatting diffs, or write back to the file.
+function format_command(args: span[str]) -> int:
+    var file_path: Option[str] = Option[str].none
+    var check_mode = false
+    var write_mode = false
+    var ai: ptr_uint = 1
+    while ai < args.len:
+        let arg = args[ai]
+        if arg == "--check":
+            check_mode = true
+            ai += 1
+            continue
+        if arg == "--write":
+            write_mode = true
+            ai += 1
+            continue
+        if file_path.is_none():
+            file_path = Option[str].some(value= arg)
+            ai += 1
+            continue
+        stdio.print_format(c"error: unknown option %.*s\n", int<-(arg.len), arg.data)
+        return 1
+
+    let path = file_path else:
+        stdio.print_line("error: format requires a source file path")
+        return 1
+
+    match fs.read_text(path):
+        Result.success as content:
+            var source = content.value
+            defer source.release()
+            let source_text = source.as_str()
+
+            var diags = vec.Vec[pstate.ParseDiagnostic].create()
+            defer diags.release()
+            let file = parser.parse_source(source_text, ref_of(diags))
+            if diags.len() > 0:
+                stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
+                return 1
+
+            var formatted = fmt.format_source_file(file)
+            defer formatted.release()
+            let fmt_text = formatted.as_str()
+
+            if write_mode:
+                match fs.write_text(path, fmt_text):
+                    Result.success:
+                        stdio.print_format(c"formatted %.*s\n", int<-(path.len), path.data)
+                        return 0
+                    Result.failure as err:
+                        var msg = err.error
+                        defer msg.release()
+                        stdio.print_format(c"error: cannot write %.*s\n", int<-(path.len), path.data)
+                        return 1
+            if check_mode:
+                if source_text == fmt_text:
+                    stdio.print_format(c"already formatted %.*s\n", int<-(path.len), path.data)
+                    return 0
+                stdio.print_format(c"needs formatting %.*s\n", int<-(path.len), path.data)
+                return 1
+            stdio.print_format(c"%.*s", int<-(fmt_text.len), fmt_text.data)
+            return 0
+        Result.failure as err:
+            var msg = err.error
+            defer msg.release()
+            stdio.print_format(c"error: cannot read %.*s\n", int<-(path.len), path.data)
+            return 1
             return 1
 
 
