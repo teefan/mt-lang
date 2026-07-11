@@ -1204,7 +1204,7 @@ module MilkTea
 
     def discover_test_files(directory)
       Dir.glob(File.join(directory, "**", "*.mt")).sort.filter_map do |file|
-        next if File.basename(file).start_with?("__mttest_runner_")
+        next if File.basename(file).start_with?("__mt_test_runner_")
 
         kind = classify_test_file(file)
         kind && [file, kind]
@@ -1353,8 +1353,8 @@ module MilkTea
 
     def with_synthesized_binary(source_path, runner_source, options:, locked:)
       directory = File.dirname(File.expand_path(source_path))
-      runner_path = File.join(directory, "__mttest_runner_#{Process.pid}.mt")
-      binary_path = File.join(Dir.tmpdir, "mttest_runner_#{Process.pid}")
+      runner_path = File.join(directory, "__mt_test_runner_#{Process.pid}.mt")
+      binary_path = File.join(Dir.tmpdir, "__mt_test_runner_#{Process.pid}")
 
       File.write(runner_path, runner_source)
       begin
