@@ -833,8 +833,8 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 else:
                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr)))
             ast.Decl.decl_event as ev:
-                ensure_event_runtime(ctx, ev.name)
-                let ev_ty = types.Type.ty_named(module_name = "", name = naming.qualified_c_name(ctx.module_name, ev.name))
+                var info = ensure_event_runtime(ctx, ev.name)
+                let ev_ty = types.Type.ty_named(module_name = "", name = info.event_c_name)
                 let ev_zero = alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
                 globals.push(ir.Global(name = ev.name, linkage_name = ev.name, ty = ev_ty, value = ev_zero))
             ast.Decl.decl_when as w:
@@ -3054,7 +3054,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
         break
     var pfor_cap_name: str = ""
     if pfor_has_captures:
-        pfor_cap_name = j3("mt_pcap_", ctx.module_name, j2("_", pfor_uid))
+        pfor_cap_name = j3("mt_pcap_", naming.module_c_prefix(ctx.module_name), j2("_", pfor_uid))
         var pf_fields = vec.Vec[ir.Field].create()
         var pf_iter = pfor_captures.entries()
         while pf_iter.next():
@@ -3186,7 +3186,7 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     var cap_struct_name: str = ""
     var cap_body_irs = vec.Vec[span[ir.Stmt]].create()
     if has_captures:
-        cap_struct_name = j3("mt_pcap_", ctx.module_name, j2("_", cap_uid))
+        cap_struct_name = j3("mt_pcap_", naming.module_c_prefix(ctx.module_name), j2("_", cap_uid))
         var cap_fields = vec.Vec[ir.Field].create()
         var cap_iter = all_captures.entries()
         while cap_iter.next():

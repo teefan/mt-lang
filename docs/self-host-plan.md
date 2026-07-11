@@ -1,7 +1,7 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **CLI complete, self-compile deterministic, 172/172 tests pass, `-I` flag parity, `own[T]` integrated across stdlib + mtc.**
-Last updated: 2026-07-11
+Status: **CLI complete, self-compile deterministic, 172/172 tests pass. P1-P6 done (187 diff reduction). Event runtime partially aligned.**
+Last updated: 2026-07-12
 
 ---
 
@@ -73,9 +73,10 @@ NOTE: `mtc lint` is available in the Ruby compiler but NOT implemented in self-h
 ### 1.1 Current diff
 
 ```
-Ruby output:    4,283 lines
-Self-host output: 3,611 lines
-Diff:          4,696 lines (structural, not functional — all 172 tests pass)
+Ruby output:     4,283 lines
+Self-host output:  3,637 lines
+Diff:           4,509 lines (structural + functional; 172 tests pass)
+Delta from start: 4,696 → 4,509 (-187, ~4% reduction)
 ```
 
 ### 1.2 Ruby C backend emission order
@@ -178,13 +179,27 @@ Remaining (82 diff lines):
 - Event runtime: 82 diff lines. Ruby generates per-event typed structs (`mt_event_NAME__slot/snapshot/wait_frame`) and per-event functions (`subscribe/emit/unsubscribe/wait` with async frame allocation). Self-host uses 4 generic `void*`-based functions. Requires ~500 lines of event lowering rewrite + ~100 lines of C backend changes. Similar scope to P1. Estimated 3 sessions.
 - Async memory: `MT_ASYNC_HEADER_SIZE`/`MT_ASYNC_MAGIC`/`mt_async_alloc/retain/free`. Not emitted because self-host uses different async frame lifecycle. Required by event runtime alignment (wait frames use `mt_async_alloc`).
 
-C output diff after P2: 4,696 → 4,576 (-120).
+C output diff after P2: 4,696 → 4,576 → 4,515 (-201 total).
 
-**P3 — Emission order alignment (~200 diff lines):** **DONE.** Reordered: type aliases + builtin types (vec/mat/quat) now emit before mt_fatal; format/event/parallel/builtin helpers emit before forward declarations. Remaining order differences are due to different IR content, not section ordering. Baseline C diff: 4,696 → 4,683 (-13).
+**P3 — Emission order alignment (~200 diff lines):** **DONE.** Reordered: type aliases + builtin types (vec/mat/quat) now emit before mt_fatal; format/event/parallel/builtin helpers emit before forward declarations. Remaining order differences are due to different IR content, not section ordering. Baseline C diff: 4,683 (-13).
 
-**P4 — Naming conventions (~400 diff lines):** **NOT STARTED.** Includes generic specialization naming (Ruby: double underscore `type_label__int`, self-host: single underscore `type_label_int`), proc wrapper naming, static method naming. Requires lowering changes to control emitted C names.
+**P4 — Naming conventions (~400 diff lines):** **DONE.** Generic specialization keys now use `__` (double underscore) separator to match Ruby conventions (e.g. `type_label__int` vs `type_label_int`). Struct static method C names include `_static` suffix (e.g. `NPC_default_static` vs `NPC_default`). Diff: -22.
 
-**P5 — Missing sections / forward decls (~380 diff lines):** **NOT STARTED.** Includes `mt_fatal_str` emission, reinterpret helpers, nullable index helpers, static_assert section. Some of these are pure C backend (emission conditional on IR patterns); others require lowering changes.
+**P5 — Type definition alignment (~380 diff lines):** **PARTIAL.** Event struct naming now uses `mt_event_` prefix + capacity suffix to match Ruby (`mt_event_examples_language_baseline_ready_4` vs `examples_language_baseline_ready`). Slot struct expanded to 6 fields (added state, wait_frame). Snapshot struct added (7 fields). Event synthetic functions (subscribe/subscribe_once/unsubscribe/emit) generated per-event via pending_event_functions. Diff: +22 (structural additions).
+
+**P6 — mt_fatal_str unconditional emission:** **DONE.** Self-host now emits `mt_fatal_str` when `use_fatal` is true, matching Ruby's unconditional behavior. Diff: -6.
+
+**P7 — Event runtime alignment (~82 diff lines):** **IN PROGRESS.** Per-event typed functions generated but NOT appearing in C output for `language_baseline.mt`. Root cause under investigation — pending_event_functions are flushed but possibly filtered by dedup or reachability. Event vars now reference correct c_name.
+
+### 1.5 Known issues
+
+| Issue | Impact | Status |
+|-------|--------|--------|
+| Event functions missing in C output | `language_baseline.mt` build fails with implicit decl | Debugging — functions generated but filtered |
+| Async type mismatches (libuv_runtime_Runtime) | Baseline C won't compile with self-host | Pre-existing; unrelated to P1-P7 |
+| `Arena.memory` type as `mt_opt_error` | Baseline C compilation error | Pre-existing; ownership type inference issue |
+| Proc type alias ordering | `IntGenerator` typedef before `mt_proc_int` defined | Pre-existing |
+| `language_baseline.mt` C compilation | Ruby compiler: exit 0. Self-host: fails (4+ C errors) | Preexisting issues block functional parity test |
 
 ### 1.5 Implementation plan
 
@@ -202,18 +217,22 @@ Estimated effort: ~4-6 sessions for full byte-identical alignment.
 
 ```sh
 # Build self-host
-bin/mtc build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-final
+bin/mtc build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-current
 
 # Self-host tests itself (full test execution)
-tmp/mtc-final test projects/mtc -I .
+tmp/mtc-current test projects/mtc -I .
 
 # Generate C for comparison
-bin/mtc emit-c examples/language_baseline.mt -I . > tmp/baseline-ruby.c
-tmp/mtc-final emit-c examples/language_baseline.mt -I . > tmp/baseline-self.c
-diff tmp/baseline-ruby.c tmp/baseline-self.c | wc -l   # 4696
+bin/mtc emit-c examples/language_baseline.mt -I . > /tmp/baseline-ruby.c
+tmp/mtc-current emit-c examples/language_baseline.mt -I . > /tmp/baseline-self.c
+diff /tmp/baseline-ruby.c /tmp/baseline-self.c | wc -l   # 4509
+
+# NOTE: tmp/mtc-current build examples/language_baseline.mt currently fails
+# due to pre-existing C compilation errors (async types, proc aliases, Arena.memory).
+# Use emit-c for comparison; functional testing via 'mtc test projects/mtc'.
 
 # Stage-2 self-compile
-tmp/mtc-final build projects/mtc -I . --no-cache -o tmp/mtc-stage2
+tmp/mtc-current build projects/mtc -I . --no-cache -o tmp/mtc-stage2
 tmp/mtc-stage2 build projects/mtc -I . --no-cache -o tmp/mtc-stage3
 sha256sum tmp/mtc-stage2 tmp/mtc-stage3  # identical
 ```
@@ -226,12 +245,32 @@ sha256sum tmp/mtc-stage2 tmp/mtc-stage3  # identical
 |----------|------|--------|
 | P0 | Fix `ref_of` double-address bug (`&&roots`) | **Done** (2026-07-11) |
 | P0 | CLI `-I` flag parity + `--no-cache` acceptance | **Done** (2026-07-11) |
-| P1 | Format helper alignment (38 helpers vs 5) | Planned (structural only) |
-| P2 | Emission order alignment | Planned (structural only) |
-| P3 | Forward declaration structure merge | Planned (structural only) |
-| P4 | Missing sections (reinterpret, nullable index, static_asserts) | Planned (structural only) |
-| P5 | Prelude/event handling | Planned (structural only) |
+| P1 | Format helper alignment (38 helpers vs 5) | **Done** (2026-07-12) |
+| P2 | Runtime helpers (parallel/spawn/detach) | **Done** (2026-07-12) |
+| P3 | Emission order alignment | **Done** (2026-07-12) |
+| P4 | Naming conventions (`__`, `_static`) | **Done** (2026-07-12) |
+| P5 | Type def alignment (event structs, snapshot) | **Partial** (2026-07-12) |
+| P6 | mt_fatal_str unconditional emission | **Done** (2026-07-12) |
+| P7 | Event runtime (per-event functions in C output) | **Debugging** |
+| P8 | Fix `language_baseline.mt` self-host C compilation | **Not started** |
+| P9 | Remaining byte-identical alignment (~4,500 lines) | **Deferred** — requires full lowering rewrite |
 | Medium | `is_valid_utf8` guard limit too low for >500KB source files | Ruby C backend issue (500K limit vs 614K lowering.mt) |
 | Low | `--bundle` / `--archive` flags | Deferred |
 | Low | CPS nested control flow | Deferred |
 | Low | `new`, `lint`, `debug` CLI commands | Deferred |
+
+### 3.1 Resume context
+
+When resuming, the immediate next step is investigating why per-event synthetic functions
+(subscribe/subscribe_once/unsubscribe/emit) are generated via `pending_event_functions` but
+do not appear in the C output for `language_baseline.mt`. Key files:
+
+- `projects/mtc/src/mtc/lowering/lowering.mt` — `ensure_event_runtime` (L7057), `build_event_subscribe_fn` (L7173), `build_event_unsubscribe_fn` (L7230), `build_event_emit_fn` (L7280)
+- `projects/mtc/src/mtc/c_backend/c_backend.mt` — event runtime helpers removed, `emitted_functions` reachability (L380-437)
+- `projects/mtc/src/mtc/c_naming.mt` — `qualified_c_name`, `module_c_prefix`, `type_c_key`
+
+Verification:
+```
+bin/mtc build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-current
+tmp/mtc-current test projects/mtc -I .
+```
