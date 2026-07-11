@@ -130,7 +130,7 @@ extending Vec[T]:
 
         var copied: ptr[T]? = null
         if needs_growth:
-            copied = heap.must_alloc[T](values.len)
+            copied = unsafe: ptr[T]<-heap.must_alloc[T](values.len)
             unsafe:
                 let copied_ptr = ptr[T]<-copied
                 var index: ptr_uint = 0
