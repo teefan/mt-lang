@@ -7064,16 +7064,37 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
     let ptr_uint_ty = types.primitive("ptr_uint")
     let bool_ty = types.primitive("bool")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-    let linkage = naming.qualified_c_name(ctx.module_name, event_name)
+    let raw_linkage = naming.qualified_c_name(ctx.module_name, event_name)
+    var cap_buf = string.String.create()
+    fmt.append_long(ref_of(cap_buf), long<-(ev.capacity))
+    let linkage_with_cap = j3(raw_linkage, "_", cap_buf.as_str())
+    let linkage = j2("mt_event_", linkage_with_cap)
     let slot_cn = j2(linkage, "__slot")
+    let snapshot_cn = j2(linkage, "__snapshot")
     let event_cn = linkage
-    # Slot struct: { active, once, generation, listener }
+    # Slot struct: { active, once, generation, state, listener, wait_frame }
     ctx.pending_event_structs.push(ir.StructDecl(
         name = slot_cn, linkage_name = slot_cn,
-        fields = sp_field4(
+        fields = sp_field6(
             ir.Field(name = "active", ty = bool_ty),
             ir.Field(name = "once", ty = bool_ty),
             ir.Field(name = "generation", ty = ptr_uint_ty),
+            ir.Field(name = "state", ty = void_ptr_ty),
+            ir.Field(name = "listener", ty = void_ptr_ty),
+            ir.Field(name = "wait_frame", ty = void_ptr_ty),
+        ),
+        packed = false, alignment = 0, source_module = Option[str].none,
+    ))
+    # Snapshot struct: { slot, generation, once, wait_slot, stateful, state, listener }
+    ctx.pending_event_structs.push(ir.StructDecl(
+        name = snapshot_cn, linkage_name = snapshot_cn,
+        fields = sp_field7(
+            ir.Field(name = "slot", ty = ptr_uint_ty),
+            ir.Field(name = "generation", ty = ptr_uint_ty),
+            ir.Field(name = "once", ty = bool_ty),
+            ir.Field(name = "wait_slot", ty = bool_ty),
+            ir.Field(name = "stateful", ty = bool_ty),
+            ir.Field(name = "state", ty = void_ptr_ty),
             ir.Field(name = "listener", ty = void_ptr_ty),
         ),
         packed = false, alignment = 0, source_module = Option[str].none,
@@ -7188,6 +7209,8 @@ function build_event_subscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, eve
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "once", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = once, ty = bool_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = gen_ref, operator = "=", value = gen_plus))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "listener", ty = void_ptr_ty, pointer = false))))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "state", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "wait_frame", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
     var return_val = alloc_expr(ir.Expr.expr_aggregate_literal(ty = sub_result_ty, fields = sp_fields2(
         ir.AggregateField(name = "slot", value = index_ref),
         ir.AggregateField(name = "generation", value = gen_plus),
@@ -7314,6 +7337,31 @@ function sp_field4(f1: ir.Field, f2: ir.Field, f3: ir.Field, f4: ir.Field) -> sp
     buf.push(f2)
     buf.push(f3)
     buf.push(f4)
+    return buf.as_span()
+
+
+## Build a field list span helper with 6 fields.
+function sp_field6(f1: ir.Field, f2: ir.Field, f3: ir.Field, f4: ir.Field, f5: ir.Field, f6: ir.Field) -> span[ir.Field]:
+    var buf = vec.Vec[ir.Field].create()
+    buf.push(f1)
+    buf.push(f2)
+    buf.push(f3)
+    buf.push(f4)
+    buf.push(f5)
+    buf.push(f6)
+    return buf.as_span()
+
+
+## Build a field list span helper with 7 fields.
+function sp_field7(f1: ir.Field, f2: ir.Field, f3: ir.Field, f4: ir.Field, f5: ir.Field, f6: ir.Field, f7: ir.Field) -> span[ir.Field]:
+    var buf = vec.Vec[ir.Field].create()
+    buf.push(f1)
+    buf.push(f2)
+    buf.push(f3)
+    buf.push(f4)
+    buf.push(f5)
+    buf.push(f6)
+    buf.push(f7)
     return buf.as_span()
 
 
