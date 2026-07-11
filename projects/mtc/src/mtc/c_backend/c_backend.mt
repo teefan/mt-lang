@@ -162,8 +162,7 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_format_string_helpers(ref_of(e))
 
     # Emit event runtime helpers when any event method calls are present.
-    if uses_event_runtime(program):
-        emit_event_helpers(ref_of(e))
+    # Event runtime handled by per-event synthetic functions in the lowering.
 
     # Emit parallel runtime helpers when any parallel/detach calls are present.
     if uses_parallel_runtime(program):

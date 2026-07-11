@@ -7106,39 +7106,37 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
         name = event_name, linkage_name = linkage, capacity = ptr_uint<-(ev.capacity),
         has_payload = has_payload, payload_type = payload_ty,
         slot_c_name = slot_cn, event_c_name = event_cn,
-        subscribe_c_name = "mt_event_subscribe",
-        subscribe_once_c_name = "mt_event_subscribe_once",
-        unsubscribe_c_name = "mt_event_unsubscribe",
-        emit_c_name = "mt_event_emit",
+        subscribe_c_name = j2(linkage, "__subscribe"),
+        subscribe_once_c_name = j2(linkage, "__subscribe_once"),
+        unsubscribe_c_name = j2(linkage, "__unsubscribe"),
+        emit_c_name = j2(linkage, "__emit"),
     )
     ctx.event_runtimes.set(event_name, info)
     return info
 
 
-## Lower an event method call: emit, subscribe, subscribe_once, or unsubscribe.
-## Routes to C runtime helpers (mt_event_*) and wraps subscribe results in
-## Option[mt_subscription] for let-else integration.
+## Generates calls to per-event typed functions (mt_event_NAME__emit etc.).
 function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let ev_name = event_name_from_type(recv_ty)
     var info = ensure_event_runtime(ctx, ev_name)
     let void_ty = types.primitive("void")
     let bool_ty = types.primitive("bool")
-    let ptr_uint_ty = types.primitive("ptr_uint")
-    # Address of the event struct
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = info.event_c_name)))
     let recv_addr = alloc_expr(ir.Expr.expr_address_of(expression = recv, ty = event_ptr_ty))
     if method_name == "emit":
         var call_args = vec.Vec[ir.Expr].create()
         unsafe:
             call_args.push(read(recv_addr))
-            call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))))
+        if info.has_payload:
+            let payload_val = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
+            unsafe:
+                call_args.push(read(payload_val))
         return alloc_expr(ir.Expr.expr_call(callee = info.emit_c_name, arguments = call_args.as_span(), ty = void_ty))
     if method_name == "subscribe" or method_name == "subscribe_once":
         let callee = if method_name == "subscribe": info.subscribe_c_name else: info.subscribe_once_c_name
         var call_args = vec.Vec[ir.Expr].create()
         unsafe:
             call_args.push(read(recv_addr))
-            call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))))
         let listener_val = lower_listener_arg(ctx, unsafe: read(args.data + 0).arg_value)
         unsafe:
             call_args.push(read(listener_val))
@@ -7148,12 +7146,147 @@ function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: typ
         var call_args = vec.Vec[ir.Expr].create()
         unsafe:
             call_args.push(read(recv_addr))
-            call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))))
         let sub_val = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
         unsafe:
             call_args.push(read(sub_val))
         return alloc_expr(ir.Expr.expr_call(callee = info.unsubscribe_c_name, arguments = call_args.as_span(), ty = bool_ty))
     fatal(c"lowering: unknown event method")
+
+
+## Build a per-event subscribe (or subscribe_once) synthetic function.
+function build_event_subscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str, once: bool) -> ir.Function:
+    let void_ty = types.primitive("void")
+    let bool_ty = types.primitive("bool")
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
+    let sub_result_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
+    let slot_ty = types.Type.ty_named(module_name = "", name = slot_cn)
+    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = event_cn)))
+    let callee = if once: info.subscribe_once_c_name else: info.subscribe_c_name
+    var body = vec.Vec[ir.Stmt].create()
+    let index_name = "i"
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = false))
+    let cap_lit = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))
+    let cond = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = cap_lit, ty = bool_ty))
+    let post = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
+    let init = alloc_stmt(ir.Stmt.stmt_local(name = index_name, linkage_name = index_name, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
+    var loop_body = vec.Vec[ir.Stmt].create()
+    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = false))
+    let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(long<-(info.capacity))))
+    let slots_ref = alloc_expr(ir.Expr.expr_member(receiver = event_ref, member = "slots", ty = slot_arr_ty))
+    let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = index_ref, ty = slot_ty))
+    let slot_active = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty))
+    let cont_stmt = ir.Stmt.stmt_continue
+    let if_active = ir.Stmt.stmt_if(condition = slot_active, then_body = span_from_one(cont_stmt), else_body = span[ir.Stmt]())
+    loop_body.push(if_active)
+    let gen_ref = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "generation", ty = ptr_uint_ty))
+    let gen_plus = alloc_expr(ir.Expr.expr_binary(operator = "+", left = gen_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty)), ty = ptr_uint_ty))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "once", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = once, ty = bool_ty))))
+    loop_body.push(ir.Stmt.stmt_assignment(target = gen_ref, operator = "=", value = gen_plus))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "listener", ty = void_ptr_ty, pointer = false))))
+    var return_val = alloc_expr(ir.Expr.expr_aggregate_literal(ty = sub_result_ty, fields = sp_fields2(
+        ir.AggregateField(name = "slot", value = index_ref),
+        ir.AggregateField(name = "generation", value = gen_plus),
+    )))
+    loop_body.push(ir.Stmt.stmt_return(value = return_val, line = 0, source_path = ""))
+    let for_stmt = ir.Stmt.stmt_for(init = init, condition = cond, post = post, body = loop_body.as_span())
+    body.push(for_stmt)
+    var fail_val = alloc_expr(ir.Expr.expr_aggregate_literal(ty = sub_result_ty, fields = sp_fields2(
+        ir.AggregateField(name = "slot", value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))),
+        ir.AggregateField(name = "generation", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))),
+    )))
+    body.push(ir.Stmt.stmt_return(value = fail_val, line = 0, source_path = ""))
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = false))
+    params.push(ir.Param(name = "listener", linkage_name = "listener", ty = void_ptr_ty, pointer = false))
+    return ir.Function(name = callee, linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+
+
+## Build a per-event unsubscribe synthetic function.
+function build_event_unsubscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str) -> ir.Function:
+    let bool_ty = types.primitive("bool")
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    let slot_ty = types.Type.ty_named(module_name = "", name = slot_cn)
+    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = event_cn)))
+    let sub_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
+    var body = vec.Vec[ir.Stmt].create()
+    let sub_ref = alloc_expr(ir.Expr.expr_name(name = "subscription", ty = sub_ty, pointer = false))
+    let sub_slot = alloc_expr(ir.Expr.expr_member(receiver = sub_ref, member = "slot", ty = ptr_uint_ty))
+    let sub_gen = alloc_expr(ir.Expr.expr_member(receiver = sub_ref, member = "generation", ty = ptr_uint_ty))
+    let cap_lit = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))
+    let out_of_range = alloc_expr(ir.Expr.expr_binary(operator = ">=", left = sub_slot, right = cap_lit, ty = bool_ty))
+    body.push(ir.Stmt.stmt_if(condition = out_of_range, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty)), line = 0, source_path = "")), else_body = span[ir.Stmt]()))
+    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = false))
+    let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(long<-(info.capacity))))
+    let slots_ref = alloc_expr(ir.Expr.expr_member(receiver = event_ref, member = "slots", ty = slot_arr_ty))
+    let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = sub_slot, ty = slot_ty))
+    let slot_active = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty))
+    body.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = slot_active, ty = bool_ty)), then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty)), line = 0, source_path = "")), else_body = span[ir.Stmt]()))
+    let slot_gen = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "generation", ty = ptr_uint_ty))
+    let gen_mismatch = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = slot_gen, right = sub_gen, ty = bool_ty))
+    body.push(ir.Stmt.stmt_if(condition = gen_mismatch, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty)), line = 0, source_path = "")), else_body = span[ir.Stmt]()))
+    body.push(ir.Stmt.stmt_assignment(target = slot_active, operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))))
+    body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty)), line = 0, source_path = ""))
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = false))
+    params.push(ir.Param(name = "subscription", linkage_name = "subscription", ty = sub_ty, pointer = false))
+    return ir.Function(name = info.unsubscribe_c_name, linkage_name = info.unsubscribe_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+
+
+## Build a per-event emit synthetic function.
+function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str) -> ir.Function:
+    let void_ty = types.primitive("void")
+    let bool_ty = types.primitive("bool")
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
+    let slot_ty = types.Type.ty_named(module_name = "", name = slot_cn)
+    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = event_cn)))
+    var body = vec.Vec[ir.Stmt].create()
+    let index_name = "i"
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = false))
+    let cap_lit = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))
+    let cond = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = cap_lit, ty = bool_ty))
+    let post = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
+    let init = alloc_stmt(ir.Stmt.stmt_local(name = index_name, linkage_name = index_name, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
+    var loop_body = vec.Vec[ir.Stmt].create()
+    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = false))
+    let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(long<-(info.capacity))))
+    let slots_ref = alloc_expr(ir.Expr.expr_member(receiver = event_ref, member = "slots", ty = slot_arr_ty))
+    let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = index_ref, ty = slot_ty))
+    let slot_active = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty))
+    let cont_stmt = ir.Stmt.stmt_continue
+    let if_inactive = ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = slot_active, ty = bool_ty)), then_body = span_from_one(cont_stmt), else_body = span[ir.Stmt]())
+    loop_body.push(if_inactive)
+    let slot_listener = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty))
+    let null_check = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = slot_listener, right = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty)), ty = bool_ty))
+    var call_body = vec.Vec[ir.Stmt].create()
+    var call_args = vec.Vec[ir.Expr].create()
+    if info.has_payload:
+        let payload_ref = alloc_expr(ir.Expr.expr_name(name = "payload", ty = info.payload_type, pointer = false))
+        unsafe:
+            call_args.push(read(payload_ref))
+    call_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "", arguments = call_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
+    let call_stmt = ir.Stmt.stmt_if(condition = null_check, then_body = call_body.as_span(), else_body = span[ir.Stmt]())
+    loop_body.push(call_stmt)
+    let slot_once = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "once", ty = bool_ty))
+    var deact_body = vec.Vec[ir.Stmt].create()
+    deact_body.push(ir.Stmt.stmt_assignment(target = slot_active, operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))))
+    loop_body.push(ir.Stmt.stmt_if(condition = slot_once, then_body = deact_body.as_span(), else_body = span[ir.Stmt]()))
+    let for_stmt = ir.Stmt.stmt_for(init = init, condition = cond, post = post, body = loop_body.as_span())
+    body.push(for_stmt)
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = false))
+    if info.has_payload:
+        params.push(ir.Param(name = "payload", linkage_name = "payload", ty = info.payload_type, pointer = false))
+    return ir.Function(name = info.emit_c_name, linkage_name = info.emit_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+
+
+## Build a span from a single IR statement.
+function span_from_one(stmt: ir.Stmt) -> span[ir.Stmt]:
+    var buf = vec.Vec[ir.Stmt].create()
+    buf.push(stmt)
+    return buf.as_span()
 
 
 ## Build a field list span helper with 1 field.
