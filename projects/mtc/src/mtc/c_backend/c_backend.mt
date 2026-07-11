@@ -21,6 +21,7 @@ import std.mem.heap as heap
 import mtc.ir as ir
 import mtc.semantic.types as types
 import mtc.c_naming as naming
+import mtc.lowering.utils as utils
 
 
 ## A backend-stage error.  Placeholder for Phase 1+.
@@ -536,44 +537,23 @@ function reach_from_expr(ep: ptr[ir.Expr], func_names: ref[map_mod.Map[str, bool
 # =============================================================================
 
 function j2(a: str, b: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    return buf.as_str()
+    return utils.j2(a, b)
+
 
 function j3(a: str, b: str, c: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    return buf.as_str()
+    return utils.j3(a, b, c)
+
 
 function j4(a: str, b: str, c: str, d: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    buf.append(d)
-    return buf.as_str()
+    return utils.j4(a, b, c, d)
+
 
 function j5(a: str, b: str, c: str, d: str, e: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    buf.append(d)
-    buf.append(e)
-    return buf.as_str()
+    return utils.j5(a, b, c, d, e)
 
-function j6(a: str, b: str, c: str, d: str, e: str, g: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    buf.append(d)
-    buf.append(e)
-    buf.append(g)
-    return buf.as_str()
+
+function j6(a: str, b: str, c: str, d: str, e: str, f: str) -> str:
+    return utils.j6(a, b, c, d, e, f)
 
 
 function emit_line(e: ref[Emitter], text: str) -> void:
