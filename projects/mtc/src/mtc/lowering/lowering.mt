@@ -1676,7 +1676,12 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     Option.none:
                         pass
                 let target = lower_expr(ctx, asg.target)
-                let value = lower_expr(ctx, asg.value)
+                var value = lower_expr(ctx, asg.value)
+                let target_ty = expr_type(ctx, asg.target)
+                if types.is_nullable_type(target_ty) and not is_nullable_pointer_like(target_ty):
+                    let value_ty = ir_expr_type(value)
+                    if not types.is_nullable_type(value_ty):
+                        value = nullable_some_literal(target_ty, value)
                 output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
             ast.Stmt.stmt_while as w:
                 let cond = lower_expr(ctx, w.condition)
@@ -1894,8 +1899,6 @@ function is_nullable_pointer_like(t: types.Type) -> bool:
                     types.Type.ty_primitive as p:
                         return p.name == "cstr"
                     types.Type.ty_function:
-                        return true
-                    types.Type.ty_imported:
                         return true
                     _:
                         return false

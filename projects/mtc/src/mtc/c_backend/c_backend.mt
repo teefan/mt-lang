@@ -268,19 +268,6 @@ public function generate_c(program: ir.Program) -> string.String:
                 emit_union(ref_of(e), read(program.unions.data + i))
             emit_line(ref_of(e), "")
             i += 1
-
-        # Emit SoA struct definitions after regular structs (they reference
-        # element struct fields by C name).
-        emit_soa_types(ref_of(e), funcs, program)
-
-        i = 0
-        while i < tuple_types.len():
-            let ty_ptr = tuple_types.get(i) else:
-                break
-            unsafe:
-                emit_tuple_type_def(ref_of(e), read(ty_ptr))
-            emit_line(ref_of(e), "")
-            i += 1
     else:
         emit_enums_block(ref_of(e), program)
 
@@ -3551,8 +3538,6 @@ function is_pointer_like_for_nullable(t: types.Type) -> bool:
         types.Type.ty_primitive as p:
             return p.name == "cstr"
         types.Type.ty_function:
-            return true
-        types.Type.ty_imported:
             return true
         _:
             return false
