@@ -9020,7 +9020,7 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                             let target_module = read(mod_ptr)
                             match find_imported_analysis(ctx, target_module):
                                 Option.some as imported:
-                                    if imported.value.static_member_types.contains(inner_ma.member_name):
+                                    if imported.value.static_member_types.contains(inner_ma.member_name) or imported.value.type_names.contains(inner_ma.member_name):
                                         match find_imported_variant_arm(imported.value, member):
                                             Option.some as var_name:
                                                 let var_ty = types.Type.ty_imported(module_name = target_module, name = var_name.value, args = span[types.Type]())
@@ -9031,7 +9031,7 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                                                 ))
                                             Option.none:
                                                 return alloc_expr(ir.Expr.expr_name(
-                                                    name = naming.qualified_member_c_name(target_module, inner_ma.member_name, member),
+                                                    name = member,
                                                     ty = expr_type(ctx, ep),
                                                     pointer = false,
                                                 ))

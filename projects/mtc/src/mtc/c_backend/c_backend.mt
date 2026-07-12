@@ -2704,6 +2704,20 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
             ir.Expr.expr_call_indirect as call:
                 return render_indirect_call(e, call.callee, call.arguments)
             ir.Expr.expr_member as member:
+                # Enum/flags member access on a type name (lowered as
+                # `expr_name(Module.Type, ty=ty_type_meta)` with subsequent
+                # `.MemberValue` access).  In C, enum values are bare constants
+                # (e.g. `UV_TIMER`); emit just the member name.
+                unsafe:
+                    match read(member.receiver):
+                        ir.Expr.expr_name as n:
+                            match n.ty:
+                                types.Type.ty_type_meta:
+                                    return member.member
+                                _:
+                                    pass
+                        _:
+                            pass
                 let operator = if pointer_member_receiver(member.receiver): "->" else: "."
                 return j3(wrap_member_receiver(e, member.receiver), operator, member.member)
             ir.Expr.expr_aggregate_literal as agg:
