@@ -1925,6 +1925,20 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
     var fail_value = storage_ref
     let ret_ty = ctx.current_fn_return_type
     if not types.type_equals(ret_ty, storage_ty):
+        # When the enclosing function returns a Task wrapping the error Result
+        # (e.g. `async function -> Task[Result[int, int]]`), the failure
+        # return must construct a Task struct containing the failure Result
+        # in its `.value` field, not a Result variant literal.
+        var is_task_ret = false
+        match ret_ty:
+            types.Type.ty_generic as tg:
+                if tg.name == "Task":
+                    is_task_ret = true
+            types.Type.ty_named as tn:
+                if tn.name.starts_with("mt_task_"):
+                    is_task_ret = true
+            _:
+                pass
         if kind == "result":
             # Extract the error from the storage's failure arm via
             # storage_ref.data.failure.error (three-level member access through
@@ -1944,13 +1958,36 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
                 member = "error",
                 ty = types.primitive("void"),
             ))
-            var fail_fields = vec.Vec[ir.AggregateField].create()
-            fail_fields.push(ir.AggregateField(name = "error", value = error_member))
-            fail_value = alloc_expr(ir.Expr.expr_variant_literal(
-                ty = ret_ty,
-                arm_name = "failure",
-                fields = fail_fields.as_span(),
-            ))
+            if is_task_ret:
+                # Construct a Task struct: all vtable fields zeroed, value
+                # field carries the failure Result variant literal.
+                # Build the failure Result first, then put it in .value.
+                var result_fail_fields = vec.Vec[ir.AggregateField].create()
+                result_fail_fields.push(ir.AggregateField(name = "error", value = error_member))
+                let result_failure = extract_task_element_type(ctx, ret_ty)
+                let failure_result = alloc_expr(ir.Expr.expr_variant_literal(
+                    ty = result_failure,
+                    arm_name = "failure",
+                    fields = result_fail_fields.as_span(),
+                ))
+                var task_fields = vec.Vec[ir.AggregateField].create()
+                let void_zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_void_type()))
+                task_fields.push(ir.AggregateField(name = "value", value = failure_result))
+                task_fields.push(ir.AggregateField(name = "frame", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "ready", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "set_waiter", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "release", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "take_result", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "cancel", value = void_zero))
+                fail_value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = ret_ty, fields = task_fields.as_span()))
+            else:
+                var fail_fields = vec.Vec[ir.AggregateField].create()
+                fail_fields.push(ir.AggregateField(name = "error", value = error_member))
+                fail_value = alloc_expr(ir.Expr.expr_variant_literal(
+                    ty = ret_ty,
+                    arm_name = "failure",
+                    fields = fail_fields.as_span(),
+                ))
         else if kind == "option":
             fail_value = alloc_expr(ir.Expr.expr_variant_literal(ty = ret_ty, arm_name = "none", fields = span[ir.AggregateField]()))
 
@@ -13476,6 +13513,26 @@ function ptr_void_type() -> types.Type:
 ## struct field access + indirect call rather than treated as methods.
 function is_task_fn_field(name: str) -> bool:
     return name == "ready" or name == "set_waiter" or name == "release" or name == "take_result" or name == "cancel"
+
+
+## Extract the element type from a Task type (`ty_generic("Task", [T])`
+## or `ty_named("mt_task_...")`).  Returns `ty_primitive("void")` on failure.
+function extract_task_element_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_generic as tg:
+            if tg.name == "Task" and tg.args.len >= 1:
+                return unsafe: read(tg.args.data + 0)
+        types.Type.ty_named as tn:
+            if tn.name.starts_with("mt_task_"):
+                let gi_ptr = ctx.generic_struct_instances.get(tn.name)
+                if gi_ptr != null:
+                    let gi = unsafe: read(gi_ptr)
+                    if gi.concrete_args.len >= 1:
+                        return unsafe: read(gi.concrete_args.data + 0)
+                        pass
+        _:
+            pass
+    return types.primitive("void")
 
 
 ## Build a single-element span of IR expressions (for call arguments).
