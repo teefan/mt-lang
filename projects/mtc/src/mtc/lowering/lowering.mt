@@ -1731,6 +1731,15 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     return
                 lower_for_range(ctx, output, f.bindings, f.iterables, f.body)
             ast.Stmt.stmt_expression as ex:
+                # Bare `expr?` propagation: unwrap the result and return on failure.
+                unsafe:
+                    match read(ex.expression):
+                        ast.Expr.expr_unary_op as un:
+                            if un.operator == "?":
+                                lower_propagate_let(ctx, output, "_", un.operand)
+                                return
+                        _:
+                            pass
                 let lowered = lower_expr(ctx, ex.expression)
                 output.push(ir.Stmt.stmt_expression(expression = lowered, line = ex.line, source_path = ""))
             ast.Stmt.stmt_when as wn:
@@ -4410,6 +4419,40 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 var ret_type_ptr = types.alloc_type(ret_ty)
                 return lower_plain_call_sig(ctx, naming.qualified_c_name(ctx.module_name, id.name), args, call_ep, ret_type_ptr, lookup_fn_sig(ctx, id.name))
             ast.Expr.expr_specialization as spec:
+                # When the specialisation callee is a member access
+                # (e.g. `r.unpack[CompactHeader]()`), try method resolution
+                # before generic-function monomorphization so that
+                # extending-block methods with their own type params are found.
+                unsafe:
+                    match read(spec.callee):
+                        ast.Expr.expr_member_access as spma:
+                            let sp_recv_ty = ir_expr_type(lower_expr(ctx, spma.receiver))
+                            match generic_receiver_info(ctx, sp_recv_ty):
+                                Option.some as sp_info:
+                                    match find_generic_method(ctx, sp_info.value.owner_name, spma.member_name):
+                                        Option.some as sp_gm:
+                                            if sp_gm.value.method.type_params.len > 0:
+                                                var sp_ext_args = vec.Vec[types.Type].create()
+                                                var sp_ai: ptr_uint = 0
+                                                while sp_ai < sp_info.value.concrete_args.len:
+                                                    unsafe:
+                                                        sp_ext_args.push(read(sp_info.value.concrete_args.data + sp_ai))
+                                                    sp_ai += 1
+                                                var sp_tpi: ptr_uint = 0
+                                                while sp_tpi < sp_gm.value.method.type_params.len:
+                                                    if sp_tpi < spec.arguments.len:
+                                                        sp_ext_args.push(qualify_type(ctx, resolve_type_ref(ctx, unsafe: read(spec.arguments.data + sp_tpi).value)))
+                                                    else:
+                                                        fatal(c"lowering: not enough specialization args for generic method")
+                                                    sp_tpi += 1
+                                                let sp_ext_info = GenericReceiver(owner_name = sp_info.value.owner_name, concrete_args = sp_ext_args.as_span())
+                                                return lower_monomorphized_method(ctx, sp_ext_info, sp_gm.value, spma.member_name, spma.receiver, args)
+                                        Option.none:
+                                            pass
+                                Option.none:
+                                    pass
+                        _:
+                            pass
                 return lower_specialization_call(ctx, spec.callee, spec.arguments, args, call_ep)
             ast.Expr.expr_member_access as ma:
                 match read(ma.receiver):
@@ -4804,7 +4847,7 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         pass
                 # Member-access specialization: e.g., `vec.Vec[string.String].create()`.
                 # Route through method resolution with the concrete type from type args.
-                let recv_ty = expr_type_for_spec(ctx, spec_callee, type_args)
+                var recv_ty = expr_type_for_spec(ctx, spec_callee, type_args)
                 match try_generic_method_call(ctx, recv_ty, ma.member_name, ma.receiver, call_args, call_ep):
                     Option.some as gen_call:
                         return gen_call.value
@@ -6534,6 +6577,13 @@ function qname_first(qn: ast.QualifiedName) -> str:
     return unsafe: read(qn.parts.data + 0)
 
 
+## The last component of a qualified name (`bin.Reader` -> "Reader"; `Reader` -> "Reader").
+function qname_last(qn: ast.QualifiedName) -> str:
+    if qn.parts.len == 0:
+        return ""
+    return unsafe: read(qn.parts.data + qn.parts.len - 1)
+
+
 ## The type-parameter names declared by an extending block's receiver type
 ## arguments (`extending Vec[T]:` -> ["T"]).
 function type_param_names_of(args: span[ast.TypeRef]) -> span[str]:
@@ -6613,8 +6663,6 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
             raw_args = inst.concrete_args
         _:
             return Option[GenericReceiver].none
-    if raw_args.len == 0:
-        return Option[GenericReceiver].none
     var resolved = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
     while i < raw_args.len:
@@ -6666,39 +6714,37 @@ function prelude_instance_args(ctx: ref[LowerCtx], c_name: str) -> Option[Generi
 
 ## Locate a generic method by owner-struct name and method name: search every
 ## module for a generic extending block (`extending Owner[...]:`) on a struct
-## named `owner_name` that declares `method_name`.  Restricting to modules that
-## declare the struct excludes prelude variants and non-struct receivers.
+## named `owner_name` that declares `method_name`.  Extending blocks for a struct
+## may appear in any module that imports it, not just the defining module (e.g.
+## `std.serialize` declares `extending bin.Reader: function unpack[T]()` even
+## though `Reader` is defined in `std.binary`).
 function find_generic_method(ctx: ref[LowerCtx], owner_name: str, method_name: str) -> Option[GenericMethodMatch]:
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len:
         var a: analyzer.Analysis
         unsafe:
             a = read(ctx.program_analyses.data + ai)
-        # Search modules that declare the owner as a struct or as a generic
-        # variant (prelude Option/Result live in std.option / std.result and are
-        # declared as variants, not structs).
-        if a.structs.contains(owner_name) or struct_in_source(a, owner_name) or variant_in_source(a, owner_name):
-            var di: ptr_uint = 0
-            while di < a.source_file.declarations.len:
-                var d: ast.Decl
-                unsafe:
-                    d = read(a.source_file.declarations.data + di)
-                match d:
-                    ast.Decl.decl_extending_block as ex:
-                        let type_ref = unsafe: read(ex.type_name)
-                        if qname_first(type_ref.name) == owner_name and type_ref.arguments.len > 0:
-                            match find_method_in_block(ex.methods, method_name):
-                                Option.some as m:
-                                    return Option[GenericMethodMatch].some(value = GenericMethodMatch(
-                                        owner_module = a.module_name,
-                                        struct_param_names = type_param_names_of(type_ref.arguments),
-                                        method = m.value,
-                                    ))
-                                Option.none:
-                                    pass
-                    _:
-                        pass
-                di += 1
+        var di: ptr_uint = 0
+        while di < a.source_file.declarations.len:
+            var d: ast.Decl
+            unsafe:
+                d = read(a.source_file.declarations.data + di)
+            match d:
+                ast.Decl.decl_extending_block as ex:
+                    let type_ref = unsafe: read(ex.type_name)
+                    if qname_last(type_ref.name) == owner_name:
+                        match find_method_in_block(ex.methods, method_name):
+                            Option.some as m:
+                                return Option[GenericMethodMatch].some(value = GenericMethodMatch(
+                                    owner_module = a.module_name,
+                                    struct_param_names = type_param_names_of(type_ref.arguments),
+                                    method = m.value,
+                                ))
+                            Option.none:
+                                pass
+                _:
+                    pass
+            di += 1
         ai += 1
     return Option[GenericMethodMatch].none
 
@@ -6810,15 +6856,34 @@ function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method
 ## variant receivers (Option/Result) use the global concrete-variant prefix with
 ## no module qualifier (`Option_str_unwrap`), matching how prelude variant
 ## instances are named globally elsewhere.
-function monomorphized_method_c_name(owner_module: str, info: GenericReceiver, method_name: str) -> str:
+## When the method declares its own type params (e.g. `unpack[T]()` on a non-generic
+## struct), those args are appended after the method name so the struct prefix
+## stays stable: `std_binary_Reader_unpack_CompactHeader`.
+function monomorphized_method_c_name(owner_module: str, info: GenericReceiver, gm: GenericMethodMatch, method_name: str) -> str:
     var buf = string.String.create()
+    # Only use struct-level args in the struct prefix; method-level args go after
+    # the method name.
+    var struct_args = vec.Vec[types.Type].create()
+    var si: ptr_uint = 0
+    while si < gm.struct_param_names.len and si < info.concrete_args.len:
+        unsafe:
+            struct_args.push(read(info.concrete_args.data + si))
+        si += 1
     if is_prelude_variant_name(info.owner_name):
-        buf.append(generic_struct_c_name(info.owner_name, info.concrete_args))
+        buf.append(generic_struct_c_name(info.owner_name, struct_args.as_span()))
     else:
-        let struct_c = naming.qualified_c_name(owner_module, generic_struct_c_name(info.owner_name, info.concrete_args))
+        let struct_c = naming.qualified_c_name(owner_module, generic_struct_c_name(info.owner_name, struct_args.as_span()))
         buf.append(struct_c)
     buf.append("_")
     buf.append(method_name)
+    # Append method-level type args after the method name, skipping the
+    # struct-level args that were already included in the struct prefix.
+    var mi: ptr_uint = gm.struct_param_names.len
+    while mi < info.concrete_args.len:
+        buf.append("_")
+        unsafe:
+            buf.append(naming.type_c_key(read(info.concrete_args.data + mi)))
+        mi += 1
     return buf.as_str()
 
 
@@ -6827,7 +6892,20 @@ function monomorphized_method_c_name(owner_module: str, info: GenericReceiver, m
 ## C name groups by the concrete struct (`std_vec_Vec_int_push`), matching the
 ## monomorphized struct type produced by `qualify_type`.
 function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, gm: GenericMethodMatch, method_name: str, receiver: ptr[ast.Expr], args: span[ast.Argument]) -> ptr[ir.Expr]:
-    let method_c = monomorphized_method_c_name(gm.owner_module, info, method_name)
+    # For the struct prefix in the C name, use the struct's defining module
+    # (which may differ from the extending-block module, e.g. `Writer` is
+    # defined in `std_binary` but extended by `std_serialize`).
+    var struct_module = gm.owner_module
+    var sai: ptr_uint = 0
+    while sai < ctx.program_analyses.len:
+        var sa: analyzer.Analysis
+        unsafe:
+            sa = read(ctx.program_analyses.data + sai)
+        if struct_in_source(sa, info.owner_name) or sa.structs.contains(info.owner_name):
+            struct_module = sa.module_name
+            break
+        sai += 1
+    let method_c = monomorphized_method_c_name(struct_module, info, gm, method_name)
 
     if not ctx.specialization_cache.contains(method_c) and not ctx.spec_in_progress.contains(method_c):
         ensure_monomorphized_method(ctx, method_c, info, gm)
@@ -6970,6 +7048,20 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     ctx.type_substitution = saved_sub
 
 
+## Find the module that defines a struct named `name` by searching loaded analyses.
+## Returns the struct's defining module name, or the default module name if not found.
+function struct_defining_module_for_type(ctx: ref[LowerCtx], name: str) -> str:
+    var sai: ptr_uint = 0
+    while sai < ctx.program_analyses.len:
+        var sa: analyzer.Analysis
+        unsafe:
+            sa = read(ctx.program_analyses.data + sai)
+        if struct_in_source(sa, name) or sa.structs.contains(name):
+            return sa.module_name
+        sai += 1
+    return ctx.module_name
+
+
 ## Lower a single generic method to an IR function with the struct's type
 ## parameters substituted.  Mirrors `lower_method`, but resolves the receiver and
 ## parameter/return types through `substitute_type_params` with `sub`.
@@ -6987,15 +7079,9 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
         unsafe:
             struct_args.push(read(info.concrete_args.data + si))
         si += 1
-    if struct_args.len == 0:
-        var z: ptr_uint = 0
-        while z < info.concrete_args.len:
-            unsafe:
-                struct_args.push(read(info.concrete_args.data + z))
-            z += 1
 
     let recv_struct_ty = qualify_type(ctx, types.Type.ty_imported(
-        module_name = gm.owner_module,
+        module_name = struct_defining_module_for_type(ctx, info.owner_name),
         name = info.owner_name,
         args = struct_args.as_span(),
     ))
