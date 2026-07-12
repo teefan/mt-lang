@@ -189,6 +189,12 @@ struct LowerCtx:
     # group; block exit and `return` flush the groups (innermost-first, each in
     # reverse encounter order).  Mirrors Ruby's active_defers/local_defers.
     defer_stack: vec.Vec[DeferGroup]
+    # Return type of the function currently being lowered, for use by `?`
+    # propagation when the propagated type differs from the enclosing function's
+    # return type (e.g. `Result[bool, E]?` inside a function returning
+    # `Result[Bytes, E]`).  Defaults to `void`; set in `lower_function` and
+    # `lower_specialized_method` before the body is lowered.
+    current_fn_return_type: types.Type
 
 
 ## Per-event runtime linkage information.  Each declared `event Name[N]`
@@ -711,6 +717,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         inline_for_element = Option[ComptimeElement].none,
         defer_stack = vec.Vec[DeferGroup].create(),
         inside_async = false,
+        current_fn_return_type = types.primitive("void"),
     )
 
 
@@ -1193,7 +1200,10 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
         pi += 1
 
     let ret_ty = resolve_return_type(ctx, sig, m.return_type)
+    var saved_fn_ret = ctx.current_fn_return_type
+    ctx.current_fn_return_type = ret_ty
     let body_stmts = lower_function_body(ctx, m.body)
+    ctx.current_fn_return_type = saved_fn_ret
 
     return ir.Function(
         name = c_name,
@@ -1282,7 +1292,10 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
     if is_async:
         ret_ty = make_task_type(ret_ty)
     ctx.inside_async = is_async
+    var saved_fn_ret = ctx.current_fn_return_type
+    ctx.current_fn_return_type = ret_ty
     let body_stmts = lower_function_body(ctx, body)
+    ctx.current_fn_return_type = saved_fn_ret
     ctx.inside_async = false
 
     return ir.Function(
@@ -1887,10 +1900,48 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
 
     let kind = guard_storage_kind(ctx, storage_ty)
 
-    # Failure branch: return the failing storage value (Option.none / Result.failure).
+    # Build the failure return value.  When the propagation type (e.g.
+    # `Result[bool, Error]`) differs from the enclosing function's return type
+    # (e.g. `Result[Bytes, Error]`), extract the error from the propagated
+    # failure arm and wrap it in the return type's failure arm so the C types
+    # are compatible.  Mirrors Ruby's `storage_type == return_type` check in
+    # `prepare_result_propagation_for_inline_lowering`.
+    var fail_value = storage_ref
+    let ret_ty = ctx.current_fn_return_type
+    if not types.type_equals(ret_ty, storage_ty):
+        if kind == "result":
+            # Extract the error from the storage's failure arm via
+            # storage_ref.data.failure.error (three-level member access through
+            # the variant's data union and failure arm struct).
+            let data_field = alloc_expr(ir.Expr.expr_member(
+                receiver = storage_ref,
+                member = "data",
+                ty = types.primitive("void"),
+            ))
+            let failure_struct = alloc_expr(ir.Expr.expr_member(
+                receiver = data_field,
+                member = "failure",
+                ty = types.primitive("void"),
+            ))
+            let error_member = alloc_expr(ir.Expr.expr_member(
+                receiver = failure_struct,
+                member = "error",
+                ty = types.primitive("void"),
+            ))
+            var fail_fields = vec.Vec[ir.AggregateField].create()
+            fail_fields.push(ir.AggregateField(name = "error", value = error_member))
+            fail_value = alloc_expr(ir.Expr.expr_variant_literal(
+                ty = ret_ty,
+                arm_name = "failure",
+                fields = fail_fields.as_span(),
+            ))
+        else if kind == "option":
+            fail_value = alloc_expr(ir.Expr.expr_variant_literal(ty = ret_ty, arm_name = "none", fields = span[ir.AggregateField]()))
+
+    # Failure branch: return the appropriate failure value.
     var fail_body = vec.Vec[ir.Stmt].create()
     flush_all_defers(ctx, ref_of(fail_body))
-    fail_body.push(ir.Stmt.stmt_return(value = storage_ref, line = 0, source_path = ""))
+    fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = 0, source_path = ""))
 
     # `if (<failure condition>) { return storage; }`
     let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
@@ -7123,7 +7174,10 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
 
     var saved_sub = ctx.type_substitution
     ctx.type_substitution = read(sub)
+    var saved_fn_ret = ctx.current_fn_return_type
+    ctx.current_fn_return_type = ret_ty
     let body_ir = lower_function_body(ctx, m.body)
+    ctx.current_fn_return_type = saved_fn_ret
     ctx.type_substitution = saved_sub
 
     return ir.Function(
