@@ -5414,6 +5414,28 @@ function unify_type_param(param_name: str, param_ref: ast.TypeRef, arg_ty: types
         unsafe:
             inner_ref = read(param_ref.arguments.data + (param_ref.arguments.len - 1))
         return unify_type_param(param_name, inner_ref, inner_arg)
+    # Nested generic instance: `Task[T]` matched against `Task[int]` → T = int;
+    # `Option[T]` matched against `Option[int]` → T = int; etc.
+    # The param_ref has nested arguments (e.g. `T` inside `Task[T]`) and the
+    # argument type is a generic instance with the same name and arg count.
+    # Recursively unify each type argument pair.
+    if param_ref.arguments.len >= 1:
+        match arg_ty:
+            types.Type.ty_generic as g:
+                if g.name == simple_name and g.args.len == param_ref.arguments.len:
+                    var mi: ptr_uint = 0
+                    while mi < g.args.len and mi < param_ref.arguments.len:
+                        var inner_ref: ast.TypeRef
+                        unsafe:
+                            inner_ref = read(param_ref.arguments.data + mi)
+                        match unify_type_param(param_name, inner_ref, unsafe: read(g.args.data + mi)):
+                            Option.some as found:
+                                return Option[types.Type].some(value = found.value)
+                            Option.none:
+                                pass
+                        mi += 1
+            _:
+                pass
     # `proc(...) -> T`: peel the proc layer (fn_params/fn_return fields, not
     # `name`/`arguments` since the parser stores callable types specially) and
     # recurse into the return type position.
