@@ -248,6 +248,10 @@ public function generate_c(program: ir.Program) -> string.String:
 
         emit_enums_block(ref_of(e), program)
 
+        # Task forward declarations must come before type aliases because
+        # aliases like `typedef mt_task_X ChanMessageTask` reference them.
+        emit_task_forward_decls(ref_of(e), program)
+
         emit_type_aliases(ref_of(e), program)
 
         # Emit span type full definitions after forward declarations
@@ -260,10 +264,6 @@ public function generate_c(program: ir.Program) -> string.String:
                 emit_span_type(ref_of(e), read(ty_ptr))
             emit_line(ref_of(e), "")
             si += 1
-
-        # Emit Task type forward declarations so that proc structs referencing
-        # Task types in their invoke field can compile.
-        emit_task_forward_decls(ref_of(e), program)
 
         # Emit struct and variant full definitions in a single dependency order,
         # since structs and variants can embed each other by value.
@@ -4166,95 +4166,122 @@ function uses_parallel_runtime(program: ir.Program) -> bool:
 
 function emit_task_forward_decls(e: ref[Emitter], program: ir.Program) -> void:
     var seen = map_mod.Map[str, bool].create()
+    var task_elements = map_mod.Map[str, types.Type].create()
     var i: ptr_uint = 0
+    # Collect Task types from all IR sources (same as emit_task_structs).
     while i < program.functions.len:
         unsafe:
             let f = read(program.functions.data + i)
-            let task_elem = task_type_element(f.return_type)
-            if task_elem.is_some():
-                let elem = task_elem.unwrap()
-                var task_args = vec.Vec[types.Type].create()
-                task_args.push(elem)
-                let c_name = generic_c_type("Task", task_args.as_span())
-                if not seen.contains(c_name):
-                    seen.set(c_name, true)
-                    emit_line(e, j3("typedef struct ", c_name, j2(" ", j2(c_name, ";"))))
+            collect_task_type(program, ref_of(seen), ref_of(task_elements), f.return_type)
             var pi: ptr_uint = 0
             while pi < f.params.len:
-                let param = read(f.params.data + pi)
-                let pt_elem = task_type_element(param.ty)
-                if pt_elem.is_some():
-                    let pe = pt_elem.unwrap()
-                    var pt_args = vec.Vec[types.Type].create()
-                    pt_args.push(pe)
-                    let pc_name = generic_c_type("Task", pt_args.as_span())
-                    if not seen.contains(pc_name):
-                        seen.set(pc_name, true)
-                        emit_line(e, j3("typedef struct ", pc_name, j2(" ", j2(pc_name, ";"))))
+                collect_task_type(program, ref_of(seen), ref_of(task_elements), read(f.params.data + pi).ty)
                 pi += 1
         i += 1
+    i = 0
+    while i < program.structs.len:
+        unsafe:
+            let s = read(program.structs.data + i)
+            var fi: ptr_uint = 0
+            while fi < s.fields.len:
+                collect_task_type(program, ref_of(seen), ref_of(task_elements), read(s.fields.data + fi).ty)
+                fi += 1
+        i += 1
+    i = 0
+    while i < program.type_aliases.len:
+        unsafe:
+            collect_task_type(program, ref_of(seen), ref_of(task_elements), read(program.type_aliases.data + i).target_type)
+        i += 1
+    var keys = seen.keys()
+    while true:
+        let kp = keys.next() else:
+            break
+        let c_name = unsafe: read(kp)
+        emit_line(e, j5("typedef struct ", c_name, " ", c_name, ";"))
     if seen.len() > 0:
         emit_line(e, "")
 
 
 
 function emit_task_structs(e: ref[Emitter], program: ir.Program) -> void:
-
     var seen = map_mod.Map[str, bool].create()
+    var task_elements = map_mod.Map[str, types.Type].create()
 
+    # Collect Task types from function return types and parameter types.
     var i: ptr_uint = 0
-
     while i < program.functions.len:
-
         unsafe:
-
             let f = read(program.functions.data + i)
-
-            let task_elem = task_type_element(f.return_type)
-
-            if task_elem.is_some():
-
-                let elem = task_elem.unwrap()
-
-                var task_args = vec.Vec[types.Type].create()
-
-                task_args.push(elem)
-
-                let c_name = generic_c_type("Task", task_args.as_span())
-
-                if not seen.contains(c_name):
-
-                    seen.set(c_name, true)
-
-                    emit_task_struct_type(e, c_name, elem)
-
+            collect_task_type(program, ref_of(seen), ref_of(task_elements), f.return_type)
             var pi: ptr_uint = 0
-
             while pi < f.params.len:
-
-                let param = read(f.params.data + pi)
-
-                let pt_elem = task_type_element(param.ty)
-
-                if pt_elem.is_some():
-
-                    let pe = pt_elem.unwrap()
-
-                    var pt_args = vec.Vec[types.Type].create()
-
-                    pt_args.push(pe)
-
-                    let pc_name = generic_c_type("Task", pt_args.as_span())
-
-                    if not seen.contains(pc_name):
-
-                        seen.set(pc_name, true)
-
-                        emit_task_struct_type(e, pc_name, pe)
-
+                collect_task_type(program, ref_of(seen), ref_of(task_elements), read(f.params.data + pi).ty)
                 pi += 1
-
         i += 1
+
+    # Collect Task types from struct field types (async frame structs have
+    # `await_N` fields typed as Task[T]).
+    i = 0
+    while i < program.structs.len:
+        unsafe:
+            let s = read(program.structs.data + i)
+            var fi: ptr_uint = 0
+            while fi < s.fields.len:
+                collect_task_type(program, ref_of(seen), ref_of(task_elements), read(s.fields.data + fi).ty)
+                fi += 1
+        i += 1
+
+    # Collect Task types from type aliases (e.g. `type ChanMessageTask = Task[Option[Message]]`).
+    i = 0
+    while i < program.type_aliases.len:
+        unsafe:
+            collect_task_type(program, ref_of(seen), ref_of(task_elements), read(program.type_aliases.data + i).target_type)
+        i += 1
+
+    # Emit collected Task struct types.
+    var keys = seen.keys()
+    while true:
+        let kp = keys.next() else:
+            break
+        let c_name = unsafe: read(kp)
+        var elem = types.primitive("void")
+        let te_ptr = task_elements.get(c_name)
+        if te_ptr != null:
+            elem = unsafe: read(te_ptr)
+        emit_task_struct_type(e, c_name, elem)
+    if seen.len() > 0:
+        emit_line(e, "")
+
+
+## Collect a Task type element from a type reference.  When `t` is a
+## `Task[T]` or has Task-typed sub-expressions, adds the concrete Task
+## struct name to `seen` and records the element type.
+function collect_task_type(program: ir.Program, seen: ref[map_mod.Map[str, bool]], elements: ref[map_mod.Map[str, types.Type]], t: types.Type) -> void:
+    match t:
+        types.Type.ty_generic as g:
+            if g.name == "Task" and g.args.len == 1:
+                let elem = unsafe: read(g.args.data + 0)
+                var task_args = vec.Vec[types.Type].create()
+                task_args.push(elem)
+                let c_name = generic_c_type("Task", task_args.as_span())
+                if not seen.contains(c_name):
+                    seen.set(c_name, true)
+                    elements.set(c_name, elem)
+            # Also scan nested generic args for Task types.
+            var ai: ptr_uint = 0
+            while ai < g.args.len:
+                collect_task_type(program, seen, elements, unsafe: read(g.args.data + ai))
+                ai += 1
+        types.Type.ty_named as n:
+            if n.name.starts_with("mt_task_"):
+                if not seen.contains(n.name):
+                    seen.set(n.name, true)
+        types.Type.ty_imported as im:
+            if im.name.starts_with("mt_task_"):
+                if not seen.contains(im.name):
+                    seen.set(im.name, true)
+        _:
+            pass
 
 
 
