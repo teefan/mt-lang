@@ -2097,6 +2097,23 @@ function emit_variant_forward(e: ref[Emitter], vd: ir.VariantDecl) -> void:
 
 ## Emit a variant type: per-arm payload structs, the `_kind` discriminant enum,
 ## the `__data` union, and the outer tagged struct.  Mirrors Ruby's emit_variant.
+## Append a trailing underscore to C keywords used as field/member names so
+## the generated code compiles (e.g. `sizeof` → `sizeof_`, `switch` → `switch_`).
+function c_safe_field_name(name: str) -> str:
+    if (
+        name == "sizeof" or name == "switch" or name == "union" or name == "struct" or name == "enum"
+        or name == "register" or name == "volatile" or name == "const" or name == "restrict"
+        or name == "auto" or name == "extern" or name == "static" or name == "typedef"
+        or name == "int" or name == "float" or name == "double" or name == "char"
+        or name == "short" or name == "long" or name == "void" or name == "bool"
+        or name == "default" or name == "case" or name == "break" or name == "continue"
+        or name == "return" or name == "if" or name == "else" or name == "while"
+        or name == "for" or name == "do" or name == "goto"
+    ):
+        return j2(name, "_")
+    return name
+
+
 function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
     let outer_c = vd.linkage_name
 
@@ -2140,7 +2157,7 @@ function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
             unsafe:
                 let arm = read(vd.arms.data + i)
                 if arm.fields.len > 0:
-                    emit_line(e, j6("  struct ", arm.linkage_name, " ", arm.name, ";", ""))
+                    emit_line(e, j6("  struct ", arm.linkage_name, " ", c_safe_field_name(arm.name), ";", ""))
             i += 1
         emit_line(e, "};")
 

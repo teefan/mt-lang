@@ -8896,6 +8896,24 @@ function lower_variant_decl(ctx: ref[LowerCtx], name: str, arms: span[ast.Varian
     return ir.VariantDecl(name = name, linkage_name = outer_c, arms = ir_arms.as_span(), source_module = Option[str].none)
 
 
+
+
+## Sanitize a variant arm name that would collide with a C keyword by appending
+## a trailing underscore (e.g. `sizeof` → `sizeof_`, `switch` → `switch_`).
+function sanitize_arm_field(name: str) -> str:
+    if (
+        name == "sizeof" or name == "switch" or name == "union" or name == "struct" or name == "enum"
+        or name == "register" or name == "volatile" or name == "const" or name == "restrict"
+        or name == "auto" or name == "extern" or name == "static" or name == "typedef"
+        or name == "int" or name == "float" or name == "double" or name == "char"
+        or name == "short" or name == "long" or name == "void" or name == "bool"
+        or name == "default" or name == "case" or name == "break" or name == "continue"
+        or name == "return" or name == "if" or name == "else" or name == "while"
+        or name == "for" or name == "do" or name == "goto"
+    ):
+        return j2(name, "_")
+    return name
+
 ## The C name of a variant arm's payload struct: `<outer_c>_<arm>`.
 function variant_arm_c_name(outer_c: str, arm_name: str) -> str:
     var buf = string.String.create()
@@ -9629,7 +9647,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                     let binding_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, arm_name))
                     register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = binding_ty))
-                    let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
+                    let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = binding_ty))
                     let bc = utils.c_local_name(bn.value)
                     body.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
                     ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
@@ -9732,7 +9750,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
                     let binding_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, arm_name))
                     register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = binding_ty))
-                    let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
+                    let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = binding_ty))
                     let bc = utils.c_local_name(bn.value)
                     stmts.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
                     ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
@@ -9814,7 +9832,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                     if ai.value.field_names.len > 0:
                         let payload_c = fresh_c_temp_name(ctx, "match_payload")
                         let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = payload_ty))
-                        let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = payload_ty))
+                        let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = payload_ty))
                         blk.push(ir.Stmt.stmt_local(name = payload_c, linkage_name = payload_c, ty = payload_ty, value = arm_data, line = 0, source_path = ""))
                         ctx.locals.push(LocalBinding(name = payload_c, c_name = payload_c, ty = payload_ty, pointer = false))
                         lower_variant_field_bindings(ctx, ref_of(blk), pattern, ai.value, payload_c, payload_ty)
