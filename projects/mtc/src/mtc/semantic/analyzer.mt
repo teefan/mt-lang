@@ -76,6 +76,7 @@ public struct ModuleBinding:
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     implemented: map_mod.Map[str, span[ast.QualifiedName]]
     match_case_names: map_mod.Map[str, span[str]]
+    types: map_mod.Map[str, bool]
     private_functions: map_mod.Map[str, FnSig]
     private_structs: map_mod.Map[str, span[FieldEntry]]
     private_value_types: map_mod.Map[str, types.Type]
@@ -1112,7 +1113,7 @@ function resolve_imported_type(ctx: ref[Context], name: ast.QualifiedName) -> Op
             var val_ptr = binding.type_alias_types.get(type_name)
             if val_ptr != null:
                 return Option[types.Type].some(value = unsafe: read(ptr[types.Type]<-val_ptr))
-        if binding.structs.contains(type_name) or binding.type_aliases.contains(type_name) or binding.static_member_types.contains(type_name) or binding.interfaces.contains(type_name):
+        if binding.structs.contains(type_name) or binding.type_aliases.contains(type_name) or binding.static_member_types.contains(type_name) or binding.interfaces.contains(type_name) or binding.types.contains(type_name):
             return Option[types.Type].some(value = types.Type.ty_imported(module_name = read(module_name_ptr), name = type_name, args = span[types.Type]()))
     return Option[types.Type].none
 

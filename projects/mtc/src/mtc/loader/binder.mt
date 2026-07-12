@@ -28,6 +28,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     var interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create()
     var implemented = map_mod.Map[str, span[ast.QualifiedName]].create()
     var match_case_names = map_mod.Map[str, span[str]].create()
+    var opaque_types = map_mod.Map[str, bool].create()
     var private_functions = map_mod.Map[str, analyzer.FnSig].create()
     var private_structs = map_mod.Map[str, span[analyzer.FieldEntry]].create()
     var private_value_types = map_mod.Map[str, types.Type].create()
@@ -118,6 +119,12 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                     interfaces.set(iface.name, iface.interface_methods)
                 else:
                     private_interfaces.set(iface.name, iface.interface_methods)
+            ast.Decl.decl_opaque as op:
+                if exports_all or op.visibility:
+                    opaque_types.set(op.name, true)
+            ast.Decl.decl_union as u:
+                if exports_all or u.visibility:
+                    opaque_types.set(u.name, true)
             _:
                 pass
         i += 1
@@ -134,6 +141,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         interfaces = interfaces,
         implemented = implemented,
         match_case_names = match_case_names,
+        types = opaque_types,
         private_functions = private_functions,
         private_structs = private_structs,
         private_value_types = private_value_types,
