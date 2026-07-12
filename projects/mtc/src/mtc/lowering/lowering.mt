@@ -4694,6 +4694,20 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                         found_ft = entry.ty
                                         break
                                     ei += 1
+                # Task[T] builtin struct fields (frame, ready, set_waiter,
+                # release, take_result, cancel) are function pointers / void
+                # pointers that must be accessed via struct field + indirect
+                # call, not treated as methods.
+                let tn = named_type_name(recv_ty)
+                if tn.is_some() and tn.unwrap() == "Task" and ma.member_name == "frame":
+                    found_ft = ptr_void_type()
+                else if tn.is_some() and tn.unwrap() == "Task" and is_task_fn_field(ma.member_name):
+                    found_ft = types.Type.ty_function(
+                        params = single_ty_span(ptr_void_type()),
+                        return_type = types.alloc_type(types.primitive("void")),
+                        variadic = false,
+                        is_proc = false,
+                    )
                 match found_ft:
                     types.Type.ty_function as field_fn:
                         if field_fn.is_proc:
@@ -13374,6 +13388,13 @@ function ptr_uint_type() -> types.Type:
 ## ptr[void] type — used for frame pointer in async CPS.
 function ptr_void_type() -> types.Type:
     return types.Type.ty_generic(name = "ptr", args = single_ty_span(types.primitive("void")))
+
+
+## True when `name` is one of the function-pointer fields on the Task[T] struct
+## (ready, set_waiter, release, take_result, cancel) that must be accessed via
+## struct field access + indirect call rather than treated as methods.
+function is_task_fn_field(name: str) -> bool:
+    return name == "ready" or name == "set_waiter" or name == "release" or name == "take_result" or name == "cancel"
 
 
 ## Build a single-element span of IR expressions (for call arguments).
