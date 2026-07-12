@@ -2083,6 +2083,12 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             # different module context does not double-prefix them.
             if ctx.generic_struct_instances.contains(n.name) or ctx.generic_struct_decls.contains(n.name):
                 return t
+            # Concrete C names produced by generic_struct_c_name always contain
+            # at least one underscore (module_prefix_Name_Arg).  Bare names
+            # without underscores (like the type param `T`) should follow the
+            # normal qualify path.
+            if n.name.find_byte('_').is_some():
+                return t
             # Prelude variant instances (Option_str, Result_int_Error) and proc
             # typedefs (mt_proc_...) have global C names and must not be
             # module-prefixed.
@@ -4608,16 +4614,17 @@ function cross_module_return_type(ctx: ref[LowerCtx], c_name: str, call_ep: ptr[
         if rp != null:
             ret_ty = read(rp)
     if not types.is_error(ret_ty):
-        # The stored type was already qualified in its defining module's context
-        # by `collect_program_returns`; re-qualifying it here (in the caller's
-        # context) would double-prefix concrete generic instance names
-        # (e.g. analyzer calling da.check() → mtc_semantic_analyzer_std_vec_Vec_…).
         return ret_ty
-    # Also check per-module function_returns (monomorphized functions added here).
     let fp = ctx.function_returns.get(c_name)
     if fp != null:
         unsafe:
             ret_ty = read(fp)
+        if not types.is_error(ret_ty):
+            return ret_ty
+    let sc = ctx.specialization_cache.get(c_name)
+    if sc != null:
+        unsafe:
+            ret_ty = read(sc).return_type
         if not types.is_error(ret_ty):
             return ret_ty
     return expr_type(ctx, call_ep)
@@ -5140,7 +5147,7 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], callee_name: str, args: s
                     return Option[ptr[ir.Expr]].none
                 sub.set(tp.name, inferred)
                 key.append("__")
-                key.append(naming.type_c_key(inferred))
+                key.append(spec_type_key(ctx, inferred))
                 tpi += 1
             let spec_key = key.as_str()
             if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
@@ -5498,6 +5505,31 @@ function collect_variant_literal_fields(ctx: ref[LowerCtx], args: span[ast.Argum
 ## Build a specialization key from the callee name + concrete type args.  For a
 ## same-module function `first[int]`, the key is `<module_prefix>_first_int`.  The
 ## key doubles as the monomorphized C linkage name.
+
+## Compute a type-key string for specialization naming.  Builtin generic types
+## (ptr/own/span/…) use their bare `type_c_key`.  User-defined generic structs
+## include the defining module's C prefix so that Node[int, bool] in std.map and
+## Node[int, bool] in std.linked_map produce distinct keys.
+function spec_type_key(ctx: ref[LowerCtx], ty: types.Type) -> str:
+    match ty:
+        types.Type.ty_generic as g:
+            if is_builtin_pointer_generic(g.name):
+                var buf = string.String.create()
+                buf.append(g.name)
+                var i: ptr_uint = 0
+                while i < g.args.len:
+                    buf.append("_")
+                    buf.append(spec_type_key(ctx, unsafe: read(g.args.data + i)))
+                    i += 1
+                return buf.as_str()
+            if g.name == "Option" or g.name == "Result":
+                return naming.type_c_key(ty)
+            return naming.qualified_c_name(ctx.module_name, generic_struct_c_name(g.name, g.args))
+        types.Type.ty_nullable as nl:
+            return spec_type_key(ctx, unsafe: read(nl.base))
+        _:
+            return naming.type_c_key(ty)
+
 function specialization_key(ctx: ref[LowerCtx], module_name: str, callee_name: str, type_args: span[ast.TypeArgument]) -> str:
     var buf = string.String.create()
     buf.append(naming.module_c_prefix(module_name))
@@ -5507,7 +5539,7 @@ function specialization_key(ctx: ref[LowerCtx], module_name: str, callee_name: s
     while i < type_args.len:
         buf.append("_")
         let ty = resolve_type_ref(ctx, unsafe: read(type_args.data + i).value)
-        buf.append(naming.type_c_key(ty))
+        buf.append(spec_type_key(ctx, ty))
         i += 1
     return buf.as_str()
 
