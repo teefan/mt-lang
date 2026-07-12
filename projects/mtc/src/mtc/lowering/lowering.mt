@@ -4720,22 +4720,44 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # pointers that must be accessed via struct field + indirect
                 # call, not treated as methods.  `take_result` returns the
                 # task's result type T; other vtable fields return void.
-                let tn = named_type_name(recv_ty)
-                if tn.is_some() and tn.unwrap() == "Task" and ma.member_name == "frame":
-                    found_ft = ptr_void_type()
-                else if tn.is_some() and tn.unwrap() == "Task" and is_task_fn_field(ma.member_name):
-                    var task_ret_ty = types.primitive("void")
-                    if ma.member_name == "take_result":
-                        match recv_ty:
-                            types.Type.ty_generic as tg:
-                                if tg.name == "Task" and tg.args.len >= 1:
+                #
+                # In the monomorphized context, the Task may already be a
+                # concrete struct like `ty_named("mt_task_int")` — detect it
+                # by the `mt_task_` prefix or `ty_generic("Task", ...)`.
+                var is_task = false
+                var task_ret_ty = types.primitive("void")
+                match recv_ty:
+                    types.Type.ty_generic as tg:
+                        if tg.name == "Task" and tg.args.len >= 1:
+                            is_task = true
+                            unsafe:
+                                task_ret_ty = read(tg.args.data + 0)
+                    types.Type.ty_named as tn:
+                        if tn.name.starts_with("mt_task_"):
+                            is_task = true
+                            let gi_ptr = ctx.generic_struct_instances.get(tn.name)
+                            if gi_ptr != null:
+                                let gi = unsafe: read(gi_ptr)
+                                if gi.concrete_args.len >= 1:
                                     unsafe:
-                                        task_ret_ty = read(tg.args.data + 0)
-                            _:
-                                pass
+                                        task_ret_ty = read(gi.concrete_args.data + 0)
+                    types.Type.ty_imported as im:
+                        if im.name.starts_with("mt_task_"):
+                            is_task = true
+                            let gi_ptr = ctx.generic_struct_instances.get(im.name)
+                            if gi_ptr != null:
+                                let gi = unsafe: read(gi_ptr)
+                                if gi.concrete_args.len >= 1:
+                                    unsafe:
+                                        task_ret_ty = read(gi.concrete_args.data + 0)
+                    _:
+                        pass
+                if is_task and ma.member_name == "frame":
+                    found_ft = ptr_void_type()
+                else if is_task and is_task_fn_field(ma.member_name):
                     found_ft = types.Type.ty_function(
                         params = single_ty_span(ptr_void_type()),
-                        return_type = types.alloc_type(types.primitive("void")),
+                        return_type = types.alloc_type(task_ret_ty),
                         variadic = false,
                         is_proc = false,
                     )
