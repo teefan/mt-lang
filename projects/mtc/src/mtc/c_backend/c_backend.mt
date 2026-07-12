@@ -57,6 +57,13 @@ struct GVInfo:
     arms: span[GVArmInfo]
 
 
+## Opt types that need synthetic StructDecl entries for topological ordering.
+## `decl` is the StructDecl; `field_store` keeps the field spans alive.
+public struct OptStructEntry:
+    decl: ir.StructDecl
+    field_store: vec.Vec[ir.Field]
+
+
 public function generate_c(program: ir.Program) -> string.String:
     var e = Emitter(
         buffer = string.String.create(),
@@ -85,6 +92,7 @@ public function generate_c(program: ir.Program) -> string.String:
     var checked_span_index_types = collect_checked_span_index_types(funcs)
     var tuple_types = collect_tuple_types(funcs)
     var gen_variants = collect_generic_variants(program)
+    var opt_structs = collect_opt_struct_decls(program)
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
     let use_fatal = uses_fatal_helper(funcs, program) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0
@@ -129,6 +137,9 @@ public function generate_c(program: ir.Program) -> string.String:
     if use_entry_argv and not seen_headers.contains("<string.h>"):
         seen_headers.set("<string.h>", true)
         emit_line(ref_of(e), "#include <string.h>")
+    if uses_parallel_runtime(program) and not seen_headers.contains("\"uv.h\""):
+        seen_headers.set("\"uv.h\"", true)
+        emit_line(ref_of(e), "#include \"uv.h\"")
     emit_line(ref_of(e), "")
 
     if use_string_view:
@@ -172,7 +183,14 @@ public function generate_c(program: ir.Program) -> string.String:
     if uses_builtin_helpers(program):
         emit_builtin_helpers(ref_of(e))
 
-    if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0 or program.variants.len > 0 or gen_variants.len() > 0:
+    if uses_event_runtime(program):
+        emit_event_helpers(ref_of(e))
+
+    if uses_foreign_cstr_helper(funcs):
+        emit_foreign_cstr_helper(ref_of(e))
+        emit_line(ref_of(e), "")
+
+    if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0 or program.variants.len > 0 or gen_variants.len() > 0 or opt_structs.len() > 0:
         var sorted_structs = topo_sort_structs(program.structs)
         let sorted = sorted_structs.as_span()
 
@@ -218,6 +236,14 @@ public function generate_c(program: ir.Program) -> string.String:
             unsafe:
                 emit_variant_forward(ref_of(e), read(v_ptr))
             i += 1
+        i = 0
+        while i < opt_structs.len():
+            let os_ptr = opt_structs.get(i) else:
+                break
+            unsafe:
+                let os = read(os_ptr)
+                emit_line(ref_of(e), j3("typedef struct ", os.decl.linkage_name, j2(" ", j2(os.decl.linkage_name, ";"))))
+            i += 1
         emit_line(ref_of(e), "")
 
         emit_enums_block(ref_of(e), program)
@@ -242,7 +268,7 @@ public function generate_c(program: ir.Program) -> string.String:
 
         # Emit struct and variant full definitions in a single dependency order,
         # since structs and variants can embed each other by value.
-        var type_order = topo_sort_types(program.structs, ref_of(gen_variants), program.variants)
+        var type_order = topo_sort_types(program.structs, ref_of(gen_variants), program.variants, ref_of(opt_structs))
         var toi: ptr_uint = 0
         while toi < type_order.len():
             let node_ptr = type_order.get(toi) else:
@@ -256,8 +282,13 @@ public function generate_c(program: ir.Program) -> string.String:
                         toi += 1
                         continue
                     emit_variant(ref_of(e), read(gv_ptr))
-                else:
+                else if node.kind == 2:
                     emit_variant(ref_of(e), read(program.variants.data + node.index))
+                else:
+                    let os_ptr = opt_structs.get(node.index) else:
+                        toi += 1
+                        continue
+                    emit_struct(ref_of(e), read(os_ptr).decl)
             emit_line(ref_of(e), "")
             toi += 1
         i = 0
@@ -280,7 +311,6 @@ public function generate_c(program: ir.Program) -> string.String:
             emit_line(ref_of(e), "")
             i += 1
 
-        emit_opt_struct_defs_from_program(ref_of(e), program)
     else:
         emit_enums_block(ref_of(e), program)
 
@@ -2127,10 +2157,11 @@ function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
                 var fi: ptr_uint = 0
                 while fi < arm.fields.len:
                     let f = read(arm.fields.data + fi)
-                    if c_type(f.ty) == outer_c:
-                        emit_line(e, j4("  ", c_declaration(f.ty, j2("*", f.name)), ";", ""))
-                    else:
-                        emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
+                    if not is_void_type(f.ty):
+                        if c_type(f.ty) == outer_c:
+                            emit_line(e, j4("  ", c_declaration(f.ty, j2("*", f.name)), ";", ""))
+                        else:
+                            emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
                     fi += 1
                 emit_line(e, "};")
                 emit_line(e, j3("typedef struct ", arm.linkage_name, j2(" ", j2(arm.linkage_name, ";"))))
@@ -2247,7 +2278,11 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
                 return Option[str].some(value = naming.qualified_c_name(im.module_name, im.name))
             return Option[str].none
         types.Type.ty_nullable as nl:
-            return by_value_dep_key(unsafe: read(nl.base))
+            unsafe:
+                let base = read(nl.base)
+                if is_pointer_like_for_nullable(base):
+                    return Option[str].none
+                return Option[str].some(value = j2("mt_opt_", naming.type_c_key(base)))
         types.Type.ty_generic as g:
             if g.name == "array" and g.args.len >= 1:
                 return by_value_dep_key(unsafe: read(g.args.data + 0))
@@ -2290,7 +2325,7 @@ function collect_variant_deps(vd: ir.VariantDecl, deps: ref[vec.Vec[str]]) -> vo
         i += 1
 
 
-function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl]) -> vec.Vec[str]:
+function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]]) -> vec.Vec[str]:
     var deps = vec.Vec[str].create()
     if node.kind == 0:
         unsafe:
@@ -2299,13 +2334,18 @@ function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_varian
         let gv_ptr = gen_variants.get(node.index) else:
             return deps
         collect_variant_deps(unsafe: read(gv_ptr), ref_of(deps))
-    else:
+    else if node.kind == 2:
         unsafe:
             collect_variant_deps(read(program_variants.data + node.index), ref_of(deps))
+    else if node.kind == 3:
+        let opt_ptr = opt_structs.get(node.index) else:
+            return deps
+        unsafe:
+            collect_field_deps(read(opt_ptr).decl.fields, ref_of(deps))
     return deps
 
 
-function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl]) -> vec.Vec[TypeNode]:
+function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]]) -> vec.Vec[TypeNode]:
     var nodes = vec.Vec[TypeNode].create()
     var by_key = map_mod.Map[str, ptr_uint].create()
     var i: ptr_uint = 0
@@ -2328,17 +2368,25 @@ function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec
         by_key.set(key, nodes.len())
         nodes.push(TypeNode(key = key, kind = 2, index = i))
         i += 1
+    i = 0
+    while i < opt_structs.len():
+        let os_ptr = opt_structs.get(i) else:
+            break
+        let key = unsafe: read(os_ptr).decl.linkage_name
+        by_key.set(key, nodes.len())
+        nodes.push(TypeNode(key = key, kind = 3, index = i))
+        i += 1
 
     var visited = map_mod.Map[str, bool].create()
     var result = vec.Vec[TypeNode].create()
     i = 0
     while i < nodes.len():
-        topo_visit_type(ref_of(nodes), i, structs, gen_variants, program_variants, ref_of(by_key), ref_of(visited), ref_of(result))
+        topo_visit_type(ref_of(nodes), i, structs, gen_variants, program_variants, opt_structs, ref_of(by_key), ref_of(visited), ref_of(result))
         i += 1
     return result
 
 
-function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], by_key: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[TypeNode]]) -> void:
+function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]], by_key: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[TypeNode]]) -> void:
     var node: TypeNode
     let node_ptr = nodes.get(index) else:
         return
@@ -2347,7 +2395,7 @@ function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs
     if visited.contains(node.key):
         return
     visited.set(node.key, true)
-    var deps = type_node_deps(node, structs, gen_variants, program_variants)
+    var deps = type_node_deps(node, structs, gen_variants, program_variants, opt_structs)
     var di: ptr_uint = 0
     while di < deps.len():
         let dep_ptr = deps.get(di) else:
@@ -2355,7 +2403,7 @@ function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs
         unsafe:
             let dep_idx = by_key.get(read(dep_ptr))
             if dep_idx != null:
-                topo_visit_type(nodes, read(dep_idx), structs, gen_variants, program_variants, by_key, visited, result)
+                topo_visit_type(nodes, read(dep_idx), structs, gen_variants, program_variants, opt_structs, by_key, visited, result)
         di += 1
     result.push(node)
 
@@ -4047,9 +4095,17 @@ function uses_event_runtime(program: ir.Program) -> bool:
             let f = read(program.functions.data + i)
 
             if body_calls(f.body, "mt_event_subscribe") or body_calls(f.body, "mt_event_subscribe_once") or body_calls(f.body, "mt_event_unsubscribe") or body_calls(f.body, "mt_event_emit"):
-
                 return true
 
+        i += 1
+
+    # Also detect per-event synthetic functions whose linkage names contain
+    # `mt_event_` (e.g. `mt_event_examples_event_stress_test_...__subscribe`).
+    i = 0
+    while i < program.functions.len:
+        unsafe:
+            if read(program.functions.data + i).linkage_name.starts_with("mt_event_"):
+                return true
         i += 1
 
     return false
@@ -4060,145 +4116,10 @@ function uses_event_runtime(program: ir.Program) -> bool:
 
 function emit_event_helpers(e: ref[Emitter]) -> void:
 
-    emit_line(e, "typedef enum { mt_event_error_full = 0 } mt_event_error;")
-
+    emit_line(e, "typedef int32_t EventError;")
+    emit_line(e, "enum { EventError_full = 0 };")
     emit_line(e, "")
 
-    emit_line(e, "static struct mt_subscription mt_event_subscribe(void* slots, uintptr_t capacity, void* listener) {")
-
-    emit_line(e, "  struct mt_subscription out;")
-
-    emit_line(e, "  for (uintptr_t i = 0; i < capacity; i++) {")
-
-    emit_line(e, "    uintptr_t off = i * (2*sizeof(bool) + sizeof(uintptr_t) + sizeof(void*));")
-
-    emit_line(e, "    bool* active = (bool*)((char*)slots + off);")
-
-    emit_line(e, "    if (!*active) {")
-
-    emit_line(e, "      *active = true;")
-
-    emit_line(e, "      ((bool*)((char*)slots + off))[1] = false;")
-
-    emit_line(e, "      *(uintptr_t*)((char*)slots + off + 2*sizeof(bool)) += 1;")
-
-    emit_line(e, "      *(void**)((char*)slots + off + 2*sizeof(bool) + sizeof(uintptr_t)) = listener;")
-
-    emit_line(e, "      out.slot = i;")
-
-    emit_line(e, "      out.generation = *(uintptr_t*)((char*)slots + off + 2*sizeof(bool));")
-
-    emit_line(e, "      return out;")
-
-    emit_line(e, "    }")
-
-    emit_line(e, "  }")
-
-    emit_line(e, "  out.slot = ~(uintptr_t)0;")
-
-    emit_line(e, "  out.generation = 0;")
-
-    emit_line(e, "  return out;")
-
-    emit_line(e, "}")
-
-    emit_line(e, "")
-
-    emit_line(e, "static struct mt_subscription mt_event_subscribe_once(void* slots, uintptr_t capacity, void* listener) {")
-
-    emit_line(e, "  struct mt_subscription out;")
-
-    emit_line(e, "  for (uintptr_t i = 0; i < capacity; i++) {")
-
-    emit_line(e, "    uintptr_t off = i * (2*sizeof(bool) + sizeof(uintptr_t) + sizeof(void*));")
-
-    emit_line(e, "    bool* active = (bool*)((char*)slots + off);")
-
-    emit_line(e, "    if (!*active) {")
-
-    emit_line(e, "      *active = true;")
-
-    emit_line(e, "      ((bool*)((char*)slots + off))[1] = true;")
-
-    emit_line(e, "      *(uintptr_t*)((char*)slots + off + 2*sizeof(bool)) += 1;")
-
-    emit_line(e, "      *(void**)((char*)slots + off + 2*sizeof(bool) + sizeof(uintptr_t)) = listener;")
-
-    emit_line(e, "      out.slot = i;")
-
-    emit_line(e, "      out.generation = *(uintptr_t*)((char*)slots + off + 2*sizeof(bool));")
-
-    emit_line(e, "      return out;")
-
-    emit_line(e, "    }")
-
-    emit_line(e, "  }")
-
-    emit_line(e, "  out.slot = ~(uintptr_t)0;")
-
-    emit_line(e, "  out.generation = 0;")
-
-    emit_line(e, "  return out;")
-
-    emit_line(e, "}")
-
-    emit_line(e, "")
-
-    emit_line(e, "static bool mt_event_unsubscribe(void* slots, uintptr_t capacity, struct mt_subscription sub) {")
-
-    emit_line(e, "  if (sub.slot >= capacity) return false;")
-
-    emit_line(e, "  uintptr_t off = sub.slot * (2*sizeof(bool) + sizeof(uintptr_t) + sizeof(void*));")
-
-    emit_line(e, "  if (!*((bool*)((char*)slots + off))) return false;")
-
-    emit_line(e, "  if (*(uintptr_t*)((char*)slots + off + 2*sizeof(bool)) != sub.generation) return false;")
-
-    emit_line(e, "  *((bool*)((char*)slots + off)) = false;")
-
-    emit_line(e, "  ((bool*)((char*)slots + off))[1] = false;")
-
-    emit_line(e, "  return true;")
-
-    emit_line(e, "}")
-
-    emit_line(e, "")
-
-    emit_line(e, "static void mt_event_emit(void* slots, uintptr_t capacity) {")
-
-    emit_line(e, "  for (uintptr_t i = 0; i < capacity; i++) {")
-
-    emit_line(e, "    uintptr_t off = i * (2*sizeof(bool) + sizeof(uintptr_t) + sizeof(void*));")
-
-    emit_line(e, "    if (*((bool*)((char*)slots + off))) {")
-
-    emit_line(e, "      void* listener = *(void**)((char*)slots + off + 2*sizeof(bool) + sizeof(uintptr_t));")
-
-    emit_line(e, "      if (listener) {")
-
-    emit_line(e, "        ((void (*)())listener)();")
-
-    emit_line(e, "        if (((bool*)((char*)slots + off))[1]) {")
-
-    emit_line(e, "          *((bool*)((char*)slots + off)) = false;")
-
-    emit_line(e, "          ((bool*)((char*)slots + off))[1] = false;")
-
-    emit_line(e, "        }")
-
-    emit_line(e, "      }")
-
-    emit_line(e, "    }")
-
-    emit_line(e, "  }")
-
-    emit_line(e, "}")
-
-
-
-
-
-# =============================================================================
 
 #  Parallel / detach runtime helpers
 
@@ -4562,7 +4483,7 @@ function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], t: types.Ty
 
 
 
-function emit_opt_struct_defs_from_program(e: ref[Emitter], program: ir.Program) -> void:
+function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptStructEntry]:
 
     var needed = map_mod.Map[str, types.Type].create()
 
@@ -4576,7 +4497,7 @@ function emit_opt_struct_defs_from_program(e: ref[Emitter], program: ir.Program)
 
             f = read(program.functions.data + fi)
 
-        collect_opt_type(ref_of(needed), f.return_type)
+            collect_opt_type(ref_of(needed), f.return_type)
 
         var pi: ptr_uint = 0
 
@@ -4587,8 +4508,6 @@ function emit_opt_struct_defs_from_program(e: ref[Emitter], program: ir.Program)
                 collect_opt_type(ref_of(needed), read(f.params.data + pi).ty)
 
             pi += 1
-
-        # Scan function body for local variable types.
 
         collect_opt_from_stmts(ref_of(needed), f.body)
 
@@ -4650,6 +4569,8 @@ function emit_opt_struct_defs_from_program(e: ref[Emitter], program: ir.Program)
 
         gi += 1
 
+    var result = vec.Vec[OptStructEntry].create()
+
     if needed.len() > 0:
 
         var key_list = vec.Vec[str].create()
@@ -4690,13 +4611,35 @@ function emit_opt_struct_defs_from_program(e: ref[Emitter], program: ir.Program)
 
                             let base_type = read(nl.base)
 
-                            emit_line(e, j5("typedef struct { bool has_value; ", c_type(base_type), " value; } ", key_value, ";"))
+                            var fields = vec.Vec[ir.Field].create()
+
+                            fields.push(ir.Field(name = "has_value", ty = types.primitive("bool")))
+
+                            fields.push(ir.Field(name = "value", ty = base_type))
+
+                            let decl = ir.StructDecl(
+
+                                name = key_value,
+
+                                linkage_name = key_value,
+
+                                fields = fields.as_span(),
+
+                                packed = false,
+
+                                alignment = 0,
+
+                                source_module = Option[str].none,
+
+                            )
+
+                            result.push(OptStructEntry(decl = decl, field_store = fields))
 
                     _:
 
                         pass
 
-        emit_line(e, "")
+    return result
 
 
 
@@ -5441,4 +5384,32 @@ function emit_entry_argv_helpers(e: ref[Emitter]) -> void:
 
     emit_line(e, "  free(items);")
 
+    emit_line(e, "}")
+
+
+## True when any emitted function calls the foreign str-to-cstr temp helper.
+function uses_foreign_cstr_helper(functions: span[ir.Function]) -> bool:
+    var i: ptr_uint = 0
+    while i < functions.len:
+        unsafe:
+            if body_calls(read(functions.data + i).body, "mt_foreign_str_to_cstr_temp"):
+                return true
+        i += 1
+    return false
+
+
+## Emit the `mt_foreign_str_to_cstr_temp` runtime helper: malloc's a
+## null-terminated copy of a str value for passing to C foreign functions.
+## Mirrors Ruby's c_backend/runtime_helpers.rb `mt_foreign_str_to_cstr_temp`.
+function emit_foreign_cstr_helper(e: ref[Emitter]) -> void:
+    emit_line(e, "static const char* mt_foreign_str_to_cstr_temp(mt_str value) {")
+    emit_line(e, "  char* data = (char*)malloc(value.len + 1);")
+    emit_line(e, "  uintptr_t index = 0;")
+    emit_line(e, "  if (data == NULL) mt_fatal(\"foreign str temporary allocation failed\");")
+    emit_line(e, "  while (index < value.len) {")
+    emit_line(e, "    data[index] = value.data[index];")
+    emit_line(e, "    index++;")
+    emit_line(e, "  }")
+    emit_line(e, "  data[value.len] = '\\0';")
+    emit_line(e, "  return data;")
     emit_line(e, "}")

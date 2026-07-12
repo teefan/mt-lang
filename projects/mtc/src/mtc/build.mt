@@ -109,14 +109,18 @@ function std_c_include_flag(roots: span[str]) -> string.String:
 
 
 ## Collect `-l<lib>` flags from every `link "<lib>"` directive in the program's
-## raw external modules.  Mirrors Ruby's link-library collection.
+## raw external modules.  Mirrors Ruby's link-library collection.  Also adds
+## `-luv` when any module uses parallel-for (libuv thread pool).
 function collect_link_flags(program: loader.Program) -> vec.Vec[string.String]:
     var link_libs = vec.Vec[string.String].create()
+    var uses_parallel = false
     var mi: ptr_uint = 0
     while mi < program.analyses.len():
         let a_ptr = program.analyses.get(mi) else:
             break
         var analysis = unsafe: read(a_ptr)
+        if analysis.uses_parallel_for:
+            uses_parallel = true
         var di: ptr_uint = 0
         while di < analysis.directives.len:
             var directive: ast.Decl
@@ -134,6 +138,12 @@ function collect_link_flags(program: loader.Program) -> vec.Vec[string.String]:
                     pass
             di += 1
         mi += 1
+    if uses_parallel:
+        var uv_flag = string.String.from_str("-luv")
+        if not link_lib_seen(ref_of(link_libs), uv_flag.as_str()):
+            link_libs.push(uv_flag)
+        else:
+            uv_flag.release()
     return link_libs
 
 

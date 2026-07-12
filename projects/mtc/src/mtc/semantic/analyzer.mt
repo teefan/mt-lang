@@ -292,6 +292,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 ctx.types.set(s.name, types.Type.ty_named(module_name = ctx.module_name, name = s.name))
                 ctx.implemented.set(s.name, s.impl_list)
                 register_nested_struct_types(ctx, s.nested_types, s.name)
+                register_struct_events(ctx, s.struct_events)
             ast.Decl.decl_union as u:
                 declare_type(ctx, u.name, u.line, u.column)
                 ctx.types.set(u.name, types.Type.ty_named(module_name = ctx.module_name, name = u.name))
@@ -347,8 +348,24 @@ function register_nested_struct_types(ctx: ref[Context], nested: span[ast.Decl],
                 ctx.types.set(qname, types.Type.ty_named(module_name = ctx.module_name, name = qname))
                 ctx.types.set(s.name, types.Type.ty_named(module_name = ctx.module_name, name = s.name))
                 register_nested_struct_types(ctx, s.nested_types, qname)
+                register_struct_events(ctx, s.struct_events)
             _:
                 pass
+        i += 1
+
+
+## Register event types and values from a struct's event declarations, so
+## struct-member event access (`window.closed.emit()`) resolves correctly.
+function register_struct_events(ctx: ref[Context], events: span[ast.Decl]) -> void:
+    var i: ptr_uint = 0
+    while i < events.len:
+        unsafe:
+            match read(events.data + i):
+                ast.Decl.decl_event as ev:
+                    ctx.types.set(ev.name, types.Type.ty_named(module_name = ctx.module_name, name = ev.name))
+                    ctx.event_types.set(ev.name, EventInfo(name = ev.name, capacity = ev.capacity, payload_type = ev.payload_type))
+                _:
+                    pass
         i += 1
 
 
@@ -714,7 +731,7 @@ function collect_struct_fields(ctx: ref[Context], file: ast.SourceFile) -> void:
             d = read(file.declarations.data + i)
         match d:
             ast.Decl.decl_struct as s:
-                ctx.structs.set(s.name, resolve_field_entries(ctx, s.struct_fields))
+                ctx.structs.set(s.name, resolve_field_entries_with_events(ctx, s.struct_fields, s.struct_events))
                 collect_nested_struct_fields(ctx, s.nested_types, s.name)
             _:
                 pass
@@ -734,9 +751,9 @@ function collect_nested_struct_fields(ctx: ref[Context], nested: span[ast.Decl],
                 qualified.append(".")
                 qualified.append(s.name)
                 let qname = qualified.as_str()
-                ctx.structs.set(qname, resolve_field_entries(ctx, s.struct_fields))
+                ctx.structs.set(qname, resolve_field_entries_with_events(ctx, s.struct_fields, s.struct_events))
                 if not ctx.structs.contains(s.name):
-                    ctx.structs.set(s.name, resolve_field_entries(ctx, s.struct_fields))
+                    ctx.structs.set(s.name, resolve_field_entries_with_events(ctx, s.struct_fields, s.struct_events))
                 collect_nested_struct_fields(ctx, s.nested_types, qname)
             _:
                 pass
@@ -753,6 +770,28 @@ function resolve_field_entries(ctx: ref[Context], fields: span[ast.Field]) -> sp
         entries.push(FieldEntry(name = f.name, ty = resolve_type_value(ctx, f.field_type)))
         i += 1
     return entries.as_span()
+
+
+## Combine regular field entries with event fields from struct_events into a
+## single span, so the analyzer sees event fields as valid struct members.
+function resolve_field_entries_with_events(ctx: ref[Context], fields: span[ast.Field], struct_events: span[ast.Decl]) -> span[FieldEntry]:
+    var entries = resolve_field_entries(ctx, fields)
+    var result = vec.Vec[FieldEntry].create()
+    var i: ptr_uint = 0
+    while i < entries.len:
+        unsafe:
+            result.push(read(entries.data + i))
+        i += 1
+    var evi: ptr_uint = 0
+    while evi < struct_events.len:
+        unsafe:
+            match read(struct_events.data + evi):
+                ast.Decl.decl_event as ev:
+                    result.push(FieldEntry(name = ev.name, ty = types.Type.ty_named(module_name = "", name = ev.name)))
+                _:
+                    pass
+        evi += 1
+    return result.as_span()
 
 
 ## Collect method names from `extending` blocks keyed as "TypeName.method", so
@@ -924,9 +963,39 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
             ast.Decl.decl_event as ev:
                 if declare_value(ctx, ev.name, ev.line, ev.column):
                     ctx.value_types.set(ev.name, types.Type.ty_named(module_name = "", name = ev.name))
+            ast.Decl.decl_struct as s:
+                # Register struct events as values so they can be referenced
+                # in expressions like `window.closed.emit()`.  Also recurse
+                # into nested structs.
+                declare_struct_event_values(ctx, s.struct_events, s.nested_types)
             _:
                 pass
         i += 1
+
+
+## Register struct-level events as value names, recursing into nested structs
+## (e.g. `Container.Inner.updated`).
+function declare_struct_event_values(ctx: ref[Context], struct_events: span[ast.Decl], nested_types: span[ast.Decl]) -> void:
+    var evi: ptr_uint = 0
+    while evi < struct_events.len:
+        unsafe:
+            match read(struct_events.data + evi):
+                ast.Decl.decl_event as ev:
+                    if not ctx.value_names.contains(ev.name):
+                        ctx.value_names.set(ev.name, true)
+                    ctx.value_types.set(ev.name, types.Type.ty_named(module_name = "", name = ev.name))
+                _:
+                    pass
+        evi += 1
+    var ni: ptr_uint = 0
+    while ni < nested_types.len:
+        unsafe:
+            match read(nested_types.data + ni):
+                ast.Decl.decl_struct as ns:
+                    declare_struct_event_values(ctx, ns.struct_events, ns.nested_types)
+                _:
+                    pass
+        ni += 1
 
 
 function declare_value(ctx: ref[Context], name: str, line: ptr_uint, column: ptr_uint) -> bool:

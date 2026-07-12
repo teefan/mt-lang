@@ -208,6 +208,7 @@ struct EventRuntimeInfo:
     subscribe_once_stateful_c_name: str
     unsubscribe_c_name: str
     emit_c_name: str
+    wait_c_name: str
 
 
 # =============================================================================
@@ -1116,9 +1117,21 @@ function extending_receiver_type(module_name: str, type_name: str) -> types.Type
 ## by value for plain, omitted for static).
 function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Function]], type_ref_ptr: ptr[ast.TypeRef], methods: span[ast.Method]) -> void:
     var type_name: str
+    var bare_name: str
     unsafe:
         let type_ref = read(type_ref_ptr)
-        type_name = read(type_ref.name.parts.data + 0)
+        bare_name = read(type_ref.name.parts.data + (type_ref.name.parts.len - 1))
+        if type_ref.name.parts.len == 1:
+            type_name = bare_name
+        else:
+            var buf = string.String.create()
+            var bi: ptr_uint = 0
+            while bi < type_ref.name.parts.len:
+                if bi > 0:
+                    buf.append(".")
+                buf.append(read(type_ref.name.parts.data + bi))
+                bi += 1
+            type_name = buf.as_str()
     # Skip generic extending blocks (e.g. `extending Vec[T]:`) — their methods
     # are monomorphized by `lower_monomorphized_call` when concrete calls occur.
     if unsafe: read(type_ref_ptr).arguments.len > 0:
@@ -1131,8 +1144,8 @@ function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Fun
         if m.is_async or m.type_params.len > 0:
             mi += 1
             continue
-        let c_name = method_link_name(ctx.module_name, type_name, m.name, m.method_kind == ast.MethodKind.mk_static)
-        let receiver_ty = extending_receiver_type(ctx.module_name, type_name)
+        let c_name = method_link_name(ctx.module_name, bare_name, m.name, m.method_kind == ast.MethodKind.mk_static)
+        let receiver_ty = extending_receiver_type(ctx.module_name, bare_name)
         functions.push(lower_method(ctx, c_name, receiver_ty, m))
         mi += 1
 
@@ -1587,6 +1600,13 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if loc.else_body != null and loc.value != null:
                     lower_guard_local(ctx, output, loc.name, loc.else_binding, loc.value, loc.else_body)
                     return
+                # let _ = expr / var _ = expr — evaluate the expression for side
+                # effects only; no local binding is introduced.
+                if loc.name == "_":
+                    let init_val = loc.value
+                    if init_val != null:
+                        lower_expr(ctx, init_val)
+                    return
                 let init_val = loc.value
                 if init_val != null:
                     unsafe:
@@ -1637,7 +1657,11 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if types.is_nullable_type(ty) and not is_nullable_pointer_like(ty):
                     let value_ty = ir_expr_type(value_expr)
                     if not types.is_nullable_type(value_ty):
-                        value_expr = nullable_some_literal(ty, value_expr)
+                        match read(value_expr):
+                            ir.Expr.expr_null_literal:
+                                value_expr = alloc_expr(ir.Expr.expr_zero_init(ty = ty))
+                            _:
+                                value_expr = nullable_some_literal(ty, value_expr)
                 output.push(ir.Stmt.stmt_local(
                     name = loc.name,
                     linkage_name = c_name,
@@ -1681,7 +1705,11 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if types.is_nullable_type(target_ty) and not is_nullable_pointer_like(target_ty):
                     let value_ty = ir_expr_type(value)
                     if not types.is_nullable_type(value_ty):
-                        value = nullable_some_literal(target_ty, value)
+                        match read(value):
+                            ir.Expr.expr_null_literal:
+                                value = alloc_expr(ir.Expr.expr_zero_init(ty = target_ty))
+                            _:
+                                value = nullable_some_literal(target_ty, value)
                 output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
             ast.Stmt.stmt_while as w:
                 let cond = lower_expr(ctx, w.condition)
@@ -1909,11 +1937,11 @@ function is_nullable_pointer_like(t: types.Type) -> bool:
 ## The base variant name from a possibly-qualified name (`Result_int_Error` →
 ## "Result"; `Result` → "Result").
 function guard_variant_base(name: str) -> str:
-    if name.starts_with("Result"):
-        return "Result"
-    if name.starts_with("Option"):
-        return "Option"
-    return name
+    match prelude_variant_base(name):
+        Option.some as base:
+            return base.value
+        Option.none:
+            return name
 
 
 ## The failure/absent condition for a guard: `storage == null` for nullable,
@@ -2387,7 +2415,7 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
         var resolved = types.Type.ty_error
         if t.arguments.len > 0:
             resolved = resolve_generic_type_ref(ctx, t)
-        else if t.name.parts.len == 2:
+        else if t.name.parts.len >= 2:
             var alias: str
             var type_name: str
             unsafe:
@@ -2415,7 +2443,8 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
                 nested_key.append(type_name)
                 let nkey = nested_key.as_str()
                 if ctx.analysis.structs.contains(nkey):
-                    resolved = types.Type.ty_imported(module_name = ctx.module_name, name = type_name, args = span[types.Type]())
+                    let last_part = unsafe: read(t.name.parts.data + (t.name.parts.len - 1))
+                    resolved = types.Type.ty_imported(module_name = ctx.module_name, name = last_part, args = span[types.Type]())
         else if t.name.parts.len == 1:
             let name = read(t.name.parts.data + 0)
             if name == "str":
@@ -4411,7 +4440,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                             return alloc_expr(ir.Expr.expr_variant_literal(
                                                 ty = var_ty,
                                                 arm_name = ma.member_name,
-                                                fields = collect_variant_literal_fields(ctx, args),
+                                                fields = collect_variant_literal_fields(ctx, args, var_ty, ma.member_name),
                                             ))
                                         Option.none:
                                             pass
@@ -4475,7 +4504,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                                     return alloc_expr(ir.Expr.expr_variant_literal(
                                                         ty = var_ty,
                                                         arm_name = ma.member_name,
-                                                        fields = collect_variant_literal_fields(ctx, args),
+                                                        fields = collect_variant_literal_fields(ctx, args, var_ty, ma.member_name),
                                                     ))
                                                 Option.none:
                                                     pass
@@ -5441,10 +5470,11 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
 ## Lower a payload variant arm constructor `Variant.arm(field = value, ...)` to an
 ## IR variant literal.  No-payload arms are handled in `lower_member_access`.
 function lower_variant_literal(ctx: ref[LowerCtx], variant_name: str, arm_name: str, args: span[ast.Argument]) -> ptr[ir.Expr]:
+    let ty = types.Type.ty_imported(module_name = ctx.module_name, name = variant_name, args = span[types.Type]())
     return alloc_expr(ir.Expr.expr_variant_literal(
-        ty = types.Type.ty_imported(module_name = ctx.module_name, name = variant_name, args = span[types.Type]()),
+        ty = ty,
         arm_name = arm_name,
-        fields = collect_variant_literal_fields(ctx, args),
+        fields = collect_variant_literal_fields(ctx, args, ty, arm_name),
     ))
 
 
@@ -5467,7 +5497,7 @@ function lower_generic_variant_literal(ctx: ref[LowerCtx], variant_name: str, ty
     return alloc_expr(ir.Expr.expr_variant_literal(
         ty = ty,
         arm_name = arm_name,
-        fields = collect_variant_literal_fields(ctx, call_args),
+        fields = collect_variant_literal_fields(ctx, call_args, ty, arm_name),
     ))
 
 
@@ -5493,7 +5523,7 @@ function find_imported_variant_arm(module_analysis: analyzer.Analysis, arm_name:
     return Option[str].none
 
 
-function collect_variant_literal_fields(ctx: ref[LowerCtx], args: span[ast.Argument]) -> span[ir.AggregateField]:
+function collect_variant_literal_fields(ctx: ref[LowerCtx], args: span[ast.Argument], variant_ty: types.Type, arm_name: str) -> span[ir.AggregateField]:
     var fields = vec.Vec[ir.AggregateField].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -5502,7 +5532,31 @@ function collect_variant_literal_fields(ctx: ref[LowerCtx], args: span[ast.Argum
             arg = read(args.data + i)
         let field_name = arg.arg_name else:
             fatal(c"lowering: variant arm construction requires named fields")
-        fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
+        var value = lower_expr(ctx, arg.arg_value)
+        # Auto-address recursive variant fields.
+        let field_ty = variant_field_type_from_arm(ctx, variant_ty, arm_name, field_name)
+        match field_ty:
+            Option.some as fty:
+                let fty_val = fty.value
+                # Wrap non-nullable values into value-type nullable fields
+                # (e.g. `NullableFields.with_values(port = raw)` where
+                # `port: int?`).
+                if types.is_nullable_type(fty_val) and not is_nullable_pointer_like(fty_val):
+                    let value_ty = ir_expr_type(value)
+                    if not types.is_nullable_type(value_ty):
+                        value = nullable_some_literal(fty_val, value)
+                # Auto-address recursive variant fields.
+                let variant_c = variant_c_type_name(variant_ty)
+                var arm_payload_c = string.String.create()
+                arm_payload_c.append(variant_c)
+                arm_payload_c.append("_")
+                arm_payload_c.append(arm_name)
+                let payload_c = arm_payload_c.as_str()
+                if is_recursive_variant_field_c(payload_c, fty_val):
+                    value = alloc_expr(ir.Expr.expr_address_of(expression = value, ty = types.Type.ty_generic(name = "ptr", args = sp_type(fty_val))))
+            Option.none:
+                pass
+        fields.push(ir.AggregateField(name = field_name, value = value))
         i += 1
     return fields.as_span()
 
@@ -5552,17 +5606,6 @@ function specialization_key(ctx: ref[LowerCtx], module_name: str, callee_name: s
 ## Lower a struct constructor `Name(field = value, ...)` to an IR aggregate
 ## literal, preserving the constructor's field order.
 function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: span[ast.Argument]) -> ptr[ir.Expr]:
-    var fields = vec.Vec[ir.AggregateField].create()
-    var i: ptr_uint = 0
-    while i < args.len:
-        var arg: ast.Argument
-        unsafe:
-            arg = read(args.data + i)
-        let field_name = arg.arg_name else:
-            fatal(c"lowering: struct construction requires named fields")
-        let value = lower_expr(ctx, arg.arg_value)
-        fields.push(ir.AggregateField(name = field_name, value = value))
-        i += 1
     var source_module = ctx.module_name
     if is_builtin_type_name(struct_name):
         source_module = ""
@@ -5580,8 +5623,27 @@ function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: spa
                         found_module = true
                 Option.none:
                     pass
-    # Use ty_named for types with no module prefix (ty_imported always
-    # qualifies through module_c_prefix, which maps "" → "value").
+    var fields = vec.Vec[ir.AggregateField].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        let field_name = arg.arg_name else:
+            fatal(c"lowering: struct construction requires named fields")
+        var value = lower_expr(ctx, arg.arg_value)
+        # Wrap non-nullable values into value-type nullable fields.
+        match find_struct_field_type(ctx, struct_name, source_module, field_name):
+            Option.some as field_ty:
+                let fty = field_ty.value
+                if types.is_nullable_type(fty) and not is_nullable_pointer_like(fty):
+                    let value_ty = ir_expr_type(value)
+                    if not types.is_nullable_type(value_ty):
+                        value = nullable_some_literal(fty, value)
+            Option.none:
+                pass
+        fields.push(ir.AggregateField(name = field_name, value = value))
+        i += 1
     if source_module.len == 0:
         var agg_ty = types.Type.ty_named(module_name = "", name = struct_name)
         if is_builtin_type_name(struct_name) or struct_name == "str":
@@ -5591,6 +5653,33 @@ function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: spa
         ty = types.Type.ty_imported(module_name = source_module, name = struct_name, args = span[types.Type]()),
         fields = fields.as_span(),
     ))
+
+
+## Find the type of a field in a struct by name.
+function find_struct_field_type(ctx: ref[LowerCtx], struct_name: str, source_module: str, field_name: str) -> Option[types.Type]:
+    let fields_ptr = ctx.analysis.structs.get(struct_name)
+    if fields_ptr != null:
+        let entries = unsafe: read(fields_ptr)
+        var fi: ptr_uint = 0
+        while fi < entries.len:
+            unsafe:
+                if read(entries.data + fi).name == field_name:
+                    return Option[types.Type].some(value = read(entries.data + fi).ty)
+            fi += 1
+    match find_imported_analysis(ctx, source_module):
+        Option.some as ia:
+            let imported_fields = ia.value.structs.get(struct_name)
+            if imported_fields != null:
+                let ientries = unsafe: read(imported_fields)
+                var ifi: ptr_uint = 0
+                while ifi < ientries.len:
+                    unsafe:
+                        if read(ientries.data + ifi).name == field_name:
+                            return Option[types.Type].some(value = read(ientries.data + ifi).ty)
+                    ifi += 1
+        Option.none:
+            pass
+    return Option[types.Type].none
 
 
 # =============================================================================
@@ -7106,7 +7195,18 @@ function lower_atomic_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: ty
 function is_event_type(ctx: ref[LowerCtx], t: types.Type) -> bool:
     match t:
         types.Type.ty_named as n:
-            return ctx.analysis.events.contains(n.name)
+            if ctx.analysis.events.contains(n.name):
+                return true
+            if n.name.starts_with("mt_event_"):
+                let stripped = strip_event_cap_suffix(n.name)
+                if ctx.analysis.events.contains(stripped):
+                    return true
+                return is_any_event_suffix(ctx, n.name)
+            return is_any_event_suffix(ctx, n.name)
+        types.Type.ty_imported as im:
+            if ctx.analysis.events.contains(im.name):
+                return true
+            return is_any_event_suffix(ctx, im.name)
         _:
             return false
 
@@ -7115,9 +7215,56 @@ function is_event_type(ctx: ref[LowerCtx], t: types.Type) -> bool:
 function event_name_from_type(t: types.Type) -> str:
     match t:
         types.Type.ty_named as n:
+            if n.name.starts_with("mt_event_"):
+                return event_name_from_c_linkage(n.name)
             return n.name
+        types.Type.ty_imported as im:
+            if im.name.starts_with("mt_event_"):
+                return event_name_from_c_linkage(im.name)
+            return im.name
+        types.Type.ty_generic as g:
+            return g.name
         _:
             fatal(c"event type is not ty_named")
+
+
+## Remove the trailing _<digits> capacity suffix from an event struct C name.
+function strip_event_cap_suffix(name: str) -> str:
+    var pos = name.len
+    while pos > 0:
+        pos -= 1
+        let b = name.byte_at(pos)
+        if b >= ubyte<-('0') and b <= ubyte<-('9'):
+            continue
+        if b == ubyte<-('_') and pos + 1 < name.len:
+            return name.slice(0, pos)
+        break
+    return name
+
+
+function is_any_event_suffix(ctx: ref[LowerCtx], name: str) -> bool:
+    let base = strip_event_cap_suffix(name)
+    var iter = ctx.analysis.events.keys()
+    while true:
+        let kp = iter.next() else:
+            break
+        unsafe:
+            if base.ends_with(read(kp)):
+                return true
+    return false
+
+
+function event_name_from_c_linkage(name: str) -> str:
+    var rest = name.slice(8, name.len - 8)
+    let base = strip_event_cap_suffix(rest)
+    return base
+
+
+## Create the EventError enum (backing: int).  Returns the named type.
+function ensure_event_error_enum(ctx: ref[LowerCtx]) -> types.Type:
+    if not ctx.event_error_emitted:
+        ctx.event_error_emitted = true
+    return types.Type.ty_named(module_name = "", name = "EventError")
 
 
 ## Ensure event runtime structs are declared (slot type, event type, subscript type).
@@ -7204,12 +7351,13 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
         subscribe_once_stateful_c_name = j2(linkage, "__subscribe_once_stateful"),
         unsubscribe_c_name = j2(linkage, "__unsubscribe"),
         emit_c_name = j2(linkage, "__emit"),
+        wait_c_name = j2(linkage, "__wait"),
     )
     ctx.event_runtimes.set(event_name, info)
-    ctx.pending_event_functions.push(build_event_subscribe_fn(ref_of(info), slot_cn, event_cn, false))
-    ctx.pending_event_functions.push(build_event_subscribe_fn(ref_of(info), slot_cn, event_cn, true))
-    ctx.pending_event_functions.push(build_event_subscribe_stateful_fn(ref_of(info), slot_cn, event_cn, false))
-    ctx.pending_event_functions.push(build_event_subscribe_stateful_fn(ref_of(info), slot_cn, event_cn, true))
+    ctx.pending_event_functions.push(build_event_subscribe_fn(ctx, ref_of(info), slot_cn, event_cn, false))
+    ctx.pending_event_functions.push(build_event_subscribe_fn(ctx, ref_of(info), slot_cn, event_cn, true))
+    ctx.pending_event_functions.push(build_event_subscribe_stateful_fn(ctx, ref_of(info), slot_cn, event_cn, false))
+    ctx.pending_event_functions.push(build_event_subscribe_stateful_fn(ctx, ref_of(info), slot_cn, event_cn, true))
     ctx.pending_event_functions.push(build_event_unsubscribe_fn(ref_of(info), slot_cn, event_cn))
     ctx.pending_event_functions.push(build_event_emit_fn(ref_of(info), slot_cn, event_cn))
     return info
@@ -7253,7 +7401,12 @@ function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: typ
             let listener_val = lower_listener_arg(ctx, unsafe: read(args.data + 0).arg_value)
             unsafe:
                 call_args.push(read(listener_val))
-        let sub_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
+        let sub_plain_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
+        let event_error_ty = ensure_event_error_enum(ctx)
+        var result_args = vec.Vec[types.Type].create()
+        result_args.push(sub_plain_ty)
+        result_args.push(event_error_ty)
+        let sub_ty = ensure_generic_variant(ctx, "Result", result_args.as_span())
         return alloc_expr(ir.Expr.expr_call(callee = callee, arguments = call_args.as_span(), ty = sub_ty))
     if method_name == "unsubscribe":
         var call_args = vec.Vec[ir.Expr].create()
@@ -7263,16 +7416,27 @@ function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: typ
         unsafe:
             call_args.push(read(sub_val))
         return alloc_expr(ir.Expr.expr_call(callee = info.unsubscribe_c_name, arguments = call_args.as_span(), ty = bool_ty))
+    if method_name == "wait":
+        var call_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            call_args.push(read(recv_addr))
+        let task_ty = make_task_type(void_ty)
+        return alloc_expr(ir.Expr.expr_call(callee = info.wait_c_name, arguments = call_args.as_span(), ty = task_ty))
     fatal(c"lowering: unknown event method")
 
 
 ## Build a per-event subscribe (or subscribe_once) synthetic function.
-function build_event_subscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str, once: bool) -> ir.Function:
+function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str, once: bool) -> ir.Function:
     let void_ty = types.primitive("void")
     let bool_ty = types.primitive("bool")
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let sub_result_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
+    let sub_plain_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
+    let event_error_ty = ensure_event_error_enum(ctx)
+    var result_args = vec.Vec[types.Type].create()
+    result_args.push(sub_plain_ty)
+    result_args.push(event_error_ty)
+    let sub_result_ty = ensure_generic_variant(ctx, "Result", result_args.as_span())
     let slot_ty = types.Type.ty_named(module_name = "", name = slot_cn)
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = event_cn)))
     let callee = if once: info.subscribe_once_c_name else: info.subscribe_c_name
@@ -7300,17 +7464,30 @@ function build_event_subscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, eve
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "listener", ty = void_ptr_ty, pointer = false))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "state", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "wait_frame", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
-    var return_val = alloc_expr(ir.Expr.expr_aggregate_literal(ty = sub_result_ty, fields = sp_fields2(
+    # Return Result.success(value = {slot, generation}).
+    var sub_literal = alloc_expr(ir.Expr.expr_aggregate_literal(ty = sub_plain_ty, fields = sp_fields2(
         ir.AggregateField(name = "slot", value = index_ref),
         ir.AggregateField(name = "generation", value = gen_plus),
     )))
+    var success_fields = vec.Vec[ir.AggregateField].create()
+    success_fields.push(ir.AggregateField(name = "value", value = sub_literal))
+    var return_val = alloc_expr(ir.Expr.expr_variant_literal(
+        ty = sub_result_ty,
+        arm_name = "success",
+        fields = success_fields.as_span(),
+    ))
     loop_body.push(ir.Stmt.stmt_return(value = return_val, line = 0, source_path = ""))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = cond, post = post, body = loop_body.as_span())
     body.push(for_stmt)
-    var fail_val = alloc_expr(ir.Expr.expr_aggregate_literal(ty = sub_result_ty, fields = sp_fields2(
-        ir.AggregateField(name = "slot", value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))),
-        ir.AggregateField(name = "generation", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))),
-    )))
+    # Return Result.failure(error = EventError.full).
+    var err_val = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = event_error_ty))
+    var fail_fields = vec.Vec[ir.AggregateField].create()
+    fail_fields.push(ir.AggregateField(name = "error", value = err_val))
+    var fail_val = alloc_expr(ir.Expr.expr_variant_literal(
+        ty = sub_result_ty,
+        arm_name = "failure",
+        fields = fail_fields.as_span(),
+    ))
     body.push(ir.Stmt.stmt_return(value = fail_val, line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = false))
@@ -7321,12 +7498,17 @@ function build_event_subscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, eve
 ## Build a per-event stateful subscribe (or subscribe_once) synthetic function.
 ## Same as build_event_subscribe_fn but also accepts a `state: ptr[void]`
 ## parameter and writes it into the slot's `state` field.
-function build_event_subscribe_stateful_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str, once: bool) -> ir.Function:
+function build_event_subscribe_stateful_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str, once: bool) -> ir.Function:
     let void_ty = types.primitive("void")
     let bool_ty = types.primitive("bool")
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let sub_result_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
+    let sub_plain_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
+    let event_error_ty = ensure_event_error_enum(ctx)
+    var result_args = vec.Vec[types.Type].create()
+    result_args.push(sub_plain_ty)
+    result_args.push(event_error_ty)
+    let sub_result_ty = ensure_generic_variant(ctx, "Result", result_args.as_span())
     let slot_ty = types.Type.ty_named(module_name = "", name = slot_cn)
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = event_cn)))
     var callee: str
@@ -7358,17 +7540,30 @@ function build_event_subscribe_stateful_fn(info: ref[EventRuntimeInfo], slot_cn:
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "listener", ty = void_ptr_ty, pointer = false))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "state", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "state", ty = void_ptr_ty, pointer = false))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "wait_frame", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
-    var return_val = alloc_expr(ir.Expr.expr_aggregate_literal(ty = sub_result_ty, fields = sp_fields2(
+    # Return Result.success(value = {slot, generation}).
+    var sub_literal = alloc_expr(ir.Expr.expr_aggregate_literal(ty = sub_plain_ty, fields = sp_fields2(
         ir.AggregateField(name = "slot", value = index_ref),
         ir.AggregateField(name = "generation", value = gen_plus),
     )))
+    var success_fields = vec.Vec[ir.AggregateField].create()
+    success_fields.push(ir.AggregateField(name = "value", value = sub_literal))
+    var return_val = alloc_expr(ir.Expr.expr_variant_literal(
+        ty = sub_result_ty,
+        arm_name = "success",
+        fields = success_fields.as_span(),
+    ))
     loop_body.push(ir.Stmt.stmt_return(value = return_val, line = 0, source_path = ""))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = cond, post = post, body = loop_body.as_span())
     body.push(for_stmt)
-    var fail_val = alloc_expr(ir.Expr.expr_aggregate_literal(ty = sub_result_ty, fields = sp_fields2(
-        ir.AggregateField(name = "slot", value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))),
-        ir.AggregateField(name = "generation", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))),
-    )))
+    # Return Result.failure(error = EventError.full).
+    var err_val = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = event_error_ty))
+    var fail_fields = vec.Vec[ir.AggregateField].create()
+    fail_fields.push(ir.AggregateField(name = "error", value = err_val))
+    var fail_val = alloc_expr(ir.Expr.expr_variant_literal(
+        ty = sub_result_ty,
+        arm_name = "failure",
+        fields = fail_fields.as_span(),
+    ))
     body.push(ir.Stmt.stmt_return(value = fail_val, line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = false))
@@ -7841,7 +8036,12 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                         ast.Expr.expr_string_literal as lit:
                             return alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = types.primitive("cstr"), cstring = true))
                         _:
-                            fatal(c"lowering: only string-literal arguments are supported at an 'as cstr' boundary")
+                            let lowered_str = lower_expr(ctx, arg)
+                            return alloc_expr(ir.Expr.expr_call(
+                                callee = "mt_foreign_str_to_cstr_temp",
+                                arguments = single_expr_span(lowered_str),
+                                ty = types.primitive("cstr"),
+                            ))
             return lower_expr(ctx, arg)
         Option.none:
             return lower_expr(ctx, arg)
@@ -8368,6 +8568,14 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                         arm_name = member,
                         fields = span[ir.AggregateField](),
                     ))
+                # Synthetic type names (e.g. `EventError.full`) — map to C
+                # constant `<Type>_<member>`.
+                if id.name == "EventError" and member == "full":
+                    return alloc_expr(ir.Expr.expr_name(
+                        name = "EventError_full",
+                        ty = expr_type(ctx, ep),
+                        pointer = false,
+                    ))
                 if ctx.analysis.static_member_types.contains(id.name):
                     return alloc_expr(ir.Expr.expr_name(
                         name = naming.qualified_member_c_name(ctx.module_name, id.name, member),
@@ -8544,11 +8752,26 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                                                         member_ty = tuple_element_type(recv_ty, index)
                                             _:
                                                 pass
-    return alloc_expr(ir.Expr.expr_member(
+    var result = alloc_expr(ir.Expr.expr_member(
         receiver = recv,
         member = member,
         ty = qualify_type(ctx, member_ty),
     ))
+    # Auto-dereference recursive variant fields (e.g. bin.left where left
+    # is stored as Expr* in C to avoid infinite struct size).
+    # Only applicable when recv_ty is a variant arm payload struct.
+    match recv_ty:
+        types.Type.ty_named as rn:
+            if ctx.arm_payload_fields.contains(rn.name):
+                if is_recursive_variant_field(recv_ty, member_ty):
+                    return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = result, ty = member_ty))
+        types.Type.ty_imported as ri:
+            if ctx.arm_payload_fields.contains(naming.qualified_c_name(ri.module_name, ri.name)):
+                if is_recursive_variant_field(recv_ty, member_ty):
+                    return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = result, ty = member_ty))
+        _:
+            pass
+    return result
 
 
 ## The resolved type of `member` on a receiver whose type is a concrete
@@ -8617,7 +8840,17 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str) -> Option[ir.StructDec
         var entry: analyzer.FieldEntry
         unsafe:
             entry = read(entries.data + i)
-        ir_fields.push(ir.Field(name = entry.name, ty = qualify_type(ctx, entry.ty)))
+        var fty = entry.ty
+        # Event fields need their C-linkage struct name (e.g.
+        # `mt_event_mod_closed_4`), not the declared name (`closed`).
+        match fty:
+            types.Type.ty_named as nt:
+                if ctx.analysis.events.contains(nt.name):
+                    var info = ensure_event_runtime(ctx, nt.name)
+                    fty = types.Type.ty_named(module_name = "", name = info.event_c_name)
+            _:
+                pass
+        ir_fields.push(ir.Field(name = entry.name, ty = qualify_type(ctx, fty)))
         i += 1
     return Option[ir.StructDecl].some(value = ir.StructDecl(
         name = name,
@@ -8738,6 +8971,10 @@ function collect_variants(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
             ast.Decl.decl_variant as vr:
                 if vr.type_params.len == 0:
                     ctx.variants.set(vr.name, build_variant_info(ctx, vr.variant_arms))
+                    # Also register arm payload fields for local variants so
+                    # field-level lookups (e.g. nullable wrapping) can resolve
+                    # field types from the arm info.
+                    register_imported_variant_arm_fields(ctx, ctx.module_name, ctx.analysis, vr.name, vr.variant_arms)
             _:
                 pass
         i += 1
@@ -9883,7 +10120,17 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                                 let field_ty = variant_arm_field_type(arm_info, id.name)
                                 let bc = utils.c_local_name(id.name)
                                 let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
-                                let field_expr = alloc_expr(ir.Expr.expr_member(receiver = payload_ref, member = id.name, ty = field_ty))
+                                var field_expr = alloc_expr(ir.Expr.expr_member(receiver = payload_ref, member = id.name, ty = field_ty))
+                                # Auto-dereference recursive variant fields.
+                                match payload_ty:
+                                    types.Type.ty_named as pn:
+                                        if ctx.arm_payload_fields.contains(pn.name) and is_recursive_variant_field(payload_ty, field_ty):
+                                            field_expr = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = field_expr, ty = field_ty))
+                                    types.Type.ty_imported as pi:
+                                        if ctx.arm_payload_fields.contains(naming.qualified_c_name(pi.module_name, pi.name)) and is_recursive_variant_field(payload_ty, field_ty):
+                                            field_expr = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = field_expr, ty = field_ty))
+                                    _:
+                                        pass
                                 blk.push(ir.Stmt.stmt_local(name = id.name, linkage_name = bc, ty = field_ty, value = field_expr, line = 0, source_path = ""))
                                 ctx.locals.push(LocalBinding(name = id.name, c_name = bc, ty = field_ty, pointer = false))
                         _:
@@ -10108,7 +10355,100 @@ function is_phantom_type(t: types.Type) -> bool:
             return false
 
 
-## The type of `member` on a variant arm payload binding, looked up from the
+## True when field_ty references the same variant that recv_ty is an arm payload of.
+function is_recursive_variant_field(recv_ty: types.Type, field_ty: types.Type) -> bool:
+    var recv_c: str
+    match recv_ty:
+        types.Type.ty_named as rn:
+            recv_c = rn.name
+        types.Type.ty_imported as ri:
+            recv_c = naming.qualified_c_name(ri.module_name, ri.name)
+        _:
+            return false
+    var field_c: str
+    match field_ty:
+        types.Type.ty_named as nt:
+            field_c = naming.qualified_c_name("", nt.name)
+        types.Type.ty_imported as fi:
+            field_c = naming.qualified_c_name(fi.module_name, fi.name)
+        _:
+            return false
+    # The arm payload C name is "<variant_c>_<arm>" (e.g.
+    # "examples_Expr_binary_op").  If the field type's C name is a prefix
+    # (e.g. "examples_Expr"), the field references the enclosing variant.
+    if recv_c.len > field_c.len and recv_c.starts_with(field_c):
+        return true
+    # Also check bare names.
+    match field_ty:
+        types.Type.ty_named as nt2:
+            if recv_c.starts_with(nt2.name):
+                return true
+        types.Type.ty_imported as fi2:
+            if recv_c.starts_with(fi2.name):
+                return true
+        _:
+            pass
+    return false
+
+
+## Like is_recursive_variant_field but using a pre-computed arm payload C name.
+function is_recursive_variant_field_c(payload_c: str, field_ty: types.Type) -> bool:
+    var field_c: str
+    match field_ty:
+        types.Type.ty_named as nt:
+            field_c = naming.qualified_c_name("", nt.name)
+        types.Type.ty_imported as fi:
+            field_c = naming.qualified_c_name(fi.module_name, fi.name)
+        _:
+            return false
+    return payload_c.len > field_c.len and payload_c.starts_with(field_c)
+
+
+## C-type name of a variant type.
+function variant_c_type_name(ty: types.Type) -> str:
+    match ty:
+        types.Type.ty_imported as im:
+            return naming.qualified_c_name(im.module_name, im.name)
+        types.Type.ty_generic as g:
+            return naming.type_c_key(ty)
+        _:
+            return ""
+
+
+## Look up the type of a field in a variant arm by name.
+function variant_field_type_from_arm(ctx: ref[LowerCtx], variant_ty: types.Type, arm_name: str, field_name: str) -> Option[types.Type]:
+    var variant_c: str
+    match variant_ty:
+        types.Type.ty_imported as im:
+            variant_c = naming.qualified_c_name(im.module_name, im.name)
+        types.Type.ty_generic as g:
+            variant_c = naming.type_c_key(variant_ty)
+        _:
+            return Option[types.Type].none
+    var arm_key = string.String.create()
+    arm_key.append(variant_c)
+    arm_key.append("_")
+    arm_key.append(arm_name)
+    let arm_ptr = ctx.arm_payload_fields.get(arm_key.as_str()) else:
+        return Option[types.Type].none
+    let arm_info = unsafe: read(arm_ptr)
+    var fi: ptr_uint = 0
+    while fi < arm_info.field_names.len:
+        unsafe:
+            if read(arm_info.field_names.data + fi) == field_name:
+                return Option[types.Type].some(value = read(arm_info.field_types.data + fi))
+        fi += 1
+    return Option[types.Type].none
+
+
+## Return the arm payload type from a struct name and source module.
+function payload_ty(ctx: ref[LowerCtx], struct_name: str, source_module: str) -> types.Type:
+    if source_module.len == 0:
+        return types.Type.ty_named(module_name = "", name = struct_name)
+    return types.Type.ty_imported(module_name = source_module, name = struct_name, args = span[types.Type]())
+
+
+## The type of 'member' on a variant arm payload binding, looked up from the
 ## registered arm field info.  Returns none for non-arm-payload receivers.
 function arm_payload_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[types.Type]:
     var name: str

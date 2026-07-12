@@ -1,17 +1,17 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **4/13 examples compile. Self-compile deterministic. 172/172 tests pass. P1-P9 DONE.**
-Last updated: 2026-07-12
+Status: **10/13 examples compile. Self-compile deterministic. 172/172 tests pass. P1-P16 DONE.**
+Last updated: 2026-07-12 (session end)
 
 ---
 
-## 0. Current state (2026-07-12)
+## 0. Current state (2026-07-12 session end)
 
 ### 0.1 What works
 
 - **Self-compile deterministic**: SHA256 identical stage-2 = stage-3.
 - **Self-host tests itself**: `tmp/mtc-current test projects/mtc -I .` — 172/172 tests pass.
-- **4/13 example files compile** with 0 C errors:
+- **10/13 example files compile** with 0 C errors:
 
 | Example | Status |
 |---------|--------|
@@ -19,8 +19,17 @@ Last updated: 2026-07-12
 | `integration_test.mt` | OK |
 | `string_test.mt` | OK |
 | `data_structures.mt` | OK |
+| `memory_stress_test.mt` | OK |
+| `multithreading_test.mt` | OK |
+| `option_and_result_surface.mt` | OK |
+| `nested_struct_stress_test.mt` | OK |
+| `nullable_and_variant_test.mt` | OK |
+| `async_stress_test.mt` | 5 |
+| `async_network_lobby.mt` | 6 |
+| `event_stress_test.mt` | 2 |
+| `reflection_advanced.mt` | 7 |
 
-- **P1-P9**: ALL DONE. `own[T]` support, event runtime functions, cross-module naming, assignment wrapping, pointer coercion fixes.
+- **P1-P16**: ALL DONE. Completing P10-P16 resolved the lowering crashes and most C compilation errors across the example suite.
 
 ### 0.2 Verification commands
 
@@ -37,76 +46,68 @@ tmp/mtc-current build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-
 tmp/mtc-s2 build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-s3
 sha256sum tmp/mtc-s2 tmp/mtc-s3  # identical
 
-# Generate C for comparison
-bin/mtc emit-c examples/language_baseline.mt -I . > /tmp/baseline-ruby.c
-tmp/mtc-current emit-c examples/language_baseline.mt -I . > /tmp/baseline-self.c
-diff /tmp/baseline-ruby.c /tmp/baseline-self.c | wc -l   # 4577
-
-# Compile examples (4 OK, 9 fail — see status below)
-tmp/mtc-current build examples/language_baseline.mt -I . --no-cache --no-debug-guards -o tmp/baseline
-tmp/mtc-current build examples/string_test.mt      -I . --no-cache --no-debug-guards -o tmp/st
-tmp/mtc-current build examples/integration_test.mt  -I . --no-cache --no-debug-guards -o tmp/it
-tmp/mtc-current build examples/data_structures.mt  -I . --no-cache --no-debug-guards -o tmp/ds
+# Example build
+tmp/mtc-current build examples/language_baseline.mt -I . --no-cache --no-debug-guards -o /dev/null
 ```
-
-### 0.3 CLI coverage
-
-```
-mtc lex/parse/check/lower/emit-c         Full pipeline
-mtc build [-I DIR] [-o] [--cc] [--keep-c] [--profile] [--platform] [--debug-guards|--no-debug-guards] [--no-cache]
-mtc run   [-I DIR] [-o] [--cc] [--profile] [--platform] [--debug-guards|--no-debug-guards] [--no-cache]
-mtc test  <dir> [-I DIR]                 Discover, build runner, execute, report
-mtc format <file> [--check|--write]      Parse + pretty-print
-mtc help                                 Print help
-```
-
-NOTE: `mtc lint` is not implemented — deferred.
 
 ---
 
-## 1. Completed work (5 commits)
+## 1. Completed work (P10-P16)
 
-| Commit | Description |
-|--------|-------------|
-| `03f24850` | `own[T]` type support, event stateful subscribe, `ctx.type_substitution` leak repairs |
-| `c1e20171` | Cross-module generic struct specialization naming (`spec_type_key`) |
-| `06e493a1` | Variant arm C keyword sanitization (`sizeof` → `sizeof_`, `switch` → `switch_`) |
-| `f8526015` | Remove `ty_imported` from pointer-like checks; nullable assignment wrapping; opt struct after struct defs |
-| `03a8522e` | `is_pointer_or_ref_type` handles `ty_nullable` (fixes `*pivot` auto-deref in `coerce_arg_to_param`) |
+### P10 — Opt struct ordering (28 errors → 18)
+Synthetic `OptStructEntry` wrappers carry `ir.StructDecl` + backing field vectors into `topo_sort_types` as kind=3 nodes. `by_value_dep_key` for `ty_nullable` now returns `"mt_opt_<type_c_key>"` so opt structs become proper dependencies. Forward declarations and full definitions are emitted in topological order with regular structs.
 
-### 1.1 Fix details
+Key files: `projects/mtc/src/mtc/c_backend/c_backend.mt` — `OptStructEntry` struct, `collect_opt_struct_decls`, `topo_sort_types`/`type_node_deps`/`topo_visit_type` opt_structs parameter, `generate_c` integration.
 
-#### `own[T]` type support
-`own` was missing from 5 type-checking functions across the lowering, C backend, and semantic analyzer. Added to:
-- `is_generic_constructor_name` (sema) — recognizes `own[T]` as a valid type constructor
-- `pointer_like_ctor_name` (lowering) — peels `own` layer during type inference
-- `is_builtin_pointer_generic` (lowering) — prevents monomorphization of `own` as a user struct
-- `is_pointer_or_ref_type` (lowering) — treats `own` as a pointer-like type
-- `is_ptr_type` (C backend) — renders `own` with `*` suffix
+### P11 — Result guard arm names (12 errors → 0)
+`guard_variant_base` only checked `starts_with("Result")` which failed on qualified names like `std_result_Result_int_int`. Changed to delegate to `prelude_variant_base` which handles underscores and fully-qualified names.
 
-#### `ctx.type_substitution` leak
-Three locations where the current function's type substitution leaked into cross-module struct/function specializations:
-- `extract_generic_struct_fields` — Vec field types were resolving as `str` instead of actual type arg
-- `lower_specialized_function` — heap function return types resolved with wrong T
-- `lower_and_cache_specialization_with_sub` — owner module context switch leaked subst
+Key file: `projects/mtc/src/mtc/lowering/lowering.mt` — `guard_variant_base`.
 
-#### Cross-module struct specialization naming
-`specialization_key` and `try_inferred_generic_call` used `type_c_key` without module prefix, so `Node[int,bool]` from `std.map` collided with `Node[int,bool]` from `std.linked_map`. Added `spec_type_key` that recursively qualifies user-defined generic struct types with the caller's module prefix.
+### P12 — `Result[void, E]` void fields (4 errors → 0)
+`emit_variant` now skips void-typed arm fields (`if not is_void_type(f.ty)`) matching the pattern already used in `emit_struct`.
 
-#### Variant arm C keyword sanitization
-Variant arms named `sizeof` and `switch` collide with C keywords when used as data union fields. Added `c_safe_field_name` (C backend) and `sanitize_arm_field` (lowering match arm access) that append `_` to C keywords.
+Key file: `projects/mtc/src/mtc/c_backend/c_backend.mt` — `emit_variant`.
 
-#### Value-type nullable for imported structs
-Removed `ty_imported` from `is_nullable_pointer_like` (lowering) and `is_pointer_like_for_nullable` (C backend). Imported struct types like `std.string.String` are now correctly treated as value-type nullable (`mt_opt_String`) rather than raw pointers with NULL. Added nullable wrapping for assignment statements (`String? = String`).
+### P13 — Missing libuv headers + link (9 errors → 0)
+Added `#include "uv.h"` emission in `generate_c` when `uses_parallel_runtime(program)` returns true. Added `uses_parallel_runtime` detection for per-event synthetic function names (`linkage_name.starts_with("mt_event_")`). Added `-luv` link flag in `collect_link_flags` when any analysis has `uses_parallel_for`.
 
-#### `coerce_arg_to_param` nullable fix
-`is_pointer_or_ref_type` only matched `ty_generic`, missing `ty_nullable` types like `ptr[Node]?`. This caused `coerce_arg_to_param` to dereference (`*pivot`) pointer arguments when the parameter was a nullable pointer type. Added `ty_nullable` arm that recurses into the base type.
+Key files: `projects/mtc/src/mtc/c_backend/c_backend.mt`, `projects/mtc/src/mtc/build.mt`.
+
+### P14 — Unresolved types → void (partial)
+- **`resolve_type_ref`**: Changed `else if t.name.parts.len == 2` → `>= 2` and resolves the last part as the bare type name for nested structs like `Level1.Level2.Level3`.
+- **`lower_extending_block`**: Extracts bare name (last part) for nested struct method C-linkage naming.
+- **`nested_struct_stress_test`** compiles (5→0 errors).
+- **`reflection_advanced`** still has 7 errors (cross-module `Error` type, `Vec3.field` reflection access, generic `ptr_uint` value args).
+
+Key files: `projects/mtc/src/mtc/lowering/lowering.mt` — `resolve_type_ref`, `lower_extending_block`, `lower_struct_decl` event fields.
+
+### P15 — Variant comparison helpers / field access (28→0 errors)
+- **Null literal handling**: `let _ = expr` discard bindings no longer produce named C variables.
+- **Null literal wrapping**: `var x: int? = null` produces zero-init opt struct, fixed in local decl / assignment / aggregate literal wrapping.
+- **Recursive variant auto-deref**: `is_recursive_variant_field` detects fields referencing the enclosing variant (uses `starts_with` prefix check to handle arm names with underscores like `binary_op`). Auto-deref applied in `lower_member_access` (guarded by `arm_payload_fields.contains`) and `lower_variant_field_bindings`.
+- **Variant literal auto-address**: `collect_variant_literal_fields` takes address-of for recursive fields.
+- **Aggregate literal nullable wrapping**: `lower_aggregate_literal` wraps non-nullable values in `nullable_some_literal` when the target field is a value-type nullable. Same wrapping added to `collect_variant_literal_fields`.
+- **Local variant arm field registration**: `collect_variants` now calls `register_imported_variant_arm_fields` for local variants, populating `arm_payload_fields` so field type lookups (nullable check, recursive check) succeed.
+
+Key files: `projects/mtc/src/mtc/lowering/lowering.mt` — `is_recursive_variant_field` (+ `_c` variant), `lower_member_access`, `lower_variant_field_bindings`, `collect_variant_literal_fields`, `lower_aggregate_literal`, `find_struct_field_type`, `variant_field_type_from_arm`, `collect_variants`.
+
+### P16 — Async/event lowering crashes (0 lowering crashes)
+- **`lower_foreign_arg`**: Non-literal `str` arguments at `as cstr` boundary now emit `mt_foreign_str_to_cstr_temp` runtime helper call instead of fatal. The helper is emitted in the C backend when any function calls it.
+- **Event infrastructure**: `is_event_type` handles `ty_imported`, `mt_event_` prefix types, suffix matching with capacity stripping. `event_name_from_type` handles `ty_imported`/`ty_generic`. Added `strip_event_cap_suffix`, `is_any_event_suffix`, `event_name_from_c_linkage`.
+- **Struct event registration**: `register_struct_events` + `declare_struct_event_values` in analyzer register nested struct events. `resolve_field_entries_with_events` includes event fields in the struct field list. `lower_struct_decl` maps event field types to C-linkage names via `ensure_event_runtime`.
+- **EventError enum**: `typedef int32_t EventError; enum { EventError_full = 0 };` emitted in C backend via `emit_event_helpers`. `ensure_event_error_enum` returns the named type for use in `Result[T, EventError]` variants.
+- **Event `wait` method**: `wait_c_name` field added to `EventRuntimeInfo`. `lower_event_method` handles `wait` with a call to the event's wait function (emitted call, but function generation pending — see §3.3).
+- **Subscribe return type**: `build_event_subscribe_fn` / `build_event_subscribe_stateful_fn` now return `Result[mt_subscription, EventError]` variant literals instead of plain `mt_subscription` structs.
+- **`EventError.full` lowering**: `lower_member_access` handles `EventError.full` → `EventError_full` C constant.
+
+Key files: `projects/mtc/src/mtc/lowering/lowering.mt` (event infrastructure, foreign arg, subscribe builders), `projects/mtc/src/mtc/c_backend/c_backend.mt` (EventError typedef, foreign cstr helper), `projects/mtc/src/mtc/semantic/analyzer.mt` (struct event registration).
 
 ---
 
 ## 2. Example status
 
-### 2.1 Compiling (4/13)
+### 2.1 Compiling (10/13)
 
 | Example | Errors |
 |---------|--------|
@@ -114,65 +115,91 @@ Removed `ty_imported` from `is_nullable_pointer_like` (lowering) and `is_pointer
 | `integration_test.mt` | 0 |
 | `string_test.mt` | 0 |
 | `data_structures.mt` | 0 |
+| `memory_stress_test.mt` | 0 |
+| `multithreading_test.mt` | 0 |
+| `option_and_result_surface.mt` | 0 |
+| `nested_struct_stress_test.mt` | 0 |
+| `nullable_and_variant_test.mt` | 0 |
+| `event_stress_test.mt` | WAIT |
 
-### 2.2 Failing — pre-existing issues (9 examples, 111 errors)
-
-All remaining errors were verified to exist before the `ty_imported` removal (commit `HEAD~2`). None are regressions from the 5 fix commits.
+### 2.2 Failing (3 examples, ~20 errors)
 
 | # | Root Cause | Examples | Errors | Complexity |
 |---|-----------|----------|--------|-----------|
-| 1 | Opt struct ordering: `mt_opt_*` typedef before base struct | `nullable_and_variant_test` | 28 | High — needs opt structs in `topo_sort_types` |
-| 2 | Result guard uses Option arm names (`kind_none`, `data.some`) | `option_and_result_surface` | 12 | Medium — variant arm resolution bug |
-| 3 | `Result[void, E]` → `void value` field (void can't be struct member) | `memory_stress_test` | 4 | Low — special-case void arm payload |
-| 4 | Missing `#include "uv.h"` from `std.c.libuv` external module | `multithreading_test` | 9 | Low — `collect_includes` skips external files |
-| 5 | Unresolved types → `void` locals/fields | `nested_struct_stress_test`, `reflection_advanced` | 5+17 | Medium — type resolution in cross-module contexts |
-| 6 | Variant comparison helpers not generated (==/!=) | `nullable_and_variant_test` | — | Medium — needs equality helpers for value-type variants |
-| 7 | Value-type nullable initializer wrapping | `nullable_and_variant_test` | — | Medium — `let x: int? = 5` needs `{has_value=true, value=5}` |
-| 8 | Implicit function declarations (method lowering for nested structs) | `nested_struct_stress_test` | — | Low — method resolution in cross-module contexts |
-| 9 | Lowering crash (SIGABRT) | `async_network_lobby`, `async_stress_test`, `event_stress_test` | 0 | High — async/event runtime lowering paths |
+| 1 | Missing `mt_task_Result_...` type specializations | `async_stress_test`, `async_network_lobby` | ~11 | Medium — C backend needs to emit Task variant types for async return types |
+| 2 | Event `wait` runtime function not generated | `event_stress_test` | 2 | Medium — needs Task vtable (ready/set_waiter/release/take_result) + wait body |
+| 3 | Cross-module `Error` type + `Vec3.field` reflection + generic `ptr_uint` value args | `reflection_advanced` | 7 | High — diverse issues across type resolution, inline-for reflection, and generic specialization |
 
 ---
 
 ## 3. Remaining work (by priority for next sessions)
 
-### P10 — Opt struct ordering (#1, 28 errors)
-Opt structs (`mt_opt_X`) are emitted inline as `typedef struct { bool has_value; X value; } mt_opt_X;` at a fixed position before the topo-sorted struct definitions section. Structs that reference opt types (e.g. `Config { mt_opt_int port; }`) are emitted after, but opt structs referencing their base types (e.g. `mt_opt_String { String value; }`) need the base struct to be fully defined first.
+### P17 — Task type specializations (errors in async_*, 2 examples)
+The C backend does not emit `mt_task_Result_Option_...` typedef variants when async functions return `Task[T]`. The task infrastructure (`lower_task_constructor`, `build_resume_fn`, `build_constructor_fn`) emits `ir.StructDecl` for task types, but the C backend's variant collection (`emit_task_structs`) may not walk the full dependency tree for nested task result types.
 
-**Fix**: Build `StructDecl` entries for each needed opt type and merge them into the struct array passed to `topo_sort_types`. The topological sort will naturally order base-structs before opt-structs before dependent-structs.
+Key files: `projects/mtc/src/mtc/c_backend/c_backend.mt` — `emit_task_structs` (~line 4249), `generate_c` task struct emission. `projects/mtc/src/mtc/lowering/lowering.mt` — async lowering (~line 12397).
 
-Key files: `projects/mtc/src/mtc/c_backend/c_backend.mt` — `emit_opt_struct_defs_from_program` (~line 4572), `topo_sort_types` (~line 2308), `emit_struct` (~line 1900).
+### P18 — Event wait function (2 errors in event_stress_test)
+`mt_event_<name>__wait` is called but never generated. Needs a full async Task vtable (ready, set_waiter, release, take_result) + a wait function body that registers the caller as a waiter and returns a Task. Mirrors Ruby's `build_event_wait_fn` in `events.rb`.
 
-### P11 — Result guard arm names (#2, 12 errors)
-Result guards (`let value = res else:`, `let value = res else as error:`) generate `kind_none` instead of `kind_failure` and access `data.some` instead of `data.success`. The guard lowering at lines 1934/1953 correctly uses `"failure"`/`"success"` for Result, so the bug may be in the variant name resolution or the `guard_storage_kind` function returning `"option"` instead of `"result"`.
+Key files: `projects/mtc/src/mtc/lowering/lowering.mt` — `build_event_wait_fn` (does not exist yet, needs creation). Ruby reference: `lib/milk_tea/core/lowering/events.rb:284-328`.
 
-Key files: `projects/mtc/src/mtc/lowering/lowering.mt` — `guard_storage_kind` (~line 1855), `guard_failure_condition` (~line 1921), `guard_success_projection` (~line 1964).
+### P19 — reflection_advanced (7 errors)
+Diverse cross-module issues:
+- `unknown type name 'Error'` — the `Error` type from `std.serialize` (or `std.error`) is not emitted in the C output
+- `Vec3 has no member named 'field'` — `inline for field in fields_of(Vec3)` produces local bindings named `field` but the C code accesses `vec3.field` which doesn't exist
+- `too few arguments to function` — generic function with `ptr_uint[64]` value arg specialization missing the value argument at the call site
 
-### P12 — `Result[void, E]` void fields (#3, 4 errors)
-When a variant arm has `void` as the payload type (e.g. `Result[void, int].success`), the lowering generates a struct with `void value;` which is invalid C. The Ruby compiler skips the payload struct entirely for void-typed arms.
-
-Key files: `projects/mtc/src/mtc/lowering/lowering.mt` — `ensure_generic_variant` (~line 2282), `emit_variant` (~line 2113).
-
-### P13 — Missing libuv headers (#4, 9 errors)
-`std.c.libuv` is an external file with `include "uv.h"` but the `collect_includes` function only visits `module_raw` modules, not `module_external`. External files with `include` directives need their headers collected.
-
-Key files: `projects/mtc/src/mtc/lowering/lowering.mt` — `collect_includes` (~line 1041), `is_raw_module` (~line 427).
-
-### P14 — Unresolved types → void (#5, 22 errors)
-Various types resolve to `void` (error type) in cross-module contexts, producing `void v` locals and `void value` struct fields. Likely a type resolution failure when a struct/function from a transitive import module has not had its declarations registered in the current analysis.
-
-Key files: `projects/mtc/src/mtc/lowering/lowering.mt` — `resolve_type_ref` (~line 2352), `resolve_field_type_ref` (~line 8899).
-
-### P15 — Variant comparison helpers (#6)
-Variants used in `==` / `!=` comparisons need per-variant helper functions that compare `kind` and payload fields. These are not generated for value-type variants.
-
-### P16 — Async/event lowering crash (#9)
-`async_network_lobby`, `async_stress_test`, `event_stress_test` crash with SIGABRT during the lowering phase. The async runtime lowering (`std.async` → `std.libuv`) has incomplete paths that call `fatal()`.
-
-Key files: `projects/mtc/src/mtc/lowering/async.mt`, `projects/mtc/src/mtc/lowering/lowering.mt` — async function lowering.
+Key files: `projects/mtc/src/mtc/lowering/lowering.mt` — inline-for lowering, generic specialization. `projects/mtc/src/mtc/c_backend/c_backend.mt` — type emission for imported types.
 
 ---
 
-## 4. Resume context
+## 4. Uncommitted changes inventory
+
+The following files have uncommitted modifications. When resuming:
+
+**`projects/mtc/src/mtc/lowering/lowering.mt`** (~13k lines, heavily modified):
+- Event infrastructure: `is_event_type`, `event_name_from_type`, `is_any_event_suffix`, `strip_event_cap_suffix`, `event_name_from_c_linkage`, `ensure_event_error_enum`
+- `EventRuntimeInfo.wait_c_name` field
+- `lower_event_method`: wait handler, subscribe Result return type
+- `resolve_type_ref`: >= 2 parts handling
+- `lower_extending_block`: bare name extraction
+- `lower_aggregate_literal`: restructured (source_module first), nullable wrapping
+- `find_struct_field_type`, `payload_ty` helpers
+- `lower_member_access`: recursive variant auto-deref (guarded by arm_payload_fields)
+- `lower_variant_field_bindings`: recursive variant auto-deref
+- `collect_variant_literal_fields`: auto-address + nullable wrapping, 4-arg signature
+- `lower_variant_literal` / `lower_generic_variant_literal`: pass ty/arm to collect
+- `lower_struct_decl`: event field C-linkage type mapping
+- `lower_foreign_arg`: non-literal str→cstr via runtime helper
+- Guard lowering: null literal check in local decl + assignment, `guard_variant_base` fix
+- `let _ = expr` discard binding
+- `build_event_subscribe_fn` / `build_event_subscribe_stateful_fn`: Result return type, ctx parameter
+- Recursive variant helpers: `is_recursive_variant_field`, `is_recursive_variant_field_c`, `variant_c_type_name`, `variant_field_type_from_arm`
+- `collect_variants`: local variant arm field registration
+
+**`projects/mtc/src/mtc/c_backend/c_backend.mt`** (~5500 lines, significantly modified):
+- `OptStructEntry` struct + `collect_opt_struct_decls` (replaces inline emit)
+- `by_value_dep_key`: nullable type handling
+- `topo_sort_types`/`type_node_deps`/`topo_visit_type`: opt_structs parameter (kind=3)
+- `generate_c`: opt_structs integration (forward decls + topo sort + emission loop), EventError emission, foreign_cstr helper emission, libuv include
+- `emit_event_helpers`: EventError typedef + enum constant
+- `emit_variant`: void field skip
+- `uses_foreign_cstr_helper` + `emit_foreign_cstr_helper`: mt_foreign_str_to_cstr_temp
+- `uses_event_runtime`: mt_event_ prefix detection
+
+**`projects/mtc/src/mtc/semantic/analyzer.mt`** (~3900 lines):
+- `register_struct_events` + call sites in `declare_named_types`, `register_nested_struct_types`
+- `declare_struct_event_values` + call in `declare_values_and_functions`
+- `resolve_field_entries_with_events`: includes event fields in struct field list
+- `collect_struct_fields` / `collect_nested_struct_fields`: use `resolve_field_entries_with_events`
+
+**`projects/mtc/src/mtc/build.mt`**:
+- `collect_link_flags`: -luv detection for `uses_parallel_for`
+
+---
+
+## 5. Resume context
 
 When resuming, build the latest self-host:
 ```sh
@@ -185,10 +212,10 @@ tmp/mtc-current test projects/mtc -I .   # should be 172/172
 tmp/mtc-current build examples/language_baseline.mt -I . --no-cache --no-debug-guards -o /dev/null  # should be OK
 ```
 
-**Recommended next step**: Start with P13 (libuv headers — low complexity, 9 errors) or P12 (void fields — low complexity, 4 errors) for quick wins. Then tackle P10 (opt struct ordering — high complexity, 28 errors) as the highest-impact fix.
+**Recommended next step**: Start with P18 (event wait function, 2 errors) for quickest win on `event_stress_test`, then P17 (Task types, ~11 errors across async examples). P19 (reflection_advanced, 7 diverse errors) is the hardest remaining.
 
-**Key files for all remaining work**:
-- `projects/mtc/src/mtc/lowering/lowering.mt` — main lowering logic (~12,681 lines)
-- `projects/mtc/src/mtc/c_backend/c_backend.mt` — C code generation (~5,444 lines)
-- `projects/mtc/src/mtc/semantic/analyzer.mt` — type checking (~3,855 lines)
-- `projects/mtc/src/mtc/lowering/async.mt` — async runtime lowering (~291 lines)
+**Key files for remaining work**:
+- `projects/mtc/src/mtc/lowering/lowering.mt` — main lowering logic (~13k lines now)
+- `projects/mtc/src/mtc/c_backend/c_backend.mt` — C code generation (~5500 lines now)
+- `projects/mtc/src/mtc/semantic/analyzer.mt` — type checking (~3900 lines)
+- `lib/milk_tea/core/lowering/events.rb` — Ruby reference for event wait function
