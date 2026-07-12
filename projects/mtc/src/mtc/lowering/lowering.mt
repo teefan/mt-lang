@@ -204,6 +204,8 @@ struct EventRuntimeInfo:
     event_c_name: str
     subscribe_c_name: str
     subscribe_once_c_name: str
+    subscribe_stateful_c_name: str
+    subscribe_once_stateful_c_name: str
     unsubscribe_c_name: str
     emit_c_name: str
 
@@ -551,6 +553,8 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[
     ctx.locals.clear()
     ctx.temp_counter = 0
     ctx.function_returns.clear()
+    var saved_type_subst = ctx.type_substitution
+    ctx.type_substitution = read(sub)
     var ir_params = vec.Vec[ir.Param].create()
     var pi: ptr_uint = 0
     while pi < params.len:
@@ -586,6 +590,7 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[
     ctx.type_substitution = read(sub)
     let body_ir = lower_function_body(ctx, body)
     ctx.type_substitution = saved_sub
+    ctx.type_substitution = saved_type_subst
     return ir.Function(
         name = name,
         linkage_name = name,
@@ -1609,11 +1614,15 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     let declared = loc.stmt_type else:
                         fatal(c"lowering: local without initializer requires a type")
                     ty = resolve_type_ref(ctx, declared)
+                    if is_user_generic_struct(ctx, ty):
+                        let _ = qualify_type(ctx, ty)
                     value_expr = alloc_expr(ir.Expr.expr_zero_init(ty = ty))
                 else:
                     value_expr = lower_expr(ctx, init)
                     if loc.stmt_type != null:
                         ty = local_decl_type(ctx, loc.stmt_type, init)
+                        if is_user_generic_struct(ctx, ty):
+                            let _ = qualify_type(ctx, ty)
                         if types.is_error(ty):
                             ty = ir_expr_type(value_expr)
                     else:
@@ -2304,10 +2313,25 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
     ))
     return types.Type.ty_named(module_name = "", name = c_name)
 
+## True when `ty` is a `ty_generic` whose name refers to a user-defined generic
+## struct (not a builtin constructor like ptr/own/span/str_buffer etc.).  Used
+## to trigger struct monomorphization via `qualify_type` when a local variable
+## declaration references a generic struct without any explicit method call.
+function is_user_generic_struct(ctx: ref[LowerCtx], ty: types.Type) -> bool:
+    match ty:
+        types.Type.ty_generic as g:
+            if is_builtin_pointer_generic(g.name):
+                return false
+            if g.name == "Option" or g.name == "Result":
+                return false
+            return g.args.len > 0
+        _:
+            return false
+
 ## True when `name` is a pointer-like generic type handled directly by C.
 function is_builtin_pointer_generic(name: str) -> bool:
     return (
-        name == "ptr" or name == "const_ptr" or name == "ref"
+        name == "ptr" or name == "const_ptr" or name == "own" or name == "ref"
         or name == "span" or name == "array" or name == "str_buffer"
         or name == "atomic" or name == "Task" or name == "SoA"
     )
@@ -4911,6 +4935,8 @@ function extract_generic_struct_fields(ctx: ref[LowerCtx], module_analysis: anal
                             sub.set(read(s.type_params.data + spi).name, read(concrete_args.data + spi))
                         spi += 1
                     var fi: ptr_uint = 0
+                    var saved_type_subst = ctx.type_substitution
+                    ctx.type_substitution = sub
                     while fi < s.struct_fields.len:
                         var f: ast.Field
                         unsafe:
@@ -4919,6 +4945,7 @@ function extract_generic_struct_fields(ctx: ref[LowerCtx], module_analysis: anal
                         let field_ty = substitute_type_params(ctx, raw_ty, ref_of(sub))
                         ir_fields.push(ir.Field(name = f.name, ty = qualify_type(ctx, field_ty)))
                         fi += 1
+                    ctx.type_substitution = saved_type_subst
             _:
                 pass
         di += 1
@@ -4930,7 +4957,7 @@ function extract_generic_struct_fields(ctx: ref[LowerCtx], module_analysis: anal
 function is_pointer_or_ref_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name == "ptr" or g.name == "const_ptr" or g.name == "ref"
+            return g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref"
         _:
             return false
 
@@ -5242,7 +5269,7 @@ function type_ref_simple_name(t: ast.TypeRef) -> str:
 ## True for the pointer-like type constructors whose single element carries the
 ## generic parameter.
 function pointer_like_ctor_name(name: str) -> bool:
-    return name == "ptr" or name == "const_ptr" or name == "ref" or name == "span"
+    return name == "ptr" or name == "const_ptr" or name == "own" or name == "ref" or name == "span"
 
 
 ## Peel one pointer/span/nullable layer off a concrete type, yielding the element
@@ -5358,6 +5385,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             var saved_locals = ctx.locals
             var saved_counter = ctx.temp_counter
             var saved_returns = ctx.function_returns
+            var saved_type_subst = ctx.type_substitution
 
             # Switch to the owner module's context when its analysis is available.
             match find_imported_analysis(ctx, gm.module_name):
@@ -5366,6 +5394,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
                     ctx.analysis = owner_a.value
                     ctx.foreign_map = map_mod.Map[str, ForeignInfo].create()
                     ctx.variants = map_mod.Map[str, VariantInfo].create()
+                    ctx.type_substitution = map_mod.Map[str, types.Type].create()
                     collect_foreign_functions(ctx, owner_a.value.source_file.declarations)
                     collect_variants(ctx, owner_a.value.source_file.declarations)
                     install_prelude_variants(ctx)
@@ -5375,6 +5404,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.locals = vec.Vec[LocalBinding].create()
             ctx.temp_counter = 0
             ctx.function_returns = map_mod.Map[str, types.Type].create()
+            ctx.type_substitution = map_mod.Map[str, types.Type].create()
 
             var spec_fun = lower_specialized_function(ctx, fun.name, fun.method_params, fun.return_type, fun.body, sub)
             spec_fun.linkage_name = spec_key
@@ -5391,6 +5421,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.locals = saved_locals
             ctx.temp_counter = saved_counter
             ctx.function_returns = saved_returns
+            ctx.type_substitution = saved_type_subst
         _:
             fatal(j2("lowering: monomorphization failed, expected function decl for ", gm.module_name))
 
@@ -7132,10 +7163,18 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
         slot_c_name = slot_cn, event_c_name = event_cn,
         subscribe_c_name = j2(linkage, "__subscribe"),
         subscribe_once_c_name = j2(linkage, "__subscribe_once"),
+        subscribe_stateful_c_name = j2(linkage, "__subscribe_stateful"),
+        subscribe_once_stateful_c_name = j2(linkage, "__subscribe_once_stateful"),
         unsubscribe_c_name = j2(linkage, "__unsubscribe"),
         emit_c_name = j2(linkage, "__emit"),
     )
     ctx.event_runtimes.set(event_name, info)
+    ctx.pending_event_functions.push(build_event_subscribe_fn(ref_of(info), slot_cn, event_cn, false))
+    ctx.pending_event_functions.push(build_event_subscribe_fn(ref_of(info), slot_cn, event_cn, true))
+    ctx.pending_event_functions.push(build_event_subscribe_stateful_fn(ref_of(info), slot_cn, event_cn, false))
+    ctx.pending_event_functions.push(build_event_subscribe_stateful_fn(ref_of(info), slot_cn, event_cn, true))
+    ctx.pending_event_functions.push(build_event_unsubscribe_fn(ref_of(info), slot_cn, event_cn))
+    ctx.pending_event_functions.push(build_event_emit_fn(ref_of(info), slot_cn, event_cn))
     return info
 
 
@@ -7157,13 +7196,26 @@ function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: typ
                 call_args.push(read(payload_val))
         return alloc_expr(ir.Expr.expr_call(callee = info.emit_c_name, arguments = call_args.as_span(), ty = void_ty))
     if method_name == "subscribe" or method_name == "subscribe_once":
-        let callee = if method_name == "subscribe": info.subscribe_c_name else: info.subscribe_once_c_name
+        let is_stateful = args.len >= 2
+        var callee: str
+        if is_stateful:
+            callee = if method_name == "subscribe": info.subscribe_stateful_c_name else: info.subscribe_once_stateful_c_name
+        else:
+            callee = if method_name == "subscribe": info.subscribe_c_name else: info.subscribe_once_c_name
         var call_args = vec.Vec[ir.Expr].create()
         unsafe:
             call_args.push(read(recv_addr))
-        let listener_val = lower_listener_arg(ctx, unsafe: read(args.data + 0).arg_value)
-        unsafe:
-            call_args.push(read(listener_val))
+        if is_stateful:
+            let state_val = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
+            unsafe:
+                call_args.push(read(state_val))
+            let listener_val = lower_listener_arg(ctx, unsafe: read(args.data + 1).arg_value)
+            unsafe:
+                call_args.push(read(listener_val))
+        else:
+            let listener_val = lower_listener_arg(ctx, unsafe: read(args.data + 0).arg_value)
+            unsafe:
+                call_args.push(read(listener_val))
         let sub_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
         return alloc_expr(ir.Expr.expr_call(callee = callee, arguments = call_args.as_span(), ty = sub_ty))
     if method_name == "unsubscribe":
@@ -7225,6 +7277,65 @@ function build_event_subscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, eve
     body.push(ir.Stmt.stmt_return(value = fail_val, line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = false))
+    params.push(ir.Param(name = "listener", linkage_name = "listener", ty = void_ptr_ty, pointer = false))
+    return ir.Function(name = callee, linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+
+
+## Build a per-event stateful subscribe (or subscribe_once) synthetic function.
+## Same as build_event_subscribe_fn but also accepts a `state: ptr[void]`
+## parameter and writes it into the slot's `state` field.
+function build_event_subscribe_stateful_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str, once: bool) -> ir.Function:
+    let void_ty = types.primitive("void")
+    let bool_ty = types.primitive("bool")
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
+    let sub_result_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
+    let slot_ty = types.Type.ty_named(module_name = "", name = slot_cn)
+    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = event_cn)))
+    var callee: str
+    if once:
+        callee = info.subscribe_once_stateful_c_name
+    else:
+        callee = info.subscribe_stateful_c_name
+    var body = vec.Vec[ir.Stmt].create()
+    let index_name = "i"
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = false))
+    let cap_lit = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))
+    let cond = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = cap_lit, ty = bool_ty))
+    let post = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
+    let init = alloc_stmt(ir.Stmt.stmt_local(name = index_name, linkage_name = index_name, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
+    var loop_body = vec.Vec[ir.Stmt].create()
+    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = false))
+    let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(long<-(info.capacity))))
+    let slots_ref = alloc_expr(ir.Expr.expr_member(receiver = event_ref, member = "slots", ty = slot_arr_ty))
+    let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = index_ref, ty = slot_ty))
+    let slot_active = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty))
+    let cont_stmt = ir.Stmt.stmt_continue
+    let if_active = ir.Stmt.stmt_if(condition = slot_active, then_body = span_from_one(cont_stmt), else_body = span[ir.Stmt]())
+    loop_body.push(if_active)
+    let gen_ref = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "generation", ty = ptr_uint_ty))
+    let gen_plus = alloc_expr(ir.Expr.expr_binary(operator = "+", left = gen_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty)), ty = ptr_uint_ty))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "once", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = once, ty = bool_ty))))
+    loop_body.push(ir.Stmt.stmt_assignment(target = gen_ref, operator = "=", value = gen_plus))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "listener", ty = void_ptr_ty, pointer = false))))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "state", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "state", ty = void_ptr_ty, pointer = false))))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "wait_frame", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
+    var return_val = alloc_expr(ir.Expr.expr_aggregate_literal(ty = sub_result_ty, fields = sp_fields2(
+        ir.AggregateField(name = "slot", value = index_ref),
+        ir.AggregateField(name = "generation", value = gen_plus),
+    )))
+    loop_body.push(ir.Stmt.stmt_return(value = return_val, line = 0, source_path = ""))
+    let for_stmt = ir.Stmt.stmt_for(init = init, condition = cond, post = post, body = loop_body.as_span())
+    body.push(for_stmt)
+    var fail_val = alloc_expr(ir.Expr.expr_aggregate_literal(ty = sub_result_ty, fields = sp_fields2(
+        ir.AggregateField(name = "slot", value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))),
+        ir.AggregateField(name = "generation", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))),
+    )))
+    body.push(ir.Stmt.stmt_return(value = fail_val, line = 0, source_path = ""))
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = false))
+    params.push(ir.Param(name = "state", linkage_name = "state", ty = void_ptr_ty, pointer = false))
     params.push(ir.Param(name = "listener", linkage_name = "listener", ty = void_ptr_ty, pointer = false))
     return ir.Function(name = callee, linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
 
@@ -7292,7 +7403,13 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
         let payload_ref = alloc_expr(ir.Expr.expr_name(name = "payload", ty = info.payload_type, pointer = false))
         unsafe:
             call_args.push(read(payload_ref))
-    call_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "", arguments = call_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
+    var listener_fn_params = vec.Vec[types.Type].create()
+    if info.has_payload:
+        listener_fn_params.push(info.payload_type)
+    let void_fn_ty = types.Type.ty_function(params = listener_fn_params.as_span(), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false)
+    let fn_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_fn_ty))
+    let cast_listener = alloc_expr(ir.Expr.expr_cast(target_type = fn_ptr_ty, expression = slot_listener, ty = fn_ptr_ty))
+    call_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_listener, arguments = call_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
     let call_stmt = ir.Stmt.stmt_if(condition = null_check, then_body = call_body.as_span(), else_body = span[ir.Stmt]())
     loop_body.push(call_stmt)
     let slot_once = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "once", ty = bool_ty))

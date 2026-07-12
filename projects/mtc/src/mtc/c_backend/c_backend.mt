@@ -134,9 +134,6 @@ public function generate_c(program: ir.Program) -> string.String:
     if use_string_view:
         emit_string_type(ref_of(e))
         emit_line(ref_of(e), "")
-        # Emit type alias typedefs and builtin math structs before fatal/format
-        # helpers (mirrors Ruby emission order: vec/mat/quat before helpers).
-        emit_type_aliases(ref_of(e), program)
         emit_builtin_type_defs(ref_of(e), program)
 
     if use_fatal:
@@ -224,6 +221,8 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_line(ref_of(e), "")
 
         emit_enums_block(ref_of(e), program)
+
+        emit_type_aliases(ref_of(e), program)
 
         # Emit span type full definitions after forward declarations
         # so they can reference struct types.
@@ -529,6 +528,11 @@ function reach_from_expr(ep: ptr[ir.Expr], func_names: ref[map_mod.Map[str, bool
                 var i: ptr_uint = 0
                 while i < vl.fields.len:
                     reach_from_expr(read(vl.fields.data + i).value, func_names, reachable, worklist)
+                    i += 1
+            ir.Expr.expr_array_literal as arr:
+                var i: ptr_uint = 0
+                while i < arr.elements.len:
+                    reach_from_expr(arr.elements.data + i, func_names, reachable, worklist)
                     i += 1
             _:
                 pass
@@ -1386,13 +1390,37 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
     if name == "span" and args.len == 1:
         return span_type_name(unsafe: read(args.data + 0))
     if name == "ptr" and args.len == 1:
-        return j2(c_type(unsafe: read(args.data + 0)), "*")
+        let inner = unsafe: read(args.data + 0)
+        match inner:
+            types.Type.ty_function:
+                return c_type(inner)
+            _:
+                pass
+        return j2(c_type(inner), "*")
     if name == "const_ptr" and args.len == 1:
-        return j3("const ", c_type(unsafe: read(args.data + 0)), "*")
+        let inner = unsafe: read(args.data + 0)
+        match inner:
+            types.Type.ty_function:
+                return c_type(inner)
+            _:
+                pass
+        return j3("const ", c_type(inner), "*")
     if name == "own" and args.len == 1:
-        return j2(c_type(unsafe: read(args.data + 0)), "*")
+        let inner = unsafe: read(args.data + 0)
+        match inner:
+            types.Type.ty_function:
+                return c_type(inner)
+            _:
+                pass
+        return j2(c_type(inner), "*")
     if name == "ref" and args.len >= 1:
-        return j2(c_type(unsafe: read(args.data + (args.len - 1))), "*")
+        let inner = unsafe: read(args.data + (args.len - 1))
+        match inner:
+            types.Type.ty_function:
+                return c_type(inner)
+            _:
+                pass
+        return j2(c_type(inner), "*")
     # str_buffer[N] → mt_str_buffer_N
     if name == "str_buffer" and args.len >= 1:
         return j3("mt_str_buffer_", naming.type_c_key(unsafe: read(args.data + 0)), "")
@@ -3160,7 +3188,7 @@ function pointer_member_receiver(ep: ptr[ir.Expr]) -> bool:
 function is_ptr_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return (g.name == "ptr" or g.name == "own") and g.args.len == 1
+            return (g.name == "ptr" or g.name == "own" or g.name == "ref") and g.args.len == 1
         _:
             return false
 
@@ -4854,33 +4882,28 @@ function collect_builtin_types(needed: ref[map_mod.Map[str, bool]], t: types.Typ
 
 
 function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
-
     var ai: ptr_uint = 0
-
     while ai < program.type_aliases.len:
-
         var ta: ir.TypeAlias
-
         unsafe:
-
             ta = read(program.type_aliases.data + ai)
-
-        match ta.backing_c_name:
-
-            Option.some as cname:
-
-                emit_line(e, j5("typedef ", cname.value, " ", ta.qualified_name, ";"))
-
-            Option.none:
-
-                let c_type_str = c_declaration(ta.target_type, ta.qualified_name)
-
-                emit_line(e, j3("typedef ", c_type_str, ";"))
-
+        var skip = false
+        match ta.target_type:
+            types.Type.ty_function:
+                let mod_c_prefix = naming.module_c_prefix(program.module_name)
+                if not ta.qualified_name.starts_with(mod_c_prefix):
+                    skip = true
+            _:
+                pass
+        if not skip:
+            match ta.backing_c_name:
+                Option.some as cname:
+                    emit_line(e, j5("typedef ", cname.value, " ", ta.qualified_name, ";"))
+                Option.none:
+                    let c_type_str = c_declaration(ta.target_type, ta.qualified_name)
+                    emit_line(e, j3("typedef ", c_type_str, ";"))
         ai += 1
-
     if program.type_aliases.len > 0:
-
         emit_line(e, "")
 
 

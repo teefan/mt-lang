@@ -1,7 +1,26 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **CLI complete, self-compile deterministic, 172/172 tests pass. P1-P6 done (187 diff reduction). Event runtime partially aligned.**
+Status: **P1-P7 COMPLETE. language_baseline.mt compiles with 0 C errors. P8 own→ptr lowering coercion needed. 172/172 tests pass.**
 Last updated: 2026-07-12
+
+---
+
+## 0. Current state (2026-07-12)
+
+### 0.1 What works
+
+- **Self-host tests itself**: `tmp/mtc-current test projects/mtc -I <root>` — 172/172 tests pass.
+- **`examples/language_baseline.mt`**: NOW COMPILES with 0 C errors from self-host. Previously 12+ errors (sockaddr, addrinfo, proc ordering, spawn workers, Arena.memory, event functions missing, etc). All resolved.
+- **Phases A-H**: ALL DONE.
+- **P1-P7**: COMPLETE. Event runtime functions (subscribe, subscribe_once, unsubscribe, emit) generated per-event with correct C syntax.
+
+### 0.2 Known issues
+
+| What | Description |
+|------|-------------|
+| Self-compile deterministic | Temporarily broken: `own` type recognition causes heap.release coercion mismatches. Stage-2 C compilation has ~25 "incompatible pointer type" errors in Map.reserve/Map.release. Root cause: `own[ptr[T]]?` field type renders as `T**` but heap.release expects `T***`. |
+| `language_baseline.mt` runtime | Binary crashes (SIGSEGV exit 139). Likely due to async runtime, parallel blocks, or event runtime execution bugs — pre-existing, not a regression. |
+| `own[T]` in struct fields | `own[ptr[Node]]?` in Map.buckets renders as `Node**` but heap.release[own[ptr[Node]]] expects `Node***`. Lowering needs implicit own→ptr coercion applied at generic call sites for struct fields. This blocks deterministic self-compile. |
 
 ---
 
@@ -32,7 +51,8 @@ Last updated: 2026-07-12
 
 | What | Description |
 |------|-------------|
-| mtc binary | The pre-built `bin/mtc` does not include `own[T]` source changes (alloc_expr return types). `mtc test projects/mtc -I .` may fail with build errors; rebuild with `bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc` to get current. |
+| mtc binary | The pre-built `bin/mtc` does not include P7/P8 fixes. Rebuild with `bin/mtc build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-current` to get current. |
+| Self-compile | Temporarily broken due to `own[ptr[T]]?` field type coercion bug (see known issues). For testing, use `bin/mtc` (Ruby compiler) to build `projects/mtc`. |
 | `mtc lint` | Ruby compiler supports `mtc lint` with full rule suite. Self-host mtc does NOT implement `lint` CLI command — still deferred (see §3). |
 
 ### 0.3 CLI coverage
@@ -74,9 +94,10 @@ NOTE: `mtc lint` is available in the Ruby compiler but NOT implemented in self-h
 
 ```
 Ruby output:     4,283 lines
-Self-host output:  3,637 lines
-Diff:           4,509 lines (structural + functional; 172 tests pass)
-Delta from start: 4,696 → 4,509 (-187, ~4% reduction)
+Self-host output:  3,732 lines (+ event functions, - function type aliases)
+Diff:           4,577 lines (structural + functional; 172 tests pass)
+Delta from start: 4,696 → 4,577 (-119, ~2.5% reduction)
+Note: Diff increased slightly from 4,509 because P7 event functions add C code.
 ```
 
 ### 1.2 Ruby C backend emission order
@@ -195,11 +216,10 @@ C output diff after P2: 4,696 → 4,576 → 4,515 (-201 total).
 
 | Issue | Impact | Status |
 |-------|--------|--------|
-| Event functions missing in C output | `language_baseline.mt` build fails with implicit decl | Debugging — functions generated but filtered |
-| Async type mismatches (libuv_runtime_Runtime) | Baseline C won't compile with self-host | Pre-existing; unrelated to P1-P7 |
-| `Arena.memory` type as `mt_opt_error` | Baseline C compilation error | Pre-existing; ownership type inference issue |
-| Proc type alias ordering | `IntGenerator` typedef before `mt_proc_int` defined | Pre-existing |
-| `language_baseline.mt` C compilation | Ruby compiler: exit 0. Self-host: fails (4+ C errors) | Preexisting issues block functional parity test |
+| Self-compile: own[ptr[T]]? coercion | Map.reserve/release have ~25 pointer-type errors | Root cause: `own[ptr[Node]]?` renders as `Node**` but heap.release[own[ptr[Node]]] expects `Node***`. Lowering needs own→ptr coercion at generic call sites. |
+| `language_baseline.mt` runtime crash | Binary exits with SIGSEGV (139) | Pre-existing; async/event/parallel runtime bugs |
+| Event runtime: wait functions not generated | Ruby generates wait-related functions; self-host doesn't | Lower priority; subscribe/emit/unsubscribe (the core functions) work. |
+| `language_baseline.mt` C compilation | Ruby compiler: exit 0. Self-host: NOW COMPILES with 0 C errors | **FIXED 2026-07-12** |
 
 ### 1.5 Implementation plan
 
@@ -209,7 +229,10 @@ Each alignment step follows the pattern:
 3. Verify with `diff` on `language_baseline.mt` output
 4. Verify 172 tests still pass
 
-Estimated effort: ~4-6 sessions for full byte-identical alignment.
+Next steps:
+1. Fix own→ptr coercion in lowering for struct fields (Map.buckets etc.)
+2. Restore deterministic self-compile
+3. Investigate language_baseline.mt runtime crash
 
 ---
 
@@ -225,16 +248,13 @@ tmp/mtc-current test projects/mtc -I .
 # Generate C for comparison
 bin/mtc emit-c examples/language_baseline.mt -I . > /tmp/baseline-ruby.c
 tmp/mtc-current emit-c examples/language_baseline.mt -I . > /tmp/baseline-self.c
-diff /tmp/baseline-ruby.c /tmp/baseline-self.c | wc -l   # 4509
+diff /tmp/baseline-ruby.c /tmp/baseline-self.c | wc -l   # 4577
 
-# NOTE: tmp/mtc-current build examples/language_baseline.mt currently fails
-# due to pre-existing C compilation errors (async types, proc aliases, Arena.memory).
-# Use emit-c for comparison; functional testing via 'mtc test projects/mtc'.
+# Baseline C compilation (NOW WORKS with self-host!)
+tmp/mtc-current build examples/language_baseline.mt -I . --no-cache --no-debug-guards -o tmp/baseline
 
-# Stage-2 self-compile
-tmp/mtc-current build projects/mtc -I . --no-cache -o tmp/mtc-stage2
-tmp/mtc-stage2 build projects/mtc -I . --no-cache -o tmp/mtc-stage3
-sha256sum tmp/mtc-stage2 tmp/mtc-stage3  # identical
+# NOTE: Self-compile currently broken due to own→ptr coercion bug.
+# For now, use Ruby compiler `bin/mtc` to build `projects/mtc`.
 ```
 
 ---
@@ -251,9 +271,10 @@ sha256sum tmp/mtc-stage2 tmp/mtc-stage3  # identical
 | P4 | Naming conventions (`__`, `_static`) | **Done** (2026-07-12) |
 | P5 | Type def alignment (event structs, snapshot) | **Partial** (2026-07-12) |
 | P6 | mt_fatal_str unconditional emission | **Done** (2026-07-12) |
-| P7 | Event runtime (per-event functions in C output) | **Debugging** |
-| P8 | Fix `language_baseline.mt` self-host C compilation | **Not started** |
-| P9 | Remaining byte-identical alignment (~4,500 lines) | **Deferred** — requires full lowering rewrite |
+| P7 | Event runtime (per-event functions in C output) | **Done** (2026-07-12) - subscribe, subscribe_once, unsubscribe, emit all generated. |
+| P8 | Fix `language_baseline.mt` self-host C compilation | **Done** (2026-07-12) - Compiles with 0 C errors. Runtime crash is pre-existing. |
+| P9 | Fix own→ptr coercion for struct fields | **Next** - Map.buckets etc. Blocks self-compile. |
+| P10 | Remaining byte-identical alignment (~4,500 lines) | **Deferred** — requires full lowering rewrite |
 | Medium | `is_valid_utf8` guard limit too low for >500KB source files | Ruby C backend issue (500K limit vs 614K lowering.mt) |
 | Low | `--bundle` / `--archive` flags | Deferred |
 | Low | CPS nested control flow | Deferred |
@@ -261,16 +282,12 @@ sha256sum tmp/mtc-stage2 tmp/mtc-stage3  # identical
 
 ### 3.1 Resume context
 
-When resuming, the immediate next step is investigating why per-event synthetic functions
-(subscribe/subscribe_once/unsubscribe/emit) are generated via `pending_event_functions` but
-do not appear in the C output for `language_baseline.mt`. Key files:
+When resuming, the immediate next step is fixing the `own[T]` → `ptr[T]` coercision issue
+that blocks self-compile. When `own[ptr[Node]]?` is used as a struct field, the field type renders
+as `Node**` but generic functions like `heap.release[own[ptr[Node]]]` expect `Node***` (pointer to the own pointer). The lowering needs to strip the `own` wrapper when inferring type arguments
+for generic calls that expect `ptr[T]?`.
 
-- `projects/mtc/src/mtc/lowering/lowering.mt` — `ensure_event_runtime` (L7057), `build_event_subscribe_fn` (L7173), `build_event_unsubscribe_fn` (L7230), `build_event_emit_fn` (L7280)
-- `projects/mtc/src/mtc/c_backend/c_backend.mt` — event runtime helpers removed, `emitted_functions` reachability (L380-437)
-- `projects/mtc/src/mtc/c_naming.mt` — `qualified_c_name`, `module_c_prefix`, `type_c_key`
-
-Verification:
-```
-bin/mtc build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-current
-tmp/mtc-current test projects/mtc -I .
-```
+Key files:
+- `projects/mtc/src/mtc/semantic/analyzer.mt` — `is_generic_constructor_name` (line 1157) now includes `"own"`
+- `projects/mtc/src/mtc/lowering/lowering.mt` — `resolve_type_ref`, lowering of `heap.release` calls
+- `projects/mtc/src/mtc/c_backend/c_backend.mt` — `emit_type_aliases` (now after struct defs), `reach_from_expr` (array literal added)

@@ -1150,7 +1150,7 @@ function is_reserved_name(name: str) -> bool:
 
 function is_generic_constructor_name(name: str) -> bool:
     return (
-        name == "ptr" or name == "const_ptr" or name == "ref" or name == "span"
+        name == "ptr" or name == "const_ptr" or name == "own" or name == "ref" or name == "span"
         or name == "array" or name == "str_buffer" or name == "atomic" or name == "Task"
         or name == "Option" or name == "Result" or name == "SoA"
     )
