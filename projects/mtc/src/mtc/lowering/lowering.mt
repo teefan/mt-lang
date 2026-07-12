@@ -267,6 +267,8 @@ function ensure_str_buffer_struct(ctx: ref[LowerCtx], sb_ty: types.Type) -> void
 ## Look up the backing C type name, following type aliases across modules.
 ## For `type uv_handle_s = c.uv_handle_s` in `std.libuv`, this follows the
 ## import to `std.c.libuv.uv_handle_s` and looks up its `c_name = "uv_handle_t"`.
+## For `type NativeHandle = libuv.uv_handle_t` where `libuv.uv_handle_t` is
+## itself a type alias, the recursive `ty_imported` branch walks the chain.
 function lookup_decl_c_name_cross(analysis: analyzer.Analysis, tv: types.Type, type_name: str, analyses: span[analyzer.Analysis]) -> Option[str]:
     # First try the current module's declarations.
     match lookup_decl_c_name(analysis, type_name):
@@ -277,9 +279,28 @@ function lookup_decl_c_name_cross(analysis: analyzer.Analysis, tv: types.Type, t
     # If the type is an imported type, follow the import chain.
     match tv:
         types.Type.ty_imported as im:
-            # Skip std.c.* raw ABI types — they ARE the C types.
+            # std.c.* raw ABI types — they ARE the C types.
             if im.module_name.starts_with("std.c."):
                 return lookup_decl_c_name_in_module(im.module_name, im.name, analyses)
+            # Non-std.c imported types may be type aliases themselves
+            # (e.g. `type uv_handle_t = c.uv_handle_t` in `std.libuv`).
+            # Follow the chain through the imported module's type aliases.
+            var found_a: analyzer.Analysis
+            var has_a = false
+            var ai: ptr_uint = 0
+            while ai < analyses.len:
+                var a: analyzer.Analysis
+                unsafe:
+                    a = read(analyses.data + ai)
+                if a.module_name == im.module_name:
+                    found_a = a
+                    has_a = true
+                    break
+                ai += 1
+            if has_a and found_a.type_alias_types.contains(im.name):
+                let resolved_ptr = found_a.type_alias_types.get(im.name) else:
+                    fatal(c"lowering: chained type alias lookup inconsistency")
+                return lookup_decl_c_name_cross(analysis, unsafe: read(resolved_ptr), im.name, analyses)
         _:
             pass
     return Option[str].none
@@ -4697,11 +4718,21 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # Task[T] builtin struct fields (frame, ready, set_waiter,
                 # release, take_result, cancel) are function pointers / void
                 # pointers that must be accessed via struct field + indirect
-                # call, not treated as methods.
+                # call, not treated as methods.  `take_result` returns the
+                # task's result type T; other vtable fields return void.
                 let tn = named_type_name(recv_ty)
                 if tn.is_some() and tn.unwrap() == "Task" and ma.member_name == "frame":
                     found_ft = ptr_void_type()
                 else if tn.is_some() and tn.unwrap() == "Task" and is_task_fn_field(ma.member_name):
+                    var task_ret_ty = types.primitive("void")
+                    if ma.member_name == "take_result":
+                        match recv_ty:
+                            types.Type.ty_generic as tg:
+                                if tg.name == "Task" and tg.args.len >= 1:
+                                    unsafe:
+                                        task_ret_ty = read(tg.args.data + 0)
+                            _:
+                                pass
                     found_ft = types.Type.ty_function(
                         params = single_ty_span(ptr_void_type()),
                         return_type = types.alloc_type(types.primitive("void")),
@@ -8775,7 +8806,13 @@ function lower_fn_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], args:
         unsafe:
             call_args.push(read(lowered))
         i += 1
-    return alloc_expr(ir.Expr.expr_call_indirect(callee = field_expr, arguments = call_args.as_span(), ty = expr_type(ctx, call_ep)))
+    var call_ty = expr_type(ctx, call_ep)
+    match ir_expr_type(field_expr):
+        types.Type.ty_function as ffn:
+            call_ty = unsafe: read(ffn.return_type)
+        _:
+            pass
+    return alloc_expr(ir.Expr.expr_call_indirect(callee = field_expr, arguments = call_args.as_span(), ty = call_ty))
 
 
 ## The resolved return type of a module function: recorded during pre-scan
