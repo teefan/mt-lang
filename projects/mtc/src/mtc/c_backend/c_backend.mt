@@ -261,10 +261,9 @@ public function generate_c(program: ir.Program) -> string.String:
             emit_line(ref_of(e), "")
             si += 1
 
-        # Emit Task struct definitions before struct definitions so that proc
-        # structs (e.g. mt_proc_Task_void) that reference Task types in their
-        # invoke field types can compile.
-        emit_task_structs(ref_of(e), program)
+        # Emit Task type forward declarations so that proc structs referencing
+        # Task types in their invoke field can compile.
+        emit_task_forward_decls(ref_of(e), program)
 
         # Emit struct and variant full definitions in a single dependency order,
         # since structs and variants can embed each other by value.
@@ -291,6 +290,11 @@ public function generate_c(program: ir.Program) -> string.String:
                     emit_struct(ref_of(e), read(os_ptr).decl)
             emit_line(ref_of(e), "")
             toi += 1
+
+        # Emit Task struct definitions after struct/variant definitions so that
+        # Task structs that embed by-value variants (e.g. Task[Result[void, E]])
+        # have the variant type already defined.
+        emit_task_structs(ref_of(e), program)
         i = 0
         while i < program.unions.len:
             unsafe:
@@ -4142,10 +4146,41 @@ function uses_parallel_runtime(program: ir.Program) -> bool:
                 return true
 
         i += 1
-
     return false
 
 
+
+function emit_task_forward_decls(e: ref[Emitter], program: ir.Program) -> void:
+    var seen = map_mod.Map[str, bool].create()
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            let f = read(program.functions.data + i)
+            let task_elem = task_type_element(f.return_type)
+            if task_elem.is_some():
+                let elem = task_elem.unwrap()
+                var task_args = vec.Vec[types.Type].create()
+                task_args.push(elem)
+                let c_name = generic_c_type("Task", task_args.as_span())
+                if not seen.contains(c_name):
+                    seen.set(c_name, true)
+                    emit_line(e, j3("typedef struct ", c_name, j2(" ", j2(c_name, ";"))))
+            var pi: ptr_uint = 0
+            while pi < f.params.len:
+                let param = read(f.params.data + pi)
+                let pt_elem = task_type_element(param.ty)
+                if pt_elem.is_some():
+                    let pe = pt_elem.unwrap()
+                    var pt_args = vec.Vec[types.Type].create()
+                    pt_args.push(pe)
+                    let pc_name = generic_c_type("Task", pt_args.as_span())
+                    if not seen.contains(pc_name):
+                        seen.set(pc_name, true)
+                        emit_line(e, j3("typedef struct ", pc_name, j2(" ", j2(pc_name, ";"))))
+                pi += 1
+        i += 1
+    if seen.len() > 0:
+        emit_line(e, "")
 
 
 
@@ -4237,7 +4272,7 @@ function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -
 
     let type_str = c_type(elem)
 
-    emit_line(e, j2("typedef struct {", ""))
+    emit_line(e, j3("struct ", c_name, " {"))
 
     if not is_void:
 
@@ -4257,7 +4292,9 @@ function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -
 
     emit_line(e, "  void (*cancel)(void*);")
 
-    emit_line(e, j3("} ", c_name, ";"))
+    emit_line(e, "};")
+
+    emit_line(e, j3("typedef struct ", c_name, j2(" ", j2(c_name, ";"))))
 
     emit_line(e, "")
 

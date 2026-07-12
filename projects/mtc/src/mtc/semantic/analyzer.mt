@@ -1166,7 +1166,7 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
             i += 1
         return types.Type.ty_generic(name = name, args = args.as_span())
     if ctx.type_names.contains(name):
-        return types.Type.ty_named(module_name = "", name = name)
+        return types.Type.ty_named(module_name = ctx.module_name, name = name)
     # Unknown / imported / type-parameter names are permissive.
     return types.Type.ty_error
 
