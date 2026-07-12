@@ -5206,12 +5206,6 @@ function lower_monomorphized_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], typ
     # from multiple caller modules dedups to one definition (see
     # dedup_append_functions).
     let spec_key = specialization_key(ctx, gm.module_name, callee_name, type_args)
-    # Skip monomorphizing async runtime module functions — they have their
-    # own C implementation and the compiler-generated Task[T] type doesn't
-    # match the runtime's representation.
-    if gm.module_name.starts_with("std.async"):
-        let ret_ty = types.primitive("void")
-        return alloc_expr(ir.Expr.expr_zero_init(ty = ret_ty))
     if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
         lower_and_cache_specialization(ctx, gm, type_args, spec_key)
     let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
@@ -5293,28 +5287,7 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], callee_name: str, args: s
                 tpi += 1
             let spec_key = key.as_str()
             if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
-                if gm.module_name.starts_with("std.async"):
-                    # Emit a stub forwarding to the C runtime library.
-                    # Build a correct signature so call sites match.
-                    var stub_params = vec.Vec[ir.Param].create()
-                    var spj: ptr_uint = 0
-                    while spj < fun.method_params.len:
-                        var fm: ast.Param = unsafe: read(fun.method_params.data + spj)
-                        var raw_ty = types.Type.ty_error
-                        if fm.param_type.is_proc or fm.param_type.is_fn:
-                            raw_ty = substitute_type_params(ctx, resolve_function_type_ref(ctx, ptr_of(fm.param_type)), ref_of(sub))
-                        else:
-                            raw_ty = substitute_type_params(ctx, resolve_type_ref(ctx, ptr_of(fm.param_type)), ref_of(sub))
-                        stub_params.push(ir.Param(name = fm.name, linkage_name = fm.name, ty = qualify_type(ctx, raw_ty), pointer = false))
-                        spj += 1
-                    let stub_ret_ty = types.primitive("int")
-                    var empty_body = vec.Vec[ir.Stmt].create()
-                    empty_body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_zero_init(ty = stub_ret_ty)), line = 0, source_path = ""))
-                    let stub_fn = ir.Function(name = spec_key, linkage_name = spec_key, params = stub_params.as_span(), return_type = stub_ret_ty, body = empty_body.as_span(), entry_point = false, method_receiver_param = false)
-                    ctx.pending_synthetic_functions.push(stub_fn)
-                    ctx.specialization_cache.set(spec_key, stub_fn)
-                else:
-                    lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key)
+                lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key)
             let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
             # Pass a synthesized sig for async wait/run so coerce_fn_arg_to_proc
             # can wrap task expressions in procs (task-root-proc bridge).
