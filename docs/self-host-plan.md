@@ -1,7 +1,7 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **10/13 examples compile. Self-compile deterministic. 172/172 tests pass. P1-P20 DONE.**
-Last updated: 2026-07-12 (session end)
+Status: **10/13 examples compile. Self-compile deterministic. 172/172 tests pass. P1-P21 DONE.**
+Last updated: 2026-07-12 (session end — P21: generic method resolution + cross-module typedef emission)
 
 ---
 
@@ -25,9 +25,9 @@ Last updated: 2026-07-12 (session end)
 | `nested_struct_stress_test.mt` | OK | 0 |
 | `nullable_and_variant_test.mt` | OK | 0 |
 | `event_stress_test.mt` | OK | 0 |
-| `async_stress_test.mt` | FAIL | 143 |
-| `async_network_lobby.mt` | FAIL | 100+ |
-| `reflection_advanced.mt` | FAIL | 1 |
+| `async_stress_test.mt` | FAIL | 99 |
+| `async_network_lobby.mt` | FAIL | 53 |
+| `reflection_advanced.mt` | FAIL | 2 |
 
 - **P1-P20**: P1-P16 DONE (prior session). P17-P20 DONE (this session).
 
@@ -77,6 +77,41 @@ Key files: `projects/mtc/src/mtc/lowering/lowering.mt` — event wait functions,
 Fixed all subscribe functions (`build_event_subscribe_fn`, `build_event_subscribe_stateful_fn`, `build_event_wait_fn`) to use a local variable (`__mt_gen`) to capture the computed generation value. Previously, `gen_plus = gen_ref + 1` was an expression tree that evaluated twice (once for the slot assignment, once for the subscription aggregate literal), producing a mismatched generation after the first evaluation mutated the slot.
 
 Key file: `projects/mtc/src/mtc/lowering/lowering.mt` — subscribe/wait function bodies.
+
+### P21 — Generic method resolution + cross-module typedef emission (this session)
+
+#### 21a: Generic method resolution for cross-module extending blocks
+**Files:** `projects/mtc/src/mtc/lowering/lowering.mt`
+
+Fixed `r.unpack[CompactHeader]()` resolving to `std.serialize.unpack` (standalone generic function) instead of `std.binary.Reader.unpack` (extending-block method):
+
+1. **`find_generic_method` now searches ALL loaded modules** (not just the struct's defining module). Extending blocks like `std.serialize.extending.bin.Reader` were invisible because `Reader` is defined in `std.binary` not `std.serialize`.
+
+2. **`qname_last` instead of `qname_first`** for matching qualified type names: `extending bin.Reader` matches against `"Reader"` (last component) not `"bin"` (first).
+
+3. **Removed `type_ref.arguments.len > 0`** requirement — methods can have their own type params on non-generic structs (`unpack[T]()` on `Reader`).
+
+4. **Added interception in `lower_call`** for `expr_specialization(callee = expr_member_access(...))` patterns. Before routing to `lower_specialization_call` (which picks standalone generic functions), the code now resolves through `generic_receiver_info` + `find_generic_method` for extending-block methods with own type params.
+
+5. **Removed fallback `struct_args` population** in `lower_specialized_method` — was incorrectly adding all concrete_args (including method-level type params) as struct type args when `struct_args.len == 0`.
+
+6. **Added `struct_defining_module_for_type`** — uses the struct's defining module (e.g. `std_binary`) for C naming, not the extending-block module (e.g. `std_serialize`).
+
+7. **`monomorphized_method_c_name` separates struct args from method args** — produces `Reader_unpack_CompactHeader` not `Reader_CompactHeader_unpack`.
+
+#### 21b: Bare `?` propagation in expression statements
+**Files:** `projects/mtc/src/mtc/lowering/lowering.mt`
+
+Added handling for bare `expr?` as an expression statement (was previously being emitted literally as `?` in C). The `lower_stmt` → `stmt_expression` branch now detects `expr_unary_op(operator = "?")` and desugars to the same guard-like unwrap as `let _ = expr?`.
+
+#### 21c: Cross-module typedef emission for type aliases targeting std.c.*
+**Files:** `projects/mtc/src/mtc/lowering/lowering.mt` — type alias collection loop (~line 380)
+
+When a non-raw module declares `type NativeSocketStorage = libuv.sockaddr_storage` where the target resolves to `std.c.libuv.sockaddr_storage`, the lowering now emits a C `typedef struct sockaddr_storage std_net_NativeSocketStorage;`. Previously all aliases targeting `std.c.*` types were unconditionally skipped because "the target already has a valid C name" — but the ALIAS didn't, causing `unknown type name 'std_net_NativeSocketStorage'` errors.
+
+The fix only emits typedefs when the target has a known C declaration in the external module (found via `lookup_decl_c_name_cross`). Targets without explicit declarations (e.g. enum fields like `uv_tcp_flags`) are still skipped.
+
+Async examples benefited: `async_stress_test` 145→99 errors (-46), `async_network_lobby` 100+→53 (-47).
 
 ### P20 — Cross-module type tracking + misc fixes
 
@@ -128,62 +163,31 @@ ctx.locals.push(LocalBinding(name = "this", ty = recv_ty, pointer = recv_is_ptr)
 
 | # | Root Cause | Examples | Errors | Complexity |
 |---|-----------|----------|--------|-----------|
-| 1 | Missing `sockaddr_storage` + cross-module type emission from std.net/std.binary | `async_stress_test`, `async_network_lobby` | 143/100+ | **HIGHEST PRIORITY** — Cross-module type collection + system header includes |
-| 2 | Method resolution: `r.unpack[CompactHeader]()` finds `std.serialize.unpack` instead of `std.binary.Reader.unpack` | `reflection_advanced` | 1 | Medium — method resolution picks wrong module's generic function |
+| 1 | Missing Task type specializations for deeply nested types + wrong async function refs + libuv callback mismatches | `async_stress_test`, `async_network_lobby` | 99/53 | **HIGH PRIORITY** — remaining async infrastructure gaps |
+| 2 | Cross-type `?` propagation (`Result[bool, E]?` in function returning `Result[Bytes, E]` fails to wrap error in correct return type) | `reflection_advanced` | 2 | Medium — needs proper error extraction/wrapping in `lower_propagate_let` |
 
 ---
 
-## 3. Remaining work: Cross-Module Import Resolution (PRIORITY #1)
+## 3. Remaining work (async infrastructure + ? propagation)
 
-The three failing examples all share a common root cause: **the self-host does not properly collect and emit all transitive type dependencies from imported modules**.
+The cross-module type emission fix (P21c) resolved the `NativeSocketStorage`/`NativeSockAddr` typedef issue. The remaining async errors are pre-existing infrastructural gaps:
 
-### 3.1 Root Cause Analysis
+### 3.1 Async errors (99 + 53 remaining)
 
-When `reflection_advanced.mt` or `async_stress_test.mt` imports modules like `std.binary`, `std.net`, or `std.serialize`, the self-host emits their locally-declared types into the C output. However, it does NOT emit:
+| Category | Count | Description |
+|----------|-------|-------------|
+| Task type specializations | ~30 | `mt_task_std_result_Result_std_option_Option_...` — deeply nested Task types aren't forward-declared or emitted |
+| Wrong async function refs | ~15 | `std_async_libuv_runtime_sleep` vs `std_async_runtime_sleep` — wrong module prefix for async runtime functions |
+| Callback type mismatches | ~20 | `uv_udp_recv_start`/`uv_close` expect specific callback signatures |
+| Missing libuv enum types | ~10 | `uv_tcp_flags`, `uv_fs_event_flags`, etc. — referenced as type aliases but not actual types |
+| Heap.release specialization names | ~15 | `std_mem_heap_release__std_net_NativeSocketStorage` — wrong naming |
+| Other type mismatches | ~20 | Various pointer/struct type mismatches |
 
-1. **All transitive generic variant instantiations** — `Result[SocketAddress, Error]`, `Result[ChannelMessage, Error]`, etc. from `std.net` are not in the C output
-2. **System header types** — `sockaddr_storage` from `<sys/socket.h>` never gets an `#include`
-3. **Proc struct types referencing imported errors** — `proc[..., Error]` structs referencing `std_binary_Error` or `std_net_Error` fail with incomplete type
+### 3.2 ? propagation (2 errors in reflection_advanced)
 
-The type resolution fix (P20a — `ty_named` with module prefix) is the correct architectural direction but is only the FIRST step. It ensures types created BY the analyzer carry their module origin. What's still needed:
+The `?` operator on `Result[bool, Error]` inside a function returning `Result[Bytes, Error]` fails because `lower_propagate_let` returns the raw storage value (type `Result[bool, Error]`) instead of extracting the error and wrapping it in `Result[Bytes, Error].failure(error = ...)`.
 
-- **Step A**: The C backend's `c_type` function does not resolve bare type names (`ty_named("", name)`) by searching program analyses for the defining module. Fix: add a reverse lookup when `n.module_name.len == 0` to find the actual C-qualified name.
-- **Step B**: The lowering's `qualify_type` (`imported_type_module`) only searches *direct* imports of the current module. For types from transitive dependencies, the lookup fails. Fix: make `imported_type_module` walk transitive import chains.
-- **Step C**: System headers for external bindings (`std.c.net`, etc.) need their `#include` directives emitted into the generated C. The self-host currently emits includes only for directly-imported external files.
-- **Step D**: Proc struct types that reference cross-module error types need the error type defined before the proc struct. This is the same ordering issue that P17 fixed for Task types, but for proc types.
-
-### 3.2 Recommended Approach for Next Session
-
-**Step A** is the highest-leverage fix. It makes `c_type` resolve any bare `ty_named("", "Error")` by searching through the program's pending variant declarations to find a qualified version (e.g., `std_binary_Error`). This can be done without major refactoring.
-
-1. In the C backend's `emit_variant`, when emitting arm field types:
-   - If `c_type(f.ty)` produces a bare name (no underscore, no module prefix)
-   - Search `program.variants` and `gen_variants` for arm fields with the same field name but a qualified type
-   - If found, use the qualified C name instead
-
-2. For system headers (`sockaddr_storage`):
-   - Walk the IR program's `includes` list and emit `#include` directives for all transitive dependencies
-   - Currently only root module's includes are emitted
-
-3. For proc structs:
-   - Add proc structs to the topological sort (like Task types were added in P17)
-   - Or ensure the error type variants are emitted before proc structs
-
-**Step B** (transitive imports in `imported_type_module`) and **Step D** are architectural improvements needed for full correctness.
-
-### 3.3 reflection_advanced remaining error (method resolution)
-
-The single remaining error in `reflection_advanced.mt`:
-
-```
-too few arguments to function 'std_serialize_unpack_...'
-```
-
-This is caused by `r.unpack[CompactHeader]()` where `r` is `bin.Reader` (from `std.binary`). The lowering resolves `unpack` to `std.serialize.unpack` instead of `std.binary.Reader.unpack`. The serializer's `unpack` takes `(source: span[ubyte])` as argument, while `Reader.unpack` takes no args (reads from internal buffer).
-
-The bug is in `lower_specialization_call` → `try_generic_method_call` → `find_generic_method`. The function searches all program analyses for a struct/owner that has an `unpack[T]` extending block. Both `std.serialize` (which has a standalone `unpack[T]`) and `std.binary.Reader` (which has `extending Reader: function unpack[T]`) match. The wrong one is chosen.
-
-Fix: `find_generic_method` should prefer the method whose owner matches the receiver type's STRUCT name. Currently it iterates all analyses and returns the first match.
+Fix needed: add `current_fn_return_type` to `LowerCtx`, set it during function lowering, and use it in `lower_propagate_let` to construct the correct failure variant when the propagation type differs from the return type (mirroring Ruby's `prepare_result_propagation_for_inline_lowering` — the `storage_type == return_type` check at line 1122 of `lib/milk_tea/core/lowering/utils.rb`).
 
 ---
 
@@ -198,6 +202,12 @@ The following files have uncommitted modifications. When resuming:
 - P19: Generation local variable fix in `build_event_subscribe_fn`, `build_event_subscribe_stateful_fn`
 - P20b: `offset_of` field name resolution from `ctx.inline_for_element`
 - P20c: `recv_is_ptr` fix for editable method `this` parameter
+- P21a: `find_generic_method` cross-module search, `qname_last`, removed `type_ref.arguments.len > 0`
+- P21a: `lower_call` member-access specialization interception
+- P21a: `struct_defining_module_for_type`, `monomorphized_method_c_name` struct/method arg separation
+- P21a: Removed fallback struct_args population in `lower_specialized_method`
+- P21b: Bare `?` propagation in `lower_stmt` → `stmt_expression`
+- P21c: Cross-module typedef emission for type aliases targeting std.c.*
 - Prior: Event infrastructure, subscribe builders, variant helpers, guard lowering, etc.
 
 **`projects/mtc/src/mtc/c_backend/c_backend.mt`** (~5500 lines):
@@ -211,13 +221,16 @@ The following files have uncommitted modifications. When resuming:
 **`projects/mtc/src/mtc/build.mt`**:
 - Prior: `collect_link_flags`: -luv detection for `uses_parallel_for`
 
+**`docs/self-host-plan.md`**:
+- P21 updates, current state, remaining work sections refreshed
+
 ---
 
 ## 5. Resume context
 
 When resuming, build the latest self-host:
 ```sh
-bin/mtc build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-current
+ruby -Ilib bin/mtc build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-current
 ```
 
 Verify state:
@@ -229,19 +242,79 @@ tmp/mtc-current build examples/event_stress_test.mt -I . --no-cache --no-debug-g
 
 Check current fail counts:
 ```sh
-tmp/mtc-current build examples/reflection_advanced.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep "error:" | wc -l  # should be 1
-tmp/mtc-current build examples/async_stress_test.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep "error:" | wc -l  # should be 143
-tmp/mtc-current build examples/async_network_lobby.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep "error:" | wc -l  # should be 100+
+tmp/mtc-current build examples/reflection_advanced.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep "error:" | wc -l  # should be 2
+tmp/mtc-current build examples/async_stress_test.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep "error:" | wc -l  # should be 99
+tmp/mtc-current build examples/async_network_lobby.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep "error:" | wc -l  # should be 53
 ```
 
-**Recommended next step — PRIORITY #1**: Fix cross-module type emission in the C backend (Step A from §3.2):
-1. Fix `c_type` for `ty_named("", name)` to search program analyses for the defining module
-2. Emit system headers from all transitive external-file imports
-3. After fixing, retest all 3 failing examples
+**Recommended next step**: Fix `?` cross-type propagation (§3.2) — the 2 remaining errors in `reflection_advanced.mt`. This is a narrow, well-understood bug: `lower_propagate_let` needs `current_fn_return_type` to construct the correct failure variant when the propagated `Result[bool, E]` type differs from the enclosing function's `Result[Bytes, E]` return type. See §3.2 and §3.3 for detailed analysis.
+
+After that, address async infrastructure gaps (§3.1): Task type specializations for deeply nested types, wrong async function references, and callback type mismatches.
 
 **Key files for remaining work**:
-- `projects/mtc/src/mtc/c_backend/c_backend.mt` — `c_type`, `emit_variant`, `generate_c` includes emission
-- `projects/mtc/src/mtc/lowering/lowering.mt` — `imported_type_module`, `find_generic_method`
-- `projects/mtc/src/mtc/semantic/analyzer.mt` — `resolve_named` (already fixed)
-- `lib/milk_tea/core/lowering/calls.rb` — Ruby reference for method resolution
-- `lib/milk_tea/core/c_backend.rb` — Ruby reference for C type emission
+- `projects/mtc/src/mtc/lowering/lowering.mt` — `lower_propagate_let`, async runtime function references
+- `projects/mtc/src/mtc/c_backend/c_backend.mt` — `emit_task_forward_decls`, `emit_task_structs` for deeply nested types
+- `lib/milk_tea/core/lowering/utils.rb` — Ruby reference for `prepare_result_propagation_for_inline_lowering`
+
+---
+
+## 6. ? Cross-Type Propagation — Detailed Approach
+
+### 6.1 The bug
+
+In `std.binary.Reader.read_bytes` (returns `Result[Bytes, Error]`):
+
+```mt
+this.check_remaining(count)?   # check_remaining returns Result[bool, Error]
+```
+
+The self-host's `lower_propagate_let` emits:
+
+```c
+__mt_propagate_1 = std_binary_reader_check_remaining(this, count);
+if (__mt_propagate_1.kind == ...failure) return __mt_propagate_1;
+```
+
+But `__mt_propagate_1` is type `Result[bool, Error]` and the function returns `Result[Bytes, Error]` — type mismatch.
+
+### 6.2 Ruby reference
+
+`lib/milk_tea/core/lowering/utils.rb:1122`:
+
+```ruby
+failure_return = if storage_type == return_type
+                   result_ref                          # same type → return raw
+                 elsif is_option
+                   IR::VariantLiteral.new(              # Option → .none
+                     type: return_type, arm_name: "none", fields: [])
+                 else
+                   IR::VariantLiteral.new(              # Result → extract error
+                     type: return_type, arm_name: "failure",
+                     fields: [IR::AggregateField.new(
+                       name: "error",
+                       value: variant_binding_projection_expression(
+                         result_ref, storage_type, "failure", "error", error_type
+                       ),
+                     )],
+                   )
+                 end
+```
+
+### 6.3 Approach
+
+Three surgical changes in `lowering.mt`:
+
+1. **Add `current_fn_return_type: types.Type` to `LowerCtx` struct** (~line 96). Set it to `ret_ty` at two points: `lower_function` (~line 1278) and `lower_specialized_method` (~line 7119), just before `lower_function_body`.
+
+2. **Modify `lower_propagate_let` failure-branch construction** (~line 1879), replacing the hardcoded `return storage_ref` with logic mirroring Ruby:
+   - If `storage_ty == ctx.current_fn_return_type`: return `storage_ref` (same as today)
+   - If `kind == "result"`: extract the error via `storage_ref.data.failure.error` (three-level member access), construct `ir.Expr.expr_variant_literal(ty = ret_ty, arm_name = "failure", fields = [{name="error", value=error_member}])`
+   - If `kind == "option"`: construct `ir.Expr.expr_variant_literal(ty = ret_ty, arm_name = "none")`
+   
+3. **Update `LowerCtx` constructor** (~line 668) with `current_fn_return_type = types.primitive("void")`.
+
+### 6.4 Risk assessment
+
+- **Low risk**: The `LowerCtx` change is additive — all existing paths either use a void default or set the real return type before function body lowering.
+- **Self-host tests**: The existing 172 tests will still pass because they don't exercise cross-type `?` propagation.
+- **No regression for same-type propagation**: When `storage_ty == ret_ty`, the code path is identical to today.

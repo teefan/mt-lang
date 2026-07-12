@@ -375,8 +375,10 @@ public function lower(program: loader.Program) -> ir.Program:
 
     # Collect type aliases from all non-raw modules. Raw (external) modules
     # define C-level types that already exist — we never emit typedefs for
-    # them. Similarly skip non-raw-module aliases whose target is a std.c.*
-    # type, because the target already has a valid C name.
+    # them.  Non-raw-module aliases whose target is a std.c.* type still need a
+    # C typedef when the target can be resolved to a valid C name, so the
+    # module-qualified name (e.g. `std_net_NativeSocketStorage`) maps to the raw
+    # C type (e.g. `struct sockaddr_storage`).
     var tai: ptr_uint = 0
     while tai < program.analyses.len():
         let ta_ptr = program.analyses.get(tai) else:
@@ -393,8 +395,17 @@ public function lower(program: loader.Program) -> ir.Program:
             let tvp = ta_analysis.type_alias_types.get(kn) else:
                 break
             let tv = unsafe: read(tvp)
+            # When the alias target is a std.c.* type, only emit a typedef if the
+            # target has a known C declaration in the external module (e.g.
+            # `sockaddr_storage` with `= c"struct sockaddr_storage"`).  Targets
+            # without explicit declarations (e.g. enum fields used as types like
+            # `uv_tcp_flags`) have no valid C type to map to and are skipped.
             if type_is_from_std_c(tv):
-                continue
+                match lookup_decl_c_name_cross(ta_analysis, tv, kn, program.analyses.as_span()):
+                    Option.some:
+                        pass
+                    Option.none:
+                        continue
             # Qualify proc type aliases to the shared proc struct name so
             # that e.g. `type IntGenerator = proc() -> int` emits a typedef
             # to `mt_proc_int` instead of a raw function pointer.
