@@ -784,12 +784,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             d = read(analysis.source_file.declarations.data + i)
         match d:
             ast.Decl.decl_function as fun:
-                # Functions in async runtime modules have their own C
-                # implementation — don't lower their bodies, but keep
-                # their declarations for type-checking.
-                if analysis.module_name.starts_with("std.async.libuv_runtime"):
-                    pass
-                else if fun.is_async:
+                if fun.is_async:
                     if async_mod.body_has_await(fun.body):
                         # Has awaits — use normal lowering with inside_async flag.
                         # (Full CPS await lowering is deferred; the current
@@ -4986,13 +4981,6 @@ function expr_type_for_spec(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr], type
                     concrete.push(resolve_type_ref(ctx, read(type_args.data + i).value))
                     i += 1
                 return types.Type.ty_generic(name = ma.member_name, args = concrete.as_span())
-            ast.Expr.expr_identifier as id:
-                var concrete = vec.Vec[types.Type].create()
-                var i: ptr_uint = 0
-                while i < type_args.len:
-                    concrete.push(resolve_type_ref(ctx, read(type_args.data + i).value))
-                    i += 1
-                return types.Type.ty_generic(name = id.name, args = concrete.as_span())
             _:
                 return types.Type.ty_error
 

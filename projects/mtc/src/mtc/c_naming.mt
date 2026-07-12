@@ -106,6 +106,10 @@ public function type_c_key(t: types.Type) -> str:
             return buf.as_str()
         types.Type.ty_generic as g:
             var buf = string.String.create()
+            if g.name == "Option":
+                buf.append("std_option_")
+            else if g.name == "Result":
+                buf.append("std_result_")
             buf.append(sanitize_identifier(g.name))
             var i: ptr_uint = 0
             while i < g.args.len:
