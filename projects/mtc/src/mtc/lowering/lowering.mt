@@ -4968,6 +4968,8 @@ function is_pointer_or_ref_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
             return g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref"
+        types.Type.ty_nullable as nl:
+            return is_pointer_or_ref_type(unsafe: read(nl.base))
         _:
             return false
 
