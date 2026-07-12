@@ -235,8 +235,6 @@ public function generate_c(program: ir.Program) -> string.String:
             emit_line(ref_of(e), "")
             si += 1
 
-        emit_opt_struct_defs_from_program(ref_of(e), program)
-
         # Emit Task struct definitions before struct definitions so that proc
         # structs (e.g. mt_proc_Task_void) that reference Task types in their
         # invoke field types can compile.
@@ -268,6 +266,21 @@ public function generate_c(program: ir.Program) -> string.String:
                 emit_union(ref_of(e), read(program.unions.data + i))
             emit_line(ref_of(e), "")
             i += 1
+
+        # Emit SoA struct definitions after regular structs (they reference
+        # element struct fields by C name).
+        emit_soa_types(ref_of(e), funcs, program)
+
+        i = 0
+        while i < tuple_types.len():
+            let ty_ptr = tuple_types.get(i) else:
+                break
+            unsafe:
+                emit_tuple_type_def(ref_of(e), read(ty_ptr))
+            emit_line(ref_of(e), "")
+            i += 1
+
+        emit_opt_struct_defs_from_program(ref_of(e), program)
     else:
         emit_enums_block(ref_of(e), program)
 
