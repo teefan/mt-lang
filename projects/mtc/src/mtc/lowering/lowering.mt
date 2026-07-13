@@ -13892,10 +13892,6 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     let frame_ty = types.Type.ty_named(module_name = "", name = frame_c)
     let frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = single_ty_span(frame_ty))
 
-    # Frame-field vectors captured after body lowering — set in has_await branch.
-    var cap_local_fields = vec.Vec[ir.Field].create()
-    var cap_await_fields = vec.Vec[ir.Field].create()
-
     # Common vtable param: void* __mt_frame_raw
     var waiter_fn_ty = types.Type.ty_function(params = single_ty_span(ptr_void_type()), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
     var vparams = vec.Vec[ir.Param].create()
@@ -13955,19 +13951,17 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         ctx.async_await_counter = 0
         ctx.async_local_fields = vec.Vec[ir.Field].create()
         ctx.async_await_fields = vec.Vec[ir.Field].create()
-        cap_local_fields = ctx.async_local_fields
-        cap_await_fields = ctx.async_await_fields
+        ctx.async_local_seen = map_mod.Map[str, bool].create()
         let complete_lbl = j2(resume_c, "_complete")
         ctx.async_complete_label = complete_lbl
         ctx.async_result_c_name = "__mt_frame->result"
         # Set up pointer-based field collection so pushes from async_emit_await
         # and async_register_local_field target this function's local vecs even
-        # when nested lower_async_fn calls reassign ctx.async_*fields.  Save the
-        # parent's pointers, set ours, restore after body lowering.
+        # when nested lower_async_fn calls reassign ctx.async_*fields.
         let saved_await_ptr = ctx.async_await_fields_ptr
         let saved_local_ptr = ctx.async_local_fields_ptr
-        ctx.async_await_fields_ptr = ptr_of(cap_await_fields)
-        ctx.async_local_fields_ptr = ptr_of(cap_local_fields)
+        ctx.async_await_fields_ptr = ptr_of(ctx.async_await_fields)
+        ctx.async_local_fields_ptr = ptr_of(ctx.async_local_fields)
         var saved_label = ctx.async_resume_return_label
         ctx.async_resume_return_label = complete_lbl
         var saved_rt = ctx.current_fn_return_type
@@ -14051,14 +14045,14 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         pif += 1
     if has_await:
         var lfi: ptr_uint = 0
-        while lfi < cap_local_fields.len():
-            let lfp = cap_local_fields.get(lfi) else:
+        while lfi < ctx.async_local_fields.len():
+            let lfp = ctx.async_local_fields.get(lfi) else:
                 break
             ff.push(unsafe: read(lfp))
             lfi += 1
         var afi: ptr_uint = 0
-        while afi < cap_await_fields.len():
-            let afp = cap_await_fields.get(afi) else:
+        while afi < ctx.async_await_fields.len():
+            let afp = ctx.async_await_fields.get(afi) else:
                 break
             ff.push(unsafe: read(afp))
             afi += 1
