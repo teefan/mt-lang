@@ -1596,6 +1596,20 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         ))
                     output.push(ir.Stmt.stmt_goto(label = ctx.async_resume_return_label))
                     return
+                # `return expr?` — handle ? propagation inline before lowering
+                # the return value so the ? is resolved to an if/failure pattern
+                # rather than emitted as a raw ? prefix in C.
+                let rval = r.value
+                if rval != null:
+                    unsafe:
+                        match read(rval):
+                            ast.Expr.expr_unary_op as un:
+                                if un.operator == "?":
+                                    flush_all_defers(ctx, output)
+                                    lower_propagate_return(ctx, output, un.operand, r.line, "")
+                                    return
+                            _:
+                                pass
                 let value = r.value else:
                     flush_all_defers(ctx, output)
                     # In async functions (inside_async / async_resume_return_label),
@@ -1935,6 +1949,92 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
 ## a guard-like unwrap: on failure, return the failure value from the enclosing
 ## function; on success, bind `name` to the unwrapped success value.  This
 ## mirrors the Ruby compiler's `prepare_result_propagation_for_inline_lowering`.
+## Like lower_propagate_let, but for `return expr?`: propagate the ? into
+## an if/failure-return pattern, then return the unwrapped success value.
+function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], operand: ptr[ast.Expr], line: ptr_uint, source_path: str) -> void:
+    let value_ir = lower_expr(ctx, operand)
+    let storage_ty = ir_expr_type(value_ir)
+
+    let storage_c = fresh_c_temp_name(ctx, "propagate")
+    output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = 0, source_path = ""))
+    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = false))
+
+    let kind = guard_storage_kind(ctx, storage_ty)
+    if kind != "option" and kind != "result" and kind != "nullable":
+        output.push(ir.Stmt.stmt_return(value = storage_ref, line = line, source_path = source_path))
+        return
+
+    if kind == "option" or kind == "result":
+        let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
+        let success_arm = if kind == "result": "success" else: "some"
+        let arm_c = variant_arm_type_name(outer_c, success_arm)
+        if not ctx.arm_payload_fields.contains(arm_c):
+            var base_name = ""
+            if is_prelude_variant_name(outer_c):
+                if outer_c.starts_with("std_result_"):
+                    base_name = "Result"
+                else if outer_c.starts_with("std_option_"):
+                    base_name = "Option"
+            if base_name.len > 0:
+                let vi_ptr = ctx.variants.get(base_name)
+                if vi_ptr != null:
+                    let vi = unsafe: read(vi_ptr)
+                    register_arm_payload_fields(ctx, arm_c, vi, success_arm, storage_ty)
+
+    var fail_value = storage_ref
+    let ret_ty = ctx.current_fn_return_type
+    if not types.type_equals(ret_ty, storage_ty):
+        var is_task_ret = false
+        match ret_ty:
+            types.Type.ty_generic as tg:
+                if tg.name == "Task":
+                    is_task_ret = true
+            types.Type.ty_named as tn:
+                if tn.name.starts_with("mt_task_"):
+                    is_task_ret = true
+            _:
+                pass
+        if kind == "result":
+            let data_field = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = types.primitive("void")))
+            let failure_struct = alloc_expr(ir.Expr.expr_member(receiver = data_field, member = "failure", ty = types.primitive("void")))
+            let error_member = alloc_expr(ir.Expr.expr_member(receiver = failure_struct, member = "error", ty = types.primitive("void")))
+            if is_task_ret:
+                var result_fail_fields = vec.Vec[ir.AggregateField].create()
+                result_fail_fields.push(ir.AggregateField(name = "error", value = error_member))
+                let result_failure = extract_task_element_type(ctx, ret_ty)
+                let failure_result = alloc_expr(ir.Expr.expr_variant_literal(ty = result_failure, arm_name = "failure", fields = result_fail_fields.as_span()))
+                var task_fields = vec.Vec[ir.AggregateField].create()
+                let void_zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_void_type()))
+                task_fields.push(ir.AggregateField(name = "value", value = failure_result))
+                task_fields.push(ir.AggregateField(name = "frame", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "ready", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "set_waiter", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "release", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "take_result", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "cancel", value = void_zero))
+                fail_value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = ret_ty, fields = task_fields.as_span()))
+            else:
+                var fail_fields = vec.Vec[ir.AggregateField].create()
+                fail_fields.push(ir.AggregateField(name = "error", value = error_member))
+                fail_value = alloc_expr(ir.Expr.expr_variant_literal(ty = ret_ty, arm_name = "failure", fields = fail_fields.as_span()))
+        else if kind == "option":
+            fail_value = alloc_expr(ir.Expr.expr_variant_literal(ty = ret_ty, arm_name = "none", fields = span[ir.AggregateField]()))
+
+    # Failure branch: return the appropriate failure value.
+    var fail_body = vec.Vec[ir.Stmt].create()
+    flush_all_defers(ctx, ref_of(fail_body))
+    fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = line, source_path = source_path))
+
+    let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = span[ir.Stmt]()))
+
+    # On success, return the unwrapped value.
+    let success_ty = guard_success_type(ctx, kind, storage_ty)
+    let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
+    output.push(ir.Stmt.stmt_return(value = success_val, line = line, source_path = source_path))
+
+
+
 function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr]) -> void:
     let value_ir = lower_expr(ctx, operand)
     let storage_ty = ir_expr_type(value_ir)
@@ -4967,9 +5067,6 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
 ## type for the call expression.
 function cross_module_return_type(ctx: ref[LowerCtx], c_name: str, call_ep: ptr[ast.Expr]) -> types.Type:
     var ret_ty = types.Type.ty_error
-    # Check function_returns first: it has the Task-wrapped return type for
-    # async functions (from collect_function_returns), whereas program_returns
-    # (from collect_program_returns) stores the raw declared return type.
     let fp = ctx.function_returns.get(c_name)
     if fp != null:
         unsafe:
@@ -4982,6 +5079,8 @@ function cross_module_return_type(ctx: ref[LowerCtx], c_name: str, call_ep: ptr[
         if rp != null:
             ret_ty = read(rp)
     if not types.is_error(ret_ty):
+        if is_cross_module_function_async(ctx, c_name) and not ret_type_is_prelude_variant(ret_ty):
+            ret_ty = make_task_type(ret_ty)
         return ret_ty
     let sc = ctx.specialization_cache.get(c_name)
     if sc != null:
@@ -4990,6 +5089,46 @@ function cross_module_return_type(ctx: ref[LowerCtx], c_name: str, call_ep: ptr[
         if not types.is_error(ret_ty):
             return ret_ty
     return expr_type(ctx, call_ep)
+
+
+
+function ret_type_is_prelude_variant(ret_ty: types.Type) -> bool:
+    match ret_ty:
+        types.Type.ty_named as n:
+            if n.name.starts_with("std_result_") or n.name.starts_with("std_option_"):
+                return true
+        types.Type.ty_generic as g:
+            if g.name == "Result" or g.name == "Option":
+                return true
+        types.Type.ty_imported as im:
+            if im.name == "Result" or im.name == "Option":
+                return true
+        _:
+            pass
+    return false
+
+
+
+function is_cross_module_function_async(ctx: ref[LowerCtx], c_name: str) -> bool:
+    var ai: ptr_uint = 0
+    while ai < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + ai)
+        var di: ptr_uint = 0
+        while di < a.source_file.declarations.len:
+            var d: ast.Decl
+            unsafe:
+                d = read(a.source_file.declarations.data + di)
+            match d:
+                ast.Decl.decl_function as fun:
+                    if naming.qualified_c_name(a.module_name, fun.name) == c_name:
+                        return fun.is_async
+                _:
+                    pass
+            di += 1
+        ai += 1
+    return false
 
 
 ## Lower a specialized call `Name[TypeArgs](args)`.  Phase 3 handles the builtin
