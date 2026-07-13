@@ -1915,6 +1915,27 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
     let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = false))
 
     let kind = guard_storage_kind(ctx, storage_ty)
+    # Pre-register arm payload fields for Option/Result so that
+    # guard_success_type can find the specialized field type via
+    # arm_payload_fields (P43 fallback). Without this, concrete variant
+    # types like Result[UdpSocket, Error] fall back to returning the
+    # storage type itself, causing `invalid initializer` C errors.
+    if kind == "option" or kind == "result":
+        let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
+        let success_arm = if kind == "result": "success" else: "some"
+        let arm_c = variant_arm_type_name(outer_c, success_arm)
+        if not ctx.arm_payload_fields.contains(arm_c):
+            var base_name = ""
+            if is_prelude_variant_name(outer_c):
+                if outer_c.starts_with("std_result_"):
+                    base_name = "Result"
+                else if outer_c.starts_with("std_option_"):
+                    base_name = "Option"
+            if base_name.len > 0:
+                let vi_ptr = ctx.variants.get(base_name)
+                if vi_ptr != null:
+                    let vi = unsafe: read(vi_ptr)
+                    register_arm_payload_fields(ctx, arm_c, vi, success_arm, storage_ty)
 
     # Build the failure return value.  When the propagation type (e.g.
     # `Result[bool, Error]`) differs from the enclosing function's return type
