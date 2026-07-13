@@ -9183,8 +9183,18 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                                                     fields = span[ir.AggregateField](),
                                                 ))
                                             Option.none:
+                                                var use_bare = target_module.starts_with("std.c.")
+                                                if not use_bare and imported.value.type_alias_types.contains(inner_ma.member_name):
+                                                    let aliased_ptr = imported.value.type_alias_types.get(inner_ma.member_name) else:
+                                                        fatal(c"lowering: enum type alias inconsistency")
+                                                    let aliased = unsafe: read(aliased_ptr)
+                                                    if type_is_from_std_c(aliased):
+                                                        use_bare = true
+                                                var member_c_name = member
+                                                if not use_bare:
+                                                    member_c_name = naming.qualified_member_c_name(target_module, inner_ma.member_name, member)
                                                 return alloc_expr(ir.Expr.expr_name(
-                                                    name = member,
+                                                    name = member_c_name,
                                                     ty = expr_type(ctx, ep),
                                                     pointer = false,
                                                 ))
