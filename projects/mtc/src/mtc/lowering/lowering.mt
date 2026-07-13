@@ -14550,7 +14550,15 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
     output.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = release_fn, arguments = single_expr_span(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = ptr_void))), ty = void_ty)), line = 0, source_path = ""))
 
 
-## Async `main` entrypoint (unimplemented placeholder — see plan §2.6-G).
+## Async `main` entrypoint (stub — requires cross-module wait specialization).
+## The async main is already CPS-lowered as a constructor returning Task[T] with
+## linkage `<module>_main`.  Implementation plan:
+## 1. Find std.async's analysis via ctx.program_analyses, locate the `wait`
+##    function's FnSig and the raw Function AST in the module's source file.
+## 2. Build a GenericFunctionMatch with the AST decl, substitute T -> inner_ty.
+## 3. Call lower_and_cache_specialization_with_sub to emit the specialization.
+## 4. Build a root proc via lower_fn_to_proc, call the specialized wait C name,
+##    release the proc, return the result (or call `run` for void).
 function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir.Function]:
     return Option[ir.Function].none
 
