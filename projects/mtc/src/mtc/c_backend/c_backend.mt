@@ -252,9 +252,15 @@ public function generate_c(program: ir.Program) -> string.String:
 
         emit_enums_block(ref_of(e), program)
 
+        # Collect Task types once; used by both forward declarations (before
+        # type aliases) and topological sort (alongside structs/variants).
+        var task_seen = map_mod.Map[str, bool].create()
+        var task_elements = map_mod.Map[str, types.Type].create()
+        collect_task_type_set(program, ref_of(task_seen), ref_of(task_elements))
+
         # Task forward declarations must come before type aliases because
         # aliases like `typedef mt_task_X ChanMessageTask` reference them.
-        emit_task_forward_decls(ref_of(e), program)
+        emit_task_forward_decls(ref_of(e), ref_of(task_seen))
 
         emit_type_aliases(ref_of(e), program)
 
@@ -270,8 +276,10 @@ public function generate_c(program: ir.Program) -> string.String:
             si += 1
 
         # Emit struct and variant full definitions in a single dependency order,
-        # since structs and variants can embed each other by value.
-        var type_order = topo_sort_types(program.structs, ref_of(gen_variants), program.variants, ref_of(opt_structs))
+        # since structs and variants can embed each other by value.  Task structs
+        # are included in the sort so that Option[Task[X]] (with value: Task[X])
+        # is ordered after the Task struct definition.
+        var type_order = topo_sort_types(program.structs, ref_of(gen_variants), program.variants, ref_of(opt_structs), ref_of(task_seen), ref_of(task_elements))
         var toi: ptr_uint = 0
         while toi < type_order.len():
             let node_ptr = type_order.get(toi) else:
@@ -287,18 +295,20 @@ public function generate_c(program: ir.Program) -> string.String:
                     emit_variant(ref_of(e), read(gv_ptr))
                 else if node.kind == 2:
                     emit_variant(ref_of(e), read(program.variants.data + node.index))
-                else:
+                else if node.kind == 3:
                     let os_ptr = opt_structs.get(node.index) else:
                         toi += 1
                         continue
                     emit_struct(ref_of(e), read(os_ptr).decl)
+                else:
+                    # kind 4: Task struct
+                    var elem = types.primitive("void")
+                    let te_ptr = task_elements.get(node.key)
+                    if te_ptr != null:
+                        elem = unsafe: read(te_ptr)
+                    emit_task_struct_type(ref_of(e), node.key, elem)
             emit_line(ref_of(e), "")
             toi += 1
-
-        # Emit Task struct definitions after struct/variant definitions so that
-        # Task structs that embed by-value variants (e.g. Task[Result[void, E]])
-        # have the variant type already defined.
-        emit_task_structs(ref_of(e), program)
         i = 0
         while i < program.unions.len:
             unsafe:
@@ -2296,9 +2306,15 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
             if (
                 g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref"
                 or g.name == "span" or g.name == "str_buffer" or g.name == "atomic"
-                or g.name == "Task" or g.name == "SoA"
+                or g.name == "SoA"
             ):
                 return Option[str].none
+            # Task[T] IS a by-value aggregate — the Task struct embeds `value:
+            # T` and other vtable fields, so it must be ordered behind T's
+            # definition.  The Task struct itself is also a dependency target
+            # for variants that embed Task instances by value.
+            if g.name == "Task" and g.args.len >= 1:
+                return Option[str].some(value = j3("mt_task_", naming.type_c_key(unsafe: read(g.args.data + 0)), ""))
             # A generic variant instance embedded by value (e.g.
             # `Option[span[str]]` → `Option_span_str`): it depends on the concrete
             # instance's full definition being ordered first.  Uses the same name
@@ -2330,7 +2346,7 @@ function collect_variant_deps(vd: ir.VariantDecl, deps: ref[vec.Vec[str]]) -> vo
         i += 1
 
 
-function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]]) -> vec.Vec[str]:
+function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]]) -> vec.Vec[str]:
     var deps = vec.Vec[str].create()
     if node.kind == 0:
         unsafe:
@@ -2347,10 +2363,20 @@ function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_varian
             return deps
         unsafe:
             collect_field_deps(read(opt_ptr).decl.fields, ref_of(deps))
+    else if node.kind == 4:
+        # Task struct depends on its element type (e.g. Task[Result[X,E]]
+        # must come after Result[X,E]).
+        let te_ptr = task_elements.get(node.key)
+        if te_ptr != null:
+            match by_value_dep_key(unsafe: read(te_ptr)):
+                Option.some as dep:
+                    deps.push(dep.value)
+                Option.none:
+                    pass
     return deps
 
 
-function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]]) -> vec.Vec[TypeNode]:
+function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]], task_seen: ref[map_mod.Map[str, bool]], task_elements: ref[map_mod.Map[str, types.Type]]) -> vec.Vec[TypeNode]:
     var nodes = vec.Vec[TypeNode].create()
     var by_key = map_mod.Map[str, ptr_uint].create()
     var i: ptr_uint = 0
@@ -2382,16 +2408,32 @@ function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec
         nodes.push(TypeNode(key = key, kind = 3, index = i))
         i += 1
 
+    # Add Task struct nodes (kind 4) so they participate in topological
+    # ordering alongside regular structs and variants.  A Task struct
+    # depends on its element type: Task[Result[X,E]] must come after
+    # Result[X,E], and Option[Task[X]]_some must come after Task[X].
+    var task_keys = vec.Vec[str].create()
+    var task_indices = map_mod.Map[str, ptr_uint].create()
+    var tk = task_seen.keys()
+    while true:
+        let tkp = tk.next() else:
+            break
+        let tname = unsafe: read(tkp)
+        if not by_key.contains(tname):
+            task_indices.set(tname, nodes.len())
+            task_keys.push(tname)
+            by_key.set(tname, nodes.len())
+            nodes.push(TypeNode(key = tname, kind = 4, index = task_keys.len() - 1))
     var visited = map_mod.Map[str, bool].create()
     var result = vec.Vec[TypeNode].create()
     i = 0
     while i < nodes.len():
-        topo_visit_type(ref_of(nodes), i, structs, gen_variants, program_variants, opt_structs, ref_of(by_key), ref_of(visited), ref_of(result))
+        topo_visit_type(ref_of(nodes), i, structs, gen_variants, program_variants, opt_structs, task_elements, ref_of(by_key), ref_of(visited), ref_of(result))
         i += 1
     return result
 
 
-function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]], by_key: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[TypeNode]]) -> void:
+function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]], by_key: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[TypeNode]]) -> void:
     var node: TypeNode
     let node_ptr = nodes.get(index) else:
         return
@@ -2400,7 +2442,7 @@ function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs
     if visited.contains(node.key):
         return
     visited.set(node.key, true)
-    var deps = type_node_deps(node, structs, gen_variants, program_variants, opt_structs)
+    var deps = type_node_deps(node, structs, gen_variants, program_variants, opt_structs, task_elements)
     var di: ptr_uint = 0
     while di < deps.len():
         let dep_ptr = deps.get(di) else:
@@ -2408,7 +2450,7 @@ function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs
         unsafe:
             let dep_idx = by_key.get(read(dep_ptr))
             if dep_idx != null:
-                topo_visit_type(nodes, read(dep_idx), structs, gen_variants, program_variants, opt_structs, by_key, visited, result)
+                topo_visit_type(nodes, read(dep_idx), structs, gen_variants, program_variants, opt_structs, task_elements, by_key, visited, result)
         di += 1
     result.push(node)
 
@@ -4165,18 +4207,15 @@ function uses_parallel_runtime(program: ir.Program) -> bool:
 
 
 
-function emit_task_forward_decls(e: ref[Emitter], program: ir.Program) -> void:
-    var seen = map_mod.Map[str, bool].create()
-    var task_elements = map_mod.Map[str, types.Type].create()
+function collect_task_type_set(program: ir.Program, seen: ref[map_mod.Map[str, bool]], task_elements: ref[map_mod.Map[str, types.Type]]) -> void:
     var i: ptr_uint = 0
-    # Collect Task types from all IR sources (same as emit_task_structs).
     while i < program.functions.len:
         unsafe:
             let f = read(program.functions.data + i)
-            collect_task_type(program, ref_of(seen), ref_of(task_elements), f.return_type)
+            collect_task_type(program, seen, task_elements, f.return_type)
             var pi: ptr_uint = 0
             while pi < f.params.len:
-                collect_task_type(program, ref_of(seen), ref_of(task_elements), read(f.params.data + pi).ty)
+                collect_task_type(program, seen, task_elements, read(f.params.data + pi).ty)
                 pi += 1
         i += 1
     i = 0
@@ -4185,14 +4224,24 @@ function emit_task_forward_decls(e: ref[Emitter], program: ir.Program) -> void:
             let s = read(program.structs.data + i)
             var fi: ptr_uint = 0
             while fi < s.fields.len:
-                collect_task_type(program, ref_of(seen), ref_of(task_elements), read(s.fields.data + fi).ty)
+                collect_task_type(program, seen, task_elements, read(s.fields.data + fi).ty)
                 fi += 1
         i += 1
     i = 0
     while i < program.type_aliases.len:
         unsafe:
-            collect_task_type(program, ref_of(seen), ref_of(task_elements), read(program.type_aliases.data + i).target_type)
+            collect_task_type(program, seen, task_elements, read(program.type_aliases.data + i).target_type)
         i += 1
+    i = 0
+    while i < program.functions.len:
+        unsafe:
+            let fun = read(program.functions.data + i)
+            task_scan_stmts(program, fun.body, seen, task_elements)
+        i += 1
+
+
+
+function emit_task_forward_decls(e: ref[Emitter], seen: ref[map_mod.Map[str, bool]]) -> void:
     var keys = seen.keys()
     while true:
         let kp = keys.next() else:
@@ -4207,49 +4256,12 @@ function emit_task_forward_decls(e: ref[Emitter], program: ir.Program) -> void:
 function emit_task_structs(e: ref[Emitter], program: ir.Program) -> void:
     var seen = map_mod.Map[str, bool].create()
     var task_elements = map_mod.Map[str, types.Type].create()
+    collect_task_type_set(program, ref_of(seen), ref_of(task_elements))
+    emit_task_struct_types_from_set(e, ref_of(seen), ref_of(task_elements))
 
-    # Collect Task types from function return types and parameter types.
-    var i: ptr_uint = 0
-    while i < program.functions.len:
-        unsafe:
-            let f = read(program.functions.data + i)
-            collect_task_type(program, ref_of(seen), ref_of(task_elements), f.return_type)
-            var pi: ptr_uint = 0
-            while pi < f.params.len:
-                collect_task_type(program, ref_of(seen), ref_of(task_elements), read(f.params.data + pi).ty)
-                pi += 1
-        i += 1
 
-    # Collect Task types from struct field types (async frame structs have
-    # `await_N` fields typed as Task[T]).
-    i = 0
-    while i < program.structs.len:
-        unsafe:
-            let s = read(program.structs.data + i)
-            var fi: ptr_uint = 0
-            while fi < s.fields.len:
-                collect_task_type(program, ref_of(seen), ref_of(task_elements), read(s.fields.data + fi).ty)
-                fi += 1
-        i += 1
 
-    # Collect Task types from type aliases (e.g. `type ChanMessageTask = Task[Option[Message]]`).
-    i = 0
-    while i < program.type_aliases.len:
-        unsafe:
-            collect_task_type(program, ref_of(seen), ref_of(task_elements), read(program.type_aliases.data + i).target_type)
-        i += 1
-
-    # Collect Task types from function bodies — aggregate literals, return
-    # values, and other expression types within IR statements may reference
-    # `mt_task_*` types not visible at the function signature level.
-    i = 0
-    while i < program.functions.len:
-        unsafe:
-            let fun = read(program.functions.data + i)
-            task_scan_stmts(program, fun.body, ref_of(seen), ref_of(task_elements))
-        i += 1
-
-    # Emit collected Task struct types.
+function emit_task_struct_types_from_set(e: ref[Emitter], seen: ref[map_mod.Map[str, bool]], task_elements: ref[map_mod.Map[str, types.Type]]) -> void:
     var keys = seen.keys()
     while true:
         let kp = keys.next() else:
