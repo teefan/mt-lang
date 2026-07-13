@@ -9859,6 +9859,9 @@ function module_var_type(ctx: ref[LowerCtx], name: str) -> types.Type:
                     let tref = v.var_type
                     if tref != null:
                         return resolve_type_ref(ctx, tref)
+            ast.Decl.decl_const as c:
+                if c.name == name:
+                    return resolve_type_ref(ctx, c.const_type)
             _:
                 pass
         di += 1
