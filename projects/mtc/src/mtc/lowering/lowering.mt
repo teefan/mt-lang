@@ -4653,7 +4653,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                             match find_imported_analysis(ctx, target_module):
                                 Option.some as imported:
                                     if imported.value.structs.contains(ma.member_name):
-                                        return lower_aggregate_literal(ctx, ma.member_name, args)
+                                        return lower_aggregate_literal_in_module(ctx, ma.member_name, args, target_module)
                                     # Check if ma.member_name is a variant arm in any
                                     # imported variant (e.g. types.Type.ty_named(name)).
                                     match find_imported_variant_arm(imported.value, ma.member_name):
@@ -5881,9 +5881,21 @@ function specialization_key(ctx: ref[LowerCtx], module_name: str, callee_name: s
 ## Lower a struct constructor `Name(field = value, ...)` to an IR aggregate
 ## literal, preserving the constructor's field order.
 function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: span[ast.Argument]) -> ptr[ir.Expr]:
+    return lower_aggregate_literal_impl(ctx, struct_name, args, Option[str].none)
+
+
+
+function lower_aggregate_literal_in_module(ctx: ref[LowerCtx], struct_name: str, args: span[ast.Argument], target_module: str) -> ptr[ir.Expr]:
+    return lower_aggregate_literal_impl(ctx, struct_name, args, Option[str].some(value = target_module))
+
+
+
+function lower_aggregate_literal_impl(ctx: ref[LowerCtx], struct_name: str, args: span[ast.Argument], target_module: Option[str]) -> ptr[ir.Expr]:
     var source_module = ctx.module_name
     if is_builtin_type_name(struct_name):
         source_module = ""
+    else if target_module.is_some():
+        source_module = target_module.unwrap()
     else if not ctx.analysis.structs.contains(struct_name):
         var import_values = ctx.analysis.imports.values()
         var found_module = false
