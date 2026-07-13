@@ -856,8 +856,20 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 if v.var_type != null:
                     var vt: ptr[ast.TypeRef] = unsafe: ptr[ast.TypeRef]<-v.var_type
                     g_ty = resolve_type_ref(ctx, vt)
-                let zero_val = alloc_expr(ir.Expr.expr_zero_init(ty = g_ty))
-                globals.push(ir.Global(name = v.name, linkage_name = naming.qualified_c_name(ctx.module_name, v.name), ty = g_ty, value = zero_val))
+                # A top-level `var` initializer must be static-storage-safe (the
+                # analyzer enforces this), so it lowers to a C static initializer.
+                # A no-capture `proc` initializer, for example, becomes a static
+                # aggregate of function pointers — without it the proc's invoke
+                # pointer stays null and calling it segfaults.
+                var g_val = alloc_expr(ir.Expr.expr_zero_init(ty = g_ty))
+                if v.value != null:
+                    # A top-level initializer is evaluated in an empty local
+                    # scope: clear any locals left over from a previously-lowered
+                    # function so a no-capture `proc` initializer is not treated
+                    # as capturing stale bindings.
+                    ctx.locals.clear()
+                    g_val = lower_expr(ctx, unsafe: ptr[ast.Expr]<-v.value)
+                globals.push(ir.Global(name = v.name, linkage_name = naming.qualified_c_name(ctx.module_name, v.name), ty = g_ty, value = g_val))
             ast.Decl.decl_const as c:
                 var c_ty = resolve_type_ref(ctx, c.const_type)
                 let val_ptr = c.value
@@ -2801,8 +2813,11 @@ function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.T
     # str_buffer[N]: ensure the struct type exists and return the resolved type.
     if name == "str_buffer" and t.arguments.len == 1:
         var sb_args = vec.Vec[types.Type].create()
-        unsafe:
-            sb_args.push(resolve_type_ref(ctx, t.arguments.data + 0))
+        # The capacity N is an integer type argument: resolve it as a
+        # `ty_literal_int` (like `array[T, N]`) so str_buffer method lowering can
+        # recover the capacity.  A plain `resolve_type_ref` would not yield a
+        # literal-int form, leaving the capacity as 0 and aborting at runtime.
+        sb_args.push(types.literal_int(resolve_array_length(unsafe: t.arguments.data + 0)))
         let sb_ty = types.Type.ty_generic(name = "str_buffer", args = sb_args.as_span())
         ensure_str_buffer_struct(ctx, sb_ty)
         return sb_ty
@@ -4704,7 +4719,8 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # Try to evaluate a const function call at compile time so that
                 # const initializers (e.g. `const SQUARE_5 = square(5)`) produce
                 # a literal value instead of a C function call.
-                match try_evaluate_const_function_call(ctx, id.name, args):
+                var toplevel_const_vars = map_mod.Map[str, long].create()
+                match try_evaluate_const_function_call(ctx, id.name, args, ref_of(toplevel_const_vars)):
                     Option.some as cf_val:
                         return cf_val.value
                     Option.none:
@@ -12291,32 +12307,32 @@ function lower_when_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], disc
 function lower_inline_if_statement(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> void:
     if branches.len == 0:
         return
-    var br: ast.IfBranch
-    unsafe:
-        br = read(branches.data + 0)
-    match try_evaluate_const_expr(ctx, br.condition):
-        Option.some as val:
-            match val.value:
-                ConstValue.cv_bool as bv:
-                    if bv.value:
-                        lower_block_stmts(ctx, output, br.body)
+    # Each `else if` is its own branch with its own condition; evaluate them in
+    # order and emit the first branch whose compile-time condition is true.
+    var i: ptr_uint = 0
+    while i < branches.len:
+        var br: ast.IfBranch
+        unsafe:
+            br = read(branches.data + i)
+        match try_evaluate_const_expr(ctx, br.condition):
+            Option.some as val:
+                match val.value:
+                    ConstValue.cv_bool as bv:
+                        if bv.value:
+                            lower_block_stmts(ctx, output, br.body)
+                            return
+                        # False: fall through to the next `else if` / `else`.
+                    _:
+                        # Non-bool discriminant: cannot select a branch.
                         return
-                    # False: check else
-                    if branches.len > 1:
-                        var eb: ast.IfBranch
-                        unsafe:
-                            eb = read(branches.data + 1)
-                        lower_block_stmts(ctx, output, eb.body)
-                        return
-                    let el = else_body
-                    if el != null:
-                        lower_block_stmts(ctx, output, el)
-                    return
-                _:
-                    return
-        Option.none:
-            # Can't evaluate at compile time: emit nothing (like Ruby).
-            pass
+            Option.none:
+                # Can't evaluate at compile time: emit nothing (like Ruby).
+                return
+        i += 1
+    # No branch condition held: emit the trailing `else` body, if any.
+    let el = else_body
+    if el != null:
+        lower_block_stmts(ctx, output, el)
 
 
 ## Lower an `inline match` statement.  Evaluate the scrutinee and only emit
@@ -12409,12 +12425,11 @@ function comptime_iterable_elements(ctx: ref[LowerCtx], iterable: ptr[ast.Expr])
 
 
 function comptime_fields_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]) -> Option[span[ComptimeElement]]:
-    let type_name: str = comptime_type_arg_name(args_data)
+    let type_name: str = comptime_resolve_type_arg_name(ctx, args_data)
     if type_name.len == 0:
         return Option[span[ComptimeElement]].none
-    let fields_ptr = ctx.analysis.structs.get(type_name) else:
+    let entries = comptime_lookup_struct_fields(ctx, type_name) else:
         return Option[span[ComptimeElement]].none
-    let entries = unsafe: read(fields_ptr)
     var elements = vec.Vec[ComptimeElement].create()
     var ei: ptr_uint = 0
     while ei < entries.len:
@@ -12426,8 +12441,28 @@ function comptime_fields_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]) ->
     return Option[span[ComptimeElement]].some(value = elements.as_span())
 
 
+## Look up a struct's field list by name, searching the current module first and
+## then every program analysis.  Cross-module search lets a generic reflective
+## helper defined in one module (e.g. `std.fmt.format_value[T]`) reflect over a
+## struct type defined in another module.
+function comptime_lookup_struct_fields(ctx: ref[LowerCtx], type_name: str) -> Option[span[analyzer.FieldEntry]]:
+    let local = ctx.analysis.structs.get(type_name)
+    if local != null:
+        return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(local))
+    var i: ptr_uint = 0
+    while i < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + i)
+        let p = a.structs.get(type_name)
+        if p != null:
+            return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(p))
+        i += 1
+    return Option[span[analyzer.FieldEntry]].none
+
+
 function comptime_members_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]) -> Option[span[ComptimeElement]]:
-    let type_name: str = comptime_type_arg_name(args_data)
+    let type_name: str = comptime_resolve_type_arg_name(ctx, args_data)
     if type_name.len == 0:
         return Option[span[ComptimeElement]].none
     let names_ptr = ctx.analysis.match_case_names.get(type_name) else:
@@ -12529,7 +12564,7 @@ function lower_inline_for_field_iter(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.
     ctx.inline_for_element = Option[ComptimeElement].some(value = ComptimeElement.ce_struct_field(name = field_name, field_type = field_ty))
     var iter_stmts = vec.Vec[ir.Stmt].create()
     let binding_c = utils.c_local_name(binding_name)
-    iter_stmts.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = field_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("int"))), line = 0, source_path = ""))
+    iter_stmts.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = field_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = field_ty)), line = 0, source_path = ""))
     ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = field_ty, pointer = false))
     lower_inline_for_field_body(ctx, ref_of(iter_stmts), body_ptr, field_ty)
     ctx.locals.pop()
@@ -12596,6 +12631,20 @@ function extract_field_type_compare(ctx: ref[LowerCtx], cond: ptr[ast.Expr], fie
     return Option[bool].none
 
 
+## Resolve a bare identifier to a compile-time type value: an in-scope generic
+## type parameter (via the active substitution) or a primitive/`str` type name.
+## Returns none for ordinary value identifiers.
+function comptime_identifier_type(ctx: ref[LowerCtx], name: str) -> Option[types.Type]:
+    let subst = ctx.type_substitution.get(name)
+    if subst != null:
+        return Option[types.Type].some(value = unsafe: read(subst))
+    if name == "str":
+        return Option[types.Type].some(value = types.Type.ty_str)
+    if types.is_numeric_name(name) or types.is_integer_name(name) or name == "float" or name == "double" or name == "bool" or name == "char" or name == "void" or name == "cstr":
+        return Option[types.Type].some(value = types.primitive(name))
+    return Option[types.Type].none
+
+
 function comptime_expr_to_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
     unsafe:
         match read(ep):
@@ -12658,6 +12707,33 @@ function comptime_type_arg_name(arg_ptr: ptr[ast.Argument]) -> str:
     return ""
 
 
+## Like `comptime_type_arg_name`, but resolves an in-scope generic type
+## parameter (e.g. `fields_of(T)` inside `count_fields[T]()`) through the active
+## substitution to the concrete struct/enum name.  Without this, `T` would be
+## looked up literally and reflection over a type parameter would find nothing.
+function comptime_resolve_type_arg_name(ctx: ref[LowerCtx], arg_ptr: ptr[ast.Argument]) -> str:
+    let raw = comptime_type_arg_name(arg_ptr)
+    if raw.len == 0:
+        return raw
+    let subst = ctx.type_substitution.get(raw)
+    if subst != null:
+        return type_simple_name(unsafe: read(subst))
+    return raw
+
+
+## The bare (unqualified) name of a named/imported/generic type, or "" otherwise.
+function type_simple_name(t: types.Type) -> str:
+    match t:
+        types.Type.ty_named as n:
+            return n.name
+        types.Type.ty_imported as im:
+            return im.name
+        types.Type.ty_generic as g:
+            return g.name
+        _:
+            return ""
+
+
 ## Extract a string argument value from a comptime argument.
 function comptime_arg_name(arg_ptr: ptr[ast.Argument]) -> str:
     unsafe:
@@ -12693,6 +12769,8 @@ function inline_for_member_subst(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], me
                             ast.Expr.expr_identifier as id:
                                 if member == "type":
                                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_name(name = "sizeof_hint", ty = f.field_type, pointer = false)))
+                                if member == "name":
+                                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_string_literal(value = f.name, ty = types.Type.ty_str, cstring = false)))
                             _:
                                 pass
                 _:
@@ -12877,8 +12955,28 @@ function try_evaluate_const_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Optio
                     return Option[ConstValue].some(value = ConstValue.cv_bool(value = true))
                 if id.name == "false":
                     return Option[ConstValue].some(value = ConstValue.cv_bool(value = false))
+                # A bare type name or an in-scope generic type parameter evaluates
+                # to a compile-time type value, enabling `inline if T == int` and
+                # `field.type == float` dispatch.
+                match comptime_identifier_type(ctx, id.name):
+                    Option.some as tv:
+                        return Option[ConstValue].some(value = ConstValue.cv_type(ty = tv.value))
+                    Option.none:
+                        pass
                 return Option[ConstValue].none
             ast.Expr.expr_member_access as ma:
+                # `field.type` inside an `inline for` over `fields_of(T)` resolves
+                # to the current field's type as a compile-time type value.
+                if ma.member_name == "type":
+                    match ctx.inline_for_element:
+                        Option.some as elem_val:
+                            match elem_val.value:
+                                ComptimeElement.ce_struct_field as sf:
+                                    return Option[ConstValue].some(value = ConstValue.cv_type(ty = sf.field_type))
+                                _:
+                                    pass
+                        Option.none:
+                            pass
                 match try_evaluate_const_expr(ctx, ma.receiver):
                     Option.some as rv:
                         return Option[ConstValue].some(value = rv.value)
@@ -12935,6 +13033,12 @@ function const_binary_op(op: str, left_val: ConstValue, right_val: ConstValue) -
         ConstValue.cv_int as li:
             match right_val:
                 ConstValue.cv_int as ri:
+                    # Comparison operators yield a bool; arithmetic/bitwise yield
+                    # an int.  Without this split, `SELECTOR == 2` would evaluate
+                    # to `cv_int(1)` and an `inline if` (which only accepts
+                    # `cv_bool`) would drop both branches.
+                    if is_const_comparison_op(op):
+                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = apply_int_op(op, li.value, ri.value) != 0))
                     return Option[ConstValue].some(value = ConstValue.cv_int(value = apply_int_op(op, li.value, ri.value)))
                 _:
                     return Option[ConstValue].none
@@ -12972,6 +13076,10 @@ function const_binary_op(op: str, left_val: ConstValue, right_val: ConstValue) -
                     return Option[ConstValue].none
                 _:
                     return Option[ConstValue].none
+
+
+function is_const_comparison_op(op: str) -> bool:
+    return op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
 
 
 function apply_int_op(op: str, l: long, r: long) -> long:
@@ -13016,7 +13124,7 @@ function apply_int_op(op: str, l: long, r: long) -> long:
 ## statements, if/else control flow, while loops, and for loops over arrays.
 ## Falls back to returning `None` for unrecognised constructs so the regular
 ## call lowering path can take over.
-function try_evaluate_const_function_call(ctx: ref[LowerCtx], func_name: str, args: span[ast.Argument]) -> Option[ptr[ir.Expr]]:
+function try_evaluate_const_function_call(ctx: ref[LowerCtx], func_name: str, args: span[ast.Argument], caller_vars: ref[map_mod.Map[str, long]]) -> Option[ptr[ir.Expr]]:
     let decls = ctx.analysis.source_file.declarations
     var i: ptr_uint = 0
     var func_body: ptr[ast.Stmt]? = null
@@ -13039,7 +13147,10 @@ function try_evaluate_const_function_call(ctx: ref[LowerCtx], func_name: str, ar
     var j: ptr_uint = 0
     while j < args.len:
         let arg_ep = unsafe: read(args.data + j).arg_value
-        match evaluate_const_expr_to_long_standalone(ctx, arg_ep):
+        # Evaluate each argument in the caller's variable scope, so a nested
+        # const-function call like `cube` -> `square(x)` resolves `x` from the
+        # caller's bindings instead of defaulting to 0.
+        match evaluate_const_expr_to_long(ctx, caller_vars, arg_ep):
             Option.some as lv:
                 unsafe:
                     param_values.set(read(func_params.data + j).name, lv.value)
@@ -13235,7 +13346,8 @@ function evaluate_const_expr_to_long_standalone(ctx: ref[LowerCtx], ep: ptr[ast.
             ast.Expr.expr_call as call:
                 match read(call.callee):
                     ast.Expr.expr_identifier as cid:
-                        match try_evaluate_const_function_call(ctx, cid.name, call.args):
+                        var standalone_vars = map_mod.Map[str, long].create()
+                        match try_evaluate_const_function_call(ctx, cid.name, call.args, ref_of(standalone_vars)):
                             Option.some as rv:
                                 unsafe:
                                     match read(rv.value):
@@ -13315,7 +13427,7 @@ function evaluate_const_expr_to_ir(ctx: ref[LowerCtx], variables: ref[map_mod.Ma
             ast.Expr.expr_call as call:
                 match read(call.callee):
                     ast.Expr.expr_identifier as cid:
-                        match try_evaluate_const_function_call(ctx, cid.name, call.args):
+                        match try_evaluate_const_function_call(ctx, cid.name, call.args, variables):
                             Option.some as rv:
                                 return Option[ptr[ir.Expr]].some(value = rv.value)
                             Option.none:

@@ -461,6 +461,16 @@ function emitted_functions(program: ir.Program) -> vec.Vec[ir.Function]:
             reach_from_expr(c.value, ref_of(func_names), ref_of(reachable), ref_of(worklist))
         ci += 1
 
+    # Seed reachability from global variable initializers: a top-level `var`
+    # initialized with a no-capture `proc` holds function pointers to synthetic
+    # invoke/release/retain wrappers that are reachable only through the global.
+    var gvi: ptr_uint = 0
+    while gvi < program.globals.len:
+        unsafe:
+            let gv = read(program.globals.data + gvi)
+            reach_from_expr(gv.value, ref_of(func_names), ref_of(reachable), ref_of(worklist))
+        gvi += 1
+
     while true:
         let name = worklist.pop() else:
             break
@@ -1901,6 +1911,16 @@ function c_declaration(t: types.Type, name: str) -> str:
     match t:
         types.Type.ty_function:
             return c_fn_ptr_declarator(t, name)
+        types.Type.ty_nullable as nl:
+            # A nullable function pointer (`fn(...)?`) lowers to a plain function
+            # pointer, which needs declarator syntax `ret (*name)(...)` — the
+            # generic fallthrough would wrongly emit `ret (*)(...) name`.
+            let nbase = unsafe: read(nl.base)
+            match nbase:
+                types.Type.ty_function:
+                    return c_fn_ptr_declarator(nbase, name)
+                _:
+                    pass
         types.Type.ty_generic as g:
             if (g.name == "ptr" or g.name == "own" or g.name == "ref") and g.args.len >= 1:
                 let inner = unsafe: read(g.args.data + (g.args.len - 1))
@@ -3954,6 +3974,11 @@ function render_global(e: ref[Emitter], g: ir.Global) -> str:
     # rather than the backend-internal `array_elem_N` struct type name (which
     # has no typedef emitted).
     buf.append(c_declaration(g.ty, g.linkage_name))
+    # Emit the static initializer.  Scalars zero-init to `0`, aggregates/arrays
+    # to `{ 0 }`, and value-carrying initializers (e.g. a no-capture `proc`
+    # aggregate of function pointers) render their concrete constant form.
+    buf.append(" = ")
+    buf.append(render_initializer(e, g.value))
     buf.append(";")
     return buf.as_str()
 
