@@ -47,6 +47,10 @@ struct Emitter:
     # std.c.* backing C names for type aliases, keyed by the internal name
     # (e.g. "sockaddr_storage" → "struct sockaddr_storage").
     std_c_backing: map_mod.Map[str, str]
+    # The return type of the function currently being emitted, so `return <arr>`
+    # in an array-returning function can be lowered to the `__mt_out` out-param
+    # convention.  `void` outside a function body.
+    current_fn_return_type: types.Type
 
 
 ## Local variant-arm metadata for prelude type collection (mirrors lowering's
@@ -76,6 +80,7 @@ public function generate_c(program: ir.Program) -> string.String:
         opt_type_set = map_mod.Map[str, types.Type].create(),
         std_c_backing = map_mod.Map[str, str].create(),
     )
+    e.current_fn_return_type = types.primitive("void")
 
     # Reachability pruning: emit only functions reachable from the entry points,
     # in source order (mirrors c_backend/reachability.rb emitted_functions).
@@ -1786,6 +1791,39 @@ function array_direct_initializer(ep: ptr[ir.Expr]) -> bool:
                 return false
 
 
+## True when `ep` is a direct call whose result type is an array — such a call is
+## emitted through the `__mt_out` out-param convention rather than by value.
+function expr_is_array_call(e: ref[Emitter], ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_call as call:
+                return is_array_type(call.ty)
+            _:
+                return false
+
+
+## Emit an array-returning direct call with `out_arg` prepended as its first
+## argument (the `__mt_out` out-param).  `out_arg` is already-rendered C (e.g.
+## `&local`, `__mt_out`, or `&(target)`).
+function emit_array_call(e: ref[Emitter], ep: ptr[ir.Expr], out_arg: str) -> str:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_call as call:
+                var buf = string.String.create()
+                buf.append(call.callee)
+                buf.append("(")
+                buf.append(out_arg)
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    buf.append(", ")
+                    buf.append(render_expression(e, call.arguments.data + i))
+                    i += 1
+                buf.append(")")
+                return buf.as_str()
+            _:
+                return render_expression(e, ep)
+
+
 function is_array_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
@@ -2535,7 +2573,13 @@ function function_signature(func: ir.Function) -> str:
     let prefix = if func.entry_point: "" else: "static "
     var buf = string.String.create()
     buf.append(prefix)
-    buf.append(c_type(func.return_type))
+    # A function returning `array[T, N]` cannot return it by value in C; it is
+    # lowered to a `void` function with a leading `T (*__mt_out)[N]` out-param
+    # (mirrors Ruby's c_function_declaration / array_out_param_declaration).
+    if is_array_type(func.return_type):
+        buf.append("void")
+    else:
+        buf.append(c_type(func.return_type))
     buf.append(" ")
     buf.append(func.linkage_name)
     buf.append("(")
@@ -2545,26 +2589,43 @@ function function_signature(func: ir.Function) -> str:
 
 
 function function_params(func: ir.Function) -> str:
-    if func.params.len == 0:
-        return "void"
-    var buf = string.String.create()
+    var parts = vec.Vec[str].create()
+    if is_array_type(func.return_type):
+        parts.push(array_out_param_declaration(func.return_type, "__mt_out"))
     var i: ptr_uint = 0
     while i < func.params.len:
-        if i > 0:
-            buf.append(", ")
         unsafe:
             let p = read(func.params.data + i)
-            buf.append(c_declaration(p.ty, p.linkage_name))
+            parts.push(c_declaration(p.ty, p.linkage_name))
         i += 1
+    if parts.len() == 0:
+        return "void"
+    var buf = string.String.create()
+    var pi: ptr_uint = 0
+    while pi < parts.len():
+        if pi > 0:
+            buf.append(", ")
+        let sp = parts.get(pi) else:
+            break
+        buf.append(unsafe: read(sp))
+        pi += 1
     return buf.as_str()
+
+
+## The C declaration of an array out-parameter: `T (*name)[N]`.  Used for the
+## synthetic `__mt_out` first parameter of an array-returning function.
+function array_out_param_declaration(t: types.Type, name: str) -> str:
+    return c_declaration(t, j3("(*", name, ")"))
 
 
 function emit_function(e: ref[Emitter], func: ir.Function) -> void:
     e.used_labels.clear()
     collect_used_labels(func.body, ref_of(e.used_labels))
+    e.current_fn_return_type = func.return_type
     emit_line(e, j2(function_signature(func), " {"))
     emit_stmts(e, func.body, 1)
     emit_line(e, "}")
+    e.current_fn_return_type = types.primitive("void")
 
 
 ## Collect every label targeted by a `goto` anywhere in a statement body, so an
@@ -2616,14 +2677,35 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 let value = r.value else:
                     emit_line(e, j2(indent, "return;"))
                     return
+                # Array-returning function: write into `*__mt_out` (either by
+                # calling the array-returning callee with `__mt_out`, or by
+                # memcpy'ing the array value) then `return;`.
+                if is_array_type(e.current_fn_return_type):
+                    if expr_is_array_call(e, value):
+                        emit_line(e, j3(indent, emit_array_call(e, value, "__mt_out"), ";"))
+                        emit_line(e, j2(indent, "return;"))
+                    else:
+                        emit_line(e, j6(indent, "memcpy(*__mt_out, ", render_expression(e, value), ", sizeof(*__mt_out)", ");", ""))
+                        emit_line(e, j2(indent, "return;"))
+                    return
                 emit_line(e, j4(indent, "return ", render_expression(e, value), ";"))
             ir.Stmt.stmt_local as loc:
-                if is_array_type(loc.ty) and not array_direct_initializer(loc.value):
+                if is_array_type(loc.ty) and expr_is_array_call(e, loc.value):
+                    # `let a = <array-returning call>` — declare the array, then
+                    # call the callee with `&a` as its out-param.
+                    emit_line(e, j3(indent, c_declaration(loc.ty, loc.linkage_name), ";"))
+                    emit_line(e, j3(indent, emit_array_call(e, loc.value, j2("&", loc.linkage_name)), ";"))
+                else if is_array_type(loc.ty) and not array_direct_initializer(loc.value):
                     emit_line(e, j3(indent, c_declaration(loc.ty, loc.linkage_name), ";"))
                     emit_line(e, j6(indent, "memcpy(", loc.linkage_name, ", ", render_expression(e, loc.value), j3(", sizeof(", loc.linkage_name, "));")))
                 else:
                     emit_line(e, j5(indent, c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";"))
             ir.Stmt.stmt_assignment as asg:
+                # `arr = <array-returning call>` — call the callee with `&arr`.
+                if asg.operator == "=" and is_array_type(expr_result_type(asg.target)) and expr_is_array_call(e, asg.value):
+                    let target_c = render_expression(e, asg.target)
+                    emit_line(e, j3(indent, emit_array_call(e, asg.value, j3("&(", target_c, ")")), ";"))
+                    return
                 emit_line(e, j6(indent, render_expression(e, asg.target), " ", asg.operator, " ", j2(render_expression(e, asg.value), ";")))
             ir.Stmt.stmt_expression as ex:
                 emit_line(e, j3(indent, render_expression(e, ex.expression), ";"))
