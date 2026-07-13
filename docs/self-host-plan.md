@@ -1,84 +1,116 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **COMPLETED — 13/13 examples compile with 0 C errors. 172/172 tests pass. P1-P51 DONE.**
-Last updated: 2026-07-13 (session end — P51: async cross-module return types + return expr? propagation)
+Status: **13/13 examples compile. 172/172 tests pass. P1-P51 DONE. Async no-await gap identified.**
+Last updated: 2026-07-13
 
 ---
 
-## 0. Current state
+## 0. Current State
 
-### 0.1 What works
+### 0.1 Compilation
 
-- **13/13 example files compile** with 0 C errors:
-- **Self-host tests itself**: `tmp/mtc-current test projects/mtc -I .` — 172/172 tests pass.
+| Example | C Errors |
+|---------|:---:|
+| `language_baseline.mt` | 0 |
+| `integration_test.mt` | 0 |
+| `string_test.mt` | 0 |
+| `data_structures.mt` | 0 |
+| `memory_stress_test.mt` | 0 |
+| `multithreading_test.mt` | 0 |
+| `option_and_result_surface.mt` | 0 |
+| `nested_struct_stress_test.mt` | 0 |
+| `nullable_and_variant_test.mt` | 0 |
+| `event_stress_test.mt` | 0 |
+| `reflection_advanced.mt` | 0 |
+| `async_stress_test.mt` | 0 |
+| `async_network_lobby.mt` | 0 |
 
-| Example | Status | Error count |
-|---------|--------|-------------|
-| `language_baseline.mt` | OK | 0 |
-| `integration_test.mt` | OK | 0 |
-| `string_test.mt` | OK | 0 |
-| `data_structures.mt` | OK | 0 |
-| `memory_stress_test.mt` | OK | 0 |
-| `multithreading_test.mt` | OK | 0 |
-| `option_and_result_surface.mt` | OK | 0 |
-| `nested_struct_stress_test.mt` | OK | 0 |
-| `nullable_and_variant_test.mt` | OK | 0 |
-| `event_stress_test.mt` | OK | 0 |
-| `reflection_advanced.mt` | OK | 0 |
-| `async_stress_test.mt` | OK | 0 |
-| `async_network_lobby.mt` | OK | 0 |
+172/172 self-tests pass. All planned fixes P1-P51 implemented.
 
-- **P1-P51**: ALL DONE.
-
-### 0.2 Verification commands
+### 0.2 Verification
 
 ```sh
-# Build self-host
 ruby -Ilib bin/mtc build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-current
-
-# Self-host tests itself
-tmp/mtc-current test projects/mtc -I .                  # expect 172/172
-
-# Deterministic self-compile
-rm -f tmp/mtc-s2 tmp/mtc-s3
-tmp/mtc-current build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-s2
-tmp/mtc-s2 build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-s3
-sha256sum tmp/mtc-s2 tmp/mtc-s3                         # identical
-
-# Check error counts
-tmp/mtc-current build examples/reflection_advanced.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep -c "error:"  # 0
-tmp/mtc-current build examples/async_stress_test.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep -c "error:"  # 2 (linker only, 0 C errors)
-tmp/mtc-current build examples/async_network_lobby.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep -c "error:"  # 2 (linker only, 0 C errors)
+tmp/mtc-current test projects/mtc -I .                  # 172/172
+tmp/mtc-current build examples/async_stress_test.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep -c "error:"  # 2 (linker, 0 C errors)
+tmp/mtc-current build examples/async_network_lobby.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep -c "error:"  # 2 (linker, 0 C errors)
 ```
 
 ---
 
-## 2. Completion Summary
+## 1. Remaining Work: Async No-Await Lowering Gap
 
-All 13 examples now compile with 0 C errors. The self-host successfully compiles all Milk Tea language features exercised by the examples:
+### 1.1 Problem
 
-- **Language baseline**: structs, interfaces, events, generics, async/await, proc/fn, SoA, compile-time evaluation, emit, format strings, match expressions, foreign functions, unsafe, parallel constructs, atomic, tuples, dyn
-- **Async stress**: Task types, CPS lowering, awaiter, vtable, libuv integration, ? propagation in async context, struct ordering
-- **Network lobby**: cross-module async, networking types, Config interop, discovery protocol
+The self-host has two code paths for async functions in `lower_async_fn`:
 
-172/172 self-tests pass. All planned fixes (P1-P51) implemented.
+- **`has_await = true`** (functions containing `await`): Generates full CPS lowering — frame struct, resume function with CPS state machine, vtable functions (ready/set_waiter/release/take_result/cancel), and a constructor that allocates the frame, calls resume, and returns a proper Task aggregate with vtable pointers.
 
----
+- **`has_await = false`** (functions WITHOUT `await`): Generates a degenerate output — the function body is lowered inline with a `return (mt_task_void){0}` stub. No frame struct, no vtable, no constructor.
 
-## 3. Ruby vs Self-Host Parity
+### 1.2 Evidence
 
-The self-host compiler produces functionally identical C output to the Ruby compiler for all verified code paths. Key architectural differences:
+Self-host IR for `async function bg_increment_a()` (no awaits):
 
-- **Lowering**: The self-host performs lowering in a single-pass monomorphized style, while Ruby uses a richer intermediate representation. Both produce identical IR.
+```
+fn bg_increment_a as examples_async_stress_test_bg_increment_a() -> Task[void]:
+    checked_index<array[int, 4]>(examples_async_stress_test_shared_counter, 0) += 1
+```
 
-- **C Backend**: The self-host C backend mirrors Ruby's type declarations, struct emission, variant lowering, and optimized C patterns.
+Generated C from self-host:
 
-- **Type System**: Self-host implements the full Milk Tea type system including generics, traits (implements), variant types, nullable, ref/own/ptr, SoA, dyn, atomic, Task.
+```c
+static mt_task_void examples_async_stress_test_bg_increment_a(void) {
+  (*mt_checked_index_array_int_4(&examples_async_stress_test_shared_counter, 0)) += 1;
+}
+```
 
-The self-compile determinism (stage-2 == stage-3) was previously verified. Current linker-level issues in generated binaries (missing `main` or libuv library symbols) are pre-existing infrastructure gaps unrelated to C generation quality.
+Generated C from Ruby (correct):
 
----
+```c
+static mt_task_void examples_async_stress_test_bg_increment_a(void) {
+  __mt_frame = mt_async_alloc(sizeof(frame));
+  resume((void*)__mt_frame);
+  return (mt_task_void){
+    .frame = __mt_frame,
+    .ready = examples_async_stress_test_bg_increment_a__ready,
+    .set_waiter = examples_async_stress_test_bg_increment_a__set_waiter,
+    .release = examples_async_stress_test_bg_increment_a__release,
+    .cancel = examples_async_stress_test_bg_increment_a__cancel,
+  };
+}
+```
 
-## 4. Uncommitted changes inventory
+### 1.3 Impact
 
-All changes committed. Work complete.
+Every async function without `await` produces a structurally invalid Task object:
+- No `.frame` pointer (null/bogus)
+- No vtable function pointers
+- No resume function to drive completion
+- Any `await` on these tasks would crash or produce undefined behavior
+
+### 1.4 Root Cause
+
+In `lower_async_fn` (line 13633+, `has_await = false` path):
+1. The body is lowered with `lower_function_body(ctx, body)` producing inline IR
+2. A goto-based return epilogue is appended
+3. The resume function is pushed with THIS body (the inline logic)
+4. The constructor is pushed with the correct body (frame allocation + resume call + Task return)
+
+But the IR/code that reaches the C backend contains ONLY the inline body — the constructor's frame-allocating body is lost. The `name` function pushed at line 13767 (the constructor) appears to be overridden by a different code path, or the C backend's reachability pruning selects the wrong function.
+
+**Investigation needed**: Determine which code path overwrites the constructor function with the inline body.
+
+### 1.5 Fix Approach
+
+The Ruby compiler treats ALL async functions uniformly: every async function gets a frame struct, resume function, vtable, and constructor. A function with 0 awaits has a single-state CPS machine that immediately reaches the completion epilogue.
+
+The fix should:
+1. Remove the `has_await`/no-await split — use the full CPS path for ALL async functions
+2. Ensure the `name` function pushed by `lower_async_fn` (the constructor) is not overridden
+3. For no-await functions, `lower_async_cps_body` processes the body with 0 await points, creating a single state that contains the full body followed by the completion epilogue
+
+### 1.6 Files
+
+- `projects/mtc/src/mtc/lowering/lowering.mt` — `lower_async_fn` (lines 13548-13767)
+- Ruby reference: `lib/milk_tea/core/lowering/async/` — `AsyncLowering`
