@@ -1,15 +1,14 @@
 # Self-Host Plan
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED.** Stage2 == stage3 byte-identical,
-172/172 self-tests pass. **12/13 examples build** (all 11 non-async + both async
-examples); **11/13 run identically to Ruby**. `async_stress_test` builds and
-crashes at runtime on a pre-existing async task-frame use-after-free (the
-Ruby-built binary also aborts early on the same example). `async_network_lobby`
-builds all its non-async paths but still has ~24 C errors from three deep,
-narrow gaps (cross-module generic-instance recovery in CPS, `?`-propagation in
-`std.binary`, and `Result[T, void]` `map_error`). The self-host itself uses no
-async and no array-by-value returns, so all landed work carries **zero
-fixed-point risk** (verified: stage2==stage3 after every change).
+172/172 self-tests pass. **13/13 examples build** with the self-hosted compiler
+(up from 11); **11/13 run identically to Ruby**. The two async examples build
+cleanly but diverge at runtime on deep async-runtime-lifetime bugs:
+`async_network_lobby` hits a recv-task frame use-after-free in std.net's
+manual-poll (`completed`/`result`) pattern; `async_stress_test` hits an awaited
+child-frame use-after-free (its Ruby-built binary also aborts early). The
+self-host itself uses no async and no array-by-value returns, so every landed
+change is verified fixed-point-safe (stage2==stage3 re-checked after each).
 Last updated: 2026-07-14
 
 ---
@@ -28,21 +27,21 @@ tmp/mtc-stage2 test projects/mtc -I .  # 172/172
 
 ### 0.2 Example parity
 
-| Example | Status |
-|---------|--------|
-| `data_structures` | MATCH |
-| `event_stress_test` | MATCH |
-| `memory_stress_test` | MATCH |
-| `multithreading_test` | MATCH |
-| `nested_struct_stress_test` | MATCH |
-| `nullable_and_variant_test` | MATCH |
-| `option_and_result_surface` | MATCH |
-| `reflection_advanced` | MATCH |
-| `integration_test` | self-host builds & runs (Ruby warns-as-errors) |
-| `language_baseline` | MATCH |
-| `string_test` | MATCH |
-| `async_stress_test` | BUILDS; runtime UAF (Ruby-built binary also aborts early) |
-| `async_network_lobby` | ~24 C errors (3 deep gaps, see §2) |
+| Example | Build | Run |
+|---------|-------|-----|
+| `data_structures` | OK | MATCH |
+| `event_stress_test` | OK | MATCH |
+| `memory_stress_test` | OK | MATCH |
+| `multithreading_test` | OK | MATCH |
+| `nested_struct_stress_test` | OK | MATCH |
+| `nullable_and_variant_test` | OK | MATCH |
+| `option_and_result_surface` | OK | MATCH |
+| `reflection_advanced` | OK | MATCH |
+| `integration_test` | OK | builds & runs (Ruby warns-as-errors) |
+| `language_baseline` | OK | MATCH |
+| `string_test` | OK | MATCH |
+| `async_stress_test` | OK | runtime UAF (Ruby-built binary also aborts early) |
+| `async_network_lobby` | OK | runtime UAF (recv-task frame; Ruby → SUCCESS) |
 
 ---
 
@@ -172,53 +171,48 @@ and clears CPS labels before lowering specialized bodies → runtime wrappers
 no longer embed `goto <other_fn>_resume_complete` (was 3 such errors, now 0).
 
 
-## 2. Remaining work (async_network_lobby's ~24 C errors)
+## 2. Remaining work (async runtime divergences)
 
-All 12 other examples build; `async_network_lobby` builds every non-async path
-but hits three narrow, deep gaps. None affect the self-host itself, so the fixed
-point is unaffected.
+All 13 examples now **build**. The three build gaps that previously blocked
+`async_network_lobby` are fixed (cross-module generic-instance recovery via a
+program-wide shared `generic_struct_instances` registry; `?`-propagation inside
+a prefix cast and in assignment position; `Result[T, void]` `map_error` via
+proc-arg return-type inference). The two async examples now diverge only at
+**runtime**, on deep async-lifetime bugs:
 
-### 2.1 Cross-module generic-instance recovery in CPS
+### 2.1 async_network_lobby: recv-task frame use-after-free
 
-`match await disc.discover(...)` yields `Result[Vec[Server], int]`; binding
-`var servers = sp.value` spills a frame field typed with the *collapsed* generic
-C name (`std_vec_Vec_lib_disc_Server`). The `Vec[Server]` instance was registered
-in the *defining* module's `generic_struct_instances` (when `discover`'s return
-type was qualified), not in the root module's per-module map, so
-`generic_receiver_info` misses it and `servers.len()`/`.get()`/`.release()`
-resolve to the current-module fallback (`<root>_std_vec_Vec_..._len`). Fields
-like `local_first_ptr` / `local_info` then also fail to spill.
+`std.net.discovery.announce` uses a manual-poll pattern:
 
-Fix options: (a) make `generic_struct_instances` a program-wide shared registry
-threaded through `lower_module` (mirrors `program_returns`); or (b) have
-`generic_receiver_info` reconstruct owner+args from the collapsed name by
-searching loaded modules. (a) is cleaner. Repro: `tmp/asynclib/app6.mt`-style —
-an async `main` awaiting a cross-module async fn returning `Result[Vec[T], E]`,
-then calling a `Vec` method on the unwrapped value.
+```mt
+let recv_task = socket.recv_from(1500)   # created once, outside the inner loop
+while frame < 120:
+    if aio.completed(recv_task):
+        let recv_result = aio.result(recv_task)   # result() has `defer release`
+```
 
-### 2.2 `?`-propagation malformed C in `std.binary`
+`result[T]` releases the task frame on exit (its `defer task.release`).
+Valgrind shows `result` → internal `completed(task)` → `task.ready(frame)`
+reading a **freed** `UdpReceiveState` frame, i.e. the recv frame is freed before
+`result` finishes reading it. Ruby runs this to `SUCCESS`, so the divergence is
+in the self-host's handling of the manually-polled task frame lifetime (likely
+the CPS spilling / release ordering of `recv_task` across the poll loop).
 
-`std.binary.Reader.read_str` etc. emit `(uintptr_t) ?read_uint(this)` — a stray
-`?` token. The `?` postfix operator inside a cast/expression position isn't
-lowered to the propagation if/return form there. Pre-existing; unrelated to the
-async work.
+Note: this also surfaced a benign duplicate specialization — `completed[T]`
+called with an explicit `[T]` (inside `result`'s body) mangles to a single-`_`
+key while the inferred `aio.completed(x)` call mangles to `__`; both bodies are
+identical (`return task.ready(task.frame)`), so it is not the crash cause, but
+unifying `specialization_key` and `try_inferred_generic_call`'s key schemes
+would dedup them.
 
-### 2.3 `Result[T, void]` `map_error`
+### 2.2 async_stress_test: awaited child-frame use-after-free
 
-`map_error` producing `Result[T, void]` emits `_void_failure has no member
-error` — the `void` error arm has no `error` field but the failure path still
-references it. Needs the `void`-error arm to be handled specially.
+An awaited child task frame is `free`d by the parent's await-completion release
+while the child's `resume` is still on the call stack (synchronous completion
+path). The Ruby-built binary also aborts early on this example (different
+message), so it is runtime-unstable under both compilers.
 
-### 2.4 async task-frame use-after-free (runtime, async_stress_test)
-
-`async_stress_test` builds but crashes at runtime: an awaited child task frame is
-`free`d by the parent's await-completion release while the child's `resume` is
-still on the call stack (synchronous completion path). The Ruby-built binary also
-aborts early on this example (different message), so it is runtime-unstable under
-both compilers. Fix is in the async release ordering / deferred-free of a task
-frame whose resume synchronously re-enters the waiter.
-
-### 2.5 CPS for-loop induction-var spilling (latent)
+### 2.3 CPS for-loop induction-var spilling (latent)
 
 A `for i in 0..N` / `for v in col` inside an async body creates C locals for the
 induction and stop values; these don't survive an await inside the loop body.
