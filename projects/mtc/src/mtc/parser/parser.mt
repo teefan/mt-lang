@@ -503,6 +503,195 @@ function normalize_format_heredoc(lexeme: str) -> str:
     return lparse.normalize_format_heredoc(lexeme)
 
 
+## Parse an `f"..."` (or `f<<-TAG` heredoc) format-string token into an
+## `expr_format_string` with alternating text and interpolation parts.  Mirrors
+## the Ruby lexer's part-splitting (which the self-host token model cannot carry)
+## plus the parser's re-parse of each `#{expr}` and format spec.
+function parse_format_string_expr(s: ref[pstate.ParserState], lexeme: str, line: ptr_uint, column: ptr_uint) -> own[ast.Expr]:
+    var content: str = ""
+    var decode_escapes = true
+    if is_format_heredoc(lexeme):
+        content = normalize_format_heredoc(lexeme)
+        # Heredoc bodies are raw text — escape sequences are not processed.
+        decode_escapes = false
+    else if lexeme.len >= 3:
+        content = lexeme.slice(2, lexeme.len - 3)
+
+    var parts = vec.Vec[ast.FormatStringPart].create()
+    var text = string.String.create()
+    var i: ptr_uint = 0
+    while i < content.len:
+        let b = content.byte_at(i)
+        if b == '#' and i + 1 < content.len and content.byte_at(i + 1) == '{':
+            if text.len() > 0:
+                parts.push(ast.FormatStringPart.fmt_text(value = text.as_str()))
+                text = string.String.create()
+            let expr_start = i + 2
+            let expr_end = fmt_scan_interp_end(content, expr_start)
+            let raw_source = content.slice(expr_start, expr_end - expr_start)
+            let (src, spec_str) = fmt_split_interp_source(raw_source)
+            let embedded = parse_embedded_expr(s, src)
+            let spec = fmt_parse_spec(spec_str)
+            parts.push(ast.FormatStringPart.fmt_expr(expression = embedded, format_spec = spec))
+            i = expr_end + 1
+        else if decode_escapes and b == '\\' and i + 1 < content.len:
+            text.push_byte(lparse.decode_string_escape(content.byte_at(i + 1)))
+            i += 2
+        else:
+            text.push_byte(b)
+            i += 1
+
+    if text.len() > 0:
+        parts.push(ast.FormatStringPart.fmt_text(value = text.as_str()))
+
+    var node = alloc_expr(s)
+    unsafe:
+        read(node) = ast.Expr.expr_format_string(parts = parts.as_span())
+    return node
+
+
+## Scan from just past `#{` to its matching `}`, tracking brace depth and
+## skipping string contents.  Returns the index of the closing `}`.
+function fmt_scan_interp_end(content: str, start: ptr_uint) -> ptr_uint:
+    var depth: int = 1
+    var i = start
+    while i < content.len:
+        let b = content.byte_at(i)
+        if b == '"':
+            i = fmt_skip_string(content, i)
+            continue
+        if b == '{':
+            depth += 1
+            i += 1
+            continue
+        if b == '}':
+            depth -= 1
+            if depth == 0:
+                return i
+            i += 1
+            continue
+        i += 1
+    return content.len
+
+
+## Advance past a `"..."` string literal starting at `index` (on the opening
+## quote), honouring backslash escapes.  Returns the index just past the close.
+function fmt_skip_string(content: str, index: ptr_uint) -> ptr_uint:
+    var i = index + 1
+    while i < content.len:
+        let b = content.byte_at(i)
+        if b == '"':
+            return i + 1
+        if b == '\\':
+            i += 2
+        else:
+            i += 1
+    return content.len
+
+
+## Split an interpolation body into `(source, format_spec)` at the last
+## top-level `:` whose suffix is a valid format spec (`.N`, `x`/`X`, `o`/`O`,
+## `b`/`B`).  `format_spec` is "" when there is none.
+function fmt_split_interp_source(raw: str) -> (str, str):
+    var depth: int = 0
+    var spec_index_set = false
+    var spec_index: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < raw.len:
+        let b = raw.byte_at(i)
+        if b == '"':
+            i = fmt_skip_string(raw, i)
+            continue
+        if b == '(' or b == '[' or b == '{':
+            depth += 1
+        else if b == ')' or b == ']' or b == '}':
+            if depth > 0:
+                depth -= 1
+        else if b == ':' and depth == 0:
+            if fmt_is_spec_suffix(raw.slice(i + 1, raw.len - i - 1)):
+                spec_index = i
+                spec_index_set = true
+        i += 1
+    if not spec_index_set:
+        return (raw, "")
+    return (raw.slice(0, spec_index), raw.slice(spec_index + 1, raw.len - spec_index - 1))
+
+
+## True when a trimmed string is a valid format spec suffix.
+function fmt_is_spec_suffix(suffix: str) -> bool:
+    let t = suffix.trim_ascii_whitespace()
+    if t.len == 0:
+        return false
+    if t.len == 1:
+        let c = t.byte_at(0)
+        return c == 'x' or c == 'X' or c == 'o' or c == 'O' or c == 'b' or c == 'B'
+    if t.byte_at(0) == '.':
+        var i: ptr_uint = 1
+        while i < t.len:
+            let d = t.byte_at(i)
+            if d < '0' or d > '9':
+                return false
+            i += 1
+        return true
+    return false
+
+
+## Parse a trimmed format-spec suffix into a `FormatSpec`, or null when empty.
+function fmt_parse_spec(spec: str) -> ptr[ast.FormatSpec]?:
+    let t = spec.trim_ascii_whitespace()
+    if t.len == 0:
+        return null
+    var fs: ast.FormatSpec
+    if t.byte_at(0) == '.':
+        var val: int = 0
+        var i: ptr_uint = 1
+        while i < t.len:
+            val = val * 10 + int<-(t.byte_at(i) - ubyte<-('0'))
+            i += 1
+        fs = ast.FormatSpec(spec_kind = ast.FormatSpecKind.precision, value = val, uppercase = false)
+    else:
+        let c = t.byte_at(0)
+        if c == 'x':
+            fs = ast.FormatSpec(spec_kind = ast.FormatSpecKind.hex, value = 0, uppercase = false)
+        else if c == 'X':
+            fs = ast.FormatSpec(spec_kind = ast.FormatSpecKind.hex, value = 0, uppercase = true)
+        else if c == 'o':
+            fs = ast.FormatSpec(spec_kind = ast.FormatSpecKind.octal, value = 0, uppercase = false)
+        else if c == 'O':
+            fs = ast.FormatSpec(spec_kind = ast.FormatSpecKind.octal, value = 0, uppercase = true)
+        else if c == 'b':
+            fs = ast.FormatSpec(spec_kind = ast.FormatSpecKind.binary, value = 0, uppercase = false)
+        else if c == 'B':
+            fs = ast.FormatSpec(spec_kind = ast.FormatSpecKind.binary, value = 0, uppercase = true)
+        else:
+            return null
+    var p = heap_mod.must_alloc[ast.FormatSpec](1)
+    unsafe:
+        read(p) = fs
+    return p
+
+
+## Re-lex and parse the source text of an interpolation as a single expression,
+## in a sub-parser that shares the parent's known-name context so type-name
+## disambiguation inside the interpolation matches the surrounding module.
+function parse_embedded_expr(s: ref[pstate.ParserState], source: str) -> ptr[ast.Expr]:
+    let trimmed = source.trim_ascii_whitespace()
+    var sub = pstate.ParserState(
+        stream = ts.create(lexer.lex(trimmed)),
+        source = trimmed,
+        step_counter = 0,
+        in_inline_block_body = false,
+        recovery_errors = s.recovery_errors,
+        known_type_names = s.known_type_names,
+        known_import_aliases = s.known_import_aliases,
+        known_generic_callable_names = s.known_generic_callable_names,
+        current_type_param_names = s.current_type_param_names,
+        suppress_errors = s.suppress_errors,
+        error_suppressed = false,
+    )
+    return parse_expression(ref_of(sub))
+
+
 function append_escaped_byte(buf: ref[string.String], ch: ubyte) -> void:
     lparse.append_escaped_byte(buf, ch)
 
@@ -2913,12 +3102,13 @@ function parse_primary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
         return node
     else if match_kind(s, tk.TokenKind.fstring):
         let lex = previous_lexeme(s)
-        var value = lex
-        if is_format_heredoc(lex):
-            value = normalize_format_heredoc(lex)
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_string_literal(lexeme = value, value = value, is_cstring = false)
-        return node
+        let ftok = pstate.previous_token(s)
+        var fline: ptr_uint = 0
+        var fcol: ptr_uint = 0
+        unsafe:
+            fline = read(ftok).line
+            fcol = read(ftok).column
+        return parse_format_string_expr(s, lex, fline, fcol)
     else if match_kind(s, tk.TokenKind.at):
         consume(s, tk.TokenKind.lbracket, c"expected '[' after @")
         skip_attribute_content(s)

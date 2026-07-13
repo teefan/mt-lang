@@ -676,6 +676,8 @@ function expr_type(ep: ptr[ir.Expr]) -> types.Type:
                 return e.ty
             ir.Expr.expr_array_literal as e:
                 return e.ty
+            ir.Expr.expr_stmt_expr as e:
+                return e.ty
 
 
 function pointer_receiver(ep: ptr[ir.Expr]) -> bool:
@@ -759,3 +761,5 @@ function render_expression(ep: ptr[ir.Expr], parent_precedence: int) -> str:
                 return j6(render_type(e.ty), ".", e.arm_name, "(", render_agg_fields(e.fields), ")")
             ir.Expr.expr_array_literal as e:
                 return j4(render_type(e.ty), "(", render_args(e.elements), ")")
+            ir.Expr.expr_stmt_expr as e:
+                return j3("stmt_expr(", render_expression(e.result, 0), ")")

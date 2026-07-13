@@ -253,7 +253,7 @@ public struct Argument:
 
 public variant FormatStringPart:
     fmt_text(value: str)
-    fmt_expr(expression: ptr[Expr], format_spec: ptr[FormatSpec])
+    fmt_expr(expression: ptr[Expr], format_spec: ptr[FormatSpec]?)
 
 
 public struct FormatSpec:

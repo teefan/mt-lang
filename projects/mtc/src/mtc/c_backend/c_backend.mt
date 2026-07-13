@@ -592,6 +592,12 @@ function reach_from_expr(ep: ptr[ir.Expr], func_names: ref[map_mod.Map[str, bool
                 while i < arr.elements.len:
                     reach_from_expr(arr.elements.data + i, func_names, reachable, worklist)
                     i += 1
+            ir.Expr.expr_stmt_expr as se:
+                var i: ptr_uint = 0
+                while i < se.setup.len:
+                    reach_from_stmt(se.setup.data + i, func_names, reachable, worklist)
+                    i += 1
+                reach_from_expr(se.result, func_names, reachable, worklist)
             _:
                 pass
 
@@ -1168,6 +1174,13 @@ function expr_calls(ep: ptr[ir.Expr], name: str) -> bool:
                         return true
                     i += 1
                 return false
+            ir.Expr.expr_stmt_expr as se:
+                var i: ptr_uint = 0
+                while i < se.setup.len:
+                    if stmt_calls(se.setup.data + i, name):
+                        return true
+                    i += 1
+                return expr_calls(se.result, name)
             _:
                 return false
 
@@ -1286,6 +1299,12 @@ function collect_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], 
             ir.Expr.expr_index as index:
                 collect_from_expr(index.receiver, seen, collected)
                 collect_from_expr(index.index, seen, collected)
+            ir.Expr.expr_stmt_expr as se:
+                var i: ptr_uint = 0
+                while i < se.setup.len:
+                    collect_from_stmt(se.setup.data + i, seen, collected)
+                    i += 1
+                collect_from_expr(se.result, seen, collected)
             _:
                 pass
 
@@ -2830,8 +2849,40 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return render_array_literal_initializer(e, arr.elements)
             ir.Expr.expr_conditional as cond:
                 return j5(emit_conditional_condition(e, cond.condition), " ? ", render_expression(e, cond.then_expression), " : ", render_expression(e, cond.else_expression))
+            ir.Expr.expr_stmt_expr as se:
+                return render_stmt_expr(e, se.setup, se.result)
             _:
                 fatal(c"c_backend: unsupported expression")
+
+
+## Render a GCC/Clang statement-expression `({ setup...; result; })`.  Only the
+## statement kinds produced by dynamic format-string lowering are supported
+## (local declaration, assignment, and expression statement); sub-expressions go
+## through `render_expression` so their string literals still register globally.
+function render_stmt_expr(e: ref[Emitter], setup: span[ir.Stmt], result: ptr[ir.Expr]) -> str:
+    var buf = string.String.create()
+    buf.append("({ ")
+    var i: ptr_uint = 0
+    while i < setup.len:
+        buf.append(render_stmt_expr_stmt(e, unsafe: setup.data + i))
+        buf.append(" ")
+        i += 1
+    buf.append(render_expression(e, result))
+    buf.append("; })")
+    return buf.as_str()
+
+
+function render_stmt_expr_stmt(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_local as loc:
+                return j4(c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";")
+            ir.Stmt.stmt_assignment as asg:
+                return j6(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value), ";")
+            ir.Stmt.stmt_expression as ex:
+                return j2(render_expression(e, ex.expression), ";")
+            _:
+                fatal(c"c_backend: statement-expression supports only local/assignment/expression statements")
 
 
 ## The address of an operand for a `&`-style position.  A checked array index is
@@ -3936,6 +3987,8 @@ function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
                 return x.ty
             ir.Expr.expr_array_literal as x:
                 return x.ty
+            ir.Expr.expr_stmt_expr as x:
+                return x.ty
 
 
 # =============================================================================
@@ -4161,6 +4214,127 @@ function emit_format_string_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "    return mt_format_append_ptr_uint(target, offset, (uintptr_t)(-((int64_t)value)));")
     emit_line(e, "  }")
     emit_line(e, "  return mt_format_append_ptr_uint(target, offset, (uintptr_t)value);")
+    emit_line(e, "}")
+    emit_line(e, "")
+    # --- Additional length helpers ---
+    emit_line(e, "static uintptr_t mt_format_cstr_len(const char* value) { return (uintptr_t)strlen(value); }")
+    emit_line(e, "static uintptr_t mt_format_bool_len(bool value) { return value ? 4 : 5; }")
+    emit_line(e, "static uintptr_t mt_format_ulong_len(uint64_t value) {")
+    emit_line(e, "  uintptr_t len = 1;")
+    emit_line(e, "  while (value >= 10) { value /= 10; len += 1; }")
+    emit_line(e, "  return len;")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_uint_len(uint32_t value) { return mt_format_ptr_uint_len((uintptr_t)value); }")
+    emit_line(e, "static uintptr_t mt_format_long_len(int64_t value) {")
+    emit_line(e, "  if (value < 0) return 1 + mt_format_ulong_len(((uint64_t)(-(value + 1))) + 1);")
+    emit_line(e, "  return mt_format_ulong_len((uint64_t)value);")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_float_len(float value) {")
+    emit_line(e, "  int written = snprintf(NULL, 0, \"%g\", (double)value);")
+    emit_line(e, "  if (written < 0) mt_fatal(\"format string could not measure float\");")
+    emit_line(e, "  return (uintptr_t)written;")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_double_len(double value) {")
+    emit_line(e, "  int written = snprintf(NULL, 0, \"%g\", value);")
+    emit_line(e, "  if (written < 0) mt_fatal(\"format string could not measure double\");")
+    emit_line(e, "  return (uintptr_t)written;")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_double_precision_len(double value, int32_t precision) {")
+    emit_line(e, "  int written = snprintf(NULL, 0, \"%.*f\", precision, value);")
+    emit_line(e, "  if (written < 0) mt_fatal(\"format string could not measure double precision\");")
+    emit_line(e, "  return (uintptr_t)written;")
+    emit_line(e, "}")
+    # --- Additional append helpers ---
+    emit_line(e, "static uintptr_t mt_format_append_cstr(mt_str target, uintptr_t offset, const char* value) {")
+    emit_line(e, "  uintptr_t len = mt_format_cstr_len(value);")
+    emit_line(e, "  return mt_format_append_bytes(target, offset, value, len);")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_bool(mt_str target, uintptr_t offset, bool value) {")
+    emit_line(e, "  return value ? mt_format_append_bytes(target, offset, \"true\", 4) : mt_format_append_bytes(target, offset, \"false\", 5);")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_ulong(mt_str target, uintptr_t offset, uint64_t value) {")
+    emit_line(e, "  uintptr_t len = mt_format_ulong_len(value);")
+    emit_line(e, "  uintptr_t index = offset + len;")
+    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
+    emit_line(e, "  target.data[index] = '\\0';")
+    emit_line(e, "  do { index -= 1; target.data[index] = (char)('0' + (value % 10)); value /= 10; } while (index > offset);")
+    emit_line(e, "  return offset + len;")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_uint(mt_str target, uintptr_t offset, uint32_t value) {")
+    emit_line(e, "  return mt_format_append_ptr_uint(target, offset, (uintptr_t)value);")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_long(mt_str target, uintptr_t offset, int64_t value) {")
+    emit_line(e, "  if (value < 0) {")
+    emit_line(e, "    offset = mt_format_append_bytes(target, offset, \"-\", 1);")
+    emit_line(e, "    return mt_format_append_ulong(target, offset, ((uint64_t)(-(value + 1))) + 1);")
+    emit_line(e, "  }")
+    emit_line(e, "  return mt_format_append_ulong(target, offset, (uint64_t)value);")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_ulong_hex(mt_str target, uintptr_t offset, uint64_t value) {")
+    emit_line(e, "  uintptr_t len = mt_format_ulong_hex_len(value);")
+    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
+    emit_line(e, "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llx\", (unsigned long long)value);")
+    emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned hex\");")
+    emit_line(e, "  return offset + len;")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_ulong_hex_upper(mt_str target, uintptr_t offset, uint64_t value) {")
+    emit_line(e, "  uintptr_t len = mt_format_ulong_hex_len(value);")
+    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
+    emit_line(e, "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llX\", (unsigned long long)value);")
+    emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned hex\");")
+    emit_line(e, "  return offset + len;")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_long_hex(mt_str target, uintptr_t offset, int64_t value) {")
+    emit_line(e, "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_hex(target, offset, ((uint64_t)(-(value + 1))) + 1); }")
+    emit_line(e, "  return mt_format_append_ulong_hex(target, offset, (uint64_t)value);")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_long_hex_upper(mt_str target, uintptr_t offset, int64_t value) {")
+    emit_line(e, "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_hex_upper(target, offset, ((uint64_t)(-(value + 1))) + 1); }")
+    emit_line(e, "  return mt_format_append_ulong_hex_upper(target, offset, (uint64_t)value);")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_ulong_oct(mt_str target, uintptr_t offset, uint64_t value) {")
+    emit_line(e, "  uintptr_t len = mt_format_ulong_oct_len(value);")
+    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
+    emit_line(e, "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llo\", (unsigned long long)value);")
+    emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned octal\");")
+    emit_line(e, "  return offset + len;")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_long_oct(mt_str target, uintptr_t offset, int64_t value) {")
+    emit_line(e, "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_oct(target, offset, ((uint64_t)(-(value + 1))) + 1); }")
+    emit_line(e, "  return mt_format_append_ulong_oct(target, offset, (uint64_t)value);")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_ulong_bin(mt_str target, uintptr_t offset, uint64_t value) {")
+    emit_line(e, "  uintptr_t len = mt_format_ulong_bin_len(value);")
+    emit_line(e, "  uintptr_t index = offset + len;")
+    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
+    emit_line(e, "  target.data[index] = '\\0';")
+    emit_line(e, "  do { index -= 1; target.data[index] = (char)('0' + (value & 1)); value >>= 1; } while (index > offset);")
+    emit_line(e, "  return offset + len;")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_long_bin(mt_str target, uintptr_t offset, int64_t value) {")
+    emit_line(e, "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_bin(target, offset, ((uint64_t)(-(value + 1))) + 1); }")
+    emit_line(e, "  return mt_format_append_ulong_bin(target, offset, (uint64_t)value);")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_float(mt_str target, uintptr_t offset, float value) {")
+    emit_line(e, "  uintptr_t len = mt_format_float_len(value);")
+    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
+    emit_line(e, "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%g\", (double)value);")
+    emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format float\");")
+    emit_line(e, "  return offset + len;")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_double(mt_str target, uintptr_t offset, double value) {")
+    emit_line(e, "  uintptr_t len = mt_format_double_len(value);")
+    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
+    emit_line(e, "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%g\", value);")
+    emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format double\");")
+    emit_line(e, "  return offset + len;")
+    emit_line(e, "}")
+    emit_line(e, "static uintptr_t mt_format_append_double_precision(mt_str target, uintptr_t offset, double value, int32_t precision) {")
+    emit_line(e, "  uintptr_t len = mt_format_double_precision_len(value, precision);")
+    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
+    emit_line(e, "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%.*f\", precision, value);")
+    emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format double precision\");")
+    emit_line(e, "  return offset + len;")
     emit_line(e, "}")
 
 

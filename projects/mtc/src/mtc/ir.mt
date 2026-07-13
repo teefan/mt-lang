@@ -89,6 +89,9 @@ public variant Expr:
     expr_aggregate_literal(ty: types.Type, fields: span[AggregateField])
     expr_variant_literal(ty: types.Type, arm_name: str, fields: span[AggregateField])
     expr_array_literal(ty: types.Type, elements: span[Expr])
+    ## GCC/Clang statement-expression `({ setup...; result; })`.  Used to lower a
+    ## dynamic format string in expression position without a separate hoist pass.
+    expr_stmt_expr(setup: span[Stmt], result: ptr[Expr], ty: types.Type)
 
 
 # =============================================================================
