@@ -1874,6 +1874,17 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         pass
                 # Desugar `read(x) = value` to `*x = value`.
                 var target_expr = asg.target
+                # `target = expr?` — Result/Option propagation into an existing
+                # lvalue (not a `let` binding).  Unwrap on success into the target;
+                # on failure return/complete-early like `let _ = expr? / return`.
+                if asg.operator == "=":
+                    match read(asg.value):
+                        ast.Expr.expr_unary_op as un:
+                            if un.operator == "?":
+                                lower_propagate_assign(ctx, output, asg.target, un.operand)
+                                return
+                        _:
+                            pass
                 match is_read_call(target_expr):
                     Option.some as inner:
                         let deref_target = lower_expr(ctx, inner.value)
@@ -2319,6 +2330,99 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
     let bc = utils.c_local_name(name)
     output.push(ir.Stmt.stmt_local(name = name, linkage_name = bc, ty = success_ty, value = success_val, line = 0, source_path = ""))
     ctx.locals.push(LocalBinding(name = name, c_name = bc, ty = success_ty, pointer = false))
+
+
+## Lower `target = expr?` (assignment form of `?` propagation).  Mirrors
+## `lower_propagate_let` but assigns the unwrapped success value into an existing
+## lvalue target rather than introducing a `let` binding.  The failure branch is
+## identical (return the wrapped failure, or complete the frame early in CPS).
+function lower_propagate_assign(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], target_ast: ptr[ast.Expr], operand: ptr[ast.Expr]) -> void:
+    let value_ir = lower_expr(ctx, operand)
+    let storage_ty = ir_expr_type(value_ir)
+
+    let storage_c = fresh_c_temp_name(ctx, "propagate")
+    output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = 0, source_path = ""))
+    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = false))
+
+    let kind = guard_storage_kind(ctx, storage_ty)
+    if kind == "option" or kind == "result":
+        let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
+        let success_arm = if kind == "result": "success" else: "some"
+        let arm_c = variant_arm_type_name(outer_c, success_arm)
+        if not ctx.arm_payload_fields.contains(arm_c):
+            var base_name = ""
+            if is_prelude_variant_name(outer_c):
+                if outer_c.starts_with("std_result_"):
+                    base_name = "Result"
+                else if outer_c.starts_with("std_option_"):
+                    base_name = "Option"
+            if base_name.len > 0:
+                let vi_ptr = ctx.variants.get(base_name)
+                if vi_ptr != null:
+                    let vi = unsafe: read(vi_ptr)
+                    register_arm_payload_fields(ctx, arm_c, vi, success_arm, storage_ty)
+
+    # Failure branch: build the wrapped failure value and return / complete early.
+    var fail_value = storage_ref
+    let ret_ty = ctx.current_fn_return_type
+    if not types.type_equals(ret_ty, storage_ty):
+        var is_task_ret = false
+        match ret_ty:
+            types.Type.ty_generic as tg:
+                if tg.name == "Task":
+                    is_task_ret = true
+            types.Type.ty_named as tn:
+                if tn.name.starts_with("mt_task_"):
+                    is_task_ret = true
+            _:
+                pass
+        if kind == "result":
+            let data_field = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = types.primitive("void")))
+            let failure_struct = alloc_expr(ir.Expr.expr_member(receiver = data_field, member = "failure", ty = types.primitive("void")))
+            let error_member = alloc_expr(ir.Expr.expr_member(receiver = failure_struct, member = "error", ty = types.primitive("void")))
+            if is_task_ret:
+                var result_fail_fields = vec.Vec[ir.AggregateField].create()
+                result_fail_fields.push(ir.AggregateField(name = "error", value = error_member))
+                let result_failure = extract_task_element_type(ctx, ret_ty)
+                let failure_result = alloc_expr(ir.Expr.expr_variant_literal(ty = result_failure, arm_name = "failure", fields = result_fail_fields.as_span()))
+                var task_fields = vec.Vec[ir.AggregateField].create()
+                let void_zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_void_type()))
+                task_fields.push(ir.AggregateField(name = "value", value = failure_result))
+                task_fields.push(ir.AggregateField(name = "frame", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "ready", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "set_waiter", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "release", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "take_result", value = void_zero))
+                task_fields.push(ir.AggregateField(name = "cancel", value = void_zero))
+                fail_value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = ret_ty, fields = task_fields.as_span()))
+            else:
+                var fail_fields = vec.Vec[ir.AggregateField].create()
+                fail_fields.push(ir.AggregateField(name = "error", value = error_member))
+                fail_value = alloc_expr(ir.Expr.expr_variant_literal(ty = ret_ty, arm_name = "failure", fields = fail_fields.as_span()))
+        else if kind == "option":
+            fail_value = alloc_expr(ir.Expr.expr_variant_literal(ty = ret_ty, arm_name = "none", fields = span[ir.AggregateField]()))
+
+    var fail_body = vec.Vec[ir.Stmt].create()
+    flush_all_defers(ctx, ref_of(fail_body))
+    if ctx.async_cps_active:
+        if not ctx.async_result_is_void:
+            fail_body.push(ir.Stmt.stmt_assignment(
+                target = alloc_expr(ir.Expr.expr_name(name = ctx.async_result_c_name, ty = ctx.async_result_ty, pointer = false)),
+                operator = "=",
+                value = fail_value,
+            ))
+        fail_body.push(ir.Stmt.stmt_goto(label = ctx.async_complete_label))
+    else:
+        fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = 0, source_path = ""))
+
+    let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = span[ir.Stmt]()))
+
+    # Assign the unwrapped success value into the target lvalue.
+    let success_ty = guard_success_type(ctx, kind, storage_ty)
+    let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
+    let target_ir = lower_expr(ctx, target_ast)
+    output.push(ir.Stmt.stmt_assignment(target = target_ir, operator = "=", value = success_val))
 
 
 ## Classify a guard's storage type: "option", "result", or "nullable".
@@ -5884,7 +5988,17 @@ function infer_type_param_from_args(ctx: ref[LowerCtx], param_name: str, params:
         var p: ast.Param
         unsafe:
             p = read(params.data + i)
-        let arg_ty = ir_expr_type(lower_expr(ctx, unsafe: read(args.data + i).arg_value))
+        # For a proc/fn parameter, prefer the argument's AST-reconstructed
+        # `ty_function` type (which carries the real return type) over the lowered
+        # proc-struct `ty_named` — the latter's mangled C name cannot be reliably
+        # parsed back for multi-component return types (e.g. an imported struct).
+        var arg_ty: types.Type
+        if p.param_type.is_proc or p.param_type.is_fn:
+            arg_ty = fallback_type(ctx, unsafe: read(args.data + i).arg_value)
+            if not is_proc_type(arg_ty) and not is_fn_type(arg_ty):
+                arg_ty = ir_expr_type(lower_expr(ctx, unsafe: read(args.data + i).arg_value))
+        else:
+            arg_ty = ir_expr_type(lower_expr(ctx, unsafe: read(args.data + i).arg_value))
         match unify_type_param(param_name, p.param_type, arg_ty):
             Option.some as found:
                 return Option[types.Type].some(value = found.value)
@@ -12005,7 +12119,11 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                 var ret = types.primitive("void")
                 let rt = pr.return_type
                 if rt != null:
-                    ret = resolve_scalar_type_ref(rt)
+                    # Full resolution (not scalar-only) so a struct / imported
+                    # return type resolves correctly — needed for generic-method
+                    # type-param inference (e.g. `map_error[F]`'s F from the proc's
+                    # return type).
+                    ret = resolve_field_type_ref(ctx, unsafe: read(rt))
                 return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true)
             _:
                 return types.Type.ty_error
