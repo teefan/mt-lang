@@ -11013,8 +11013,9 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                     let bc = utils.c_local_name(bn.value)
                     if ctx.async_cps_active:
                         # Spill the match binding to a frame field so it survives
-                        # suspend/resume across an await inside the arm body.
-                        let mfield = j2("local_", bn.value)
+                        # suspend/resume across an await inside the arm body.  The
+                        # arm name disambiguates same-named bindings across arms.
+                        let mfield = j4("local_", arm_name, "_", bn.value)
                         let mcname = j2("__mt_frame->", mfield)
                         async_register_local_field(ctx, bn.value, mfield, mcname, binding_ty)
                         body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = mcname, ty = binding_ty, pointer = false)), operator = "=", value = arm_data))
@@ -11123,7 +11124,13 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = binding_ty))
                     let bc = utils.c_local_name(bn.value)
                     if ctx.async_cps_active:
-                        let mfield = j2("local_", bn.value)
+                        # Include the arm name in the frame field so two arms of the
+                        # same match that bind the SAME name to different arm-payload
+                        # types (e.g. `Result.failure as p` and `Result.success as p`)
+                        # get distinct fields instead of colliding on one field typed
+                        # by whichever arm registered first (which would mismatch the
+                        # other arm's payload type).
+                        let mfield = j4("local_", arm_name, "_", bn.value)
                         let mcname = j2("__mt_frame->", mfield)
                         async_register_local_field(ctx, bn.value, mfield, mcname, binding_ty)
                         stmts.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = mcname, ty = binding_ty, pointer = false)), operator = "=", value = arm_data))
@@ -11226,7 +11233,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                                 let bc = utils.c_local_name(bn.value)
                                 let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
                                 if ctx.async_cps_active:
-                                    let asfield = j2("local_", bn.value)
+                                    let asfield = j4("local_", arm_name, "_", bn.value)
                                     let ascname = j2("__mt_frame->", asfield)
                                     async_register_local_field(ctx, bn.value, asfield, ascname, payload_ty)
                                     blk.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = ascname, ty = payload_ty, pointer = false)), operator = "=", value = payload_ref))
@@ -11281,7 +11288,10 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                                     _:
                                         pass
                                 if ctx.async_cps_active:
-                                    let vfield = j2("local_", id.name)
+                                    # Prefix with the arm-unique payload temp name so
+                                    # the same destructured field name in different
+                                    # arms gets distinct frame fields.
+                                    let vfield = j4("local_", payload_c, "_", id.name)
                                     let vcname = j2("__mt_frame->", vfield)
                                     async_register_local_field(ctx, id.name, vfield, vcname, field_ty)
                                     blk.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = vcname, ty = field_ty, pointer = false)), operator = "=", value = field_expr))
