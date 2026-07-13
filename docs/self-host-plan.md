@@ -2,8 +2,9 @@
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED.** The self-host compiler compiles
 itself and reaches a byte-identical fixed point (stage2 == stage3). 172/172
-self-tests pass under the self-built compiler. Two feature subsystems remain
-for full *example* parity: `await`-driven async CPS and format strings.
+self-tests pass under the self-built compiler. Format strings are done; one
+feature subsystem remains for full *example* parity: `await`-driven async CPS
+(§2, fully designed — the self-host uses no async so it carries no fixed-point risk).
 Last updated: 2026-07-13
 
 ---
@@ -128,41 +129,163 @@ Several related gaps, all now fixed:
 `language_baseline` crashes (SIGSEGV) at `aio.wait(async_demo())`; the async
 example programs fail to link (`undefined reference to main`).
 
-### 2.2 Root cause
+### 2.2 Root cause (audited)
 
-The self-host has two async paths in `lower_module`:
+Dispatch in `lower_module` (lowering.mt ~813) splits async functions:
 
-- **no `await`** → `lower_async_fn`: full CPS output — frame struct, resume,
-  vtable (ready/set_waiter/release/take_result/cancel), and a constructor that
-  returns a proper `Task`. This is correct.
+- **no `await`** → `lower_async_fn`: correct full output — frame struct, resume,
+  vtable (ready/set_waiter/release/take_result/cancel), constructor.
 - **has `await`** → `lower_function(..., is_async=true)`: evaluates each `await`
   **synchronously** as `expr.value` and returns a **degenerate task with null
-  vtable pointers** (`{ .value = …, .ready = 0, … }`). When `std.async.wait`
-  drives it through `task.ready(task.frame)` the null pointer call crashes.
+  vtable pointers** (`{ .value = …, .ready = 0, … }`). `std.async.wait` then calls
+  `task.ready(task.frame)` through a null pointer → crash.
 
-Additionally, an **async `main`** is never given a synchronous entrypoint
-wrapper, so no C `main` symbol is emitted (Ruby's `build_async_main_entrypoint`
-wraps the async main in a root proc and calls `std_async_wait__int`).
+`lower_async_fn` *does* contain a `has_await` branch (`lower_async_cps_body` /
+`lower_async_await_stmt`), but it is only reached for no-await functions and is a
+skeleton with five correctness gaps:
 
-### 2.3 Correct fix (per Ruby)
+1. **`await_N` frame fields are never declared.** `lower_async_await` writes
+   `frame->await_N = task`, but the frame struct only has
+   ready/cancelled/waiter/waiter_frame/state/result/params. `await_N` fields (typed
+   as the awaited `Task[T]`) are missing.
+2. **`set_waiter` is never called on suspend.** The suspend body only sets
+   `state` and `return`s. Without `await_task.set_waiter(await_task.frame,
+   __mt_frame_raw, resume)` the event loop can never wake the parent — fatal for
+   real timer/network I/O.
+3. **The await result is discarded.** The resume side calls `take_result` as a
+   bare expression statement; `let v = await …` never receives the value, and the
+   awaited task is never `release`d.
+4. **Only top-of-`stmt_local`/`stmt_expression` awaits are split.** Awaits inside
+   `if`/`while`/`for`/`match`/`return` and inside larger expressions (e.g.
+   `while (await f()) > 0`, `let w = if c: await g() else: 0`) are not handled.
+5. **No local spilling.** C locals declared in one state do not survive the
+   `return`+re-entry at a later state. Every local (and loop var/iterable/index)
+   that is live across an await must live in the frame, not as a C local.
 
-Route **all** async functions through a single real CPS lowering: build the
-frame, a resume function containing a `switch(state)` state machine with a
-`goto` label per await point, spill live locals into the frame across await
-boundaries, and the vtable + constructor. A 0-await function is just the
-single-state case. Then add the async-`main` entrypoint wrapper.
+Additionally an **async `main`** gets no synchronous entrypoint wrapper, so no C
+`main` symbol is emitted.
 
-Reference: `lib/milk_tea/core/lowering/async.rb` and
-`lib/milk_tea/core/lowering/async/lowering.rb`. This is a substantial subsystem
-(~500+ lines); a synchronous approximation is **not** acceptable because it is
-semantically wrong for real timer/network I/O.
+### 2.3 De-risking fact
 
-Files: `projects/mtc/src/mtc/lowering/lowering.mt` (`lower_async_fn`,
-`lower_module` async dispatch), `projects/mtc/src/mtc/lowering/async.mt`.
+**The self-host compiler uses no `async`/`await` anywhere in its own source**
+(verified). Therefore async CPS work **cannot affect the bootstrap fixed point** —
+it only changes the three async example programs. This removes the fixed-point
+risk that constrained the format-string work.
+
+### 2.4 Complete solution design (researched, mirrors Ruby)
+
+Ruby's transform lives in `lib/milk_tea/core/lowering/async/analysis.rb` (245
+lines), `.../async/lowering.rb` (1416), and `.../async.rb` (714). The complete
+self-host solution has five parts.
+
+**(A) Analysis pass — `async_info`.** Before lowering the body, walk the AST once
+(`analyze_async_statements!`) to build:
+- `param_fields`: each parameter → frame field `param_<name>` (type; `pointer`
+  for an editable `this`).
+- `local_fields`: **every** `let`/`var` name, plus each range loop's induction
+  var + a synthesized `<name>_stop`, plus each collection loop's binding +
+  iterable + index → frame field `local_<name>` (with `type`/`storage_type`,
+  `mutable`). Spilling all locals (not just await-crossing ones) is simplest and
+  matches Ruby.
+- `await_fields`: keyed by the await expression's identity → `{ field_name:
+  await_<N>, task_type, result_type, state: N }`, assigned a state id `N` in
+  source order (recursing into nested bodies). State count = await count.
+
+**(B) Frame struct.** ready, cancelled, waiter_frame, waiter, `state:int`,
+`result:T` (unless void), one `param_<p>` per param, one `local_<l>` per spilled
+local, one `await_<N>: Task[resultType_N]` per await.
+
+**(C) Local/param spilling trick (the key to tractability).** Bind each
+param/local's `LocalBinding.c_name` to the string `"__mt_frame->" + field_name`.
+Then every `expr_name(v)` the existing `lower_expr` produces renders as
+`__mt_frame->local_v` with no reference rewriting. A `let`/`var` **declaration**
+lowers to an *assignment* to the frame field (not a C `Type name = …`). Ruby does
+exactly this via `async_frame_field_c_name`.
+
+**(D) Resume function = goto state machine.** Body:
+```
+frame = (Frame*) raw;
+switch (frame->state) { case 0: goto S0; case 1: goto S1; ... }
+return;
+S0: ;
+  <lowered body with await suspend/resume + labels S1..Sn>
+<completion>: waiter-wake; frame->ready = true; (result already stored); return;
+```
+Each await lowers to:
+```
+frame->await_N = <task>;                    // unless reusing storage
+if (!frame->await_N.ready(frame->await_N.frame)) {
+    frame->state = N;
+    frame->await_N.set_waiter(frame->await_N.frame, raw, resume);
+    return;
+}
+SN: ;
+frame->local_x = frame->await_N.take_result(frame->await_N.frame);  // bind result
+frame->await_N.release(frame->await_N.frame);
+```
+Control flow (`if`/`while`/`for`/`match`) is lowered recursively: a branch/body
+containing an await uses the CF path (which can emit suspend/`return`/labels);
+one without an await uses a plain lowering. `while`/`for` with an await in the
+**condition** restructure to `while(true){ <cond-setup incl. await>; if(!cond)
+break; <body> }`. `break`/`continue` become jumps to synthesized loop
+break/continue labels (with defer cleanup run first). This requires threading a
+`loop_flow { break_label, continue_label }` and an `active_defers` list.
+
+**(E) Await-in-expression hoisting.** An await nested in an expression
+(`(await f()) > 0`, `if c: await g() else: 0`) must be pulled into a preceding
+await-statement writing a temp local, then the surrounding expression references
+the temp. Ruby uses `prepare_expression_for_inline_lowering` returning
+`[setup, expr]`. The self-host has no such general pass; the `expr_stmt_expr`
+node added for format strings does **not** apply here (an await suspends and
+`return`s, which cannot live inside a value expression). The correct approach is
+a small await-hoisting pre-pass over the async AST that rewrites each
+await-bearing expression into `let __await_tmp = await <inner>` + the expression
+with `__await_tmp` substituted — run before CF lowering so every await is the top
+of a `stmt_local`/`stmt_expression`/`stmt_assignment`/`stmt_return`.
+
+**(F) Vtable + constructor** already exist in `lower_async_fn` and are correct;
+they only need the `await_N` fields present and (for `set_waiter`) the real body.
+`cancel`/`release` should additionally cancel/release any in-flight `await_N`
+task and run frame-stored defers (Ruby's `build_async_cancel_function` /
+`build_async_release_function`).
+
+**(G) Async `main` entrypoint.** When `main` is `async` and is root, emit a
+synchronous `int main(...)` that wraps the async-main constructor in a
+zero-capture root `proc() -> Task[int]` and calls `std_async_wait__int` (int
+return) or the void `run` variant, then releases the root proc and returns the
+result. Mirror Ruby's `build_async_main_entrypoint`; reuse the existing proc
+synthesis (`lower_proc_expression`).
+
+### 2.5 Implementation plan (staged; each independently testable)
+
+1. Dispatch: route **all** async functions to `lower_async_fn`; delete the
+   degenerate `lower_function(..., is_async=true)` path.
+2. Analysis pass producing `async_info`; extend the frame struct with
+   param/local/await fields.
+3. Spilling: bind param/local c-names to `__mt_frame->field`; lower `let`/`var`
+   to frame assignments.
+4. Goto state machine in resume; real await suspend/resume with `set_waiter`,
+   result binding, and `release`.
+5. Await-hoisting pre-pass for awaits embedded in expressions/conditions.
+6. CF-aware lowering (if/while/for/match) with loop break/continue labels and
+   defer cleanup.
+7. Async `main` entrypoint.
+8. `cancel`/`release` completeness (nested-task cleanup, defers).
+
+Validation: `language_baseline` runs to `0` and matches Ruby; `async_stress_test`
+and `async_network_lobby` build and run (timers, UDP, nested awaits, loops with
+awaits, error propagation). The bootstrap fixed point is unaffected by
+construction (self-host uses no async).
+
+Files: `projects/mtc/src/mtc/lowering/lowering.mt` (`lower_module` dispatch,
+`lower_async_fn`, `lower_async_cps_body`, `lower_async_await*`,
+`build_root_main_entrypoint`), `projects/mtc/src/mtc/lowering/async.mt`
+(analysis + frame builder).
 
 ---
 
 ## 3. Remaining: format strings (`f"..."`)
+
 
 **DONE.** Format strings are fully implemented and verified byte-identical to
 the Ruby compiler for text interpolation, `:x`/`:X` hex, `:o`/`:O` octal,
