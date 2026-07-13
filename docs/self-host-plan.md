@@ -2,15 +2,16 @@
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED.** The self-host compiles itself to a
 byte-identical fixed point (stage2 == stage3) and 172/172 self-tests pass under
-the self-built compiler. **9/13 examples match Ruby**; `integration_test` also
-builds & runs clean under the self-host (Ruby's own build warns-as-errors there).
-Format strings are **done**. The single remaining subsystem for full example
-parity is `await`-driven **async CPS** (§2) — affecting only `language_baseline`
-(runtime crash on `await`) and `async_stress_test` / `async_network_lobby` (no C
-`main` emitted). The self-host itself uses no async, so this work carries **zero
-fixed-point risk**.
+the self-built compiler. **10/13 examples match Ruby** (incl. `language_baseline`,
+now correct through real await-driven CPS); `integration_test` also builds & runs
+clean under the self-host (Ruby's own build warns-as-errors there). Format strings
+are **done**. Async CPS core is **done** (direct awaits, nested async, Result
+returns, awaits in loops); the two remaining async examples (`async_stress_test`,
+`async_network_lobby`) need embedded-await hoisting, async-method Task typing, and
+the async-`main` entrypoint (§2). The self-host itself uses no async, so this work
+carries **zero fixed-point risk**.
 
-Verified this sync (Ruby stage-1 → self-host stage-2 → stage-3):
+Verified this round (Ruby stage-1 → self-host stage-2 → stage-3):
 `diff stage2.c stage3.c` identical · 172/172 tests · example table below.
 Last updated: 2026-07-13
 
@@ -53,10 +54,10 @@ compile itself. The root cause was a cross-module same-name type collision (see
 | `option_and_result_surface` | MATCH |
 | `reflection_advanced` | MATCH (fixed this round — comptime type dispatch) |
 | `integration_test` | self-host builds & runs clean (Ruby's own build warns-as-errors here) |
-| `language_baseline` | all features pass **except** `await` (see §2) |
+| `language_baseline` | MATCH (async `await` now lowered through real CPS — see §2) |
 | `string_test` | MATCH (format strings now fully implemented — see §3) |
-| `async_stress_test` | needs async `main` entrypoint + CPS (see §2) |
-| `async_network_lobby` | needs async `main` entrypoint + CPS (see §2) |
+| `async_stress_test` | partial: core CPS works; blocked on async-method Task typing + embedded-await hoisting + async-`main` entrypoint (§2) |
+| `async_network_lobby` | partial: same blockers as `async_stress_test` (§2) |
 
 ---
 
@@ -129,18 +130,78 @@ Several related gaps, all now fixed:
 
 ---
 
-## 2. Remaining: `await`-driven async (CPS)
+## 2. `await`-driven async (CPS)
 
-### 2.1 Symptoms (verified)
+### 2.0 Status — core implemented
 
-- `language_baseline`: builds with **0 C errors** but **SIGSEGV (139)** at
-  runtime — `aio.wait(async_demo())` drives a degenerate `Task` whose vtable
-  pointers are null (`task.ready(task.frame)` calls through `NULL`).
-- `async_stress_test` / `async_network_lobby`: **link failure** —
-  `emit-c` produces **no `int main(`** symbol, so the linker reports
-  `undefined reference to 'main'` (the "2 errors" are the cc error + collect2).
-  Cause: their `main` is `async function main() -> int`, and the async dispatch
-  never emits the synchronous entrypoint wrapper.
+The continuation-passing async lowering is **implemented and verified** for the
+common cases. `lower_async_fn` now emits, for every async function, a frame
+struct, a goto-based resume state machine, the vtable, and a constructor; the
+degenerate `lower_function(is_async=true)` path is gone.
+
+Working and verified end-to-end (against real libuv timers):
+- direct awaits — `let v = await f()`, `let _ = await aio.sleep(n)`;
+- **nested** async awaiting async awaiting a timer (multi-level suspend + wake
+  propagation);
+- `Result`/`Option`-returning async functions;
+- awaits **inside loops** (`while`/`for` bodies) — the resume `goto` re-enters
+  the C loop mid-iteration;
+- `return expr` (stores `frame->result`, gotos the completion label);
+- `language_baseline` matches Ruby; 172/172 self-tests; stage2 == stage3.
+
+Key implementation points (in `projects/mtc/src/mtc/lowering/lowering.mt`):
+- **Spilling**: params → frame `param_<name>`, locals → `local_<name>`, awaited
+  tasks → `await_<N>`. A spilled binding's C name is literally
+  `"__mt_frame->field"`, so the existing `lower_expr`/`lower_stmt` machinery reads
+  and writes through the frame automatically. `let`/`var` in CPS mode lower to
+  frame-field assignments (`lower_async_local`).
+- **Await**: `async_emit_await` stores the task in `frame->await_N`, guards on
+  `ready`, and on suspend sets `state`, calls
+  `await_N.set_waiter(await_N.frame, __mt_frame_raw, resume)`, and `return`s;
+  the resume label takes the result into the target and `release`s the child.
+- **Frame is `calloc`'d** (control fields + unassigned locals start zeroed).
+- **`async_waiter_wake`** saves the waiter fn pointer to a temp before nulling
+  the field, then calls the temp (nulling-then-calling was a null-call crash).
+- CPS state is reset per function; nested proc bodies disable CPS mode.
+
+### 2.1 Remaining blockers for `async_stress_test` / `async_network_lobby`
+
+These two examples (and their `std.net` dependency) exercise three patterns the
+core does not yet handle; each shows up as C-compile errors today:
+
+1. **Async-method Task typing.** `await obj.method()` where `method` is an async
+   method returning e.g. `Result[bool, net.Error]` resolves to the *result* type
+   instead of `Task[...]`, so `frame->await_N` is typed as the `Result` and
+   `await_N.frame/.ready/...` do not exist. Async free functions already record
+   `Task[T]` return types (dispatch site ~9109); async methods must do the same
+   at their call resolution.
+2. **Embedded-await hoisting.** Awaits nested in expressions/conditions
+   (`(await f())?`, `while (await f()) > 0`, `let w = if c: await g() else: 0`,
+   `total += await g()`) still fall through `lower_expr(expr_await)` →
+   `unwrap_task_value` (synchronous, correct only for already-ready tasks). A
+   pre-pass must rewrite each embedded await into a preceding
+   `let __await_k = await <inner>` (direct-await statement) + a temp reference;
+   `while`/`for` conditions restructure to `while(true){ <cond incl. await>;
+   if(!cond) break; <body> }`; an `if`-expression await becomes a statement `if`.
+3. **Async `main` entrypoint.** `build_async_main_entrypoint` is still a stub, so
+   an `async function main` emits no C `main` (link error). It must lower the
+   async main as CPS under an internal name and emit a synchronous `int main()`
+   that wraps the constructor in a zero-capture root `proc() -> Task[int]` and
+   calls `std_async_wait__int` (reuse `lower_fn_to_proc`; trigger the
+   `std.async.wait[int]` specialization). Mirrors Ruby's `__async_main` rename.
+
+### 2.2 De-risking fact
+
+**The self-host compiler uses no `async`/`await` in its own source** (verified),
+so all async CPS work — done and remaining — **cannot affect the bootstrap fixed
+point**; it only changes the async example programs.
+
+### 2.3 Historical: original symptom / root cause
+
+The following recorded the pre-implementation state.
+
+`language_baseline` crashed (SIGSEGV) at `aio.wait(async_demo())`; the async
+example programs failed to link (`undefined reference to main`).
 
 ### 2.2 Runtime contract the CPS must satisfy (from `std.async`)
 
