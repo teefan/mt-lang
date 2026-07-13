@@ -1357,14 +1357,11 @@ function c_type(t: types.Type) -> str:
         types.Type.ty_dyn as d:
             return j3("mt_dyn_", d.iface, "")
         types.Type.ty_function:
-            # Function types are declarators: `ret_type (*)(param_types)`.
             return c_fn_ptr_declarator(t, "")
         types.Type.ty_imported as im:
-            # Types from `std.c.*` raw-ABI modules use their bare C name (the
-            # `struct X = c"X"` alias / raw external name), never a module prefix,
-            # so they match the C header declarations (mirrors Ruby's
-            # `named_type_c_name` std.c. special case).
             if im.module_name.starts_with("std.c."):
+                if im.name == "sockaddr" or im.name == "sockaddr_storage" or im.name == "sockaddr_in" or im.name == "sockaddr_in6":
+                    return j2("struct ", im.name)
                 return im.name
             return naming.qualified_c_name(im.module_name, im.name)
         types.Type.ty_named as n:
@@ -4242,6 +4239,16 @@ function emit_task_structs(e: ref[Emitter], program: ir.Program) -> void:
             collect_task_type(program, ref_of(seen), ref_of(task_elements), read(program.type_aliases.data + i).target_type)
         i += 1
 
+    # Collect Task types from function bodies — aggregate literals, return
+    # values, and other expression types within IR statements may reference
+    # `mt_task_*` types not visible at the function signature level.
+    i = 0
+    while i < program.functions.len:
+        unsafe:
+            let fun = read(program.functions.data + i)
+            task_scan_stmts(program, fun.body, ref_of(seen), ref_of(task_elements))
+        i += 1
+
     # Emit collected Task struct types.
     var keys = seen.keys()
     while true:
@@ -4255,6 +4262,146 @@ function emit_task_structs(e: ref[Emitter], program: ir.Program) -> void:
         emit_task_struct_type(e, c_name, elem)
     if seen.len() > 0:
         emit_line(e, "")
+
+
+function task_scan_stmts(program: ir.Program, body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], elements: ref[map_mod.Map[str, types.Type]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            task_scan_stmt(program, body.data + i, seen, elements)
+        i += 1
+
+
+function task_scan_stmt(program: ir.Program, sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], elements: ref[map_mod.Map[str, types.Type]]) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_return as r:
+                let value = r.value else:
+                    return
+                task_scan_expr(program, value, seen, elements)
+            ir.Stmt.stmt_local as loc:
+                task_scan_expr(program, loc.value, seen, elements)
+            ir.Stmt.stmt_assignment as asg:
+                task_scan_expr(program, asg.target, seen, elements)
+                task_scan_expr(program, asg.value, seen, elements)
+            ir.Stmt.stmt_expression as ex:
+                task_scan_expr(program, ex.expression, seen, elements)
+            ir.Stmt.stmt_block as blk:
+                task_scan_stmts(program, blk.body, seen, elements)
+            ir.Stmt.stmt_if as iff:
+                task_scan_expr(program, iff.condition, seen, elements)
+                task_scan_stmts(program, iff.then_body, seen, elements)
+                task_scan_stmts(program, iff.else_body, seen, elements)
+            ir.Stmt.stmt_while as w:
+                task_scan_expr(program, w.condition, seen, elements)
+                task_scan_stmts(program, w.body, seen, elements)
+            ir.Stmt.stmt_for as f:
+                task_scan_stmt(program, f.init, seen, elements)
+                task_scan_expr(program, f.condition, seen, elements)
+                task_scan_stmt(program, f.post, seen, elements)
+                task_scan_stmts(program, f.body, seen, elements)
+            ir.Stmt.stmt_switch as sw:
+                task_scan_expr(program, sw.expression, seen, elements)
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    task_scan_stmts(program, read(sw.cases.data + ci).body, seen, elements)
+                    ci += 1
+            _:
+                pass
+
+
+function task_scan_expr(program: ir.Program, ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], elements: ref[map_mod.Map[str, types.Type]]) -> void:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_binary as bin:
+                collect_task_type(program, seen, elements, bin.ty)
+                task_scan_expr(program, bin.left, seen, elements)
+                task_scan_expr(program, bin.right, seen, elements)
+            ir.Expr.expr_unary as un:
+                collect_task_type(program, seen, elements, un.ty)
+                task_scan_expr(program, un.operand, seen, elements)
+            ir.Expr.expr_conditional as cond:
+                collect_task_type(program, seen, elements, cond.ty)
+                task_scan_expr(program, cond.condition, seen, elements)
+                task_scan_expr(program, cond.then_expression, seen, elements)
+                task_scan_expr(program, cond.else_expression, seen, elements)
+            ir.Expr.expr_call as call:
+                collect_task_type(program, seen, elements, call.ty)
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    task_scan_expr(program, call.arguments.data + i, seen, elements)
+                    i += 1
+            ir.Expr.expr_call_indirect as ci:
+                collect_task_type(program, seen, elements, ci.ty)
+                var i: ptr_uint = 0
+                while i < ci.arguments.len:
+                    task_scan_expr(program, ci.arguments.data + i, seen, elements)
+                    i += 1
+            ir.Expr.expr_member as member:
+                collect_task_type(program, seen, elements, member.ty)
+                task_scan_expr(program, member.receiver, seen, elements)
+            ir.Expr.expr_index as ix:
+                collect_task_type(program, seen, elements, ix.ty)
+                task_scan_expr(program, ix.receiver, seen, elements)
+                task_scan_expr(program, ix.index, seen, elements)
+            ir.Expr.expr_checked_index as ix:
+                collect_task_type(program, seen, elements, ix.ty)
+                task_scan_expr(program, ix.receiver, seen, elements)
+                task_scan_expr(program, ix.index, seen, elements)
+            ir.Expr.expr_checked_span_index as ix:
+                collect_task_type(program, seen, elements, ix.ty)
+                task_scan_expr(program, ix.receiver, seen, elements)
+                task_scan_expr(program, ix.index, seen, elements)
+            ir.Expr.expr_address_of as addr:
+                collect_task_type(program, seen, elements, addr.ty)
+                task_scan_expr(program, addr.expression, seen, elements)
+            ir.Expr.expr_cast as cast:
+                collect_task_type(program, seen, elements, cast.ty)
+                task_scan_expr(program, cast.expression, seen, elements)
+            ir.Expr.expr_reinterpret as rin:
+                collect_task_type(program, seen, elements, rin.ty)
+                task_scan_expr(program, rin.expression, seen, elements)
+            ir.Expr.expr_aggregate_literal as agg:
+                collect_task_type(program, seen, elements, agg.ty)
+                var i: ptr_uint = 0
+                while i < agg.fields.len:
+                    task_scan_expr(program, read(agg.fields.data + i).value, seen, elements)
+                    i += 1
+            ir.Expr.expr_variant_literal as vl:
+                collect_task_type(program, seen, elements, vl.ty)
+                var i: ptr_uint = 0
+                while i < vl.fields.len:
+                    task_scan_expr(program, read(vl.fields.data + i).value, seen, elements)
+                    i += 1
+            ir.Expr.expr_array_literal as arr:
+                collect_task_type(program, seen, elements, arr.ty)
+                var i: ptr_uint = 0
+                while i < arr.elements.len:
+                    task_scan_expr(program, arr.elements.data + i, seen, elements)
+                    i += 1
+            ir.Expr.expr_name as nm:
+                collect_task_type(program, seen, elements, nm.ty)
+            ir.Expr.expr_sizeof as sz:
+                collect_task_type(program, seen, elements, sz.ty)
+            ir.Expr.expr_alignof as al:
+                collect_task_type(program, seen, elements, al.ty)
+            ir.Expr.expr_offsetof as of:
+                collect_task_type(program, seen, elements, of.ty)
+            ir.Expr.expr_integer_literal as il:
+                collect_task_type(program, seen, elements, il.ty)
+            ir.Expr.expr_float_literal as fl:
+                collect_task_type(program, seen, elements, fl.ty)
+            ir.Expr.expr_string_literal as sl:
+                collect_task_type(program, seen, elements, sl.ty)
+            ir.Expr.expr_boolean_literal as bl:
+                collect_task_type(program, seen, elements, bl.ty)
+            ir.Expr.expr_null_literal as nl:
+                collect_task_type(program, seen, elements, nl.ty)
+            ir.Expr.expr_zero_init as zi:
+                collect_task_type(program, seen, elements, zi.ty)
+            _:
+                pass
+
 
 
 ## Collect a Task type element from a type reference.  When `t` is a
