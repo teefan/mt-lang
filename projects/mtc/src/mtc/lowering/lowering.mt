@@ -8576,7 +8576,18 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                             ))
             return lower_expr(ctx, arg)
         Option.none:
-            return lower_expr(ctx, arg)
+            let lowered = lower_expr(ctx, arg)
+            var needs_address = param.param_mode == ast.ForeignParamMode.fmode_out or param.param_mode == ast.ForeignParamMode.fmode_inout
+            if not needs_address:
+                var pt_copy = param.param_type
+                let param_ty = resolve_type_ref(ctx, ptr_of(pt_copy))
+                if types.is_raw_pointer(param_ty) or types.is_ref_type(param_ty):
+                    let arg_ty = ir_expr_type(lowered)
+                    if not types.is_raw_pointer(arg_ty):
+                        needs_address = true
+            if needs_address:
+                return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
+            return lowered
 
 
 function boundary_is_cstr(boundary: ast.TypeRef) -> bool:
