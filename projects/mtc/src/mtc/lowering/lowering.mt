@@ -102,6 +102,10 @@ struct LowerCtx:
     extern_map: map_mod.Map[str, str]
     function_returns: map_mod.Map[str, types.Type]
     inside_async: bool
+    # When non-empty, `lower_stmt` rewrites `return expr` into a result-store +
+    # `goto` this label instead of a `stmt_return`.  Set during async resume
+    # function body lowering so returns inside nested blocks reach the epilogue.
+    async_resume_return_label: str
     # Same-module variant declarations, keyed by variant name, so arm
     # constructors and match arms can resolve discriminants and payload fields.
     variants: map_mod.Map[str, VariantInfo]
@@ -738,6 +742,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         inline_for_element = Option[ComptimeElement].none,
         defer_stack = vec.Vec[DeferGroup].create(),
         inside_async = false,
+        async_resume_return_label = "",
         current_fn_return_type = types.primitive("void"),
     )
 
@@ -1574,9 +1579,34 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
     unsafe:
         match read(sp):
             ast.Stmt.stmt_ret as r:
+                # Async resume functions (whose return_label is set) rewrite
+                # returns into: store result → goto epilogue.  This way
+                # returns inside nested blocks (if/while/for/switch) reach
+                # the waiter-wake + void-return epilogue instead of
+                # returning directly with a value from a void function.
+                if ctx.async_resume_return_label.len > 0:
+                    flush_all_defers(ctx, output)
+                    let rv = r.value
+                    if rv != null and not types.is_void(ctx.current_fn_return_type):
+                        let lowered = lower_expr(ctx, rv)
+                        output.push(ir.Stmt.stmt_assignment(
+                            target = alloc_expr(ir.Expr.expr_name(name = "__mt_result", ty = ctx.current_fn_return_type, pointer = false)),
+                            operator = "=",
+                            value = lowered,
+                        ))
+                    output.push(ir.Stmt.stmt_goto(label = ctx.async_resume_return_label))
+                    return
                 let value = r.value else:
                     flush_all_defers(ctx, output)
-                    output.push(ir.Stmt.stmt_return(value = null, line = r.line, source_path = ""))
+                    # In async functions (inside_async / async_resume_return_label),
+                    # a bare `return;` produces a completed Task[void] aggregate
+                    # rather than a void return.
+                    if ctx.inside_async:
+                        let void_ret_val = alloc_expr(ir.Expr.expr_zero_init(ty = types.primitive("void")))
+                        let wrapped = make_task_literal(void_ret_val)
+                        output.push(ir.Stmt.stmt_return(value = wrapped, line = r.line, source_path = ""))
+                    else:
+                        output.push(ir.Stmt.stmt_return(value = null, line = r.line, source_path = ""))
                     return
                 # `return match ...`: a match expression has no direct C form, so
                 # hoist it into a synthetic temp local (a switch / if-chain that
@@ -13451,36 +13481,41 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
         ctx.locals.push(LocalBinding(name = pname, c_name = lc, ty = pty, pointer = false))
         pi2 += 1
     if has_await:
+        var saved_label2 = ctx.async_resume_return_label
+        ctx.async_resume_return_label = "__mt_async_return_cps"
+        if not is_void_ret:
+            resume_body.push(ir.Stmt.stmt_local(name = "__mt_result", linkage_name = "__mt_result", ty = res_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = res_ty)), line = 0, source_path = ""))
         lower_async_cps_body(ctx, name, body, resume_c, frame_c, frame_exp, res_ty, is_void_ret, bool_ty, int_ty, ref_of(resume_body))
+        ctx.async_resume_return_label = saved_label2
     else:
-        # Lower original body (handles defers, locals, return values),
-        # then replace each return with: store result → waiter wake → ready → return.
+        # Lower the body with async-resume return rewriting enabled:
+        # `return expr` → `__mt_result = expr; goto __mt_async_return`.
+        # This handles returns inside nested blocks (if/while/for/switch).
+        var saved_label = ctx.async_resume_return_label
+        ctx.async_resume_return_label = "__mt_async_return"
+        if not is_void_ret:
+            resume_body.push(ir.Stmt.stmt_local(name = "__mt_result", linkage_name = "__mt_result", ty = res_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = res_ty)), line = 0, source_path = ""))
         var body_ir = lower_function_body(ctx, body)
         var bi: ptr_uint = 0
         while bi < body_ir.len:
             var stmt: ir.Stmt
             unsafe:
                 stmt = read(body_ir.data + bi)
-            match stmt:
-                ir.Stmt.stmt_return as ret:
-                    # Store return value in frame->result
-                    if not is_void_ret:
-                        let rv = ret.value
-                        if rv != null:
-                            resume_body.push(ir.Stmt.stmt_assignment(
-                                target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)),
-                                operator = "=",
-                                value = rv,
-                            ))
-                    # Waiter wake
-                    async_waiter_wake(ctx, ref_of(resume_body), frame_exp, bool_ty, async_mod.ptr_void_type())
-                    # Set ready
-                    resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = bool_true))
-                    # Return void
-                    resume_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-                _:
-                    resume_body.push(stmt)
+            resume_body.push(stmt)
             bi += 1
+        # Return epilogue: store result, wake waiter, set ready, return void.
+        resume_body.push(ir.Stmt.stmt_label(name = "__mt_async_return"))
+        if not is_void_ret:
+            let result_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_result", ty = res_ty, pointer = false))
+            resume_body.push(ir.Stmt.stmt_assignment(
+                target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)),
+                operator = "=",
+                value = result_expr,
+            ))
+        async_waiter_wake(ctx, ref_of(resume_body), frame_exp, bool_ty, async_mod.ptr_void_type())
+        resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = bool_true))
+        resume_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+        ctx.async_resume_return_label = saved_label
     functions.push(ir.Function(name = j2(name, "_resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable linkage names --
@@ -13629,10 +13664,11 @@ function lower_async_cps_body(ctx: ref[LowerCtx], name: str, body: ptr[ast.Stmt]
                             ti += 1
 
     # Completion: waiter wake, set ready, store result, return
+    cur.push(ir.Stmt.stmt_label(name = "__mt_async_return_cps"))
     async_waiter_wake(ctx, ref_of(cur), frame_exp, bool_ty, async_mod.ptr_void_type())
     cur.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
     if not is_void_ret:
-        cur.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_zero_init(ty = res_ty))))
+        cur.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "__mt_result", ty = res_ty, pointer = false))))
     cur.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     state_cases.push(cur)
 
