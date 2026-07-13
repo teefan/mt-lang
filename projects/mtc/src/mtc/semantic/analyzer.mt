@@ -45,6 +45,9 @@ public struct FnSig:
     return_type: types.Type
     has_return_type: bool
     method_kind: ast.MethodKind
+    ## True for `async function`/`async` methods.  Lets the lowering wrap the
+    ## call's return type in `Task[T]` and route the definition through CPS.
+    is_async: bool
 
 
 public struct FieldEntry:
@@ -603,7 +606,7 @@ function register_event_methods(ctx: ref[Context]) -> void:
 
 
 function fn_sig_no_params(type_name: str, method_name: str, return_type: types.Type) -> FnSig:
-    return FnSig(name = method_name, params = span[ParamEntry](), return_type = return_type, has_return_type = true, method_kind = ast.MethodKind.mk_plain)
+    return FnSig(name = method_name, params = span[ParamEntry](), return_type = return_type, has_return_type = true, method_kind = ast.MethodKind.mk_plain, is_async = false)
 
 
 function check_attribute_applications(ctx: ref[Context], file: ast.SourceFile) -> void:
@@ -820,7 +823,7 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                     ctx.method_keys.set(key, true)
                     enter_type_params(ctx, m.type_params)
                     if m.method_kind != ast.MethodKind.mk_static or not ctx.method_sigs.contains(key):
-                        ctx.method_sigs.set(key, build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind, false))
+                        ctx.method_sigs.set(key, build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind, m.is_async))
                     ctx.type_params.clear()
                     if m.type_params.len > 0:
                         ctx.method_type_params.set(key, m.type_params)
@@ -1032,11 +1035,11 @@ function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], ret
         if is_async:
             final_ret = make_task_type(final_ret)
         return FnSig(name = name, params = param_entries.as_span(),
-            return_type = final_ret, has_return_type = true, method_kind = method_kind)
+            return_type = final_ret, has_return_type = true, method_kind = method_kind, is_async = is_async)
     if is_async:
         final_ret = make_task_type(final_ret)
     return FnSig(name = name, params = param_entries.as_span(),
-        return_type = final_ret, has_return_type = false, method_kind = method_kind)
+        return_type = final_ret, has_return_type = false, method_kind = method_kind, is_async = is_async)
 
 
 # =============================================================================
@@ -3326,7 +3329,8 @@ function str_buffer_method_sig(args: span[types.Type], method_name: str) -> Opti
         params = params.as_span(),
         return_type = return_type,
         has_return_type = true,
-        method_kind = ast.MethodKind.mk_plain
+        method_kind = ast.MethodKind.mk_plain,
+        is_async = false
     ))
 
 
@@ -3358,7 +3362,8 @@ function atomic_method_sig(args: span[types.Type], method_name: str) -> Option[F
         params = params.as_span(),
         return_type = return_type,
         has_return_type = true,
-        method_kind = method_kind
+        method_kind = method_kind,
+        is_async = false
     ))
 
 

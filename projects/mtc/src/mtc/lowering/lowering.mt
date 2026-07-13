@@ -841,7 +841,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                     # All async functions use full CPS lowering (frame struct,
                     # resume state machine, vtable, constructor).  A 0-await
                     # function is the single-state case.
-                    lower_async_fn(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, ref_of(structs), ref_of(functions))
+                    lower_async_fn(ref_of(ctx), fun.name, naming.qualified_c_name(ctx.module_name, fun.name), Option[types.Type].none, fun.method_params, fun.return_type, fun.body, ref_of(structs), ref_of(functions))
                     if is_root and fun.name == "main":
                         match build_async_main_entrypoint(ref_of(ctx), fun.name):
                             Option.some as entry:
@@ -879,7 +879,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 if vr.type_params.len == 0:
                     variants.push(lower_variant_decl(ref_of(ctx), vr.name, vr.variant_arms))
             ast.Decl.decl_extending_block as ex:
-                lower_extending_block(ctx, ref_of(functions), ex.type_name, ex.methods)
+                lower_extending_block(ctx, ref_of(functions), ref_of(structs), ex.type_name, ex.methods)
             ast.Decl.decl_var as v:
                 var g_ty = types.primitive("void")
                 if v.var_type != null:
@@ -1201,7 +1201,7 @@ function extending_receiver_type(module_name: str, type_name: str) -> types.Type
 ## Lower all methods in an extending block to IR functions.  Each method becomes
 ## a C function with the receiver as the first parameter (pointer for editable,
 ## by value for plain, omitted for static).
-function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Function]], type_ref_ptr: ptr[ast.TypeRef], methods: span[ast.Method]) -> void:
+function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Function]], structs: ref[vec.Vec[ir.StructDecl]], type_ref_ptr: ptr[ast.TypeRef], methods: span[ast.Method]) -> void:
     var type_name: str
     var bare_name: str
     unsafe:
@@ -1227,11 +1227,23 @@ function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Fun
         var m: ast.Method
         unsafe:
             m = read(methods.data + mi)
-        if m.is_async or m.type_params.len > 0:
+        # Generic methods are monomorphized on demand by `lower_monomorphized_call`.
+        if m.type_params.len > 0:
             mi += 1
             continue
         let c_name = method_link_name(ctx.module_name, bare_name, m.name, m.method_kind == ast.MethodKind.mk_static)
         let receiver_ty = extending_receiver_type(ctx.module_name, bare_name)
+        # Async methods are lowered through the full CPS path, with the receiver
+        # (`this`) as an implicit param — except static async methods, which have
+        # no receiver.
+        if m.is_async:
+            var recv_opt = Option[types.Type].none
+            if m.method_kind != ast.MethodKind.mk_static:
+                let recv_ty = if m.method_kind == ast.MethodKind.mk_editable: types.Type.ty_generic(name = "ptr", args = sp_type(receiver_ty)) else: receiver_ty
+                recv_opt = Option[types.Type].some(value = recv_ty)
+            lower_async_fn(ctx, m.name, c_name, recv_opt, m.method_params, m.return_type, m.body, structs, functions)
+            mi += 1
+            continue
         functions.push(lower_method(ctx, c_name, receiver_ty, m))
         mi += 1
 
@@ -5746,7 +5758,7 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], callee_name: str, args: s
                         p_ty = substitute_type_params(ctx, resolve_type_ref(ctx, ptr_of(fm.param_type)), ref_of(sub))
                     syn_params.push(analyzer.ParamEntry(name = fm.name, ty = p_ty))
                     spi += 1
-                sig = Option[analyzer.FnSig].some(value = analyzer.FnSig(name = callee_name, params = syn_params.as_span(), return_type = types.primitive("void"), has_return_type = false, method_kind = ast.MethodKind.mk_plain))
+                sig = Option[analyzer.FnSig].some(value = analyzer.FnSig(name = callee_name, params = syn_params.as_span(), return_type = types.primitive("void"), has_return_type = false, method_kind = ast.MethodKind.mk_plain, is_async = false))
             return Option[ptr[ir.Expr]].some(value = lower_plain_call_sig(ctx, spec_key, args, call_ep, types.alloc_type(ret_ty), sig))
         _:
             return Option[ptr[ir.Expr]].none
@@ -13845,20 +13857,26 @@ function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
 ## For Step 1 only the no-await path is handled — the resume function body
 ## is a stub that sets ready = true and returns.  Full CPS lowering (state
 ## machine for await sites) will be added in subsequent steps.
-function lower_async_fn(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, structs: ref[vec.Vec[ir.StructDecl]], functions: ref[vec.Vec[ir.Function]]) -> void:
+function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_ty_opt: Option[types.Type], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, structs: ref[vec.Vec[ir.StructDecl]], functions: ref[vec.Vec[ir.Function]]) -> void:
     # Reset async CPS state so a no-await function (or the next function) never
     # inherits a previous has-await function's frame-result target / labels.
     ctx.async_cps_active = false
     ctx.async_result_c_name = ""
     ctx.async_complete_label = ""
+    ctx.async_await_counter = 0
+    ctx.async_local_fields = vec.Vec[ir.Field].create()
+    ctx.async_await_fields = vec.Vec[ir.Field].create()
+    ctx.async_local_seen = map_mod.Map[str, bool].create()
     let sig = lookup_fn_sig(ctx, name)
     let res_ty = resolve_return_type(ctx, sig, return_type)
     let bool_ty = types.primitive("bool")
     let int_ty = types.primitive("int")
     let void_t = types.primitive("void")
     let is_void_ret = is_void_type_lowered(res_ty)
-    let frame_c = naming.qualified_c_name(ctx.module_name, j2(name, "_frame"))
-    let resume_c = naming.qualified_c_name(ctx.module_name, j2(name, "_resume"))
+    # `link_base` is the constructor's C linkage (e.g. `<mod>_main`, or a method's
+    # `<mod>_Type_method`); the frame/resume names derive from it.
+    let frame_c = j2(link_base, "_frame")
+    let resume_c = j2(link_base, "_resume")
     let task_ty = make_task_type(res_ty)
     let has_await = async_mod.body_has_await(body)
     let ptr_ty = ptr_uint_type()
@@ -13873,9 +13891,16 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
     let raw_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ptr_void_type(), pointer = true))
 
     # Param frame-field info.  Fields are named `param_<name>` so they cannot
-    # clash with control fields (`state`/`result`/…).
+    # clash with control fields (`state`/`result`/…).  For an async method the
+    # receiver is prepended as an implicit `this` param.
     var ctor_param_names = vec.Vec[str].create()
     var ctor_param_tys = vec.Vec[types.Type].create()
+    match receiver_ty_opt:
+        Option.some as rty:
+            ctor_param_names.push("this")
+            ctor_param_tys.push(rty.value)
+        Option.none:
+            pass
     var pi: ptr_uint = 0
     while pi < params.len:
         var p: ast.Param
@@ -13913,6 +13938,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
         ctx.async_resume_c = resume_c
         ctx.async_result_ty = res_ty
         ctx.async_result_is_void = is_void_ret
+        # Fresh field vecs for this function.
         ctx.async_await_counter = 0
         ctx.async_local_fields = vec.Vec[ir.Field].create()
         ctx.async_await_fields = vec.Vec[ir.Field].create()
@@ -14129,7 +14155,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
             pty = read(ptr[types.Type]<-rawt + pi4)
         ctor_params.push(ir.Param(name = pname, linkage_name = pname, ty = pty, pointer = is_pointer_or_ref_type(pty)))
         pi4 += 1
-    functions.push(ir.Function(name = name, linkage_name = naming.qualified_c_name(ctx.module_name, name), params = ctor_params.as_span(), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, method_receiver_param = false))
+    functions.push(ir.Function(name = name, linkage_name = link_base, params = ctor_params.as_span(), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, method_receiver_param = false))
 
 
 ## The C label for async resume state `n` (goto target in the dispatch switch).
