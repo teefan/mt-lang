@@ -2115,7 +2115,16 @@ function guard_success_type(ctx: ref[LowerCtx], kind: str, storage_ty: types.Typ
         Option.some as ft:
             return ft.value
         Option.none:
-            return storage_ty
+            pass
+    # Concrete variant (e.g. Result[UdpSocket, Error]): look up the success
+    # payload field type from the arm_payload_fields registry populated during
+    # variant lowering.
+    let arm_ptr = ctx.arm_payload_fields.get(payload_c)
+    if arm_ptr != null:
+        let arm_info = unsafe: read(arm_ptr)
+        if arm_info.field_types.len > 0:
+            return unsafe: read(arm_info.field_types.data + 0)
+    return storage_ty
 
 
 ## The success-value projection for a guard: the storage itself for nullable,
