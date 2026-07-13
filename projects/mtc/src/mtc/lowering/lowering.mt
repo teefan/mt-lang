@@ -139,8 +139,11 @@ struct LowerCtx:
     # Map from a concrete struct's qualified C name (`std_vec_Vec_int`) to the
     # generic struct instance info (owner module, name, type args), enabling
     # method resolution on variables whose type has been collapsed to
-    # `ty_named` by the C backend qualification pass.
-    generic_struct_instances: map_mod.Map[str, GenericReceiver]
+    # `ty_named` by the C backend qualification pass.  Shared program-wide (via
+    # pointer) so a generic instance registered while lowering one module
+    # (e.g. `Vec[Server]` when qualifying a cross-module return type) is visible
+    # to every other module's method resolution.
+    generic_struct_instances: ptr[map_mod.Map[str, GenericReceiver]]
     # Map from a variant arm payload struct's C name (the `ty_named` given to a
     # match-arm binding, e.g. `mtc_parser_ast_Expr_expr_unary_op`) to that arm's
     # field info, so member access on the binding resolves field types.
@@ -389,7 +392,11 @@ public function lower(program: loader.Program) -> ir.Program:
     # return type, emitting the concrete Option/Result decls) so it is available
     # before any module body is lowered.
     var prelude_arm_field_types = map_mod.Map[str, types.Type].create()
-    collect_program_returns(program, ref_of(program_returns), ref_of(prelude_arm_field_types))
+    # Program-wide generic-struct instance registry, shared across every module's
+    # lowering so a `Vec[T]` instance registered while qualifying one module's
+    # types is visible to method resolution in every other module.
+    var generic_instances = map_mod.Map[str, GenericReceiver].create()
+    collect_program_returns(program, ref_of(program_returns), ref_of(prelude_arm_field_types), ref_of(generic_instances))
 
     var constants = vec.Vec[ir.Constant].create()
     var globals = vec.Vec[ir.Global].create()
@@ -415,7 +422,7 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == count - 1
-        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span())
+        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances))
         globals.append_span(fragment.globals)
         opaques.append_span(fragment.opaques)
         dedup_append_structs(ref_of(structs), fragment.structs, ref_of(seen_structs))
@@ -723,9 +730,23 @@ function substitute_type_params(ctx: ref[LowerCtx], ty: types.Type, sub: ref[map
             return ty
 
 
+## Accessors for the shared program-wide generic-struct instance registry
+## (`ctx.generic_struct_instances` is a raw pointer to the one shared map).
+function gsi_get(ctx: ref[LowerCtx], name: str) -> ptr[GenericReceiver]?:
+    return unsafe: read(ctx.generic_struct_instances).get(name)
+
+
+function gsi_set(ctx: ref[LowerCtx], name: str, value: GenericReceiver) -> void:
+    unsafe: read(ctx.generic_struct_instances).set(name, value)
+
+
+function gsi_contains(ctx: ref[LowerCtx], name: str) -> bool:
+    return unsafe: read(ctx.generic_struct_instances).contains(name)
+
+
 ## Create a fully initialised LowerCtx for a single module.  Every field is
 ## set explicitly so all code paths start from a known clean state.
-function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule]) -> LowerCtx:
+function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule], gen_instances: ptr[map_mod.Map[str, GenericReceiver]]) -> LowerCtx:
     return LowerCtx(
         module_name = analysis.module_name,
         analysis = analysis,
@@ -741,7 +762,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         pending_specializations = vec.Vec[PendingSpecialization].create(),
         specialization_cache = map_mod.Map[str, ir.Function].create(),
         generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
-        generic_struct_instances = map_mod.Map[str, GenericReceiver].create(),
+        generic_struct_instances = gen_instances,
         arm_payload_fields = map_mod.Map[str, VariantArmInfo].create(),
         program_analyses = prog_analyses,
         loaded_modules = lod_modules,
@@ -786,14 +807,14 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
 ## Pre-scan every module's function declarations and record each one's resolved
 ## return type keyed by its C linkage name, so cross-module calls can look them
 ## up regardless of lowering order.
-function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]]) -> void:
+function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], gen_instances: ref[map_mod.Map[str, GenericReceiver]]) -> void:
     var mi: ptr_uint = 0
     while mi < program.analyses.len():
         let a_ptr = program.analyses.get(mi) else:
             mi += 1
             continue
         var analysis = unsafe: read(a_ptr)
-        var ctx = new_lowering_context(analysis, ptr_of(read(sink)), ptr_of(read(prelude_arm_field_types)), program.analyses.as_span(), program.modules.as_span())
+        var ctx = new_lowering_context(analysis, ptr_of(read(sink)), ptr_of(read(prelude_arm_field_types)), program.analyses.as_span(), program.modules.as_span(), ptr_of(read(gen_instances)))
         var di: ptr_uint = 0
         while di < analysis.source_file.declarations.len:
             var d: ast.Decl
@@ -824,8 +845,8 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
         mi += 1
 
 
-function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule]) -> ir.Program:
-    var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules)
+function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]]) -> ir.Program:
+    var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)))
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
     collect_variants(ref_of(ctx), analysis.source_file.declarations)
@@ -1786,6 +1807,24 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 if un.operator == "?":
                                     lower_propagate_let(ctx, output, loc.name, un.operand)
                                     return
+                            # `let x = <cast>(inner?)` — the `?` is nested inside a
+                            # prefix cast.  Propagate the `?` into a hidden temp,
+                            # then bind `x` to the cast of that temp.
+                            ast.Expr.expr_prefix_cast as pc:
+                                match read(pc.expression):
+                                    ast.Expr.expr_unary_op as inner_un:
+                                        if inner_un.operator == "?":
+                                            let tmp = fresh_c_temp_name(ctx, "cast_prop")
+                                            lower_propagate_let(ctx, output, tmp, inner_un.operand)
+                                            let tmp_id = alloc_ast_expr(ast.Expr.expr_identifier(name = tmp, line = 0, column = 0))
+                                            let cast_expr = alloc_ast_expr(ast.Expr.expr_prefix_cast(target_type = pc.target_type, expression = tmp_id, line = pc.line, column = pc.column))
+                                            let bc = utils.c_local_name(loc.name)
+                                            let val_ir = lower_expr(ctx, cast_expr)
+                                            output.push(ir.Stmt.stmt_local(name = loc.name, linkage_name = bc, ty = ir_expr_type(val_ir), value = val_ir, line = 0, source_path = ""))
+                                            ctx.locals.push(LocalBinding(name = loc.name, c_name = bc, ty = ir_expr_type(val_ir), pointer = false))
+                                            return
+                                    _:
+                                        pass
                             _:
                                 pass
                         match read(init_val):
@@ -2667,7 +2706,7 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             # Already-monomorphized concrete names (e.g. std_map_Node_str_bool)
             # are fully qualified: pass them through so re-qualifying in a
             # different module context does not double-prefix them.
-            if ctx.generic_struct_instances.contains(n.name) or ctx.generic_struct_decls.contains(n.name):
+            if gsi_contains(ctx, n.name) or ctx.generic_struct_decls.contains(n.name):
                 return t
             # Concrete C names produced by generic_struct_c_name always contain
             # at least one underscore (module_prefix_Name_Arg).  Bare names
@@ -2734,7 +2773,7 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             if resolved_args.len > 0:
                 let concrete_name = naming.qualified_c_name(im.module_name, generic_struct_c_name(im.name, resolved_args))
                 ensure_generic_struct_decl_named(ctx, im.name, span[ast.TypeArgument](), resolved_args, concrete_name)
-                ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = im.name, concrete_args = resolved_args, owner_module = im.module_name))
+                gsi_set(ctx, concrete_name, GenericReceiver(owner_name = im.name, concrete_args = resolved_args, owner_module = im.module_name))
                 return types.Type.ty_named(module_name = "", name = concrete_name)
             return t
         types.Type.ty_generic as g:
@@ -2775,7 +2814,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
     if ctx.analysis.structs.contains(name):
         let concrete_name = naming.qualified_c_name(ctx.module_name, generic_struct_c_name(name, args))
         ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
-        ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = ctx.module_name))
+        gsi_set(ctx, concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = ctx.module_name))
         return types.Type.ty_named(module_name = "", name = concrete_name)
     # Try imported modules — search both public and private structs,
     # and fall back to extracting from the AST directly.
@@ -2792,7 +2831,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
                 if has_struct:
                     let concrete_name = naming.qualified_c_name(target_module, generic_struct_c_name(name, args))
                     ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
-                    ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = target_module))
+                    gsi_set(ctx, concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = target_module))
                     return types.Type.ty_named(module_name = "", name = concrete_name)
             Option.none:
                 pass
@@ -5290,7 +5329,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     types.Type.ty_named as tn:
                         if tn.name.starts_with("mt_task_"):
                             is_task = true
-                            let gi_ptr = ctx.generic_struct_instances.get(tn.name)
+                            let gi_ptr = gsi_get(ctx, tn.name)
                             if gi_ptr != null:
                                 let gi = unsafe: read(gi_ptr)
                                 if gi.concrete_args.len >= 1:
@@ -5299,7 +5338,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     types.Type.ty_imported as im:
                         if im.name.starts_with("mt_task_"):
                             is_task = true
-                            let gi_ptr = ctx.generic_struct_instances.get(im.name)
+                            let gi_ptr = gsi_get(ctx, im.name)
                             if gi_ptr != null:
                                 let gi = unsafe: read(gi_ptr)
                                 if gi.concrete_args.len >= 1:
@@ -5723,7 +5762,7 @@ function ensure_generic_struct_decl_named(ctx: ref[LowerCtx], struct_name: str, 
                 alignment = 0,
                 source_module = Option[str].none,
             ))
-            ctx.generic_struct_instances.set(decl_name, GenericReceiver(owner_name = struct_name, concrete_args = concrete_args, owner_module = found_module))
+            gsi_set(ctx, decl_name, GenericReceiver(owner_name = struct_name, concrete_args = concrete_args, owner_module = found_module))
         Option.none:
             pass
 
@@ -7472,7 +7511,7 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
                         return Option[GenericReceiver].some(value = rec.value)
                     Option.none:
                         return Option[GenericReceiver].none
-            let instance_ptr = ctx.generic_struct_instances.get(n.name)
+            let instance_ptr = gsi_get(ctx, n.name)
             if instance_ptr == null:
                 return Option[GenericReceiver].none
             let inst = unsafe: read(instance_ptr)
@@ -14944,7 +14983,7 @@ function extract_task_element_type(ctx: ref[LowerCtx], t: types.Type) -> types.T
                 return unsafe: read(tg.args.data + 0)
         types.Type.ty_named as tn:
             if tn.name.starts_with("mt_task_"):
-                let gi_ptr = ctx.generic_struct_instances.get(tn.name)
+                let gi_ptr = gsi_get(ctx, tn.name)
                 if gi_ptr != null:
                     let gi = unsafe: read(gi_ptr)
                     if gi.concrete_args.len >= 1:
