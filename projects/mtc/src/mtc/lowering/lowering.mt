@@ -6060,6 +6060,17 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             var saved_returns = ctx.function_returns
             var saved_type_subst = ctx.type_substitution
             var saved_inside_async = ctx.inside_async
+            var saved_cps_active = ctx.async_cps_active
+            var saved_cps_label = ctx.async_resume_return_label
+            var saved_cps_complete = ctx.async_complete_label
+            var saved_cps_result_cname = ctx.async_result_c_name
+            # Specializations are lowered in their own right; a CPS label from a
+            # caller must not leak into their IR bodies (or the body will emit a
+            # `goto` to a label that doesn't exist in the specialization).
+            ctx.async_cps_active = false
+            ctx.async_resume_return_label = ""
+            ctx.async_complete_label = ""
+            ctx.async_result_c_name = ""
 
             # Switch to the owner module's context when its analysis is available.
             match find_imported_analysis(ctx, gm.module_name):
@@ -6098,6 +6109,10 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.function_returns = saved_returns
             ctx.type_substitution = saved_type_subst
             ctx.inside_async = saved_inside_async
+            ctx.async_cps_active = saved_cps_active
+            ctx.async_resume_return_label = saved_cps_label
+            ctx.async_complete_label = saved_cps_complete
+            ctx.async_result_c_name = saved_cps_result_cname
         _:
             fatal(j2("lowering: monomorphization failed, expected function decl for ", gm.module_name))
 
@@ -10957,8 +10972,16 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = binding_ty))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = binding_ty))
                     let bc = utils.c_local_name(bn.value)
-                    body.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
-                    ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
+                    if ctx.async_cps_active:
+                        # Spill the match binding to a frame field so it survives
+                        # suspend/resume across an await inside the arm body.
+                        let mfield = j2("local_", bn.value)
+                        let mcname = j2("__mt_frame->", mfield)
+                        async_register_local_field(ctx, bn.value, mfield, mcname, binding_ty)
+                        body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = mcname, ty = binding_ty, pointer = false)), operator = "=", value = arm_data))
+                    else:
+                        body.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
+                        ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
                 Option.none:
                     pass
         let lowered_val = lower_expr(ctx, arm.value)
@@ -11060,8 +11083,14 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = binding_ty))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = binding_ty))
                     let bc = utils.c_local_name(bn.value)
-                    stmts.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
-                    ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
+                    if ctx.async_cps_active:
+                        let mfield = j2("local_", bn.value)
+                        let mcname = j2("__mt_frame->", mfield)
+                        async_register_local_field(ctx, bn.value, mfield, mcname, binding_ty)
+                        stmts.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = mcname, ty = binding_ty, pointer = false)), operator = "=", value = arm_data))
+                    else:
+                        stmts.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
+                        ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
                 Option.none:
                     pass
             let body = lower_block(ctx, arm.body)
@@ -11141,15 +11170,30 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                         let payload_c = fresh_c_temp_name(ctx, "match_payload")
                         let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = payload_ty))
                         let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = payload_ty))
-                        blk.push(ir.Stmt.stmt_local(name = payload_c, linkage_name = payload_c, ty = payload_ty, value = arm_data, line = 0, source_path = ""))
-                        ctx.locals.push(LocalBinding(name = payload_c, c_name = payload_c, ty = payload_ty, pointer = false))
+                        if ctx.async_cps_active:
+                            # Spill the match arm's payload struct to a frame
+                            # field so pattern-bindings and `as` binding survive
+                            # await inside the arm body.
+                            let mfield = j2("local_", payload_c)
+                            let mcname = j2("__mt_frame->", mfield)
+                            async_register_local_field(ctx, payload_c, mfield, mcname, payload_ty)
+                            blk.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = mcname, ty = payload_ty, pointer = false)), operator = "=", value = arm_data))
+                        else:
+                            blk.push(ir.Stmt.stmt_local(name = payload_c, linkage_name = payload_c, ty = payload_ty, value = arm_data, line = 0, source_path = ""))
+                            ctx.locals.push(LocalBinding(name = payload_c, c_name = payload_c, ty = payload_ty, pointer = false))
                         lower_variant_field_bindings(ctx, ref_of(blk), pattern, ai.value, payload_c, payload_ty)
                         match arm.binding_name:
                             Option.some as bn:
                                 let bc = utils.c_local_name(bn.value)
                                 let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
-                                blk.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = payload_ty, value = payload_ref, line = 0, source_path = ""))
-                                ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = payload_ty, pointer = false))
+                                if ctx.async_cps_active:
+                                    let asfield = j2("local_", bn.value)
+                                    let ascname = j2("__mt_frame->", asfield)
+                                    async_register_local_field(ctx, bn.value, asfield, ascname, payload_ty)
+                                    blk.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = ascname, ty = payload_ty, pointer = false)), operator = "=", value = payload_ref))
+                                else:
+                                    blk.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = payload_ty, value = payload_ref, line = 0, source_path = ""))
+                                    ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = payload_ty, pointer = false))
                             Option.none:
                                 pass
                 Option.none:
@@ -11197,8 +11241,14 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                                             field_expr = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = field_expr, ty = field_ty))
                                     _:
                                         pass
-                                blk.push(ir.Stmt.stmt_local(name = id.name, linkage_name = bc, ty = field_ty, value = field_expr, line = 0, source_path = ""))
-                                ctx.locals.push(LocalBinding(name = id.name, c_name = bc, ty = field_ty, pointer = false))
+                                if ctx.async_cps_active:
+                                    let vfield = j2("local_", id.name)
+                                    let vcname = j2("__mt_frame->", vfield)
+                                    async_register_local_field(ctx, id.name, vfield, vcname, field_ty)
+                                    blk.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = vcname, ty = field_ty, pointer = false)), operator = "=", value = field_expr))
+                                else:
+                                    blk.push(ir.Stmt.stmt_local(name = id.name, linkage_name = bc, ty = field_ty, value = field_expr, line = 0, source_path = ""))
+                                    ctx.locals.push(LocalBinding(name = id.name, c_name = bc, ty = field_ty, pointer = false))
                         _:
                             pass
                     i += 1
