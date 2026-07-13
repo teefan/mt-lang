@@ -2067,6 +2067,13 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
         return
     let success_ty = guard_success_type(ctx, kind, storage_ty)
     let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
+    if ctx.async_cps_active:
+        # Spill the guard-bound local to a frame field so it survives suspend.
+        let gfield = j2("local_", name)
+        let gcname = j2("__mt_frame->", gfield)
+        async_register_local_field(ctx, name, gfield, gcname, success_ty)
+        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = gcname, ty = success_ty, pointer = false)), operator = "=", value = success_val))
+        return
     let bc = utils.c_local_name(name)
     output.push(ir.Stmt.stmt_local(name = name, linkage_name = bc, ty = success_ty, value = success_val, line = 0, source_path = ""))
     ctx.locals.push(LocalBinding(name = name, c_name = bc, ty = success_ty, pointer = false))
@@ -14394,12 +14401,23 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
                 pass
 
     # Plain spilled local: `frame->local_<name> = <value>`.
-    let val_ir = lower_expr(ctx, hv)
+    var val_ir = lower_expr(ctx, hv)
     var ty = ir_expr_type(val_ir)
     if loc_stmt_type != null:
         let annotated = local_decl_type(ctx, loc_stmt_type, hv)
         if not types.is_error(annotated):
             ty = annotated
+    # Wrap a non-nullable value into a value-type nullable's opt struct (mirrors
+    # the normal stmt_local path), so `let m: int? = 5` stores `{has_value,value}`.
+    if types.is_nullable_type(ty) and not is_nullable_pointer_like(ty):
+        let value_ty = ir_expr_type(val_ir)
+        if not types.is_nullable_type(value_ty):
+            unsafe:
+                match read(val_ir):
+                    ir.Expr.expr_null_literal:
+                        val_ir = alloc_expr(ir.Expr.expr_zero_init(ty = ty))
+                    _:
+                        val_ir = nullable_some_literal(ty, val_ir)
     async_register_local_field(ctx, loc_name, field_name, frame_cname, ty)
     let target = alloc_expr(ir.Expr.expr_name(name = frame_cname, ty = ty, pointer = false))
     output.push(ir.Stmt.stmt_assignment(target = target, operator = "=", value = val_ir))
