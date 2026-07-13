@@ -2470,7 +2470,7 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             if resolved_args.len > 0:
                 let concrete_name = naming.qualified_c_name(im.module_name, generic_struct_c_name(im.name, resolved_args))
                 ensure_generic_struct_decl_named(ctx, im.name, span[ast.TypeArgument](), resolved_args, concrete_name)
-                ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = im.name, concrete_args = resolved_args))
+                ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = im.name, concrete_args = resolved_args, owner_module = im.module_name))
                 return types.Type.ty_named(module_name = "", name = concrete_name)
             return t
         types.Type.ty_generic as g:
@@ -2511,7 +2511,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
     if ctx.analysis.structs.contains(name):
         let concrete_name = naming.qualified_c_name(ctx.module_name, generic_struct_c_name(name, args))
         ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
-        ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = name, concrete_args = args))
+        ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = ctx.module_name))
         return types.Type.ty_named(module_name = "", name = concrete_name)
     # Try imported modules — search both public and private structs,
     # and fall back to extracting from the AST directly.
@@ -2528,7 +2528,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
                 if has_struct:
                     let concrete_name = naming.qualified_c_name(target_module, generic_struct_c_name(name, args))
                     ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
-                    ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = name, concrete_args = args))
+                    ctx.generic_struct_instances.set(concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = target_module))
                     return types.Type.ty_named(module_name = "", name = concrete_name)
             Option.none:
                 pass
@@ -4739,7 +4739,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                                     else:
                                                         fatal(c"lowering: not enough specialization args for generic method")
                                                     sp_tpi += 1
-                                                let sp_ext_info = GenericReceiver(owner_name = sp_info.value.owner_name, concrete_args = sp_ext_args.as_span())
+                                                let sp_ext_info = GenericReceiver(owner_name = sp_info.value.owner_name, concrete_args = sp_ext_args.as_span(), owner_module = sp_info.value.owner_module)
                                                 return lower_monomorphized_method(ctx, sp_ext_info, sp_gm.value, spma.member_name, spma.receiver, args)
                                         Option.none:
                                             pass
@@ -5383,7 +5383,10 @@ function ensure_generic_struct_decl_named(ctx: ref[LowerCtx], struct_name: str, 
     if ctx.spec_in_progress.contains(decl_name):
         return
     ctx.spec_in_progress.set(decl_name, true)
-    # Search the current module's AST first, then imported modules.
+    # Search the current module's AST first, then imported modules.  Track the
+    # module the struct was found in so the registered instance carries an
+    # authoritative owner module for C-name mangling.
+    var found_module: str = ctx.module_name
     var fields_opt = extract_generic_struct_fields(ctx, ctx.analysis, struct_name, concrete_args)
     if fields_opt.is_none():
         # Try each imported module.
@@ -5398,6 +5401,7 @@ function ensure_generic_struct_decl_named(ctx: ref[LowerCtx], struct_name: str, 
                     fields_opt = extract_generic_struct_fields(ctx, imported.value, struct_name, concrete_args)
                     if fields_opt.is_some():
                         found_once = true
+                        found_module = target_module
                 Option.none:
                     pass
     match fields_opt:
@@ -5410,7 +5414,7 @@ function ensure_generic_struct_decl_named(ctx: ref[LowerCtx], struct_name: str, 
                 alignment = 0,
                 source_module = Option[str].none,
             ))
-            ctx.generic_struct_instances.set(decl_name, GenericReceiver(owner_name = struct_name, concrete_args = concrete_args))
+            ctx.generic_struct_instances.set(decl_name, GenericReceiver(owner_name = struct_name, concrete_args = concrete_args, owner_module = found_module))
         Option.none:
             pass
 
@@ -7031,6 +7035,12 @@ function build_receiver_arg(recv: ptr[ir.Expr], method_kind: ast.MethodKind) -> 
 struct GenericReceiver:
     owner_name: str
     concrete_args: span[types.Type]
+    ## The module that defines the receiver struct, sourced from the receiver
+    ## type itself.  Authoritative for C-name mangling so same-named structs in
+    ## different modules (e.g. `map.Entries` vs `fs.Entries`) do not collide.
+    ## Empty when the module is not recoverable; callers then fall back to a
+    ## by-name scan of the program analyses.
+    owner_module: str
 
 
 ## A located generic method: the module that defines the extending block, the
@@ -7107,10 +7117,12 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
         effective = types.pointer_element(effective)
     var owner_name: str
     var raw_args: span[types.Type]
+    var owner_module: str = ""
     match effective:
         types.Type.ty_imported as im:
             owner_name = im.name
             raw_args = im.args
+            owner_module = im.module_name
         types.Type.ty_generic as g:
             if is_builtin_pointer_generic(g.name):
                 return Option[GenericReceiver].none
@@ -7132,6 +7144,7 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
             let inst = unsafe: read(instance_ptr)
             owner_name = inst.owner_name
             raw_args = inst.concrete_args
+            owner_module = inst.owner_module
         _:
             return Option[GenericReceiver].none
     var resolved = vec.Vec[types.Type].create()
@@ -7146,7 +7159,7 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
         # correct prefix when the method body is lowered in owner context.
         resolved.push(qualify_type(ctx, concrete))
         i += 1
-    return Option[GenericReceiver].some(value = GenericReceiver(owner_name = owner_name, concrete_args = resolved.as_span()))
+    return Option[GenericReceiver].some(value = GenericReceiver(owner_name = owner_name, concrete_args = resolved.as_span(), owner_module = owner_module))
 
 
 ## Recover a prelude variant's owner name and concrete type arguments from its
@@ -7178,7 +7191,7 @@ function prelude_instance_args(ctx: ref[LowerCtx], c_name: str) -> Option[Generi
                         args.push(read(arm.fields.data + 0).ty)
                 ai += 1
             if args.len() > 0:
-                return Option[GenericReceiver].some(value = GenericReceiver(owner_name = base, concrete_args = args.as_span()))
+                return Option[GenericReceiver].some(value = GenericReceiver(owner_name = base, concrete_args = args.as_span(), owner_module = ""))
         si += 1
     return Option[GenericReceiver].none
 
@@ -7243,7 +7256,7 @@ function spec_receiver_info(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> Opti
                         return Option[GenericReceiver].none
                     resolved.push(qualify_type(ctx, concrete))
                     i += 1
-                return Option[GenericReceiver].some(value = GenericReceiver(owner_name = owner_name, concrete_args = resolved.as_span()))
+                return Option[GenericReceiver].some(value = GenericReceiver(owner_name = owner_name, concrete_args = resolved.as_span(), owner_module = ""))
             _:
                 return Option[GenericReceiver].none
 
@@ -7317,7 +7330,7 @@ function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method
             tpi += 1
         if not all_inferred:
             return Option[ptr[ir.Expr]].none
-        let extended_info = GenericReceiver(owner_name = info.owner_name, concrete_args = extended_args.as_span())
+        let extended_info = GenericReceiver(owner_name = info.owner_name, concrete_args = extended_args.as_span(), owner_module = info.owner_module)
         return Option[ptr[ir.Expr]].some(value = lower_monomorphized_method(ctx, extended_info, gm, method_name, receiver, args))
     return Option[ptr[ir.Expr]].some(value = lower_monomorphized_method(ctx, info, gm, method_name, receiver, args))
 
@@ -7365,17 +7378,22 @@ function monomorphized_method_c_name(owner_module: str, info: GenericReceiver, g
 function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, gm: GenericMethodMatch, method_name: str, receiver: ptr[ast.Expr], args: span[ast.Argument]) -> ptr[ir.Expr]:
     # For the struct prefix in the C name, use the struct's defining module
     # (which may differ from the extending-block module, e.g. `Writer` is
-    # defined in `std_binary` but extended by `std_serialize`).
-    var struct_module = gm.owner_module
-    var sai: ptr_uint = 0
-    while sai < ctx.program_analyses.len:
-        var sa: analyzer.Analysis
-        unsafe:
-            sa = read(ctx.program_analyses.data + sai)
-        if struct_in_source(sa, info.owner_name) or sa.structs.contains(info.owner_name):
-            struct_module = sa.module_name
-            break
-        sai += 1
+    # defined in `std_binary` but extended by `std_serialize`).  The receiver
+    # type's own module (`info.owner_module`) is authoritative when known;
+    # otherwise fall back to a by-name scan of the program analyses, which is
+    # ambiguous when several modules declare a struct with the same simple name.
+    var struct_module = info.owner_module
+    if struct_module.len == 0:
+        struct_module = gm.owner_module
+        var sai: ptr_uint = 0
+        while sai < ctx.program_analyses.len:
+            var sa: analyzer.Analysis
+            unsafe:
+                sa = read(ctx.program_analyses.data + sai)
+            if struct_in_source(sa, info.owner_name) or sa.structs.contains(info.owner_name):
+                struct_module = sa.module_name
+                break
+            sai += 1
     let method_c = monomorphized_method_c_name(struct_module, info, gm, method_name)
 
     if not ctx.specialization_cache.contains(method_c) and not ctx.spec_in_progress.contains(method_c):
@@ -7555,7 +7573,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
         si += 1
 
     let recv_struct_ty = qualify_type(ctx, types.Type.ty_imported(
-        module_name = struct_defining_module_for_type(ctx, info.owner_name),
+        module_name = if info.owner_module.len > 0: info.owner_module else: struct_defining_module_for_type(ctx, info.owner_name),
         name = info.owner_name,
         args = struct_args.as_span(),
     ))
