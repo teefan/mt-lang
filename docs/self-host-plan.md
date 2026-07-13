@@ -164,31 +164,110 @@ Key implementation points (in `projects/mtc/src/mtc/lowering/lowering.mt`):
   the field, then calls the temp (nulling-then-calling was a null-call crash).
 - CPS state is reset per function; nested proc bodies disable CPS mode.
 
-### 2.1 Remaining blockers for `async_stress_test` / `async_network_lobby`
+### 2.1 Remaining blockers — reviewed root causes + accurate solutions
 
-These two examples (and their `std.net` dependency) exercise three patterns the
-core does not yet handle; each shows up as C-compile errors today:
+Verified by reproducing each against the current compiler. All three trace to a
+small number of precise gaps; `std.net` (the async dependency of both examples)
+is method-heavy, so **Blocker 1 is the largest contributor**.
 
-1. **Async-method Task typing.** `await obj.method()` where `method` is an async
-   method returning e.g. `Result[bool, net.Error]` resolves to the *result* type
-   instead of `Task[...]`, so `frame->await_N` is typed as the `Result` and
-   `await_N.frame/.ready/...` do not exist. Async free functions already record
-   `Task[T]` return types (dispatch site ~9109); async methods must do the same
-   at their call resolution.
-2. **Embedded-await hoisting.** Awaits nested in expressions/conditions
-   (`(await f())?`, `while (await f()) > 0`, `let w = if c: await g() else: 0`,
-   `total += await g()`) still fall through `lower_expr(expr_await)` →
-   `unwrap_task_value` (synchronous, correct only for already-ready tasks). A
-   pre-pass must rewrite each embedded await into a preceding
-   `let __await_k = await <inner>` (direct-await statement) + a temp reference;
-   `while`/`for` conditions restructure to `while(true){ <cond incl. await>;
-   if(!cond) break; <body> }`; an `if`-expression await becomes a statement `if`.
-3. **Async `main` entrypoint.** `build_async_main_entrypoint` is still a stub, so
-   an `async function main` emits no C `main` (link error). It must lower the
-   async main as CPS under an internal name and emit a synchronous `int main()`
-   that wraps the constructor in a zero-capture root `proc() -> Task[int]` and
-   calls `std_async_wait__int` (reuse `lower_fn_to_proc`; trigger the
-   `std.async.wait[int]` specialization). Mirrors Ruby's `__async_main` rename.
+#### Blocker 1 — async methods are not CPS-lowered (biggest)
+
+**Root cause (verified).** `lower_module`'s extending-block pass skips async
+methods: `lowering.mt:1230` `if m.is_async or m.type_params.len > 0: continue`.
+They then fall to `lower_method`, which emits a **plain synchronous** function
+(e.g. `static int32_t Worker_run(Worker this)`) — no frame/resume/vtable, return
+type `int` not `Task[int]`. So `await w.run()` hands `async_emit_await` an `int`,
+producing `int.ready/.frame/...` errors and `void`-typed spilled locals
+(`extract_task_element_type(int)` → void → `void target;`).
+
+**Accurate solution.**
+1. **`FnSig` gains `is_async: bool`** (`semantic/analyzer.mt:42`). Populate it
+   where method and function sigs are recorded (from the AST `is_async`). This is
+   the only cross-file (analyzer) change; every `FnSig(...)` constructor site must
+   pass the flag (there are a few, incl. the synthesized async-wait sig at
+   `lowering.mt:~5749` → `false`).
+2. **Lower async methods as CPS.** At `lowering.mt:1225-1236`, stop skipping
+   `m.is_async` (keep skipping only `type_params > 0`). Route them to a new
+   `lower_async_method` that reuses `lower_async_fn`'s machinery with `this`
+   prepended as implicit param #0: generalize `lower_async_fn` to take a
+   `receiver: Option[(name,ty)]` (or build `params = [this] + m.method_params`
+   and share a core). Constructor linkage must be `method_link_name(module,
+   type, m.name, is_static)` so call sites resolve it. Frame carries
+   `param_this` + method params + locals + awaits (spilling already handles the
+   rest).
+3. **Wrap async-method call return types in `Task[T]`.** In
+   `resolve_method_return_from_import` (`lowering.mt:5363`) and the two
+   value-method-call return sites (`lowering.mt:~6964, ~7007`), when the resolved
+   `sig.is_async`, return `make_task_type(ret)`. This makes `await w.run()` see
+   `Task[int]`, and the existing CPS await handling takes over.
+4. **Generic async methods** (`type_params > 0`) remain deferred — they need the
+   monomorphization path to emit the CPS form. Rare; none in the two examples.
+
+#### Blocker 2 — embedded-await hoisting
+
+**Root cause (verified).** Awaits nested in expressions/conditions fall to
+`lower_expr(expr_await)` → `unwrap_task_value` (synchronous; correct only for a
+task that is *already* ready). Patterns: `(await f())?`, `while (await f()) > 0`,
+`let w = if c: await g() else: 0`, `total += await g()`.
+
+**Accurate solution — an AST pre-pass** run in `lower_async_fn`'s has-await branch
+*before* `lower_function_body`, rewriting the body so **every await is the direct
+value of a `stmt_local`/`stmt_assignment`/`stmt_expression`/`stmt_ret`** (which
+the existing CPS handling already lowers). AST nodes are constructed with
+`heap_mod.must_alloc[ast.Expr|Stmt](1)` (shapes: `expr_await(expression)`,
+`expr_if(condition,then_expr,else_expr)`, `stmt_local(is_let,name,stmt_type,value,…)`,
+`stmt_while(condition,body,…)`, `stmt_if(branches,else_body,…)`,
+`stmt_ret(value,…)`).
+
+- `hoist_expr(ep, out) -> ptr[ast.Expr]`: recurse over `expr_binary_op`,
+  `expr_unary_op` (incl. `?`), `expr_call` (callee+args), `expr_member_access`,
+  `expr_index_access`, `expr_prefix_cast`; for `expr_await`, first hoist the
+  inner, then append `let __await_k = await <inner'>` to `out` and return
+  `expr_identifier(__await_k)`. Non-await leaves return unchanged.
+- Statement rewrite: for each `stmt_local`/`assignment`/`expression`/`ret` whose
+  value has an embedded (non-direct) await, run `hoist_expr` on the value,
+  splice the produced `out` statements before it, keep a trailing direct-await
+  or await-free statement.
+- **Conditional awaits** can't hoist unconditionally:
+  - `while <c has await>: body` → `while true: <hoist c into stmts>; if not c': break; body`.
+  - `for` with an awaiting iterable → hoist the iterable expr before the loop.
+  - `let w = if c: await X else: Y` (await in an `if`-**expression**) → rewrite to
+    `var w; if c: w = await X else: w = Y` (statement `if`; each branch's
+    `w = await …` is then a direct-await assignment).
+- Recurse into `if`/`while`/`for`/`match`/`block`/`unsafe` bodies.
+- Hoist temps are ordinary `let`s → they become spilled `local_<k>` frame fields
+  automatically.
+
+#### Blocker 3 — async `main` entrypoint
+
+**Root cause (verified).** `build_async_main_entrypoint` (`lowering.mt`, added last
+round) is a stub returning `none`, so an `async function main` emits no C `main`
+→ link error `undefined reference to 'main'`.
+
+**Accurate solution (mirrors Ruby `lowering/async.rb:8`).** The async main is
+already CPS-lowered (constructor linkage `<module>_main` returning `Task[int]`);
+the C entrypoint is a separate function with linkage `"main"`:
+1. Build the zero-capture root proc wrapping the constructor:
+   `lower_fn_to_proc(ctx, "<module>_main", fn(() -> Task[int]))` → proc IR value;
+   bind to `__mt_async_main_root`.
+2. Trigger the `std.async.wait[int]` specialization and get its C name via a new
+   helper that replicates the cross-module generic path
+   (`lowering.mt:~5731`): find `wait` in `std.async`'s analysis, build
+   substitution `{T: int}`, compute `spec_key`, call
+   `lower_and_cache_specialization_with_sub`, return `spec_key`
+   (= `std_async_wait__int`). For a `void` main, use `run` instead.
+3. Emit `let __mt_result = <wait_c>(__mt_async_main_root);
+   __mt_async_main_root.release(__mt_async_main_root.env); return __mt_result;`
+   (int main); for void main call `run` then `return 0`.
+4. `main(argc, argv)` (a `span[str]` param) reuses the existing argv→`span[str]`
+   bridge from `build_root_main_entrypoint`.
+Return the `ir.Function(linkage_name = "main", entry_point = true)`; the dispatch
+already calls `build_async_main_entrypoint` for a root async `main`.
+
+**Recommended order:** Blocker 1 (unblocks most `std.net`), then 2 (embedded
+awaits), then 3 (linking). 1+2 make the resume bodies correct; 3 makes the
+programs link and run. Each is independently testable and, per §2.2, cannot
+affect the bootstrap fixed point.
 
 ### 2.2 De-risking fact
 
