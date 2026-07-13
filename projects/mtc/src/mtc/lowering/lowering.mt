@@ -11523,15 +11523,24 @@ function arm_payload_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member:
             name = n.name
         _:
             return Option[types.Type].none
-    let arm_ptr = ctx.arm_payload_fields.get(name) else:
-        return Option[types.Type].none
-    let arm_info = unsafe: read(arm_ptr)
-    var i: ptr_uint = 0
-    while i < arm_info.field_names.len:
-        unsafe:
-            if read(arm_info.field_names.data + i) == member:
-                return Option[types.Type].some(value = read(arm_info.field_types.data + i))
-        i += 1
+    let arm_ptr = ctx.arm_payload_fields.get(name)
+    if arm_ptr != null:
+        let arm_info = unsafe: read(arm_ptr)
+        var i: ptr_uint = 0
+        while i < arm_info.field_names.len:
+            unsafe:
+                if read(arm_info.field_names.data + i) == member:
+                    return Option[types.Type].some(value = read(arm_info.field_types.data + i))
+            i += 1
+    # Fallback for prelude Option/Result arm payload structs (e.g.
+    # `Result_Option_Msg_int_success`): a plain `match` doesn't register the arm
+    # in `arm_payload_fields`, but `ensure_generic_variant` records the single
+    # payload field type (which may itself be a nested generic like `Option[Msg]`)
+    # in the shared `prelude_arm_field_types` registry keyed by the arm C name.
+    if member == "value" or member == "error":
+        let shared = unsafe: read(ctx.prelude_arm_field_types).get(name)
+        if shared != null:
+            return Option[types.Type].some(value = unsafe: read(shared))
     return Option[types.Type].none
 
 
