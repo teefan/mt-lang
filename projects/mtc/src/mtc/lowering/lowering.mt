@@ -14560,7 +14560,103 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
 ## 4. Build a root proc via lower_fn_to_proc, call the specialized wait C name,
 ##    release the proc, return the result (or call `run` for void).
 function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir.Function]:
-    return Option[ir.Function].none
+    # Only a zero-parameter `async function main` is supported today (both async
+    # examples use `async function main() -> int`).  The constructor is already
+    # CPS-lowered as `<module>_main` returning `Task[inner]`; here we synthesize
+    # the C `main()` that wraps that constructor in a root proc and drives it via
+    # the async runtime (`std.async.wait[inner]` for an int result, `run` for a
+    # void result), mirroring Ruby's `build_async_main_entrypoint`.
+    let sig = lookup_fn_sig(ctx, name)
+    let task_ret = fn_sig_return_type(sig)
+    let inner_ty = extract_task_element_type(ctx, task_ret)
+    let is_void_ret = is_void_type_lowered(inner_ty)
+    # Supported result types: int (wait[int]) and void (run).
+    if not (is_void_ret or is_int_type(inner_ty)):
+        return Option[ir.Function].none
+
+    let int_ty = types.primitive("int")
+    let void_ty = types.primitive("void")
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
+    let main_cname = naming.qualified_c_name(ctx.module_name, name)
+
+    # Root proc: `proc() -> Task[inner]` wrapping the async main constructor.
+    # `lower_fn_to_proc` registers the invoke/release/retain wrappers and the
+    # proc struct decl, and returns the aggregate-literal initializer.
+    let proc_fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(task_ret), variadic = false, is_proc = true)
+    let proc_expr = lower_fn_to_proc(ctx, main_cname, proc_fn_ty)
+    let proc_named_ty = ir_expr_type(proc_expr)
+
+    var body = vec.Vec[ir.Stmt].create()
+    let root_name = "__mt_async_main_root"
+    body.push(ir.Stmt.stmt_local(name = root_name, linkage_name = root_name, ty = proc_named_ty, value = proc_expr, line = 0, source_path = ""))
+    let root_ref = alloc_expr(ir.Expr.expr_name(name = root_name, ty = proc_named_ty, pointer = false))
+
+    let result_name = "__mt_result"
+    if is_void_ret:
+        # `std.async.run(root)` — non-generic, so no specialization is needed.
+        let run_cname = naming.qualified_c_name("std.async", "run")
+        let run_call = alloc_expr(ir.Expr.expr_call(callee = run_cname, arguments = single_expr_span(root_ref), ty = void_ty))
+        body.push(ir.Stmt.stmt_expression(expression = run_call, line = 0, source_path = ""))
+    else:
+        # `std.async.wait[inner](root)` — specialize the generic on demand and
+        # capture the int result.
+        let wait_cname = ensure_async_wait_specialization(ctx, inner_ty) else:
+            return Option[ir.Function].none
+        let wait_call = alloc_expr(ir.Expr.expr_call(callee = wait_cname, arguments = single_expr_span(root_ref), ty = inner_ty))
+        body.push(ir.Stmt.stmt_local(name = result_name, linkage_name = result_name, ty = inner_ty, value = wait_call, line = 0, source_path = ""))
+
+    # Release the root proc: `root.release(root.env)`.
+    let lifecycle_ty = proc_lifecycle_fn_type()
+    let release_member = alloc_expr(ir.Expr.expr_member(receiver = root_ref, member = "release", ty = lifecycle_ty))
+    let env_member = alloc_expr(ir.Expr.expr_member(receiver = root_ref, member = "env", ty = void_ptr))
+    body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = release_member, arguments = single_expr_span(env_member), ty = void_ty)), line = 0, source_path = ""))
+
+    if is_void_ret:
+        body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = int_ty)), line = 0, source_path = ""))
+    else:
+        body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_name(name = result_name, ty = int_ty, pointer = false)), line = 0, source_path = ""))
+
+    return Option[ir.Function].some(value = ir.Function(
+        name = name, linkage_name = "main", params = span[ir.Param](),
+        return_type = int_ty, body = body.as_span(), entry_point = true, method_receiver_param = false,
+    ))
+
+
+## Ensure `std.async.wait[inner_ty]` is specialized and return its C linkage name.
+## Mirrors Ruby's `async_main_runtime_callee_name("wait", type_arguments: [...])`.
+## Resolution goes through `find_generic_function`, which (thanks to the
+## dependency-first ordering of `program_analyses`) resolves `wait` to the
+## deepest non-delegating backend implementation (`std.async.libuv_runtime.wait`)
+## — the same target the working inferred `aio.wait(...)` call path reaches.  The
+## spec key mirrors `try_inferred_generic_call` (`<owner>_wait__<type_key>`), so
+## the entrypoint reuses the exact specialization that `aio.wait` already emits.
+function ensure_async_wait_specialization(ctx: ref[LowerCtx], inner_ty: types.Type) -> Option[str]:
+    let gm = find_generic_function(ctx, "wait") else:
+        return Option[str].none
+    if not gm.module_name.starts_with("std.async"):
+        return Option[str].none
+
+    # Build the substitution `T -> inner_ty` from wait's own type parameter name.
+    var sub = map_mod.Map[str, types.Type].create()
+    match gm.decl:
+        ast.Decl.decl_function as fun:
+            if fun.type_params.len == 0:
+                return Option[str].none
+            let tp_name = unsafe: read(fun.type_params.data + 0).name
+            sub.set(tp_name, inner_ty)
+        _:
+            return Option[str].none
+
+    # Spec key mirrors `try_inferred_generic_call`: `<owner_prefix>_wait__<key>`.
+    var key = string.String.create()
+    key.append(naming.module_c_prefix(gm.module_name))
+    key.append("_wait__")
+    key.append(spec_type_key(ctx, inner_ty))
+    let spec_key = key.as_str()
+
+    if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
+        lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key)
+    return Option[str].some(value = spec_key)
 
 
 ## Convert int to string.
