@@ -4730,6 +4730,19 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                                     ))
                                                 Option.none:
                                                     pass
+                                            # If ma.member_name is a static method of a struct
+                                            # in the imported module (e.g.
+                                            # `sess.Config.default(payload_size)`), resolve
+                                            # it against the imported module so struct name
+                                            # collisions across modules (e.g. Config in both
+                                            # session and channel) pick the correct module.
+                                            let inner_recv_ty = types.Type.ty_imported(module_name = target_module, name = inner_ma.member_name, args = span[types.Type]())
+                                            match resolve_method_info_imported(ctx, inner_recv_ty, method_name = ma.member_name, import_module = target_module):
+                                                Option.some as smi:
+                                                    if smi.value.method_kind == ast.MethodKind.mk_static:
+                                                        return lower_static_call_args(ctx, smi.value, args)
+                                                Option.none:
+                                                    pass
                                         Option.none:
                                             pass
                             _:
@@ -6646,12 +6659,25 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
             ret = types.primitive("void")
         return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name(ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = qualify_type(ctx, ret)))
     # Search imported modules' method_sigs when the method is not found locally.
+    # When the receiver type carries a specific originating module (ty_imported),
+    # restrict the search to that module first so that structs with the same name
+    # in different modules (e.g. Config in both std.net.session and
+    # std.net.channel) resolve methods from the correct module.
+    var preferred_module = ""
+    match effective_ty:
+        types.Type.ty_imported as im:
+            preferred_module = im.module_name
+        _:
+            pass
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len:
         var a: analyzer.Analysis
         unsafe:
             a = read(ctx.program_analyses.data + ai)
         if a.module_name == ctx.module_name:
+            ai += 1
+            continue
+        if preferred_module.len > 0 and a.module_name != preferred_module:
             ai += 1
             continue
         if a.method_sigs.contains(key):
@@ -6677,6 +6703,50 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
                 method_kind = sig.method_kind,
                 return_type = resolve_method_return_from_import(ctx, a.module_name, sig, effective_ty),
             ))
+        ai += 1
+    return Option[MethodInfo].none
+
+
+## Like resolve_method_info, but searches ONLY the named imported module
+## (for module-qualified receiver types like `sess.Config.default(...)`).
+function resolve_method_info_imported(ctx: ref[LowerCtx], receiver_ty: types.Type, method_name: str, import_module: str) -> Option[MethodInfo]:
+    var effective_ty = receiver_ty
+    if types.is_raw_pointer(effective_ty) or types.is_ref_type(effective_ty):
+        effective_ty = types.pointer_element(effective_ty)
+    let type_name = named_type_name(effective_ty) else:
+        return Option[MethodInfo].none
+    var lookup_name = type_name
+    match prelude_variant_base(type_name):
+        Option.some as base:
+            lookup_name = base.value
+        Option.none:
+            pass
+    let key = analyzer.method_key(lookup_name, method_name)
+    var ai: ptr_uint = 0
+    while ai < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + ai)
+        if a.module_name == import_module:
+            if a.method_sigs.contains(key):
+                let sig_ptr = a.method_sigs.get(key) else:
+                    return Option[MethodInfo].none
+                let sig = unsafe: read(sig_ptr)
+                var ret = sig.return_type
+                if not sig.has_return_type:
+                    ret = types.primitive("void")
+                match ret:
+                    types.Type.ty_named as rn:
+                        if a.structs.contains(rn.name):
+                            ret = types.Type.ty_imported(module_name = a.module_name, name = rn.name, args = span[types.Type]())
+                    _:
+                        pass
+                return Option[MethodInfo].some(value = MethodInfo(
+                    c_name = method_c_name(a.module_name, type_name, method_name, sig.method_kind),
+                    method_kind = sig.method_kind,
+                    return_type = resolve_method_return_from_import(ctx, a.module_name, sig, effective_ty),
+                ))
+            return Option[MethodInfo].none
         ai += 1
     return Option[MethodInfo].none
 
