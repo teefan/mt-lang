@@ -4206,6 +4206,8 @@ function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str,
 function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt], invoke_c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
     let saved_locals = ctx.locals
     let saved_counter = ctx.temp_counter
+    let saved_cps_ci = ctx.async_cps_active
+    ctx.async_cps_active = false
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
 
@@ -4258,6 +4260,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
 
     ctx.locals = saved_locals
     ctx.temp_counter = saved_counter
+    ctx.async_cps_active = saved_cps_ci
     return ir.Function(
         name = invoke_c_name,
         linkage_name = invoke_c_name,
@@ -4319,6 +4322,8 @@ function build_capturing_retain(c_name: str, env_type_name: str) -> ir.Function:
 function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt], invoke_c_name: str) -> ir.Function:
     let saved_locals = ctx.locals
     let saved_counter = ctx.temp_counter
+    let saved_cps_pi = ctx.async_cps_active
+    ctx.async_cps_active = false
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
 
@@ -4344,6 +4349,7 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
 
     ctx.locals = saved_locals
     ctx.temp_counter = saved_counter
+    ctx.async_cps_active = saved_cps_pi
     return ir.Function(
         name = invoke_c_name,
         linkage_name = invoke_c_name,
@@ -13840,6 +13846,11 @@ function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
 ## is a stub that sets ready = true and returns.  Full CPS lowering (state
 ## machine for await sites) will be added in subsequent steps.
 function lower_async_fn(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, structs: ref[vec.Vec[ir.StructDecl]], functions: ref[vec.Vec[ir.Function]]) -> void:
+    # Reset async CPS state so a no-await function (or the next function) never
+    # inherits a previous has-await function's frame-result target / labels.
+    ctx.async_cps_active = false
+    ctx.async_result_c_name = ""
+    ctx.async_complete_label = ""
     let sig = lookup_fn_sig(ctx, name)
     let res_ty = resolve_return_type(ctx, sig, return_type)
     let bool_ty = types.primitive("bool")
