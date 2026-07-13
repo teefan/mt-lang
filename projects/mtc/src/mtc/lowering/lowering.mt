@@ -4967,6 +4967,15 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
 ## type for the call expression.
 function cross_module_return_type(ctx: ref[LowerCtx], c_name: str, call_ep: ptr[ast.Expr]) -> types.Type:
     var ret_ty = types.Type.ty_error
+    # Check function_returns first: it has the Task-wrapped return type for
+    # async functions (from collect_function_returns), whereas program_returns
+    # (from collect_program_returns) stores the raw declared return type.
+    let fp = ctx.function_returns.get(c_name)
+    if fp != null:
+        unsafe:
+            ret_ty = read(fp)
+        if not types.is_error(ret_ty):
+            return ret_ty
     unsafe:
         var pr = read(ctx.program_returns)
         let rp = pr.get(c_name)
@@ -4974,12 +4983,6 @@ function cross_module_return_type(ctx: ref[LowerCtx], c_name: str, call_ep: ptr[
             ret_ty = read(rp)
     if not types.is_error(ret_ty):
         return ret_ty
-    let fp = ctx.function_returns.get(c_name)
-    if fp != null:
-        unsafe:
-            ret_ty = read(fp)
-        if not types.is_error(ret_ty):
-            return ret_ty
     let sc = ctx.specialization_cache.get(c_name)
     if sc != null:
         unsafe:
@@ -8895,6 +8898,7 @@ function collect_function_returns(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> 
                 if fun.is_async:
                     ret = make_task_type(ret)
                 ctx.function_returns.set(fun.name, ret)
+                ctx.function_returns.set(naming.qualified_c_name(ctx.module_name, fun.name), ret)
             _:
                 pass
         i += 1
