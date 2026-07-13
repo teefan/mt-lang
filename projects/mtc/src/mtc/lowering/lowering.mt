@@ -1659,7 +1659,11 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                             let ret_target = alloc_expr(ir.Expr.expr_name(name = result_target_name, ty = ctx.current_fn_return_type, pointer = false))
                             lower_async_await_into(ctx, output, direct_await_inner(rv), Option[ptr[ir.Expr]].some(value = ret_target))
                         else:
-                            let lowered = lower_expr(ctx, rv)
+                            # Hoist any embedded awaits in the return value first.
+                            var rvh = rv
+                            if ctx.async_cps_active and async_mod.expr_has_await(rv):
+                                rvh = async_hoist_awaits(ctx, output, rv)
+                            let lowered = lower_expr(ctx, rvh)
                             output.push(ir.Stmt.stmt_assignment(
                                 target = alloc_expr(ir.Expr.expr_name(name = result_target_name, ty = ctx.current_fn_return_type, pointer = false)),
                                 operator = "=",
@@ -1839,11 +1843,18 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 ))
                 ctx.locals.push(LocalBinding(name = loc.name, c_name = c_name, ty = ty, pointer = false))
             ast.Stmt.stmt_assignment as asg:
-                # Async CPS: `x = await Y` splits into suspend/resume, storing the
-                # awaited result into the assignment target.
-                if ctx.async_cps_active and expr_is_direct_await(asg.value):
-                    let asg_target = lower_expr(ctx, asg.target)
-                    lower_async_await_into(ctx, output, direct_await_inner(asg.value), Option[ptr[ir.Expr]].some(value = asg_target))
+                # Async CPS: an assignment whose value contains an await.  For a
+                # plain `x = await Y` (operator `=`), assign the awaited result
+                # straight into the target.  For a compound operator (`+=` etc.)
+                # or an embedded await, hoist the await(s) into temp frame locals
+                # first, then emit the (await-free) assignment normally.
+                if ctx.async_cps_active and async_mod.expr_has_await(asg.value):
+                    if asg.operator == "=" and expr_is_direct_await(asg.value):
+                        let asg_target = lower_expr(ctx, asg.target)
+                        lower_async_await_into(ctx, output, direct_await_inner(asg.value), Option[ptr[ir.Expr]].some(value = asg_target))
+                        return
+                    let hoisted = async_hoist_awaits(ctx, output, asg.value)
+                    output.push(ir.Stmt.stmt_assignment(target = lower_expr(ctx, asg.target), operator = asg.operator, value = lower_expr(ctx, hoisted)))
                     return
                 # Lower `arr[start..end] = (e1, e2, ...)` — range index assignment.
                 # Expand into individual checked-index assignments, one per RHS element.
@@ -1885,6 +1896,23 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 value = nullable_some_literal(target_ty, value)
                 output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
             ast.Stmt.stmt_while as w:
+                # Async CPS: an await in the loop condition must be re-evaluated
+                # (and may suspend) each iteration.  Restructure to
+                # `while (true) { <cond awaits>; if (!cond) break; <body> }`.
+                if ctx.async_cps_active and async_mod.expr_has_await(w.condition):
+                    var wbody = vec.Vec[ir.Stmt].create()
+                    let cond_hoisted = async_hoist_awaits(ctx, ref_of(wbody), w.condition)
+                    let cond_ir = lower_expr(ctx, cond_hoisted)
+                    var brk = vec.Vec[ir.Stmt].create()
+                    brk.push(ir.Stmt.stmt_break)
+                    wbody.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = cond_ir, ty = types.primitive("bool"))), then_body = brk.as_span(), else_body = span[ir.Stmt]()))
+                    let inner = lower_block(ctx, w.body)
+                    var ii: ptr_uint = 0
+                    while ii < inner.len:
+                        wbody.push(unsafe: read(inner.data + ii))
+                        ii += 1
+                    output.push(ir.Stmt.stmt_while(condition = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool"))), body = wbody.as_span()))
+                    return
                 let cond = lower_expr(ctx, w.condition)
                 let body = lower_block(ctx, w.body)
                 output.push(ir.Stmt.stmt_while(condition = cond, body = body))
@@ -1925,6 +1953,18 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if iff.is_inline:
                     lower_inline_if_statement(ctx, output, iff.branches, iff.else_body)
                     return
+                # Async CPS: hoist an await in a single `if` condition into
+                # preceding statements (the condition is evaluated exactly once).
+                # else-if chains with awaits in later conditions are left to the
+                # normal path (rare; would need nested restructuring).
+                if ctx.async_cps_active and iff.branches.len == 1:
+                    let br0 = unsafe: read(iff.branches.data + 0)
+                    if async_mod.expr_has_await(br0.condition):
+                        let cond_hoisted = async_hoist_awaits(ctx, output, br0.condition)
+                        var new_branches = vec.Vec[ast.IfBranch].create()
+                        new_branches.push(ast.IfBranch(condition = cond_hoisted, body = br0.body, line = br0.line, column = br0.column))
+                        output.push(lower_if_chain(ctx, new_branches.as_span(), 0, iff.else_body))
+                        return
                 if iff.branches.len > 0:
                     output.push(lower_if_chain(ctx, iff.branches, 0, iff.else_body))
             ast.Stmt.stmt_match as m:
@@ -2232,7 +2272,19 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
     # Failure branch: return the appropriate failure value.
     var fail_body = vec.Vec[ir.Stmt].create()
     flush_all_defers(ctx, ref_of(fail_body))
-    fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = 0, source_path = ""))
+    if ctx.async_cps_active:
+        # In a CPS resume (void-returning), a failure `?` stores the propagated
+        # value into the frame result and jumps to the completion label rather
+        # than emitting a value-returning `return`.
+        if not ctx.async_result_is_void:
+            fail_body.push(ir.Stmt.stmt_assignment(
+                target = alloc_expr(ir.Expr.expr_name(name = ctx.async_result_c_name, ty = ctx.async_result_ty, pointer = false)),
+                operator = "=",
+                value = fail_value,
+            ))
+        fail_body.push(ir.Stmt.stmt_goto(label = ctx.async_complete_label))
+    else:
+        fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = 0, source_path = ""))
 
     # `if (<failure condition>) { return storage; }`
     let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
@@ -2243,6 +2295,13 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
         return
     let success_ty = guard_success_type(ctx, kind, storage_ty)
     let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
+    if ctx.async_cps_active:
+        # Spill the bound local to a frame field so it survives suspend/resume.
+        let afield = j2("local_", name)
+        let acname = j2("__mt_frame->", afield)
+        async_register_local_field(ctx, name, afield, acname, success_ty)
+        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = acname, ty = success_ty, pointer = false)), operator = "=", value = success_val))
+        return
     let bc = utils.c_local_name(name)
     output.push(ir.Stmt.stmt_local(name = name, linkage_name = bc, ty = success_ty, value = success_val, line = 0, source_path = ""))
     ctx.locals.push(LocalBinding(name = name, c_name = bc, ty = success_ty, pointer = false))
@@ -14228,6 +14287,64 @@ function async_register_local_field(ctx: ref[LowerCtx], loc_name: str, field_nam
 
 ## Lower a `let`/`var` inside an async CPS body: spill to a frame field and, when
 ## the initializer is a direct `await`, split into suspend/resume.
+## Allocate a fresh AST expression node on the heap (for the await-hoisting
+## rewrite, which splices synthesized identifier nodes into the source AST).
+function alloc_ast_expr(e: ast.Expr) -> ptr[ast.Expr]:
+    var p = heap_mod.must_alloc[ast.Expr](1)
+    unsafe:
+        read(p) = e
+    return p
+
+
+## Hoist embedded `await`s out of an expression: emit each await as a direct
+## suspend/resume boundary into a fresh temp frame local, and return a rewritten
+## AST expression with each await replaced by an identifier referencing that
+## temp.  After this, the returned expression contains no awaits, so it can be
+## lowered by the normal expression machinery.  A top-level `?` is preserved (its
+## operand is hoisted) so the caller can route it to `lower_propagate_let`.
+function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ep: ptr[ast.Expr]) -> ptr[ast.Expr]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_await as aw:
+                let inner = async_hoist_awaits(ctx, output, aw.expression)
+                let task_ir = lower_expr(ctx, inner)
+                let task_ty = ir_expr_type(task_ir)
+                let result_ty = extract_task_element_type(ctx, task_ty)
+                let tmp = fresh_c_temp_name(ctx, "await_tmp")
+                let field_name = j2("local_", tmp)
+                let frame_cname = j2("__mt_frame->", field_name)
+                async_register_local_field(ctx, tmp, field_name, frame_cname, result_ty)
+                let target = alloc_expr(ir.Expr.expr_name(name = frame_cname, ty = result_ty, pointer = false))
+                async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target))
+                return alloc_ast_expr(ast.Expr.expr_identifier(name = tmp, line = 0, column = 0))
+            ast.Expr.expr_binary_op as b:
+                let l = async_hoist_awaits(ctx, output, b.left)
+                let r = async_hoist_awaits(ctx, output, b.right)
+                return alloc_ast_expr(ast.Expr.expr_binary_op(operator = b.operator, left = l, right = r))
+            ast.Expr.expr_unary_op as u:
+                let operand = async_hoist_awaits(ctx, output, u.operand)
+                return alloc_ast_expr(ast.Expr.expr_unary_op(operator = u.operator, operand = operand))
+            ast.Expr.expr_call as c:
+                let callee = async_hoist_awaits(ctx, output, c.callee)
+                var new_args = vec.Vec[ast.Argument].create()
+                var i: ptr_uint = 0
+                while i < c.args.len:
+                    let arg = read(c.args.data + i)
+                    new_args.push(ast.Argument(arg_name = arg.arg_name, arg_value = async_hoist_awaits(ctx, output, arg.arg_value)))
+                    i += 1
+                return alloc_ast_expr(ast.Expr.expr_call(callee = callee, args = new_args.as_span()))
+            ast.Expr.expr_member_access as ma:
+                return alloc_ast_expr(ast.Expr.expr_member_access(receiver = async_hoist_awaits(ctx, output, ma.receiver), member_name = ma.member_name, line = ma.line, column = ma.column))
+            ast.Expr.expr_index_access as ix:
+                return alloc_ast_expr(ast.Expr.expr_index_access(receiver = async_hoist_awaits(ctx, output, ix.receiver), index = async_hoist_awaits(ctx, output, ix.index)))
+            ast.Expr.expr_prefix_cast as pc:
+                return alloc_ast_expr(ast.Expr.expr_prefix_cast(target_type = pc.target_type, expression = async_hoist_awaits(ctx, output, pc.expression), line = pc.line, column = pc.column))
+            ast.Expr.expr_unsafe as us:
+                return alloc_ast_expr(ast.Expr.expr_unsafe(expression = async_hoist_awaits(ctx, output, us.expression), line = us.line, column = us.column))
+            _:
+                return ep
+
+
 function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], loc_name: str, loc_value: ptr[ast.Expr]?, loc_stmt_type: ptr[ast.TypeRef]?) -> void:
     # `let _ = ...`: evaluate for side effects, no binding.
     if loc_name == "_":
@@ -14259,11 +14376,28 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
         async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target))
         return
 
+    # Hoist any embedded awaits (inside `?`, arithmetic, calls, etc.) into temp
+    # frame locals so the remaining expression is await-free.
+    var hv = v
+    if async_mod.expr_has_await(v):
+        hv = async_hoist_awaits(ctx, output, v)
+
+    # `let x = <expr>?` — Result/Option propagation.  Route to the CPS-aware
+    # propagate helper (which spills `x` and returns via the frame on failure).
+    unsafe:
+        match read(hv):
+            ast.Expr.expr_unary_op as u:
+                if u.operator == "?":
+                    lower_propagate_let(ctx, output, loc_name, u.operand)
+                    return
+            _:
+                pass
+
     # Plain spilled local: `frame->local_<name> = <value>`.
-    let val_ir = lower_expr(ctx, v)
+    let val_ir = lower_expr(ctx, hv)
     var ty = ir_expr_type(val_ir)
     if loc_stmt_type != null:
-        let annotated = local_decl_type(ctx, loc_stmt_type, v)
+        let annotated = local_decl_type(ctx, loc_stmt_type, hv)
         if not types.is_error(annotated):
             ty = annotated
     async_register_local_field(ctx, loc_name, field_name, frame_cname, ty)
