@@ -4737,9 +4737,18 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         var result_ty = expr_type(ctx, call_ep)
                         # When expr_type returns void or error (e.g. the analyzer
                         # did not record a type for the builtin), compute the
-                        # correct result type from the argument's type.
+                        # correct result type from the argument's type.  Also
+                        # recompute when the recorded type is a pointer to a void
+                        # element (`ptr[void]`) but the argument has a concrete
+                        # type — the analyzer sometimes records the untyped
+                        # `ptr[void]` for a builtin whose operand is a member
+                        # access it did not resolve, which would otherwise mask the
+                        # real referent type.
                         let outer_kind = if id.name == "ptr_of": "ptr" else: if id.name == "ref_of": "ref" else: "const_ptr"
-                        if types.is_error(result_ty) or types.is_void(result_ty):
+                        let recorded_elem = types.pointer_element(result_ty)
+                        let recorded_elem_bad = types.is_void(recorded_elem) or types.is_error(recorded_elem)
+                        let inner_is_concrete = not (types.is_error(inner_ty) or types.is_void(inner_ty))
+                        if types.is_error(result_ty) or types.is_void(result_ty) or (recorded_elem_bad and inner_is_concrete):
                             result_ty = types.Type.ty_generic(name = outer_kind, args = sp_type(inner_ty))
                         # When the argument is already a pointer/ref value (e.g. a
                         # `ref[T]` parameter, which is a pointer in C), taking its
@@ -7709,6 +7718,10 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     var saved_returns = ctx.function_returns
     var saved_sub = ctx.type_substitution
     var saved_inside_async = ctx.inside_async
+    var saved_cps_active = ctx.async_cps_active
+    var saved_cps_label = ctx.async_resume_return_label
+    var saved_cps_complete = ctx.async_complete_label
+    var saved_cps_result_cname = ctx.async_result_c_name
 
     ctx.module_name = gm.owner_module
     ctx.analysis = owner_a
@@ -7719,6 +7732,15 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     ctx.function_returns = map_mod.Map[str, types.Type].create()
     ctx.type_substitution = sub
     ctx.inside_async = false
+    # A generic method may first be specialized while an async function body is
+    # being CPS-lowered (its call triggers monomorphization).  The method body is
+    # an ordinary (non-CPS) function, so the caller's CPS state must not leak into
+    # it — otherwise the body emits `__mt_frame->...` references and
+    # `goto <caller>_resume_complete` labels that don't exist in the method.
+    ctx.async_cps_active = false
+    ctx.async_resume_return_label = ""
+    ctx.async_complete_label = ""
+    ctx.async_result_c_name = ""
     collect_foreign_functions(ctx, owner_a.source_file.declarations)
     collect_variants(ctx, owner_a.source_file.declarations)
     install_prelude_variants(ctx)
@@ -7736,6 +7758,10 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     ctx.function_returns = saved_returns
     ctx.type_substitution = saved_sub
     ctx.inside_async = saved_inside_async
+    ctx.async_cps_active = saved_cps_active
+    ctx.async_resume_return_label = saved_cps_label
+    ctx.async_complete_label = saved_cps_complete
+    ctx.async_result_c_name = saved_cps_result_cname
 
 
 ## Find the module that defines a struct named `name` by searching loaded analyses.
