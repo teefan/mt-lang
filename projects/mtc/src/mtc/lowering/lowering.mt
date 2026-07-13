@@ -813,7 +813,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                         functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, true))
                     else:
                         # No awaits — full CPS with frame + synthetic functions.
-                        lower_async_fn(ref_of(ctx), fun.name, fun.return_type, fun.body, ref_of(structs), ref_of(functions))
+                        lower_async_fn(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, ref_of(structs), ref_of(functions))
                 else if lowerable_function(fun.is_async, fun.is_const, fun.type_params, fun.body):
                     functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, fun.is_async))
                     if is_root and fun.name == "main":
@@ -13290,7 +13290,7 @@ function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
 ## For Step 1 only the no-await path is handled — the resume function body
 ## is a stub that sets ready = true and returns.  Full CPS lowering (state
 ## machine for await sites) will be added in subsequent steps.
-function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, structs: ref[vec.Vec[ir.StructDecl]], functions: ref[vec.Vec[ir.Function]]) -> void:
+function lower_async_fn(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, structs: ref[vec.Vec[ir.StructDecl]], functions: ref[vec.Vec[ir.Function]]) -> void:
     let sig = lookup_fn_sig(ctx, name)
     let res_ty = resolve_return_type(ctx, sig, return_type)
     let bool_ty = types.primitive("bool")
@@ -13316,6 +13316,20 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.Type
         ff.push(ir.Field(name = "state",      ty = int_ty))
     if not is_void_ret:
         ff.push(ir.Field(name = "result",     ty = res_ty))
+    # Add frame fields for each async function parameter so they survive
+    # across suspend points and are accessible from the resume function.
+    var ctor_param_names = vec.Vec[str].create()
+    var ctor_param_tys = vec.Vec[types.Type].create()
+    var pi: ptr_uint = 0
+    while pi < params.len:
+        var p: ast.Param
+        unsafe:
+            p = read(params.data + pi)
+        let p_ty = resolve_param_type(ctx, sig, pi, p.param_type)
+        ff.push(ir.Field(name = p.name, ty = p_ty))
+        ctor_param_names.push(p.name)
+        ctor_param_tys.push(p_ty)
+        pi += 1
     structs.push(ir.StructDecl(name = frame_c, linkage_name = frame_c, fields = ff.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
 
     # Shared expressions
@@ -13334,6 +13348,26 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.Type
     var resume_body = vec.Vec[ir.Stmt].create()
     resume_body.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
     let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = frame_ptr_ty, pointer = true))
+    # Copy each original param from the frame into a local so the function
+    # body can reference `x`/`y` (mirrors the original function signature).
+    var pi2: ptr_uint = 0
+    while pi2 < ctor_param_names.len:
+        var pname: str
+        var pty: types.Type
+        unsafe:
+            let rawdata = ctor_param_names.data
+            if rawdata == null:
+                fatal(c"lowering: async ctor param names missing storage")
+            pname = read(ptr[str]<-rawdata + pi2)
+            let rawt = ctor_param_tys.data
+            if rawt == null:
+                fatal(c"lowering: async ctor param types missing storage")
+            pty = read(ptr[types.Type]<-rawt + pi2)
+        let field_expr = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = pname, ty = pty))
+        let lc = utils.c_local_name(pname)
+        resume_body.push(ir.Stmt.stmt_local(name = pname, linkage_name = lc, ty = pty, value = field_expr, line = 0, source_path = ""))
+        ctx.locals.push(LocalBinding(name = pname, c_name = lc, ty = pty, pointer = false))
+        pi2 += 1
     if has_await:
         lower_async_cps_body(ctx, name, body, resume_c, frame_c, frame_exp, res_ty, is_void_ret, bool_ty, int_ty, ref_of(resume_body))
     else:
@@ -13423,6 +13457,24 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.Type
     ctor_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = "cancelled", ty = bool_ty)), operator = "=", value = bool_false))
     if has_await:
         ctor_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = "state", ty = int_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = int_ty))))
+    # Copy constructor params to frame fields.
+    var pi3: ptr_uint = 0
+    while pi3 < ctor_param_names.len:
+        var pname: str
+        var pty: types.Type
+        unsafe:
+            let rawdata = ctor_param_names.data
+            if rawdata == null:
+                fatal(c"lowering: async ctor param names missing storage")
+            pname = read(ptr[str]<-rawdata + pi3)
+            let rawt = ctor_param_tys.data
+            if rawt == null:
+                fatal(c"lowering: async ctor param types missing storage")
+            pty = read(ptr[types.Type]<-rawt + pi3)
+        let field_expr = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = pname, ty = pty))
+        let arg_expr = alloc_expr(ir.Expr.expr_name(name = pname, ty = pty, pointer = false))
+        ctor_body.push(ir.Stmt.stmt_assignment(target = field_expr, operator = "=", value = arg_expr))
+        pi3 += 1
     ctor_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = resume_c, arguments = single_expr_span(cframe), ty = void_t)), line = 0, source_path = ""))
     var tf = vec.Vec[ir.AggregateField].create()
     if not is_void_ret:
@@ -13435,7 +13487,24 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, return_type: ptr[ast.Type
         tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = take_lk, ty = ptr_void_type(), pointer = false))))
     tf.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_name(name = cancel_lk, ty = ptr_void_type(), pointer = false))))
     ctor_body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = tf.as_span())), line = 0, source_path = ""))
-    functions.push(ir.Function(name = name, linkage_name = naming.qualified_c_name(ctx.module_name, name), params = span[ir.Param](), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, method_receiver_param = false))
+    # Build constructor params from the original async function params.
+    var ctor_params = vec.Vec[ir.Param].create()
+    var pi4: ptr_uint = 0
+    while pi4 < ctor_param_names.len:
+        var pname: str
+        var pty: types.Type
+        unsafe:
+            let rawdata = ctor_param_names.data
+            if rawdata == null:
+                fatal(c"lowering: async ctor params missing storage")
+            pname = read(ptr[str]<-rawdata + pi4)
+            let rawt = ctor_param_tys.data
+            if rawt == null:
+                fatal(c"lowering: async ctor params missing storage")
+            pty = read(ptr[types.Type]<-rawt + pi4)
+        ctor_params.push(ir.Param(name = pname, linkage_name = pname, ty = pty, pointer = is_pointer_or_ref_type(pty)))
+        pi4 += 1
+    functions.push(ir.Function(name = name, linkage_name = naming.qualified_c_name(ctx.module_name, name), params = ctor_params.as_span(), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, method_receiver_param = false))
 
 
 ## CPS body lowering — state machine for await suspend/resume.
