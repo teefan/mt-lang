@@ -2956,7 +2956,7 @@ function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.T
         var args = vec.Vec[types.Type].create()
         unsafe:
             args.push(resolve_type_ref(ctx, t.arguments.data + 0))
-        args.push(types.literal_int(resolve_array_length(unsafe: t.arguments.data + 1)))
+        args.push(resolve_array_length_type(ctx, unsafe: t.arguments.data + 1))
         return types.Type.ty_generic(name = "array", args = args.as_span())
     # str_buffer[N]: ensure the struct type exists and return the resolved type.
     if name == "str_buffer" and t.arguments.len == 1:
@@ -3015,6 +3015,25 @@ function resolve_array_length(tp: ptr[ast.TypeRef]) -> long:
         return 0
     let text = unsafe: read(t.name.parts.data + 0)
     return parse_decimal(text)
+
+
+## Resolve an array-length type argument to a `ty_literal_int`.  A numeric
+## literal (`4`) parses directly.  A named length parameter (`N` in
+## `array[T, N]`) resolves through `ctx.type_substitution` when the enclosing
+## generic is being specialized (`N -> ty_literal_int(4)`); otherwise it is left
+## as a `ty_named` so a later `substitute_type_params` can fill it in.
+function resolve_array_length_type(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Type:
+    let t = unsafe: read(tp)
+    if t.name.parts.len == 1:
+        let text = unsafe: read(t.name.parts.data + 0)
+        if text.len > 0 and text.byte_at(0) >= '0' and text.byte_at(0) <= '9':
+            return types.literal_int(parse_decimal(text))
+        # A named length parameter: substitute if bound, else keep the name.
+        let concrete_ptr = ctx.type_substitution.get(text)
+        if concrete_ptr != null:
+            return unsafe: read(concrete_ptr)
+        return types.Type.ty_named(module_name = "", name = text)
+    return types.literal_int(resolve_array_length(tp))
 
 
 function parse_decimal(text: str) -> long:
@@ -7650,10 +7669,30 @@ function coerce_arg_to_param(cached: ptr[ir.Function]?, param_index: ptr_uint, a
     unsafe:
         param = read(spec_fn.params.data + param_index)
     let arg_ty = ir_expr_type(arg)
+    # `array[T, N]` argument passed to a `span[T]` parameter: coerce to a span
+    # aggregate `{ data = &arr[0], len = N }` (mirrors the array→span boundary
+    # coercion the analyzer permits).
+    if is_span_type(param.ty) and is_array_type(arg_ty):
+        return array_value_to_span(arg, arg_ty, param.ty)
     if is_pointer_or_ref_type(arg_ty) and not is_pointer_or_ref_type(param.ty):
         # `*arg`: dereference the pointer argument to match the value parameter.
         return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = arg, ty = param.ty))
     return arg
+
+
+## Build a `span[T]` aggregate `{ data = &arr[0], len = N }` from an addressable
+## `array[T, N]` value expression.
+function array_value_to_span(arr: ptr[ir.Expr], arr_ty: types.Type, span_ty: types.Type) -> ptr[ir.Expr]:
+    let elem_ty = generic_first_arg(arr_ty)
+    let len = array_length_of(arr_ty)
+    let ptr_elem_ty = types.Type.ty_generic(name = "ptr", args = sp_type(elem_ty))
+    let zero_idx = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("ptr_uint")))
+    let elem0 = alloc_expr(ir.Expr.expr_index(receiver = arr, index = zero_idx, ty = elem_ty))
+    let data_ptr = alloc_expr(ir.Expr.expr_address_of(expression = elem0, ty = ptr_elem_ty))
+    var fields = vec.Vec[ir.AggregateField].create()
+    fields.push(ir.AggregateField(name = "data", value = data_ptr))
+    fields.push(ir.AggregateField(name = "len", value = alloc_expr(ir.Expr.expr_integer_literal(value = len, ty = types.primitive("ptr_uint")))))
+    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = span_ty, fields = fields.as_span()))
 
 
 ## Coerce a bare function argument to a proc struct when the monomorphized

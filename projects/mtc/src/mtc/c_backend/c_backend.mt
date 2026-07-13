@@ -51,6 +51,12 @@ struct Emitter:
     # in an array-returning function can be lowered to the `__mt_out` out-param
     # convention.  `void` outside a function body.
     current_fn_return_type: types.Type
+    # Array-returning calls that appear nested in argument position are hoisted
+    # into temp array locals before the enclosing statement; this maps each such
+    # call expression (by pointer identity) to its temp C name so
+    # `render_expression` substitutes the temp instead of re-emitting the call.
+    array_call_temps: map_mod.Map[ptr_uint, str]
+    array_call_temp_counter: ptr_uint
 
 
 ## Local variant-arm metadata for prelude type collection (mirrors lowering's
@@ -81,6 +87,8 @@ public function generate_c(program: ir.Program) -> string.String:
         std_c_backing = map_mod.Map[str, str].create(),
     )
     e.current_fn_return_type = types.primitive("void")
+    e.array_call_temps = map_mod.Map[ptr_uint, str].create()
+    e.array_call_temp_counter = 0
 
     # Reachability pruning: emit only functions reachable from the entry points,
     # in source order (mirrors c_backend/reachability.rb emitted_functions).
@@ -2622,6 +2630,7 @@ function emit_function(e: ref[Emitter], func: ir.Function) -> void:
     e.used_labels.clear()
     collect_used_labels(func.body, ref_of(e.used_labels))
     e.current_fn_return_type = func.return_type
+    e.array_call_temps = map_mod.Map[ptr_uint, str].create()
     emit_line(e, j2(function_signature(func), " {"))
     emit_stmts(e, func.body, 1)
     emit_line(e, "}")
@@ -2669,8 +2678,108 @@ function emit_stmts(e: ref[Emitter], body: span[ir.Stmt], level: ptr_uint) -> vo
         i += 1
 
 
+## Hoist every array-returning call nested inside `sp`'s expressions (except a
+## direct top-level array-call value, which the return/local/assignment emitters
+## handle via the `__mt_out` convention) into a temp array local, emitting the
+## declaration + out-param call at `level` and recording the substitution.
+function materialize_stmt_array_calls(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_return as r:
+                let v = r.value else:
+                    return
+                # A direct array-call return is handled by the emitter; only
+                # descend into its sub-expressions.
+                if expr_is_array_call(e, v):
+                    materialize_array_calls_in_children(e, v, level)
+                else:
+                    materialize_array_calls_in_expr(e, v, level)
+            ir.Stmt.stmt_local as loc:
+                if expr_is_array_call(e, loc.value):
+                    materialize_array_calls_in_children(e, loc.value, level)
+                else:
+                    materialize_array_calls_in_expr(e, loc.value, level)
+            ir.Stmt.stmt_assignment as asg:
+                materialize_array_calls_in_expr(e, asg.target, level)
+                if expr_is_array_call(e, asg.value):
+                    materialize_array_calls_in_children(e, asg.value, level)
+                else:
+                    materialize_array_calls_in_expr(e, asg.value, level)
+            ir.Stmt.stmt_expression as ex:
+                materialize_array_calls_in_expr(e, ex.expression, level)
+            _:
+                pass
+
+
+## Recurse into an expression, hoisting any array-returning call found (including
+## the expression itself) into a temp.
+function materialize_array_calls_in_expr(e: ref[Emitter], ep: ptr[ir.Expr], level: ptr_uint) -> void:
+    if expr_is_array_call(e, ep):
+        materialize_array_calls_in_children(e, ep, level)
+        hoist_array_call_to_temp(e, ep, level)
+        return
+    materialize_array_calls_in_children(e, ep, level)
+
+
+## Recurse into an expression's children (not the node itself), hoisting nested
+## array-returning calls.
+function materialize_array_calls_in_children(e: ref[Emitter], ep: ptr[ir.Expr], level: ptr_uint) -> void:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_call as call:
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    materialize_array_calls_in_expr(e, call.arguments.data + i, level)
+                    i += 1
+            ir.Expr.expr_call_indirect as call:
+                materialize_array_calls_in_expr(e, call.callee, level)
+                var i: ptr_uint = 0
+                while i < call.arguments.len:
+                    materialize_array_calls_in_expr(e, call.arguments.data + i, level)
+                    i += 1
+            ir.Expr.expr_binary as bin:
+                materialize_array_calls_in_expr(e, bin.left, level)
+                materialize_array_calls_in_expr(e, bin.right, level)
+            ir.Expr.expr_unary as un:
+                materialize_array_calls_in_expr(e, un.operand, level)
+            ir.Expr.expr_member as m:
+                materialize_array_calls_in_expr(e, m.receiver, level)
+            ir.Expr.expr_index as ix:
+                materialize_array_calls_in_expr(e, ix.receiver, level)
+                materialize_array_calls_in_expr(e, ix.index, level)
+            ir.Expr.expr_cast as cast:
+                materialize_array_calls_in_expr(e, cast.expression, level)
+            ir.Expr.expr_address_of as addr:
+                materialize_array_calls_in_expr(e, addr.expression, level)
+            _:
+                pass
+
+
+## Emit `T tmp[N]; f(&tmp, args...);` for an array-returning call and record the
+## call's temp so render_expression substitutes it.
+function hoist_array_call_to_temp(e: ref[Emitter], ep: ptr[ir.Expr], level: ptr_uint) -> void:
+    let key = unsafe: reinterpret[ptr_uint](ep)
+    if e.array_call_temps.get(key) != null:
+        return
+    let arr_ty = expr_result_type(ep)
+    e.array_call_temp_counter += 1
+    var tname = string.String.create()
+    tname.append("__mt_array_call_")
+    fmt.append_ptr_uint(ref_of(tname), e.array_call_temp_counter)
+    let temp = tname.as_str()
+    let indent = indent_c(level)
+    emit_line(e, j3(indent, c_declaration(arr_ty, temp), ";"))
+    emit_line(e, j3(indent, emit_array_call(e, ep, j2("&", temp)), ";"))
+    e.array_call_temps.set(key, temp)
+
+
 function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> void:
     let indent = indent_c(level)
+    # Materialize any array-returning call nested in argument position into a
+    # temp array local before this statement (C cannot use an array-returning
+    # call as a value/argument).  Records substitutions consumed by
+    # render_expression.
+    materialize_stmt_array_calls(e, sp, level)
     unsafe:
         match read(sp):
             ir.Stmt.stmt_return as r:
@@ -2684,6 +2793,16 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     if expr_is_array_call(e, value):
                         emit_line(e, j3(indent, emit_array_call(e, value, "__mt_out"), ";"))
                         emit_line(e, j2(indent, "return;"))
+                    else if array_direct_initializer(value):
+                        # `return {a, b, ...}`: an array literal can't be memcpy'd
+                        # from a bare initializer list, so bind it to a temp array
+                        # first, then copy into the out-param.
+                        emit_line(e, j2(indent, "{"))
+                        let inner = indent_c(level + 1)
+                        emit_line(e, j5(inner, c_declaration(e.current_fn_return_type, "__mt_ret"), " = ", render_initializer(e, value), ";"))
+                        emit_line(e, j2(inner, "memcpy(*__mt_out, __mt_ret, sizeof(*__mt_out));"))
+                        emit_line(e, j2(inner, "return;"))
+                        emit_line(e, j2(indent, "}"))
                     else:
                         emit_line(e, j6(indent, "memcpy(*__mt_out, ", render_expression(e, value), ", sizeof(*__mt_out)", ");", ""))
                         emit_line(e, j2(indent, "return;"))
@@ -2705,6 +2824,17 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 if asg.operator == "=" and is_array_type(expr_result_type(asg.target)) and expr_is_array_call(e, asg.value):
                     let target_c = render_expression(e, asg.target)
                     emit_line(e, j3(indent, emit_array_call(e, asg.value, j3("&(", target_c, ")")), ";"))
+                    return
+                # `arr = {a, b, ...}` — C forbids assigning an initializer list to
+                # an array; bind it to a temp array and memcpy into the target.
+                if asg.operator == "=" and is_array_type(expr_result_type(asg.target)) and array_direct_initializer(asg.value):
+                    let target_c = render_expression(e, asg.target)
+                    let arr_ty = expr_result_type(asg.target)
+                    emit_line(e, j2(indent, "{"))
+                    let inner = indent_c(level + 1)
+                    emit_line(e, j5(inner, c_declaration(arr_ty, "__mt_arr_tmp"), " = ", render_initializer(e, asg.value), ";"))
+                    emit_line(e, j6(inner, "memcpy(", target_c, ", __mt_arr_tmp, sizeof(__mt_arr_tmp)", ");", ""))
+                    emit_line(e, j2(indent, "}"))
                     return
                 emit_line(e, j6(indent, render_expression(e, asg.target), " ", asg.operator, " ", j2(render_expression(e, asg.value), ";")))
             ir.Stmt.stmt_expression as ex:
@@ -2874,6 +3004,13 @@ function render_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
 # =============================================================================
 
 function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+    # An array-returning call hoisted into a temp (materialized before the
+    # enclosing statement) renders as the temp name instead of re-emitting the
+    # call (which C cannot use in value position).
+    let ac_key = unsafe: reinterpret[ptr_uint](ep)
+    let ac_ptr = e.array_call_temps.get(ac_key)
+    if ac_ptr != null:
+        return unsafe: read(ac_ptr)
     unsafe:
         match read(ep):
             ir.Expr.expr_name as n:
