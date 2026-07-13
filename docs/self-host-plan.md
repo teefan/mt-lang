@@ -1,7 +1,7 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **11/13 examples compile. 172/172 tests pass. P1-P38 in progress.**
-Last updated: 2026-07-13 (session — P33-P38 fixes, 25/45 errors remaining)
+Status: **11/13 examples compile. 172/172 tests pass. P1-P39 done (23/27 errors left).**
+Last updated: 2026-07-13 (session — P39: cross-module enum member access)
 
 ---
 
@@ -188,7 +188,7 @@ Added `task_scan_stmts`/`task_scan_stmt`/`task_scan_expr` to walk IR function bo
 
 | # | Root Cause | Examples | Errors |
 |---|-----------|----------|--------|
-| 1 | Task return type mismatches + incomplete Task struct fields + libuv type + variable scoping | `async_stress_test`, `async_network_lobby` | 25/27 |
+| 1 | Task return type mismatches + incomplete Task struct fields + libuv ptr + CPS frame + misc | `async_stress_test`, `async_network_lobby` | 23/27 |
 
 The async examples dropped from 73/45 → 25/27 after P33-P38. Remaining errors are pre-existing type mismatches in the async/monomorphization lowering (Task return types conflicting with non-Task signatures), incomplete Task struct field types, libuv callback type mismatches, and variable scoping issues.
 
