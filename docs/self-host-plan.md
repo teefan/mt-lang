@@ -1,11 +1,16 @@
 # Self-Host Plan
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED.** Stage2 == stage3 byte-identical,
-172/172 self-tests pass. **10/13 examples match Ruby**; the two async examples
-(102/32 C errors) are regressing on pre-existing `std.net` type-resolution bugs +
-missing `async main` entrypoint. Format strings and async CPS core are done.
-The self-host uses no async, so remaining work carries **zero fixed-point risk**.
-Last updated: 2026-07-13
+172/172 self-tests pass. **12/13 examples build** (all 11 non-async + both async
+examples); **11/13 run identically to Ruby**. `async_stress_test` builds and
+crashes at runtime on a pre-existing async task-frame use-after-free (the
+Ruby-built binary also aborts early on the same example). `async_network_lobby`
+builds all its non-async paths but still has ~24 C errors from three deep,
+narrow gaps (cross-module generic-instance recovery in CPS, `?`-propagation in
+`std.binary`, and `Result[T, void]` `map_error`). The self-host itself uses no
+async and no array-by-value returns, so all landed work carries **zero
+fixed-point risk** (verified: stage2==stage3 after every change).
+Last updated: 2026-07-14
 
 ---
 
@@ -36,12 +41,46 @@ tmp/mtc-stage2 test projects/mtc -I .  # 172/172
 | `integration_test` | self-host builds & runs (Ruby warns-as-errors) |
 | `language_baseline` | MATCH |
 | `string_test` | MATCH |
-| `async_stress_test` | ~102 C errors (pre-existing std.net + missing async main entrypoint) |
-| `async_network_lobby` | ~32 C errors (same root causes) |
+| `async_stress_test` | BUILDS; runtime UAF (Ruby-built binary also aborts early) |
+| `async_network_lobby` | ~24 C errors (3 deep gaps, see §2) |
 
 ---
 
-## 1. Fixes landed
+## 1b. Fixes landed this session (async + array ABI)
+
+1. **Async `main` entrypoint** — `build_async_main_entrypoint` synthesizes the
+   C `main()`: wraps the CPS-lowered `<module>_main` constructor in a root proc,
+   drives it via `std.async.wait[int]` (specialized through `find_generic_function`
+   so it reuses the deepest backend impl) / `run` for void, releases the proc.
+2. **`own[T]` auto-deref** — `is_own_type()` lets `read()`, member-access, and
+   field-type resolution treat `own[T]` like a pointer (Ruby's `pointer_type?`
+   includes own).
+3. **Arm-payload topo ordering** — variant arm-payload structs (`<V>_<arm>`) are
+   registered as `by_key` aliases to the variant node, so async frame fields that
+   embed them by value are ordered after the full variant definition.
+4. **`own[T]` foreign arg** — passing `own[T]` to a `ptr`/`const_ptr` foreign
+   param no longer takes its address.
+5. **Match-scrutinee await hoist** — `match await expr:` in a CPS body hoists the
+   scrutinee await into a suspend/resume point (was silently dropped).
+6. **Method-spec CPS isolation** — `ensure_monomorphized_method` saves/clears/
+   restores the async CPS state, so a generic method first specialized while an
+   async body is CPS-lowered doesn't inherit `__mt_frame`/resume labels.
+7. **`ptr_of` referent-type recovery** — recompute `<kind>[inner]` when the
+   analyzer recorded a pointer to a void/error element and the operand is concrete
+   (fixes `ptr_of(read(ptr).imported_struct_field)` → `ptr[void]`).
+8. **Arm-name-disambiguated CPS match fields** — same-named bindings in different
+   match arms (`Result.failure as p` / `Result.success as p`) get distinct frame
+   fields instead of colliding on one mistyped field.
+9. **Array-by-value C ABI** — `array[T,N]`-returning functions lower to
+   `void f(T (*__mt_out)[N], ...)`; array-returning calls in argument position are
+   materialized into `__mt_array_call_N` temps; array-literal returns/assignments
+   memcpy from a temp; named array-length params (`array[T,N]`) resolve through
+   the type substitution; `array[T,N]` args coerce to `span[T]` aggregates.
+
+---
+
+## 1. Fixes landed (earlier sessions)
+
 
 ### 1.1 Self-hosting blocker: cross-module same-name type collision
 
@@ -132,45 +171,57 @@ for prelude arms not in `match`-only `arm_payload_fields`. Fixed
 and clears CPS labels before lowering specialized bodies → runtime wrappers
 no longer embed `goto <other_fn>_resume_complete` (was 3 such errors, now 0).
 
----
 
-## 2. Remaining work (for a new session)
+## 2. Remaining work (async_network_lobby's ~24 C errors)
 
-### 2.1 Async `main` entrypoint (Blocker 3)
+All 12 other examples build; `async_network_lobby` builds every non-async path
+but hits three narrow, deep gaps. None affect the self-host itself, so the fixed
+point is unaffected.
 
-`build_async_main_entrypoint` is a stub → `async function main` emits no
-C `main` (link error). The async main is already CPS-lowered as a constructor
-returning `Task[T]`. Implementation:
+### 2.1 Cross-module generic-instance recovery in CPS
 
-1. Build zero-capture root proc via `lower_fn_to_proc(ctx, <module>_main, fn() -> Task[T])`.
-2. Trigger `std.async.wait[int]` specialization: find `std.async`'s analysis,
-   locate `wait`'s AST decl, build `GenericFunctionMatch`, substitute
-   `T → inner_ty`, call `lower_and_cache_specialization_with_sub`, get C name
-   `std_async_wait__int`. (For void main, use `run`.)
-3. Emit `main()` body: `let p = <proc>; let r = wait(p); p.release(env); return r;`
-   using the specialized C name.
-4. `main(argc, argv)` reuses the argv→`span[str]` bridge from
-   `build_root_main_entrypoint`.
+`match await disc.discover(...)` yields `Result[Vec[Server], int]`; binding
+`var servers = sp.value` spills a frame field typed with the *collapsed* generic
+C name (`std_vec_Vec_lib_disc_Server`). The `Vec[Server]` instance was registered
+in the *defining* module's `generic_struct_instances` (when `discover`'s return
+type was qualified), not in the root module's per-module map, so
+`generic_receiver_info` misses it and `servers.len()`/`.get()`/`.release()`
+resolve to the current-module fallback (`<root>_std_vec_Vec_..._len`). Fields
+like `local_first_ptr` / `local_info` then also fail to spill.
 
-**Files:** `lowering.mt` (`build_async_main_entrypoint` ≈ line 14554).
+Fix options: (a) make `generic_struct_instances` a program-wide shared registry
+threaded through `lower_module` (mirrors `program_returns`); or (b) have
+`generic_receiver_info` reconstruct owner+args from the collapsed name by
+searching loaded modules. (a) is cleaner. Repro: `tmp/asynclib/app6.mt`-style —
+an async `main` awaiting a cross-module async fn returning `Result[Vec[T], E]`,
+then calling a `Vec` method on the unwrapped value.
 
-### 2.2 `std.net` guard/type-resolution bugs (pre-existing)
+### 2.2 `?`-propagation malformed C in `std.binary`
 
-The C errors in `async_network_lobby` (~32) and `async_stress_test` (~102) are
-almost entirely in `std.net` functions — `declared void`, int-from-pointer,
-type-mismatched initializers. The guard form
-`let x = read(state).inner.<field> else:` on a struct field holding a
-type-aliased pointer to an imported opaque (`SocketAddress.storage` →
-`ptr[NativeSocketStorage]?`, where `NativeSocketStorage = libuv.sockaddr_storage`)
-resolves the member access to `void`. Isolated reproductions with simpler types
-work; the failure is specific to `std.net`'s multi-nested read chain +
-type-aliased-opaque pattern. Fix is in the general member-access type
-resolution, not in CPS.
+`std.binary.Reader.read_str` etc. emit `(uintptr_t) ?read_uint(this)` — a stray
+`?` token. The `?` postfix operator inside a cast/expression position isn't
+lowered to the propagation if/return form there. Pre-existing; unrelated to the
+async work.
 
-### 2.3 CPS for-loop binding spilling (correctness, not fixing current errors)
+### 2.3 `Result[T, void]` `map_error`
 
-A `for i in 0..N` or `for v in col` inside an async body creates C locals for
-the induction var and stop value; these don't survive an await inside the loop
-body. No current example exercises this, but it is a latent correctness gap.
-Fix: `lower_for_range` should call `async_register_local_field` when
+`map_error` producing `Result[T, void]` emits `_void_failure has no member
+error` — the `void` error arm has no `error` field but the failure path still
+references it. Needs the `void`-error arm to be handled specially.
+
+### 2.4 async task-frame use-after-free (runtime, async_stress_test)
+
+`async_stress_test` builds but crashes at runtime: an awaited child task frame is
+`free`d by the parent's await-completion release while the child's `resume` is
+still on the call stack (synchronous completion path). The Ruby-built binary also
+aborts early on this example (different message), so it is runtime-unstable under
+both compilers. Fix is in the async release ordering / deferred-free of a task
+frame whose resume synchronously re-enters the waiter.
+
+### 2.5 CPS for-loop induction-var spilling (latent)
+
+A `for i in 0..N` / `for v in col` inside an async body creates C locals for the
+induction and stop values; these don't survive an await inside the loop body.
+No current example exercises it. Fix: `lower_for_range` should
+`async_register_local_field` for the induction/stop temps when
 `ctx.async_cps_active`.
