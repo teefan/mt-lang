@@ -5669,6 +5669,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             var saved_counter = ctx.temp_counter
             var saved_returns = ctx.function_returns
             var saved_type_subst = ctx.type_substitution
+            var saved_inside_async = ctx.inside_async
 
             # Switch to the owner module's context when its analysis is available.
             match find_imported_analysis(ctx, gm.module_name):
@@ -5688,6 +5689,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.temp_counter = 0
             ctx.function_returns = map_mod.Map[str, types.Type].create()
             ctx.type_substitution = map_mod.Map[str, types.Type].create()
+            ctx.inside_async = false
 
             var spec_fun = lower_specialized_function(ctx, fun.name, fun.method_params, fun.return_type, fun.body, sub)
             spec_fun.linkage_name = spec_key
@@ -5705,6 +5707,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.temp_counter = saved_counter
             ctx.function_returns = saved_returns
             ctx.type_substitution = saved_type_subst
+            ctx.inside_async = saved_inside_async
         _:
             fatal(j2("lowering: monomorphization failed, expected function decl for ", gm.module_name))
 
@@ -7205,6 +7208,7 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     var saved_counter = ctx.temp_counter
     var saved_returns = ctx.function_returns
     var saved_sub = ctx.type_substitution
+    var saved_inside_async = ctx.inside_async
 
     ctx.module_name = gm.owner_module
     ctx.analysis = owner_a
@@ -7214,6 +7218,7 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     ctx.temp_counter = 0
     ctx.function_returns = map_mod.Map[str, types.Type].create()
     ctx.type_substitution = sub
+    ctx.inside_async = false
     collect_foreign_functions(ctx, owner_a.source_file.declarations)
     collect_variants(ctx, owner_a.source_file.declarations)
     install_prelude_variants(ctx)
@@ -7230,6 +7235,7 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     ctx.temp_counter = saved_counter
     ctx.function_returns = saved_returns
     ctx.type_substitution = saved_sub
+    ctx.inside_async = saved_inside_async
 
 
 ## Find the module that defines a struct named `name` by searching loaded analyses.
