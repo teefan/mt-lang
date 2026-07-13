@@ -269,11 +269,40 @@ so the bootstrap fixed point is unaffected):**
 - `stmt_if`: a single-branch `if (await X) …` hoists the condition beforehand.
 - `return`: embedded awaits in the return value hoist first.
 
-**Remaining async-example errors are a *separate* class** (not embedded-await):
-`variable declared void` and `_phantom` in `std.net` come from a pre-existing
-guard/nullable success-type projection returning `void` in **non-CPS** code
-(e.g. `std_net_udp_send_task`), plus CPS spilling for `match`-statement bindings
-and `for`-loop bindings. These are the next targeted items after Blocker 2.
+**Remaining async-example errors** (async_network_lobby ~30, async_stress_test ~86
+C errors, down from ~34/108 after the nested-generic arm-payload fix):
+
+Three distinct root causes, **all pre-existing and not async-CPS specific**:
+
+1. **Nested-generic prelude arm-payload field types (FIXED).** `rp.value` where
+   `rp` is a `Result.success` / `Option.some` arm binding whose payload is itself
+   a generic (e.g. `Result[Option[Msg], int]`) mis-resolved to the arm struct type,
+   cascading to `_phantom` / `declared void`. Fixed: `arm_payload_field_type` now
+   falls back to the shared `prelude_arm_field_types` registry (populated by
+   `ensure_generic_variant` with the concrete, possibly nested-generic type).
+   Verified in both sync and async functions. (Commit `9b82552b`.)
+
+2. **`std.net` member-access type resolution (pre-existing).** `declared void`
+   and `int`-from-pointer errors in `udp_send_impl` and related `std.net`
+   functions. The guard form `let x = read(state).inner.storage else:` resolves
+   `.storage` on a struct field that itself holds a type-aliased pointer to an
+   imported opaque type. Isolated reproductions work; the failure is specific to
+   `std.net`'s exact guard + multi-nested read chain + platform-c-binding struct
+   pattern. ~10 remaining errors in `async_network_lobby`, ~50 in
+   `async_stress_test`.
+
+3. **CPS spilling for `match`-statement bindings + `for`-loop bindings.** A
+   `match` arm's `as name` or `for i in col` binding inside an async body
+   produces a C local that does not survive suspend/resume. Fixes: intercept
+   `match` and `for` in `lower_stmt` when `async_cps_active`, register the
+   bindings as frame-spilled locals. ~5 remaining errors.
+
+4. **Undefined completion labels** in CPS functions. The `_resume_complete`
+   label gets used but not defined in some edge cases. ~3 errors.
+
+5. **Async `main` entrypoint** (Blocker 3 — stub). `async function main` emits
+   no C `main` → link error. Requires proc synthesis + `std.async.wait`
+   specialization.
 
 #### Blocker 2 (original design) — embedded-await hoisting
 
@@ -315,8 +344,6 @@ the existing CPS handling already lowers). AST nodes are constructed with
 **Root cause (verified).** `build_async_main_entrypoint` (`lowering.mt`, added last
 round) is a stub returning `none`, so an `async function main` emits no C `main`
 → link error `undefined reference to 'main'`.
-
-**Accurate solution (mirrors Ruby `lowering/async.rb:8`).** The async main is
 already CPS-lowered (constructor linkage `<module>_main` returning `Task[int]`);
 the C entrypoint is a separate function with linkage `"main"`:
 1. Build the zero-capture root proc wrapping the constructor:
