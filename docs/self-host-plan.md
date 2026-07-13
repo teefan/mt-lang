@@ -168,9 +168,46 @@ Key implementation points (in `projects/mtc/src/mtc/lowering/lowering.mt`):
 
 Verified by reproducing each against the current compiler. All three trace to a
 small number of precise gaps; `std.net` (the async dependency of both examples)
-is method-heavy, so **Blocker 1 is the largest contributor**.
+is method-heavy, so **Blocker 1 was the largest contributor**.
 
-#### Blocker 1 — async methods are not CPS-lowered (biggest)
+#### Blocker 1 — async methods CPS-lowered — **DONE**
+
+**Status: implemented and verified.** An async method with a `this` receiver
+awaiting a real libuv timer now lowers to a correct CPS frame and runs
+end-to-end. `async_network_lobby` dropped from ~30 → the remaining errors are all
+Blocker 2 (embedded awaits); `async_stress_test` similarly.
+
+**Two root causes were involved (both verified and fixed):**
+
+1. **Definition side:** `lower_extending_block` skipped async methods
+   (`if m.is_async … continue`), so they fell to `lower_method` as plain
+   synchronous functions. Fixed: async non-generic methods now route to a
+   generalized `lower_async_fn` that takes an optional receiver type; `this`
+   becomes implicit frame field `param_this` (editable→`ptr[T]`, plain→value),
+   constructor linkage = `method_link_name`.
+
+2. **Call side (the subtle one):** `await w.run()` did **not** reach
+   `resolve_method_info`. It was intercepted earlier by `try_generic_method_call`
+   → `lower_monomorphized_method`, which reads the return type from a *plain,
+   non-CPS* monomorphized lowering of the method body → returned the unwrapped
+   `int` instead of `Task[int]`. Fixed: `try_generic_method_call` returns `none`
+   for `gm.method.is_async`, so the call falls through to `resolve_method_info`,
+   which returns the `Task[T]` type (from the analyzer's `is_async`-aware
+   `FnSig`) and the eagerly-lowered CPS constructor's C name.
+
+**Supporting analyzer change:** `FnSig` gained `is_async: bool`;
+`collect_extending_methods` passes `m.is_async` to `build_fn_sig` (was hardcoded
+`false`), so `build_fn_sig` wraps async method returns in `Task[T]`. All
+`FnSig(...)` construction sites updated.
+
+**Field-collection isolation:** `LowerCtx` gained `async_await_fields_ptr` /
+`async_local_fields_ptr`; `lower_async_fn`'s has-await branch collects into
+function-local vecs pointed to by these, immune to a nested `lower_async_fn`
+reassigning the ctx vecs. (A harmless dead `await_N` field can still appear in a
+caller frame when a method is eagerly lowered before the caller; it is not
+referenced by the resume body. Cosmetic; can be tightened later.)
+
+#### Blocker 1 (original) — historical root-cause note
 
 **Root cause (verified).** `lower_module`'s extending-block pass skips async
 methods: `lowering.mt:1230` `if m.is_async or m.type_params.len > 0: continue`.
