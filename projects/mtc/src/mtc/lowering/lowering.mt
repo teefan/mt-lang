@@ -215,6 +215,13 @@ struct LowerCtx:
     async_local_seen: map_mod.Map[str, bool]
     async_complete_label: str
     async_result_c_name: str
+    # When non-null, `async_emit_await` and `async_register_local_field` push
+    # through these pointers instead of the vec fields above.  This makes a
+    # function's field collection immune to nested `lower_async_fn` calls — even
+    # if a nested call reassigns `ctx.async_await_fields`, the pointer still
+    # targets the local vec declared in this function's `has_await` branch.
+    async_await_fields_ptr: ptr[vec.Vec[ir.Field]]?
+    async_local_fields_ptr: ptr[vec.Vec[ir.Field]]?
 
 
 ## Per-event runtime linkage information.  Each declared `event Name[N]`
@@ -771,6 +778,8 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         async_local_seen = map_mod.Map[str, bool].create(),
         async_complete_label = "",
         async_result_c_name = "",
+        async_await_fields_ptr = null,
+        async_local_fields_ptr = null,
     )
 
 
@@ -13883,6 +13892,10 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     let frame_ty = types.Type.ty_named(module_name = "", name = frame_c)
     let frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = single_ty_span(frame_ty))
 
+    # Frame-field vectors captured after body lowering — set in has_await branch.
+    var cap_local_fields = vec.Vec[ir.Field].create()
+    var cap_await_fields = vec.Vec[ir.Field].create()
+
     # Common vtable param: void* __mt_frame_raw
     var waiter_fn_ty = types.Type.ty_function(params = single_ty_span(ptr_void_type()), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
     var vparams = vec.Vec[ir.Param].create()
@@ -13942,10 +13955,19 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         ctx.async_await_counter = 0
         ctx.async_local_fields = vec.Vec[ir.Field].create()
         ctx.async_await_fields = vec.Vec[ir.Field].create()
-        ctx.async_local_seen = map_mod.Map[str, bool].create()
+        cap_local_fields = ctx.async_local_fields
+        cap_await_fields = ctx.async_await_fields
         let complete_lbl = j2(resume_c, "_complete")
         ctx.async_complete_label = complete_lbl
         ctx.async_result_c_name = "__mt_frame->result"
+        # Set up pointer-based field collection so pushes from async_emit_await
+        # and async_register_local_field target this function's local vecs even
+        # when nested lower_async_fn calls reassign ctx.async_*fields.  Save the
+        # parent's pointers, set ours, restore after body lowering.
+        let saved_await_ptr = ctx.async_await_fields_ptr
+        let saved_local_ptr = ctx.async_local_fields_ptr
+        ctx.async_await_fields_ptr = ptr_of(cap_await_fields)
+        ctx.async_local_fields_ptr = ptr_of(cap_local_fields)
         var saved_label = ctx.async_resume_return_label
         ctx.async_resume_return_label = complete_lbl
         var saved_rt = ctx.current_fn_return_type
@@ -13955,6 +13977,8 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
 
         var body_stmts = lower_function_body(ctx, body)
         let await_count = ctx.async_await_counter
+        ctx.async_await_fields_ptr = saved_await_ptr
+        ctx.async_local_fields_ptr = saved_local_ptr
 
         ctx.async_cps_active = false
         ctx.async_resume_return_label = saved_label
@@ -14027,14 +14051,14 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         pif += 1
     if has_await:
         var lfi: ptr_uint = 0
-        while lfi < ctx.async_local_fields.len():
-            let lfp = ctx.async_local_fields.get(lfi) else:
+        while lfi < cap_local_fields.len():
+            let lfp = cap_local_fields.get(lfi) else:
                 break
             ff.push(unsafe: read(lfp))
             lfi += 1
         var afi: ptr_uint = 0
-        while afi < ctx.async_await_fields.len():
-            let afp = ctx.async_await_fields.get(afi) else:
+        while afi < cap_await_fields.len():
+            let afp = cap_await_fields.get(afi) else:
                 break
             ff.push(unsafe: read(afp))
             afi += 1
@@ -14188,7 +14212,11 @@ function direct_await_inner(ep: ptr[ast.Expr]) -> ptr[ast.Expr]:
 function async_register_local_field(ctx: ref[LowerCtx], loc_name: str, field_name: str, frame_cname: str, ty: types.Type) -> void:
     if not ctx.async_local_seen.contains(field_name):
         ctx.async_local_seen.set(field_name, true)
-        ctx.async_local_fields.push(ir.Field(name = field_name, ty = ty))
+        let lfp = ctx.async_local_fields_ptr
+        if lfp != null:
+            unsafe: read(lfp).push(ir.Field(name = field_name, ty = ty))
+        else:
+            ctx.async_local_fields.push(ir.Field(name = field_name, ty = ty))
     ctx.locals.push(LocalBinding(name = loc_name, c_name = frame_cname, ty = ty, pointer = false))
 
 
@@ -14250,6 +14278,7 @@ function lower_async_await_into(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 ## suspend (register waiter + return) if not ready, then resume at `state_<N+1>`,
 ## take the result into `target`, and release the child task.
 function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], task_ir: ptr[ir.Expr], task_ty: types.Type, result_ty: types.Type, target: Option[ptr[ir.Expr]]) -> void:
+    # Temporary to confirm function is reached
     let ptr_void = async_mod.ptr_void_type()
     let bool_ty = types.primitive("bool")
     let int_ty = types.primitive("int")
@@ -14257,7 +14286,13 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
     let idx = ctx.async_await_counter
     ctx.async_await_counter = idx + 1
     let await_field = j2("await_", int_to_str(int<-idx))
-    ctx.async_await_fields.push(ir.Field(name = await_field, ty = task_ty))
+    # Push through the pointer when set (immune to ctx reassignment by nested
+    # lower_async_fn calls), otherwise push to the ctx vec directly.
+    let afp = ctx.async_await_fields_ptr
+    if afp != null:
+        unsafe: read(afp).push(ir.Field(name = await_field, ty = task_ty))
+    else:
+        ctx.async_await_fields.push(ir.Field(name = await_field, ty = task_ty))
     let next_state = int<-idx + 1
 
     let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = true))
