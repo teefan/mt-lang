@@ -1,7 +1,7 @@
 # Self-Host Plan: Path to 100% Ruby Parity
 
-Status: **11/13 examples compile. 172/172 tests pass. P1-P39 done (23/27 errors left).**
-Last updated: 2026-07-13 (session — P39: cross-module enum member access)
+Status: **11/13 examples compile. 172/172 tests pass. P1-P41 done (14/19 errors left).**
+Last updated: 2026-07-13 (session — P41: inside_async leak fix, 6 errors fixed)
 
 ---
 
@@ -26,10 +26,10 @@ Last updated: 2026-07-13 (session — P39: cross-module enum member access)
 | `nullable_and_variant_test.mt` | OK | 0 |
 | `event_stress_test.mt` | OK | 0 |
 | `reflection_advanced.mt` | OK | 0 |
-| `async_stress_test.mt` | FAIL | 73 |
-| `async_network_lobby.mt` | FAIL | 45 |
+| `async_stress_test.mt` | FAIL | 14 |
+| `async_network_lobby.mt` | FAIL | 19 |
 
-- **P1-P32**: P1-P20 DONE (prior session). P21-P32 DONE (this session).
+- **P1-P41**: P1-P20 DONE (prior session). P21-P41 DONE (this session).
 
 ### 0.2 Verification commands
 
@@ -48,8 +48,8 @@ sha256sum tmp/mtc-s2 tmp/mtc-s3                         # identical
 
 # Check error counts
 tmp/mtc-current build examples/reflection_advanced.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep -c "error:"  # 0
-tmp/mtc-current build examples/async_stress_test.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep -c "error:"        # 73
-tmp/mtc-current build examples/async_network_lobby.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep -c "error:"      # 45
+tmp/mtc-current build examples/async_stress_test.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep -c "error:"  # 14
+tmp/mtc-current build examples/async_network_lobby.mt -I . --no-cache --no-debug-guards -o /dev/null 2>&1 | grep -c "error:"  # 19
 ```
 
 ---
@@ -188,45 +188,35 @@ Added `task_scan_stmts`/`task_scan_stmt`/`task_scan_expr` to walk IR function bo
 
 | # | Root Cause | Examples | Errors |
 |---|-----------|----------|--------|
-| 1 | Task return type mismatches + incomplete Task struct fields + libuv ptr + CPS frame + misc | `async_stress_test`, `async_network_lobby` | 23/27 |
+| 1 | Incomplete Task struct fields + CPS frame + ? propagation + misc | `async_stress_test`, `async_network_lobby` | 14/19 |
 
-The async examples dropped from 73/45 → 25/27 after P33-P38. Remaining errors are pre-existing type mismatches in the async/monomorphization lowering (Task return types conflicting with non-Task signatures), incomplete Task struct field types, libuv callback type mismatches, and variable scoping issues.
+The async examples dropped from 73/45 → 14/19 after P33-P41. All Task return type mismatches (P41) and foreign arg (P40) issues are resolved. Remaining: struct ordering, ? propagation, CPS frame field access, async constructor params, Config mismatches.
 
 ---
 
 ## 3. Remaining work
 
-### 3.1 Task return type mismatches in monomorphized functions (~6 errors)
+### 3.1 Incomplete Task struct field types (~4 errors across both examples)
 
-Monomorphized async functions like `Deque[OutgoingMessage].next_index` have return types mismatched: the C signature declares `uintptr_t` but the body returns `mt_task_int` or `mt_task_ptr_uint`. This is a lowering bug where async body lowering incorrectly wraps return values in Task aggregate literals.
+Task structs with element types that are forward-declared but not yet fully defined (e.g. `Task[Result[Option[Message, Error]]]`) have `value` fields with incomplete types. The Option payload struct references the Task type before the Task struct is defined. Moving Task structs before variants fixed some cases but broke others (Task[Result[...]] needs Result defined first). Requires topological sort.
 
-**Fix approach**: In `lower_async_fn`, check if the function is actually async before wrapping returns in Task aggregates. Or fix the body scan to detect when a function body is using Task types but the signature doesn't match.
+### 3.2 ? propagation bindings for concrete variant types (~2 errors)
 
-### 3.2 Incomplete Task struct field types (~2 errors)
+`invalid initializer` — `guard_success_type` for concrete (non-generic) variant types falls back to the storage type itself instead of extracting the success arm's field type. E.g. `let socket = bind_on(...)?` binds to full Result type instead of UdpSocket.
 
-Task structs with element types that are forward-declared but not yet fully defined (e.g. `Task[std_result_Result_std_option_Option_std_net_channel_Message_std_net_Error]`) have `value` fields with incomplete types. The Option payload struct references the Task type before the Task struct is defined.
+### 3.3 CPS frame field access / async constructor params (~3 errors)
 
-**Fix approach**: Ensure Task struct definitions are emitted AFTER their element type structs. This may require topological sorting of struct definitions.
+`x`/`y` undeclared and `too many arguments` — async function constructor doesn't accept original params or copy them to frame fields. The resume body uses bare param names instead of `__mt_frame->x`.
 
-### 3.3 Libuv callback type mismatches (~4 errors)
+### 3.4 Array indexing on module variables (~8 errors, async_network_lobby only)
 
-`uv_ip4_addr` and `uv_ip6_addr` have incompatible argument types. The suseelf-host passes struct types where the C function expects different pointer types.
+`mt_checked_index_array_ubyte_0` uses dimension 0. The P34 fix works for async_stress_test but not async_network_lobby — likely a different variable access pattern not covered by `module_var_type`.
 
-**Fix approach**: Add explicit pointer casts at libuv call sites, or ensure the type alias chain produces the correct C pointer types.
+### 3.5 Miscellaneous (~4 errors)
 
-### 3.4 Variable scoping issues (~4 errors)
-
-Variables `x`, `y`, `player_joined`, `connected` are used without being declared in scope. These might be from match arm destructuring patterns or inline variable bindings that the self-host doesn't lower correctly.
-
-**Fix approach**: Debug the specific source code patterns that produce these variables and fix the lowering.
-
-### 3.5 Miscellaneous (~9 errors)
-
-- `invalid initializer` (2) — Task struct initialization issues
-- `'return' with a value in non-void function` (2)
-- Wrong Config types (1)
-- Incompatible type for arguments (1)
-- 'too many arguments' (1)
+- `return with value in void function` (2) — async body return/void mismatch
+- Config type mismatch (1) — `std_net_session_Config` vs `std_net_channel_Config`
+- Listener/udp init arg mismatches (3)
 
 ---
 
