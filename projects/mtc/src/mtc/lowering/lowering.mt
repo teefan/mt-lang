@@ -2267,15 +2267,31 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
                     pass
             # Resolve type aliases to their target type so the C backend sees
             # the concrete type (e.g. IntCallback → fn(...)) rather than an
-            # opaque ty_imported.
+            # opaque ty_imported.  Aliases targeting std.c.* types are NOT
+            # resolved — the C typedef (e.g. `typedef struct sockaddr_storage
+            # std_net_NativeSocketStorage`) handles the mapping, and keeping
+            # the alias name avoids raw C type names (e.g. `sockaddr_storage`
+            # without `struct` prefix) in function signatures / struct fields.
             if ctx.analysis.type_alias_types.contains(n.name):
                 let resolved_ptr = ctx.analysis.type_alias_types.get(n.name) else:
                     fatal(c"lowering: type alias lookup inconsistency")
-                return qualify_type(ctx, unsafe: read(resolved_ptr))
+                let resolved_val = unsafe: read(resolved_ptr)
+                if not type_is_from_std_c(resolved_val):
+                    return qualify_type(ctx, resolved_val)
             return types.Type.ty_imported(module_name = ctx.module_name, name = n.name, args = span[types.Type]())
         types.Type.ty_imported as im:
             if is_raw_type_param_name(im.name):
                 return types.primitive("void")
+            # Resolve type aliases defined in the owning module (e.g.
+            # `NativeBuffer` in `std.net` → `uv_buf_t` in `std.c.libuv`).
+            if im.args.len == 0 and not is_prelude_variant_name(im.name):
+                let owner_a_opt = find_imported_analysis(ctx, im.module_name)
+                if owner_a_opt.is_some():
+                    let owner_a = owner_a_opt.unwrap()
+                    if owner_a.type_alias_types.contains(im.name):
+                        let resolved_ptr = owner_a.type_alias_types.get(im.name) else:
+                            fatal(c"lowering: imported type alias lookup inconsistency")
+                        return qualify_type(ctx, unsafe: read(resolved_ptr))
             var resolved_args = span[types.Type]()
             if im.args.len > 0:
                 var args_vec = vec.Vec[types.Type].create()
@@ -4248,6 +4264,9 @@ function index_receiver_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> typ
                         return lb.value.ty
                     Option.none:
                         pass
+                let mvt = module_var_type(ctx, id.name)
+                if not types.is_error(mvt):
+                    return mvt
             _:
                 pass
     return expr_type(ctx, receiver)
@@ -4739,10 +4758,26 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         found_ft = ft.value
                     Option.none:
                         # Not in generic_struct_decls; try analysis.structs for
-                        # non-generic (local) structs.
-                        let struct_name = named_type_name(recv_ty)
+                        # non-generic (local and imported) structs.  Strip
+                        # pointer/ref wrappers first so the base struct name is
+                        # recovered (ptr[SleepState] → SleepState).
+                        var base = recv_ty
+                        if types.is_raw_pointer(base) or types.is_ref_type(base):
+                            base = types.pointer_element(base)
+                        if types.is_nullable_type(base):
+                            base = types.unwrap_nullable(base)
+                        let struct_name = named_type_name(base)
                         if struct_name.is_some():
-                            let raw_fields = ctx.analysis.structs.get(struct_name.unwrap())
+                            let sn = struct_name.unwrap()
+                            var raw_fields = ctx.analysis.structs.get(sn)
+                            if raw_fields == null:
+                                var ai: ptr_uint = 0
+                                while ai < ctx.program_analyses.len and raw_fields == null:
+                                    var a: analyzer.Analysis
+                                    unsafe:
+                                        a = read(ctx.program_analyses.data + ai)
+                                    raw_fields = a.structs.get(sn)
+                                    ai += 1
                             if raw_fields != null:
                                 let entries = unsafe: read(raw_fields)
                                 var ei: ptr_uint = 0
@@ -9292,16 +9327,34 @@ function concrete_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: st
             struct_name = n.name
         _:
             return Option[types.Type].none
-    let decl_ptr = ctx.generic_struct_decls.get(struct_name) else:
-        return Option[types.Type].none
-    unsafe:
-        let decl = read(decl_ptr)
-        var i: ptr_uint = 0
-        while i < decl.fields.len:
-            let f = read(decl.fields.data + i)
-            if f.name == member:
-                return Option[types.Type].some(value = f.ty)
-            i += 1
+    let decl_ptr = ctx.generic_struct_decls.get(struct_name)
+    if decl_ptr != null:
+        unsafe:
+            let decl = read(decl_ptr)
+            var i: ptr_uint = 0
+            while i < decl.fields.len:
+                let f = read(decl.fields.data + i)
+                if f.name == member:
+                    return Option[types.Type].some(value = f.ty)
+                i += 1
+    # Non-generic struct: search current and imported module analyses.
+    var raw_fields = ctx.analysis.structs.get(struct_name)
+    if raw_fields == null:
+        var ai: ptr_uint = 0
+        while ai < ctx.program_analyses.len and raw_fields == null:
+            var a: analyzer.Analysis
+            unsafe:
+                a = read(ctx.program_analyses.data + ai)
+            raw_fields = a.structs.get(struct_name)
+            ai += 1
+    if raw_fields != null:
+        let entries = unsafe: read(raw_fields)
+        var ei: ptr_uint = 0
+        while ei < entries.len:
+            let entry = unsafe: read(entries.data + ei)
+            if entry.name == member:
+                return Option[types.Type].some(value = entry.ty)
+            ei += 1
     return Option[types.Type].none
 
 
@@ -11216,6 +11269,9 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                     Option.some as lb:
                         return lb.value.ty
                     Option.none:
+                        let mvt = module_var_type(ctx, id.name)
+                        if not types.is_error(mvt):
+                            return mvt
                         # Function reference: return its function type.
                         match lookup_fn_sig(ctx, id.name):
                             Option.some as s:

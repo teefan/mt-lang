@@ -44,6 +44,9 @@ struct Emitter:
     variant_eq_set: map_mod.Map[str, bool]
     # Nullable value type C trivially emitted as mt_opt_* typedefs.
     opt_type_set: map_mod.Map[str, types.Type]
+    # std.c.* backing C names for type aliases, keyed by the internal name
+    # (e.g. "sockaddr_storage" → "struct sockaddr_storage").
+    std_c_backing: map_mod.Map[str, str]
 
 
 ## Local variant-arm metadata for prelude type collection (mirrors lowering's
@@ -71,6 +74,7 @@ public function generate_c(program: ir.Program) -> string.String:
         used_labels = map_mod.Map[str, bool].create(),
         variant_eq_set = map_mod.Map[str, bool].create(),
         opt_type_set = map_mod.Map[str, types.Type].create(),
+        std_c_backing = map_mod.Map[str, str].create(),
     )
 
     # Reachability pruning: emit only functions reachable from the entry points,
@@ -4285,10 +4289,7 @@ function collect_task_type(program: ir.Program, seen: ref[map_mod.Map[str, bool]
 
 
 
-
-
 function task_type_element(t: types.Type) -> Option[types.Type]:
-
     match t:
 
         types.Type.ty_generic as g:
@@ -4941,6 +4942,28 @@ function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
         ai += 1
     if program.type_aliases.len > 0:
         emit_line(e, "")
+
+
+
+function collect_std_c_backing(program: ir.Program) -> map_mod.Map[str, str]:
+    var m = map_mod.Map[str, str].create()
+    var ai: ptr_uint = 0
+    while ai < program.type_aliases.len:
+        var ta: ir.TypeAlias
+        unsafe:
+            ta = read(program.type_aliases.data + ai)
+        match ta.backing_c_name:
+            Option.some as cname:
+                match ta.target_type:
+                    types.Type.ty_imported as im:
+                        if im.name != cname.value:
+                            m.set(im.name, cname.value)
+                    _:
+                        pass
+            Option.none:
+                pass
+        ai += 1
+    return m
 
 
 
