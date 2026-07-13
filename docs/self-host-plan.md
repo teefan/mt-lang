@@ -240,7 +240,42 @@ producing `int.ready/.frame/...` errors and `void`-typed spilled locals
 4. **Generic async methods** (`type_params > 0`) remain deferred — they need the
    monomorphization path to emit the CPS form. Rare; none in the two examples.
 
-#### Blocker 2 — embedded-await hoisting
+#### Blocker 2 — embedded-await hoisting — **DONE (core)**
+
+**Status: implemented and verified.** Awaits nested in expressions and
+conditions now hoist correctly and match Ruby. Verified end-to-end:
+`(await m())?` → correct, `total += await f()`, `(await f()) * 2`,
+`if (await f()) > 5`, `while (await f()) > 0`, and `let v = maybe else: … ; await …`
+(guard spill). `async_stress_test` dropped 159 → 108 C errors.
+
+**Implemented (all guarded by `ctx.async_cps_active`; the self-host uses no async
+so the bootstrap fixed point is unaffected):**
+- `async_hoist_awaits` (a recursive AST rewrite, `alloc_ast_expr` on the heap):
+  emits each embedded await as a suspend/resume boundary into a fresh
+  `local_await_tmp_N` frame field and replaces it with an identifier. Handles
+  binary/unary/call/member/index/prefix_cast/unsafe. A top-level `?` is preserved
+  so the caller routes it to `lower_propagate_let`.
+- `lower_async_local`: hoists embedded awaits, routes a top-level `?` to
+  `lower_propagate_let`, and wraps non-null inits for value-nullable locals.
+- `lower_propagate_let` is CPS-aware: on `?` failure it stores the propagated
+  value to `frame->result` and jumps to the completion label (not a value-return
+  in the void resume); the success binding spills to a frame field.
+- `lower_guard_local` (`let x = expr else:`): spills the bound local to a frame
+  field in CPS mode.
+- `stmt_assignment`: compound ops (`+=`) and embedded awaits hoist first, then
+  emit the await-free assignment with the original operator.
+- `stmt_while`: an await in the loop condition restructures to
+  `while(true){ <cond awaits>; if(!cond) break; body }`.
+- `stmt_if`: a single-branch `if (await X) …` hoists the condition beforehand.
+- `return`: embedded awaits in the return value hoist first.
+
+**Remaining async-example errors are a *separate* class** (not embedded-await):
+`variable declared void` and `_phantom` in `std.net` come from a pre-existing
+guard/nullable success-type projection returning `void` in **non-CPS** code
+(e.g. `std_net_udp_send_task`), plus CPS spilling for `match`-statement bindings
+and `for`-loop bindings. These are the next targeted items after Blocker 2.
+
+#### Blocker 2 (original design) — embedded-await hoisting
 
 **Root cause (verified).** Awaits nested in expressions/conditions fall to
 `lower_expr(expr_await)` → `unwrap_task_value` (synchronous; correct only for a
