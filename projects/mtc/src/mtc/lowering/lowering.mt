@@ -7413,6 +7413,12 @@ function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method
         return Option[ptr[ir.Expr]].none
     let gm = find_generic_method(ctx, info.owner_name, method_name) else:
         return Option[ptr[ir.Expr]].none
+    # Async methods are lowered eagerly through the CPS path (lower_async_fn) and
+    # resolved via resolve_method_info (which returns their Task[T] type + CPS
+    # constructor).  Monomorphizing them here would produce a plain, non-CPS
+    # function returning the unwrapped type, so defer to resolve_method_info.
+    if gm.method.is_async:
+        return Option[ptr[ir.Expr]].none
     if gm.method.type_params.len > 0:
         # Method has its own type parameters (e.g. `map_error[F]`).
         # Infer each from the argument types and extend the concrete args.
@@ -13955,13 +13961,15 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         let complete_lbl = j2(resume_c, "_complete")
         ctx.async_complete_label = complete_lbl
         ctx.async_result_c_name = "__mt_frame->result"
-        # Set up pointer-based field collection so pushes from async_emit_await
-        # and async_register_local_field target this function's local vecs even
-        # when nested lower_async_fn calls reassign ctx.async_*fields.
+        # Create LOCAL vec vars and point to THEM (NOT to ctx fields).  The ctx
+        # fields are reassigned by nested lower_async_fn calls; a LOCAL variable
+        # is immune to that, so pushes through the pointer always land here.
+        var my_await_fields = ctx.async_await_fields
+        var my_local_fields = ctx.async_local_fields
         let saved_await_ptr = ctx.async_await_fields_ptr
         let saved_local_ptr = ctx.async_local_fields_ptr
-        ctx.async_await_fields_ptr = ptr_of(ctx.async_await_fields)
-        ctx.async_local_fields_ptr = ptr_of(ctx.async_local_fields)
+        ctx.async_await_fields_ptr = ptr_of(my_await_fields)
+        ctx.async_local_fields_ptr = ptr_of(my_local_fields)
         var saved_label = ctx.async_resume_return_label
         ctx.async_resume_return_label = complete_lbl
         var saved_rt = ctx.current_fn_return_type
@@ -13971,6 +13979,10 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
 
         var body_stmts = lower_function_body(ctx, body)
         let await_count = ctx.async_await_counter
+        # Copy the accumulated fields back to ctx so the frame builder picks them
+        # up (ctx fields may have been reassigned by nested lower_async_fn calls).
+        ctx.async_local_fields = my_local_fields
+        ctx.async_await_fields = my_await_fields
         ctx.async_await_fields_ptr = saved_await_ptr
         ctx.async_local_fields_ptr = saved_local_ptr
 
