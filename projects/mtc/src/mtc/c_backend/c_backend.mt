@@ -2385,6 +2385,26 @@ function collect_variant_deps(vd: ir.VariantDecl, deps: ref[vec.Vec[str]]) -> vo
         i += 1
 
 
+## Register each payload-bearing arm's C struct name (`<variant>_<arm>`) as an
+## alias in `by_key` that points to the owning variant's node index, so a
+## by-value dependency on the arm-payload struct (e.g. an async frame field for a
+## `Result.success as p` binding, typed `<Variant>_success`) resolves to the
+## whole variant node.  The variant defines the payload struct, so ordering the
+## variant first guarantees the payload struct is complete before the embedder.
+function register_variant_arm_aliases(vd: ir.VariantDecl, by_key: ref[map_mod.Map[str, ptr_uint]]) -> void:
+    let owner_idx_ptr = by_key.get(vd.linkage_name)
+    if owner_idx_ptr == null:
+        return
+    let owner_idx = unsafe: read(owner_idx_ptr)
+    var i: ptr_uint = 0
+    while i < vd.arms.len:
+        unsafe:
+            let arm = read(vd.arms.data + i)
+            if arm.fields.len > 0 and not by_key.contains(arm.linkage_name):
+                by_key.set(arm.linkage_name, owner_idx)
+        i += 1
+
+
 function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]]) -> vec.Vec[str]:
     var deps = vec.Vec[str].create()
     if node.kind == 0:
@@ -2445,6 +2465,24 @@ function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec
         let key = unsafe: read(os_ptr).decl.linkage_name
         by_key.set(key, nodes.len())
         nodes.push(TypeNode(key = key, kind = 3, index = i))
+        i += 1
+
+    # Register each variant's per-arm payload struct name as an alias pointing
+    # back to the owning variant node.  A struct that embeds an arm-payload
+    # struct by value (e.g. an async frame field `Result[T,E].success as p`
+    # binding, typed as `<Variant>_success`) then creates a dependency edge to
+    # the variant node, so the whole variant — which defines the payload struct —
+    # is ordered first.  Without this the frame struct can precede the payload
+    # struct definition, yielding a C "field has incomplete type" error.
+    i = 0
+    while i < gen_variants.len():
+        let gv_ptr = gen_variants.get(i) else:
+            break
+        register_variant_arm_aliases(unsafe: read(gv_ptr), ref_of(by_key))
+        i += 1
+    i = 0
+    while i < program_variants.len:
+        register_variant_arm_aliases(unsafe: read(program_variants.data + i), ref_of(by_key))
         i += 1
 
     # Add Task struct nodes (kind 4) so they participate in topological

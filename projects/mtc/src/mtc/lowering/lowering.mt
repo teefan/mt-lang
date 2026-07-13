@@ -1971,7 +1971,14 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if m.is_inline:
                     lower_inline_match_statement(ctx, output, m.scrutinee, m.arms)
                     return
-                lower_match(ctx, output, m.scrutinee, m.arms)
+                # In an async CPS body, an `await` embedded in the match scrutinee
+                # (`match await expr: ...`) must be hoisted to a frame field and
+                # split into a suspend/resume point before the switch is emitted;
+                # otherwise the whole match (scrutinee + arms) is dropped.
+                var match_scrutinee = m.scrutinee
+                if ctx.async_cps_active and async_mod.expr_has_await(m.scrutinee):
+                    match_scrutinee = async_hoist_awaits(ctx, output, m.scrutinee)
+                lower_match(ctx, output, match_scrutinee, m.arms)
             ast.Stmt.stmt_break:
                 output.push(ir.Stmt.stmt_break())
             ast.Stmt.stmt_continue:
@@ -4774,7 +4781,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         if types.is_nullable_type(base):
                             base = types.unwrap_nullable(base)
                         var elem_ty = expr_type(ctx, call_ep)
-                        if types.is_raw_pointer(base) or types.is_ref_type(base):
+                        if types.is_raw_pointer(base) or types.is_ref_type(base) or types.is_own_type(base):
                             elem_ty = types.pointer_element(base)
                         return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = inner, ty = qualify_type(ctx, elem_ty)))
                 # `get(coll, index)` → recoverable array/span indexing returning
@@ -5106,7 +5113,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         # pointer/ref wrappers first so the base struct name is
                         # recovered (ptr[SleepState] → SleepState).
                         var base = recv_ty
-                        if types.is_raw_pointer(base) or types.is_ref_type(base):
+                        if types.is_raw_pointer(base) or types.is_ref_type(base) or types.is_own_type(base):
                             base = types.pointer_element(base)
                         if types.is_nullable_type(base):
                             base = types.unwrap_nullable(base)
@@ -5260,7 +5267,6 @@ function cross_module_return_type(ctx: ref[LowerCtx], c_name: str, call_ep: ptr[
         if not types.is_error(ret_ty):
             return ret_ty
     return expr_type(ctx, call_ep)
-
 
 
 function ret_type_is_prelude_variant(ret_ty: types.Type) -> bool:
@@ -9083,7 +9089,10 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                 let param_ty = resolve_type_ref(ctx, ptr_of(pt_copy))
                 if types.is_raw_pointer(param_ty) or types.is_ref_type(param_ty):
                     let arg_ty = ir_expr_type(lowered)
-                    if not types.is_raw_pointer(arg_ty):
+                    # An `own[T]` is already a pointer to `T`, so passing it to a
+                    # `ptr[T]`/`const_ptr[T]` foreign param must NOT take its
+                    # address (that would pass `own[T]*` — a double pointer).
+                    if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
                         needs_address = true
             if needs_address:
                 return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
@@ -9500,7 +9509,9 @@ function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> s
 ## (`p.x`).  Method calls and other member forms arrive in later phases.
 function imported_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[types.Type]:
     var base = recv_ty
-    if types.is_raw_pointer(base) or types.is_ref_type(base):
+    if types.is_nullable_type(base):
+        base = types.unwrap_nullable(base)
+    if types.is_raw_pointer(base) or types.is_ref_type(base) or types.is_own_type(base):
         base = types.pointer_element(base)
     if types.is_nullable_type(base):
         base = types.unwrap_nullable(base)
@@ -9841,7 +9852,9 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
 ## analyzer's recorded member type) or unknown fields.
 function concrete_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[types.Type]:
     var base = recv_ty
-    if types.is_raw_pointer(base) or types.is_ref_type(base):
+    if types.is_nullable_type(base):
+        base = types.unwrap_nullable(base)
+    if types.is_raw_pointer(base) or types.is_ref_type(base) or types.is_own_type(base):
         base = types.pointer_element(base)
     var struct_name: str
     match base:
@@ -14374,7 +14387,7 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
             ast.Expr.expr_await as aw:
                 let inner = async_hoist_awaits(ctx, output, aw.expression)
                 let task_ir = lower_expr(ctx, inner)
-                let task_ty = ir_expr_type(task_ir)
+                let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
                 let result_ty = extract_task_element_type(ctx, task_ty)
                 let tmp = fresh_c_temp_name(ctx, "await_tmp")
                 let field_name = j2("local_", tmp)
@@ -14435,7 +14448,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
 
     if expr_is_direct_await(v):
         let task_ir = lower_expr(ctx, direct_await_inner(v))
-        let task_ty = ir_expr_type(task_ir)
+        let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
         let result_ty = extract_task_element_type(ctx, task_ty)
         async_register_local_field(ctx, loc_name, field_name, frame_cname, result_ty)
         let target = alloc_expr(ir.Expr.expr_name(name = frame_cname, ty = result_ty, pointer = false))
@@ -14486,9 +14499,25 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
 ## suspend/resume boundary, assigning the result to `target` (or discarding).
 function lower_async_await_into(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], task_ep: ptr[ast.Expr], target: Option[ptr[ir.Expr]]) -> void:
     let task_ir = lower_expr(ctx, task_ep)
-    let task_ty = ir_expr_type(task_ir)
+    let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
     let result_ty = extract_task_element_type(ctx, task_ty)
     async_emit_await(ctx, output, task_ir, task_ty, result_ty, target)
+
+
+## The type of an awaited expression, normalized to a `Task[T]`.  A cross-module
+## async function that returns `Result`/`Option` has its stored return type left
+## unwrapped (`cross_module_return_type` skips wrapping prelude variants), so the
+## awaited expression's IR type is the bare `Result`/`Option`.  An `await` always
+## operates on a `Task`, so wrap any non-Task awaited type here; `Task[T]` types
+## pass through unchanged.
+function normalize_awaited_task_type(t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_generic as g:
+            if g.name == "Task":
+                return t
+        _:
+            pass
+    return make_task_type(t)
 
 
 ## Core await lowering: store the task in `frame->await_N`, guard on `ready`,

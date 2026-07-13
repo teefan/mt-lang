@@ -376,6 +376,20 @@ public function is_raw_pointer(t: Type) -> bool:
             return false
 
 
+## True when `t` is an owning heap pointer (own[T] or own[T]?).  An `own[T]`
+## auto-dereferences at the language level: member access and `read()` treat it
+## like a pointer to its referent (mirrors Ruby's `own_type?`, and `own` being
+## part of `pointer_type?`).
+public function is_own_type(t: Type) -> bool:
+    match t:
+        Type.ty_generic as g:
+            return g.name == "own"
+        Type.ty_nullable as nl:
+            return is_own_type(unsafe: read(nl.base))
+        _:
+            return false
+
+
 ## The element type of a pointer or array-like type.  Returns ty_error for
 ## anything that is not ptr / const_ptr / ref / span / array.
 public function pointer_element(t: Type) -> Type:
