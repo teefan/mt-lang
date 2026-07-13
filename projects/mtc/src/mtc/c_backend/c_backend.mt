@@ -4508,15 +4508,12 @@ function is_vec_math_name(name: str) -> bool:
 
 
 function is_void_type(t: types.Type) -> bool:
-
     match t:
-
         types.Type.ty_primitive as p:
-
             return p.name == "void"
-
+        types.Type.ty_error:
+            return true
         _:
-
             return false
 
 
