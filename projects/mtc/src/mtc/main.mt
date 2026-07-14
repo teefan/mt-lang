@@ -114,7 +114,7 @@ function print_help() -> void:
     stdio.print_line("  emit-c <file|dir> [-I DIR]... [--platform NAME]    compile to C and print it")
     stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache] [--clean]")
     stdio.print_line("  run   <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache] [-- ARGS...]")
-    stdio.print_line("  test  <dir> [-I DIR]... [-n NAME] [--timeout SECONDS] [--mem MB]  discover and run @[test] functions")
+    stdio.print_line("  test  <dir> [-I DIR]... [-n NAME] [--timeout SECONDS] [--mem MB] [--format human|tap|junit]  discover and run @[test] functions")
     stdio.print_line("  format <file> [--check|--write]                     format source and print, check, or write back")
     stdio.print_line("  version|--version|-V                                print version and exit")
     stdio.print_line("  help                                                print this help")
@@ -1184,10 +1184,195 @@ function lex_command(file_path: str, machine: bool) -> int:
     return 0
 
 
-## Discover and report @[test] functions in a directory.  Scans all .mt files,
-## parses each to find @[test] annotations, and prints a summary.  Full test
-## execution (build runner + run) requires the std.testing runtime which is
-## not yet linked in self-host builds.
+## Machine-readable test output selection.
+enum OutputFormat: ubyte
+    human = 0
+    tap   = 1
+    junit = 2
+
+
+enum TestStatus: ubyte
+    ok   = 0
+    skip = 1
+    fail = 2
+
+
+## A single parsed test outcome for machine-readable (TAP/JUnit) emission.
+struct TestResult:
+    name: string.String
+    status: TestStatus
+    detail: string.String
+    has_detail: bool
+
+
+extending TestResult:
+    editable function release() -> void:
+        this.name.release()
+        this.detail.release()
+
+
+## Parse one runner output line (`ok   - name`, `skip - name: detail`,
+## `FAIL - name: detail`) into a TestResult; none for unrelated lines.
+function parse_runner_line(line: str) -> Option[TestResult]:
+    var status = TestStatus.ok
+    if line.starts_with("ok   - "):
+        status = TestStatus.ok
+    else if line.starts_with("skip - "):
+        status = TestStatus.skip
+    else if line.starts_with("FAIL - "):
+        status = TestStatus.fail
+    else:
+        return Option[TestResult].none
+
+    let rest = line.slice(7, line.len - 7)
+    if status == TestStatus.ok:
+        return Option[TestResult].some(value= TestResult(
+            name = string.String.from_str(rest),
+            status = status,
+            detail = string.String.create(),
+            has_detail = false,
+        ))
+
+    match rest.find_substring(": "):
+        Option.some as idx:
+            let name_text = rest.slice(0, idx.value)
+            let detail_text = rest.slice(idx.value + 2, rest.len - idx.value - 2)
+            return Option[TestResult].some(value= TestResult(
+                name = string.String.from_str(name_text),
+                status = status,
+                detail = string.String.from_str(detail_text),
+                has_detail = true,
+            ))
+        Option.none:
+            return Option[TestResult].some(value= TestResult(
+                name = string.String.from_str(rest),
+                status = status,
+                detail = string.String.create(),
+                has_detail = false,
+            ))
+
+
+## Parse runner stdout, appending each `ok/skip/FAIL` line to `results`.
+function collect_runner_results(output: str, results: ref[vec.Vec[TestResult]]) -> void:
+    var start: ptr_uint = 0
+    var pos: ptr_uint = 0
+    while pos <= output.len:
+        if pos == output.len or output.byte_at(pos) == 10:
+            if pos > start:
+                let line = output.slice(start, pos - start)
+                match parse_runner_line(line):
+                    Option.some as parsed:
+                        results.push(parsed.value)
+                    Option.none:
+                        pass
+            start = pos + 1
+        pos += 1
+
+
+## Escape the five XML metacharacters for JUnit attribute/text content.
+function xml_escape(value: str) -> string.String:
+    var result = string.String.with_capacity(value.len)
+    var i: ptr_uint = 0
+    while i < value.len:
+        let b = value.byte_at(i)
+        if b == '&':
+            result.append("&amp;")
+        else if b == '<':
+            result.append("&lt;")
+        else if b == '>':
+            result.append("&gt;")
+        else if b == '"':
+            result.append("&quot;")
+        else:
+            result.push_byte(b)
+        i += 1
+    return result
+
+
+function emit_tap(results: ref[vec.Vec[TestResult]]) -> void:
+    stdio.print_line("TAP version 13")
+    stdio.print_format(c"1..%d\n", int<-(results.len()))
+    var i: ptr_uint = 0
+    while i < results.len():
+        let rp = results.get(i) else:
+            break
+        let number = int<-(i + 1)
+        unsafe:
+            let r = read(rp)
+            let name = r.name.as_str()
+            match r.status:
+                TestStatus.ok:
+                    stdio.print_format(c"ok %d - %.*s\n", number, int<-(name.len), name.data)
+                TestStatus.skip:
+                    if r.has_detail:
+                        let d = r.detail.as_str()
+                        stdio.print_format(c"ok %d - %.*s # SKIP %.*s\n", number, int<-(name.len), name.data, int<-(d.len), d.data)
+                    else:
+                        stdio.print_format(c"ok %d - %.*s # SKIP\n", number, int<-(name.len), name.data)
+                TestStatus.fail:
+                    stdio.print_format(c"not ok %d - %.*s\n", number, int<-(name.len), name.data)
+                    if r.has_detail:
+                        let d = r.detail.as_str()
+                        stdio.print_line("  ---")
+                        stdio.print_format(c"  message: %.*s\n", int<-(d.len), d.data)
+                        stdio.print_line("  ...")
+        i += 1
+
+
+function emit_junit(results: ref[vec.Vec[TestResult]]) -> void:
+    var failures: ptr_uint = 0
+    var skipped: ptr_uint = 0
+    var ci: ptr_uint = 0
+    while ci < results.len():
+        let rp = results.get(ci) else:
+            break
+        unsafe:
+            match read(rp).status:
+                TestStatus.fail:
+                    failures += 1
+                TestStatus.skip:
+                    skipped += 1
+                TestStatus.ok:
+                    pass
+        ci += 1
+
+    let total = int<-(results.len())
+    stdio.print_line("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+    stdio.print_format(c"<testsuites tests=\"%d\" failures=\"%d\" skipped=\"%d\">\n", total, int<-failures, int<-skipped)
+    stdio.print_format(c"  <testsuite name=\"mtc test\" tests=\"%d\" failures=\"%d\" skipped=\"%d\">\n", total, int<-failures, int<-skipped)
+    var i: ptr_uint = 0
+    while i < results.len():
+        let rp = results.get(i) else:
+            break
+        unsafe:
+            let r = read(rp)
+            var name_escaped = xml_escape(r.name.as_str())
+            let name = name_escaped.as_str()
+            match r.status:
+                TestStatus.ok:
+                    stdio.print_format(c"    <testcase name=\"%.*s\"/>\n", int<-(name.len), name.data)
+                TestStatus.skip:
+                    stdio.print_format(c"    <testcase name=\"%.*s\"><skipped/></testcase>\n", int<-(name.len), name.data)
+                TestStatus.fail:
+                    var detail_escaped = if r.has_detail: xml_escape(r.detail.as_str()) else: string.String.from_str("failed")
+                    let detail = detail_escaped.as_str()
+                    stdio.print_format(
+                        c"    <testcase name=\"%.*s\"><failure message=\"%.*s\"/></testcase>\n",
+                        int<-(name.len), name.data,
+                        int<-(detail.len), detail.data,
+                    )
+                    detail_escaped.release()
+            name_escaped.release()
+        i += 1
+    stdio.print_line("  </testsuite>")
+    stdio.print_line("</testsuites>")
+
+
+## Discover and run @[test] functions under a directory.  Scans all .mt files,
+## synthesizes a std.testing runner per file, builds it via bin/mtc, and runs
+## it under a timeout/memory sandbox.  With --format tap|junit the per-test
+## outcomes are parsed and re-emitted in the machine-readable format instead of
+## the human summary.
 function test_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
@@ -1195,6 +1380,7 @@ function test_command(args: span[str]) -> int:
     var name_filter: Option[str] = Option[str].none
     var timeout_seconds: ptr_uint = 30
     var memory_mb: ptr_uint = 1024
+    var format = OutputFormat.human
     var ai: ptr_uint = 1
     while ai < args.len:
         let arg = args[ai]
@@ -1232,6 +1418,22 @@ function test_command(args: span[str]) -> int:
             memory_mb = megabytes
             ai += 2
             continue
+        if arg == "--format":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --format must be human, tap, or junit")
+                return 1
+            let fmt_name = args[ai + 1]
+            if fmt_name == "human":
+                format = OutputFormat.human
+            else if fmt_name == "tap":
+                format = OutputFormat.tap
+            else if fmt_name == "junit":
+                format = OutputFormat.junit
+            else:
+                stdio.print_line("error: --format must be human, tap, or junit")
+                return 1
+            ai += 2
+            continue
         test_dir = arg
         ai += 1
 
@@ -1247,6 +1449,8 @@ function test_command(args: span[str]) -> int:
             var total_failed: ptr_uint = 0
             var file_count: ptr_uint = 0
             var runner_counter: ptr_uint = 0
+            var results = vec.Vec[TestResult].create()
+            let machine = format != OutputFormat.human
             var index: ptr_uint = 0
             while index < entries.len():
                 match entries.get(index):
@@ -1255,7 +1459,7 @@ function test_command(args: span[str]) -> int:
                         if entry_name.ends_with(".mt"):
                             let (file_passed, file_failed) = run_test_file(
                                 entry_name, ref_of(roots), ref_of(runner_counter), name_filter,
-                                timeout_seconds, memory_mb
+                                timeout_seconds, memory_mb, machine, ref_of(results)
                             )
                             if file_passed > 0 or file_failed > 0:
                                 file_count += 1
@@ -1265,6 +1469,24 @@ function test_command(args: span[str]) -> int:
                         pass
                 index += 1
 
+            if machine:
+                if format == OutputFormat.tap:
+                    emit_tap(ref_of(results))
+                else:
+                    emit_junit(ref_of(results))
+                var ri: ptr_uint = 0
+                while ri < results.len():
+                    let rp = results.get(ri) else:
+                        break
+                    unsafe:
+                        read(rp).release()
+                    ri += 1
+                results.release()
+                if total_failed > 0:
+                    return 1
+                return 0
+
+            results.release()
             if file_count == 0:
                 match name_filter:
                     Option.some as needle:
@@ -1337,7 +1559,7 @@ function count_tests_in_file(file_path: str) -> int:
             return 0
 
 
-function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[ptr_uint], name_filter: Option[str], timeout_seconds: ptr_uint, memory_mb: ptr_uint) -> (int, int):
+function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[ptr_uint], name_filter: Option[str], timeout_seconds: ptr_uint, memory_mb: ptr_uint, machine: bool, results: ref[vec.Vec[TestResult]]) -> (int, int):
     match fs.read_text(file_path):
         Result.success as content_payload:
             var source = content_payload.value
@@ -1447,26 +1669,37 @@ function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[pt
             build_cmd.push(runner_bin_str.as_str())
             build_cmd.push("--no-debug-guards")
 
-            stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
+            if not machine:
+                stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
             var build_failed = false
             match process.capture(build_cmd.as_span()):
                 Result.success as captured:
                     var build_result = captured.value
                     defer build_result.release()
-                    let build_stdout = build_result.stdout_text()
-                    if build_stdout.is_some():
-                        stdio.print_format(c"%.*s", int<-(build_stdout.unwrap().len), build_stdout.unwrap().data)
-                    let build_stderr = build_result.stderr_text()
-                    if build_stderr.is_some():
-                        stdio.print_format(c"%.*s", int<-(build_stderr.unwrap().len), build_stderr.unwrap().data)
+                    if not machine:
+                        let build_stdout = build_result.stdout_text()
+                        if build_stdout.is_some():
+                            stdio.print_format(c"%.*s", int<-(build_stdout.unwrap().len), build_stdout.unwrap().data)
+                        let build_stderr = build_result.stderr_text()
+                        if build_stderr.is_some():
+                            stdio.print_format(c"%.*s", int<-(build_stderr.unwrap().len), build_stderr.unwrap().data)
                     if build_result.status.normalized_code() != 0:
                         build_failed = true
                 Result.failure:
-                    stdio.print_line("FAILED - build error")
                     build_failed = true
 
             if build_failed:
-                stdio.print_format(c"FAILED - %.*s (build error)\n", int<-(file_path.len), file_path.data)
+                if machine:
+                    var be_name = string.String.from_str(file_path)
+                    be_name.append(" (build error)")
+                    results.push(TestResult(
+                        name = be_name,
+                        status = TestStatus.fail,
+                        detail = string.String.from_str("build error"),
+                        has_detail = true,
+                    ))
+                else:
+                    stdio.print_format(c"FAILED - %.*s (build error)\n", int<-(file_path.len), file_path.data)
                 let _rb = fs.remove(runner_path_str.as_str())
                 return (int<-(test_names.len()), 1)
 
@@ -1497,18 +1730,33 @@ function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[pt
                     defer capture_result.release()
                     let run_stdout = capture_result.stdout_text()
                     if run_stdout.is_some():
-                        stdio.print_format(c"%.*s", int<-(run_stdout.unwrap().len), run_stdout.unwrap().data)
-                    let run_stderr = capture_result.stderr_text()
-                    if run_stderr.is_some():
-                        stdio.print_format(c"%.*s", int<-(run_stderr.unwrap().len), run_stderr.unwrap().data)
+                        if machine:
+                            collect_runner_results(run_stdout.unwrap(), results)
+                        else:
+                            stdio.print_format(c"%.*s", int<-(run_stdout.unwrap().len), run_stdout.unwrap().data)
+                    if not machine:
+                        let run_stderr = capture_result.stderr_text()
+                        if run_stderr.is_some():
+                            stdio.print_format(c"%.*s", int<-(run_stderr.unwrap().len), run_stderr.unwrap().data)
                     let code = capture_result.status.normalized_code()
                     if code == 124:
-                        stdio.print_format(c"test run timed out after %ds\n", int<-timeout_seconds)
+                        if machine:
+                            var to_name = string.String.from_str(file_path)
+                            to_name.append(" (timed out)")
+                            results.push(TestResult(
+                                name = to_name,
+                                status = TestStatus.fail,
+                                detail = string.String.from_str("timed out"),
+                                has_detail = true,
+                            ))
+                        else:
+                            stdio.print_format(c"test run timed out after %ds\n", int<-timeout_seconds)
                         run_failed = true
                     else if code != 0:
                         run_failed = true
                 Result.failure:
-                    stdio.print_line("FAILED - runner crashed")
+                    if not machine:
+                        stdio.print_line("FAILED - runner crashed")
                     run_failed = true
 
             let _r1 = fs.remove(runner_path_str.as_str())
