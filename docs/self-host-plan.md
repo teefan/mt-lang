@@ -244,113 +244,108 @@ CFG Builder (graph with edges + read/write sets)
 
 ---
 
-## 2. Remaining work
+## 2. Remaining work (ordered by impact ÷ effort)
 
-### 2.1 AST-only lint rules (10 rules)
+Below, every remaining gap is verified against actual Ruby lint output on the
+self-host codebase (2290 total warnings, 22 distinct rule codes).  Gaps are
+sorted from highest-impact/lowest-effort downward.
 
-These can be implemented today — no infrastructure prerequisites.  The
-self-host linter already has the full AST visitor framework plus key
-helpers (`always_returns_stmts`, `body_can_break`, `is_true_literal`,
+### 2.1 Tier 1 — AST-only, implementable today (9 rules, 1361 warnings)
+
+No infrastructure prerequisites.  The self-host linter already has every helper
+needed (`always_returns_stmts`, `body_can_break`, `is_true_literal`,
 `block_is_nonempty`, `terminating_expression`).
 
-| Priority | Rules | Est. effort |
-|----------|-------|-------------|
-| High | `missing-return` | Small — wraps `always_returns_stmts` at function-level |
-| Medium | `prefer-inline-if`, `prefer-let-else`, `prefer-var-else` | Small — per-statement pattern matching |
-| Medium | `prefer-conditional-expression` | Small — detect if-match-return pattern |
-| Medium | `prefer-or-pattern`, `prefer-is-variant`, `prefer-try`, `prefer-struct-with` | Small — per-expression pattern matching |
-| Low | `line-too-long` | Medium — needs UTF-8 character-width count + formatter max-length |
+| # | Rule | Ruby warnings | Self-host gap | Effort |
+|---|------|--------------|---------------|--------|
+| 1 | `line-too-long` | **1089** (40%) | None — just needs UTF-8 char-width counter (not byte) + formatter max-line-length config.  This single rule closes 40% of the remaining warning gap. | 50-100 LOC |
+| 2 | `prefer-inline-if` | 85 | Detect multi-line `if`/`else` where each branch is a single-statement that fits on the same line as `if`:`/`else:`. | ~40 LOC |
+| 3 | `prefer-or-pattern` | 76 | Adjacent match arms with identical bodies → suggest merging with `\|`. | ~50 LOC |
+| 4 | `prefer-conditional-expression` | 65 | `if x: return a else: return b` → `return if x: a else: b` (or `match x: 0: y else: z` → `if` expression). | ~50 LOC |
+| 5 | `prefer-let-else` | 20 | `let x = expr; if x != null:` guard → `let x = expr else:`.  Also detects through `match Option.some/Result.success`. | ~60 LOC |
+| 6 | `prefer-try` | 10 | `match opt: Option.some as v: v else: return err` → `opt?` propagation. | ~30 LOC |
+| 7 | `prefer-is-variant` | 6 | `match v: Arm: true; _: false` → `v is Arm`. | ~30 LOC |
+| 8 | `prefer-struct-with` | 5 | Struct copy with one field changed → `struct.with(field = val)`. | ~30 LOC |
+| 9 | `missing-return` | 0 | Non-void function whose body doesn't always return (correctness check, not cosmetic). Uses existing `always_returns_stmts`. | ~20 LOC |
 
-### 2.2 Ownership rules (2 rules, AST fallback)
+### 2.2 Tier 2 — Ownership AST fallback (2 rules, 148 warnings, zero prerequisites)
 
-The Ruby linter has a two-tier implementation for `owning-release-leak`
-and `owning-release-double`:
-1. **CFG-based** — precise, requires full graph + solvers
-2. **AST fallback** — pattern matching without CFG
+The Ruby linter has a two-tier implementation for ownership rules:
+1. **CFG-based** — precise, needs full graph + solvers
+2. **AST fallback** — simple pattern matching, no CFG needed
 
-The AST fallback can be ported now.  It detects: (a) `own[T]` locals declared
-but never passed to `release`/`release_and_null` (leak), and (b) the same name
-passed to `release` twice along a sequential path (double-free).
+The AST fallback is portable now.  It scans for `own[T]` locals that are never
+passed to `release`/`release_and_null` (leak), or passed to `release` twice
+along the same sequential path (double-free).
 
-`borrow-and-mutate` requires `@sema_facts` (needs ref/value tracking per
-expression) and is blocked on §2.4.
+| # | Rule | Ruby warnings | Notes |
+|---|------|--------------|-------|
+| 10 | `owning-release-leak` | 148 | Detect `own[T]` locals declared but never released |
+| 11 | `owning-release-double` | 0 | Detect same name passed to `release` twice (correctness) |
 
-### 2.3 Control-Flow Graph (6 rules blocked on full CFG)
+The key prerequisite: the ownership rules need to know which variables have
+`own[T]` type — this information is available in the analyzer's per-module
+`Analysis.functions` signatures and `resolved_expr_types`, but needs to be
+extracted into a form the linter can consume (see §2.4).
 
-The self-host CFG (`builder.mt`, 132 lines) is currently a name→ID pre-scan.
-It has no graph nodes with edges, no read/write sets, and no flow solvers.
-The Ruby CFG has 9 modules (580-line builder + 8 solver modules totalling
-~1,500 lines).
+### 2.3 Tier 3 — Semantic-facts rules (5 rules, 75 warnings, blocked on §2.4)
 
-To unlock the 6 flow-based lint rules, the following would need to be built:
+These need `@sema_facts` — a per-identifier table from the analyzer mapping
+each AST identifier to its resolved binding (kind, type, module).  Currently
+the self-host linter has no access to this data.
 
-| Layer | What | Used by |
-|-------|------|---------|
-| 1. Graph data structure | Nodes with succ/pred edges, read/write sets, edge labels (true/false branch), edge refinements (null-checks) | All rules |
-| 2. Builder | Walk the AST and construct the graph with nodes and edges, recording reads/writes per node | All rules |
-| 3. Reachability | Forward dataflow: which nodes are reachable from entry? | `unreachable-code` |
-| 4. NullabilityFlow | Forward dataflow: is each nullable pointer null or non-null at each node? | `redundant-null-check` |
-| 5. ConstantPropagation | Forward dataflow: which expressions evaluate to a constant at each node? | `constant-condition`, `loop-single-iteration` |
-| 6. Liveness | Backward dataflow: which variables are live at each node? | `dead-assignment` |
-| 7. Termination | Detect nodes that always return/break/continue from their subtree | `loop-single-iteration` |
+| # | Rule | Ruby warnings | Prerequisite from sema_facts |
+|---|------|--------------|------------------------------|
+| 12 | `prefer-own-ptr` | 38 | Is variable `own[T]` vs `ptr[T]`? |
+| 13 | `redundant-cast` | 37 | Expression type vs target cast type |
+| 14 | `redundant-type-annotation` | 0 | Declared type annotation vs inferred type |
+| 15 | `reserved-primitive-name` | 0 | Does local/param name shadow a primitive type name? |
+| 16 | `borrow-and-mutate` | 0 | Does expression yield `ref[T]` while a `T` is also borrowed? |
 
-The graph data structure and builder are the heaviest items (the Ruby builder
-is 580 lines of per-statement-kind node/edge construction).  The solvers
-(reachability, nullability, constant-prop, liveness) are each ~100-200 lines
-of standard dataflow-algorithm code — mechanical but low-risk.
+### 2.4 Tier 4 — Full CFG (5 rules, 9 warnings, needs 7-layer infrastructure)
 
-### 2.4 Semantic-facts integration (5 rules blocked)
+These require a proper Control-Flow Graph with nodes, edges, read/write sets,
+and edge labels — none of which the self-host `builder.mt` (name→ID pre-scan)
+provides.  The Ruby CFG is ~2,100 lines across 9 modules.
 
-The Ruby linter receives `@sema_facts` — a per-identifier table produced by
-the semantic analyzer that maps every AST identifier node to its resolved
-binding (kind, declared type, owner module).  The self-host linter has no such
-table.  All 5 semantic-facts rules are blocked on building and plumbing this
-mapping from the analyzer into the linter visitors.
+| # | Rule | Ruby warnings | Minimum CFG layer |
+|---|------|--------------|-------------------|
+| 17 | `dead-assignment` | 3 | Builder + Liveness |
+| 18 | `unreachable-code` | 2 | Builder + Reachability |
+| 19 | `redundant-null-check` | 2 | Builder + NullabilityFlow |
+| 20 | `loop-single-iteration` | 2 | Builder + Termination (or ConstantPropagation) |
+| 21 | `constant-condition` | 0 | Builder + ConstantPropagation |
 
-| Rule | Needs from sema_facts |
-|------|----------------------|
-| `redundant-cast` | Expression type vs target cast type |
-| `redundant-type-annotation` | Declared type annotation vs inferred type |
-| `prefer-own-ptr` | Whether a variable has `own[T]` or `ptr[T]` type |
-| `reserved-primitive-name` | Whether a local or param name shadows a primitive type name |
-| `borrow-and-mutate` | Whether an expression yields `ref[T]` while a `T` is also borrowed |
+**Combined impact: 9 warnings.** This is < 0.4% of the remaining warning gap.
+CFG infrastructure is useful for correctness (dead-assignment, unreachable-code
+are real bugs when they fire), but the warning-count return on investment is
+minimal.  This tier should be re-evaluated once Tier 1–3 are complete.
 
-### 2.5 Tooling
+### 2.5 Lowering correctness gaps
 
-| Gap | Est. effort | Notes |
-|-----|-------------|-------|
-| `--select` / `--ignore` | Small | CLI parsing + filter check per warning |
-| `--fix` | Medium | Per-rule auto-fix logic |
-| `.mt-lint.yml` config | Medium | TOML parsing + rule configuration |
-| Wire lint into `check` (`lint_tier: :full`) | Small | Call `lint_source` from `check_program` |
+| # | Gap | Impact | Notes |
+|---|-----|--------|-------|
+| 22 | Match expression hoisting (`lowering.mt:9214`) | **Correctness**, zero occurrences in self-host codebase | Non-return-position multi-arm match expressions emit a placeholder `match_expr` IR node.  `return match` is fine; `let x = match {...}` would silently produce wrong C. |
+| 23 | Foreign cstr list boundary | **Zero occurrences in self-host codebase** | `str[] → cstr[]` conversion for foreign function params.  Only affects foreign functions with `span[str]` parameters — none exist in the self-host. |
 
-### 2.6 Lowering gaps
+### 2.6 Tooling
 
-The self-host lowering (15182 lines, ~490 functions) was compared against all 8
-Ruby lowering modules.  Overall status: **7 of 8 modules at full parity**,
-1 partial, plus 1 known correctness bug.
-
-| Area | Status | Details |
-|------|--------|---------|
-| Type resolution | **Full** | `resolve_type_ref`, `resolve_generic_type_ref`, `resolve_function_type_ref`, `resolve_field_type_ref`, `resolve_param_type`, `resolve_return_type`, `resolve_scalar_type_ref`, `resolve_array_length` — all present |
-| Dyn trait objects | **Full** | `adapt[I](val)`, vtable generation, wrapper functions, global vtable constants, cross-module interface lookup, generic type substitution — all present |
-| Events | **Full** | subscribe/subscribe_once/subscribe_stateful/unsubscribe/emit/wait, `EventRuntimeInfo` struct, snapshot-based emit dispatch, wait-frame lifecycle — all present |
-| str_buffer[N] | **Full** | All 9 methods (clear/assign/append/len/capacity/as_str/as_cstr/assign_format/append_format), struct emission per N, C runtime integration — all present |
-| Proc expressions | **Full** | Capture detection, env struct generation, invoke/release/retain lifecycle, fn→proc coercion — all present |
-| Statement coverage | **Full** | All 18+ statement types handled; self-host additionally has async CPS awareness in 7 of them (return, local, assignment, while, if, match, expression) — going beyond Ruby's sync-only lowering |
-| Pre-lowering scans | **Full (enhanced)** | Self-host has explicit `collect_foreign_functions`, `collect_function_returns`, `collect_variants`, `collect_program_returns` — more structured than Ruby's implicit pass-through |
-| Foreign cstr boundary | **Partial** | Basic `as cstr` for string literals works. Missing: `str[] → cstr[]` list conversion (`mt_foreign_strs_to_cstrs_temp` / `mt_free_foreign_cstrs_temp`), cstr metadata tracking in bindings, cstr flow analysis through if/assignment, inlineability optimizations. This only affects foreign functions with `span[str]` parameters — rare in practice. |
-| Match expression hoisting | **Bug** | `lowering.mt:9214-9218`: non-return-position multi-arm match expressions fall back to a placeholder `match_expr` name in the IR. `return match` is handled correctly; any `let x = match { ... }` in a non-return position will produce wrong C code. This is the only known correctness gap in the lowering. |
+| # | Gap | Effort |
+|---|-----|--------|
+| 24 | `--select` / `--ignore` | Small — CLI parsing stubbed at `main.mt:455` |
+| 25 | `--fix` | Medium — per-rule auto-fix logic |
+| 26 | `.mt-lint.yml` config | Medium — TOML parsing + rule config |
+| 27 | Wire lint into `check` (`lint_tier: :full`) | Small — call `lint_source` from `check_program` |
 
 ### 2.7 Out-of-scope subsystems (separate projects)
 
 | Gap | Effort | Notes |
 |-----|--------|-------|
-| `--locked` / `--frozen` + package-graph resolution | Large | `PackageGraph`, `PackageManifest`, dependency solver — `deps` subsystem |
+| Package-graph resolution (`--locked`/`--frozen`) | Large | `PackageGraph`, `PackageManifest`, dependency solver |
 | Build cache | Large | Hash-keyed caching of compiled C + binaries |
-| `--bundle` / `--archive` | Medium | `assets.mtpack`, tar.gz — packaging subsystem |
-| Wasm compilation (emcc) + preview server | Large | Emscripten linker flags, HTML shell — toolchain subsystem |
+| `--bundle` / `--archive` | Medium | `assets.mtpack`, tar.gz |
+| Wasm compilation (emcc) + preview server | Large | Emscripten linker flags, HTML shell |
 | `--jobs` parallel test execution | Medium | `fork`-based orchestration |
 | `--sanitize` | Medium | `-fsanitize=address` + skip ulimit cap |
-| Self-hosted test-runner build | Large | Build runners via `argv[0]` instead of `bin/mtc` |
-| `run-module`, `new`, `debug`, `deps`, `toolchain`, `bindgen`, `cache`, `docs`, `snapshot`, `completions` | Varies | Non-core-compiler CLI commands |
+| Self-hosted test-runner build | Large | Build runners via `argv[0]` statt `bin/mtc` |
+| `run-module`, `new`, `debug`, `deps`, `toolchain`, `bindgen`, `cache`, `docs`, `snapshot`, `completions` | Varies | Non-core CLI commands |
