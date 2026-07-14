@@ -211,6 +211,63 @@ function test_call_argument_type_mismatch_is_flagged() -> t.Check:
 
 
 @[test]
+function test_unknown_name_is_flagged() -> t.Check:
+    # A bare identifier that resolves to no local, value, function, or type is
+    # a typo or missing import.
+    var source = <<-SRC
+        function main() -> int:
+            return undefined_name
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_match_binding_is_in_scope() -> t.Check:
+    # An arm's `as name` binding is visible in the arm body and must not be
+    # reported as an unknown name.
+    var source = <<-SRC
+        function main() -> int:
+            let opt = Option[int].some(value = 5)
+            match opt:
+                Option.some as s:
+                    return s.value
+                Option.none:
+                    return 0
+    SRC
+    return expect_clean(source)
+
+
+@[test]
+function test_unknown_name_in_match_arm_is_flagged() -> t.Check:
+    # A binding is in scope, but an unrelated unknown name in the arm body is
+    # still reported.
+    var source = <<-SRC
+        function main() -> int:
+            let opt = Option[int].some(value = 5)
+            match opt:
+                Option.some as s:
+                    return bogus_name
+                Option.none:
+                    return 0
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_tuple_destructure_bindings_are_in_scope() -> t.Check:
+    # Names bound by tuple destructuring are visible afterwards.
+    var source = <<-SRC
+        function pair() -> (int, int):
+            return (1, 2)
+
+        function main() -> int:
+            let (a, b) = pair()
+            return a + b
+    SRC
+    return expect_clean(source)
+
+
+@[test]
 function test_call_to_unknown_function_is_permissive() -> t.Check:
     # A method call on a value of an unresolved (qualified) type is permissive.
     var source = <<-SRC

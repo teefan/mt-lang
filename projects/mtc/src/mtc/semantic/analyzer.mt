@@ -1916,7 +1916,10 @@ function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags
                 while ai < m.arms.len:
                     var arm: ast.MatchArm
                     arm = read(m.arms.data + ai)
+                    scope_enter(scope)
+                    bind_match_arm_names(scope, arm.binding_name, arm.pattern)
                     check_body(ctx, scope, chk, arm.body)
+                    scope_leave(scope)
                     ai += 1
                 check_match(ctx, scope, m.scrutinee, m.arms, m.line, m.column)
             ast.Stmt.stmt_unsafe as u:
@@ -2470,9 +2473,19 @@ function check_assign_target_immutable(ctx: ref[Context], scope: ref[sscope.Scop
 
 
 function check_local(ctx: ref[Context], scope: ref[sscope.Scope], is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, has_guard: bool, destructure_bindings: Option[span[str]], line: ptr_uint, column: ptr_uint) -> void:
-    # Destructuring bindings are permissive in phase 1.
+    # Destructuring bindings: bind each destructured name to the permissive
+    # error type so later references are not reported as unknown.  Binding to
+    # `ty_error` (and not inferring the initializer, as before) keeps recorded
+    # types — and thus code generation — identical to the previous behavior.
     match destructure_bindings:
-        Option.some:
+        Option.some as names:
+            var di: ptr_uint = 0
+            while di < names.value.len:
+                unsafe:
+                    let dn = read(names.value.data + di)
+                    if not dn == "_":
+                        scope_set(scope, dn, types.Type.ty_error)
+                di += 1
             return
         Option.none:
             pass
@@ -2654,7 +2667,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
             ast.Expr.expr_char_literal:
                 return types.primitive("ubyte")
             ast.Expr.expr_identifier as id:
-                return infer_identifier(ctx, scope, id.name)
+                return infer_identifier(ctx, scope, id.name, id.line, id.column)
             ast.Expr.expr_binary_op as b:
                 return infer_binary(ctx, scope, b.operator, b.left, b.right)
             ast.Expr.expr_unary_op as u:
@@ -2722,7 +2735,10 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 var ai: ptr_uint = 0
                 while ai < me.arms.len:
                     var arm: ast.MatchExprArm = read(me.arms.data + ai)
+                    scope_enter(scope)
+                    bind_match_arm_names(scope, arm.binding_name, arm.pattern)
                     arm_types.push(infer_expr(ctx, scope, arm.value))
+                    scope_leave(scope)
                     ai += 1
                 return exprs.match_expression_common_type(arm_types.as_span())
             ast.Expr.expr_detach as det:
@@ -2754,7 +2770,25 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 return types.Type.ty_error
 
 
-function infer_identifier(ctx: ref[Context], scope: ref[sscope.Scope], name: str) -> types.Type:
+## A bare identifier that names something referenceable even when its type is
+## not in `value_types` — a declared value/function/event (`value_names`), a
+## function (fn-pointer), a type or type parameter, an import alias, or a
+## built-in type constructor.  Used to avoid false "unknown name" reports.
+function is_known_value_identifier(ctx: ref[Context], name: str) -> bool:
+    return (
+        ctx.value_names.contains(name)
+        or ctx.value_types.contains(name)
+        or ctx.functions.contains(name)
+        or ctx.type_names.contains(name)
+        or ctx.type_params.contains(name)
+        or ctx.import_aliases.contains(name)
+        or is_generic_constructor_name(name)
+        or is_primitive_type_name(name)
+        or name == "str"
+    )
+
+
+function infer_identifier(ctx: ref[Context], scope: ref[sscope.Scope], name: str, line: ptr_uint, column: ptr_uint) -> types.Type:
     let local = scope_get(scope, name)
     if local != null:
         unsafe:
@@ -2763,7 +2797,50 @@ function infer_identifier(ctx: ref[Context], scope: ref[sscope.Scope], name: str
     if global != null:
         unsafe:
             return read(global)
+    # Declared functions/externs and other referenceable names carry no
+    # `value_types` entry, so keep the permissive error type for them (recorded
+    # types — and thus code generation — are unchanged); only a name matching
+    # nothing at all is a typo or missing import and is reported.
+    if not is_known_value_identifier(ctx, name):
+        report(ctx, line, column, unknown_name_message(name))
     return types.Type.ty_error
+
+
+function unknown_name_message(name: str) -> str:
+    var buf = string.String.create()
+    buf.append("unknown name ")
+    buf.append(name)
+    return buf.as_str()
+
+
+## Bind an arm's `as name` and struct-pattern field names to the permissive
+## error type in the current scope, so references in the arm body/value are not
+## reported as unknown.  Binding to `ty_error` keeps recorded types identical to
+## the previous (unbound) behavior, so code generation is unaffected.
+function bind_match_arm_names(scope: ref[sscope.Scope], binding_name: Option[str], pattern: ptr[ast.Expr]?) -> void:
+    match binding_name:
+        Option.some as bn:
+            scope_set(scope, bn.value, types.Type.ty_error)
+        Option.none:
+            pass
+    let p = pattern else:
+        return
+    unsafe:
+        match read(p):
+            ast.Expr.expr_call as cl:
+                var i: ptr_uint = 0
+                while i < cl.args.len:
+                    var arg: ast.Argument
+                    arg = read(cl.args.data + i)
+                    match read(arg.arg_value):
+                        ast.Expr.expr_identifier as id:
+                            if not id.name == "_":
+                                scope_set(scope, id.name, types.Type.ty_error)
+                        _:
+                            pass
+                    i += 1
+            _:
+                pass
 
 
 function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> types.Type:
