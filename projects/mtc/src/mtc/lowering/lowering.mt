@@ -225,6 +225,12 @@ struct LowerCtx:
     # targets the local vec declared in this function's `has_await` branch.
     async_await_fields_ptr: ptr[vec.Vec[ir.Field]]?
     async_local_fields_ptr: ptr[vec.Vec[ir.Field]]?
+    # Current loop's break / continue goto labels.  When non-empty, `break` and
+    # `continue` statements emit `stmt_goto` to these labels instead of C's
+    # native `break`/`continue`, so they correctly exit the enclosing loop even
+    # when the `break`/`continue` appears inside a match lowered to a C `switch`.
+    loop_break_label: str
+    loop_continue_label: str
 
 
 ## Per-event runtime linkage information.  Each declared `event Name[N]`
@@ -801,6 +807,8 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         async_result_c_name = "",
         async_await_fields_ptr = null,
         async_local_fields_ptr = null,
+        loop_break_label = "",
+        loop_continue_label = "",
     )
 
 
@@ -1668,7 +1676,6 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # the waiter-wake + void-return epilogue instead of
                 # returning directly with a value from a void function.
                 if ctx.async_resume_return_label.len > 0:
-                    flush_all_defers(ctx, output)
                     let rv = r.value
                     if rv != null and not types.is_void(ctx.current_fn_return_type):
                         # CPS returns store straight into the frame's `result`
@@ -1690,6 +1697,10 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 operator = "=",
                                 value = lowered,
                             ))
+                    # Flush defers AFTER evaluating the return expression so
+                    # `return copy_payload(packet)` with `defer packet.release()`
+                    # evaluates copy_payload before release.
+                    flush_all_defers(ctx, output)
                     output.push(ir.Stmt.stmt_goto(label = ctx.async_resume_return_label))
                     return
                 # `return expr?` — handle ? propagation inline before lowering
@@ -1953,19 +1964,48 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     var wbody = vec.Vec[ir.Stmt].create()
                     let cond_hoisted = async_hoist_awaits(ctx, ref_of(wbody), w.condition)
                     let cond_ir = lower_expr(ctx, cond_hoisted)
+                    # Use goto labels so user-written `break`/`continue` inside the
+                    # loop body (including inside match→switch arms) still exit the
+                    # correct enclosing loop.
+                    let saved_break = ctx.loop_break_label
+                    let saved_continue = ctx.loop_continue_label
+                    let bl = fresh_c_temp_name(ctx, "while_break")
+                    let cl = fresh_c_temp_name(ctx, "while_continue")
+                    ctx.loop_break_label = bl
+                    ctx.loop_continue_label = cl
                     var brk = vec.Vec[ir.Stmt].create()
-                    brk.push(ir.Stmt.stmt_break)
+                    brk.push(ir.Stmt.stmt_goto(label = bl))
                     wbody.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = cond_ir, ty = types.primitive("bool"))), then_body = brk.as_span(), else_body = span[ir.Stmt]()))
                     let inner = lower_block(ctx, w.body)
                     var ii: ptr_uint = 0
                     while ii < inner.len:
                         wbody.push(unsafe: read(inner.data + ii))
                         ii += 1
-                    output.push(ir.Stmt.stmt_while(condition = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool"))), body = wbody.as_span()))
+                    wbody.push(ir.Stmt.stmt_label(name = cl))
+                    var wrap = vec.Vec[ir.Stmt].create()
+                    wrap.push(ir.Stmt.stmt_while(condition = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool"))), body = wbody.as_span()))
+                    wrap.push(ir.Stmt.stmt_label(name = bl))
+                    output.push(ir.Stmt.stmt_block(body = wrap.as_span()))
+                    ctx.loop_break_label = saved_break
+                    ctx.loop_continue_label = saved_continue
                     return
                 let cond = lower_expr(ctx, w.condition)
-                let body = lower_block(ctx, w.body)
-                output.push(ir.Stmt.stmt_while(condition = cond, body = body))
+                let saved_break = ctx.loop_break_label
+                let saved_continue = ctx.loop_continue_label
+                let bl = fresh_c_temp_name(ctx, "while_break")
+                let cl = fresh_c_temp_name(ctx, "while_continue")
+                ctx.loop_break_label = bl
+                ctx.loop_continue_label = cl
+                let body_span = lower_block(ctx, w.body)
+                var body = vec.Vec[ir.Stmt].create()
+                append_span_stmts(ref_of(body), body_span)
+                body.push(ir.Stmt.stmt_label(name = cl))
+                var wrap = vec.Vec[ir.Stmt].create()
+                wrap.push(ir.Stmt.stmt_while(condition = cond, body = body.as_span()))
+                wrap.push(ir.Stmt.stmt_label(name = bl))
+                output.push(ir.Stmt.stmt_block(body = wrap.as_span()))
+                ctx.loop_break_label = saved_break
+                ctx.loop_continue_label = saved_continue
             ast.Stmt.stmt_for as f:
                 if f.is_inline:
                     lower_inline_for_stmt(ctx, output, f.bindings, f.iterables, f.body)
@@ -2030,9 +2070,15 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     match_scrutinee = async_hoist_awaits(ctx, output, m.scrutinee)
                 lower_match(ctx, output, match_scrutinee, m.arms)
             ast.Stmt.stmt_break:
-                output.push(ir.Stmt.stmt_break())
+                if ctx.loop_break_label != "":
+                    output.push(ir.Stmt.stmt_goto(label = ctx.loop_break_label))
+                else:
+                    output.push(ir.Stmt.stmt_break())
             ast.Stmt.stmt_continue:
-                output.push(ir.Stmt.stmt_continue())
+                if ctx.loop_continue_label != "":
+                    output.push(ir.Stmt.stmt_goto(label = ctx.loop_continue_label))
+                else:
+                    output.push(ir.Stmt.stmt_continue())
             ast.Stmt.stmt_unsafe as u:
                 if u.body != null:
                     # Lower the unsafe body into its own statement list and wrap it
@@ -3247,42 +3293,75 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
 
     let index_c = utils.c_local_name(index_name)
     let stop_c = fresh_c_temp_name(ctx, "for_stop")
-    let _continue_label = fresh_c_temp_name(ctx, "loop_continue")
-    let _break_label = fresh_c_temp_name(ctx, "loop_break")
 
     let inline_stop = is_integer_literal(stop)
 
-    ctx.locals.push(LocalBinding(name = index_name, c_name = index_c, ty = loop_type, pointer = false))
-    let body = lower_block(ctx, body_ptr)
+    let saved_break = ctx.loop_break_label
+    let saved_continue = ctx.loop_continue_label
+    let bl = fresh_c_temp_name(ctx, "for_break")
+    let cl = fresh_c_temp_name(ctx, "for_continue")
+    ctx.loop_break_label = bl
+    ctx.loop_continue_label = cl
 
-    let init = alloc_stmt(ir.Stmt.stmt_local(
-        name = index_name,
-        linkage_name = index_c,
-        ty = loop_type,
-        value = lower_expr(ctx, start),
-        line = 0,
-        source_path = "",
-    ))
-    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_c, ty = loop_type, pointer = false))
-    let stop_value = if inline_stop: lower_expr(ctx, stop) else: alloc_expr(ir.Expr.expr_name(name = stop_c, ty = loop_type, pointer = false))
-    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = stop_value, ty = types.primitive("bool")))
-    let post_target = alloc_expr(ir.Expr.expr_name(name = index_c, ty = loop_type, pointer = false))
-    let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = loop_type))
-    let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = one))
-    let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = body)
+    # In CPS mode, spill the induction variable and (if not inline) the stop value
+    # to frame fields so they survive an `await` inside the loop body.
+    var index_linkage: str = index_c
+    var stop_linkage: str = stop_c
+    if ctx.async_cps_active:
+        let idx_field = j2("local_for_", index_name)
+        index_linkage = j2("__mt_frame->", idx_field)
+        async_register_local_field(ctx, index_name, idx_field, index_linkage, loop_type)
+        if not inline_stop:
+            let stp_field = j2("local_", stop_c)
+            stop_linkage = j2("__mt_frame->", stp_field)
+            async_register_local_field(ctx, stop_c, stp_field, stop_linkage, loop_type)
+    else:
+        ctx.locals.push(LocalBinding(name = index_name, c_name = index_c, ty = loop_type, pointer = false))
 
-    var block_stmts = vec.Vec[ir.Stmt].create()
-    if not inline_stop:
-        block_stmts.push(ir.Stmt.stmt_local(
-            name = stop_c,
-            linkage_name = stop_c,
+    let body_span = lower_block(ctx, body_ptr)
+    var body = vec.Vec[ir.Stmt].create()
+    append_span_stmts(ref_of(body), body_span)
+    body.push(ir.Stmt.stmt_label(name = cl))
+
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_linkage, ty = loop_type, pointer = false))
+    var init: ptr[ir.Stmt]
+    if ctx.async_cps_active:
+        init = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "=", value = lower_expr(ctx, start)))
+    else:
+        init = alloc_stmt(ir.Stmt.stmt_local(
+            name = index_name,
+            linkage_name = index_c,
             ty = loop_type,
-            value = lower_expr(ctx, stop),
+            value = lower_expr(ctx, start),
             line = 0,
             source_path = "",
         ))
+    let stop_value = if inline_stop: lower_expr(ctx, stop) else: alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = false))
+    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = stop_value, ty = types.primitive("bool")))
+    let post_target = alloc_expr(ir.Expr.expr_name(name = index_linkage, ty = loop_type, pointer = false))
+    let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = loop_type))
+    let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = one))
+    let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = body.as_span())
+
+    var block_stmts = vec.Vec[ir.Stmt].create()
+    if not inline_stop:
+        if ctx.async_cps_active:
+            block_stmts.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = false)), operator = "=", value = lower_expr(ctx, stop)))
+        else:
+            block_stmts.push(ir.Stmt.stmt_local(
+                name = stop_c,
+                linkage_name = stop_c,
+                ty = loop_type,
+                value = lower_expr(ctx, stop),
+                line = 0,
+                source_path = "",
+            ))
     block_stmts.push(for_stmt)
+    block_stmts.push(ir.Stmt.stmt_label(name = bl))
     output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
+
+    ctx.loop_break_label = saved_break
+    ctx.loop_continue_label = saved_continue
 
 
 function is_integer_literal(ep: ptr[ast.Expr]) -> bool:
@@ -3312,21 +3391,38 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
 
     let items_c = fresh_c_temp_name(ctx, "for_items")
     let index_c = fresh_c_temp_name(ctx, "for_index")
-    let _continue_label = fresh_c_temp_name(ctx, "loop_continue")
-    let _break_label = fresh_c_temp_name(ctx, "loop_break")
 
     let binding_c = utils.c_local_name(binding_name)
+    let saved_break = ctx.loop_break_label
+    let saved_continue = ctx.loop_continue_label
+    let bl = fresh_c_temp_name(ctx, "for_break")
+    let cl = fresh_c_temp_name(ctx, "for_continue")
+    ctx.loop_break_label = bl
+    ctx.loop_continue_label = cl
+
+    # In CPS mode, register the index and element binding as frame fields so they
+    # survive an `await` inside the loop body.
+    var idx_linkage: str = index_c
+    var items_linkage: str = items_c
+    if ctx.async_cps_active:
+        let idx_field = j2("local_", index_c)
+        idx_linkage = j2("__mt_frame->", idx_field)
+        async_register_local_field(ctx, index_c, idx_field, idx_linkage, ptr_uint_ty)
+        let items_field = j2("local_", items_c)
+        items_linkage = j2("__mt_frame->", items_field)
+        async_register_local_field(ctx, items_c, items_field, items_linkage, iterable_type)
+
     ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = element_type, pointer = false))
-    let body = lower_block(ctx, body_ptr)
+    let body_span = lower_block(ctx, body_ptr)
 
     # item value: array -> items[index]; span -> items.data[index]
     var item_value: ptr[ir.Expr]
-    let index_ref_item = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = false))
+    let index_ref_item = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = false))
     if is_arr:
-        let items_ref = alloc_expr(ir.Expr.expr_name(name = items_c, ty = iterable_type, pointer = false))
+        let items_ref = alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = false))
         item_value = alloc_expr(ir.Expr.expr_index(receiver = items_ref, index = index_ref_item, ty = element_type))
     else:
-        let items_ref = alloc_expr(ir.Expr.expr_name(name = items_c, ty = iterable_type, pointer = false))
+        let items_ref = alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = false))
         var ptr_args = vec.Vec[types.Type].create()
         ptr_args.push(element_type)
         let data_ty = types.Type.ty_generic(name = "ptr", args = ptr_args.as_span())
@@ -3338,28 +3434,46 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     if is_arr:
         stop_value = alloc_expr(ir.Expr.expr_integer_literal(value = array_length_of(iterable_type), ty = ptr_uint_ty))
     else:
-        let items_ref_stop = alloc_expr(ir.Expr.expr_name(name = items_c, ty = iterable_type, pointer = false))
+        let items_ref_stop = alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = false))
         stop_value = alloc_expr(ir.Expr.expr_member(receiver = items_ref_stop, member = "len", ty = ptr_uint_ty))
 
     var loop_body = vec.Vec[ir.Stmt].create()
-    loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = element_type, value = item_value, line = 0, source_path = ""))
+    if ctx.async_cps_active:
+        let elt_field = j2("local_for_elt_", binding_name)
+        let elt_cname = j2("__mt_frame->", elt_field)
+        async_register_local_field(ctx, binding_name, elt_field, elt_cname, element_type)
+        loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = elt_cname, ty = element_type, pointer = false)), operator = "=", value = item_value))
+    else:
+        loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = element_type, value = item_value, line = 0, source_path = ""))
     var bi: ptr_uint = 0
-    while bi < body.len:
+    while bi < body_span.len:
         unsafe:
-            loop_body.push(read(body.data + bi))
+            loop_body.push(read(body_span.data + bi))
         bi += 1
+    loop_body.push(ir.Stmt.stmt_label(name = cl))
 
-    let init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
-    let index_ref_cond = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = false))
+    var init: ptr[ir.Stmt]
+    if ctx.async_cps_active:
+        init = alloc_stmt(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = false)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))))
+    else:
+        init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
+    let index_ref_cond = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = false))
     let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref_cond, right = stop_value, ty = types.primitive("bool")))
-    let post_target = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = false))
+    let post_target = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = false))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = loop_body.as_span())
 
     var block_stmts = vec.Vec[ir.Stmt].create()
-    block_stmts.push(ir.Stmt.stmt_local(name = items_c, linkage_name = items_c, ty = iterable_type, value = lower_expr(ctx, iterable), line = 0, source_path = ""))
+    if ctx.async_cps_active:
+        block_stmts.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = false)), operator = "=", value = lower_expr(ctx, iterable)))
+    else:
+        block_stmts.push(ir.Stmt.stmt_local(name = items_c, linkage_name = items_c, ty = iterable_type, value = lower_expr(ctx, iterable), line = 0, source_path = ""))
     block_stmts.push(for_stmt)
+    block_stmts.push(ir.Stmt.stmt_label(name = bl))
     output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
+
+    ctx.loop_break_label = saved_break
+    ctx.loop_continue_label = saved_continue
 
 
 function array_length_of(t: types.Type) -> long:
@@ -11419,7 +11533,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                         else:
                             blk.push(ir.Stmt.stmt_local(name = payload_c, linkage_name = payload_c, ty = payload_ty, value = arm_data, line = 0, source_path = ""))
                             ctx.locals.push(LocalBinding(name = payload_c, c_name = payload_c, ty = payload_ty, pointer = false))
-                        lower_variant_field_bindings(ctx, ref_of(blk), pattern, ai.value, payload_c, payload_ty)
+                        lower_variant_field_bindings(ctx, ref_of(blk), pattern, ai.value, payload_c, payload_ty, goto_label)
                         match arm.binding_name:
                             Option.some as bn:
                                 let bc = utils.c_local_name(bn.value)
@@ -11447,9 +11561,11 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
 
 
 ## Emit `<field_type> <field> = <payload>.<field>;` bindings for each bare
-## identifier in a struct pattern's argument list, skipping `_` discards.  Guards
-## and equality patterns are not yet supported.
-function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.Stmt]], pattern: ptr[ast.Expr], arm_info: VariantArmInfo, payload_c: str, payload_ty: types.Type) -> void:
+## identifier in a struct pattern's argument list, skipping `_` discards.
+## Guards (`field > expr`) and equality patterns (`field = expr`) are emitted
+## as conditional `goto next_arm_label` checks on failure.
+function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.Stmt]], pattern: ptr[ast.Expr], arm_info: VariantArmInfo, payload_c: str, payload_ty: types.Type, next_arm_label: str) -> void:
+    let bool_ty = types.primitive("bool")
     unsafe:
         match read(pattern):
             ast.Expr.expr_call as cl:
@@ -11458,8 +11574,17 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                     var arg: ast.Argument
                     arg = read(cl.args.data + i)
                     match arg.arg_name:
-                        Option.some:
-                            pass
+                        Option.some as eq_name:
+                            # Equality pattern: `field = expr` —
+                            # skip arm if payload.field != expr.
+                            let field_ty = variant_arm_field_type(arm_info, eq_name.value)
+                            let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
+                            let left = alloc_expr(ir.Expr.expr_member(receiver = payload_ref, member = eq_name.value, ty = field_ty))
+                            let right = lower_expr(ctx, arg.arg_value)
+                            let cond = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = left, right = right, ty = bool_ty))
+                            var guard_body = vec.Vec[ir.Stmt].create()
+                            guard_body.push(ir.Stmt.stmt_goto(label = next_arm_label))
+                            blk.push(ir.Stmt.stmt_if(condition = cond, then_body = guard_body.as_span(), else_body = span[ir.Stmt]()))
                         Option.none:
                             pass
                     match read(arg.arg_value):
@@ -11480,9 +11605,6 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                                     _:
                                         pass
                                 if ctx.async_cps_active:
-                                    # Prefix with the arm-unique payload temp name so
-                                    # the same destructured field name in different
-                                    # arms gets distinct frame fields.
                                     let vfield = j4("local_", payload_c, "_", id.name)
                                     let vcname = j2("__mt_frame->", vfield)
                                     async_register_local_field(ctx, id.name, vfield, vcname, field_ty)
@@ -11490,6 +11612,27 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                                 else:
                                     blk.push(ir.Stmt.stmt_local(name = id.name, linkage_name = bc, ty = field_ty, value = field_expr, line = 0, source_path = ""))
                                     ctx.locals.push(LocalBinding(name = id.name, c_name = bc, ty = field_ty, pointer = false))
+                        ast.Expr.expr_binary_op as b:
+                            # Guard pattern: `field comparison_op expr` —
+                            # skip arm if guard condition is false.
+                            # The left side must be a bare identifier (field name);
+                            # we resolve it against the payload struct.
+                            var left_name: str = ""
+                            unsafe:
+                                match read(b.left):
+                                    ast.Expr.expr_identifier as lid:
+                                        left_name = lid.name
+                                    _:
+                                        pass
+                            if left_name != "":
+                                let field_ty = variant_arm_field_type(arm_info, left_name)
+                                let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
+                                let left_expr = alloc_expr(ir.Expr.expr_member(receiver = payload_ref, member = left_name, ty = field_ty))
+                                let right_expr = lower_expr(ctx, b.right)
+                                let cond = alloc_expr(ir.Expr.expr_binary(operator = b.operator, left = left_expr, right = right_expr, ty = bool_ty))
+                                var guard_fail = vec.Vec[ir.Stmt].create()
+                                guard_fail.push(ir.Stmt.stmt_goto(label = next_arm_label))
+                                blk.push(ir.Stmt.stmt_if(condition = cond, then_body = span[ir.Stmt](), else_body = guard_fail.as_span()))
                         _:
                             pass
                     i += 1
@@ -14377,8 +14520,8 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             resume_body.push(unsafe: read(body_stmts.data + bci))
             bci += 1
         resume_body.push(ir.Stmt.stmt_label(name = complete_lbl))
-        async_waiter_wake(ctx, ref_of(resume_body), frame_exp, bool_ty, async_mod.ptr_void_type())
         resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
+        async_waiter_wake(ctx, ref_of(resume_body), frame_exp, bool_ty, async_mod.ptr_void_type())
         resume_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     else:
         # No awaits: single-state body; `return expr` → store __mt_result + goto.
@@ -14398,8 +14541,8 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         resume_body.push(ir.Stmt.stmt_label(name = "__mt_async_return"))
         if not is_void_ret:
             resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "__mt_result", ty = res_ty, pointer = false))))
-        async_waiter_wake(ctx, ref_of(resume_body), frame_exp, bool_ty, async_mod.ptr_void_type())
         resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
+        async_waiter_wake(ctx, ref_of(resume_body), frame_exp, bool_ty, async_mod.ptr_void_type())
         resume_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
         ctx.async_resume_return_label = saved_label
         ctx.current_fn_return_type = saved_rt
@@ -14461,14 +14604,43 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     # -- vtable: release (fresh vec) --
     var vrel = vec.Vec[ir.Stmt].create()
     vrel.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
+    if has_await:
+        # If not yet ready, release pending await tasks and return without freeing.
+        let await_ptr_void = ptr_void_type()
+        let await_null_ptr = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = await_ptr_void))
+        var rel_if_body = vec.Vec[ir.Stmt].create()
+        var afi: ptr_uint = 0
+        while afi < ctx.async_await_fields.len():
+            let afp = ctx.async_await_fields.get(afi) else:
+                break
+            let af = unsafe: read(afp)
+            let af_task = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = af.name, ty = af.ty))
+            let af_frame = alloc_expr(ir.Expr.expr_member(receiver = af_task, member = "frame", ty = await_ptr_void))
+            var af_release_body = vec.Vec[ir.Stmt].create()
+            let af_release_fn = alloc_expr(ir.Expr.expr_member(receiver = af_task, member = "release", ty = await_ptr_void))
+            af_release_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = af_release_fn, arguments = single_expr_span(af_frame), ty = void_t)), line = 0, source_path = ""))
+            let af_has_frame = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = af_frame, right = await_null_ptr, ty = bool_ty))
+            rel_if_body.push(ir.Stmt.stmt_if(condition = af_has_frame, then_body = af_release_body.as_span(), else_body = span[ir.Stmt]()))
+            afi += 1
+        rel_if_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+        let not_ready = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), ty = bool_ty))
+        vrel.push(ir.Stmt.stmt_if(condition = not_ready, then_body = rel_if_body.as_span(), else_body = span[ir.Stmt]()))
     vrel.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "free", arguments = single_expr_span(frame_exp), ty = void_t)), line = 0, source_path = ""))
     functions.push(ir.Function(name = j2(name, "_release"), linkage_name = release_lk, params = vparam_s, return_type = void_t, body = vrel.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: set_waiter (fresh vec) --
     var vsw = vec.Vec[ir.Stmt].create()
     vsw.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
-    vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter_frame", ty = ptr_void_type())), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_frame", ty = ptr_void_type(), pointer = true))))
-    vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = ptr_void_type())), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_fn", ty = ptr_void_type(), pointer = false))))
+    # If already ready, call the waiter immediately (synchronous completion).
+    var sw_rdy = vec.Vec[ir.Stmt].create()
+    let sw_waiter_fn = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_fn", ty = ptr_void_type(), pointer = false))
+    let sw_waiter_frame = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_frame", ty = ptr_void_type(), pointer = true))
+    sw_rdy.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = sw_waiter_fn, arguments = single_expr_span(sw_waiter_frame), ty = void_t)), line = 0, source_path = ""))
+    sw_rdy.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+    let sw_ready_cond = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty))
+    vsw.push(ir.Stmt.stmt_if(condition = sw_ready_cond, then_body = sw_rdy.as_span(), else_body = span[ir.Stmt]()))
+    vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter_frame", ty = ptr_void_type())), operator = "=", value = sw_waiter_frame))
+    vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = ptr_void_type())), operator = "=", value = sw_waiter_fn))
     vsw.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     var sw_params = vec.Vec[ir.Param].create()
     sw_params.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ptr_void_type(), pointer = true))
