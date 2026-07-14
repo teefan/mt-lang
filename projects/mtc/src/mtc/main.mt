@@ -112,9 +112,9 @@ function print_help() -> void:
     stdio.print_line("  check <file|dir>... [-I DIR]... [--platform NAME] [-Werror] [--locked] [--frozen]  type-check files/package and imports")
     stdio.print_line("  lower <file|dir> [-I DIR]... [--platform NAME]     lower to IR and print it")
     stdio.print_line("  emit-c <file|dir> [-I DIR]... [--platform NAME]    compile to C and print it")
-    stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache]")
+    stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache] [--clean]")
     stdio.print_line("  run   <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache] [-- ARGS...]")
-    stdio.print_line("  test  <dir> [-I DIR]...                             discover and run @[test] functions")
+    stdio.print_line("  test  <dir> [-I DIR]... [-n NAME] [--timeout SECONDS] [--mem MB]  discover and run @[test] functions")
     stdio.print_line("  format <file> [--check|--write]                     format source and print, check, or write back")
     stdio.print_line("  version|--version|-V                                print version and exit")
     stdio.print_line("  help                                                print this help")
@@ -693,6 +693,7 @@ function build_command(args: span[str]) -> int:
     var debug_guards = true
     var profile_name = "debug"
     var platform = resolver.Platform.linux
+    var clean_mode = false
     var filtered = vec.Vec[str].create()
     defer filtered.release()
     filtered.push("build")
@@ -705,6 +706,10 @@ function build_command(args: span[str]) -> int:
                 return 1
             output_override = Option[str].some(value= args[ai + 1])
             ai += 2
+            continue
+        if arg == "--clean":
+            clean_mode = true
+            ai += 1
             continue
         if arg == "--keep-c":
             if ai + 1 >= args.len:
@@ -764,6 +769,31 @@ function build_command(args: span[str]) -> int:
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
+
+    # --clean removes the generated output artifact without compiling.
+    if clean_mode:
+        var clean_output: string.String
+        if output_override.is_some():
+            clean_output = string.String.from_str(output_override.unwrap())
+        else:
+            clean_output = default_output_path(effective)
+        defer clean_output.release()
+        if fs.exists(clean_output.as_str()):
+            match fs.remove(clean_output.as_str()):
+                Result.success:
+                    stdio.print_format(c"cleaned %.*s\n", int<-(clean_output.as_str().len), clean_output.as_str().data)
+                Result.failure as failure:
+                    var msg = failure.error
+                    defer msg.release()
+                    stdio.print_format(c"error: cannot remove %.*s\n", int<-(clean_output.as_str().len), clean_output.as_str().data)
+                    entry_path_owner.release()
+                    source_root_owner.release()
+                    return 1
+        else:
+            stdio.print_format(c"cleaned %.*s\n", int<-(clean_output.as_str().len), clean_output.as_str().data)
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 0
 
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
@@ -880,11 +910,11 @@ function run_command(args: span[str]) -> int:
         ai += 1
     let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(platform)) else:
         return 1
-
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
+
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
