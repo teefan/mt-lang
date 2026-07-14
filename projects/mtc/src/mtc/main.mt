@@ -290,7 +290,12 @@ function check_command(args: span[str]) -> int:
         let warnings = program.diagnostic_warning_count()
 
         if errors == 0 and warnings == 0:
-            stdio.print_format(c"checked %.*s: ok\n", int<-(effective.len), effective.data)
+            let module_name = program.root_module_name()
+            stdio.print_format(
+                c"checked %.*s as %.*s\n",
+                int<-(effective.len), effective.data,
+                int<-(module_name.len), module_name.data,
+            )
         else:
             print_program_diagnostics(ref_of(program))
             file_count += 1
@@ -309,6 +314,29 @@ function check_command(args: span[str]) -> int:
     return 0
 
 
+## Right-justify a `ptr_uint` to a minimum width of 5 with leading spaces, the
+## line-number gutter width used by the diagnostic renderer (matches Ruby's
+## `line.to_s.rjust(5)`).
+function rjust_line_number(line: ptr_uint) -> string.String:
+    let num = ptr_uint_to_str(line)
+    var buf = string.String.create()
+    if num.len < 5:
+        var pad = 5 - num.len
+        while pad > 0:
+            buf.push_byte(32)
+            pad -= 1
+    buf.append(num)
+    return buf
+
+
+## Render a program's diagnostics in the shared Milk Tea format (matching the
+## Ruby `ErrorFormatter`, no color):
+##
+##     error[sema/error]: <message>
+##       --> <path>:<line>:<column>
+##        |
+##         2 | <source line>
+##           | <caret>
 function print_program_diagnostics(program: ref[loader.Program]) -> void:
     var i: ptr_uint = 0
     while i < program.diagnostics.len():
@@ -320,86 +348,85 @@ function print_program_diagnostics(program: ref[loader.Program]) -> void:
             let location = rd.path.as_str()
             let prefix = if rd.severity == "warning": "warning" else: "error"
             stdio.print_format(
-                c"%s: %.*s\n  --> %.*s:%d:%d\n",
-                prefix,
+                c"%.*s[%.*s]: %.*s\n  --> %.*s:%d:%d\n",
+                int<-(prefix.len), prefix.data,
+                int<-(rd.code.len), rd.code.data,
                 int<-(message.len), message.data,
                 int<-(location.len), location.data,
                 int<-(rd.line), int<-(rd.column),
             )
-            # Show source context if the file is readable.
-            match fs.read_text(location):
-                Result.success as source_content:
-                    var source_str = source_content.value
-                    defer source_str.release()
-                    let source_text = source_str.as_str()
-                    # Count newline-separated lines to find the target line.
-                    var current_line: ptr_uint = 1
-                    var line_start: ptr_uint = 0
-                    var pos: ptr_uint = 0
-                    while pos < source_text.len and current_line < rd.line:
-                        if source_text.byte_at(pos) == 10:
-                            current_line += 1
-                        pos += 1
-                    line_start = pos
-                    while pos < source_text.len and source_text.byte_at(pos) != 10:
-                        pos += 1
-                    let line_end = pos
-                    if line_start < line_end:
-                        let source_line = source_text.slice(line_start, line_end - line_start)
-                        stdio.print_format(c"   |\n %d | %.*s\n   | ", int<-(rd.line), int<-(source_line.len), source_line.data)
-                        # Underline at the column position.
-                        if rd.column > 1:
+            # Show source context when the diagnostic has a real line and the
+            # file is readable.
+            if rd.line >= 1:
+                match fs.read_text(location):
+                    Result.success as source_content:
+                        var source_str = source_content.value
+                        defer source_str.release()
+                        let source_text = source_str.as_str()
+                        # Walk to the start of the target line.
+                        var current_line: ptr_uint = 1
+                        var pos: ptr_uint = 0
+                        while pos < source_text.len and current_line < rd.line:
+                            if source_text.byte_at(pos) == 10:
+                                current_line += 1
+                            pos += 1
+                        let line_start = pos
+                        while pos < source_text.len and source_text.byte_at(pos) != 10:
+                            pos += 1
+                        let line_end = pos
+                        if line_start <= line_end:
+                            let source_line = source_text.slice(line_start, line_end - line_start)
+                            var gutter = rjust_line_number(rd.line)
+                            defer gutter.release()
+                            let gutter_str = gutter.as_str()
+                            stdio.print_format(
+                                c"   |\n%.*s | %.*s\n      | ",
+                                int<-(gutter_str.len), gutter_str.data,
+                                int<-(source_line.len), source_line.data,
+                            )
                             var spaces = string.String.create()
+                            defer spaces.release()
                             var sp: ptr_uint = 1
                             while sp < rd.column:
                                 spaces.push_byte(32)
                                 sp += 1
                             let spaces_text = spaces.as_str()
                             stdio.print_format(c"%.*s^\n", int<-(spaces_text.len), spaces_text.data)
-                            spaces.release()
-                        else:
-                            stdio.print_line("^")
-                Result.failure:
-                    pass
+                    Result.failure:
+                        pass
         i += 1
 
 
+## Append "<n> <singular|plural>" (e.g. "1 error", "3 errors") to `buf`.
+function append_count_phrase(buf: ref[string.String], n: ptr_uint, singular: str, plural: str) -> void:
+    buf.append(ptr_uint_to_str(n))
+    buf.push_byte(32)
+    if n == 1:
+        buf.append(singular)
+    else:
+        buf.append(plural)
+
+
+## Print the trailing check summary, matching the Ruby CLI: a blank line then
+## `error: could not check due to <N errors[; M warnings]>`, or, when only
+## warnings are present, `warning: <M warnings>`.
 function report_check_summary(errors: ptr_uint, warnings: ptr_uint, file_count: ptr_uint, warnings_as_errors: bool) -> void:
     if errors == 0 and warnings == 0:
         return
     stdio.print_line("")
-    var parts = vec.Vec[str].create()
-    defer parts.release()
+    var body = string.String.create()
+    defer body.release()
     if errors > 0:
-        if errors == 1:
-            parts.push("1 error")
-        else:
-            var es = ptr_uint_to_str(errors)
-            parts.push(es)
-            parts.push(" errors")
+        append_count_phrase(ref_of(body), errors, "error", "errors")
     if warnings > 0:
-        if warnings == 1:
-            parts.push("1 warning")
-        else:
-            var ws = ptr_uint_to_str(warnings)
-            parts.push(ws)
-            parts.push(" warnings")
-    var ti: ptr_uint = 0
-    while ti < parts.len():
-        let p = parts.get(ti) else:
-            break
-        stdio.print_format(c"%.*s", int<-(unsafe: read(p).len), unsafe: read(p).data)
-        if ti < parts.len() - 1:
-            stdio.print_format(c"; ", 0, null)
-        ti += 1
-    if file_count > 1:
-        stdio.print_format(c" in %d files\n", int<-(file_count))
-    else:
-        stdio.print_line("")
+        if errors > 0:
+            body.append("; ")
+        append_count_phrase(ref_of(body), warnings, "warning", "warnings")
+    let body_str = body.as_str()
     if errors > 0:
-        stdio.print_line("error: could not check due to previous errors")
-    else if warnings > 0 and warnings_as_errors:
-        stdio.print_line("error: could not check due to warnings (treated as errors via -Werror)")
+        stdio.print_format(c"error: could not check due to %.*s\n", int<-(body_str.len), body_str.data)
+    else:
+        stdio.print_format(c"warning: %.*s\n", int<-(body_str.len), body_str.data)
 
 
 ## Parse a `--platform NAME` / `--profile NAME` argument value into a

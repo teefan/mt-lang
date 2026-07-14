@@ -43,6 +43,7 @@ public struct LoadDiagnostic:
     column: ptr_uint
     message: string.String
     severity: str
+    code: str
 
 
 ## The result of loading and checking a program: every parsed module, a
@@ -77,6 +78,14 @@ extending Program:
 
     public function diagnostic_count() -> ptr_uint:
         return this.diagnostics.len()
+
+
+    ## The module name of the root program (the last analysis, in
+    ## dependency-first order), or "" when there are no analyses.
+    public function root_module_name() -> str:
+        let root = this.analyses.last() else:
+            return ""
+        return unsafe: read(root).module_name
 
 
     public function diagnostic_error_count() -> ptr_uint:
@@ -257,6 +266,7 @@ function parse_all(
             column = 0,
             message = string.String.from_str("cyclic import detected"),
             severity = "error",
+            code = "module/error",
         ))
         owned_path.release()
         return
@@ -270,6 +280,7 @@ function parse_all(
                 column = 0,
                 message = string.String.from_str("source file not found"),
                 severity = "error",
+                code = "module/error",
             ))
             error.release()
             owned_path.release()
@@ -340,6 +351,7 @@ function recurse_imports(
                             column = imported.column,
                             message = message,
                             severity = "error",
+                            code = "module/error",
                         ))
                         error.release()
             _:
@@ -372,6 +384,7 @@ function check_and_bind_module(
                 column = parse_diag.column,
                 message = string.String.from_str(text.cstr_as_str(parse_diag.message)),
                 severity = "error",
+                code = "parse/error",
             ))
             pi += 1
 
@@ -390,6 +403,7 @@ function check_and_bind_module(
                 column = sema_diag.column,
                 message = string.String.from_str(sema_diag.message),
                 severity = "error",
+                code = "sema/error",
             ))
             si += 1
         analysis.diagnostics.release()
