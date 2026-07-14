@@ -106,6 +106,12 @@ struct Context:
     value_types: map_mod.Map[str, types.Type]
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     type_params: map_mod.Map[str, span[ast.TypeParamConstraint]]
+    # Names known to be generic type/value parameters in the current
+    # declaration context (struct fields, `extending Type[T]` methods, foreign
+    # value params, interface methods).  Used ONLY to suppress "unknown type"
+    # reports; unlike `type_params`, these still resolve to the permissive
+    # `ty_error` so recorded types — and thus code generation — are unchanged.
+    suppressed_type_names: map_mod.Map[str, bool]
     function_type_params: map_mod.Map[str, span[ast.TypeParam]]
     method_type_params: map_mod.Map[str, span[ast.TypeParam]]
     implemented: map_mod.Map[str, span[ast.QualifiedName]]
@@ -178,6 +184,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         value_types = map_mod.Map[str, types.Type].create(),
         interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create(),
         type_params = map_mod.Map[str, span[ast.TypeParamConstraint]].create(),
+        suppressed_type_names = map_mod.Map[str, bool].create(),
         function_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
         method_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
         implemented = map_mod.Map[str, span[ast.QualifiedName]].create(),
@@ -511,8 +518,10 @@ function collect_struct_fields_extra(ctx: ref[Context], extra: span[ast.Decl]) -
             d = read(extra.data + i)
         match d:
             ast.Decl.decl_struct as s:
+                enter_suppressed_type_params(ctx, s.type_params)
                 ctx.structs.set(s.name, resolve_field_entries(ctx, s.struct_fields))
                 collect_nested_struct_fields(ctx, s.nested_types, s.name)
+                ctx.suppressed_type_names.clear()
             _:
                 pass
         i += 1
@@ -735,8 +744,13 @@ function collect_struct_fields(ctx: ref[Context], file: ast.SourceFile) -> void:
             d = read(file.declarations.data + i)
         match d:
             ast.Decl.decl_struct as s:
+                # A generic struct's fields reference its type parameters
+                # (`data: own[T]?`); suppress unknown-type reports for `[T, ...]`
+                # while resolving field types (types still resolve to ty_error).
+                enter_suppressed_type_params(ctx, s.type_params)
                 ctx.structs.set(s.name, resolve_field_entries_with_events(ctx, s.struct_fields, s.struct_events))
                 collect_nested_struct_fields(ctx, s.nested_types, s.name)
+                ctx.suppressed_type_names.clear()
             _:
                 pass
         i += 1
@@ -821,10 +835,12 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                         m = read(ex.methods.data + j)
                     let key = method_key(base, m.name)
                     ctx.method_keys.set(key, true)
+                    enter_suppressed_extending_target(ctx, ex.type_name)
                     enter_type_params(ctx, m.type_params)
                     if m.method_kind != ast.MethodKind.mk_static or not ctx.method_sigs.contains(key):
                         ctx.method_sigs.set(key, build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind, m.is_async))
                     ctx.type_params.clear()
+                    ctx.suppressed_type_names.clear()
                     if m.type_params.len > 0:
                         ctx.method_type_params.set(key, m.type_params)
                     j += 1
@@ -958,6 +974,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                     enter_type_params(ctx, fun.type_params)
                     ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type, ast.MethodKind.mk_plain, fun.is_async))
                     ctx.type_params.clear()
+                    ctx.suppressed_type_names.clear()
                     if fun.type_params.len > 0:
                         ctx.function_type_params.set(fun.name, fun.type_params)
             ast.Decl.decl_extern_function as ef:
@@ -1092,7 +1109,7 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
             pass
 
     let name = qname_to_str(t.name)
-    let base = resolve_named(ctx, name, t.arguments, depth)
+    let base = resolve_named(ctx, name, t.arguments, depth, t.line, t.column)
     return wrap_nullable(base, t.nullable)
 
 
@@ -1147,7 +1164,7 @@ function wrap_nullable(base: types.Type, nullable: bool) -> types.Type:
     return base
 
 
-function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef], depth: int) -> types.Type:
+function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef], depth: int, line: ptr_uint, column: ptr_uint) -> types.Type:
     # An in-scope generic type parameter is a type variable, carrying whatever
     # `implements` constraints its declaration gave it.
     if ctx.type_params.contains(name):
@@ -1171,7 +1188,21 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
         return types.Type.ty_generic(name = name, args = args.as_span())
     if ctx.type_names.contains(name):
         return types.Type.ty_named(module_name = ctx.module_name, name = name)
-    # Unknown / imported / type-parameter names are permissive.
+    # Everything below stays permissive (returns the `ty_error` sentinel that
+    # code generation relies on for monomorphization); only the *reporting*
+    # decision differs.  An integer literal in type-argument position
+    # (`array[ubyte, 256]`), a qualified `alias.Type` / `Outer.Inner` whose
+    # binding the single-module analyzer cannot see, and a contextual generic
+    # parameter (struct/extending/foreign/interface `[T]`, value param `[N]`)
+    # are all silent.  A bare, otherwise-unknown name is a typo or missing
+    # import — reported.
+    if is_all_digits(name):
+        return types.Type.ty_error
+    if name.find_byte('.').is_some():
+        return types.Type.ty_error
+    if ctx.suppressed_type_names.contains(name):
+        return types.Type.ty_error
+    report(ctx, line, column, unknown_type_message(name))
     return types.Type.ty_error
 
 
@@ -1260,14 +1291,16 @@ function check_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> voi
         match d:
             ast.Decl.decl_extending_block as ex:
                 var this_type: types.Type = types.Type.ty_error
+                enter_suppressed_extending_target(ctx, ex.type_name)
                 unsafe:
                     this_type = resolve_type_value(ctx, read(ex.type_name))
+                ctx.suppressed_type_names.clear()
                 var j: ptr_uint = 0
                 while j < ex.methods.len:
                     var m: ast.Method
                     unsafe:
                         m = read(ex.methods.data + j)
-                    check_method_body(ctx, this_type, m)
+                    check_method_body(ctx, this_type, m, ex.type_name)
                     j += 1
             _:
                 pass
@@ -1364,7 +1397,9 @@ function check_conformance_methods(ctx: ref[Context], type_name: str, iface_name
         if actual_ptr == null:
             report(ctx, line, column, missing_method_message(type_name, iface_name, m.name))
         else:
+            enter_suppressed_interface_method(ctx, m)
             let required = build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind, false)
+            ctx.suppressed_type_names.clear()
             unsafe:
                 if not sigs_compatible(required, read(actual_ptr)):
                     report(ctx, line, column, method_mismatch_message(type_name, iface_name, m.name))
@@ -1398,15 +1433,18 @@ function check_extern_and_foreign(ctx: ref[Context], file: ast.SourceFile) -> vo
             d = read(file.declarations.data + i)
         match d:
             ast.Decl.decl_extern_function as ef:
-                check_foreign_params(ctx, ef.name, ef.extern_params)
+                check_foreign_params(ctx, ef.name, ef.extern_params, ef.type_params)
             ast.Decl.decl_foreign_function as ff:
-                check_foreign_params(ctx, ff.name, ff.foreign_params)
+                check_foreign_params(ctx, ff.name, ff.foreign_params, ff.type_params)
             _:
                 pass
         i += 1
 
 
-function check_foreign_params(ctx: ref[Context], name: str, params: span[ast.ForeignParam]) -> void:
+function check_foreign_params(ctx: ref[Context], name: str, params: span[ast.ForeignParam], type_params: span[ast.TypeParam]) -> void:
+    # A foreign/extern signature may carry value params (`create_temp_file[N]`
+    # with `str_buffer[N]`); suppress unknown-type reports for them.
+    enter_suppressed_type_params(ctx, type_params)
     var pi: ptr_uint = 0
     while pi < params.len:
         var p: ast.ForeignParam
@@ -1416,6 +1454,7 @@ function check_foreign_params(ctx: ref[Context], name: str, params: span[ast.For
         if types.is_ref_type(pt):
             report(ctx, 0, 0, extern_ref_param_message(name, p.name))
         pi += 1
+    ctx.suppressed_type_names.clear()
 
 
 function extern_ref_param_message(func: str, param: str) -> str:
@@ -1475,7 +1514,8 @@ function scope_set_let(scope: ref[sscope.Scope], name: str) -> void:
     sscope.scope_set_let(scope, name)
 
 
-function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Method) -> void:
+function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Method, target_type_name: ptr[ast.TypeRef]) -> void:
+    enter_suppressed_extending_target(ctx, target_type_name)
     enter_type_params(ctx, m.type_params)
     var scope = scope_create()
     scope_enter(ref_of(scope))
@@ -1507,6 +1547,7 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
         if not terminates_ptr(ctx, m.body):
             report(ctx, m.line, m.column, missing_return_message(m.name))
     ctx.type_params.clear()
+    ctx.suppressed_type_names.clear()
 
 
 function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_params: span[ast.TypeParam], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, is_async: bool) -> void:
@@ -1541,6 +1582,7 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_
         if not terminates_ptr(ctx, b):
             report(ctx, line, 1, missing_return_message(name))
     ctx.type_params.clear()
+    ctx.suppressed_type_names.clear()
 
 
 function check_definite_assignment(ctx: ref[Context], params: span[ast.Param], body: ptr[ast.Stmt]) -> void:
@@ -1567,7 +1609,103 @@ function enter_type_params(ctx: ref[Context], type_params: span[ast.TypeParam]) 
             tp = read(type_params.data + i)
         if not tp.is_value and not tp.is_lifetime:
             ctx.type_params.set(tp.name, tp.constraints)
+        # Value params (`[N: int]`) are not type variables, but they appear in
+        # type-argument position (`array[T, N]`); suppress unknown-type reports
+        # for them without turning them into type variables.
+        if tp.is_value:
+            ctx.suppressed_type_names.set(tp.name, true)
         i += 1
+
+
+## True when `name` is a decimal integer literal in type-argument position
+## (`array[ubyte, 256]`) rather than a type name.
+function is_all_digits(name: str) -> bool:
+    if name.len == 0:
+        return false
+    var i: ptr_uint = 0
+    while i < name.len:
+        let b = name.byte_at(i)
+        if b < 48 or b > 57:
+            return false
+        i += 1
+    return true
+
+
+## True when `name` looks like a fresh type-parameter identifier (single-part,
+## not a primitive/str/generic-constructor/locally-declared type).
+function is_type_param_identifier(ctx: ref[Context], name: str) -> bool:
+    if name.find_byte('.').is_some():
+        return false
+    if is_primitive_type_name(name) or name == "str":
+        return false
+    if is_generic_constructor_name(name):
+        return false
+    if ctx.type_names.contains(name):
+        return false
+    return true
+
+
+## Suppress unknown-type reports for a declaration's own type + value params
+## (e.g. a generic struct's `[T]` while resolving its field types).
+function enter_suppressed_type_params(ctx: ref[Context], type_params: span[ast.TypeParam]) -> void:
+    var i: ptr_uint = 0
+    while i < type_params.len:
+        var tp: ast.TypeParam
+        unsafe:
+            tp = read(type_params.data + i)
+        if not tp.is_lifetime:
+            ctx.suppressed_type_names.set(tp.name, true)
+        i += 1
+
+
+## Suppress reports for the fresh type parameters named by an
+## `extending Type[T, ...]` target (`T`, `K`, `V`).  Concrete instantiation
+## arguments are left alone.
+function enter_suppressed_extending_target(ctx: ref[Context], type_name: ptr[ast.TypeRef]) -> void:
+    unsafe:
+        let tref = read(type_name)
+        var i: ptr_uint = 0
+        while i < tref.arguments.len:
+            let arg = read(tref.arguments.data + i)
+            let arg_name = qname_to_str(arg.name)
+            if is_type_param_identifier(ctx, arg_name):
+                ctx.suppressed_type_names.set(arg_name, true)
+            i += 1
+
+
+## Suppress reports for type-parameter identifiers a TypeRef mentions, recursing
+## into its arguments (`Vec[T]` → `T`, `Map[K, V]` → `K`, `V`).
+function register_suppressed_ref_names(ctx: ref[Context], t: ast.TypeRef) -> void:
+    let name = qname_to_str(t.name)
+    if is_type_param_identifier(ctx, name):
+        ctx.suppressed_type_names.set(name, true)
+    var i: ptr_uint = 0
+    while i < t.arguments.len:
+        unsafe:
+            register_suppressed_ref_names(ctx, read(t.arguments.data + i))
+        i += 1
+
+
+## Suppress reports for the interface type parameters referenced by an interface
+## method's parameter and return types (`convert(x: T) -> U` → `T`, `U`).
+function enter_suppressed_interface_method(ctx: ref[Context], m: ast.InterfaceMethod) -> void:
+    var pi: ptr_uint = 0
+    while pi < m.method_params.len:
+        unsafe:
+            let p = read(m.method_params.data + pi)
+            register_suppressed_ref_names(ctx, p.param_type)
+        pi += 1
+    let rt = m.return_type
+    if rt != null:
+        unsafe:
+            register_suppressed_ref_names(ctx, read(rt))
+
+
+function unknown_type_message(name: str) -> str:
+    var buf = string.String.create()
+    buf.append("unknown type ")
+    buf.append(name)
+    return buf.as_str()
 
 
 # =============================================================================

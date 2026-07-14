@@ -110,13 +110,27 @@ function test_let_numeric_literal_is_clean() -> t.Check:
 
 
 @[test]
-function test_unknown_types_are_permissive() -> t.Check:
-    # Imported / unresolved types degrade to the permissive error type and must
-    # never produce a false positive.
+function test_unknown_bare_type_is_flagged() -> t.Check:
+    # A bare, unresolved type name is a typo or missing import — always an error.
+    # (Cross-module types are qualified `alias.Type`, never bare, so a bare
+    # unknown name can never be a legitimate imported type.)
     var source = <<-SRC
-        function f(v: SomeImported) -> OtherImported:
-            let x: Widget = make_widget()
-            return convert(x)
+        function f(v: SomeUnknownType) -> int:
+            return 0
+    SRC
+    return expect_flagged(source)
+
+
+@[test]
+function test_qualified_unresolved_type_is_permissive() -> t.Check:
+    # A qualified `alias.Type` whose binding is unavailable degrades to the
+    # permissive error type and must never produce a false positive.
+    var source = <<-SRC
+        import ext.widgets as ext
+
+        function f(v: ext.SomeImported) -> ext.OtherImported:
+            let x: ext.Widget = make_widget()
+            return x
     SRC
     return expect_clean(source)
 
@@ -198,8 +212,11 @@ function test_call_argument_type_mismatch_is_flagged() -> t.Check:
 
 @[test]
 function test_call_to_unknown_function_is_permissive() -> t.Check:
+    # A method call on a value of an unresolved (qualified) type is permissive.
     var source = <<-SRC
-        function g(w: Widget) -> int:
+        import ext.widgets as ext
+
+        function g(w: ext.Widget) -> int:
             return w.compute(1, 2, 3)
     SRC
     return expect_clean(source)
@@ -313,10 +330,12 @@ function test_unknown_field_read_is_flagged() -> t.Check:
 
 @[test]
 function test_member_on_non_local_type_is_permissive() -> t.Check:
-    # Receivers of imported / ref-wrapped / generic types are not locally-known
-    # structs, so their member accesses must never be flagged.
+    # Receivers of imported / ref-wrapped types are not locally-known structs,
+    # so their member accesses must never be flagged.
     var source = <<-SRC
-        function f(w: Widget, p: ref[Gadget]) -> int:
+        import ext.widgets as ext
+
+        function f(w: ext.Widget, p: ref[ext.Gadget]) -> int:
             let a = w.anything()
             return p.whatever + a
     SRC
