@@ -1,15 +1,8 @@
 # Self-Host Plan
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED.** Stage2 == stage3 byte-identical.
-391/391 self-tests pass. **13/13 examples build** with the self-hosted compiler.
-**12/13 run identically to Ruby** (`async_stress_test` crashes under both — a
-pre-existing libuv runtime bug in the stdlib, not a self-host issue).
-
-The 4 core compiler commands (check/build/run/test) are now at feature parity
-with the Ruby CLI for the self-host scope: platform-variant resolution, run
-exit-code forwarding, build --clean, and the full test surface (--timeout/--mem
-sandboxing, -n filter, --format tap|junit, compile-fail fixtures, and
-@[expect_fatal] death tests).
+443/443 self-tests pass across 9 test files. **`mtc lint` has 12 rules
+byte-identical to Ruby** across the entire codebase.
 
 Last updated: 2026-07-14
 
@@ -24,131 +17,134 @@ ruby -Ilib bin/mtc build projects/mtc -I . --no-cache --no-debug-guards -o tmp/m
 tmp/mtc-current build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-stage2 --keep-c tmp/stage2.c
 tmp/mtc-stage2 build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-stage3 --keep-c tmp/stage3.c
 diff tmp/stage2.c tmp/stage3.c        # identical
-tmp/mtc-stage2 test projects/mtc -I .  # 391/391
+tmp/mtc-stage2 test projects/mtc -I .  # 443/443
 ```
 
 ### 0.2 Example parity
 
-| Example | Build (Ruby) | Build (SH) | Run (Ruby) | Run (SH) |
-|---------|-------------|-----------|-----------|---------|
-| `data_structures` | OK | OK | 134 | 134 MATCH |
-| `event_stress_test` | OK | OK | 4 | 4 MATCH |
-| `memory_stress_test` | OK | OK | 0 | 0 MATCH |
-| `multithreading_test` | OK | OK | 0 | 0 MATCH |
-| `nested_struct_stress_test` | OK | OK | 0 | 0 MATCH |
-| `nullable_and_variant_test` | OK | OK | 0 | 0 MATCH |
-| `option_and_result_surface` | OK | OK | 0 | 0 MATCH |
-| `reflection_advanced` | OK | OK | 0 | 0 MATCH |
-| `integration_test` | FAIL (dyn vtable C-ABI bug) | OK | — | 0 |
-| `language_baseline` | OK | OK | 0 | 0 MATCH |
-| `string_test` | OK | OK | 0 | 0 MATCH |
-| `async_stress_test` | OK | OK | 134 (UAF) | 134 (UAF) |
-| `async_network_lobby` | OK | OK | 0 | 0 MATCH |
+13/13 examples build with the self-hosted compiler. 12/13 run identically to
+Ruby; `async_stress_test` crashes under both (a pre-existing libuv runtime bug).
 
 ### 0.3 CLI parity
 
-11 of 22 Ruby CLI commands implemented (50% overall, 100% core compiler):
-
 | Status | Commands |
 |--------|----------|
-| **FULL**  | lex, parse, lower, emit-c, format, help, version, check, build, run, test |
-| **NOT IMPL** | run-module, new, lint, debug, deps, toolchain, bindgen, cache, docs, snapshot, completions |
+| **FULL**  | lex, parse, lower, emit-c, format, help, version, check, build, run, test, lint |
+| **NOT IMPL** | run-module, new, debug, deps, toolchain, bindgen, cache, docs, snapshot, completions |
 
-The 4 core compiler commands are feature-complete for the self-host scope. The
-remaining gaps (build cache, --bundle/--archive, wasm/emcc, package-graph
-dependency resolution, lint) belong to separate subsystems (deps solver,
-toolchain, lint) that are intentionally out of scope for compiler self-host
-parity.
+**Core compiler commands (check/build/run/test) at full feature parity:**
+platform-variant entry/import resolution, run exit-code forwarding (128+signal
+for signals), build --clean, test --timeout/--mem sandboxing, -n filter,
+--format tap|junit, compile-fail fixtures, @[expect_fatal] death tests.
+
+**`mtc lint`** — 12 AST-only rules implemented, output byte-identical to Ruby
+across the entire codebase (see §1.1).
+
+**`mtc check`** — diagnostic format matches Ruby byte-for-byte (`error[sema/error]:`,
+rjust-5 gutter, 6-space caret line, summary). Analyzer now reports unknown type
+annotations and undefined names (the two former `check`-silence bugs).
 
 ### 0.4 Landed fixes (all sessions)
 
-**Language lowering:**
-
-1. **Loop break/continue with goto labels** — prevents C `break` inside `match`→`switch` from only exiting the innermost switch.
-
-2. **Async frame release ready-check** — vtable `release` checks `!__mt_frame->ready` before freeing; only releases pending `await_N` sub-tasks when still pending.
-
-3. **Ready-flag ordering** — `ready = true` set BEFORE `async_waiter_wake`, matching Ruby compiler.
-
-4. **Async frame set_waiter ready-check** — calls waiter immediately on already-complete tasks (synchronous completion path).
-
-5. **CPS return defer ordering** — `flush_all_defers` runs AFTER evaluating the return expression in CPS mode. Fixed `async_network_lobby` "heap.must_alloc out of memory" crash.
-
-6. **Match equality/guard patterns** — equality patterns (`field = expr`) and guard patterns (`field > expr`) now emit conditional `goto next_arm` checks.
-
-7. **CPS for-loop induction-var spilling** — `lower_for_range` and `lower_collection_for` register induction/stop/index/items variables as frame fields when `async_cps_active`.
-
-8. **Async `main` entrypoint** — synthesizes C `main()`, wraps CPS-lowered constructor in root proc, drives via `std.async.wait[int]`/`run`.
-
-9. **Array-by-value C ABI** — `array[T,N]`-returning functions lower to `void f(T (*__mt_out)[N], ...)`.
+**Analyzer (semantic errors):**
+- Unknown type annotations now reported (e.g. `let x: NoSuchType`)
+- Undefined names now reported (e.g. `return typo_name`); match-arm bindings
+  and destructuring names are bound into scope so they are not falsely reported
+  
+**Diagnostic-format parity:**
+- `check` output matches Ruby: `error[sema/error]:` / `error[parse/error]:` /
+  `error[module/error]:` with bracketed codes, rjust-5 line gutter, 6-space
+  caret line, and `error: could not check due to N errors` summary
 
 **CLI / Architecture:**
+- run exit-code forwarding (was always 0; now forwards `normalized_code()`)
+- run stderr routing (captured stderr → `terminal.write_stderr`)
+- build --clean (removes resolved output artifact; idempotent)
+- test --timeout/--mem sandboxing (per-runner `timeout` + `ulimit -v`)
+- test -n/--name substring filter
+- test --format tap|junit (TAP verified byte-identical to Ruby)
+- test compile-fail fixtures (# expect-error:)
+- test @[expect_fatal] death tests
+- platform-variant entry/import resolution (confirmed in `check_program`)
+- directory `check` UTF-8 crash fixed (was use-after-free on borrowed dir paths)
+- directory `lint` silently-reporting-clean bug fixed (same UAF)
+- parser now records `else` keyword line on `stmt_if` (was hardcoded 0)
 
-10. **check parity** — directory targets (recursive `*.mt` discovery), source-context error formatting with `^^^`, `-Werror`, per-severity summary counts.
-
-**CLI core-command parity (this session):**
-
-13. **run exit-code forwarding** — `mtc run` returns the child's `normalized_code()` (128+signal for signals) instead of always 0, and routes captured stderr to stderr.
-
-14. **build --clean** — removes the resolved output artifact (honoring `-o` and package `build.entry`) without compiling; idempotent.
-
-15. **test sandboxing + failure detection** — each runner binary runs under `timeout <sec> bash -c 'ulimit -v <kb>'` (exit 124 = timeout); build failures and non-zero runner exits are now detected so failing files are counted and `mtc test` exits 1. Adds `--timeout` (default 30s) and `--mem` (default 1024MB).
-
-16. **test -n/--name filter** — run only @[test] functions whose name contains the substring.
-
-17. **test --format tap|junit** — parse runner `ok/skip/FAIL` lines and re-emit as TAP 13 or JUnit XML (TAP verified byte-identical to Ruby).
-
-18. **test # expect-error: compile-fail fixtures** — type-check the fixture and verify each expected substring appears in an error diagnostic.
-
-19. **test @[expect_fatal] death tests** — run in an isolated binary; pass iff the process aborts rather than returns/times out. Normal runner extracted to `run_normal_test_runner`; sandbox shared via `run_sandboxed`.
-
-20. **platform-variant entry resolution** — confirmed already handled inside `check_program` (`resolve_source_path`), so check/build/run honor `name.<platform>.mt` for entry files and imports.
-
-11. **Cached common types** — `bool_ty`, `void_ty`, `ptr_void_ty` in `LowerCtx`, replacing 154 repeated `types.primitive()`/`ptr_void_type()` calls.
-
-12. **Naming consistency** — `gsi_*` → `generic_instance_*` in lowering, `GVArmInfo`/`GVInfo`/`OptStructEntry` → `GenericVariantArmInfo`/`GenericVariantInfo`/`OptionStructEntry` in c_backend.
+**Language lowering:**
+- Loop break/continue with goto labels, async frame release, ready-flag
+  ordering, CPS return defer ordering, match equality/guard patterns, CPS
+  for-loop spilling, async main entrypoint, array-by-value C ABI
+- Cached common types (`bool_ty`, `void_ty`, `ptr_void_ty` in `LowerCtx`)
+- Naming consistency pass (`gsi_*` → `generic_instance_*`, etc.)
 
 **Earlier fixes (cross-module, generics, async CPS core):**
-
-- Cross-module same-name type collision (`GenericReceiver.owner_module`)
-- Nullable fn-pointer locals, global variable initializers
-- `str_buffer[N]` capacity, const comparison `cv_bool`
-- Compile-time reflection / type dispatch (`reflection_advanced` end-to-end)
-- Format strings (`f"..."` — `mt_format_*` runtime)
-- Async CPS core (state machine, direct awaits, methods, hoisting)
-- Match-binding CPS spilling, arm-payload field types
-- Specialization label isolation, `ptr_of` referent-type recovery
-- Arm-name-disambiguated CPS match fields
+- Cross-module same-name type collision, nullable fn-pointer locals, global var
+  initializers, `str_buffer[N]` capacity, const comparison, compile-time
+  reflection/type dispatch, format strings, async CPS core, match-binding CPS
+  spilling, specialization label isolation, `ptr_of` recovery, etc.
 
 ---
 
-## 1. Remaining work
+## 1. Linter (12 / ~40 rules)
 
-The 4 core compiler commands are at feature parity for the self-host scope.
-The gaps that remain all belong to **separate subsystems** that are out of
-scope for compiler self-host parity (they are large standalone projects, not
-core-compiler behavior):
+### 1.1 Implemented rules (all byte-identical to Ruby)
 
-### 1.1 Out-of-scope subsystems (not core-compiler)
+| Rule | Severity | Category |
+|------|----------|----------|
+| self-assignment | warning | AST-only |
+| self-comparison | warning | AST-only |
+| redundant-bool-compare | hint | AST-only |
+| redundant-return | hint | AST-only |
+| useless-expression | warning | AST-only |
+| duplicate-if-condition | warning | AST-only |
+| noop-compound-assignment | hint | AST-only |
+| redundant-ignored-match-binding | hint | AST-only |
+| redundant-else | hint | AST-only + flow |
+| event-capacity | warning | AST-only (whole-file) |
+| trailing-list-comma | hint | token-based (re-lexes source) |
+| doc-tag | hint | source-line + AST |
 
-| Gap | Command(s) | Effort | Notes |
-|-----|-----------|--------|-------|
-| `--locked` / `--frozen` + package-graph resolution | check, build, run | Large | Requires `PackageGraph`, `PackageManifest`, dependency solver — part of the `deps` subsystem |
-| Lint integration | check, lint | Large | 63 lint rules require semantic-analysis facts — separate `lint` project |
-| Build cache | build, run | Large | Hash-keyed caching of compiled C + binaries |
-| `--bundle` / `--archive` | build, run | Medium | `assets.mtpack`, tar.gz output — packaging subsystem |
-| Wasm compilation (emcc) + preview server | build, run | Large | Emscripten linker flags, HTML shell, preload files — toolchain subsystem |
-| `--jobs` parallel test execution | test | Medium | Needs `fork`-based orchestration |
-| `--sanitize` | test | Medium | Pass `-fsanitize=address` and skip the `ulimit -v` cap |
-| Self-hosted test-runner build | test | Large | Currently builds runners via `bin/mtc`; use the self-built `mtc` (needs argv[0]/toolchain path resolution) |
+### 1.2 Remaining lint rules (deferred)
 
-### 1.2 Completed this session
+**Semantic-facts rules** (`unused-local`, `unused-param`, `shadow`, `prefer-let`,
+`dead-assignment`, `redundant-cast`, `reserved-primitive-name`,
+`prefer-is-variant`, ownership rules, etc.):
+- These require **scope tracking interleaved into the main AST visitor**
+  (`declare_local` / `mark_used` / `mark_mutated` / `with_scope`). This is a
+  30+-function mechanical refactor that threads mutable scope state through
+  every visit function, with tight byte-parity constraints (scope warnings must
+  emit at the exact same interleaved points as Ruby's visitor). The refactor
+  itself is well-defined but is a dedicated effort — see §2.1.
 
-- `run` exit-code forwarding (+ stderr routing)
-- `build --clean`
-- `test` sandboxing (`--timeout` / `--mem`) + failure detection via exit code
-- `test -n/--name` filter
-- `test --format tap|junit`
-- `test # expect-error:` compile-fail fixtures
-- `test @[expect_fatal]` death tests
-- Confirmed platform-variant entry resolution (already handled in `check_program`)
+**CFG/flow rules** (`constant-condition`, `redundant-null-check`,
+`loop-single-iteration`): need full control-flow graph + constant propagation.
+
+**Token-based rules** (`line-too-long`): needs `Formatter` wrap-detection +
+UTF-8 character (not byte) length to match Ruby's message text.
+
+**Tooling**: `--select` / `--ignore` / `--fix`, `.mt-lint.yml` config, wiring
+lint into `check` (`lint_tier: :full`).
+
+---
+
+## 2. Remaining work
+
+### 2.1 Semantic-facts rules (next major milestone)
+
+The visitor refactor to thread scope tracking is the single remaining piece of
+the lint system. Once in place, all scope-based rules (`unused-local`,
+`unused-param`, `shadow`, `prefer-let`) fall out from `emit_scope_warnings` on
+scope-pop. Flow analysis rules (`dead-assignment`) are a further step.
+
+### 2.2 Out-of-scope subsystems (separate projects)
+
+| Gap | Effort | Notes |
+|-----|--------|-------|
+| `--locked` / `--frozen` + package-graph resolution | Large | `PackageGraph`, `PackageManifest`, dependency solver — `deps` subsystem |
+| Build cache | Large | Hash-keyed caching of compiled C + binaries |
+| `--bundle` / `--archive` | Medium | `assets.mtpack`, tar.gz — packaging subsystem |
+| Wasm compilation (emcc) + preview server | Large | Emscripten linker flags, HTML shell — toolchain subsystem |
+| `--jobs` parallel test execution | Medium | `fork`-based orchestration |
+| `--sanitize` | Medium | `-fsanitize=address` + skip ulimit cap |
+| Self-hosted test-runner build | Large | Build runners via `argv[0]` instead of `bin/mtc` |
+| `run-module`, `new`, `debug`, `deps`, `toolchain`, `bindgen`, `cache`, `docs`, `snapshot`, `completions` | Varies | Non-core-compiler CLI commands |
