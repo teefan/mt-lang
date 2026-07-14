@@ -155,53 +155,167 @@ annotations and undefined names (the two former `check`-silence bugs).
 
 ### 1.2 Remaining lint rules (deferred)
 
-**Semantic-facts rules** (`redundant-cast`, `redundant-type-annotation`, `prefer-own-ptr`, `reserved-primitive-name`):
-- These require `@sema_facts` (binding resolution from semantic analysis). The self-host does not yet have semantic-facts integration for lint.
+Below are the ~23 missing lint rules categorised by their *prerequisite work*.
+The self-host already covers the heavy machinery (AST visitors, scope tracking,
+`always_returns`, `body_can_break`) so the gap is narrower than it first looks.
 
-**CFG/flow rules** (`constant-condition`, `redundant-null-check`,
-`loop-single-iteration`, `dead-assignment`, `unreachable-code`, `missing-return`): need full control-flow graph + constant propagation. The self-host already has `ControlFlow::Builder` infrastructure for the parts needed here.
+#### 1.2a AST-only — implementable today
 
-**AST pattern rules** (`prefer-inline-if`, `prefer-conditional-expression`, `prefer-or-pattern`, `prefer-let-else`, `prefer-var-else`, `prefer-try`, `prefer-is-variant`, `prefer-struct-with`):
-- AST-only or small flow analysis; can be added to the existing visitor without scope tracking.
+These rules work purely on the AST; the self-host already has all the
+ingredients (`always_returns_stmts`, `stmt_always_returns`,
+`block_is_nonempty`, `is_true_literal`, etc.):
 
-**Ownership rules** (`owning-release-leak`, `owning-release-double`, `borrow-and-mutate`): require sema facts for ownership tracking.
+| Rule | Category | What it checks |
+|------|----------|----------------|
+| `missing-return` | error | Non-void function whose body does not always return (uses `always_returns_stmts`) |
+| `prefer-inline-if` | hint | Multi-line `if`/`else` where each branch is a single-statement single-line form |
+| `prefer-conditional-expression` | hint | `if x: return a else: return b` → `return if x: a else: b` |
+| `prefer-or-pattern` | hint | Adjacent match arms with identical bodies → merge with `\|` |
+| `prefer-let-else` | hint | `let x = expr; if x != null:` → `let x = expr else:` |
+| `prefer-var-else` | hint | Same for `var` declarations |
+| `prefer-try` | hint | `match opt: Option.some as v: v else: return ...` → `opt?` |
+| `prefer-is-variant` | hint | `match v: Arm: true; _: false` → `v is Arm` |
+| `prefer-struct-with` | hint | Struct copy with one field changed → `struct.with(field = val)` |
+| `line-too-long` | warning | Line length > configurable max (needs UTF-8 char width, not byte length) |
 
-**Token-based rules** (`line-too-long`): needs `Formatter` wrap-detection +
-UTF-8 character (not byte) length to match Ruby's message text.
+#### 1.2b Ownership — AST fallback exists in Ruby
 
-**Tooling**: `--select` / `--ignore` / `--fix`, `.mt-lint.yml` config, wiring
-lint into `check` (`lint_tier: :full`).
+| Rule | Category | Notes |
+|------|----------|-------|
+| `owning-release-leak` | warning | Ruby has CFG-based check *and* an AST fallback (`check_owning_release_leaks`). The AST fallback is pattern-matching only — detect `own[T]` locals that are never passed to `release`/`release_and_null`. |
+| `owning-release-double` | warning | Same as above: AST fallback detects sequential `release` on the same name. |
+
+#### 1.2c Semantic-facts — needs `@sema_facts` integration
+
+The self-host does not yet thread resolved-binding information into the
+linter visitor (the Ruby `@sema_facts` object that maps every AST identifier to
+its binding kind, declared type, owner module, etc.).
+
+| Rule | Category | Notes |
+|------|----------|-------|
+| `redundant-cast` | hint | Needs type info per expression |
+| `redundant-type-annotation` | hint | Needs type info per `let`/`var` |
+| `prefer-own-ptr` | hint | Needs to know when a variable has `own[T]` type |
+| `reserved-primitive-name` | warning | Needs binding resolution (is the name a local shadowing a primitive?) |
+| `borrow-and-mutate` | warning | Needs `ref` vs value tracking per expression |
+
+#### 1.2d Full CFG — needs graph builder + flow solvers
+
+These rules require a proper Control-Flow Graph (nodes with succ/pred edges,
+read/write sets, edge labels) plus analysis passes run over that graph.  The
+self-host `builder.mt` today only assigns name→ID; it has no graph, no edges,
+no read/write sets, and no solvers.
+
+The Ruby pipeline for these rules is:
+
+```
+CFG Builder (graph with edges + read/write sets)
+  → Reachability (identifies unreachable nodes)
+  → NullabilityFlow (null/non-null across branches)
+  → ConstantPropagation (always-true/false conditions)
+  → Liveness (variable live/dead at each node)
+  → Termination (nodes that always exit)
+```
+
+| Rule | Needs (minimum) | Notes |
+|------|----------------|-------|
+| `dead-assignment` | Builder + Liveness | Find writes that are never read |
+| `unreachable-code` | Builder + Reachability | Nodes with no path from entry |
+| `constant-condition` | Builder + ConstantPropagation | Always-true/false in if/while |
+| `redundant-null-check` | Builder + NullabilityFlow | Null check after !null branch |
+| `loop-single-iteration` | Builder + Termination | Loop whose body always breaks |
+
+#### 1.2e Tooling
+
+| Gap | Notes |
+|-----|-------|
+| `--select` / `--ignore` | Filter rules by code; CLI parsing is stubbed (`main.mt:455`) |
+| `--fix` | Auto-fix lint violations in-place |
+| `.mt-lint.yml` config | Per-project lint configuration file |
 
 ---
 
 ## 2. Remaining work
 
-### 2.1 Remaining lint rules (~23 rules)
+### 2.1 AST-only lint rules (10 rules)
 
-**AST pattern rules** (`prefer-inline-if`, `prefer-conditional-expression`,
-`prefer-or-pattern`, `prefer-let-else`, `prefer-var-else`, `prefer-try`,
-`prefer-is-variant`, `prefer-struct-with`): AST-only or small flow analysis.
-Can be added to the existing `visit_stmt` / `visit_expr` without scope
-tracking or sema facts.
+These can be implemented today — no infrastructure prerequisites.  The
+self-host linter already has the full AST visitor framework plus key
+helpers (`always_returns_stmts`, `body_can_break`, `is_true_literal`,
+`block_is_nonempty`, `terminating_expression`).
 
-**Semantic-facts rules** (`redundant-cast`, `redundant-type-annotation`,
-`prefer-own-ptr`, `reserved-primitive-name`): require `@sema_facts` (binding
-resolution from semantic analysis). Not yet available in self-host lint.
+| Priority | Rules | Est. effort |
+|----------|-------|-------------|
+| High | `missing-return` | Small — wraps `always_returns_stmts` at function-level |
+| Medium | `prefer-inline-if`, `prefer-let-else`, `prefer-var-else` | Small — per-statement pattern matching |
+| Medium | `prefer-conditional-expression` | Small — detect if-match-return pattern |
+| Medium | `prefer-or-pattern`, `prefer-is-variant`, `prefer-try`, `prefer-struct-with` | Small — per-expression pattern matching |
+| Low | `line-too-long` | Medium — needs UTF-8 character-width count + formatter max-length |
 
-**CFG/flow rules** (`constant-condition`, `redundant-null-check`,
-`loop-single-iteration`, `dead-assignment`, `unreachable-code`,
-`missing-return`): need control-flow graph. The self-host already has
-`ControlFlow::Builder` in `mtc.semantic.control_flow.builder`.
+### 2.2 Ownership rules (2 rules, AST fallback)
 
-**Ownership rules** (`owning-release-leak`, `owning-release-double`,
-`borrow-and-mutate`): require sema facts and release-tracking pass.
+The Ruby linter has a two-tier implementation for `owning-release-leak`
+and `owning-release-double`:
+1. **CFG-based** — precise, requires full graph + solvers
+2. **AST fallback** — pattern matching without CFG
 
-**Token-based** (`line-too-long`): standalone; needs UTF-8 char width and
-formatter integration.
+The AST fallback can be ported now.  It detects: (a) `own[T]` locals declared
+but never passed to `release`/`release_and_null` (leak), and (b) the same name
+passed to `release` twice along a sequential path (double-free).
 
-**Tooling**: `--select` / `--ignore` / `--fix`, `.mt-lint.yml` config.
+`borrow-and-mutate` requires `@sema_facts` (needs ref/value tracking per
+expression) and is blocked on §2.4.
 
-### 2.2 Out-of-scope subsystems (separate projects)
+### 2.3 Control-Flow Graph (6 rules blocked on full CFG)
+
+The self-host CFG (`builder.mt`, 132 lines) is currently a name→ID pre-scan.
+It has no graph nodes with edges, no read/write sets, and no flow solvers.
+The Ruby CFG has 9 modules (580-line builder + 8 solver modules totalling
+~1,500 lines).
+
+To unlock the 6 flow-based lint rules, the following would need to be built:
+
+| Layer | What | Used by |
+|-------|------|---------|
+| 1. Graph data structure | Nodes with succ/pred edges, read/write sets, edge labels (true/false branch), edge refinements (null-checks) | All rules |
+| 2. Builder | Walk the AST and construct the graph with nodes and edges, recording reads/writes per node | All rules |
+| 3. Reachability | Forward dataflow: which nodes are reachable from entry? | `unreachable-code` |
+| 4. NullabilityFlow | Forward dataflow: is each nullable pointer null or non-null at each node? | `redundant-null-check` |
+| 5. ConstantPropagation | Forward dataflow: which expressions evaluate to a constant at each node? | `constant-condition`, `loop-single-iteration` |
+| 6. Liveness | Backward dataflow: which variables are live at each node? | `dead-assignment` |
+| 7. Termination | Detect nodes that always return/break/continue from their subtree | `loop-single-iteration` |
+
+The graph data structure and builder are the heaviest items (the Ruby builder
+is 580 lines of per-statement-kind node/edge construction).  The solvers
+(reachability, nullability, constant-prop, liveness) are each ~100-200 lines
+of standard dataflow-algorithm code — mechanical but low-risk.
+
+### 2.4 Semantic-facts integration (5 rules blocked)
+
+The Ruby linter receives `@sema_facts` — a per-identifier table produced by
+the semantic analyzer that maps every AST identifier node to its resolved
+binding (kind, declared type, owner module).  The self-host linter has no such
+table.  All 5 semantic-facts rules are blocked on building and plumbing this
+mapping from the analyzer into the linter visitors.
+
+| Rule | Needs from sema_facts |
+|------|----------------------|
+| `redundant-cast` | Expression type vs target cast type |
+| `redundant-type-annotation` | Declared type annotation vs inferred type |
+| `prefer-own-ptr` | Whether a variable has `own[T]` or `ptr[T]` type |
+| `reserved-primitive-name` | Whether a local or param name shadows a primitive type name |
+| `borrow-and-mutate` | Whether an expression yields `ref[T]` while a `T` is also borrowed |
+
+### 2.5 Tooling
+
+| Gap | Est. effort | Notes |
+|-----|-------------|-------|
+| `--select` / `--ignore` | Small | CLI parsing + filter check per warning |
+| `--fix` | Medium | Per-rule auto-fix logic |
+| `.mt-lint.yml` config | Medium | TOML parsing + rule configuration |
+| Wire lint into `check` (`lint_tier: :full`) | Small | Call `lint_source` from `check_program` |
+
+### 2.6 Out-of-scope subsystems (separate projects)
 
 | Gap | Effort | Notes |
 |-----|--------|-------|
