@@ -10366,7 +10366,7 @@ function concrete_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: st
                                     var saved_module = ctx.module_name
                                     var saved_analysis = ctx.analysis
                                     ctx.module_name = base_im.module_name
-                                    ctx.analysis = owner_a
+                                    ctx.analysis = owner_a.value
                                     ft = qualify_type(ctx, ft)
                                     ctx.module_name = saved_module
                                     ctx.analysis = saved_analysis
