@@ -112,7 +112,7 @@ public function generate_c(program: ir.Program) -> string.String:
     var opt_structs = collect_opt_struct_decls(program)
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
-    let use_fatal = uses_fatal_helper(funcs, program) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0
+    let use_fatal = uses_fatal_helper(funcs, program) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0 or uses_format_helpers(program) or uses_foreign_cstr_helper(funcs)
     let use_fatal_str = uses_fatal_str_helper(funcs)
     let use_entry_argv = uses_entry_argv(program)
     let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or use_fatal_str or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants)) or use_entry_argv
@@ -148,9 +148,12 @@ public function generate_c(program: ir.Program) -> string.String:
     if use_offsetof and not seen_headers.contains("<stddef.h>"):
         seen_headers.set("<stddef.h>", true)
         emit_line(ref_of(e), "#include <stddef.h>")
-    if (use_fatal or use_fatal_str or use_entry_argv) and not seen_headers.contains("<stdlib.h>"):
+    if (use_fatal or use_fatal_str or use_entry_argv or uses_format_helpers(program) or uses_foreign_cstr_helper(funcs)) and not seen_headers.contains("<stdlib.h>"):
         seen_headers.set("<stdlib.h>", true)
         emit_line(ref_of(e), "#include <stdlib.h>")
+    if (use_fatal or use_fatal_str or uses_format_helpers(program)) and not seen_headers.contains("<stdio.h>"):
+        seen_headers.set("<stdio.h>", true)
+        emit_line(ref_of(e), "#include <stdio.h>")
     if use_entry_argv and not seen_headers.contains("<string.h>"):
         seen_headers.set("<string.h>", true)
         emit_line(ref_of(e), "#include <string.h>")
