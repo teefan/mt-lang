@@ -1188,16 +1188,13 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
         return types.Type.ty_generic(name = name, args = args.as_span())
     if ctx.type_names.contains(name):
         return types.Type.ty_named(module_name = ctx.module_name, name = name)
-    # Everything below stays permissive (returns the `ty_error` sentinel that
-    # code generation relies on for monomorphization); only the *reporting*
-    # decision differs.  An integer literal in type-argument position
-    # (`array[ubyte, 256]`), a qualified `alias.Type` / `Outer.Inner` whose
-    # binding the single-module analyzer cannot see, and a contextual generic
-    # parameter (struct/extending/foreign/interface `[T]`, value param `[N]`)
-    # are all silent.  A bare, otherwise-unknown name is a typo or missing
-    # import — reported.
+    # An integer literal in type-argument position (`array[ubyte, 256]`) is
+    # resolved directly to a `ty_literal_int` so that the lowering and C
+    # backend can recover the correct array size without relying on a
+    # follow-up fixup pass (which only existed for expression/statement-level
+    # type refs, not struct-field types).
     if is_all_digits(name):
-        return types.Type.ty_error
+        return types.literal_int(parse_str_int(name))
     if name.find_byte('.').is_some():
         return types.Type.ty_error
     if ctx.suppressed_type_names.contains(name):
@@ -1629,6 +1626,18 @@ function is_all_digits(name: str) -> bool:
             return false
         i += 1
     return true
+
+
+## Parse an all-digits string to a long integer.  Callers must verify
+## `is_all_digits` first — no validation is performed here.
+function parse_str_int(name: str) -> long:
+    var value: long = 0
+    var i: ptr_uint = 0
+    while i < name.len:
+        let b = name.byte_at(i)
+        value = value * 10 + long<-(b - 48)
+        i += 1
+    return value
 
 
 ## True when `name` looks like a fresh type-parameter identifier (single-part,

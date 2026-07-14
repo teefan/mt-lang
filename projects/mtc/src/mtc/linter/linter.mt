@@ -34,6 +34,7 @@ import mtc.parser.ast as ast
 import mtc.lexer.lexer as lexer
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
+import mtc.linter.scope_tracking as scope_tracking
 
 
 public struct Warning:
@@ -53,6 +54,17 @@ public function lint_source(file: ast.SourceFile, source: str, path: str) -> vec
         unsafe:
             visit_decl(file.declarations.data + i, path, ref_of(warnings))
         i += 1
+    # Scope-tracking pass: unused-local, unused-param, shadow, prefer-let, unused-import
+    var scope_warnings = vec.Vec[scope_tracking.ScopeWarning].create()
+    scope_tracking.lint_scope_pass(file, path, ref_of(scope_warnings))
+    i = 0
+    while i < scope_warnings.len():
+        let sp = scope_warnings.get(i) else:
+            break
+        let sw = unsafe: read(sp)
+        warnings.push(Warning(path = sw.path, line = sw.line, code = sw.code, message = sw.message, severity = sw.severity))
+        i += 1
+    scope_warnings.release()
     # Whole-file passes run after the AST visitor, matching Ruby's emission order.
     lint_doc_tags(file.declarations, source, path, ref_of(warnings))
     lint_events(file.declarations, "", path, ref_of(warnings))
