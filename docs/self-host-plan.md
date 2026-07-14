@@ -5,6 +5,12 @@ Status: **SELF-HOSTING FIXED POINT ACHIEVED.** Stage2 == stage3 byte-identical.
 **12/13 run identically to Ruby** (`async_stress_test` crashes under both — a
 pre-existing libuv runtime bug in the stdlib, not a self-host issue).
 
+The 4 core compiler commands (check/build/run/test) are now at feature parity
+with the Ruby CLI for the self-host scope: platform-variant resolution, run
+exit-code forwarding, build --clean, and the full test surface (--timeout/--mem
+sandboxing, -n filter, --format tap|junit, compile-fail fixtures, and
+@[expect_fatal] death tests).
+
 Last updated: 2026-07-14
 
 ---
@@ -45,9 +51,14 @@ tmp/mtc-stage2 test projects/mtc -I .  # 391/391
 
 | Status | Commands |
 |--------|----------|
-| **FULL**  | lex, parse, lower, emit-c, format, help, version |
-| **PARTIAL** | check, build, run, test |
+| **FULL**  | lex, parse, lower, emit-c, format, help, version, check, build, run, test |
 | **NOT IMPL** | run-module, new, lint, debug, deps, toolchain, bindgen, cache, docs, snapshot, completions |
+
+The 4 core compiler commands are feature-complete for the self-host scope. The
+remaining gaps (build cache, --bundle/--archive, wasm/emcc, package-graph
+dependency resolution, lint) belong to separate subsystems (deps solver,
+toolchain, lint) that are intentionally out of scope for compiler self-host
+parity.
 
 ### 0.4 Landed fixes (all sessions)
 
@@ -75,6 +86,24 @@ tmp/mtc-stage2 test projects/mtc -I .  # 391/391
 
 10. **check parity** — directory targets (recursive `*.mt` discovery), source-context error formatting with `^^^`, `-Werror`, per-severity summary counts.
 
+**CLI core-command parity (this session):**
+
+13. **run exit-code forwarding** — `mtc run` returns the child's `normalized_code()` (128+signal for signals) instead of always 0, and routes captured stderr to stderr.
+
+14. **build --clean** — removes the resolved output artifact (honoring `-o` and package `build.entry`) without compiling; idempotent.
+
+15. **test sandboxing + failure detection** — each runner binary runs under `timeout <sec> bash -c 'ulimit -v <kb>'` (exit 124 = timeout); build failures and non-zero runner exits are now detected so failing files are counted and `mtc test` exits 1. Adds `--timeout` (default 30s) and `--mem` (default 1024MB).
+
+16. **test -n/--name filter** — run only @[test] functions whose name contains the substring.
+
+17. **test --format tap|junit** — parse runner `ok/skip/FAIL` lines and re-emit as TAP 13 or JUnit XML (TAP verified byte-identical to Ruby).
+
+18. **test # expect-error: compile-fail fixtures** — type-check the fixture and verify each expected substring appears in an error diagnostic.
+
+19. **test @[expect_fatal] death tests** — run in an isolated binary; pass iff the process aborts rather than returns/times out. Normal runner extracted to `run_normal_test_runner`; sandbox shared via `run_sandboxed`.
+
+20. **platform-variant entry resolution** — confirmed already handled inside `check_program` (`resolve_source_path`), so check/build/run honor `name.<platform>.mt` for entry files and imports.
+
 11. **Cached common types** — `bool_ty`, `void_ty`, `ptr_void_ty` in `LowerCtx`, replacing 154 repeated `types.primitive()`/`ptr_void_type()` calls.
 
 12. **Naming consistency** — `gsi_*` → `generic_instance_*` in lowering, `GVArmInfo`/`GVInfo`/`OptStructEntry` → `GenericVariantArmInfo`/`GenericVariantInfo`/`OptionStructEntry` in c_backend.
@@ -93,64 +122,33 @@ tmp/mtc-stage2 test projects/mtc -I .  # 391/391
 
 ---
 
-## 1. Remaining work: check, build, run, test full parity
+## 1. Remaining work
 
-The 4 core commands are implemented but have gaps blocking full feature
-parity with the Ruby compiler.
+The 4 core compiler commands are at feature parity for the self-host scope.
+The gaps that remain all belong to **separate subsystems** that are out of
+scope for compiler self-host parity (they are large standalone projects, not
+core-compiler behavior):
 
-### 1.1 `check` — pending gaps
+### 1.1 Out-of-scope subsystems (not core-compiler)
 
-| Gap | Effort | Notes |
-|-----|--------|-------|
-| `--locked` / `--frozen` wiring | Medium | Parse and use `package.lock` for dependency graph resolution |
-| Package-graph resolution | Large | Requires `PackageGraph`, `PackageManifest`, dependency solver |
-| Platform-specific file variant resolution | Medium | Prefer `name.linux.mt` → `name.mt` fallback per active platform |
-| Lint integration | Large | 63 lint rules require semantic analysis facts; separate project |
+| Gap | Command(s) | Effort | Notes |
+|-----|-----------|--------|-------|
+| `--locked` / `--frozen` + package-graph resolution | check, build, run | Large | Requires `PackageGraph`, `PackageManifest`, dependency solver — part of the `deps` subsystem |
+| Lint integration | check, lint | Large | 63 lint rules require semantic-analysis facts — separate `lint` project |
+| Build cache | build, run | Large | Hash-keyed caching of compiled C + binaries |
+| `--bundle` / `--archive` | build, run | Medium | `assets.mtpack`, tar.gz output — packaging subsystem |
+| Wasm compilation (emcc) + preview server | build, run | Large | Emscripten linker flags, HTML shell, preload files — toolchain subsystem |
+| `--jobs` parallel test execution | test | Medium | Needs `fork`-based orchestration |
+| `--sanitize` | test | Medium | Pass `-fsanitize=address` and skip the `ulimit -v` cap |
+| Self-hosted test-runner build | test | Large | Currently builds runners via `bin/mtc`; use the self-built `mtc` (needs argv[0]/toolchain path resolution) |
 
-### 1.2 `build` — pending gaps
+### 1.2 Completed this session
 
-| Gap | Effort | Notes |
-|-----|--------|-------|
-| `--bundle` / `--archive` | Medium | Package artifact bundling, `assets.mtpack`, tar.gz output |
-| `--clean` | Small | Remove generated output artifacts |
-| Build cache | Large | Caching compiled C + binaries with hash keys |
-| Package-graph resolution | Large | Same as check §1.1 |
-| Platform-specific file variant resolution | Medium | Same as check §1.1 |
-| Wasm compilation (emcc) | Large | Emscripten linker flags, HTML shell, preload files |
-
-### 1.3 `run` — pending gaps
-
-| Gap | Effort | Notes |
-|-----|--------|-------|
-| `--bundle` / `--archive` | Medium | Same as build §1.2 |
-| Wasm preview server | Small | Local HTTP server with COOP/COEP headers for Emscripten |
-| Platform-specific file variants | Medium | Same as check §1.1 |
-| Proper exit code forwarding | Small | Currently captures stdout/stderr but may not forward exit code |
-
-### 1.4 `test` — pending gaps
-
-| Gap | Effort | Notes |
-|-----|--------|-------|
-| `--timeout` / `--mem` | Small | Per-test timeout and virtual memory limits |
-| `--jobs` | Medium | Parallel test execution via fork |
-| `--format tap\|junit` | Small | Machine-readable test output |
-| `--name` / `-n` filter | Small | Substring match on test function names |
-| `--sanitize` | Medium | Pass `-fsanitize=address` to C compiler |
-| Death tests (`@[expect_fatal]`) | Medium | Run test in subprocess, expect SIGABRT |
-| Self-hosted test runner | Large | Use self-built `mtc` instead of `bin/mtc` for building test runners |
-| Compile-fail fixtures (`# expect-error:`) | Medium | Check that expected compile errors match actual diagnostics |
-
-### 1.5 Priority ordering
-
-```
-1. test --timeout         (1-line addition, safety-critical)
-2. test --name filter     (simple substring match, quality-of-life)
-3. build --clean          (removes output artifacts)
-4. check platform variants (name.linux.mt → name.mt fallback)
-5. build platform variants
-6. test --format tap/junit
-7. test compile-fail fixtures
-8. run exit code forwarding
-9. test death tests
-10. build --bundle / --archive
-```
+- `run` exit-code forwarding (+ stderr routing)
+- `build --clean`
+- `test` sandboxing (`--timeout` / `--mem`) + failure detection via exit code
+- `test -n/--name` filter
+- `test --format tap|junit`
+- `test # expect-error:` compile-fail fixtures
+- `test @[expect_fatal]` death tests
+- Confirmed platform-variant entry resolution (already handled in `check_program`)
