@@ -10,9 +10,10 @@ matures, we need:
 
 1. A **Ruby-free bootstrap path** for contributors who don't have Ruby.
 2. A **release pipeline** that ships pre-built `mtc` binaries.
-3. **Reproducible fixed-point verification** integrated into CI.
-4. **Fast development shortcuts** that avoid rebuilding the compiler-chain from
-   scratch on every change.
+3. **Reproducible fixed-point verification** so every build proves the compiler
+   is self-consistent.
+4. **Fast development shortcuts** that avoid rebuilding the full compiler-chain
+   on every change.
 
 This document draws from Rust, Go, and Zig bootstrap architectures and adapts
 them to Milk Tea's constraints (Ruby host, C backend, source-only stdlib).
@@ -29,7 +30,7 @@ stage1        ──build──→ stage2  (tmp/mtc-stage2)
 stage2        ──build──→ stage3  (tmp/mtc-stage3)  ← must == stage2
 ```
 
-This works but has no artifact persistence, no CI automation, and always
+This is run manually with no artifact persistence, no automation, and always
 requires Ruby.
 
 ### 1.2 Target model (mirrors Rust/Go)
@@ -42,29 +43,32 @@ requires Ruby.
 +----------+      +---------+      +---------+      +---------+
     |                 |                 |                 |
     v                 v                 v                 v
- Downloaded       Fast dev         Distributable    Fixed-point
- snapshot         artifact         artifact         check only
+ Snapshotted      Fast dev         Distributable    Fixed-point
+ binary           artifact         artifact         check only
 ```
 
-| Stage | Built by | Links std | Purpose |
-|-------|----------|-----------|---------|
-| stage0 | Pre-built snapshot | Snapshot std sources | Bootstrap host |
-| stage1 | stage0 | stage0 std sources | Fast dev iteration (`--stage 1`) |
-| stage2 | stage1 | stage1 std sources | Distributable artifact (`--stage 2`) |
-| stage3 | stage2 | stage2 std sources | Fixed-point verification only |
+| Stage | Built by | Uses std from | Purpose |
+|-------|----------|---------------|---------|
+| stage0 | Pre-built snapshot | Repo `std/` tree | Bootstrap host |
+| stage1 | stage0 | Repo `std/` tree | Fast dev iteration (`--stage 1`) |
+| stage2 | stage1 | Repo `std/` tree | Distributable artifact (`--stage 2`) |
+| stage3 | stage2 | Repo `std/` tree | Fixed-point verification only |
+
+All stages load the same `std/` source tree from the repository root — there is
+no stage-specific standard library.  See §5 for rationale.
 
 ### 1.3 Why 3 stages?
 
-Borrowed directly from Go's rationale:
+Borrowed from Go's rationale:
 
 1. **stage1** carries traces of stage0's code generation — not reproducible.
 2. **stage2** is "new compiler built by new compiler" — clean, reproducible,
-   suitable for distribution and caching.
+   suitable for distribution.
 3. **stage3** proves stage2 is stable — `diff stage2.c stage3.c` must be empty.
    If the compiler has a self-consistency bug, it surfaces here.
 
 Rust ships stage2. Go ships toolchain3. Zig ships stage3. Milk Tea should ship
-stage2 (matching Rust) with stage3 as CI-only verification.
+stage2 (matching Rust) with stage3 as verification-only.
 
 ---
 
@@ -72,58 +76,33 @@ stage2 (matching Rust) with stage3 as CI-only verification.
 
 ### 2.1 Snapshot concept
 
-A **snapshot** is a pre-built `mtc` binary from the last stable release, stored
-alongside the repository. It replaces Ruby as the stage0 compiler for
-contributors who don't have (or don't want to install) Ruby.
+A **snapshot** is a pre-built `mtc` binary from the last stable release. It
+replaces Ruby as the stage0 compiler for contributors who don't have (or don't
+want to install) Ruby. The snapshot is NOT committed to the repository — it is
+either provided locally by the user or downloaded on demand (see §2.2).
 
-```text
-bin/
-  bootstrap-mtc          ← Linux x86-64 snapshot
-  bootstrap-mtc.exe      ← Windows x86-64 snapshot (MinGW-linked)
-```
+### 2.2 Snapshot storage strategy
 
-### 2.2 Snapshot lifecycle
+**Recommendation: user-provided or download-on-demand, locally cached.**
 
-```
-Release v0.N.0
-    │
-    ├── Build release binaries (Linux, Windows)
-    ├── Verify fixed point
-    ├── Upload to GitHub Releases
-    └── Commit snapshot binary to repo as bin/bootstrap-mtc
+- The user sets `$MTC_BOOTSTRAP` to point at a pre-built `mtc` binary.
+- Alternatively, the bootstrap script can download a snapshot from a configured
+  URL into a local cache directory.
+- The cache lives at `$XDG_CACHE_HOME/milk_tea/bootstrap/` (or `~/.cache/milk_tea/bootstrap/`).
 
-Next dev cycle
-    │
-    ├── `bin/bootstrap-mtc` is the stage0 compiler
-    └── Contributors with Ruby can also use `ruby -Ilib bin/mtc`
+We reject committing binaries to the repository (bloats history, opaque diffs)
+and git-lfs (extra tooling requirement for every contributor).
 
-Release v0.N+1.0
-    │
-    └── Snapshots are bumped to the new release
-```
+### 2.3 Stage0 resolution order
 
-### 2.3 Snapshot storage strategy
+The bootstrap script resolves the stage0 compiler in this order:
 
-**Option A: Commit binary to repo** (Rust-style, used by `rust-lang/rust`
-before CI downloads)
-
-- Pro: zero setup, `git clone` gives you a working bootstrap
-- Con: bloats repo, binary diffs are opaque
-
-**Option B: Download on demand** (current Rust: CI provides downloads)
-
-- Pro: clean repo, binaries are cached in `$XDG_CACHE_HOME/milk_tea/`
-- Con: requires network on first build, needs hosting infra
-
-**Option C: CI-built, git-lfs stored** (hybrid)
-
-- Pro: binary available locally, tracked in git-lfs, not bloating normal clones
-- Con: requires git-lfs setup
-
-**Recommendation: Option B** — download on demand from GitHub Releases, cached
-in `$XDG_CACHE_HOME/milk_tea/bootstrap/`. This is the Rust model and requires
-no repo bloat or extra tooling beyond what we already have (`mtc deps fetch`
-already downloads from remotes).
+1. `--bootstrap PATH` (explicit, highest priority)
+2. `$MTC_BOOTSTRAP` environment variable
+3. `bin/bootstrap-mtc` in the repo root (if present — user places it there)
+4. Download snapshot from `$MTC_BOOTSTRAP_URL` into local cache
+5. `ruby -Ilib bin/mtc` (Ruby host — existing fallback)
+6. Error: "No bootstrap compiler found. Install Ruby or set MTC_BOOTSTRAP."
 
 ### 2.4 Snapshot format
 
@@ -154,50 +133,61 @@ Options:
   -j N                 Parallel jobs for C compilation (default: nproc)
 ```
 
-### 3.2 Stage0 resolution order
-
-The script resolves the stage0 compiler in this order:
-
-1. `--bootstrap PATH` (explicit)
-2. `$MTC_BOOTSTRAP` environment variable
-3. `bin/bootstrap-mtc` in the repo root (committed snapshot)
-4. Download latest release from `$MTC_BOOTSTRAP_URL` into cache
-5. `ruby -Ilib bin/mtc` (Ruby host — existing fallback)
-6. Error: "No bootstrap compiler found. Install Ruby or set MTC_BOOTSTRAP."
-
-### 3.3 Build flow
+### 3.2 Build flow
 
 ```sh
+set -euo pipefail
+
+BUILD_DIR="${MTC_BUILD_DIR:-build}"
+PROFILE="${MTC_PROFILE:-release}"
+BOOTSTRAP="${MTC_BOOTSTRAP:-}"
+
+# Resolve stage0 (see §2.3)
+MTC_STAGE0="$(resolve_bootstrap "$BOOTSTRAP")"
+
 # Stage 1: build by stage0
-$MTC_STAGE0 build -I . --profile $PROFILE \
+$MTC_STAGE0 build -I . --profile "$PROFILE" \
     --cc "$CC" \
+    --no-cache --no-debug-guards \
     -o "$BUILD_DIR/stage1/mtc" \
     projects/mtc
 
-# Stage 2: build by stage1 (distributable)
-$BUILD_DIR/stage1/mtc build -I . --profile $PROFILE \
+# Stage 2: build by stage1 (distributable artifact)
+$BUILD_DIR/stage1/mtc build -I . --profile "$PROFILE" \
     --cc "$CC" \
+    --no-cache --no-debug-guards \
     -o "$BUILD_DIR/stage2/mtc" \
     --keep-c "$BUILD_DIR/stage2.c" \
     projects/mtc
 
+if [ "${SKIP_VERIFY:-0}" = "1" ]; then
+    exit 0
+fi
+
 # Stage 3: build by stage2 (verify fixed point)
-$BUILD_DIR/stage2/mtc build -I . --profile $PROFILE \
+$BUILD_DIR/stage2/mtc build -I . --profile "$PROFILE" \
     --cc "$CC" \
+    --no-cache --no-debug-guards \
     -o "$BUILD_DIR/stage3/mtc" \
     --keep-c "$BUILD_DIR/stage3.c" \
     projects/mtc
 
-# Verify
-diff "$BUILD_DIR/stage2.c" "$BUILD_DIR/stage3.c" || {
-    echo "ERROR: Fixed point broken — stage2.c != stage3.c"
+# Fixed-point check
+if ! diff "$BUILD_DIR/stage2.c" "$BUILD_DIR/stage3.c"; then
+    echo "ERROR: Fixed point broken — stage2.c != stage3.c" >&2
     exit 1
-}
+fi
 ```
 
-### 3.4 Development shortcuts
+Notes on the flags:
+- `-I .` is required so that `std/` at the repo root is visible as a module
+  root during compilation.
+- `--no-cache` forces a clean build from source — without it the build cache
+  may serve stale output from a previous compiler version.
+- `--no-debug-guards` is already implied by `--profile release` (the default
+  in the script), but is listed explicitly for clarity.
 
-For quick iteration, skip the full chain:
+### 3.3 Development shortcuts
 
 ```sh
 # Dev build: just stage1, no verification
@@ -209,75 +199,32 @@ tools/bootstrap.sh --verify-only
 
 ---
 
-## 4. CI/CD Pipeline
+## 4. Standard Library Considerations
 
-### 4.1 Per-commit CI (GitHub Actions or equivalent)
-
-```yaml
-jobs:
-  bootstrap-test:
-    # Full bootstrap from Ruby, verify fixed point, run tests
-    steps:
-      - uses: actions/checkout
-      - uses: ruby/setup-ruby
-      - run: tools/bootstrap.sh --bootstrap "ruby -Ilib bin/mtc"
-      - run: ./build/stage2/mtc test projects/mtc -I .
-      - run: diff build/stage2.c build/stage3.c  # verify fixed point
-
-  snapshot-test:
-    # Bootstrap from last known good snapshot
-    # Skip if snapshot doesn't exist yet
-    steps:
-      - run: tools/bootstrap.sh
-      - run: ./build/stage2/mtc test projects/mtc -I .
-```
-
-### 4.2 Release pipeline (on tag)
-
-```
-git tag v0.N.0
-    │
-    ├── Full bootstrap from Ruby (extra safety)
-    ├── Build linux/x86-64 release binary
-    ├── Build windows/x86-64 release binary (via MinGW cross)
-    ├── Package: mtc + std/ + docs/ → tar.gz / zip
-    ├── Upload to GitHub Releases
-    ├── Update snapshot: stage2 binary → cache for next dev cycle
-    └── Publish to package registry
-```
-
-### 4.3 Snapshot update automation
-
-After each release, a CI job:
-
-1. Builds the release `mtc` binary for linux/x86-64
-2. Uploads it to a known URL (GitHub Releases API)
-3. Updates `MTC_BOOTSTRAP_URL` in `tools/bootstrap.sh` to point to the new release
-
-This ensures the bootstrap chain always has one release of runway — if a new
-release introduces a compiler bug, the previous release's snapshot can still
-bootstrap.
-
----
-
-## 5. Standard Library Considerations
-
-### 5.1 Current state
+### 4.1 Current state
 
 Milk Tea's standard library is source-only — `.mt` files under `std/`. There
-are no pre-compiled artifacts. The compiler loads std sources at build time.
+are no pre-compiled artifacts. The compiler loads std sources at build time
+from the module roots configured via `-I`.
 
-### 5.2 Implications for bootstrapping
+### 4.2 Implications for bootstrapping
 
 This simplifies bootstrapping significantly compared to Rust (which must manage
-pre-compiled `std` artifacts across stages):
+pre-compiled `std` artifacts across stage0/stage1):
 
-- **No ABI coupling**: std source is always compatible with any compiler version
-  (no `cfg(bootstrap)` equivalent needed)
-- **No artifact management**: no `.rlib`/`.so`/`.a` files to ship
-- **No stage-specific std**: stage1 and stage2 both load the same std sources
+- **No ABI coupling**: The compiler embeds prelude types at compile time, but
+  std source files do not form a binary interface between stages.
+- **No artifact management**: no `.rlib`/`.so`/`.a` files to ship or stage.
+- **No stage-specific std**: all stages load the same `std/` source tree from
+  the repository root. There is no `cfg(bootstrap)` equivalent because there
+  is no separate std artifact to build with two compiler versions.
 
-### 5.3 Potential future concern
+Caveat: if a new compiler release adds language features that stdlib source
+files use, those std files cannot be built by an older compiler.  In practice
+this is handled naturally — a snapshot binary from the prior release can still
+bootstrap the current source because both read the same in-tree std sources.
+
+### 4.3 Potential future concern
 
 If stdlib ever grows pre-compiled C components (e.g., a bundled libuv, pcre2,
 or similar native library), those would need to be shipped as part of the
@@ -285,75 +232,71 @@ release package. Today this is not needed.
 
 ---
 
-## 6. Build Cache & Incremental Compilation
+## 5. Build Cache & Incremental Compilation
 
-### 6.1 Current state
+### 5.1 Current state
 
-Milk Tea has a build cache (hash-keyed `.mt` → compiled C → binary). The cache
-persists across invocations but is not shared across stages.
+Milk Tea has a build cache. Consecutive `mtc build` invocations reuse compiled C
+and binaries when source files haven't changed.  The cache is local to the build
+directory and is not shared across stages.
 
-### 6.2 Stage sharing (like Rust's `--keep-stage`)
+### 5.2 Cache during bootstrapping
 
-Rust's `--keep-stage std` skips rebuilding std when the compiler ABI hasn't
-changed. Milk Tea doesn't need this today (std is source-only, not compiled),
-but the same principle applies to the compiler's own source:
+The bootstrap script uses `--no-cache` to ensure every stage builds from a
+clean slate.  This avoids cache poisoning where stage0-built artifacts are
+reused by stage1, which would defeat the purpose of stage isolation.
 
-- `--keep-stage 1` could skip rebuilding projects/mtc from stage1 if no source
-  files changed — reuse the stage1 binary.
-- The build cache already handles file-level caching.
-
-### 6.3 Cache location
+### 5.3 Cache location
 
 ```
 $XDG_CACHE_HOME/milk_tea/
   bootstrap/           ← downloaded snapshot binaries
-  build-cache/         ← existing .mt → C → binary cache
+  build-cache/         ← existing .mt → C → binary cache (normal builds)
 ```
 
 ---
 
-## 7. Implementation Plan
+## 6. Implementation Plan
 
-### Phase 1: Bootstrap script (1-2 days)
+### Phase 1: Bootstrap script
 
 - Write `tools/bootstrap.sh`
-- Support `$MTC_BOOTSTRAP`, `--bootstrap`, Ruby fallback
-- 3-stage build + fixed-point verification
+- Support `$MTC_BOOTSTRAP`, `--bootstrap`, Ruby fallback, snapshot download
+- 3-stage build + fixed-point verification via `diff`
 - `--stage 1` fast path for development
+- `--no-verify` to skip stage3
+- Cache snapshot downloads at `$XDG_CACHE_HOME/milk_tea/bootstrap/`
 
-### Phase 2: Snapshot storage (1 day)
+### Phase 2: Release tooling
 
-- Add download-from-GitHub-Releases logic to bootstrap script
-- Set up `$XDG_CACHE_HOME/milk_tea/bootstrap/` cache
-- Test: `rm -rf tmp/` then `tools/bootstrap.sh` with no Ruby
+- Script to build release binaries for linux/x86-64 (and windows/x86-64 via
+  MinGW cross-compilation when supported)
+- Package: `mtc` + `std/` + docs → `.tar.gz` / `.zip`
+- Snapshot update: copy the release `mtc` binary to the snapshot cache and
+  update `$MTC_BOOTSTRAP_URL`
 
-### Phase 3: CI integration (1-2 days)
-
-- GitHub Actions workflow: bootstrap + test + fixed-point
-- Release workflow: build + package + upload
-- Snapshot update automation
-
-### Phase 4: Developer tooling (future)
+### Phase 3: Developer tooling (future)
 
 - `make bootstrap` / `make dev` targets
-- Pre-commit hook: verify fixed point
-- `mtc bootstrap` subcommand (self-host the bootstrap)
+- Pre-commit hook: verify fixed point before allowing commits to `projects/mtc/`
+- `mtc bootstrap` self-hosted subcommand (the bootstrap script itself written
+  in Milk Tea)
 
 ---
 
-## 8. Configuration Reference
+## 7. Configuration Reference
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `$MTC_BOOTSTRAP` | Path to stage0 mtc binary | auto-detect |
-| `$MTC_BOOTSTRAP_URL` | URL to download snapshot from | GitHub Releases latest |
+| `$MTC_BOOTSTRAP_URL` | URL to download snapshot from | none (user-configured) |
 | `$CC` | C compiler for native builds | `cc` |
 | `$MTC_BUILD_DIR` | Build output directory | `build/` |
-| `$XDG_CACHE_HOME` | Cache root (bootstrap + build) | `~/.cache` |
+| `$XDG_CACHE_HOME` | Cache root (bootstrap downloads) | `~/.cache` |
 
 ---
 
-## 9. References
+## 8. References
 
 - [Rust bootstrap redesign (2025)](https://blog.rust-lang.org/inside-rust/2025/05/29/redesigning-the-initial-bootstrap-sequence/)
 - [Rust Compiler Development Guide — Bootstrapping](https://rustc-dev-guide.rust-lang.org/building/bootstrapping/)
