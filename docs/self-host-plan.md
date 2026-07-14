@@ -14,6 +14,14 @@ Last updated: 2026-07-14
 ### 0.1 Bootstrap
 
 ```sh
+tools/bootstrap.sh                                 # full 3-stage + fixed point + tests
+tools/bootstrap.sh --stage 1 --no-verify            # fast dev build
+MTC_BOOTSTRAP=build/stage2/mtc tools/bootstrap.sh   # Ruby-free bootstrap
+```
+
+Manual bootstrap (equivalent):
+
+```sh
 ruby -Ilib bin/mtc build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-current
 tmp/mtc-current build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-stage2 --keep-c tmp/stage2.c
 tmp/mtc-stage2 build projects/mtc -I . --no-cache --no-debug-guards -o tmp/mtc-stage3 --keep-c tmp/stage3.c
