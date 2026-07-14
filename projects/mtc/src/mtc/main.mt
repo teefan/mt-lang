@@ -1144,6 +1144,7 @@ function test_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
     var test_dir = "."
+    var name_filter: Option[str] = Option[str].none
     var ai: ptr_uint = 1
     while ai < args.len:
         let arg = args[ai]
@@ -1152,6 +1153,13 @@ function test_command(args: span[str]) -> int:
                 stdio.print_line("error: -I requires a directory")
                 return 1
             roots.push(args[ai + 1])
+            ai += 2
+            continue
+        if arg == "-n" or arg == "--name":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: -n requires a name substring")
+                return 1
+            name_filter = Option[str].some(value= args[ai + 1])
             ai += 2
             continue
         test_dir = arg
@@ -1176,7 +1184,7 @@ function test_command(args: span[str]) -> int:
                         let entry_name = name_payload.value
                         if entry_name.ends_with(".mt"):
                             let (file_passed, file_failed) = run_test_file(
-                                entry_name, ref_of(roots), ref_of(runner_counter)
+                                entry_name, ref_of(roots), ref_of(runner_counter), name_filter
                             )
                             if file_passed > 0 or file_failed > 0:
                                 file_count += 1
@@ -1187,7 +1195,15 @@ function test_command(args: span[str]) -> int:
                 index += 1
 
             if file_count == 0:
-                stdio.print_line("no @[test] functions found")
+                match name_filter:
+                    Option.some as needle:
+                        stdio.print_format(
+                            c"no tests matched -n '%.*s' under %.*s\n",
+                            int<-(needle.value.len), needle.value.data,
+                            int<-(test_dir.len), test_dir.data,
+                        )
+                    Option.none:
+                        stdio.print_line("no @[test] functions found")
             else:
                 stdio.print_format(
                     c"%d test file(s), %d failed\n",
@@ -1203,6 +1219,16 @@ function test_command(args: span[str]) -> int:
                 int<-(test_dir.len), test_dir.data,
             )
             return 1
+
+
+## True when `name` should run under the active `-n` filter: no filter matches
+## everything, otherwise the test name must contain the filter substring.
+function matches_name_filter(name: str, name_filter: Option[str]) -> bool:
+    match name_filter:
+        Option.some as needle:
+            return name.contains_substring(needle.value)
+        Option.none:
+            return true
 
 
 ## Count @[test] / @[expect_fatal] annotations in a .mt file.
@@ -1238,7 +1264,7 @@ function count_tests_in_file(file_path: str) -> int:
             return 0
 
 
-function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[ptr_uint]) -> (int, int):
+function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[ptr_uint], name_filter: Option[str]) -> (int, int):
     match fs.read_text(file_path):
         Result.success as content_payload:
             var source = content_payload.value
@@ -1261,7 +1287,8 @@ function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[pt
                             while ai < fun.attributes.len:
                                 let attr = read(fun.attributes.data + ai)
                                 if attr.name.parts.len == 1 and read(attr.name.parts.data + 0) == "test":
-                                    test_names.push(fun.name)
+                                    if matches_name_filter(fun.name, name_filter):
+                                        test_names.push(fun.name)
                                 ai += 1
                         _:
                             pass
