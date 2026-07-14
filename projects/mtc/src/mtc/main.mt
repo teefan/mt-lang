@@ -1716,23 +1716,36 @@ function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[pt
                 return (0, 0)
 
             var test_names = vec.Vec[str].create()
+            defer test_names.release()
+            var death_names = vec.Vec[str].create()
+            defer death_names.release()
             var di: ptr_uint = 0
             while di < file.declarations.len:
                 unsafe:
                     match read(file.declarations.data + di):
                         ast.Decl.decl_function as fun:
+                            var is_test = false
+                            var is_fatal = false
                             var ai: ptr_uint = 0
                             while ai < fun.attributes.len:
                                 let attr = read(fun.attributes.data + ai)
-                                if attr.name.parts.len == 1 and read(attr.name.parts.data + 0) == "test":
-                                    if matches_name_filter(fun.name, name_filter):
-                                        test_names.push(fun.name)
+                                if attr.name.parts.len == 1:
+                                    let an = read(attr.name.parts.data + 0)
+                                    if an == "test":
+                                        is_test = true
+                                    else if an == "expect_fatal":
+                                        is_fatal = true
                                 ai += 1
+                            if is_test and matches_name_filter(fun.name, name_filter):
+                                if is_fatal:
+                                    death_names.push(fun.name)
+                                else:
+                                    test_names.push(fun.name)
                         _:
                             pass
                 di += 1
 
-            if test_names.len() == 0:
+            if test_names.len() == 0 and death_names.len() == 0:
                 return (0, 0)
 
             var testing_alias = "t"
@@ -1751,161 +1764,290 @@ function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[pt
                             pass
                 vi += 1
 
-            var runner_source = string.String.create()
-            runner_source.append(source_text)
-            runner_source.append("\n\nfunction main() -> int:\n")
-            runner_source.append("    var __mt_test_stats = ")
-            runner_source.append(testing_alias)
-            runner_source.append(".Stats.create()\n")
-            var ti: ptr_uint = 0
-            while ti < test_names.len():
-                let tn_ptr = test_names.get(ti) else:
-                    break
-                let tn = unsafe: read(tn_ptr)
-                runner_source.append("    __mt_test_stats = ")
-                runner_source.append(testing_alias)
-                runner_source.append(".record(__mt_test_stats, \"")
-                runner_source.append(tn)
-                runner_source.append("\", ")
-                runner_source.append(tn)
-                runner_source.append("())\n")
-                ti += 1
-            runner_source.append("    return ")
-            runner_source.append(testing_alias)
-            runner_source.append(".summarize(__mt_test_stats)\n")
-
-            let dirname = path_ops.dirname(file_path)
-            let counter_val = read(counter)
-            read(counter) = counter_val + 1z
-            var runner_num_str = ptr_uint_to_str(counter_val)
-            var runner_path_str = string.String.create()
-            runner_path_str.append(dirname)
-            runner_path_str.append("/__mt_test_runner_")
-            runner_path_str.append(runner_num_str)
-            runner_path_str.append(".mt")
-            defer runner_path_str.release()
-
-            match fs.write_text(runner_path_str.as_str(), runner_source.as_str()):
-                Result.success:
-                    pass
-                Result.failure:
-                    return (0, int<-(test_names.len()))
-
-            var runner_bin_str = string.String.create()
-            runner_bin_str.append(dirname)
-            runner_bin_str.append("/__mt_test_runner_")
-            runner_bin_str.append(runner_num_str)
-            defer runner_bin_str.release()
-
-            var build_cmd = vec.Vec[str].create()
-            defer build_cmd.release()
-            build_cmd.push("bin/mtc")
-            build_cmd.push("build")
-            build_cmd.push(runner_path_str.as_str())
-            var bri: ptr_uint = 0
-            while bri < roots.len():
-                build_cmd.push("-I")
-                unsafe:
-                    build_cmd.push(read(ptr[str]<-roots.data + bri))
-                bri += 1
-            build_cmd.push("-o")
-            build_cmd.push(runner_bin_str.as_str())
-            build_cmd.push("--no-debug-guards")
-
             if not machine:
                 stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
-            var build_failed = false
-            match process.capture(build_cmd.as_span()):
-                Result.success as captured:
-                    var build_result = captured.value
-                    defer build_result.release()
-                    if not machine:
-                        let build_stdout = build_result.stdout_text()
-                        if build_stdout.is_some():
-                            stdio.print_format(c"%.*s", int<-(build_stdout.unwrap().len), build_stdout.unwrap().data)
-                        let build_stderr = build_result.stderr_text()
-                        if build_stderr.is_some():
-                            stdio.print_format(c"%.*s", int<-(build_stderr.unwrap().len), build_stderr.unwrap().data)
-                    if build_result.status.normalized_code() != 0:
-                        build_failed = true
-                Result.failure:
-                    build_failed = true
 
-            if build_failed:
+            var file_failed = 0
+            if test_names.len() > 0:
+                if run_normal_test_runner(file_path, source_text, ref_of(test_names), testing_alias, roots, counter, timeout_seconds, memory_mb, machine, results) != 0:
+                    file_failed = 1
+
+            var dj: ptr_uint = 0
+            while dj < death_names.len():
+                let dn_ptr = death_names.get(dj) else:
+                    break
+                if not run_death_test(file_path, source_text, unsafe: read(dn_ptr), roots, counter, timeout_seconds, memory_mb, machine, results):
+                    file_failed = 1
+                dj += 1
+
+            return (int<-(test_names.len() + death_names.len()), file_failed)
+        Result.failure:
+            return (0, 0)
+
+
+## Run `binary_path` under a sandbox: `timeout <sec> bash -c 'ulimit -v <kb>;
+## exec "$@"'`, capturing output.  `timeout` reports exit 124 on expiry and the
+## `ulimit -v` cap bounds virtual memory so a hung/runaway binary cannot stall
+## or exhaust the host.
+function run_sandboxed(binary_path: str, timeout_seconds: ptr_uint, memory_mb: ptr_uint) -> Result[process.CaptureResult, process.ProcessError]:
+    var ulimit_cmd = string.String.create()
+    defer ulimit_cmd.release()
+    ulimit_cmd.append("ulimit -v ")
+    ulimit_cmd.append(ptr_uint_to_str(memory_mb * 1024z))
+    ulimit_cmd.append("; exec \"$@\"")
+
+    var run_cmd = vec.Vec[str].create()
+    defer run_cmd.release()
+    run_cmd.push("timeout")
+    run_cmd.push(ptr_uint_to_str(timeout_seconds))
+    run_cmd.push("bash")
+    run_cmd.push("-c")
+    run_cmd.push(ulimit_cmd.as_str())
+    run_cmd.push("mt")
+    run_cmd.push(binary_path)
+    return process.capture(run_cmd.as_span())
+
+
+## Synthesize, build, and run the std.testing runner for a file's normal
+## @[test] functions.  Returns 1 when the runner fails to build, times out,
+## crashes, or exits non-zero; 0 otherwise.
+function run_normal_test_runner(file_path: str, source_text: str, test_names: ref[vec.Vec[str]], testing_alias: str, roots: ref[vec.Vec[str]], counter: ref[ptr_uint], timeout_seconds: ptr_uint, memory_mb: ptr_uint, machine: bool, results: ref[vec.Vec[TestResult]]) -> int:
+    var runner_source = string.String.create()
+    defer runner_source.release()
+    runner_source.append(source_text)
+    runner_source.append("\n\nfunction main() -> int:\n")
+    runner_source.append("    var __mt_test_stats = ")
+    runner_source.append(testing_alias)
+    runner_source.append(".Stats.create()\n")
+    var ti: ptr_uint = 0
+    while ti < test_names.len():
+        let tn_ptr = test_names.get(ti) else:
+            break
+        let tn = unsafe: read(tn_ptr)
+        runner_source.append("    __mt_test_stats = ")
+        runner_source.append(testing_alias)
+        runner_source.append(".record(__mt_test_stats, \"")
+        runner_source.append(tn)
+        runner_source.append("\", ")
+        runner_source.append(tn)
+        runner_source.append("())\n")
+        ti += 1
+    runner_source.append("    return ")
+    runner_source.append(testing_alias)
+    runner_source.append(".summarize(__mt_test_stats)\n")
+
+    let dirname = path_ops.dirname(file_path)
+    let counter_val = read(counter)
+    read(counter) = counter_val + 1z
+    var runner_num_str = ptr_uint_to_str(counter_val)
+    var runner_path_str = string.String.create()
+    runner_path_str.append(dirname)
+    runner_path_str.append("/__mt_test_runner_")
+    runner_path_str.append(runner_num_str)
+    runner_path_str.append(".mt")
+    defer runner_path_str.release()
+
+    match fs.write_text(runner_path_str.as_str(), runner_source.as_str()):
+        Result.success:
+            pass
+        Result.failure:
+            return 1
+
+    var runner_bin_str = string.String.create()
+    runner_bin_str.append(dirname)
+    runner_bin_str.append("/__mt_test_runner_")
+    runner_bin_str.append(runner_num_str)
+    defer runner_bin_str.release()
+
+    var build_cmd = vec.Vec[str].create()
+    defer build_cmd.release()
+    build_cmd.push("bin/mtc")
+    build_cmd.push("build")
+    build_cmd.push(runner_path_str.as_str())
+    var bri: ptr_uint = 0
+    while bri < roots.len():
+        build_cmd.push("-I")
+        unsafe:
+            build_cmd.push(read(ptr[str]<-roots.data + bri))
+        bri += 1
+    build_cmd.push("-o")
+    build_cmd.push(runner_bin_str.as_str())
+    build_cmd.push("--no-debug-guards")
+
+    var build_failed = false
+    match process.capture(build_cmd.as_span()):
+        Result.success as captured:
+            var build_result = captured.value
+            defer build_result.release()
+            if not machine:
+                let build_stdout = build_result.stdout_text()
+                if build_stdout.is_some():
+                    stdio.print_format(c"%.*s", int<-(build_stdout.unwrap().len), build_stdout.unwrap().data)
+                let build_stderr = build_result.stderr_text()
+                if build_stderr.is_some():
+                    stdio.print_format(c"%.*s", int<-(build_stderr.unwrap().len), build_stderr.unwrap().data)
+            if build_result.status.normalized_code() != 0:
+                build_failed = true
+        Result.failure:
+            build_failed = true
+
+    if build_failed:
+        if machine:
+            var be_name = string.String.from_str(file_path)
+            be_name.append(" (build error)")
+            results.push(TestResult(
+                name = be_name,
+                status = TestStatus.fail,
+                detail = string.String.from_str("build error"),
+                has_detail = true,
+            ))
+        else:
+            stdio.print_format(c"FAILED - %.*s (build error)\n", int<-(file_path.len), file_path.data)
+        let _rb = fs.remove(runner_path_str.as_str())
+        return 1
+
+    var run_failed = false
+    match run_sandboxed(runner_bin_str.as_str(), timeout_seconds, memory_mb):
+        Result.success as run_result:
+            var capture_result = run_result.value
+            defer capture_result.release()
+            let run_stdout = capture_result.stdout_text()
+            if run_stdout.is_some():
                 if machine:
-                    var be_name = string.String.from_str(file_path)
-                    be_name.append(" (build error)")
+                    collect_runner_results(run_stdout.unwrap(), results)
+                else:
+                    stdio.print_format(c"%.*s", int<-(run_stdout.unwrap().len), run_stdout.unwrap().data)
+            if not machine:
+                let run_stderr = capture_result.stderr_text()
+                if run_stderr.is_some():
+                    stdio.print_format(c"%.*s", int<-(run_stderr.unwrap().len), run_stderr.unwrap().data)
+            let code = capture_result.status.normalized_code()
+            if code == 124:
+                if machine:
+                    var to_name = string.String.from_str(file_path)
+                    to_name.append(" (timed out)")
                     results.push(TestResult(
-                        name = be_name,
+                        name = to_name,
                         status = TestStatus.fail,
-                        detail = string.String.from_str("build error"),
+                        detail = string.String.from_str("timed out"),
                         has_detail = true,
                     ))
                 else:
-                    stdio.print_format(c"FAILED - %.*s (build error)\n", int<-(file_path.len), file_path.data)
-                let _rb = fs.remove(runner_path_str.as_str())
-                return (int<-(test_names.len()), 1)
-
-            # Sandbox the runner: cap wall-clock time via `timeout` and virtual
-            # memory via `ulimit -v` so a hung or runaway generated binary cannot
-            # stall or exhaust the host.  `timeout` reports 124 on expiry.
-            var timeout_str = ptr_uint_to_str(timeout_seconds)
-            var ulimit_cmd = string.String.create()
-            defer ulimit_cmd.release()
-            ulimit_cmd.append("ulimit -v ")
-            ulimit_cmd.append(ptr_uint_to_str(memory_mb * 1024z))
-            ulimit_cmd.append("; exec \"$@\"")
-
-            var run_cmd = vec.Vec[str].create()
-            defer run_cmd.release()
-            run_cmd.push("timeout")
-            run_cmd.push(timeout_str)
-            run_cmd.push("bash")
-            run_cmd.push("-c")
-            run_cmd.push(ulimit_cmd.as_str())
-            run_cmd.push("mt")
-            run_cmd.push(runner_bin_str.as_str())
-
-            var run_failed = false
-            match process.capture(run_cmd.as_span()):
-                Result.success as run_result:
-                    var capture_result = run_result.value
-                    defer capture_result.release()
-                    let run_stdout = capture_result.stdout_text()
-                    if run_stdout.is_some():
-                        if machine:
-                            collect_runner_results(run_stdout.unwrap(), results)
-                        else:
-                            stdio.print_format(c"%.*s", int<-(run_stdout.unwrap().len), run_stdout.unwrap().data)
-                    if not machine:
-                        let run_stderr = capture_result.stderr_text()
-                        if run_stderr.is_some():
-                            stdio.print_format(c"%.*s", int<-(run_stderr.unwrap().len), run_stderr.unwrap().data)
-                    let code = capture_result.status.normalized_code()
-                    if code == 124:
-                        if machine:
-                            var to_name = string.String.from_str(file_path)
-                            to_name.append(" (timed out)")
-                            results.push(TestResult(
-                                name = to_name,
-                                status = TestStatus.fail,
-                                detail = string.String.from_str("timed out"),
-                                has_detail = true,
-                            ))
-                        else:
-                            stdio.print_format(c"test run timed out after %ds\n", int<-timeout_seconds)
-                        run_failed = true
-                    else if code != 0:
-                        run_failed = true
-                Result.failure:
-                    if not machine:
-                        stdio.print_line("FAILED - runner crashed")
-                    run_failed = true
-
-            let _r1 = fs.remove(runner_path_str.as_str())
-            let _r2 = fs.remove(runner_bin_str.as_str())
-            if run_failed:
-                return (int<-(test_names.len()), 1)
-            return (int<-(test_names.len()), 0)
+                    stdio.print_format(c"test run timed out after %ds\n", int<-timeout_seconds)
+                run_failed = true
+            else if code != 0:
+                run_failed = true
         Result.failure:
-            return (0, 0)
+            if not machine:
+                stdio.print_line("FAILED - runner crashed")
+            run_failed = true
+
+    let _r1 = fs.remove(runner_path_str.as_str())
+    let _r2 = fs.remove(runner_bin_str.as_str())
+    if run_failed:
+        return 1
+    return 0
+
+
+## Run a single @[expect_fatal] death test in its own binary.  The synthesized
+## main calls the test and returns 0 on either outcome; the test passes only if
+## the process aborts (fatal / failed safety check) instead of returning or
+## timing out.
+function run_death_test(file_path: str, source_text: str, test_name: str, roots: ref[vec.Vec[str]], counter: ref[ptr_uint], timeout_seconds: ptr_uint, memory_mb: ptr_uint, machine: bool, results: ref[vec.Vec[TestResult]]) -> bool:
+    var runner_source = string.String.create()
+    defer runner_source.release()
+    runner_source.append(source_text)
+    runner_source.append("\n\nfunction main() -> int:\n")
+    runner_source.append("    match ")
+    runner_source.append(test_name)
+    runner_source.append("():\n")
+    runner_source.append("        Result.success:\n            return 0\n")
+    runner_source.append("        Result.failure:\n            return 0\n")
+
+    let dirname = path_ops.dirname(file_path)
+    let counter_val = read(counter)
+    read(counter) = counter_val + 1z
+    var runner_num_str = ptr_uint_to_str(counter_val)
+    var runner_path_str = string.String.create()
+    runner_path_str.append(dirname)
+    runner_path_str.append("/__mt_test_runner_")
+    runner_path_str.append(runner_num_str)
+    runner_path_str.append(".mt")
+    defer runner_path_str.release()
+
+    match fs.write_text(runner_path_str.as_str(), runner_source.as_str()):
+        Result.success:
+            pass
+        Result.failure:
+            return false
+
+    var runner_bin_str = string.String.create()
+    runner_bin_str.append(dirname)
+    runner_bin_str.append("/__mt_test_runner_")
+    runner_bin_str.append(runner_num_str)
+    defer runner_bin_str.release()
+
+    var build_cmd = vec.Vec[str].create()
+    defer build_cmd.release()
+    build_cmd.push("bin/mtc")
+    build_cmd.push("build")
+    build_cmd.push(runner_path_str.as_str())
+    var bri: ptr_uint = 0
+    while bri < roots.len():
+        build_cmd.push("-I")
+        unsafe:
+            build_cmd.push(read(ptr[str]<-roots.data + bri))
+        bri += 1
+    build_cmd.push("-o")
+    build_cmd.push(runner_bin_str.as_str())
+    build_cmd.push("--no-debug-guards")
+
+    var build_ok = false
+    match process.capture(build_cmd.as_span()):
+        Result.success as captured:
+            var build_result = captured.value
+            defer build_result.release()
+            if build_result.status.normalized_code() == 0:
+                build_ok = true
+        Result.failure:
+            build_ok = false
+
+    var passed = false
+    var reason = "expected a fatal abort, but the test returned"
+    if not build_ok:
+        reason = "build error"
+    else:
+        match run_sandboxed(runner_bin_str.as_str(), timeout_seconds, memory_mb):
+            Result.success as run_result:
+                var capture_result = run_result.value
+                defer capture_result.release()
+                let code = capture_result.status.normalized_code()
+                if code == 124:
+                    reason = "timed out"
+                else if code == 0:
+                    reason = "expected a fatal abort, but the test returned"
+                else:
+                    passed = true
+            Result.failure:
+                reason = "runner crashed"
+
+    let _r1 = fs.remove(runner_path_str.as_str())
+    let _r2 = fs.remove(runner_bin_str.as_str())
+
+    if machine:
+        var name = string.String.from_str(test_name)
+        name.append(" (expect_fatal)")
+        if passed:
+            results.push(TestResult(name = name, status = TestStatus.ok, detail = string.String.create(), has_detail = false))
+        else:
+            results.push(TestResult(name = name, status = TestStatus.fail, detail = string.String.from_str(reason), has_detail = true))
+    else:
+        if passed:
+            stdio.print_format(c"ok   - %.*s (expect_fatal)\n", int<-(test_name.len), test_name.data)
+        else:
+            stdio.print_format(
+                c"FAIL - %.*s (expect_fatal): %.*s\n",
+                int<-(test_name.len), test_name.data,
+                int<-(reason.len), reason.data,
+            )
+    return passed
