@@ -231,6 +231,10 @@ struct LowerCtx:
     # when the `break`/`continue` appears inside a match lowered to a C `switch`.
     loop_break_label: str
     loop_continue_label: str
+    # Cached commonly-used types to avoid repeated ty_primitive/ty_generic calls.
+    bool_ty: types.Type
+    void_ty: types.Type
+    ptr_void_ty: types.Type
 
 
 ## Per-event runtime linkage information.  Each declared `event Name[N]`
@@ -284,7 +288,7 @@ function ensure_str_buffer_struct(ctx: ref[LowerCtx], sb_ty: types.Type) -> void
     var fields = vec.Vec[ir.Field].create()
     let char_ty = types.primitive("char")
     let ptr_uint_ty = types.primitive("ptr_uint")
-    let bool_ty = types.primitive("bool")
+    let bool_ty = ctx.bool_ty
     var data_ty = types.Type.ty_generic(name = "array", args = sp_type2(char_ty, types.literal_int(65)))
     fields.push(ir.Field(name = "data", ty = data_ty))
     fields.push(ir.Field(name = "len", ty = ptr_uint_ty))
@@ -662,7 +666,7 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[
         ir_params.push(ir.Param(name = p.name, linkage_name = p_c, ty = p_ty, pointer = p_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = p_c, ty = p_ty, pointer = p_ptr))
         pi += 1
-    var ret_ty = types.primitive("void")
+    var ret_ty = ctx.void_ty
     if return_type != null:
         let rt_raw = unsafe: read(unsafe: ptr[ast.TypeRef]<-return_type)
         if rt_raw.is_proc or rt_raw.is_fn:
@@ -809,6 +813,9 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         async_local_fields_ptr = null,
         loop_break_label = "",
         loop_continue_label = "",
+        bool_ty = types.primitive("bool"),
+        void_ty = types.primitive("void"),
+        ptr_void_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))),
     )
 
 
@@ -1723,7 +1730,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     # a bare `return;` produces a completed Task[void] aggregate
                     # rather than a void return.
                     if ctx.inside_async:
-                        let void_ret_val = alloc_expr(ir.Expr.expr_zero_init(ty = types.primitive("void")))
+                        let void_ret_val = alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty))
                         let wrapped = make_task_literal(void_ret_val)
                         output.push(ir.Stmt.stmt_return(value = wrapped, line = r.line, source_path = ""))
                     else:
@@ -1975,7 +1982,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     ctx.loop_continue_label = cl
                     var brk = vec.Vec[ir.Stmt].create()
                     brk.push(ir.Stmt.stmt_goto(label = bl))
-                    wbody.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = cond_ir, ty = types.primitive("bool"))), then_body = brk.as_span(), else_body = span[ir.Stmt]()))
+                    wbody.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = cond_ir, ty = ctx.bool_ty)), then_body = brk.as_span(), else_body = span[ir.Stmt]()))
                     let inner = lower_block(ctx, w.body)
                     var ii: ptr_uint = 0
                     while ii < inner.len:
@@ -1983,7 +1990,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         ii += 1
                     wbody.push(ir.Stmt.stmt_label(name = cl))
                     var wrap = vec.Vec[ir.Stmt].create()
-                    wrap.push(ir.Stmt.stmt_while(condition = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool"))), body = wbody.as_span()))
+                    wrap.push(ir.Stmt.stmt_while(condition = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty)), body = wbody.as_span()))
                     wrap.push(ir.Stmt.stmt_label(name = bl))
                     output.push(ir.Stmt.stmt_block(body = wrap.as_span()))
                     ctx.loop_break_label = saved_break
@@ -2232,16 +2239,16 @@ function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
             _:
                 pass
         if kind == "result":
-            let data_field = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = types.primitive("void")))
-            let failure_struct = alloc_expr(ir.Expr.expr_member(receiver = data_field, member = "failure", ty = types.primitive("void")))
-            let error_member = alloc_expr(ir.Expr.expr_member(receiver = failure_struct, member = "error", ty = types.primitive("void")))
+            let data_field = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = ctx.void_ty))
+            let failure_struct = alloc_expr(ir.Expr.expr_member(receiver = data_field, member = "failure", ty = ctx.void_ty))
+            let error_member = alloc_expr(ir.Expr.expr_member(receiver = failure_struct, member = "error", ty = ctx.void_ty))
             if is_task_ret:
                 var result_fail_fields = vec.Vec[ir.AggregateField].create()
                 result_fail_fields.push(ir.AggregateField(name = "error", value = error_member))
                 let result_failure = extract_task_element_type(ctx, ret_ty)
                 let failure_result = alloc_expr(ir.Expr.expr_variant_literal(ty = result_failure, arm_name = "failure", fields = result_fail_fields.as_span()))
                 var task_fields = vec.Vec[ir.AggregateField].create()
-                let void_zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_void_type()))
+                let void_zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ctx.ptr_void_ty))
                 task_fields.push(ir.AggregateField(name = "value", value = failure_result))
                 task_fields.push(ir.AggregateField(name = "frame", value = void_zero))
                 task_fields.push(ir.AggregateField(name = "ready", value = void_zero))
@@ -2334,17 +2341,17 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
             let data_field = alloc_expr(ir.Expr.expr_member(
                 receiver = storage_ref,
                 member = "data",
-                ty = types.primitive("void"),
+                ty = ctx.void_ty,
             ))
             let failure_struct = alloc_expr(ir.Expr.expr_member(
                 receiver = data_field,
                 member = "failure",
-                ty = types.primitive("void"),
+                ty = ctx.void_ty,
             ))
             let error_member = alloc_expr(ir.Expr.expr_member(
                 receiver = failure_struct,
                 member = "error",
-                ty = types.primitive("void"),
+                ty = ctx.void_ty,
             ))
             if is_task_ret:
                 # Construct a Task struct: all vtable fields zeroed, value
@@ -2359,7 +2366,7 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
                     fields = result_fail_fields.as_span(),
                 ))
                 var task_fields = vec.Vec[ir.AggregateField].create()
-                let void_zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_void_type()))
+                let void_zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ctx.ptr_void_ty))
                 task_fields.push(ir.AggregateField(name = "value", value = failure_result))
                 task_fields.push(ir.AggregateField(name = "frame", value = void_zero))
                 task_fields.push(ir.AggregateField(name = "ready", value = void_zero))
@@ -2462,16 +2469,16 @@ function lower_propagate_assign(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
             _:
                 pass
         if kind == "result":
-            let data_field = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = types.primitive("void")))
-            let failure_struct = alloc_expr(ir.Expr.expr_member(receiver = data_field, member = "failure", ty = types.primitive("void")))
-            let error_member = alloc_expr(ir.Expr.expr_member(receiver = failure_struct, member = "error", ty = types.primitive("void")))
+            let data_field = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = ctx.void_ty))
+            let failure_struct = alloc_expr(ir.Expr.expr_member(receiver = data_field, member = "failure", ty = ctx.void_ty))
+            let error_member = alloc_expr(ir.Expr.expr_member(receiver = failure_struct, member = "error", ty = ctx.void_ty))
             if is_task_ret:
                 var result_fail_fields = vec.Vec[ir.AggregateField].create()
                 result_fail_fields.push(ir.AggregateField(name = "error", value = error_member))
                 let result_failure = extract_task_element_type(ctx, ret_ty)
                 let failure_result = alloc_expr(ir.Expr.expr_variant_literal(ty = result_failure, arm_name = "failure", fields = result_fail_fields.as_span()))
                 var task_fields = vec.Vec[ir.AggregateField].create()
-                let void_zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_void_type()))
+                let void_zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ctx.ptr_void_ty))
                 task_fields.push(ir.AggregateField(name = "value", value = failure_result))
                 task_fields.push(ir.AggregateField(name = "frame", value = void_zero))
                 task_fields.push(ir.AggregateField(name = "ready", value = void_zero))
@@ -2578,7 +2585,7 @@ function guard_variant_base(name: str) -> str:
 ## The failure/absent condition for a guard: `storage == null` for nullable,
 ## `storage.kind == <none/failure>` for Option/Result.
 function guard_failure_condition(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type, storage_ref: ptr[ir.Expr]) -> ptr[ir.Expr]:
-    let bool_ty = types.primitive("bool")
+    let bool_ty = ctx.bool_ty
     if kind == "nullable":
         # mt_subscription is a plain struct without nullable/null wrapper;
         # failure is indicated by slot == 0.
@@ -2648,7 +2655,7 @@ function guard_success_projection(ctx: ref[LowerCtx], kind: str, storage_ty: typ
 function emit_result_failure_binding(ctx: ref[LowerCtx], else_stmts: ref[vec.Vec[ir.Stmt]], storage_ty: types.Type, storage_ref: ptr[ir.Expr], error_name: str) -> void:
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
     let payload_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, "failure"))
-    var error_ty = types.primitive("void")
+    var error_ty = ctx.void_ty
     let args = variant_type_args(storage_ty)
     if args.len >= 2:
         error_ty = qualify_type(ctx, unsafe: read(args.data + 1))
@@ -2748,7 +2755,7 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
     match t:
         types.Type.ty_named as n:
             if is_raw_type_param_name(n.name):
-                return types.primitive("void")
+                return ctx.void_ty
             # Already-monomorphized concrete names (e.g. std_map_Node_str_bool)
             # are fully qualified: pass them through so re-qualifying in a
             # different module context does not double-prefix them.
@@ -2790,7 +2797,7 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             return types.Type.ty_imported(module_name = ctx.module_name, name = n.name, args = span[types.Type]())
         types.Type.ty_imported as im:
             if is_raw_type_param_name(im.name):
-                return types.primitive("void")
+                return ctx.void_ty
             # Resolve type aliases defined in the owning module (e.g.
             # `NativeBuffer` in `std.net` → `uv_buf_t` in `std.c.libuv`).
             if im.args.len == 0 and not is_prelude_variant_name(im.name):
@@ -3182,7 +3189,7 @@ function resolve_function_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> 
         let pty = resolve_type_ref(ctx, ptr_of(p.param_type))
         param_types.push(pty)
         i += 1
-    var ret = types.primitive("void")
+    var ret = ctx.void_ty
     let fr = t.fn_return
     if fr != null:
         unsafe:
@@ -3337,7 +3344,7 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
             source_path = "",
         ))
     let stop_value = if inline_stop: lower_expr(ctx, stop) else: alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = false))
-    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = stop_value, ty = types.primitive("bool")))
+    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = stop_value, ty = ctx.bool_ty))
     let post_target = alloc_expr(ir.Expr.expr_name(name = index_linkage, ty = loop_type, pointer = false))
     let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = loop_type))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = one))
@@ -3458,7 +3465,7 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     else:
         init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
     let index_ref_cond = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = false))
-    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref_cond, right = stop_value, ty = types.primitive("bool")))
+    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref_cond, right = stop_value, ty = ctx.bool_ty))
     let post_target = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = false))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = loop_body.as_span())
@@ -3653,7 +3660,7 @@ function parallel_uid(ctx: ref[LowerCtx]) -> str:
 
 
 function parallel_worker_fn(ctx: ref[LowerCtx], body_ir: span[ir.Stmt]) -> ir.Function:
-    let void_ty = types.primitive("void")
+    let void_ty = ctx.void_ty
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     parallel_cnt += 1
     let uid = parallel_uid(ctx)
@@ -3768,7 +3775,7 @@ function find_local(ctx: ref[LowerCtx], name: str) -> Option[LocalBinding]:
 
 ## Worker for mt_parallel_for: takes (void* data, int64_t start, int64_t end).
 function parallel_for_worker_fn(ctx: ref[LowerCtx], body_ir: span[ir.Stmt]) -> ir.Function:
-    let void_ty = types.primitive("void")
+    let void_ty = ctx.void_ty
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let long_ty = types.primitive("long")
     parallel_cnt += 1
@@ -3779,7 +3786,7 @@ function parallel_for_worker_fn(ctx: ref[LowerCtx], body_ir: span[ir.Stmt]) -> i
     let index_ref = alloc_expr(ir.Expr.expr_name(name = index_c, ty = long_ty, pointer = false))
     let start_ref = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_start", ty = long_ty, pointer = false))
     let end_ref = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_end", ty = long_ty, pointer = false))
-    let cond = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = end_ref, ty = types.primitive("bool")))
+    let cond = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = end_ref, ty = ctx.bool_ty))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = long_ty))))
     let init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = long_ty, value = start_ref, line = 0, source_path = ""))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = cond, post = post, body = body_ir)
@@ -3817,7 +3824,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
                 end_ptr = rng.end_expr
             _:
                 fatal(c"lowering parallel for: only range iteration is supported")
-    let void_ty = types.primitive("void")
+    let void_ty = ctx.void_ty
     let long_ty = types.primitive("long")
     let bd = body else:
         return
@@ -3929,7 +3936,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
                     mc_args.push(read(field_addr))
                     mc_args.push(read(outer_addr))
                     mc_args.push(read(sz))
-                pf_setup.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = mc_args.as_span(), ty = types.primitive("void"))), line = 0, source_path = ""))
+                pf_setup.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = mc_args.as_span(), ty = ctx.void_ty)), line = 0, source_path = ""))
             else:
                 pf_setup.push(ir.Stmt.stmt_assignment(target = field_ref, operator = "=", value = outer_ref))
         var pf_setup_iter = pf_setup.iter()
@@ -3957,7 +3964,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
 function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bodies: span[ast.Stmt]) -> void:
     if bodies.len < 2:
         return
-    let void_ty = types.primitive("void")
+    let void_ty = ctx.void_ty
     parallel_cnt += 1
     let cap_uid = parallel_uid(ctx)
     # Detect captures: names referenced in bodies that are outer-scope locals.
@@ -4040,7 +4047,7 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     # Generate workers, accumulate spawn items, emit mt_spawn_all.
     let spawn_item_ty = types.Type.ty_named(module_name = "", name = "mt_spawn_item")
     var spawn_items = vec.Vec[ir.Expr].create()
-    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     i = 0
     while i < bodies.len:
         let wbp = cap_body_irs.get(i) else:
@@ -4073,7 +4080,7 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
                         mc_args.push(read(field_addr))
                         mc_args.push(read(outer_addr))
                         mc_args.push(read(sz))
-                    cap_setup.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = mc_args.as_span(), ty = types.primitive("void"))), line = 0, source_path = ""))
+                    cap_setup.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = mc_args.as_span(), ty = ctx.void_ty)), line = 0, source_path = ""))
                 else:
                     cap_setup.push(ir.Stmt.stmt_assignment(target = field_ref, operator = "=", value = outer_ref))
             var cs_iter = cap_setup.iter()
@@ -4120,7 +4127,7 @@ function find_local_before(ctx: ref[LowerCtx], name: str, limit: ptr_uint) -> Op
 
 ## Lower `gather h1, h2, ...`.  Each handle is joined via mt_detach_join.
 function lower_gather_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], handles: span[ast.Expr]) -> void:
-    let void_ty = types.primitive("void")
+    let void_ty = ctx.void_ty
     var i: ptr_uint = 0
     while i < handles.len:
         let h = unsafe: lower_expr(ctx, handles.data + i)
@@ -4137,7 +4144,7 @@ function lower_gather_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ha
 ## Lower `detach <call>` expression.  Wraps the call in a worker function
 ## and dispatches via mt_detach_run, returning a void* handle.
 function lower_detach_expr(ctx: ref[LowerCtx], expression: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
-    let void_ty = types.primitive("void")
+    let void_ty = ctx.void_ty
     let lowered_call = lower_expr(ctx, expression)
     var wb = vec.Vec[ir.Stmt].create()
     wb.push(ir.Stmt.stmt_expression(expression = lowered_call, line = 0, source_path = ""))
@@ -4175,7 +4182,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_char_literal as lit:
                 return alloc_expr(ir.Expr.expr_integer_literal(value = long<-lit.value, ty = types.primitive("ubyte")))
             ast.Expr.expr_bool_literal as b:
-                return alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = types.primitive("bool")))
+                return alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = ctx.bool_ty))
             ast.Expr.expr_if as ie:
                 let cond = lower_expr(ctx, ie.condition)
                 let then_e = lower_expr(ctx, ie.then_expr)
@@ -4333,7 +4340,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 let start = lower_expr(ctx, rng.start_expr)
                 return start
             ast.Expr.expr_null_literal:
-                return alloc_expr(ir.Expr.expr_null_literal(ty = types.primitive("void")))
+                return alloc_expr(ir.Expr.expr_null_literal(ty = ctx.void_ty))
             ast.Expr.expr_named as nm:
                 return lower_expr(ctx, nm.value)
             ast.Expr.expr_sizeof as sz:
@@ -4357,7 +4364,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                     ty = types.primitive("ptr_uint"),
                 ))
             ast.Expr.expr_error:
-                return alloc_expr(ir.Expr.expr_null_literal(ty = types.primitive("void")))
+                return alloc_expr(ir.Expr.expr_null_literal(ty = ctx.void_ty))
             _:
                 fatal(c"lowering: unsupported expression")
 
@@ -4384,7 +4391,7 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
     # Proc struct type: { env, invoke, release, retain }.
     # Use the shared proc struct name (mt_proc_<ret>) so that proc-typed
     # fields, params, and expressions all unify to the same C struct type.
-    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let shared_name = proc_type_name_from_signature(proc_ty)
     let struct_name = shared_name
     # Register the shared struct declaration (no-op if already emitted).
@@ -4519,7 +4526,7 @@ function collect_locals_for_capture(ctx: ref[LowerCtx], method_params: span[ast.
 ## Build a setup function that allocates + populates the capture-env struct.
 ## Takes captured values as parameters and returns a pointer to the initialized env.
 function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
-    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let env_ty_named = types.Type.ty_named(module_name = "", name = env_type_name)
     let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(env_ty_named))
     let uint_ty = types.primitive("ptr_uint")
@@ -4560,7 +4567,7 @@ function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str,
                 memcpy_args.push(read(addr_of_field))
                 memcpy_args.push(read(addr_of_arg))
                 memcpy_args.push(read(size_val))
-            body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = memcpy_args.as_span(), ty = types.primitive("void"))), line = 0, source_path = ""))
+            body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = memcpy_args.as_span(), ty = ctx.void_ty)), line = 0, source_path = ""))
         else:
             body.push(ir.Stmt.stmt_assignment(target = field, operator = "=", value = cap_val))
         ci2 += 1
@@ -4581,7 +4588,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
 
-    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = env_type_name)))
 
     var params = vec.Vec[ir.Param].create()
@@ -4598,7 +4605,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
         ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = false))
         pi += 1
 
-    var ret_ty = types.primitive("void")
+    var ret_ty = ctx.void_ty
     if return_type != null:
         ret_ty = resolve_type_ref(ctx, return_type)
 
@@ -4697,7 +4704,7 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
 
-    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
 
@@ -4712,7 +4719,7 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
         ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = false))
         pi += 1
 
-    var ret_ty = types.primitive("void")
+    var ret_ty = ctx.void_ty
     if return_type != null:
         ret_ty = resolve_type_ref(ctx, return_type)
     let body_stmts = lower_function_body(ctx, body)
@@ -4919,7 +4926,7 @@ function soa_field_type(ctx: ref[LowerCtx], soa_ty: types.Type, field_name: str)
                     types.Type.ty_named as n:
                         # Look up the field in the element struct from analysis.
                         let fields_ptr = ctx.analysis.structs.get(n.name) else:
-                            return types.primitive("void")
+                            return ctx.void_ty
                         let entries = unsafe: read(fields_ptr)
                         var fi: ptr_uint = 0
                         while fi < entries.len:
@@ -4931,7 +4938,7 @@ function soa_field_type(ctx: ref[LowerCtx], soa_ty: types.Type, field_name: str)
                         pass
         _:
             pass
-    return types.primitive("void")
+    return ctx.void_ty
 
 
 function generic_first_arg(t: types.Type) -> types.Type:
@@ -5160,7 +5167,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # (zero-init at the IR level since they are consumed only by
                 # other compile-time builtins).
                 if id.name == "has_attribute":
-                    return alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool")))
+                    return alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty))
                 if id.name == "field_of" or id.name == "callable_of" or id.name == "attribute_of":
                     return alloc_expr(ir.Expr.expr_zero_init(ty = types.Type.ty_error))
                 # Try to evaluate a const function call at compile time so that
@@ -5388,7 +5395,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # But first, check if the member is an fn/proc struct field — if so,
                 # lower as a direct field access call instead of a method call.
                 var is_fn_proc_field = false
-                var found_ft: types.Type = types.primitive("void")
+                var found_ft: types.Type = ctx.void_ty
                 match concrete_field_type(ctx, recv_ty, ma.member_name):
                     Option.some as ft:
                         found_ft = ft.value
@@ -5433,7 +5440,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # concrete struct like `ty_named("mt_task_int")` — detect it
                 # by the `mt_task_` prefix or `ty_generic("Task", ...)`.
                 var is_task = false
-                var task_ret_ty = types.primitive("void")
+                var task_ret_ty = ctx.void_ty
                 match recv_ty:
                     types.Type.ty_generic as tg:
                         if tg.name == "Task" and tg.args.len >= 1:
@@ -5461,10 +5468,10 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     _:
                         pass
                 if is_task and ma.member_name == "frame":
-                    found_ft = ptr_void_type()
+                    found_ft = ctx.ptr_void_ty
                 else if is_task and is_task_fn_field(ma.member_name):
                     found_ft = types.Type.ty_function(
-                        params = single_ty_span(ptr_void_type()),
+                        params = single_ty_span(ctx.ptr_void_ty),
                         return_type = types.alloc_type(task_ret_ty),
                         variadic = false,
                         is_proc = false,
@@ -5522,7 +5529,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                             si += 1
                         return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
             _:
-                return alloc_expr(ir.Expr.expr_zero_init(ty = types.primitive("void")))
+                return alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty))
 
 
 ## The result type of a cross-module call, resolved from the shared program-wide
@@ -5658,7 +5665,7 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         si += 1
                     var ret_ty = types.primitive("int")
                     if id.name == "equal":
-                        ret_ty = types.primitive("bool")
+                        ret_ty = ctx.bool_ty
                     else if id.name == "hash":
                         ret_ty = types.primitive("uint")
                     # Resolve the canonical hook (`T.hash` / `T.equal` / `T.order`)
@@ -5741,7 +5748,7 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
 function resolve_method_return_from_import(ctx: ref[LowerCtx], module_name: str, sig: analyzer.FnSig, receiver_ty: types.Type) -> types.Type:
     var ret = sig.return_type
     if not sig.has_return_type:
-        ret = types.primitive("void")
+        ret = ctx.void_ty
     match ret:
         types.Type.ty_named as rn:
             match receiver_ty:
@@ -6124,7 +6131,7 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], callee_name: str, args: s
                         p_ty = substitute_type_params(ctx, resolve_type_ref(ctx, ptr_of(fm.param_type)), ref_of(sub))
                     syn_params.push(analyzer.ParamEntry(name = fm.name, ty = p_ty))
                     spi += 1
-                sig = Option[analyzer.FnSig].some(value = analyzer.FnSig(name = callee_name, params = syn_params.as_span(), return_type = types.primitive("void"), has_return_type = false, method_kind = ast.MethodKind.mk_plain, is_async = false))
+                sig = Option[analyzer.FnSig].some(value = analyzer.FnSig(name = callee_name, params = syn_params.as_span(), return_type = ctx.void_ty, has_return_type = false, method_kind = ast.MethodKind.mk_plain, is_async = false))
             return Option[ptr[ir.Expr]].some(value = lower_plain_call_sig(ctx, spec_key, args, call_ep, types.alloc_type(ret_ty), sig))
         _:
             return Option[ptr[ir.Expr]].none
@@ -6672,8 +6679,8 @@ function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], 
             let methods = ia.value.methods
             let concrete_name = canonical_type_name(ctx.module_name, concrete_type)
             let vtable_name = ensure_dyn_vtable(ctx, concrete_name, concrete_type, iface_name, methods, ia.value.module_name, type_args.as_span(), ia.value.type_params)
-            var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-            var const_void_ptr = types.Type.ty_generic(name = "const_ptr", args = sp_type(types.primitive("void")))
+            var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
+            var const_void_ptr = types.Type.ty_generic(name = "const_ptr", args = sp_type(ctx.void_ty))
             return alloc_expr(ir.Expr.expr_aggregate_literal(
                 ty = types.Type.ty_dyn(iface = iface_name),
                 fields = sp_fields2(
@@ -6837,8 +6844,8 @@ function ensure_dyn_struct_type(ctx: ref[LowerCtx], iface_name: str) -> void:
             break
         if unsafe: read(s_ptr).linkage_name == name:
             return
-    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-    var const_void_ptr = types.Type.ty_generic(name = "const_ptr", args = sp_type(types.primitive("void")))
+    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
+    var const_void_ptr = types.Type.ty_generic(name = "const_ptr", args = sp_type(ctx.void_ty))
     var fields = vec.Vec[ir.Field].create()
     fields.push(ir.Field(name = "data", ty = void_ptr))
     fields.push(ir.Field(name = "vtable", ty = const_void_ptr))
@@ -6854,7 +6861,7 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, m
             break
         if unsafe: read(s_ptr).linkage_name == vtable_type_c_name:
             return
-    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     var fields = vec.Vec[ir.Field].create()
     var mi: ptr_uint = 0
     while mi < methods.len:
@@ -6872,7 +6879,7 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, m
             param_ty = substitute_interface_type_params(param_ty, type_args, type_params)
             fn_params.push(param_ty)
             pi += 1
-        var ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: types.primitive("void")
+        var ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: ctx.void_ty
         ret = substitute_interface_type_params(ret, type_args, type_params)
         let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false)
         fields.push(ir.Field(name = m.name, ty = fn_ty))
@@ -6884,7 +6891,7 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, m
 ## concrete type's method implementation.  Returns a map from method name to wrapper C name.
 function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], iface_module_name: str, type_args: span[types.Type], type_params: span[ast.TypeParam]) -> map_mod.Map[str, str]:
     var wrappers = map_mod.Map[str, str].create()
-    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let concrete_type_name = named_type_name(concrete_type) else:
         fatal(c"dyn lowering: concrete type must be nominal")
     # Use a module-qualified type so c_type renders the correct C struct name.
@@ -6905,7 +6912,7 @@ function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concret
             let p_ty = substitute_interface_type_params(resolve_field_type_ref(ctx, p.param_type), type_args, type_params)
             wrapper_params.push(ir.Param(name = p.name, linkage_name = utils.c_local_name(p.name), ty = p_ty, pointer = false))
             pi += 1
-        let ret_ty = if m.return_type != null: substitute_interface_type_params(resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)), type_args, type_params) else: types.primitive("void")
+        let ret_ty = if m.return_type != null: substitute_interface_type_params(resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)), type_args, type_params) else: ctx.void_ty
         # Find the method info for the concrete type's method (search all modules).
         var method_info_opt: Option[DynMethodLookup]
         match concrete_type:
@@ -6944,7 +6951,7 @@ function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concret
                     unsafe:
                         call_args.push(read(alloc_expr(ir.Expr.expr_name(name = utils.c_local_name(p.name), ty = substitute_interface_type_params(resolve_field_type_ref(ctx, p.param_type), type_args, type_params), pointer = false))))
                     pi += 1
-                let call_ret_ty = if types.is_void(ret_ty): types.primitive("void") else: ret_ty
+                let call_ret_ty = if types.is_void(ret_ty): ctx.void_ty else: ret_ty
                 body_stmts.push(ir.Stmt.stmt_return(
                     value = alloc_expr(ir.Expr.expr_call(callee = call_name, arguments = call_args.as_span(), ty = call_ret_ty)),
                     line = 0,
@@ -7009,7 +7016,7 @@ function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_typ
         let wrapper_c_name = unsafe: read(wrapper_ptr)
         # Use the function type for the field so the constant matches the struct decl.
         var fn_params = vec.Vec[types.Type].create()
-        fn_params.push(types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))))
+        fn_params.push(types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty)))
         var pi: ptr_uint = 0
         while pi < m.method_params.len:
             var p: ast.Param
@@ -7017,7 +7024,7 @@ function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_typ
                 p = read(m.method_params.data + pi)
             fn_params.push(resolve_field_type_ref(ctx, p.param_type))
             pi += 1
-        let ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: types.primitive("void")
+        let ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: ctx.void_ty
         let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false)
         fields.push(ir.AggregateField(name = m.name, value = alloc_expr(ir.Expr.expr_name(name = wrapper_c_name, ty = fn_ty, pointer = false))))
         mi += 1
@@ -7033,7 +7040,7 @@ function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_typ
 ## Extracts data and vtable members, casts vtable to its struct type, and calls
 ## through the method function pointer.
 function lower_dyn_method_call(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
-    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let data = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "data", ty = void_ptr))
     let vtable_raw = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "vtable", ty = void_ptr))
     # Cast vtable void* to the vtable struct pointer type (mt_vtable_{iface}*).
@@ -7073,14 +7080,14 @@ function iface_method_return_type(ctx: ref[LowerCtx], recv_ty: types.Type, metho
                             m = read(ia.value.methods.data + mi)
                         if m.name == method_name:
                             let ret = m.return_type else:
-                                return types.primitive("void")
+                                return ctx.void_ty
                             return resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-ret))
                         mi += 1
                 Option.none:
                     pass
         _:
             pass
-    return types.primitive("void")
+    return ctx.void_ty
 
 
 ## The C type name for a dyn[I] vtable struct: "mt_vtable_" + iface_name.
@@ -7241,7 +7248,7 @@ function resolve_primitive_method_info(ctx: ref[LowerCtx], type_name: str, metho
         let sig = unsafe: read(sig_ptr)
         var ret = sig.return_type
         if not sig.has_return_type:
-            ret = types.primitive("void")
+            ret = ctx.void_ty
         return Option[MethodInfo].some(value = MethodInfo(
             c_name = primitive_method_c_name(type_name, method_name, sig.method_kind == ast.MethodKind.mk_static),
             method_kind = sig.method_kind,
@@ -7262,7 +7269,7 @@ function resolve_primitive_method_info(ctx: ref[LowerCtx], type_name: str, metho
             let sig = unsafe: read(sig_ptr)
             var ret = sig.return_type
             if not sig.has_return_type:
-                ret = types.primitive("void")
+                ret = ctx.void_ty
             return Option[MethodInfo].some(value = MethodInfo(
                 c_name = primitive_method_c_name(type_name, method_name, sig.method_kind == ast.MethodKind.mk_static),
                 method_kind = sig.method_kind,
@@ -7298,7 +7305,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
                     let sig = unsafe: read(sig_ptr)
                     var ret = sig.return_type
                     if not sig.has_return_type:
-                        ret = types.primitive("void")
+                        ret = ctx.void_ty
                     return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, gv.value, method_name), method_kind = sig.method_kind, return_type = ret))
             Option.none:
                 pass
@@ -7319,7 +7326,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
         let sig = unsafe: read(sig_ptr)
         var ret = sig.return_type
         if not sig.has_return_type:
-            ret = types.primitive("void")
+            ret = ctx.void_ty
         return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name(ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = qualify_type(ctx, ret)))
     # Search imported modules' method_sigs when the method is not found locally.
     # When the receiver type carries a specific originating module (ty_imported),
@@ -7351,7 +7358,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
             let mod_prefix = naming.module_c_prefix(a.module_name)
             var ret = sig.return_type
             if not sig.has_return_type:
-                ret = types.primitive("void")
+                ret = ctx.void_ty
             # If the method returns a locally-named struct (ty_named), which is
             # defined in the imported module, convert it to ty_imported so the C
             # backend produces the module-qualified C name.
@@ -7397,7 +7404,7 @@ function resolve_method_info_imported(ctx: ref[LowerCtx], receiver_ty: types.Typ
                 let sig = unsafe: read(sig_ptr)
                 var ret = sig.return_type
                 if not sig.has_return_type:
-                    ret = types.primitive("void")
+                    ret = ctx.void_ty
                 match ret:
                     types.Type.ty_named as rn:
                         if a.structs.contains(rn.name):
@@ -7892,7 +7899,7 @@ function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, g
     if not ctx.specialization_cache.contains(method_c) and not ctx.spec_in_progress.contains(method_c):
         ensure_monomorphized_method(ctx, method_c, info, gm)
 
-    var ret_ty = types.primitive("void")
+    var ret_ty = ctx.void_ty
     let cached = ctx.specialization_cache.get(method_c)
     if cached != null:
         ret_ty = unsafe: read(cached).return_type
@@ -8126,7 +8133,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = p_ty, pointer = is_ptr))
         pi += 1
 
-    var ret_ty = types.primitive("void")
+    var ret_ty = ctx.void_ty
     let return_ref = m.return_type
     if return_ref != null:
         let resolved_ret = resolve_field_type_ref(ctx, unsafe: read(return_ref))
@@ -8176,7 +8183,7 @@ function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type)
 
     match fn_ty:
         types.Type.ty_function as fnt:
-            let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+            let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
             var inv_params = vec.Vec[ir.Param].create()
             inv_params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = false))
             var call_args = vec.Vec[ir.Expr].create()
@@ -8191,7 +8198,7 @@ function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type)
                 unsafe:
                     call_args.push(read(arg_expr))
                 pi += 1
-            var ret_ty = types.primitive("void")
+            var ret_ty = ctx.void_ty
             unsafe:
                 ret_ty = read(fnt.return_type)
             var inv_body = vec.Vec[ir.Stmt].create()
@@ -8294,7 +8301,7 @@ function atomic_element_type(t: types.Type) -> types.Type:
 ## Ruby's lower_atomic_method_call.
 function lower_atomic_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let elem_ty = atomic_element_type(recv_ty)
-    let void_ty = types.primitive("void")
+    let void_ty = ctx.void_ty
     let int_ty = types.primitive("int")
     let ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(elem_ty))
     let addr = alloc_expr(ir.Expr.expr_address_of(expression = recv, ty = ptr_ty))
@@ -8403,8 +8410,8 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
         fatal(c"ensure_event_runtime: event not found")
     var ev = unsafe: read(ev_ptr)
     let ptr_uint_ty = types.primitive("ptr_uint")
-    let bool_ty = types.primitive("bool")
-    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let bool_ty = ctx.bool_ty
+    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let raw_linkage = naming.qualified_c_name(ctx.module_name, event_name)
     var cap_buf = string.String.create()
     fmt.append_long(ref_of(cap_buf), long<-(ev.capacity))
@@ -8461,7 +8468,7 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
         ))
         ctx.subscription_emitted = true
     var has_payload = false
-    var payload_ty = types.primitive("void")
+    var payload_ty = ctx.void_ty
     if ev.payload_type != null:
         has_payload = true
         let pt = ev.payload_type else:
@@ -8472,10 +8479,10 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
     if has_payload:
         wait_result_args.push(payload_ty)
     else:
-        wait_result_args.push(types.primitive("void"))
+        wait_result_args.push(ctx.void_ty)
     wait_result_args.push(event_error_ty)
     let wait_result_ty = ensure_generic_variant(ctx, "Result", wait_result_args.as_span())
-    let wake_fn_ty = types.Type.ty_function(params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
+    let wake_fn_ty = types.Type.ty_function(params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false)
     let wait_frame_cn = j2(linkage, "__wait_frame")
     ctx.pending_event_structs.push(ir.StructDecl(
         name = wait_frame_cn, linkage_name = wait_frame_cn,
@@ -8526,8 +8533,8 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
 function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let ev_name = event_name_from_type(recv_ty)
     var info = ensure_event_runtime(ctx, ev_name)
-    let void_ty = types.primitive("void")
-    let bool_ty = types.primitive("bool")
+    let void_ty = ctx.void_ty
+    let bool_ty = ctx.bool_ty
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = info.event_c_name)))
     let recv_addr = alloc_expr(ir.Expr.expr_address_of(expression = recv, ty = event_ptr_ty))
     if method_name == "emit":
@@ -8584,7 +8591,7 @@ function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: typ
         if info.has_payload:
             wait_result_args.push(info.payload_type)
         else:
-            wait_result_args.push(types.primitive("void"))
+            wait_result_args.push(ctx.void_ty)
         wait_result_args.push(event_error_ty)
         let wait_result_ty = ensure_generic_variant(ctx, "Result", wait_result_args.as_span())
         let task_ty = make_task_type(wait_result_ty)
@@ -8594,8 +8601,8 @@ function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: typ
 
 ## Build a per-event subscribe (or subscribe_once) synthetic function.
 function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str, once: bool) -> ir.Function:
-    let void_ty = types.primitive("void")
-    let bool_ty = types.primitive("bool")
+    let void_ty = ctx.void_ty
+    let bool_ty = ctx.bool_ty
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let sub_plain_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
@@ -8667,8 +8674,8 @@ function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo
 ## Same as build_event_subscribe_fn but also accepts a `state: ptr[void]`
 ## parameter and writes it into the slot's `state` field.
 function build_event_subscribe_stateful_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str, once: bool) -> ir.Function:
-    let void_ty = types.primitive("void")
-    let bool_ty = types.primitive("bool")
+    let void_ty = ctx.void_ty
+    let bool_ty = ctx.bool_ty
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let sub_plain_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
@@ -8956,8 +8963,8 @@ function build_event_wait_take_result_fn(info: ref[EventRuntimeInfo], slot_cn: s
 ## Loops through inactive slots, activates one as subscribe_once with a wait_frame,
 ## and returns a Task[Result[void_or_payload, EventError]].
 function build_event_wait_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str) -> ir.Function:
-    let void_ty = types.primitive("void")
-    let bool_ty = types.primitive("bool")
+    let void_ty = ctx.void_ty
+    let bool_ty = ctx.bool_ty
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = info.wait_frame_c_name)))
@@ -9093,12 +9100,12 @@ function lower_listener_arg(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> ptr[ir.Ex
             ast.Expr.expr_identifier as id:
                 if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
                     let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
-                    let void_ty = types.primitive("void")
+                    let void_ty = ctx.void_ty
                     let void_fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false)
                     return alloc_expr(ir.Expr.expr_cast(
-                        target_type = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))),
+                        target_type = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty)),
                         expression = alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = void_fn_ty, pointer = false)),
-                        ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))),
+                        ty = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty)),
                     ))
             _:
                 pass
@@ -9109,9 +9116,9 @@ function lower_listener_arg(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> ptr[ir.Ex
 function lower_str_buffer_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let char_ty = types.primitive("char")
     let ptr_uint_ty = types.primitive("ptr_uint")
-    let void_ty = types.primitive("void")
+    let void_ty = ctx.void_ty
     let str_ty = types.Type.ty_str
-    let bool_ty = types.primitive("bool")
+    let bool_ty = ctx.bool_ty
     let data_member = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "data", ty = char_ty))
     let data_elem = alloc_expr(ir.Expr.expr_index(receiver = data_member, index = alloc_expr(ir.Expr.expr_integer_literal(value = 0z, ty = ptr_uint_ty)), ty = char_ty))
     let data_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(char_ty))
@@ -9201,7 +9208,7 @@ function lower_expression_match(ctx: ref[LowerCtx], scrutinee: ptr[ast.Expr], ar
             let int_ty = types.primitive("int")
             let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = scrut_expr, member = "kind", ty = int_ty))
             let kind_const = alloc_expr(ir.Expr.expr_name(name = variant_kind_const_name(outer_c, arm_name.value), ty = int_ty, pointer = false))
-            return alloc_expr(ir.Expr.expr_binary(operator = "==", left = kind_expr, right = kind_const, ty = types.primitive("bool")))
+            return alloc_expr(ir.Expr.expr_binary(operator = "==", left = kind_expr, right = kind_const, ty = ctx.bool_ty))
         Option.none:
             pass
     # A genuine multi-arm match expression in a non-return position is not
@@ -9529,7 +9536,7 @@ function imported_extern_call(ctx: ref[LowerCtx], target_module: str, name: str)
         match d:
             ast.Decl.decl_extern_function as ef:
                 if ef.name == name:
-                    var ret = types.primitive("void")
+                    var ret = ctx.void_ty
                     if ef.return_type != null:
                         ret = qualify_type(ctx, resolve_return_type(ctx, Option[analyzer.FnSig].none, ef.return_type))
                     result = Option[ForeignInfo].some(value = ForeignInfo(
@@ -9658,7 +9665,7 @@ function proc_ensure_struct_decl(ctx: ref[LowerCtx], struct_name: str, proc_ty: 
     # inside generic function bodies where T is not yet substituted).
     if proc_type_has_type_var(proc_ty):
         return types.Type.ty_named(module_name = "", name = struct_name)
-    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     var struct_fields = vec.Vec[ir.Field].create()
     struct_fields.push(ir.Field(name = "env", ty = void_ptr))
     struct_fields.push(ir.Field(name = "invoke", ty = proc_invoke_field_type(proc_ty)))
@@ -9717,7 +9724,7 @@ function type_contains_type_var(t: types.Type) -> bool:
 ## env member as the first argument.
 function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let recv = alloc_expr(ir.Expr.expr_name(name = lb.c_name, ty = lb.ty, pointer = false))
-    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let env_member = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "env", ty = void_ptr))
 
     # Build arguments: env, then user args.
@@ -9744,7 +9751,7 @@ function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Ar
 ## `s.field.invoke(s.field.env, args)`, analogously to lower_proc_call but for
 ## struct field receivers instead of local bindings.
 function lower_proc_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
-    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let env_member = alloc_expr(ir.Expr.expr_member(receiver = field_expr, member = "env", ty = void_ptr))
     var invoke_args = vec.Vec[ir.Expr].create()
     unsafe:
@@ -10995,7 +11002,7 @@ function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
             operator = "==",
             left = name_ref,
             right = unsafe: read(value_ptr),
-            ty = types.primitive("bool"),
+            ty = ctx.bool_ty,
         ))
         let then_body = unsafe: read(body_ptr)
         var if_stmts = vec.Vec[ir.Stmt].create()
@@ -11148,7 +11155,7 @@ function lower_str_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
             operator = "==",
             left = scrutinee_expr,
             right = unsafe: read(pat_ptr),
-            ty = types.primitive("bool"),
+            ty = ctx.bool_ty,
         ))
         var then_body = vec.Vec[ir.Stmt].create()
         then_body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = unsafe: read(val_ptr)))
@@ -11223,17 +11230,17 @@ function tuple_pattern_condition(ctx: ref[LowerCtx], scrutinee_expr: ptr[ir.Expr
                                 pass
                         let field = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = member_name, ty = elem_ty))
                         let elem_expr = lower_expr(ctx, unsafe: ptr[ast.Expr]<-(lst.elements.data + i))
-                        let cmp = alloc_expr(ir.Expr.expr_binary(operator = "==", left = field, right = elem_expr, ty = types.primitive("bool")))
+                        let cmp = alloc_expr(ir.Expr.expr_binary(operator = "==", left = field, right = elem_expr, ty = ctx.bool_ty))
                         let existing = cond
                         if existing == null:
                             cond = cmp
                         else:
-                            cond = alloc_expr(ir.Expr.expr_binary(operator = "and", left = existing, right = cmp, ty = types.primitive("bool")))
+                            cond = alloc_expr(ir.Expr.expr_binary(operator = "and", left = existing, right = cmp, ty = ctx.bool_ty))
                 i += 1
         _:
             pass
     let final_cond = cond else:
-        return alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool")))
+        return alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty))
     return final_cond
 
 
@@ -11472,7 +11479,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
     let info = unsafe: read(info_ptr)
     let outer_c = variant_base_c_name(scrutinee_ty, ctx.module_name)
     let int_ty = types.primitive("int")
-    let bool_ty = types.primitive("bool")
+    let bool_ty = ctx.bool_ty
 
     var scrut_base = lower_expr(ctx, scrutinee)
     if not ir_expr_is_name(scrut_base):
@@ -11565,7 +11572,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
 ## Guards (`field > expr`) and equality patterns (`field = expr`) are emitted
 ## as conditional `goto next_arm_label` checks on failure.
 function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.Stmt]], pattern: ptr[ast.Expr], arm_info: VariantArmInfo, payload_c: str, payload_ty: types.Type, next_arm_label: str) -> void:
-    let bool_ty = types.primitive("bool")
+    let bool_ty = ctx.bool_ty
     unsafe:
         match read(pattern):
             ast.Expr.expr_call as cl:
@@ -12216,7 +12223,7 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
             ast.Expr.expr_integer_literal:
                 return types.primitive("int")
             ast.Expr.expr_bool_literal:
-                return types.primitive("bool")
+                return ctx.bool_ty
             ast.Expr.expr_identifier as id:
                 match lookup_local(ctx, id.name):
                     Option.some as lb:
@@ -12230,7 +12237,7 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                             Option.some as s:
                                 var ret = s.value.return_type
                                 if not s.value.has_return_type:
-                                    ret = types.primitive("void")
+                                    ret = ctx.void_ty
                                 var param_types = vec.Vec[types.Type].create()
                                 var pi: ptr_uint = 0
                                 while pi < s.value.params.len:
@@ -12243,7 +12250,7 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                         return types.Type.ty_error
             ast.Expr.expr_binary_op as bin:
                 if is_comparison_operator(bin.operator):
-                    return types.primitive("bool")
+                    return ctx.bool_ty
                 return fallback_type(ctx, bin.left)
             ast.Expr.expr_unary_op as un:
                 return fallback_type(ctx, un.operand)
@@ -12298,7 +12305,7 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                         let p = read(pr.method_params.data + pi)
                         param_types.push(resolve_field_type_ref(ctx, p.param_type))
                     pi += 1
-                var ret = types.primitive("void")
+                var ret = ctx.void_ty
                 let rt = pr.return_type
                 if rt != null:
                     # Full resolution (not scalar-only) so a struct / imported
@@ -12830,7 +12837,7 @@ function fmt_plan(ctx: ref[LowerCtx], val_ty: types.Type, spec_ptr: ptr[ast.Form
     if prim_name == "cstr":
         return FormatPlan(append_helper = "mt_format_append_cstr", len_helper = "mt_format_cstr_len", arg_ty = types.primitive("cstr"), len_kind = 0, precision = 0)
     if prim_name == "bool":
-        return FormatPlan(append_helper = "mt_format_append_bool", len_helper = "mt_format_bool_len", arg_ty = types.primitive("bool"), len_kind = 0, precision = 0)
+        return FormatPlan(append_helper = "mt_format_append_bool", len_helper = "mt_format_bool_len", arg_ty = ctx.bool_ty, len_kind = 0, precision = 0)
     if prim_name == "float":
         return FormatPlan(append_helper = "mt_format_append_float", len_helper = "mt_format_float_len", arg_ty = types.primitive("float"), len_kind = 0, precision = 0)
     if prim_name == "double":
@@ -13899,7 +13906,7 @@ function evaluate_const_stmt(ctx: ref[LowerCtx], variables: ref[map_mod.Map[str,
             ast.Stmt.stmt_ret as r:
                 let val_ptr = r.value else:
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(
-                        ir.Expr.expr_zero_init(ty = types.primitive("void"))))
+                        ir.Expr.expr_zero_init(ty = ctx.void_ty)))
                 return evaluate_const_expr_to_ir(ctx, variables, val_ptr)
             ast.Stmt.stmt_expression as ex:
                 let _discard = evaluate_const_expr_to_ir(ctx, variables, ex.expression)
@@ -14098,7 +14105,7 @@ function evaluate_const_expr_to_ir(ctx: ref[LowerCtx], variables: ref[map_mod.Ma
                     ir.Expr.expr_integer_literal(value = long<-(lit.value), ty = types.primitive("int"))))
             ast.Expr.expr_bool_literal as b:
                 return Option[ptr[ir.Expr]].some(value = alloc_expr(
-                    ir.Expr.expr_boolean_literal(value = b.value, ty = types.primitive("bool"))))
+                    ir.Expr.expr_boolean_literal(value = b.value, ty = ctx.bool_ty)))
             ast.Expr.expr_identifier as id:
                 let entry = variables.get(id.name)
                 if entry != null:
@@ -14111,10 +14118,10 @@ function evaluate_const_expr_to_ir(ctx: ref[LowerCtx], variables: ref[map_mod.Ma
                     return evaluate_const_expr_to_ir(ctx, variables, cv_val)
                 if id.name == "true":
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(
-                        ir.Expr.expr_boolean_literal(value = true, ty = types.primitive("bool"))))
+                        ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty)))
                 if id.name == "false":
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(
-                        ir.Expr.expr_boolean_literal(value = false, ty = types.primitive("bool"))))
+                        ir.Expr.expr_boolean_literal(value = false, ty = ctx.bool_ty)))
                 return Option[ptr[ir.Expr]].none
             ast.Expr.expr_binary_op as bin:
                 match evaluate_const_expr_to_ir(ctx, variables, bin.left):
@@ -14260,7 +14267,7 @@ function unwrap_task_value(task_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
 
 
 function lower_task_constructor(ctx: ref[LowerCtx], type_args: span[ast.TypeArgument], call_args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
-    var task_inner = types.primitive("void")
+    var task_inner = ctx.void_ty
     if type_args.len >= 1:
         task_inner = resolve_type_ref(ctx, unsafe: read(type_args.data + 0).value)
     let task_ty = make_task_type(task_inner)
@@ -14337,7 +14344,7 @@ function lower_multi_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
             loop_body.push(read(body.data + si))
         si += 1
     let init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
-    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 3, ty = ptr_uint_ty)), ty = types.primitive("bool")))
+    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 3, ty = ptr_uint_ty)), ty = ctx.bool_ty))
     let post_target = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = false))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = loop_body.as_span())
@@ -14382,9 +14389,7 @@ function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
 
 ## Lower an async function: generate frame struct, resume fn, constructor fn,
 ## and vtable helpers.  Push into the output structs/functions collections.
-## For Step 1 only the no-await path is handled — the resume function body
-## is a stub that sets ready = true and returns.  Full CPS lowering (state
-## machine for await sites) will be added in subsequent steps.
+## Supports both no-await (single-state) and full CPS (state-machine) paths.
 function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_ty_opt: Option[types.Type], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, structs: ref[vec.Vec[ir.StructDecl]], functions: ref[vec.Vec[ir.Function]]) -> void:
     # Reset async CPS state so a no-await function (or the next function) never
     # inherits a previous has-await function's frame-result target / labels.
@@ -14397,9 +14402,9 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     ctx.async_local_seen = map_mod.Map[str, bool].create()
     let sig = lookup_fn_sig(ctx, name)
     let res_ty = resolve_return_type(ctx, sig, return_type)
-    let bool_ty = types.primitive("bool")
+    let bool_ty = ctx.bool_ty
     let int_ty = types.primitive("int")
-    let void_t = types.primitive("void")
+    let void_t = ctx.void_ty
     let is_void_ret = is_void_type_lowered(res_ty)
     # `link_base` is the constructor's C linkage (e.g. `<mod>_main`, or a method's
     # `<mod>_Type_method`); the frame/resume names derive from it.
@@ -14412,11 +14417,11 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     let frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = single_ty_span(frame_ty))
 
     # Common vtable param: void* __mt_frame_raw
-    var waiter_fn_ty = types.Type.ty_function(params = single_ty_span(ptr_void_type()), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
+    var waiter_fn_ty = types.Type.ty_function(params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false)
     var vparams = vec.Vec[ir.Param].create()
-    vparams.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ptr_void_type(), pointer = true))
+    vparams.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = true))
     let vparam_s = vparams.as_span()
-    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ptr_void_type(), pointer = true))
+    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = true))
 
     # Param frame-field info.  Fields are named `param_<name>` so they cannot
     # clash with control fields (`state`/`result`/…).  For an async method the
@@ -14553,7 +14558,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     var ff = vec.Vec[ir.Field].create()
     ff.push(ir.Field(name = "ready",        ty = bool_ty))
     ff.push(ir.Field(name = "cancelled",    ty = bool_ty))
-    ff.push(ir.Field(name = "waiter_frame", ty = ptr_void_type()))
+    ff.push(ir.Field(name = "waiter_frame", ty = ctx.ptr_void_ty))
     ff.push(ir.Field(name = "waiter",       ty = waiter_fn_ty))
     if has_await:
         ff.push(ir.Field(name = "state",    ty = int_ty))
@@ -14606,7 +14611,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     vrel.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
     if has_await:
         # If not yet ready, release pending await tasks and return without freeing.
-        let await_ptr_void = ptr_void_type()
+        let await_ptr_void = ctx.ptr_void_ty
         let await_null_ptr = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = await_ptr_void))
         var rel_if_body = vec.Vec[ir.Stmt].create()
         var afi: ptr_uint = 0
@@ -14633,19 +14638,19 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     vsw.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
     # If already ready, call the waiter immediately (synchronous completion).
     var sw_rdy = vec.Vec[ir.Stmt].create()
-    let sw_waiter_fn = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_fn", ty = ptr_void_type(), pointer = false))
-    let sw_waiter_frame = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_frame", ty = ptr_void_type(), pointer = true))
+    let sw_waiter_fn = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_fn", ty = ctx.ptr_void_ty, pointer = false))
+    let sw_waiter_frame = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_frame", ty = ctx.ptr_void_ty, pointer = true))
     sw_rdy.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = sw_waiter_fn, arguments = single_expr_span(sw_waiter_frame), ty = void_t)), line = 0, source_path = ""))
     sw_rdy.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     let sw_ready_cond = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty))
     vsw.push(ir.Stmt.stmt_if(condition = sw_ready_cond, then_body = sw_rdy.as_span(), else_body = span[ir.Stmt]()))
-    vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter_frame", ty = ptr_void_type())), operator = "=", value = sw_waiter_frame))
-    vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = ptr_void_type())), operator = "=", value = sw_waiter_fn))
+    vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter_frame", ty = ctx.ptr_void_ty)), operator = "=", value = sw_waiter_frame))
+    vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = ctx.ptr_void_ty)), operator = "=", value = sw_waiter_fn))
     vsw.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     var sw_params = vec.Vec[ir.Param].create()
-    sw_params.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ptr_void_type(), pointer = true))
-    sw_params.push(ir.Param(name = "__mt_waiter_frame", linkage_name = "__mt_waiter_frame", ty = ptr_void_type(), pointer = true))
-    var waiter_cb_ty = types.Type.ty_function(params = single_ty_span(ptr_void_type()), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
+    sw_params.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = true))
+    sw_params.push(ir.Param(name = "__mt_waiter_frame", linkage_name = "__mt_waiter_frame", ty = ctx.ptr_void_ty, pointer = true))
+    var waiter_cb_ty = types.Type.ty_function(params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false)
     sw_params.push(ir.Param(name = "__mt_waiter_fn", linkage_name = "__mt_waiter_fn", ty = waiter_cb_ty, pointer = true))
     functions.push(ir.Function(name = j2(name, "_set_waiter"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, method_receiver_param = false))
 
@@ -14703,12 +14708,12 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     if not is_void_ret:
         tf.push(ir.AggregateField(name = "value", value = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = "result", ty = res_ty))))
     tf.push(ir.AggregateField(name = "frame",       value = cframe))
-    tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = ready_lk,  ty = ptr_void_type(), pointer = false))))
-    tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = waiter_lk, ty = ptr_void_type(), pointer = false))))
-    tf.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_name(name = release_lk, ty = ptr_void_type(), pointer = false))))
+    tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = ready_lk,  ty = ctx.ptr_void_ty, pointer = false))))
+    tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = waiter_lk, ty = ctx.ptr_void_ty, pointer = false))))
+    tf.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_name(name = release_lk, ty = ctx.ptr_void_ty, pointer = false))))
     if not is_void_ret:
-        tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = take_lk, ty = ptr_void_type(), pointer = false))))
-    tf.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_name(name = cancel_lk, ty = ptr_void_type(), pointer = false))))
+        tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = take_lk, ty = ctx.ptr_void_ty, pointer = false))))
+    tf.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_name(name = cancel_lk, ty = ctx.ptr_void_ty, pointer = false))))
     ctor_body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = tf.as_span())), line = 0, source_path = ""))
     # Build constructor params from the original async function params.
     var ctor_params = vec.Vec[ir.Param].create()
@@ -14844,7 +14849,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
 
     let v = loc_value else:
         # No initializer: reserve the frame field with the declared type.
-        var ty0 = types.primitive("void")
+        var ty0 = ctx.void_ty
         if loc_stmt_type != null:
             ty0 = resolve_type_ref(ctx, unsafe: ptr[ast.TypeRef]<-loc_stmt_type)
         async_register_local_field(ctx, loc_name, field_name, frame_cname, ty0)
@@ -14930,9 +14935,9 @@ function normalize_awaited_task_type(t: types.Type) -> types.Type:
 function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], task_ir: ptr[ir.Expr], task_ty: types.Type, result_ty: types.Type, target: Option[ptr[ir.Expr]]) -> void:
     # Temporary to confirm function is reached
     let ptr_void = async_mod.ptr_void_type()
-    let bool_ty = types.primitive("bool")
+    let bool_ty = ctx.bool_ty
     let int_ty = types.primitive("int")
-    let void_ty = types.primitive("void")
+    let void_ty = ctx.void_ty
     let idx = ctx.async_await_counter
     ctx.async_await_counter = idx + 1
     let await_field = j2("await_", int_to_str(int<-idx))
@@ -14983,15 +14988,10 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
     output.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = release_fn, arguments = single_expr_span(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = ptr_void))), ty = void_ty)), line = 0, source_path = ""))
 
 
-## Async `main` entrypoint (stub — requires cross-module wait specialization).
+## Async `main` entrypoint — synthesizes the C `main()` function.
 ## The async main is already CPS-lowered as a constructor returning Task[T] with
-## linkage `<module>_main`.  Implementation plan:
-## 1. Find std.async's analysis via ctx.program_analyses, locate the `wait`
-##    function's FnSig and the raw Function AST in the module's source file.
-## 2. Build a GenericFunctionMatch with the AST decl, substitute T -> inner_ty.
-## 3. Call lower_and_cache_specialization_with_sub to emit the specialization.
-## 4. Build a root proc via lower_fn_to_proc, call the specialized wait C name,
-##    release the proc, return the result (or call `run` for void).
+## linkage `<module>_main`.  Here we build a root proc from the constructor,
+## drive it via `std.async.wait[int]` / `run` for void, and release the proc.
 function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir.Function]:
     # Only a zero-parameter `async function main` is supported today (both async
     # examples use `async function main() -> int`).  The constructor is already
@@ -15008,7 +15008,7 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
         return Option[ir.Function].none
 
     let int_ty = types.primitive("int")
-    let void_ty = types.primitive("void")
+    let void_ty = ctx.void_ty
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let main_cname = naming.qualified_c_name(ctx.module_name, name)
 
@@ -15113,7 +15113,7 @@ function int_to_str(v: int) -> str:
 
 ## Emit waiter wake: if frame->waiter is non-NULL, call it and null it.
 function async_waiter_wake(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], frame_exp: ptr[ir.Expr], bool_ty: types.Type, ptr_void_ty: types.Type) -> void:
-    let waiter_fn_ty = types.Type.ty_function(params = single_ty_span(ptr_void_type()), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
+    let waiter_fn_ty = types.Type.ty_function(params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false)
     let waiter_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = waiter_fn_ty))
     let null_void = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_void_ty))
     let has_waiter = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = waiter_field, right = null_void, ty = bool_ty))
@@ -15125,7 +15125,7 @@ function async_waiter_wake(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], fr
     wake_body.push(ir.Stmt.stmt_local(name = "__mt_waker", linkage_name = "__mt_waker", ty = waiter_fn_ty, value = waiter_field, line = 0, source_path = ""))
     let waker_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_waker", ty = waiter_fn_ty, pointer = false))
     wake_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = waiter_fn_ty)), operator = "=", value = null_void))
-    wake_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = waker_ref, arguments = single_expr_span(waiter_frame_field), ty = types.primitive("void"))), line = 0, source_path = ""))
+    wake_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = waker_ref, arguments = single_expr_span(waiter_frame_field), ty = ctx.void_ty)), line = 0, source_path = ""))
     output.push(ir.Stmt.stmt_if(condition = has_waiter, then_body = wake_body.as_span(), else_body = span[ir.Stmt]()))
 
 
@@ -15163,7 +15163,7 @@ function extract_task_element_type(ctx: ref[LowerCtx], t: types.Type) -> types.T
                         pass
         _:
             pass
-    return types.primitive("void")
+    return ctx.void_ty
 
 
 ## Build a single-element span of IR expressions (for call arguments).
