@@ -1043,6 +1043,24 @@ function j2_path(a: str, b: str) -> string.String:
     return buf
 
 
+## Parse a decimal string into a positive `ptr_uint`.  Returns none when the
+## text is empty, contains a non-digit, or evaluates to zero.
+function parse_positive_int(text: str) -> Option[ptr_uint]:
+    if text.len == 0:
+        return Option[ptr_uint].none
+    var value: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if b < 48 or b > 57:
+            return Option[ptr_uint].none
+        value = value * 10 + ptr_uint<-(int<-b - 48)
+        i += 1
+    if value == 0:
+        return Option[ptr_uint].none
+    return Option[ptr_uint].some(value= value)
+
+
 function ptr_uint_to_str(value: ptr_uint) -> str:
     if value == 0:
         return "0"
@@ -1145,6 +1163,8 @@ function test_command(args: span[str]) -> int:
     defer roots.release()
     var test_dir = "."
     var name_filter: Option[str] = Option[str].none
+    var timeout_seconds: ptr_uint = 30
+    var memory_mb: ptr_uint = 1024
     var ai: ptr_uint = 1
     while ai < args.len:
         let arg = args[ai]
@@ -1160,6 +1180,26 @@ function test_command(args: span[str]) -> int:
                 stdio.print_line("error: -n requires a name substring")
                 return 1
             name_filter = Option[str].some(value= args[ai + 1])
+            ai += 2
+            continue
+        if arg == "--timeout":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --timeout requires a positive integer (seconds)")
+                return 1
+            let seconds = parse_positive_int(args[ai + 1]) else:
+                stdio.print_line("error: --timeout requires a positive integer (seconds)")
+                return 1
+            timeout_seconds = seconds
+            ai += 2
+            continue
+        if arg == "--mem":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --mem requires a positive integer (megabytes)")
+                return 1
+            let megabytes = parse_positive_int(args[ai + 1]) else:
+                stdio.print_line("error: --mem requires a positive integer (megabytes)")
+                return 1
+            memory_mb = megabytes
             ai += 2
             continue
         test_dir = arg
@@ -1184,7 +1224,8 @@ function test_command(args: span[str]) -> int:
                         let entry_name = name_payload.value
                         if entry_name.ends_with(".mt"):
                             let (file_passed, file_failed) = run_test_file(
-                                entry_name, ref_of(roots), ref_of(runner_counter), name_filter
+                                entry_name, ref_of(roots), ref_of(runner_counter), name_filter,
+                                timeout_seconds, memory_mb
                             )
                             if file_passed > 0 or file_failed > 0:
                                 file_count += 1
@@ -1204,12 +1245,14 @@ function test_command(args: span[str]) -> int:
                         )
                     Option.none:
                         stdio.print_line("no @[test] functions found")
-            else:
-                stdio.print_format(
-                    c"%d test file(s), %d failed\n",
-                    int<-file_count,
-                    int<-total_failed,
-                )
+                return 0
+            stdio.print_format(
+                c"%d test file(s), %d failed\n",
+                int<-file_count,
+                int<-total_failed,
+            )
+            if total_failed > 0:
+                return 1
             return 0
         Result.failure as failure_payload:
             var err = failure_payload.error
@@ -1264,7 +1307,7 @@ function count_tests_in_file(file_path: str) -> int:
             return 0
 
 
-function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[ptr_uint], name_filter: Option[str]) -> (int, int):
+function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[ptr_uint], name_filter: Option[str], timeout_seconds: ptr_uint, memory_mb: ptr_uint) -> (int, int):
     match fs.read_text(file_path):
         Result.success as content_payload:
             var source = content_payload.value
@@ -1375,33 +1418,73 @@ function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[pt
             build_cmd.push("--no-debug-guards")
 
             stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
+            var build_failed = false
             match process.capture(build_cmd.as_span()):
                 Result.success as captured:
-                    let build_stdout = captured.value.stdout_text()
+                    var build_result = captured.value
+                    defer build_result.release()
+                    let build_stdout = build_result.stdout_text()
                     if build_stdout.is_some():
                         stdio.print_format(c"%.*s", int<-(build_stdout.unwrap().len), build_stdout.unwrap().data)
-                    let build_stderr = captured.value.stderr_text()
+                    let build_stderr = build_result.stderr_text()
                     if build_stderr.is_some():
                         stdio.print_format(c"%.*s", int<-(build_stderr.unwrap().len), build_stderr.unwrap().data)
+                    if build_result.status.normalized_code() != 0:
+                        build_failed = true
                 Result.failure:
                     stdio.print_line("FAILED - build error")
+                    build_failed = true
+
+            if build_failed:
+                stdio.print_format(c"FAILED - %.*s (build error)\n", int<-(file_path.len), file_path.data)
+                let _rb = fs.remove(runner_path_str.as_str())
+                return (int<-(test_names.len()), 1)
+
+            # Sandbox the runner: cap wall-clock time via `timeout` and virtual
+            # memory via `ulimit -v` so a hung or runaway generated binary cannot
+            # stall or exhaust the host.  `timeout` reports 124 on expiry.
+            var timeout_str = ptr_uint_to_str(timeout_seconds)
+            var ulimit_cmd = string.String.create()
+            defer ulimit_cmd.release()
+            ulimit_cmd.append("ulimit -v ")
+            ulimit_cmd.append(ptr_uint_to_str(memory_mb * 1024z))
+            ulimit_cmd.append("; exec \"$@\"")
 
             var run_cmd = vec.Vec[str].create()
             defer run_cmd.release()
+            run_cmd.push("timeout")
+            run_cmd.push(timeout_str)
+            run_cmd.push("bash")
+            run_cmd.push("-c")
+            run_cmd.push(ulimit_cmd.as_str())
+            run_cmd.push("mt")
             run_cmd.push(runner_bin_str.as_str())
+
+            var run_failed = false
             match process.capture(run_cmd.as_span()):
                 Result.success as run_result:
-                    let run_stdout = run_result.value.stdout_text()
+                    var capture_result = run_result.value
+                    defer capture_result.release()
+                    let run_stdout = capture_result.stdout_text()
                     if run_stdout.is_some():
                         stdio.print_format(c"%.*s", int<-(run_stdout.unwrap().len), run_stdout.unwrap().data)
-                    let run_stderr = run_result.value.stderr_text()
+                    let run_stderr = capture_result.stderr_text()
                     if run_stderr.is_some():
                         stdio.print_format(c"%.*s", int<-(run_stderr.unwrap().len), run_stderr.unwrap().data)
+                    let code = capture_result.status.normalized_code()
+                    if code == 124:
+                        stdio.print_format(c"test run timed out after %ds\n", int<-timeout_seconds)
+                        run_failed = true
+                    else if code != 0:
+                        run_failed = true
                 Result.failure:
                     stdio.print_line("FAILED - runner crashed")
+                    run_failed = true
 
             let _r1 = fs.remove(runner_path_str.as_str())
             let _r2 = fs.remove(runner_bin_str.as_str())
+            if run_failed:
+                return (int<-(test_names.len()), 1)
             return (int<-(test_names.len()), 0)
         Result.failure:
             return (0, 0)
