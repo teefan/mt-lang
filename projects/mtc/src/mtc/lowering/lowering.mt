@@ -4900,7 +4900,15 @@ function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
     let index_expr = lower_expr(ctx, index)
     var elem_ty = qualify_type(ctx, expr_type(ctx, ep))
     if types.is_error(elem_ty):
-        elem_ty = qualify_type(ctx, generic_first_arg(receiver_type))
+        # The analyzer may not have recorded the type for member-access
+        # chains on external structs (e.g. model.skeleton.bindPose[i]).
+        # Fall back to the lowered receiver's type, which carries the
+        # correct resolved type from lower_member_access.
+        var recv_ty = ir_expr_type(recv)
+        if not types.is_error(recv_ty):
+            elem_ty = qualify_type(ctx, generic_first_arg(recv_ty))
+        if types.is_error(elem_ty):
+            elem_ty = qualify_type(ctx, generic_first_arg(receiver_type))
     if is_array_type(receiver_type):
         return alloc_expr(ir.Expr.expr_checked_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))
     if is_span_type(receiver_type):
@@ -10316,6 +10324,8 @@ function concrete_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: st
     match base:
         types.Type.ty_named as n:
             struct_name = n.name
+        types.Type.ty_imported as im:
+            struct_name = im.name
         _:
             return Option[types.Type].none
     let decl_ptr = ctx.generic_struct_decls.get(struct_name)
@@ -10344,7 +10354,27 @@ function concrete_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: st
         while ei < entries.len:
             let entry = unsafe: read(entries.data + ei)
             if entry.name == member:
-                return Option[types.Type].some(value = entry.ty)
+                # When the struct lives in a different module, qualify
+                # the field type in that module's context so bare type
+                # names resolve to the correct C module name.
+                var ft = entry.ty
+                match base:
+                    types.Type.ty_imported as base_im:
+                        if base_im.module_name != ctx.module_name:
+                            match find_imported_analysis(ctx, base_im.module_name):
+                                Option.some as owner_a:
+                                    var saved_module = ctx.module_name
+                                    var saved_analysis = ctx.analysis
+                                    ctx.module_name = base_im.module_name
+                                    ctx.analysis = owner_a
+                                    ft = qualify_type(ctx, ft)
+                                    ctx.module_name = saved_module
+                                    ctx.analysis = saved_analysis
+                                Option.none:
+                                    pass
+                    _:
+                        pass
+                return Option[types.Type].some(value = ft)
             ei += 1
     return Option[types.Type].none
 
