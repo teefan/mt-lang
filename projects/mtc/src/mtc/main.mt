@@ -108,7 +108,7 @@ function print_help() -> void:
     stdio.print_line("commands:")
     stdio.print_line("  lex   <file> [--machine]                           print the lexer token stream")
     stdio.print_line("  parse <file>                                       parse source and print AST")
-    stdio.print_line("  check <file|dir> [-I DIR]... [--platform NAME]     type-check a file/package and its imports")
+    stdio.print_line("  check <file|dir>... [-I DIR]... [--platform NAME] [-Werror] [--locked] [--frozen]  type-check files/package and imports")
     stdio.print_line("  lower <file|dir> [-I DIR]... [--platform NAME]     lower to IR and print it")
     stdio.print_line("  emit-c <file|dir> [-I DIR]... [--platform NAME]    compile to C and print it")
     stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache]")
@@ -162,15 +162,25 @@ function parse_command(file_path: str) -> int:
             return 0
 
 
-## Type-check a source file and its transitive imports.  Imports are resolved
-## against `-I DIR` / `--root DIR` module roots (repeatable); when none are given
-## the root defaults to the entry file's directory.  Supports both `.mt` files and
-## package directory targets (reads package.toml for the entry point).
+## Type-check source files and their transitive imports.  Accepts `.mt` files,
+## directories (recursively discovers `*.mt`), and package directory targets
+## (reads package.toml).  Imports are resolved against `-I DIR` / `--root DIR`
+## module roots (repeatable); when none are given the root defaults to the file's
+## directory.
+##
+## Flags:
+##   -I DIR, --root DIR    module search root (repeatable)
+##   --platform NAME       target platform (linux|windows|wasm, default: linux)
+##   -Werror               treat warnings as errors
+##   --locked              (accepted, not yet wired — requires package.toml)
+##   --frozen              (accepted, not yet wired — implies --locked)
 function check_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
-    var file_path: Option[str] = Option[str].none
+    var input_paths = vec.Vec[str].create()
+    defer input_paths.release()
     var platform = resolver.Platform.linux
+    var warnings_as_errors = false
 
     var i: ptr_uint = 1
     while i < args.len:
@@ -193,38 +203,109 @@ function check_command(args: span[str]) -> int:
                     return 1
             i += 2
             continue
-        match file_path:
-            Option.some:
-                stdio.print_line("error: check accepts a single source path")
-                return 1
-            Option.none:
-                file_path = Option[str].some(value = arg)
+        if arg == "-Werror" or arg == "--warnings-as-errors":
+            warnings_as_errors = true
+            i += 1
+            continue
+        if arg == "--locked" or arg == "--frozen":
+            # Accepted for CLI compatibility; package lock not yet wired.
+            i += 1
+            continue
+        input_paths.push(arg)
         i += 1
 
-    let path = file_path else:
+    if input_paths.is_empty():
         print_help()
         return 1
 
-    var entry_path_owner = string.String.create()
-    var source_root_owner = string.String.create()
-    let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
-        return 1
+    # Expand directories to their .mt files.
+    var source_files = vec.Vec[str].create()
+    defer source_files.release()
+    var si: ptr_uint = 0
+    while si < input_paths.len():
+        let raw = input_paths.get(si) else:
+            break
+        let path = unsafe: read(raw)
+        if fs.is_directory(path):
+            match fs.list_files_recursive(path):
+                Result.success as entries_payload:
+                    var entries = entries_payload.value
+                    defer entries.release()
+                    var ei: ptr_uint = 0
+                    while ei < entries.len():
+                        match entries.get(ei):
+                            Option.some as name_payload:
+                                let entry_name = name_payload.value
+                                if entry_name.ends_with(".mt") and not entry_name.starts_with("__mt_test_runner_"):
+                                    source_files.push(entry_name)
+                            Option.none:
+                                pass
+                        ei += 1
+                Result.failure as err_payload:
+                    var err_msg = err_payload.error
+                    defer err_msg.release()
+                    stdio.print_format(c"error: cannot list %.*s\n", int<-(path.len), path.data)
+                    return 1
+        else:
+            source_files.push(path)
+        si += 1
 
-    if roots.is_empty():
-        roots.push(path_ops.dirname(effective))
-
-    var program = loader.check_program(effective, roots.as_span(), platform)
-    defer program.release()
-
-    if program.diagnostic_count() == 0:
-        stdio.print_format(c"checked %.*s: ok\n", int<-(effective.len), effective.data)
-        entry_path_owner.release()
-        source_root_owner.release()
+    if source_files.is_empty():
+        stdio.print_line("no .mt files found")
         return 0
 
-    print_program_diagnostics(ref_of(program))
-    report_check_summary(program.diagnostic_count())
-    return 1
+    var total_errors: ptr_uint = 0
+    var total_warnings: ptr_uint = 0
+    var file_count: ptr_uint = 0
+
+    var fi: ptr_uint = 0
+    while fi < source_files.len():
+        let raw_path = source_files.get(fi) else:
+            break
+        let source_path = unsafe: read(raw_path)
+
+        var file_roots = vec.Vec[str].create()
+        defer file_roots.release()
+        var rj: ptr_uint = 0
+        while rj < roots.len():
+            let rp = roots.get(rj) else:
+                break
+            unsafe:
+                file_roots.push(read(rp))
+            rj += 1
+
+        var entry_path_owner = string.String.create()
+        var source_root_owner = string.String.create()
+        let effective = effective_source_path(source_path, ref_of(file_roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+            continue
+
+        if file_roots.is_empty():
+            file_roots.push(path_ops.dirname(effective))
+
+        var program = loader.check_program(effective, file_roots.as_span(), platform)
+        defer program.release()
+
+        let errors = program.diagnostic_error_count()
+        let warnings = program.diagnostic_warning_count()
+
+        if errors == 0 and warnings == 0:
+            stdio.print_format(c"checked %.*s: ok\n", int<-(effective.len), effective.data)
+        else:
+            print_program_diagnostics(ref_of(program))
+            file_count += 1
+            total_errors += errors
+            total_warnings += warnings
+
+        entry_path_owner.release()
+        source_root_owner.release()
+        fi += 1
+
+    report_check_summary(total_errors, total_warnings, file_count, warnings_as_errors)
+    if total_errors > 0:
+        return 1
+    if warnings_as_errors and total_warnings > 0:
+        return 1
+    return 0
 
 
 function print_program_diagnostics(program: ref[loader.Program]) -> void:
@@ -236,21 +317,88 @@ function print_program_diagnostics(program: ref[loader.Program]) -> void:
             let rd = read(d)
             let message = rd.message.as_str()
             let location = rd.path.as_str()
+            let prefix = if rd.severity == "warning": "warning" else: "error"
             stdio.print_format(
-                c"error[sema/error]: %.*s\n  --> %.*s:%d:%d\n",
+                c"%s: %.*s\n  --> %.*s:%d:%d\n",
+                prefix,
                 int<-(message.len), message.data,
                 int<-(location.len), location.data,
                 int<-(rd.line), int<-(rd.column),
             )
+            # Show source context if the file is readable.
+            match fs.read_text(location):
+                Result.success as source_content:
+                    var source_str = source_content.value
+                    defer source_str.release()
+                    let source_text = source_str.as_str()
+                    # Count newline-separated lines to find the target line.
+                    var current_line: ptr_uint = 1
+                    var line_start: ptr_uint = 0
+                    var pos: ptr_uint = 0
+                    while pos < source_text.len and current_line < rd.line:
+                        if source_text.byte_at(pos) == 10:
+                            current_line += 1
+                        pos += 1
+                    line_start = pos
+                    while pos < source_text.len and source_text.byte_at(pos) != 10:
+                        pos += 1
+                    let line_end = pos
+                    if line_start < line_end:
+                        let source_line = source_text.slice(line_start, line_end - line_start)
+                        stdio.print_format(c"   |\n %d | %.*s\n   | ", int<-(rd.line), int<-(source_line.len), source_line.data)
+                        # Underline at the column position.
+                        if rd.column > 1:
+                            var spaces = string.String.create()
+                            var sp: ptr_uint = 1
+                            while sp < rd.column:
+                                spaces.push_byte(32)
+                                sp += 1
+                            let spaces_text = spaces.as_str()
+                            stdio.print_format(c"%.*s^\n", int<-(spaces_text.len), spaces_text.data)
+                            spaces.release()
+                        else:
+                            stdio.print_line("^")
+                Result.failure:
+                    pass
         i += 1
 
 
-function report_check_summary(count: ptr_uint) -> void:
+function report_check_summary(errors: ptr_uint, warnings: ptr_uint, file_count: ptr_uint, warnings_as_errors: bool) -> void:
+    if errors == 0 and warnings == 0:
+        return
     stdio.print_line("")
-    if count == 1:
-        stdio.print_line("error: could not check due to 1 error")
+    var parts = vec.Vec[str].create()
+    defer parts.release()
+    if errors > 0:
+        if errors == 1:
+            parts.push("1 error")
+        else:
+            var es = ptr_uint_to_str(errors)
+            parts.push(es)
+            parts.push(" errors")
+    if warnings > 0:
+        if warnings == 1:
+            parts.push("1 warning")
+        else:
+            var ws = ptr_uint_to_str(warnings)
+            parts.push(ws)
+            parts.push(" warnings")
+    var ti: ptr_uint = 0
+    while ti < parts.len():
+        let p = parts.get(ti) else:
+            break
+        stdio.print_format(c"%.*s", int<-(unsafe: read(p).len), unsafe: read(p).data)
+        if ti < parts.len() - 1:
+            stdio.print_format(c"; ", 0, null)
+        ti += 1
+    if file_count > 1:
+        stdio.print_format(c" in %d files\n", int<-(file_count))
     else:
-        stdio.print_format(c"error: could not check due to %d errors\n", int<-(count))
+        stdio.print_line("")
+    if errors > 0:
+        stdio.print_line("error: could not check due to previous errors")
+    else if warnings > 0 and warnings_as_errors:
+        stdio.print_line("error: could not check due to warnings (treated as errors via -Werror)")
 
 
 ## Parse a `--platform NAME` / `--profile NAME` argument value into a

@@ -42,6 +42,7 @@ public struct LoadDiagnostic:
     line: ptr_uint
     column: ptr_uint
     message: string.String
+    severity: str
 
 
 ## The result of loading and checking a program: every parsed module, a
@@ -76,6 +77,30 @@ extending Program:
 
     public function diagnostic_count() -> ptr_uint:
         return this.diagnostics.len()
+
+
+    public function diagnostic_error_count() -> ptr_uint:
+        var count: ptr_uint = 0
+        var i: ptr_uint = 0
+        while i < this.diagnostics.len():
+            let d = this.diagnostics.get(i) else:
+                break
+            if unsafe: read(d).severity == "error":
+                count += 1
+            i += 1
+        return count
+
+
+    public function diagnostic_warning_count() -> ptr_uint:
+        var count: ptr_uint = 0
+        var i: ptr_uint = 0
+        while i < this.diagnostics.len():
+            let d = this.diagnostics.get(i) else:
+                break
+            if unsafe: read(d).severity == "warning":
+                count += 1
+            i += 1
+        return count
 
 
     ## The module name at the given dependency-order position, if any.
@@ -231,6 +256,7 @@ function parse_all(
             line = 0,
             column = 0,
             message = string.String.from_str("cyclic import detected"),
+            severity = "error",
         ))
         owned_path.release()
         return
@@ -243,6 +269,7 @@ function parse_all(
                 line = 0,
                 column = 0,
                 message = string.String.from_str("source file not found"),
+                severity = "error",
             ))
             error.release()
             owned_path.release()
@@ -312,6 +339,7 @@ function recurse_imports(
                             line = imported.line,
                             column = imported.column,
                             message = message,
+                            severity = "error",
                         ))
                         error.release()
             _:
@@ -343,6 +371,7 @@ function check_and_bind_module(
                 line = parse_diag.line,
                 column = parse_diag.column,
                 message = string.String.from_str(text.cstr_as_str(parse_diag.message)),
+                severity = "error",
             ))
             pi += 1
 
@@ -360,6 +389,7 @@ function check_and_bind_module(
                 line = sema_diag.line,
                 column = sema_diag.column,
                 message = string.String.from_str(sema_diag.message),
+                severity = "error",
             ))
             si += 1
         analysis.diagnostics.release()
