@@ -68,6 +68,8 @@ public function lint_source(file: ast.SourceFile, source: str, path: str) -> vec
     # Whole-file passes run after the AST visitor, matching Ruby's emission order.
     lint_prefer_let_else(file, path, ref_of(warnings))
     lint_ownership(file, path, ref_of(warnings))
+    lint_reserved_names(file, path, ref_of(warnings))
+    lint_borrow_mutate(file, path, ref_of(warnings))
     lint_doc_tags(file.declarations, source, path, ref_of(warnings))
     lint_events(file.declarations, "", path, ref_of(warnings))
     lint_trailing_commas(file.declarations, source, path, ref_of(warnings))
@@ -1536,6 +1538,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
             ast.Stmt.stmt_local as loc:
                 visit_expr_opt(loc.value, path, warnings)
                 visit_stmt_opt(loc.else_body, path, warnings)
+                check_redundant_type_annotation(loc.is_let, loc.name, loc.stmt_type, loc.value, path, warnings)
             ast.Stmt.stmt_assignment as asgn:
                 visit_expr(asgn.value, path, warnings)
                 visit_expr(asgn.target, path, warnings)
@@ -2213,9 +2216,6 @@ function prefer_else_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[
         unsafe:
             match read(stmts.data + i):
                 ast.Stmt.stmt_local as loc:
-                    if not loc.is_let:
-                        i += 1
-                        continue
                     if loc.value == null:
                         i += 1
                         continue
@@ -2241,11 +2241,18 @@ function prefer_else_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[
                             if not always_returns_body(guard_body):
                                 i += 1
                                 continue
-                            var buf = string.String.create()
-                            buf.append("nullable guard for '")
-                            buf.append(loc.name)
-                            buf.append("' can use let ... else")
-                            push_warning(warnings, path, loc.line, "prefer-let-else", buf.as_str(), "hint")
+                            if loc.is_let:
+                                var buf = string.String.create()
+                                buf.append("nullable guard for '")
+                                buf.append(loc.name)
+                                buf.append("' can use let ... else")
+                                push_warning(warnings, path, loc.line, "prefer-let-else", buf.as_str(), "hint")
+                            else:
+                                var buf = string.String.create()
+                                buf.append("nullable guard for '")
+                                buf.append(loc.name)
+                                buf.append("' can use var ... else")
+                                push_warning(warnings, path, loc.line, "prefer-var-else", buf.as_str(), "hint")
                         _:
                             pass
                 _:
@@ -2551,6 +2558,68 @@ function expr_source_name(expr: ptr[ast.Expr]?) -> str:
 
 
 # =============================================================================
+#  redundant-type-annotation — `let x: T = value` where T matches literal type.
+# =============================================================================
+
+function check_redundant_type_annotation(is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    if not is_let:
+        return
+    let st = stmt_type else:
+        return
+    let val = value else:
+        return
+    let declared = type_ref_leaf_name(st) else:
+        return
+    let inferred = expression_literal_type_name(val) else:
+        return
+    if declared.equal(inferred):
+        var buf = string.String.create()
+        buf.append("type annotation ': ")
+        buf.append(declared)
+        buf.append("' is redundant, inferred from initializer")
+        push_warning(warnings, path, 0, "redundant-type-annotation", buf.as_str(), "hint")
+
+
+## Extract the leaf name from a simple TypeRef (e.g. `int` → `"int"`),
+## or none when it has type arguments or is compound.
+function type_ref_leaf_name(type_ref: ptr[ast.TypeRef]) -> Option[str]:
+    unsafe:
+        let t = read(type_ref)
+        if t.arguments.len > 0:
+            return Option[str].none
+        if t.fn_params.len > 0:
+            return Option[str].none
+        if t.nullable or t.is_dyn or t.is_fn or t.is_proc or t.is_tuple:
+            return Option[str].none
+        if t.name.parts.len != 1:
+            return Option[str].none
+        return Option[str].some(value = read(t.name.parts.data + 0))
+
+
+## Infer the literal type name of an expression, or none. Handles integer,
+## float, string, bool, null, and char literals.
+function expression_literal_type_name(expr: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_integer_literal:
+                return Option[str].some(value = "int")
+            ast.Expr.expr_float_literal:
+                return Option[str].some(value = "float")
+            ast.Expr.expr_string_literal as s:
+                if s.is_cstring:
+                    return Option[str].some(value = "cstr")
+                return Option[str].some(value = "str")
+            ast.Expr.expr_bool_literal:
+                return Option[str].some(value = "bool")
+            ast.Expr.expr_null_literal:
+                return Option[str].some(value = "null")
+            ast.Expr.expr_char_literal:
+                return Option[str].some(value = "ubyte")
+            _:
+                return Option[str].none
+
+
+# =============================================================================
 #  prefer-struct-with — struct construction with many copy-field args.
 # =============================================================================
 
@@ -2606,7 +2675,7 @@ function check_prefer_struct_with(call_expr: ptr[ast.Expr], args: span[ast.Argum
     buf.append(" field(s) from `")
     buf.append(display_source)
     buf.append("`; use `")
-    buf.append(source_text)
+    buf.append(display_source)
     buf.append(".with(")
     var first = true
     var ci: ptr_uint = 0
@@ -3004,7 +3073,7 @@ function own_creating_call(expr: ptr[ast.Expr]?) -> bool:
 
 
 function is_create_method_name(name: str) -> bool:
-    false
+    return false
 
 
 function is_alloc_method_name(name: str) -> bool:
@@ -3054,4 +3123,345 @@ function ownership_collect_ret_transfer(value: ptr[ast.Expr]?, transferred: ref[
 ## True when `expr` is a struct constructor call that takes an owning value
 ## (transfers ownership). For AST-only, we just record names passed to any call.
 function ownership_transfer_ctor(expr: ptr[ast.Expr]?, target_name: str) -> bool:
-    false
+    return false
+
+
+# =============================================================================
+#  reserved-primitive-name — warn when a binding shadows a built-in type name.
+# =============================================================================
+
+const RESERVED_VALUE_NAMES: array[str, 30] = array[str, 30](
+    "bool", "byte", "short", "int", "long",
+    "ubyte", "ushort", "uint", "ulong",
+    "char", "float", "double",
+    "void", "str", "cstr",
+    "vec2", "vec3", "vec4",
+    "ivec2", "ivec3", "ivec4",
+    "mat3", "mat4", "quat",
+    "ptr", "ref", "span", "own",
+    "type", "fn"
+)
+
+
+function is_reserved_type_name(name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < 30:
+        if name.equal(RESERVED_VALUE_NAMES[i]):
+            return true
+        i += 1
+    return false
+
+
+function lint_reserved_names(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        unsafe:
+            match read(file.declarations.data + i):
+                ast.Decl.decl_function as fun:
+                    if is_reserved_type_name(fun.name):
+                        reserved_name_warn(path, fun.line, fun.name, "function", warnings)
+                    reserved_check_params(fun.method_params, path, warnings)
+                    reserved_walk_body(fun.body, path, warnings)
+                ast.Decl.decl_extending_block as ex:
+                    var j: ptr_uint = 0
+                    while j < ex.methods.len:
+                        let m = read(ex.methods.data + j)
+                        if is_reserved_type_name(m.name):
+                            reserved_name_warn(path, m.line, m.name, "method", warnings)
+                        reserved_check_params(m.method_params, path, warnings)
+                        reserved_walk_body(m.body, path, warnings)
+                        j += 1
+                ast.Decl.decl_var as v:
+                    if is_reserved_type_name(v.name):
+                        reserved_name_warn(path, v.line, v.name, "global variable", warnings)
+                ast.Decl.decl_struct as s:
+                    if is_reserved_type_name(s.name):
+                        reserved_name_warn(path, s.line, s.name, "struct", warnings)
+                ast.Decl.decl_enum as e:
+                    if is_reserved_type_name(e.name):
+                        reserved_name_warn(path, e.line, e.name, "enum", warnings)
+                ast.Decl.decl_type_alias as ta:
+                    if is_reserved_type_name(ta.name):
+                        reserved_name_warn(path, ta.line, ta.name, "type alias", warnings)
+                _:
+                    pass
+        i += 1
+
+
+function reserved_check_params(params: span[ast.Param], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var i: ptr_uint = 0
+    while i < params.len:
+        unsafe:
+            let p = read(params.data + i)
+            if is_reserved_type_name(p.name):
+                reserved_name_warn(path, p.line, p.name, "parameter", warnings)
+        i += 1
+
+
+function reserved_walk_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let bp = body else:
+        return
+    unsafe:
+        match read(bp):
+            ast.Stmt.stmt_block as blk:
+                reserved_walk_stmts(blk.statements, path, warnings)
+            _:
+                pass
+
+
+function reserved_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var i: ptr_uint = 0
+    while i < stmts.len:
+        unsafe:
+            match read(stmts.data + i):
+                ast.Stmt.stmt_local as loc:
+                    if is_reserved_type_name(loc.name):
+                        let kind = if loc.is_let: "local" else: "variable"
+                        reserved_name_warn(path, loc.line, loc.name, kind, warnings)
+                _:
+                    pass
+            reserved_recurse_stmt(stmts.data + i, path, warnings)
+        i += 1
+
+
+function reserved_recurse_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    reserved_walk_body(read(iff.branches.data + bi).body, path, warnings)
+                    bi += 1
+                reserved_walk_body(iff.else_body, path, warnings)
+            ast.Stmt.stmt_match as mt:
+                var ai: ptr_uint = 0
+                while ai < mt.arms.len:
+                    reserved_walk_body(read(mt.arms.data + ai).body, path, warnings)
+                    ai += 1
+            ast.Stmt.stmt_while as wh:
+                reserved_walk_body(wh.body, path, warnings)
+            ast.Stmt.stmt_for as fr:
+                reserved_walk_body(fr.body, path, warnings)
+            ast.Stmt.stmt_unsafe as un:
+                reserved_walk_body(un.body, path, warnings)
+            ast.Stmt.stmt_defer as df:
+                reserved_walk_body(df.body, path, warnings)
+            ast.Stmt.stmt_block as blk:
+                reserved_walk_stmts(blk.statements, path, warnings)
+            _:
+                pass
+
+
+function reserved_name_warn(path: str, line: ptr_uint, name: str, kind_label: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var buf = string.String.create()
+    buf.append(kind_label)
+    buf.append(" '")
+    buf.append(name)
+    buf.append("' uses reserved built-in type name '")
+    buf.append(name)
+    buf.append("'; rename it before this becomes a hard error")
+    push_warning(warnings, path, line, "reserved-primitive-name", buf.as_str(), "warning")
+
+
+# =============================================================================
+#  borrow-and-mutate — warn when a variable is borrowed and also mutated.
+# =============================================================================
+
+function lint_borrow_mutate(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        unsafe:
+            match read(file.declarations.data + i):
+                ast.Decl.decl_function as fun:
+                    borrow_check_body(fun.body, path, warnings)
+                ast.Decl.decl_extending_block as ex:
+                    var j: ptr_uint = 0
+                    while j < ex.methods.len:
+                        borrow_check_body(read(ex.methods.data + j).body, path, warnings)
+                        j += 1
+                _:
+                    pass
+        i += 1
+
+
+function borrow_check_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let bp = body else:
+        return
+    var borrows = vec.Vec[str].create()
+    defer borrows.release()
+    var writes = vec.Vec[str].create()
+    defer writes.release()
+    borrow_collect_body(bp, ref_of(borrows), ref_of(writes))
+    var i: ptr_uint = 0
+    while i < borrows.len():
+        let bp2 = borrows.get(i) else:
+            break
+        let name = unsafe: read(bp2)
+        if borrow_vec_contains(ref_of(writes), name):
+            var buf = string.String.create()
+            buf.append("'")
+            buf.append(name)
+            buf.append("' is borrowed via ref_of/ptr_of and also mutated in the same scope — potential aliasing hazard")
+            push_warning(warnings, path, 0, "borrow-and-mutate", buf.as_str(), "warning")
+        i += 1
+
+
+function borrow_collect_body(body: ptr[ast.Stmt], borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+    unsafe:
+        match read(body):
+            ast.Stmt.stmt_block as blk:
+                borrow_collect_stmts(blk.statements, borrows, writes)
+            _:
+                borrow_collect_stmt(body, borrows, writes)
+
+
+function borrow_collect_stmts(stmts: span[ast.Stmt], borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+    var i: ptr_uint = 0
+    while i < stmts.len:
+        unsafe:
+            borrow_collect_stmt(stmts.data + i, borrows, writes)
+        i += 1
+    i = 0
+    while i < stmts.len:
+        unsafe:
+            borrow_recurse_stmt(stmts.data + i, borrows, writes)
+        i += 1
+
+
+function borrow_collect_stmt(stmt: ptr[ast.Stmt], borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_assignment as asgn:
+                borrow_collect_expr(asgn.value, borrows, writes)
+                match read(asgn.target):
+                    ast.Expr.expr_identifier as id:
+                        if not borrow_vec_contains(writes, id.name):
+                            writes.push(id.name)
+                    _:
+                        pass
+            ast.Stmt.stmt_expression as ex:
+                borrow_collect_expr(ex.expression, borrows, writes)
+            ast.Stmt.stmt_local as loc:
+                borrow_collect_expr_opt(loc.value, borrows, writes)
+            ast.Stmt.stmt_ret as r:
+                borrow_collect_expr_opt(r.value, borrows, writes)
+            ast.Stmt.stmt_defer as df:
+                borrow_collect_expr_opt(df.expression, borrows, writes)
+            _:
+                pass
+
+
+function borrow_collect_expr(expr: ptr[ast.Expr], borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_call as call:
+                if borrow_is_ref_call(call.callee) and call.args.len > 0:
+                    let first_arg = read(call.args.data + 0).arg_value
+                    match read(first_arg):
+                        ast.Expr.expr_identifier as id:
+                            if not borrow_vec_contains(borrows, id.name):
+                                borrows.push(id.name)
+                        _:
+                            pass
+                borrow_collect_expr(call.callee, borrows, writes)
+                var ai: ptr_uint = 0
+                while ai < call.args.len:
+                    borrow_collect_expr(read(call.args.data + ai).arg_value, borrows, writes)
+                    ai += 1
+            ast.Expr.expr_binary_op as b:
+                borrow_collect_expr(b.left, borrows, writes)
+                borrow_collect_expr(b.right, borrows, writes)
+            ast.Expr.expr_unary_op as u:
+                borrow_collect_expr(u.operand, borrows, writes)
+            ast.Expr.expr_member_access as m:
+                borrow_collect_expr(m.receiver, borrows, writes)
+            ast.Expr.expr_index_access as ix:
+                borrow_collect_expr(ix.receiver, borrows, writes)
+                borrow_collect_expr(ix.index, borrows, writes)
+            ast.Expr.expr_if as iff:
+                borrow_collect_expr(iff.condition, borrows, writes)
+                borrow_collect_expr(iff.then_expr, borrows, writes)
+                borrow_collect_expr(iff.else_expr, borrows, writes)
+            ast.Expr.expr_match as mm:
+                borrow_collect_expr(mm.scrutinee, borrows, writes)
+                var mi: ptr_uint = 0
+                while mi < mm.arms.len:
+                    borrow_collect_expr(read(mm.arms.data + mi).value, borrows, writes)
+                    mi += 1
+            ast.Expr.expr_prefix_cast as pc:
+                borrow_collect_expr(pc.expression, borrows, writes)
+            ast.Expr.expr_unsafe as us:
+                borrow_collect_expr(us.expression, borrows, writes)
+            ast.Expr.expr_await as aw:
+                borrow_collect_expr(aw.expression, borrows, writes)
+            ast.Expr.expr_detach as dt:
+                borrow_collect_expr(dt.expression, borrows, writes)
+            ast.Expr.expr_expression_list as el:
+                var ei: ptr_uint = 0
+                while ei < el.elements.len:
+                    borrow_collect_expr(el.elements.data + ei, borrows, writes)
+                    ei += 1
+            ast.Expr.expr_named as nm:
+                borrow_collect_expr(nm.value, borrows, writes)
+            _:
+                pass
+
+
+function borrow_collect_expr_opt(expr: ptr[ast.Expr]?, borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+    let ep = expr else:
+        return
+    borrow_collect_expr(ep, borrows, writes)
+
+
+function borrow_is_ref_call(callee: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                return id.name == "ref_of" or id.name == "ptr_of"
+            _:
+                return false
+
+
+function borrow_recurse_stmt(stmt: ptr[ast.Stmt], borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    borrow_collect_body_opt2(read(iff.branches.data + bi).body, borrows, writes)
+                    bi += 1
+                borrow_collect_body_opt2(iff.else_body, borrows, writes)
+            ast.Stmt.stmt_match as mt:
+                var ai: ptr_uint = 0
+                while ai < mt.arms.len:
+                    borrow_collect_body_opt2(read(mt.arms.data + ai).body, borrows, writes)
+                    ai += 1
+            ast.Stmt.stmt_while as wh:
+                borrow_collect_body_opt2(wh.body, borrows, writes)
+            ast.Stmt.stmt_for as fr:
+                borrow_collect_body_opt2(fr.body, borrows, writes)
+            ast.Stmt.stmt_unsafe as un:
+                borrow_collect_body_opt2(un.body, borrows, writes)
+            ast.Stmt.stmt_defer as df:
+                borrow_collect_body_opt2(df.body, borrows, writes)
+            ast.Stmt.stmt_block as blk:
+                borrow_collect_stmts(blk.statements, borrows, writes)
+            _:
+                pass
+
+
+function borrow_collect_body_opt2(body: ptr[ast.Stmt]?, borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+    let bp = body else:
+        return
+    borrow_collect_body(bp, borrows, writes)
+
+
+function borrow_vec_contains(vec_ref: ref[vec.Vec[str]], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < vec_ref.len():
+        let ep = vec_ref.get(i) else:
+            break
+        if unsafe: read(ep).equal(name):
+            return true
+        i += 1
+    return false

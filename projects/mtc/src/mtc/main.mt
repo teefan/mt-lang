@@ -312,6 +312,39 @@ function check_command(args: span[str]) -> int:
             total_errors += errors
             total_warnings += warnings
 
+        # Run linter on clean files to catch style hints.
+        if errors == 0:
+            match fs.read_text(effective):
+                Result.success as content:
+                    var src = content.value
+                    defer src.release()
+                    var diags = vec.Vec[pstate.ParseDiagnostic].create()
+                    defer diags.release()
+                    let lfile = parser.parse_source(src.as_str(), ref_of(diags))
+                    var lwarns = linter.lint_source(lfile, src.as_str(), effective)
+                    defer lwarns.release()
+                    if lwarns.len() > 0:
+                        var lwi: ptr_uint = 0
+                        while lwi < lwarns.len():
+                            let lwp = lwarns.get(lwi) else:
+                                break
+                            unsafe:
+                                let lw = read(lwp)
+                                stdio.print_format(
+                                    c"%.*s:%d: %.*s: %.*s\n",
+                                    int<-(lw.path.len), lw.path.data,
+                                    int<-(lw.line),
+                                    int<-(lw.code.len), lw.code.data,
+                                    int<-(lw.message.len), lw.message.data,
+                                )
+                            lwi += 1
+                        total_warnings += lwarns.len()
+                        if total_errors == 0 and warnings == 0:
+                            file_count += 1
+                Result.failure as read_err:
+                    var em = read_err.error
+                    em.release()
+
         entry_path_owner.release()
         source_root_owner.release()
         fi += 1
@@ -445,14 +478,30 @@ function report_check_summary(errors: ptr_uint, warnings: ptr_uint, file_count: 
 function lint_command(args: span[str]) -> int:
     var input_paths = vec.Vec[str].create()
     defer input_paths.release()
+    var select_set = vec.Vec[str].create()
+    defer select_set.release()
+    var ignore_set = vec.Vec[str].create()
+    defer ignore_set.release()
     var i: ptr_uint = 1
     while i < args.len:
         let arg = args[i]
         if arg == "-I" or arg == "--root":
             i += 2
             continue
+        if arg == "--select":
+            i += 1
+            if i < args.len:
+                collect_filter_codes(args[i], ref_of(select_set))
+            i += 1
+            continue
+        if arg == "--ignore":
+            i += 1
+            if i < args.len:
+                collect_filter_codes(args[i], ref_of(ignore_set))
+            i += 1
+            continue
         if arg.starts_with("-"):
-            # Config / select / ignore / fix flags are not yet supported; ignore.
+            # Other flags (--fix, --init, --locked, --profile) are silently skipped.
             i += 1
             continue
         input_paths.push(arg)
@@ -512,11 +561,23 @@ function lint_command(args: span[str]) -> int:
                 let file = parser.parse_source(src.as_str(), ref_of(diags))
                 var warns = linter.lint_source(file, src.as_str(), fp)
                 defer warns.release()
-                if warns.len() > 0:
-                    files_with_warnings += 1
+                var filtered = vec.Vec[linter.Warning].create()
+                defer filtered.release()
                 var wi: ptr_uint = 0
                 while wi < warns.len():
                     let wp = warns.get(wi) else:
+                        break
+                    unsafe:
+                        let w = read(wp)
+                        if warning_allowed(w.code, ref_of(select_set), ref_of(ignore_set)):
+                            filtered.push(w)
+                    wi += 1
+                if filtered.len() > 0:
+                    files_with_warnings += 1
+                total_warnings += filtered.len()
+                wi = 0
+                while wi < filtered.len():
+                    let wp = filtered.get(wi) else:
                         break
                     unsafe:
                         let w = read(wp)
@@ -560,6 +621,40 @@ function lint_command(args: span[str]) -> int:
         int<-(files_text.len), files_text.data,
     )
     return 1
+
+
+function warning_allowed(code: str, select_set: ref[vec.Vec[str]], ignore_set: ref[vec.Vec[str]]) -> bool:
+    if ignore_set.len() > 0:
+        var i: ptr_uint = 0
+        while i < ignore_set.len():
+            let ep = ignore_set.get(i) else:
+                break
+            if code.equal(unsafe: read(ep)):
+                return false
+            i += 1
+    if select_set.len() > 0:
+        var i: ptr_uint = 0
+        while i < select_set.len():
+            let ep = select_set.get(i) else:
+                break
+            if code.equal(unsafe: read(ep)):
+                return true
+            i += 1
+        return false
+    return true
+
+
+function collect_filter_codes(list: str, output: ref[vec.Vec[str]]) -> void:
+    var start: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < list.len:
+        if list.byte_at(i) == ',':
+            if i > start:
+                output.push(list.slice(start, i - start))
+            start = i + 1
+        i += 1
+    if i > start:
+        output.push(list.slice(start, i - start))
 
 
 ## Parse a `--platform NAME` / `--profile NAME` argument value into a
