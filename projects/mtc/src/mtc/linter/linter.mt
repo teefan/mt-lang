@@ -1,16 +1,21 @@
 ## In-language linter for the self-hosted mtc compiler.
 ##
 ## Walks a parsed AST and reports style/correctness warnings, mirroring the Ruby
-## linter's AST-only rules.  This first increment covers the rules that need no
-## semantic-analysis facts:
+## linter's AST-only rules (those that need no semantic-analysis facts):
 ##
-##   - self-assignment       (warning)  `x = x`
-##   - self-comparison       (warning)  `x == x` / `x != x`
-##   - redundant-bool-compare (hint)    `x == true` and friends
-##   - redundant-return      (hint)     final bare `return` in a `-> void` body
+##   - self-assignment                (warning)  `x = x`
+##   - self-comparison                (warning)  `x == x` / `x != x`
+##   - redundant-bool-compare         (hint)     `x == true` and friends
+##   - redundant-return               (hint)     final bare `return` in a `-> void` body
+##   - useless-expression             (warning)  pure expression statement
+##   - duplicate-if-condition         (warning)  duplicate branch condition
+##   - noop-compound-assignment       (hint)     `x += 0`, `x *= 1`
+##   - redundant-ignored-match-binding (hint)    `as _`
 ##
-## The `lint` command renders each warning as `path:line: code: message`, so a
-## warning only needs a line, code, message, and severity.
+## Rule checks are applied after visiting a node's children, matching the Ruby
+## visitor's emission order.  The `lint` command renders each warning as
+## `path:line: code: message`, so a warning only needs a line, code, message,
+## and severity.
 
 import std.vec as vec
 import std.string as string
@@ -183,6 +188,243 @@ function check_redundant_bool_compare(operator: str, left: ptr[ast.Expr], right:
     push_warning(warnings, path, line, "redundant-bool-compare", buf.as_str(), "hint")
 
 
+## A pure expression statement with no side effects has a useless result.
+function is_pure_expression(expr: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_integer_literal:
+                return true
+            ast.Expr.expr_float_literal:
+                return true
+            ast.Expr.expr_string_literal:
+                return true
+            ast.Expr.expr_format_string:
+                return true
+            ast.Expr.expr_bool_literal:
+                return true
+            ast.Expr.expr_null_literal:
+                return true
+            ast.Expr.expr_binary_op:
+                return true
+            ast.Expr.expr_unary_op:
+                return true
+            ast.Expr.expr_identifier:
+                return true
+            ast.Expr.expr_unsafe:
+                return true
+            _:
+                return false
+
+
+## True when `expr` contains a call, await, or `?` propagation — mirrors the
+## Ruby `contains_side_effecting_expression?` (note: it does NOT descend into a
+## plain unary operand).
+function contains_side_effect(expr: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_call:
+                return true
+            ast.Expr.expr_await:
+                return true
+            ast.Expr.expr_unary_op as u:
+                return u.operator == "?"
+            ast.Expr.expr_binary_op as b:
+                if contains_side_effect(b.left):
+                    return true
+                return contains_side_effect(b.right)
+            ast.Expr.expr_unsafe as us:
+                return contains_side_effect(us.expression)
+            ast.Expr.expr_format_string as fs:
+                var i: ptr_uint = 0
+                while i < fs.parts.len:
+                    match read(fs.parts.data + i):
+                        ast.FormatStringPart.fmt_expr as fe:
+                            if contains_side_effect(fe.expression):
+                                return true
+                        _:
+                            pass
+                    i += 1
+                return false
+            _:
+                return false
+
+
+function check_useless_expression(expr: ptr[ast.Expr], stmt_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    if not is_pure_expression(expr):
+        return
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_unary_op as u:
+                if u.operator == "?":
+                    return
+            _:
+                pass
+    if contains_side_effect(expr):
+        return
+    var line = expression_line(expr)
+    if line == 0:
+        line = stmt_line
+    push_warning(warnings, path, line, "useless-expression", "expression result is unused and has no side effects", "warning")
+
+
+## Compound assignment against an identity value (`x += 0`, `x *= 1`).
+function check_noop_compound_assignment(target: ptr[ast.Expr], operator: str, value: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var is_identity = false
+    if operator == "+=" or operator == "-=" or operator == "|=" or operator == "^=" or operator == "<<=" or operator == ">>=":
+        is_identity = integer_literal_matches(value, "0")
+    else if operator == "*=" or operator == "/=":
+        is_identity = numeric_literal_one(value)
+    if is_identity:
+        push_warning(warnings, path, expression_line(target), "noop-compound-assignment", "compound assignment with identity value has no effect", "hint")
+
+
+function lexeme_without_underscores(lexeme: str) -> string.String:
+    var b = string.String.create()
+    var i: ptr_uint = 0
+    while i < lexeme.len:
+        let c = lexeme.byte_at(i)
+        if c != 95:
+            b.push_byte(c)
+        i += 1
+    return b
+
+
+function integer_literal_matches(value: ptr[ast.Expr], target: str) -> bool:
+    unsafe:
+        match read(value):
+            ast.Expr.expr_integer_literal as il:
+                var stripped = lexeme_without_underscores(il.lexeme)
+                defer stripped.release()
+                return stripped.as_str().equal(target)
+            _:
+                return false
+
+
+function numeric_literal_one(value: ptr[ast.Expr]) -> bool:
+    if integer_literal_matches(value, "1"):
+        return true
+    unsafe:
+        match read(value):
+            ast.Expr.expr_float_literal as fl:
+                var stripped = lexeme_without_underscores(fl.lexeme)
+                defer stripped.release()
+                let s = stripped.as_str()
+                return s.equal("1.0") or s.equal("1.")
+            _:
+                return false
+
+
+## Duplicate condition across the branches of one if/else-if chain.
+function check_duplicate_if_conditions(branches: span[ast.IfBranch], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var seen = vec.Vec[str].create()
+    defer seen.release()
+    var bi: ptr_uint = 0
+    while bi < branches.len:
+        unsafe:
+            let br = read(branches.data + bi)
+            match expression_signature(br.condition):
+                Option.some as sig:
+                    var dup = false
+                    var k: ptr_uint = 0
+                    while k < seen.len():
+                        let sp = seen.get(k) else:
+                            break
+                        if read(sp).equal(sig.value):
+                            dup = true
+                            break
+                        k += 1
+                    if dup:
+                        var line = expression_line(br.condition)
+                        if line == 0:
+                            line = br.line
+                        push_warning(warnings, path, line, "duplicate-if-condition", "duplicate condition matches an earlier if/else-if branch and is unreachable", "warning")
+                    else:
+                        seen.push(sig.value)
+                Option.none:
+                    pass
+        bi += 1
+
+
+## A structural signature string for a condition, used to detect duplicate
+## branches.  None for expressions the signature does not model.
+function expression_signature(expr: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_identifier as id:
+                var b = string.String.create()
+                b.append("id:")
+                b.append(id.name)
+                return Option[str].some(value = b.as_str())
+            ast.Expr.expr_bool_literal as bl:
+                var b = string.String.create()
+                b.append("bool:")
+                b.append(if bl.value: "true" else: "false")
+                return Option[str].some(value = b.as_str())
+            ast.Expr.expr_integer_literal as il:
+                var b = string.String.create()
+                b.append("lit:")
+                b.append(il.lexeme)
+                return Option[str].some(value = b.as_str())
+            ast.Expr.expr_float_literal as fl:
+                var b = string.String.create()
+                b.append("lit:")
+                b.append(fl.lexeme)
+                return Option[str].some(value = b.as_str())
+            ast.Expr.expr_string_literal as sl:
+                var b = string.String.create()
+                b.append("lit:")
+                b.append(sl.lexeme)
+                return Option[str].some(value = b.as_str())
+            ast.Expr.expr_null_literal:
+                return Option[str].some(value = "null")
+            ast.Expr.expr_member_access as m:
+                let recv = expression_signature(m.receiver) else:
+                    return Option[str].none
+                var b = string.String.create()
+                b.append("member:(")
+                b.append(recv)
+                b.append(").")
+                b.append(m.member_name)
+                return Option[str].some(value = b.as_str())
+            ast.Expr.expr_unary_op as u:
+                let operand = expression_signature(u.operand) else:
+                    return Option[str].none
+                var b = string.String.create()
+                b.append("unary:")
+                b.append(u.operator)
+                b.append("(")
+                b.append(operand)
+                b.append(")")
+                return Option[str].some(value = b.as_str())
+            ast.Expr.expr_binary_op as bo:
+                let l = expression_signature(bo.left) else:
+                    return Option[str].none
+                let r = expression_signature(bo.right) else:
+                    return Option[str].none
+                var b = string.String.create()
+                b.append("binary:(")
+                b.append(l)
+                b.append(")")
+                b.append(bo.operator)
+                b.append("(")
+                b.append(r)
+                b.append(")")
+                return Option[str].some(value = b.as_str())
+            _:
+                return Option[str].none
+
+
+## `Variant.arm as _` — an ignored match binding is redundant.
+function warn_redundant_ignored_match_binding(binding_name: Option[str], binding_line: ptr_uint, fallback_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    match binding_name:
+        Option.some as bn:
+            if bn.value.equal("_"):
+                let line = if binding_line != 0: binding_line else: fallback_line
+                push_warning(warnings, path, line, "redundant-ignored-match-binding", "ignored match binding is redundant; remove 'as _'", "hint")
+        Option.none:
+            pass
+
+
 ## Final bare `return` in an explicit `-> void` body is redundant.
 function check_redundant_return(return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     if not is_void_type(return_type):
@@ -279,9 +521,10 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 visit_expr_opt(loc.value, path, warnings)
                 visit_stmt_opt(loc.else_body, path, warnings)
             ast.Stmt.stmt_assignment as asgn:
-                check_self_assignment(asgn.target, asgn.operator, asgn.value, path, warnings)
-                visit_expr(asgn.target, path, warnings)
                 visit_expr(asgn.value, path, warnings)
+                visit_expr(asgn.target, path, warnings)
+                check_self_assignment(asgn.target, asgn.operator, asgn.value, path, warnings)
+                check_noop_compound_assignment(asgn.target, asgn.operator, asgn.value, path, warnings)
             ast.Stmt.stmt_if as iff:
                 var bi: ptr_uint = 0
                 while bi < iff.branches.len:
@@ -290,6 +533,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                     visit_stmt(br.body, path, warnings)
                     bi += 1
                 visit_stmt_opt(iff.else_body, path, warnings)
+                check_duplicate_if_conditions(iff.branches, path, warnings)
             ast.Stmt.stmt_while as wh:
                 visit_expr(wh.condition, path, warnings)
                 visit_stmt_opt(wh.body, path, warnings)
@@ -304,6 +548,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 var ai: ptr_uint = 0
                 while ai < mt.arms.len:
                     let arm = read(mt.arms.data + ai)
+                    warn_redundant_ignored_match_binding(arm.binding_name, arm.binding_line, mt.line, path, warnings)
                     visit_stmt_opt(arm.body, path, warnings)
                     ai += 1
             ast.Stmt.stmt_ret as r:
@@ -315,6 +560,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 visit_stmt_opt(un.body, path, warnings)
             ast.Stmt.stmt_expression as ex:
                 visit_expr(ex.expression, path, warnings)
+                check_useless_expression(ex.expression, ex.line, path, warnings)
             ast.Stmt.stmt_static_assert as sa:
                 visit_expr(sa.condition, path, warnings)
                 visit_expr_opt(sa.message, path, warnings)
@@ -353,10 +599,10 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
     unsafe:
         match read(expr):
             ast.Expr.expr_binary_op as b:
-                check_self_comparison(b.operator, b.left, b.right, path, warnings)
-                check_redundant_bool_compare(b.operator, b.left, b.right, path, warnings)
                 visit_expr(b.left, path, warnings)
                 visit_expr(b.right, path, warnings)
+                check_self_comparison(b.operator, b.left, b.right, path, warnings)
+                check_redundant_bool_compare(b.operator, b.left, b.right, path, warnings)
             ast.Expr.expr_unary_op as u:
                 visit_expr(u.operand, path, warnings)
             ast.Expr.expr_member_access as m:
@@ -382,6 +628,7 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
                 var ai: ptr_uint = 0
                 while ai < mm.arms.len:
                     let arm = read(mm.arms.data + ai)
+                    warn_redundant_ignored_match_binding(arm.binding_name, arm.binding_line, mm.line, path, warnings)
                     visit_expr(arm.value, path, warnings)
                     ai += 1
             ast.Expr.expr_proc as pr:

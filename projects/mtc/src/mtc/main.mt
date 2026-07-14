@@ -228,7 +228,9 @@ function check_command(args: span[str]) -> int:
         return 1
 
     # Expand directories to their .mt files.
-    var source_files = vec.Vec[str].create()
+    # Paths are copied into owned Strings so they do not dangle when a directory
+    # listing's Entries buffer is released.
+    var source_files = vec.Vec[string.String].create()
     defer source_files.release()
     var si: ptr_uint = 0
     while si < input_paths.len():
@@ -246,7 +248,7 @@ function check_command(args: span[str]) -> int:
                             Option.some as name_payload:
                                 let entry_name = name_payload.value
                                 if entry_name.ends_with(".mt") and not entry_name.starts_with("__mt_test_runner_"):
-                                    source_files.push(entry_name)
+                                    source_files.push(string.String.from_str(entry_name))
                             Option.none:
                                 pass
                         ei += 1
@@ -256,7 +258,7 @@ function check_command(args: span[str]) -> int:
                     stdio.print_format(c"error: cannot list %.*s\n", int<-(path.len), path.data)
                     return 1
         else:
-            source_files.push(path)
+            source_files.push(string.String.from_str(path))
         si += 1
 
     if source_files.is_empty():
@@ -271,7 +273,7 @@ function check_command(args: span[str]) -> int:
     while fi < source_files.len():
         let raw_path = source_files.get(fi) else:
             break
-        let source_path = unsafe: read(raw_path)
+        let source_path = unsafe: read(raw_path).as_str()
 
         var file_roots = vec.Vec[str].create()
         defer file_roots.release()
@@ -460,7 +462,9 @@ function lint_command(args: span[str]) -> int:
         print_help()
         return 1
 
-    var source_files = vec.Vec[str].create()
+    # Collect .mt files.  Paths are copied into owned Strings so they do not
+    # dangle when a directory listing's Entries buffer is released.
+    var source_files = vec.Vec[string.String].create()
     defer source_files.release()
     var si: ptr_uint = 0
     while si < input_paths.len():
@@ -478,7 +482,7 @@ function lint_command(args: span[str]) -> int:
                             Option.some as name_payload:
                                 let entry_name = name_payload.value
                                 if entry_name.ends_with(".mt") and not entry_name.starts_with("__mt_test_runner_"):
-                                    source_files.push(entry_name)
+                                    source_files.push(string.String.from_str(entry_name))
                             Option.none:
                                 pass
                         ei += 1
@@ -488,7 +492,7 @@ function lint_command(args: span[str]) -> int:
                     stdio.print_format(c"error: cannot list %.*s\n", int<-(path.len), path.data)
                     return 1
         else:
-            source_files.push(path)
+            source_files.push(string.String.from_str(path))
         si += 1
 
     var total_warnings: ptr_uint = 0
@@ -498,7 +502,7 @@ function lint_command(args: span[str]) -> int:
     while fi < source_files.len():
         let fp_ptr = source_files.get(fi) else:
             break
-        let fp = unsafe: read(fp_ptr)
+        let fp = unsafe: read(fp_ptr).as_str()
         match fs.read_text(fp):
             Result.success as content:
                 var src = content.value

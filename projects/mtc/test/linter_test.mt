@@ -172,3 +172,130 @@ function test_implicit_void_return_clean() -> t.Check:
             return
     SRC
     return expect_none(source, "redundant-return")
+
+
+# =============================================================================
+#  useless-expression
+# =============================================================================
+
+@[test]
+function test_useless_expression_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            a
+            return a
+    SRC
+    return expect_one(source, "useless-expression")
+
+
+@[test]
+function test_call_statement_clean() -> t.Check:
+    # A bare call has side effects and is not useless.
+    var source = <<-SRC
+        function side() -> int:
+            return 0
+        function demo() -> int:
+            side()
+            return 0
+    SRC
+    return expect_none(source, "useless-expression")
+
+
+# =============================================================================
+#  duplicate-if-condition
+# =============================================================================
+
+@[test]
+function test_duplicate_if_condition_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            if a == 1:
+                return 1
+            else if a == 1:
+                return 2
+            return 0
+    SRC
+    return expect_one(source, "duplicate-if-condition")
+
+
+@[test]
+function test_distinct_if_conditions_clean() -> t.Check:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            if a == 1:
+                return 1
+            else if a == 2:
+                return 2
+            return 0
+    SRC
+    return expect_none(source, "duplicate-if-condition")
+
+
+# =============================================================================
+#  noop-compound-assignment
+# =============================================================================
+
+@[test]
+function test_noop_compound_add_zero_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo() -> int:
+            var x = 0
+            x += 0
+            return x
+    SRC
+    return expect_one(source, "noop-compound-assignment")
+
+
+@[test]
+function test_noop_compound_mul_one_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo() -> int:
+            var x = 2
+            x *= 1
+            return x
+    SRC
+    return expect_one(source, "noop-compound-assignment")
+
+
+@[test]
+function test_compound_nonidentity_clean() -> t.Check:
+    var source = <<-SRC
+        function demo(y: int) -> int:
+            var x = 0
+            x += y
+            x *= 2
+            return x
+    SRC
+    return expect_none(source, "noop-compound-assignment")
+
+
+# =============================================================================
+#  redundant-ignored-match-binding
+# =============================================================================
+
+@[test]
+function test_redundant_ignored_match_binding_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo() -> int:
+            let opt = Option[int].some(value = 5)
+            match opt:
+                Option.some as _:
+                    return 1
+                Option.none:
+                    return 0
+    SRC
+    return expect_one(source, "redundant-ignored-match-binding")
+
+
+@[test]
+function test_named_match_binding_clean() -> t.Check:
+    var source = <<-SRC
+        function demo() -> int:
+            let opt = Option[int].some(value = 5)
+            match opt:
+                Option.some as s:
+                    return s.value
+                Option.none:
+                    return 0
+    SRC
+    return expect_none(source, "redundant-ignored-match-binding")
