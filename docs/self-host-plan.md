@@ -1,8 +1,9 @@
 # Self-Host Plan
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED.** Stage2 == stage3 byte-identical.
-177/177 self-tests pass across 9 test files. **`mtc lint` has 27 rules**
-across the self-host codebase (9 new Tier-1 AST rules, 1 ownership rule added).
+177/177 self-tests pass across 9 test files. **`mtc lint` has 31 rules**
+(+4 Tier-1/3 AST rules, +2 tooling features). `--select`/`--ignore` supported.
+Lint wired into `mtc check`.
 
 Last updated: 2026-07-14
 
@@ -152,7 +153,7 @@ annotations and undefined names (the two former `check`-silence bugs).
   type information (`own[T]` vs `ptr[T]` distinction needs sema_facts).
 
 
-## 1. Linter (27 / ~40 rules)
+## 1. Linter (31 / ~40 rules)
 
 ### 1.1 Implemented rules
 
@@ -203,13 +204,29 @@ annotations and undefined names (the two former `check`-silence bugs).
 |------|----------|----------|
 | owning-release-double | warning | AST-only |
 
+#### New Tier 3 / heuristic rules (4 rules, added 2026-07-14)
+
+| Rule | Severity | Category |
+|------|----------|----------|
+| prefer-var-else | hint | AST-only |
+| reserved-primitive-name | warning | name-based |
+| redundant-type-annotation | hint | AST-heuristic |
+| borrow-and-mutate | warning | AST-only |
+
+#### Tooling (added 2026-07-14)
+
+| Feature | Status |
+|---------|--------|
+| `--select` / `--ignore` | Done |
+| Wire lint into `check` | Done |
+
 ### 1.2 Remaining lint rules (deferred)
 
 Below are the ~23 missing lint rules categorised by their *prerequisite work*.
 The self-host already covers the heavy machinery (AST visitors, scope tracking,
 `always_returns`, `body_can_break`) so the gap is narrower than it first looks.
 
-#### 1.2a AST-only — 9 of 10 now implemented
+#### 1.2a AST-only — COMPLETED (10 of 10 rules)
 
 | Rule | Status |
 |------|--------|
@@ -218,7 +235,7 @@ The self-host already covers the heavy machinery (AST visitors, scope tracking,
 | `prefer-conditional-expression` | **DONE** |
 | `prefer-or-pattern` | **DONE** |
 | `prefer-let-else` | **DONE** (AST-structural heuristic; no sema_facts needed) |
-| `prefer-var-else` | Not yet implemented |
+| `prefer-var-else` | **DONE** |
 | `prefer-try` | **DONE** (AST-structural heuristic) |
 | `prefer-is-variant` | **DONE** (AST-structural heuristic) |
 | `prefer-struct-with` | **DONE** (AST-structural heuristic) |
@@ -231,19 +248,15 @@ The self-host already covers the heavy machinery (AST visitors, scope tracking,
 | `owning-release-leak` | DEFERRED (needs sema_facts for `own[T]` type detection) |
 | `owning-release-double` | **DONE** (AST-only sequential release detection) |
 
-#### 1.2c Semantic-facts — needs `@sema_facts` integration
+#### 1.2c Semantic-facts — 2 of 5 rules completed (AST heuristics, no sema_facts needed)
 
-The self-host does not yet thread resolved-binding information into the
-linter visitor (the Ruby `@sema_facts` object that maps every AST identifier to
-its binding kind, declared type, owner module, etc.).
-
-| Rule | Category | Notes |
-|------|----------|-------|
-| `redundant-cast` | hint | Needs type info per expression |
-| `redundant-type-annotation` | hint | Needs type info per `let`/`var` |
-| `prefer-own-ptr` | hint | Needs to know when a variable has `own[T]` type |
-| `reserved-primitive-name` | warning | Needs binding resolution (is the name a local shadowing a primitive?) |
-| `borrow-and-mutate` | warning | Needs `ref` vs value tracking per expression |
+| Rule | Status |
+|------|--------|
+| `redundant-cast` | Not yet — needs type resolution |
+| `redundant-type-annotation` | **DONE** (AST-heuristic: literal type name vs type annotation) |
+| `prefer-own-ptr` | Not yet — needs `own[T]` vs `ptr[T]` distinction |
+| `reserved-primitive-name` | **DONE** (static name check against reserved list) |
+| `borrow-and-mutate` | **DONE** (AST walk: ref_of/ptr_of + assignment in same scope) |
 
 #### 1.2d Full CFG — needs graph builder + flow solvers
 
@@ -271,13 +284,14 @@ CFG Builder (graph with edges + read/write sets)
 | `redundant-null-check` | Builder + NullabilityFlow | Null check after !null branch |
 | `loop-single-iteration` | Builder + Termination | Loop whose body always breaks |
 
-#### 1.2e Tooling
+#### 1.2e Tooling — partial
 
-| Gap | Notes |
-|-----|-------|
-| `--select` / `--ignore` | Filter rules by code; CLI parsing is stubbed (`main.mt:455`) |
-| `--fix` | Auto-fix lint violations in-place |
-| `.mt-lint.yml` config | Per-project lint configuration file |
+| Gap | Status |
+|-----|--------|
+| `--select` / `--ignore` | **DONE** — comma-separated code filter |
+| Wire lint into `check` | **DONE** — runs linter on clean check results |
+| `--fix` | Not yet — per-rule auto-fix logic |
+| `.mt-lint.yml` config | Not yet — TOML parsing + rule config |
 
 ---
 
@@ -306,19 +320,27 @@ All 9 Tier-1 rules are now implemented. ~1361 additional warnings generated acro
 | 10 | `owning-release-leak` | 148 | DEFERRED — needs sema_facts for `own[T]` type detection |
 | 11 | `owning-release-double` | 0 | **DONE** — AST-only sequential release detection |
 
-### 2.3 Tier 3 — Semantic-facts rules (5 rules, 75 warnings, blocked on §2.4)
+### 2.3 Tier 3 — Semantic-facts rules — PARTIAL (4 of 5 rules completed without sema_facts)
 
-These need `@sema_facts` — a per-identifier table from the analyzer mapping
-each AST identifier to its resolved binding (kind, type, module).  Currently
-the self-host linter has no access to this data.
+| # | Rule | Ruby warnings | Status |
+|---|------|--------------|--------|
+| 12 | `prefer-own-ptr` | 38 | Not yet — needs `own[T]` type detection |
+| 13 | `redundant-cast` | 37 | Not yet — needs expression type resolution |
+| 14 | `redundant-type-annotation` | 0 | **DONE** — AST-heuristic (literal type matching) |
+| 15 | `reserved-primitive-name` | 0 | **DONE** — static reserved-name list check |
+| 16 | `borrow-and-mutate` | 0 (4 in self-host) | **DONE** — AST walk for ref_of/ptr_of + assignment |
 
-| # | Rule | Ruby warnings | Prerequisite from sema_facts |
-|---|------|--------------|------------------------------|
-| 12 | `prefer-own-ptr` | 38 | Is variable `own[T]` vs `ptr[T]`? |
-| 13 | `redundant-cast` | 37 | Expression type vs target cast type |
-| 14 | `redundant-type-annotation` | 0 | Declared type annotation vs inferred type |
-| 15 | `reserved-primitive-name` | 0 | Does local/param name shadow a primitive type name? |
-| 16 | `borrow-and-mutate` | 0 | Does expression yield `ref[T]` while a `T` is also borrowed? |
+The two remaining Tier-3 rules (`redundant-cast`, `prefer-own-ptr`) genuinely need
+sema_facts or a close approximation to avoid false positives.
+
+### 2.4 Tooling — PARTIAL (2 of 4 completed)
+
+| # | Gap | Status |
+|---|-----|--------|
+| 24 | `--select` / `--ignore` | **DONE** |
+| 25 | `--fix` | Not yet |
+| 26 | `.mt-lint.yml` config | Not yet |
+| 27 | Wire lint into `check` | **DONE** |
 
 ### 2.4 Tier 4 — Full CFG (5 rules, 9 warnings, needs 7-layer infrastructure)
 
