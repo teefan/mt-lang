@@ -15,7 +15,7 @@ function lint_text(source: str) -> vec.Vec[linter.Warning]:
     var diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer diags.release()
     let file = parser.parse_source(source, ref_of(diags))
-    return linter.lint_source(file, "test.mt")
+    return linter.lint_source(file, source, "test.mt")
 
 
 ## Count warnings whose code equals `code`.
@@ -362,3 +362,34 @@ function test_small_event_capacity_clean() -> t.Check:
         event small[4]
     SRC
     return expect_none(source, "event-capacity")
+
+
+# =============================================================================
+#  trailing-list-comma
+# =============================================================================
+
+@[test]
+function test_trailing_list_comma_flagged() -> t.Check:
+    var source = <<-SRC
+        function side(a: int, b: int) -> int:
+            return a + b
+
+        function demo() -> int:
+            return side(
+                1,
+                2,
+            )
+    SRC
+    return expect_one(source, "trailing-list-comma")
+
+
+@[test]
+function test_no_trailing_comma_clean() -> t.Check:
+    var source = <<-SRC
+        function side(a: int, b: int) -> int:
+            return a + b
+
+        function demo() -> int:
+            return side(1, 2)
+    SRC
+    return expect_none(source, "trailing-list-comma")

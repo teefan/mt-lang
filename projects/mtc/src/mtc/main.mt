@@ -510,7 +510,7 @@ function lint_command(args: span[str]) -> int:
                 var diags = vec.Vec[pstate.ParseDiagnostic].create()
                 defer diags.release()
                 let file = parser.parse_source(src.as_str(), ref_of(diags))
-                var warns = linter.lint_source(file, fp)
+                var warns = linter.lint_source(file, src.as_str(), fp)
                 defer warns.release()
                 if warns.len() > 0:
                     files_with_warnings += 1
