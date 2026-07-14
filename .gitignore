@@ -84,3 +84,4 @@ __mt_test_*
 
 # Vendored tool binaries built into bin/
 /bin/tracy-profiler
+build/
