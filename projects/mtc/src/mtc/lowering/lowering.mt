@@ -2907,7 +2907,23 @@ function imported_type_module(ctx: ref[LowerCtx], name: str) -> Option[str]:
         let target_module = unsafe: read(target_ptr)
         match find_imported_analysis(ctx, target_module):
             Option.some as imported:
-                if imported.value.structs.contains(name) or type_declared_in_source(imported.value, name):
+                if imported.value.structs.contains(name) or type_declared_in_source(imported.value, name) or imported.value.type_alias_types.contains(name):
+                    # When the type is a re-exported alias (e.g. type Mesh = c.Mesh),
+                    # follow the chain to the originating module so bare C names
+                    # from std.c.* are used.
+                    let opt_alias = resolve_single_imported_type(ctx, target_module, name)
+                    match opt_alias:
+                        Option.some as resolved:
+                            match resolved.value:
+                                types.Type.ty_imported as aim:
+                                    return Option[str].some(value = aim.module_name)
+                                types.Type.ty_named as nm:
+                                    if nm.module_name.len > 0:
+                                        return Option[str].some(value = nm.module_name)
+                                _:
+                                    pass
+                        Option.none:
+                            pass
                     return Option[str].some(value = target_module)
             Option.none:
                 pass
