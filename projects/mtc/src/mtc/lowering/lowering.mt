@@ -9832,6 +9832,10 @@ function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> s
                 return id.name
             ast.Expr.expr_member_access as ma:
                 return ma.member_name
+            ast.Expr.expr_prefix_cast as pc:
+                return resolve_foreign_c_name(ctx, pc.expression)
+            ast.Expr.expr_call as call:
+                return resolve_foreign_c_name(ctx, call.callee)
             _:
                 fatal(c"lowering: unsupported foreign function mapping")
 
