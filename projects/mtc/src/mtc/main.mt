@@ -709,6 +709,7 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], platfor
         Option.some as p:
             if roots.is_empty():
                 roots.push(path_ops.dirname(p.value))
+                discover_project_root(p.value, roots)
             return Option[str].some(value = p.value)
         Option.none:
             print_help()
@@ -935,6 +936,42 @@ function effective_source_path(raw_path: str, roots: ref[vec.Vec[str]], entry_ow
         return resolve_package_entry(raw_path, roots, entry_owner, source_root_owner)
 
     return Option[str].some(value= raw_path)
+
+
+## Walk up from `source_path` to find the nearest parent directory that
+## contains a `std/` subdirectory, and push it onto `roots`.
+## The backing string is stored in the module-level `owned_roots` Vec.
+var owned_roots: vec.Vec[string.String]
+
+function owners_ready() -> void:
+    if owned_roots.capacity() == 0:
+        owned_roots = vec.Vec[string.String].create()
+
+function discover_project_root(source_path: str, roots: ref[vec.Vec[str]]) -> void:
+    owners_ready()
+    var start = string.String.from_str(if fs.is_directory(source_path): source_path else: path_ops.dirname(source_path))
+    while true:
+        var candidate = path_ops.join(start.as_str(), "std")
+        defer candidate.release()
+        if fs.is_directory(candidate.as_str()):
+            let view = start.as_str()
+            var i: ptr_uint = 0
+            while i < roots.len():
+                let ep = roots.get(i) else:
+                    break
+                if view.equal(unsafe: read(ep)):
+                    start.release()
+                    return
+                i += 1
+            roots.push(view)
+            owned_roots.push(start)
+            return
+        let parent = path_ops.dirname(start.as_str())
+        if parent.equal(start.as_str()):
+            start.release()
+            return
+        start.release()
+        start = string.String.from_str(parent)
 
 
 ## Build a program (`mtc build`).  Supports both single `.mt` files and package
