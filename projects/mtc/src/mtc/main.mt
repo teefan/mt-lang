@@ -1368,6 +1368,131 @@ function emit_junit(results: ref[vec.Vec[TestResult]]) -> void:
     stdio.print_line("</testsuites>")
 
 
+## Parse one `# expect-error: <text>` directive line, returning the expected
+## diagnostic substring (a borrowed slice of the line).  None for other lines.
+function parse_expect_error_line(line: str) -> Option[str]:
+    let trimmed = line.trim_ascii_whitespace()
+    if not trimmed.starts_with("#"):
+        return Option[str].none
+    let after_hash = trimmed.slice(1, trimmed.len - 1).trim_ascii_whitespace()
+    if not after_hash.starts_with("expect-error:"):
+        return Option[str].none
+    let marker_len = 13z
+    return Option[str].some(value= after_hash.slice(marker_len, after_hash.len - marker_len).trim_ascii_whitespace())
+
+
+## Collect every `# expect-error:` expectation in `source` into `out` (borrowed
+## slices of `source`).  The presence of any expectation marks a compile-fail
+## fixture.
+function collect_expect_errors(source: str, sink: ref[vec.Vec[str]]) -> void:
+    var start: ptr_uint = 0
+    var pos: ptr_uint = 0
+    while pos <= source.len:
+        if pos == source.len or source.byte_at(pos) == 10:
+            if pos > start:
+                let line = source.slice(start, pos - start)
+                match parse_expect_error_line(line):
+                    Option.some as expected:
+                        sink.push(expected.value)
+                    Option.none:
+                        pass
+            start = pos + 1
+        pos += 1
+
+
+function is_compile_fail_fixture(source: str) -> bool:
+    var expectations = vec.Vec[str].create()
+    defer expectations.release()
+    collect_expect_errors(source, ref_of(expectations))
+    return expectations.len() > 0
+
+
+## Run a compile-fail fixture: type-check the file and verify every
+## `# expect-error:` substring appears in some error diagnostic.  Returns
+## (1, 0) when the expectations are satisfied and (1, 1) otherwise, so the
+## fixture is counted like a test file.
+function run_compile_fail_file(file_path: str, source_text: str, roots: ref[vec.Vec[str]], machine: bool, results: ref[vec.Vec[TestResult]]) -> (int, int):
+    var expected = vec.Vec[str].create()
+    defer expected.release()
+    collect_expect_errors(source_text, ref_of(expected))
+
+    var eff_roots = vec.Vec[str].create()
+    defer eff_roots.release()
+    var ri: ptr_uint = 0
+    while ri < roots.len():
+        let rp = roots.get(ri) else:
+            break
+        unsafe:
+            eff_roots.push(read(rp))
+        ri += 1
+    eff_roots.push(path_ops.dirname(file_path))
+
+    var program = loader.check_program(file_path, eff_roots.as_span(), resolver.Platform.linux)
+    defer program.release()
+
+    var error_msgs = vec.Vec[str].create()
+    defer error_msgs.release()
+    var di: ptr_uint = 0
+    while di < program.diagnostics.len():
+        let dp = program.diagnostics.get(di) else:
+            break
+        unsafe:
+            if read(dp).severity == "error":
+                error_msgs.push(read(dp).message.as_str())
+        di += 1
+
+    var passed = true
+    var fail_reason = string.String.create()
+    defer fail_reason.release()
+    if error_msgs.len() == 0:
+        passed = false
+        fail_reason.assign("expected a compile error, but it compiled cleanly")
+    else:
+        var ei: ptr_uint = 0
+        while ei < expected.len():
+            let ep = expected.get(ei) else:
+                break
+            let exp = unsafe: read(ep)
+            var found = false
+            var mi: ptr_uint = 0
+            while mi < error_msgs.len():
+                let mp = error_msgs.get(mi) else:
+                    break
+                if unsafe: read(mp).contains_substring(exp):
+                    found = true
+                    break
+                mi += 1
+            if not found:
+                passed = false
+                fail_reason.assign("no diagnostic matched: ")
+                fail_reason.append(exp)
+                break
+            ei += 1
+
+    if machine:
+        var name = string.String.from_str(file_path)
+        name.append(" (compile-fail)")
+        if passed:
+            results.push(TestResult(name = name, status = TestStatus.ok, detail = string.String.create(), has_detail = false))
+        else:
+            results.push(TestResult(name = name, status = TestStatus.fail, detail = string.String.from_str(fail_reason.as_str()), has_detail = true))
+    else:
+        stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
+        if passed:
+            stdio.print_format(c"ok   - %.*s (compile-fail)\n", int<-(file_path.len), file_path.data)
+        else:
+            let reason = fail_reason.as_str()
+            stdio.print_format(
+                c"FAIL - %.*s (compile-fail): %.*s\n",
+                int<-(file_path.len), file_path.data,
+                int<-(reason.len), reason.data,
+            )
+
+    if passed:
+        return (1, 0)
+    return (1, 1)
+
+
 ## Discover and run @[test] functions under a directory.  Scans all .mt files,
 ## synthesizes a std.testing runner per file, builds it via bin/mtc, and runs
 ## it under a timeout/memory sandbox.  With --format tap|junit the per-test
@@ -1457,14 +1582,32 @@ function test_command(args: span[str]) -> int:
                     Option.some as name_payload:
                         let entry_name = name_payload.value
                         if entry_name.ends_with(".mt"):
-                            let (file_passed, file_failed) = run_test_file(
-                                entry_name, ref_of(roots), ref_of(runner_counter), name_filter,
-                                timeout_seconds, memory_mb, machine, ref_of(results)
-                            )
-                            if file_passed > 0 or file_failed > 0:
-                                file_count += 1
-                            total_passed += ptr_uint<-file_passed
-                            total_failed += ptr_uint<-file_failed
+                            match fs.read_text(entry_name):
+                                Result.success as content:
+                                    var src = content.value
+                                    if is_compile_fail_fixture(src.as_str()):
+                                        if matches_name_filter(path_ops.basename(entry_name), name_filter):
+                                            let (cfp, cff) = run_compile_fail_file(
+                                                entry_name, src.as_str(), ref_of(roots), machine, ref_of(results)
+                                            )
+                                            if cfp > 0 or cff > 0:
+                                                file_count += 1
+                                            total_passed += ptr_uint<-cfp
+                                            total_failed += ptr_uint<-cff
+                                        src.release()
+                                    else:
+                                        src.release()
+                                        let (file_passed, file_failed) = run_test_file(
+                                            entry_name, ref_of(roots), ref_of(runner_counter), name_filter,
+                                            timeout_seconds, memory_mb, machine, ref_of(results)
+                                        )
+                                        if file_passed > 0 or file_failed > 0:
+                                            file_count += 1
+                                        total_passed += ptr_uint<-file_passed
+                                        total_failed += ptr_uint<-file_failed
+                                Result.failure as read_err:
+                                    var em = read_err.error
+                                    em.release()
                     Option.none:
                         pass
                 index += 1
