@@ -3045,6 +3045,32 @@ function generic_c_type_raw(name: str, args: span[types.Type]) -> str:
         i += 1
     return buf.as_str()
 
+## Follow a type alias chain across module boundaries.  When `target_module`
+## re-exports `type_name` as an alias (e.g. `std.raylib` has `type CameraMode = c.CameraMode`),
+## follow the chain through the alias target to get the underlying type from the
+## originating module (e.g. `ty_imported("std.c.raylib", "CameraMode")`).
+## Returns none if `type_name` is not a type alias in the target module.
+function resolve_single_imported_type(ctx: ref[LowerCtx], target_module: str, type_name: str) -> Option[types.Type]:
+    match find_imported_analysis(ctx, target_module):
+        Option.some as ia:
+            let alias_target = ia.value.type_alias_types.get(type_name) else:
+                return Option[types.Type].none
+            unsafe:
+                var at = read(alias_target)
+                var base = at
+                if types.is_nullable_type(base):
+                    base = types.unwrap_nullable(base)
+                match base:
+                    types.Type.ty_imported as aim:
+                        return Option[types.Type].some(value = types.Type.ty_imported(module_name = aim.module_name, name = aim.name, args = aim.args))
+                    types.Type.ty_named as nm:
+                        return Option[types.Type].some(value = types.Type.ty_named(module_name = nm.module_name, name = nm.name))
+                    _:
+                        return Option[types.Type].some(value = at)
+        Option.none:
+            return Option[types.Type].none
+
+
 ## Resolve a syntactic `ast.TypeRef` to a `types.Type`, producing module-
 ## qualified named types and modelling `array[T, N]` (N as `ty_literal_int`) and
 ## `span[T]` / `ptr[T]` / `const_ptr[T]` / `ref[T]` as generic instances.  Returns
@@ -3093,7 +3119,15 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
             let mod_ptr = ctx.analysis.imports.get(alias)
             if mod_ptr != null:
                 let target_module = unsafe: read(mod_ptr)
-                resolved = types.Type.ty_imported(module_name = target_module, name = type_name, args = span[types.Type]())
+                # If the imported module re-exports the type as an alias
+                # (e.g. `type CameraMode = c.CameraMode`), follow the chain
+                # so the C name comes from the originating `std.c.*` module.
+                let opt_alias = resolve_single_imported_type(ctx, target_module, type_name)
+                match opt_alias:
+                    Option.some as alias_ty:
+                        resolved = alias_ty.value
+                    Option.none:
+                        resolved = types.Type.ty_imported(module_name = target_module, name = type_name, args = span[types.Type]())
             else:
                 # Not an import alias: may be a nested struct, e.g.
                 # `Rectangle.Edge`.  The bare name is stored in structs and
@@ -5262,6 +5296,27 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                 Option.some as imported:
                                     if imported.value.structs.contains(ma.member_name):
                                         return lower_aggregate_literal_in_module(ctx, ma.member_name, args, target_module)
+                                    # member_name may be a type alias pointing to a
+                                    # struct in an external module (e.g.
+                                    # `type Rectangle = c.Rectangle`).  Follow the
+                                    # alias chain to the originating struct module
+                                    # and construct an aggregate literal there.
+                                    if imported.value.type_alias_types.contains(ma.member_name):
+                                        let alias_target = imported.value.type_alias_types.get(ma.member_name)
+                                        if alias_target != null:
+                                            var at = unsafe: read(alias_target)
+                                            # Unwrap nullable so `rl.Color?` resolves
+                                            # to the underlying struct type.
+                                            var base = at
+                                            if types.is_nullable_type(base):
+                                                base = types.unwrap_nullable(base)
+                                            match base:
+                                                types.Type.ty_imported as aim:
+                                                    return lower_aggregate_literal_in_module(ctx, aim.name, args, aim.module_name)
+                                                types.Type.ty_named as nm:
+                                                    return lower_aggregate_literal_in_module(ctx, nm.name, args, nm.module_name)
+                                                _:
+                                                    pass
                                     # Check if ma.member_name is a variant arm in any
                                     # imported variant (e.g. types.Type.ty_named(name)).
                                     match find_imported_variant_arm(imported.value, ma.member_name):
