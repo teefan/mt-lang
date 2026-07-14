@@ -742,15 +742,15 @@ function substitute_type_params(ctx: ref[LowerCtx], ty: types.Type, sub: ref[map
 
 ## Accessors for the shared program-wide generic-struct instance registry
 ## (`ctx.generic_struct_instances` is a raw pointer to the one shared map).
-function gsi_get(ctx: ref[LowerCtx], name: str) -> ptr[GenericReceiver]?:
+function generic_instance_get(ctx: ref[LowerCtx], name: str) -> ptr[GenericReceiver]?:
     return unsafe: read(ctx.generic_struct_instances).get(name)
 
 
-function gsi_set(ctx: ref[LowerCtx], name: str, value: GenericReceiver) -> void:
+function generic_instance_set(ctx: ref[LowerCtx], name: str, value: GenericReceiver) -> void:
     unsafe: read(ctx.generic_struct_instances).set(name, value)
 
 
-function gsi_contains(ctx: ref[LowerCtx], name: str) -> bool:
+function generic_instance_contains(ctx: ref[LowerCtx], name: str) -> bool:
     return unsafe: read(ctx.generic_struct_instances).contains(name)
 
 
@@ -2759,7 +2759,7 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             # Already-monomorphized concrete names (e.g. std_map_Node_str_bool)
             # are fully qualified: pass them through so re-qualifying in a
             # different module context does not double-prefix them.
-            if gsi_contains(ctx, n.name) or ctx.generic_struct_decls.contains(n.name):
+            if generic_instance_contains(ctx, n.name) or ctx.generic_struct_decls.contains(n.name):
                 return t
             # Concrete C names produced by generic_struct_c_name always contain
             # at least one underscore (module_prefix_Name_Arg).  Bare names
@@ -2826,7 +2826,7 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             if resolved_args.len > 0:
                 let concrete_name = naming.qualified_c_name(im.module_name, generic_struct_c_name(im.name, resolved_args))
                 ensure_generic_struct_decl_named(ctx, im.name, span[ast.TypeArgument](), resolved_args, concrete_name)
-                gsi_set(ctx, concrete_name, GenericReceiver(owner_name = im.name, concrete_args = resolved_args, owner_module = im.module_name))
+                generic_instance_set(ctx, concrete_name, GenericReceiver(owner_name = im.name, concrete_args = resolved_args, owner_module = im.module_name))
                 return types.Type.ty_named(module_name = "", name = concrete_name)
             return t
         types.Type.ty_generic as g:
@@ -2867,7 +2867,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
     if ctx.analysis.structs.contains(name):
         let concrete_name = naming.qualified_c_name(ctx.module_name, generic_struct_c_name(name, args))
         ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
-        gsi_set(ctx, concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = ctx.module_name))
+        generic_instance_set(ctx, concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = ctx.module_name))
         return types.Type.ty_named(module_name = "", name = concrete_name)
     # Try imported modules — search both public and private structs,
     # and fall back to extracting from the AST directly.
@@ -2884,7 +2884,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
                 if has_struct:
                     let concrete_name = naming.qualified_c_name(target_module, generic_struct_c_name(name, args))
                     ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
-                    gsi_set(ctx, concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = target_module))
+                    generic_instance_set(ctx, concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = target_module))
                     return types.Type.ty_named(module_name = "", name = concrete_name)
             Option.none:
                 pass
@@ -5450,7 +5450,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     types.Type.ty_named as tn:
                         if tn.name.starts_with("mt_task_"):
                             is_task = true
-                            let gi_ptr = gsi_get(ctx, tn.name)
+                            let gi_ptr = generic_instance_get(ctx, tn.name)
                             if gi_ptr != null:
                                 let gi = unsafe: read(gi_ptr)
                                 if gi.concrete_args.len >= 1:
@@ -5459,7 +5459,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     types.Type.ty_imported as im:
                         if im.name.starts_with("mt_task_"):
                             is_task = true
-                            let gi_ptr = gsi_get(ctx, im.name)
+                            let gi_ptr = generic_instance_get(ctx, im.name)
                             if gi_ptr != null:
                                 let gi = unsafe: read(gi_ptr)
                                 if gi.concrete_args.len >= 1:
@@ -5883,7 +5883,7 @@ function ensure_generic_struct_decl_named(ctx: ref[LowerCtx], struct_name: str, 
                 alignment = 0,
                 source_module = Option[str].none,
             ))
-            gsi_set(ctx, decl_name, GenericReceiver(owner_name = struct_name, concrete_args = concrete_args, owner_module = found_module))
+            generic_instance_set(ctx, decl_name, GenericReceiver(owner_name = struct_name, concrete_args = concrete_args, owner_module = found_module))
         Option.none:
             pass
 
@@ -7632,7 +7632,7 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
                         return Option[GenericReceiver].some(value = rec.value)
                     Option.none:
                         return Option[GenericReceiver].none
-            let instance_ptr = gsi_get(ctx, n.name)
+            let instance_ptr = generic_instance_get(ctx, n.name)
             if instance_ptr == null:
                 return Option[GenericReceiver].none
             let inst = unsafe: read(instance_ptr)
@@ -15155,7 +15155,7 @@ function extract_task_element_type(ctx: ref[LowerCtx], t: types.Type) -> types.T
                 return unsafe: read(tg.args.data + 0)
         types.Type.ty_named as tn:
             if tn.name.starts_with("mt_task_"):
-                let gi_ptr = gsi_get(ctx, tn.name)
+                let gi_ptr = generic_instance_get(ctx, tn.name)
                 if gi_ptr != null:
                     let gi = unsafe: read(gi_ptr)
                     if gi.concrete_args.len >= 1:

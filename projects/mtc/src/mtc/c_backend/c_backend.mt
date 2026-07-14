@@ -61,18 +61,18 @@ struct Emitter:
 
 ## Local variant-arm metadata for prelude type collection (mirrors lowering's
 ## VariantArmInfo / VariantInfo, scoped small for the backend).
-struct GVArmInfo:
+struct GenericVariantArmInfo:
     name: str
     fields: span[ir.Field]
 
 
-struct GVInfo:
-    arms: span[GVArmInfo]
+struct GenericVariantInfo:
+    arms: span[GenericVariantArmInfo]
 
 
 ## Opt types that need synthetic StructDecl entries for topological ordering.
 ## `decl` is the StructDecl; `field_store` keeps the field spans alive.
-public struct OptStructEntry:
+public struct OptionStructEntry:
     decl: ir.StructDecl
     field_store: vec.Vec[ir.Field]
 
@@ -1025,24 +1025,24 @@ function sp_elem(t: types.Type) -> span[types.Type]:
 
 ## Return the arm info for a prelude variant (Option / Result).  Mirrors the
 ## lowering's `install_prelude_variants`.
-function prelude_variant_arm_info(name: str, args: span[types.Type]) -> GVInfo:
+function prelude_variant_arm_info(name: str, args: span[types.Type]) -> GenericVariantInfo:
     let default_ty = types.Type.ty_primitive(name = "int")
     let first_arg = if args.len > 0: unsafe: read(args.data + 0) else: default_ty
     let second_arg = if args.len > 1: unsafe: read(args.data + 1) else: default_ty
-    var arms = vec.Vec[GVArmInfo].create()
+    var arms = vec.Vec[GenericVariantArmInfo].create()
     if name == "Option":
         var sf = vec.Vec[ir.Field].create()
         sf.push(ir.Field(name = "value", ty = first_arg))
-        arms.push(GVArmInfo(name = "some", fields = sf.as_span()))
-        arms.push(GVArmInfo(name = "none", fields = span[ir.Field]()))
+        arms.push(GenericVariantArmInfo(name = "some", fields = sf.as_span()))
+        arms.push(GenericVariantArmInfo(name = "none", fields = span[ir.Field]()))
     else if name == "Result":
         var sf = vec.Vec[ir.Field].create()
         sf.push(ir.Field(name = "value", ty = first_arg))
         var ef = vec.Vec[ir.Field].create()
         ef.push(ir.Field(name = "error", ty = second_arg))
-        arms.push(GVArmInfo(name = "success", fields = sf.as_span()))
-        arms.push(GVArmInfo(name = "failure", fields = ef.as_span()))
-    return GVInfo(arms = arms.as_span())
+        arms.push(GenericVariantArmInfo(name = "success", fields = sf.as_span()))
+        arms.push(GenericVariantArmInfo(name = "failure", fields = ef.as_span()))
+    return GenericVariantInfo(arms = arms.as_span())
 
 
 function uses_string_view(functions: span[ir.Function], has_str_literals: bool) -> bool:
@@ -2451,7 +2451,7 @@ function register_variant_arm_aliases(vd: ir.VariantDecl, by_key: ref[map_mod.Ma
         i += 1
 
 
-function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]]) -> vec.Vec[str]:
+function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptionStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]]) -> vec.Vec[str]:
     var deps = vec.Vec[str].create()
     if node.kind == 0:
         unsafe:
@@ -2481,7 +2481,7 @@ function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_varian
     return deps
 
 
-function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]], task_seen: ref[map_mod.Map[str, bool]], task_elements: ref[map_mod.Map[str, types.Type]]) -> vec.Vec[TypeNode]:
+function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptionStructEntry]], task_seen: ref[map_mod.Map[str, bool]], task_elements: ref[map_mod.Map[str, types.Type]]) -> vec.Vec[TypeNode]:
     var nodes = vec.Vec[TypeNode].create()
     var by_key = map_mod.Map[str, ptr_uint].create()
     var i: ptr_uint = 0
@@ -2556,7 +2556,7 @@ function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec
     return result
 
 
-function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]], by_key: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[TypeNode]]) -> void:
+function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptionStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]], by_key: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[TypeNode]]) -> void:
     var node: TypeNode
     let node_ptr = nodes.get(index) else:
         return
@@ -5174,7 +5174,7 @@ function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], t: types.Ty
 
 
 
-function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptStructEntry]:
+function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptionStructEntry]:
 
     var needed = map_mod.Map[str, types.Type].create()
 
@@ -5260,7 +5260,7 @@ function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptStructEntry
 
         gi += 1
 
-    var result = vec.Vec[OptStructEntry].create()
+    var result = vec.Vec[OptionStructEntry].create()
 
     if needed.len() > 0:
 
@@ -5324,7 +5324,7 @@ function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptStructEntry
 
                             )
 
-                            result.push(OptStructEntry(decl = decl, field_store = fields))
+                            result.push(OptionStructEntry(decl = decl, field_store = fields))
 
                     _:
 
