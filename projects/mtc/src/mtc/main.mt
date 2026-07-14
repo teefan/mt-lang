@@ -27,6 +27,7 @@ import mtc.lowering.lowering as lowering
 import mtc.c_backend.c_backend as c_backend
 import mtc.build as build_driver
 import mtc.pretty_printer.ast_formatter as fmt
+import mtc.linter.linter as linter
 
 
 function main(args: span[str]) -> int:
@@ -62,6 +63,12 @@ function main(args: span[str]) -> int:
             print_help()
             return 1
         return check_command(args)
+
+    if cmd == "lint":
+        if args.len < 2:
+            print_help()
+            return 1
+        return lint_command(args)
 
     if cmd == "lower":
         if args.len < 2:
@@ -110,6 +117,7 @@ function print_help() -> void:
     stdio.print_line("  lex   <file> [--machine]                           print the lexer token stream")
     stdio.print_line("  parse <file>                                       parse source and print AST")
     stdio.print_line("  check <file|dir>... [-I DIR]... [--platform NAME] [-Werror] [--locked] [--frozen]  type-check files/package and imports")
+    stdio.print_line("  lint  <file|dir>...                                 report style/correctness warnings")
     stdio.print_line("  lower <file|dir> [-I DIR]... [--platform NAME]     lower to IR and print it")
     stdio.print_line("  emit-c <file|dir> [-I DIR]... [--platform NAME]    compile to C and print it")
     stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache] [--clean]")
@@ -427,6 +435,127 @@ function report_check_summary(errors: ptr_uint, warnings: ptr_uint, file_count: 
         stdio.print_format(c"error: could not check due to %.*s\n", int<-(body_str.len), body_str.data)
     else:
         stdio.print_format(c"warning: %.*s\n", int<-(body_str.len), body_str.data)
+
+
+## Lint source files and print `path:line: code: message` per warning, matching
+## the Ruby `mtc lint` command.  Directories are expanded to their `.mt` files
+## in sorted order.  Exits 1 when any warning is found.
+function lint_command(args: span[str]) -> int:
+    var input_paths = vec.Vec[str].create()
+    defer input_paths.release()
+    var i: ptr_uint = 1
+    while i < args.len:
+        let arg = args[i]
+        if arg == "-I" or arg == "--root":
+            i += 2
+            continue
+        if arg.starts_with("-"):
+            # Config / select / ignore / fix flags are not yet supported; ignore.
+            i += 1
+            continue
+        input_paths.push(arg)
+        i += 1
+
+    if input_paths.is_empty():
+        print_help()
+        return 1
+
+    var source_files = vec.Vec[str].create()
+    defer source_files.release()
+    var si: ptr_uint = 0
+    while si < input_paths.len():
+        let raw = input_paths.get(si) else:
+            break
+        let path = unsafe: read(raw)
+        if fs.is_directory(path):
+            match fs.list_files_recursive(path):
+                Result.success as entries_payload:
+                    var entries = entries_payload.value
+                    defer entries.release()
+                    var ei: ptr_uint = 0
+                    while ei < entries.len():
+                        match entries.get(ei):
+                            Option.some as name_payload:
+                                let entry_name = name_payload.value
+                                if entry_name.ends_with(".mt") and not entry_name.starts_with("__mt_test_runner_"):
+                                    source_files.push(entry_name)
+                            Option.none:
+                                pass
+                        ei += 1
+                Result.failure as err_payload:
+                    var err_msg = err_payload.error
+                    defer err_msg.release()
+                    stdio.print_format(c"error: cannot list %.*s\n", int<-(path.len), path.data)
+                    return 1
+        else:
+            source_files.push(path)
+        si += 1
+
+    var total_warnings: ptr_uint = 0
+    var files_with_warnings: ptr_uint = 0
+
+    var fi: ptr_uint = 0
+    while fi < source_files.len():
+        let fp_ptr = source_files.get(fi) else:
+            break
+        let fp = unsafe: read(fp_ptr)
+        match fs.read_text(fp):
+            Result.success as content:
+                var src = content.value
+                defer src.release()
+                var diags = vec.Vec[pstate.ParseDiagnostic].create()
+                defer diags.release()
+                let file = parser.parse_source(src.as_str(), ref_of(diags))
+                var warns = linter.lint_source(file, fp)
+                defer warns.release()
+                if warns.len() > 0:
+                    files_with_warnings += 1
+                var wi: ptr_uint = 0
+                while wi < warns.len():
+                    let wp = warns.get(wi) else:
+                        break
+                    unsafe:
+                        let w = read(wp)
+                        stdio.print_format(
+                            c"%.*s:%d: %.*s: %.*s\n",
+                            int<-(w.path.len), w.path.data,
+                            int<-(w.line),
+                            int<-(w.code.len), w.code.data,
+                            int<-(w.message.len), w.message.data,
+                        )
+                    wi += 1
+                total_warnings += warns.len()
+            Result.failure as read_err:
+                var em = read_err.error
+                em.release()
+        fi += 1
+
+    if total_warnings == 0:
+        if input_paths.len() == 1:
+            let ip = input_paths.get(0) else:
+                return 0
+            let ip_str = unsafe: read(ip)
+            stdio.print_format(c"clean %.*s\n", int<-(ip_str.len), ip_str.data)
+        else:
+            stdio.print_format(c"clean %d file(s)\n", int<-(source_files.len()))
+        return 0
+
+    let noun = if total_warnings == 1: "warning" else: "warnings"
+    var files_str = string.String.create()
+    defer files_str.release()
+    if files_with_warnings == 1:
+        files_str.append("1 file")
+    else:
+        files_str.append(ptr_uint_to_str(files_with_warnings))
+        files_str.append(" files")
+    let files_text = files_str.as_str()
+    stdio.print_format(
+        c"Found %d %.*s in %.*s.\n",
+        int<-(total_warnings),
+        int<-(noun.len), noun.data,
+        int<-(files_text.len), files_text.data,
+    )
+    return 1
 
 
 ## Parse a `--platform NAME` / `--profile NAME` argument value into a
