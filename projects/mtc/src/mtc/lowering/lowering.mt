@@ -3071,6 +3071,33 @@ function resolve_single_imported_type(ctx: ref[LowerCtx], target_module: str, ty
             return Option[types.Type].none
 
 
+## The C name for a member resolved through an import alias.
+## When the member is a type alias re-exporting from std.c.* (e.g.
+## `type CameraMode = c.CameraMode`), use the bare C name from the
+## originating module.  Otherwise use the standard qualified name.
+function imported_member_c_name(ctx: ref[LowerCtx], imported: analyzer.Analysis, target_module: str, member: str) -> str:
+    if is_raw_module(imported.module_kind):
+        return member
+    let opt_alias = resolve_single_imported_type(ctx, target_module, member)
+    match opt_alias:
+        Option.some as alias_ty:
+            match alias_ty.value:
+                types.Type.ty_imported as aim:
+                    if aim.module_name.starts_with("std.c."):
+                        return aim.name
+                    return naming.qualified_c_name(aim.module_name, aim.name)
+                types.Type.ty_named as nm:
+                    if nm.module_name.starts_with("std.c."):
+                        return nm.name
+                    if nm.module_name.len > 0:
+                        return naming.qualified_c_name(nm.module_name, nm.name)
+                    return nm.name
+                _:
+                    return naming.qualified_c_name(target_module, member)
+        Option.none:
+            return naming.qualified_c_name(target_module, member)
+
+
 ## Resolve a syntactic `ast.TypeRef` to a `types.Type`, producing module-
 ## qualified named types and modelling `array[T, N]` (N as `ty_literal_int`) and
 ## `span[T]` / `ptr[T]` / `const_ptr[T]` / `ref[T]` as generic instances.  Returns
@@ -9477,6 +9504,20 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                             return alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = types.primitive("cstr"), cstring = true))
                         _:
                             let lowered_str = lower_expr(ctx, arg)
+                            # If the argument is already a cstr (e.g. from a
+                            # preceding foreign function call returning cstr),
+                            # skip the mt_foreign_str_to_cstr_temp wrapper
+                            # since the value is already a C string pointer.
+                            let arg_ty = ir_expr_type(lowered_str)
+                            var arg_is_cstr = false
+                            match arg_ty:
+                                types.Type.ty_primitive as p:
+                                    if p.name == "cstr":
+                                        arg_is_cstr = true
+                                _:
+                                    pass
+                            if arg_is_cstr:
+                                return lowered_str
                             return alloc_expr(ir.Expr.expr_call(
                                 callee = "mt_foreign_str_to_cstr_temp",
                                 arguments = single_expr_span(lowered_str),
@@ -10056,15 +10097,24 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                     match find_imported_analysis(ctx, target_module):
                         Option.some as imported:
                             if imported.value.type_names.contains(member):
-                                # Raw modules export C macros, not Milk Tea constants.
-                                let c_name = if is_raw_module(imported.value.module_kind): member else: naming.qualified_c_name(target_module, member)
+                                let c_name = imported_member_c_name(ctx, imported.value, target_module, member)
+                                var member_ty = expr_type(ctx, ep)
+                                # If the member is a re-exported type alias, use
+                                # the originating module's type so c_type() produces
+                                # the correct C name.
+                                let opt_alias = resolve_single_imported_type(ctx, target_module, member)
+                                match opt_alias:
+                                    Option.some as resolved:
+                                        member_ty = resolved.value
+                                    Option.none:
+                                        pass
                                 return alloc_expr(ir.Expr.expr_name(
                                     name = c_name,
-                                    ty = expr_type(ctx, ep),
+                                    ty = member_ty,
                                     pointer = false,
                                 ))
                             if imported.value.value_types.contains(member):
-                                let c_name = if is_raw_module(imported.value.module_kind): member else: naming.qualified_c_name(target_module, member)
+                                let c_name = imported_member_c_name(ctx, imported.value, target_module, member)
                                 return alloc_expr(ir.Expr.expr_name(
                                     name = c_name,
                                     ty = expr_type(ctx, ep),
@@ -12248,7 +12298,15 @@ function import_qualified_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[
                             var a: analyzer.Analysis = read(ctx.program_analyses.data + ai)
                             if a.module_name == target_module:
                                 if a.structs.contains(ma.member_name) or a.type_names.contains(ma.member_name):
-                                    return Option[types.Type].some(value = types.Type.ty_imported(module_name = target_module, name = ma.member_name, args = span[types.Type]()))
+                                    # Follow the type alias chain so re-exported types
+                                    # (e.g. `type CameraMode = c.CameraMode`) resolve to
+                                    # the originating std.c.* module's type.
+                                    let opt_alias = resolve_single_imported_type(ctx, target_module, ma.member_name)
+                                    match opt_alias:
+                                        Option.some as resolved:
+                                            return Option[types.Type].some(value = resolved.value)
+                                        Option.none:
+                                            return Option[types.Type].some(value = types.Type.ty_imported(module_name = target_module, name = ma.member_name, args = span[types.Type]()))
                             ai += 1
                     _:
                         pass
