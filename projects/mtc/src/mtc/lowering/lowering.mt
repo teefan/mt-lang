@@ -9547,6 +9547,15 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                                 arguments = single_expr_span(lowered_str),
                                 ty = types.primitive("cstr"),
                             ))
+            # For `in value: int as const_ptr[void]`, the lowered value is a
+            # plain local integer but the boundary type is a C pointer.
+            # Take the address so we pass a pointer, not the value itself.
+            if param.param_mode == ast.ForeignParamMode.fmode_in:
+                let lowered_val = lower_expr(ctx, arg)
+                let arg_ty = ir_expr_type(lowered_val)
+                if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
+                    return alloc_expr(ir.Expr.expr_address_of(expression = lowered_val, ty = types.primitive("ptr[void]")))
+                return lowered_val
             return lower_expr(ctx, arg)
         Option.none:
             let lowered = lower_expr(ctx, arg)

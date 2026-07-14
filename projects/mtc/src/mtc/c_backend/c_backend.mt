@@ -1421,6 +1421,8 @@ function c_type(t: types.Type) -> str:
             return naming.qualified_c_name(im.module_name, im.name)
         types.Type.ty_named as n:
             if n.module_name.len > 0:
+                if n.module_name.starts_with("std.c."):
+                    return n.name
                 return naming.qualified_c_name(n.module_name, n.name)
             return n.name
         types.Type.ty_var as v:
