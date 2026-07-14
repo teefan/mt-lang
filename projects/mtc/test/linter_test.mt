@@ -393,3 +393,48 @@ function test_no_trailing_comma_clean() -> t.Check:
             return side(1, 2)
     SRC
     return expect_none(source, "trailing-list-comma")
+
+
+# =============================================================================
+#  doc-tag
+# =============================================================================
+
+@[test]
+function test_doc_tag_valid_clean() -> t.Check:
+    var source = <<-SRC
+        ## @param a first
+        ## @param b second
+        function add(a: int, b: int) -> int:
+            return a + b
+    SRC
+    return expect_none(source, "doc-tag")
+
+
+@[test]
+function test_doc_tag_param_mismatch_flagged() -> t.Check:
+    var source = <<-SRC
+        ## @param nope not a real param
+        function add(a: int, b: int) -> int:
+            return a + b
+    SRC
+    return expect_one(source, "doc-tag")
+
+
+@[test]
+function test_doc_tag_unknown_tag_flagged() -> t.Check:
+    var source = <<-SRC
+        ## @bogus something
+        function demo() -> int:
+            return 0
+    SRC
+    return expect_one(source, "doc-tag")
+
+
+@[test]
+function test_doc_tag_on_struct_flagged() -> t.Check:
+    var source = <<-SRC
+        ## @param x nope
+        struct Point:
+            x: int
+    SRC
+    return expect_one(source, "doc-tag")
