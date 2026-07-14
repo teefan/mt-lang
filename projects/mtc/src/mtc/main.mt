@@ -35,6 +35,10 @@ function main(args: span[str]) -> int:
 
     let cmd = args[0]
 
+    if cmd == "version" or cmd == "--version" or cmd == "-V":
+        stdio.print_line("mtc 0.1.0")
+        return 0
+
     if cmd == "lex":
         var machine = false
         var file_index: ptr_uint = 1
@@ -102,16 +106,17 @@ function print_help() -> void:
     stdio.print_line("usage: mtc <command> [args...]")
     stdio.print_line("")
     stdio.print_line("commands:")
-    stdio.print_line("  lex   <file>  print the lexer token stream")
-    stdio.print_line("  parse <file>  parse source and print AST")
-    stdio.print_line("  check <file|dir> [-I DIR]...  type-check a file/package and its imports")
-    stdio.print_line("  lower <file|dir> [-I DIR]...  lower to IR and print it")
-    stdio.print_line("  emit-c <file|dir> [-I DIR]...  compile to C and print it")
-    stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards]")
-    stdio.print_line("  run   <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards]")
-    stdio.print_line("  test  <dir>                                       discover and run @[test] functions")
-    stdio.print_line("  format <file> [--check|--write]                  format source and print, check, or write back")
-    stdio.print_line("  help          print this help")
+    stdio.print_line("  lex   <file> [--machine]                           print the lexer token stream")
+    stdio.print_line("  parse <file>                                       parse source and print AST")
+    stdio.print_line("  check <file|dir> [-I DIR]... [--platform NAME]     type-check a file/package and its imports")
+    stdio.print_line("  lower <file|dir> [-I DIR]... [--platform NAME]     lower to IR and print it")
+    stdio.print_line("  emit-c <file|dir> [-I DIR]... [--platform NAME]    compile to C and print it")
+    stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache]")
+    stdio.print_line("  run   <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache] [-- ARGS...]")
+    stdio.print_line("  test  <dir> [-I DIR]...                             discover and run @[test] functions")
+    stdio.print_line("  format <file> [--check|--write]                     format source and print, check, or write back")
+    stdio.print_line("  version|--version|-V                                print version and exit")
+    stdio.print_line("  help                                                print this help")
 
 
 function print_unknown(cmd: str) -> void:
@@ -165,6 +170,7 @@ function check_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
     var file_path: Option[str] = Option[str].none
+    var platform = resolver.Platform.linux
 
     var i: ptr_uint = 1
     while i < args.len:
@@ -174,6 +180,17 @@ function check_command(args: span[str]) -> int:
                 stdio.print_line("error: -I requires a directory")
                 return 1
             roots.push(args[i + 1])
+            i += 2
+            continue
+        if arg == "--platform":
+            if i + 1 >= args.len:
+                stdio.print_line("error: --platform requires linux, windows, or wasm")
+                return 1
+            match parse_platform_name(args[i + 1]):
+                Option.some as plat:
+                    platform = plat.value
+                Option.none:
+                    return 1
             i += 2
             continue
         match file_path:
@@ -196,7 +213,7 @@ function check_command(args: span[str]) -> int:
     if roots.is_empty():
         roots.push(path_ops.dirname(effective))
 
-    var program = loader.check_program(effective, roots.as_span(), resolver.Platform.linux)
+    var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
     if program.diagnostic_count() == 0:
@@ -249,11 +266,11 @@ function parse_platform_name(name: str) -> Option[resolver.Platform]:
     return Option[resolver.Platform].none
 
 
-## Parse the `[-I DIR]... <source>` argument tail shared by the lower,
-## emit-c, and build commands.  Fills `roots` (defaulting to the source
-## directory when none is given) and returns the source path, or none after
-## printing an error / usage.
-function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]]) -> Option[str]:
+## Parse the `[-I DIR]... [--platform NAME] <source>` argument tail shared by
+## the lower, emit-c, and build commands.  Fills `roots` (defaulting to the source
+## directory when none is given), sets `platform` to the parsed platform (defaults
+## to linux), and returns the source path, or none after printing an error / usage.
+function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], platform: ref[resolver.Platform]) -> Option[str]:
     var file_path: Option[str] = Option[str].none
     var i: ptr_uint = 1
     while i < args.len:
@@ -263,6 +280,17 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]]) -> Opti
                 stdio.print_line("error: -I requires a directory")
                 return Option[str].none
             roots.push(args[i + 1])
+            i += 2
+            continue
+        if arg == "--platform":
+            if i + 1 >= args.len:
+                stdio.print_line("error: --platform requires linux, windows, or wasm")
+                return Option[str].none
+            match parse_platform_name(args[i + 1]):
+                Option.some as plat:
+                    read(platform) = plat.value
+                Option.none:
+                    return Option[str].none
             i += 2
             continue
         match file_path:
@@ -288,7 +316,8 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]]) -> Opti
 function lower_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
-    let path = parse_source_operand(args, ref_of(roots)) else:
+    var platform = resolver.Platform.linux
+    let path = parse_source_operand(args, ref_of(roots), ref_of(platform)) else:
         return 1
 
     var entry_path_owner = string.String.create()
@@ -296,7 +325,7 @@ function lower_command(args: span[str]) -> int:
     let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
 
-    var program = loader.check_program(effective, roots.as_span(), resolver.Platform.linux)
+    var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
     let ir_program = lowering.lower(program)
@@ -314,7 +343,8 @@ function lower_command(args: span[str]) -> int:
 function emit_c_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
-    let path = parse_source_operand(args, ref_of(roots)) else:
+    var platform = resolver.Platform.linux
+    let path = parse_source_operand(args, ref_of(roots), ref_of(platform)) else:
         return 1
 
     var entry_path_owner = string.String.create()
@@ -322,7 +352,7 @@ function emit_c_command(args: span[str]) -> int:
     let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
 
-    var program = loader.check_program(effective, roots.as_span(), resolver.Platform.linux)
+    var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
     let ir_program = lowering.lower(program)
@@ -550,6 +580,7 @@ function build_command(args: span[str]) -> int:
             ai += 1
             continue
         if arg == "--no-cache":
+            # Accepted but a no-op: the current build driver always rebuilds.
             ai += 1
             continue
         if arg == "--profile":
@@ -577,7 +608,7 @@ function build_command(args: span[str]) -> int:
             continue
         filtered.push(arg)
         ai += 1
-    let path = parse_source_operand(filtered.as_span(), ref_of(roots)) else:
+    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(platform)) else:
         return 1
 
     var entry_path_owner = string.String.create()
@@ -670,6 +701,7 @@ function run_command(args: span[str]) -> int:
             ai += 1
             continue
         if arg == "--no-cache":
+            # Accepted but a no-op: the current build driver always rebuilds.
             ai += 1
             continue
         if arg == "--profile":
@@ -697,7 +729,7 @@ function run_command(args: span[str]) -> int:
             continue
         filtered.push(arg)
         ai += 1
-    let path = parse_source_operand(filtered.as_span(), ref_of(roots)) else:
+    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(platform)) else:
         return 1
 
     var entry_path_owner = string.String.create()
