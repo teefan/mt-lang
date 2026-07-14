@@ -3115,7 +3115,15 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
             else if is_builtin_type_name(name):
                 resolved = types.primitive(name)
             else if ctx.analysis.type_names.contains(name):
-                resolved = types.Type.ty_imported(module_name = ctx.module_name, name = name, args = span[types.Type]())
+                # Follow the type alias chain so that type aliases pointing to
+                # imported types (e.g. `type Color = c.Color`) resolve to the
+                # originating module's C name rather than the re-exporting
+                # module's qualified name.
+                var alias_target = ctx.analysis.type_alias_types.get(name)
+                if alias_target != null:
+                    resolved = unsafe: read(alias_target)
+                else:
+                    resolved = types.Type.ty_imported(module_name = ctx.module_name, name = name, args = span[types.Type]())
             else:
                 let concrete_ptr = ctx.type_substitution.get(name)
                 if concrete_ptr != null:
