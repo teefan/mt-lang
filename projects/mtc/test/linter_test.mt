@@ -299,3 +299,66 @@ function test_named_match_binding_clean() -> t.Check:
                     return 0
     SRC
     return expect_none(source, "redundant-ignored-match-binding")
+
+
+# =============================================================================
+#  redundant-else
+# =============================================================================
+
+@[test]
+function test_redundant_else_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            if a > 0:
+                return 1
+            else:
+                return 2
+    SRC
+    return expect_one(source, "redundant-else")
+
+
+@[test]
+function test_else_after_nonreturning_clean() -> t.Check:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            var x = 0
+            if a > 0:
+                x = 1
+            else:
+                x = 2
+            return x
+    SRC
+    return expect_none(source, "redundant-else")
+
+
+@[test]
+function test_redundant_else_with_fatal_flagged() -> t.Check:
+    # `fatal(...)` is a terminating expression, so the branch always exits.
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            if a > 0:
+                fatal(c"nope")
+            else:
+                return 2
+    SRC
+    return expect_one(source, "redundant-else")
+
+
+# =============================================================================
+#  event-capacity
+# =============================================================================
+
+@[test]
+function test_large_event_capacity_flagged() -> t.Check:
+    var source = <<-SRC
+        event big[128]
+    SRC
+    return expect_one(source, "event-capacity")
+
+
+@[test]
+function test_small_event_capacity_clean() -> t.Check:
+    var source = <<-SRC
+        event small[4]
+    SRC
+    return expect_none(source, "event-capacity")

@@ -1830,6 +1830,8 @@ function parse_if_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     var branch = ast.IfBranch(condition = condition, body = then_body, line = start_ln, column = 0)
     branches.push(branch)
     var else_body: ptr[ast.Stmt]? = null
+    var else_ln: ptr_uint = 0
+    var else_col: ptr_uint = 0
     while check(s, tk.TokenKind.tk_else) and check_next(s, tk.TokenKind.tk_if):
         advance(s)
         advance(s)
@@ -1837,13 +1839,19 @@ function parse_if_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
         var elif_body = parse_if_branch_body(s)
         var elif_branch = ast.IfBranch(condition = condition, body = elif_body, line = 0, column = 0)
         branches.push(elif_branch)
-    if match_kind(s, tk.TokenKind.tk_else):
+    if check(s, tk.TokenKind.tk_else):
+        let else_tok = peek(s) else:
+            return stmt_error_sentinel(s, c"unexpected eof in else")
+        unsafe:
+            else_ln = read(else_tok).line
+            else_col = read(else_tok).column
+        advance(s)
         else_body = parse_else_branch_body(s)
     var branches_span = branches.as_span()
     var node = alloc_stmt(s)
     unsafe:
         read(node) = ast.Stmt.stmt_if(branches = branches_span, else_body = else_body,
-            is_inline = false, line = start_ln, else_line = 0, else_column = 0)
+            is_inline = false, line = start_ln, else_line = else_ln, else_column = else_col)
     return node
 
 

@@ -11,6 +11,8 @@
 ##   - duplicate-if-condition         (warning)  duplicate branch condition
 ##   - noop-compound-assignment       (hint)     `x += 0`, `x *= 1`
 ##   - redundant-ignored-match-binding (hint)    `as _`
+##   - redundant-else                 (hint)     else after branches that all return
+##   - event-capacity                 (warning)  event capacity >= 128
 ##
 ## Rule checks are applied after visiting a node's children, matching the Ruby
 ## visitor's emission order.  The `lint` command renders each warning as
@@ -40,7 +42,70 @@ public function lint_source(file: ast.SourceFile, path: str) -> vec.Vec[Warning]
         unsafe:
             visit_decl(file.declarations.data + i, path, ref_of(warnings))
         i += 1
+    # Whole-file passes run after the AST visitor, matching Ruby's emission order.
+    lint_events(file.declarations, "", path, ref_of(warnings))
     return warnings
+
+
+const EVENT_CAPACITY_THRESHOLD: int = 128
+
+
+## Warn on event declarations whose capacity forces emit() to copy a large
+## listener array onto the stack.  Recurses into struct and nested-struct
+## events, in declaration order (after the AST-visitor warnings).
+function lint_events(decls: span[ast.Decl], owner: str, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var i: ptr_uint = 0
+    while i < decls.len:
+        unsafe:
+            match read(decls.data + i):
+                ast.Decl.decl_event as ev:
+                    if ev.capacity >= EVENT_CAPACITY_THRESHOLD:
+                        warn_event_capacity(ev.name, owner, ev.capacity, ev.line, path, warnings)
+                ast.Decl.decl_struct as s:
+                    lint_events(s.struct_events, s.name, path, warnings)
+                    lint_events(s.nested_types, s.name, path, warnings)
+                _:
+                    pass
+        i += 1
+
+
+function warn_event_capacity(name: str, owner: str, capacity: int, line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var label = string.String.create()
+    defer label.release()
+    if owner.len > 0:
+        label.append(owner)
+        label.append(".")
+    label.append(name)
+    var cap = int_to_decimal(capacity)
+    defer cap.release()
+    let cap_s = cap.as_str()
+    var msg = string.String.create()
+    msg.append("event '")
+    msg.append(label.as_str())
+    msg.append("' capacity ")
+    msg.append(cap_s)
+    msg.append(" makes emit() copy up to ")
+    msg.append(cap_s)
+    msg.append(" listeners onto the stack; prefer a smaller fixed capacity or a managed queue abstraction")
+    push_warning(warnings, path, line, "event-capacity", msg.as_str(), "warning")
+
+
+function int_to_decimal(n: int) -> string.String:
+    if n <= 0:
+        return string.String.from_str("0")
+    var digits = string.String.create()
+    defer digits.release()
+    var v = n
+    while v > 0:
+        digits.push_byte(ubyte<-(48 + (v % 10)))
+        v = v / 10
+    var result = string.String.create()
+    let ds = digits.as_str()
+    var i = ds.len
+    while i > 0:
+        result.push_byte(ds.byte_at(i - 1))
+        i -= 1
+    return result
 
 
 function push_warning(warnings: ref[vec.Vec[Warning]], path: str, line: ptr_uint, code: str, message: str, severity: str) -> void:
@@ -466,6 +531,266 @@ function last_block_statement(body: ptr[ast.Stmt]?) -> ptr[ast.Stmt]?:
 
 
 # =============================================================================
+#  redundant-else — flag an else block when every if/else-if branch returns.
+# =============================================================================
+
+## A call/specialization to `fatal` or `static_assert(false)` never returns.
+function terminating_expression(expr: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_call as call:
+                if terminating_callee(call.callee):
+                    return true
+                return static_assert_false(call.callee, call.args)
+            ast.Expr.expr_specialization as sp:
+                return terminating_callee(sp.callee)
+            _:
+                return false
+
+
+function terminating_callee(callee: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                return id.name == "fatal"
+            ast.Expr.expr_specialization as sp:
+                return terminating_callee(sp.callee)
+            _:
+                return false
+
+
+function static_assert_false(callee: ptr[ast.Expr], args: span[ast.Argument]) -> bool:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                if id.name != "static_assert" or args.len == 0:
+                    return false
+                match read(read(args.data + 0).arg_value):
+                    ast.Expr.expr_bool_literal as b:
+                        return not b.value
+                    _:
+                        return false
+            _:
+                return false
+
+
+## A `break` that would exit *this* loop — descends into conditionals but not
+## into nested loops (whose breaks belong to them).
+function stmt_can_break(stmt: ptr[ast.Stmt]) -> bool:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_break:
+                return true
+            ast.Stmt.stmt_block as blk:
+                return stmts_can_break(blk.statements)
+            ast.Stmt.stmt_local as loc:
+                return body_can_break(loc.else_body)
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    if body_can_break(read(iff.branches.data + bi).body):
+                        return true
+                    bi += 1
+                return body_can_break(iff.else_body)
+            ast.Stmt.stmt_match as mt:
+                var ai: ptr_uint = 0
+                while ai < mt.arms.len:
+                    if body_can_break(read(mt.arms.data + ai).body):
+                        return true
+                    ai += 1
+                return false
+            ast.Stmt.stmt_when as wn:
+                var wi: ptr_uint = 0
+                while wi < wn.branches.len:
+                    if stmts_can_break(read(wn.branches.data + wi).body):
+                        return true
+                    wi += 1
+                return body_can_break(wn.else_body)
+            ast.Stmt.stmt_unsafe as un:
+                return body_can_break(un.body)
+            ast.Stmt.stmt_defer as df:
+                return body_can_break(df.body)
+            _:
+                return false
+
+
+function stmts_can_break(stmts: span[ast.Stmt]) -> bool:
+    var i: ptr_uint = 0
+    while i < stmts.len:
+        unsafe:
+            if stmt_can_break(stmts.data + i):
+                return true
+        i += 1
+    return false
+
+
+function body_can_break(body: ptr[ast.Stmt]?) -> bool:
+    let bp = body else:
+        return false
+    return stmt_can_break(bp)
+
+
+function is_true_literal(expr: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_bool_literal as b:
+                return b.value
+            _:
+                return false
+
+
+## Mirrors the Ruby linter's `always_returns?` over a statement list: true when
+## some statement unconditionally returns/terminates.
+function always_returns_stmts(stmts: span[ast.Stmt]) -> bool:
+    var i: ptr_uint = 0
+    while i < stmts.len:
+        unsafe:
+            if stmt_always_returns(stmts.data + i):
+                return true
+        i += 1
+    return false
+
+
+function always_returns_body(body: ptr[ast.Stmt]?) -> bool:
+    let bp = body else:
+        return false
+    unsafe:
+        match read(bp):
+            ast.Stmt.stmt_block as blk:
+                return always_returns_stmts(blk.statements)
+            _:
+                return stmt_always_returns(bp)
+
+
+function block_is_nonempty(body: ptr[ast.Stmt]?) -> bool:
+    let bp = body else:
+        return false
+    unsafe:
+        match read(bp):
+            ast.Stmt.stmt_block as blk:
+                return blk.statements.len > 0
+            _:
+                return true
+
+
+function stmt_always_returns(stmt: ptr[ast.Stmt]) -> bool:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_ret:
+                return true
+            ast.Stmt.stmt_expression as ex:
+                return terminating_expression(ex.expression)
+            ast.Stmt.stmt_if as iff:
+                if not block_is_nonempty(iff.else_body):
+                    return false
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    if not always_returns_body(read(iff.branches.data + bi).body):
+                        return false
+                    bi += 1
+                return always_returns_body(iff.else_body)
+            ast.Stmt.stmt_while as wh:
+                return is_true_literal(wh.condition) and not body_can_break(wh.body)
+            ast.Stmt.stmt_match as mt:
+                if mt.arms.len == 0:
+                    return false
+                var ai: ptr_uint = 0
+                while ai < mt.arms.len:
+                    if not always_returns_body(read(mt.arms.data + ai).body):
+                        return false
+                    ai += 1
+                return true
+            ast.Stmt.stmt_when as wn:
+                var any_branch = false
+                var wi: ptr_uint = 0
+                while wi < wn.branches.len:
+                    any_branch = true
+                    if not always_returns_stmts(read(wn.branches.data + wi).body):
+                        return false
+                    wi += 1
+                if block_is_nonempty(wn.else_body):
+                    any_branch = true
+                    if not always_returns_body(wn.else_body):
+                        return false
+                return any_branch
+            ast.Stmt.stmt_static_assert as sa:
+                return is_false_literal(sa.condition)
+            ast.Stmt.stmt_unsafe as un:
+                return always_returns_body(un.body)
+            _:
+                return false
+
+
+function is_false_literal(expr: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_bool_literal as b:
+                return not b.value
+            _:
+                return false
+
+
+function first_block_statement_line(body: ptr[ast.Stmt]?) -> ptr_uint:
+    let bp = body else:
+        return 0
+    unsafe:
+        match read(bp):
+            ast.Stmt.stmt_block as blk:
+                if blk.statements.len == 0:
+                    return 0
+                return statement_line(blk.statements.data + 0)
+            _:
+                return statement_line(bp)
+
+
+function statement_line(stmt: ptr[ast.Stmt]) -> ptr_uint:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_ret as r:
+                return r.line
+            ast.Stmt.stmt_if as iff:
+                return iff.line
+            ast.Stmt.stmt_while as wh:
+                return wh.line
+            ast.Stmt.stmt_for as fr:
+                return fr.line
+            ast.Stmt.stmt_match as mt:
+                return mt.line
+            ast.Stmt.stmt_expression as ex:
+                return expression_line(ex.expression)
+            ast.Stmt.stmt_local as loc:
+                return loc.line
+            ast.Stmt.stmt_break as bk:
+                return bk.line
+            ast.Stmt.stmt_continue as ct:
+                return ct.line
+            ast.Stmt.stmt_pass as ps:
+                return ps.line
+            ast.Stmt.stmt_defer as df:
+                return df.line
+            ast.Stmt.stmt_unsafe as un:
+                return un.line
+            _:
+                return 0
+
+
+## Every if/else-if branch returns, so the else block is unnecessary nesting.
+function check_redundant_else(branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?, else_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    if not block_is_nonempty(else_body):
+        return
+    var bi: ptr_uint = 0
+    while bi < branches.len:
+        unsafe:
+            if not always_returns_body(read(branches.data + bi).body):
+                return
+        bi += 1
+    var line = else_line
+    if line == 0:
+        line = first_block_statement_line(else_body)
+    push_warning(warnings, path, line, "redundant-else", "else block is redundant because all preceding branches return", "hint")
+
+
+# =============================================================================
 #  Traversal
 # =============================================================================
 
@@ -533,6 +858,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                     visit_stmt(br.body, path, warnings)
                     bi += 1
                 visit_stmt_opt(iff.else_body, path, warnings)
+                check_redundant_else(iff.branches, iff.else_body, iff.else_line, path, warnings)
                 check_duplicate_if_conditions(iff.branches, path, warnings)
             ast.Stmt.stmt_while as wh:
                 visit_expr(wh.condition, path, warnings)
