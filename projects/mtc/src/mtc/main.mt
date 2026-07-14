@@ -11,6 +11,7 @@ import std.string as string
 import std.vec as vec
 import std.stdio as stdio
 import std.process as process
+import std.terminal as terminal
 
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.token as token_mod
@@ -916,15 +917,17 @@ function run_command(args: span[str]) -> int:
 
             match process.capture(cmd.as_span()):
                 Result.success as captured:
-                    let stdout_text_opt = captured.value.stdout_text()
+                    var capture_result = captured.value
+                    defer capture_result.release()
+                    let stdout_text_opt = capture_result.stdout_text()
                     if stdout_text_opt.is_some():
                         let stdout_text = stdout_text_opt.unwrap()
                         stdio.print_format(c"%.*s", int<-(stdout_text.len), stdout_text.data)
-                    let stderr_text_opt = captured.value.stderr_text()
+                    let stderr_text_opt = capture_result.stderr_text()
                     if stderr_text_opt.is_some():
                         let stderr_text = stderr_text_opt.unwrap()
-                        stdio.print_format(c"%.*s", int<-(stderr_text.len), stderr_text.data)
-                    return 0
+                        let _w = terminal.write_stderr(stderr_text)
+                    return capture_result.status.normalized_code()
                 Result.failure:
                     stdio.print_format(c"error: cannot execute '%.*s'\n", int<-(owned_output.as_str().len), owned_output.as_str().data)
                     return 1
