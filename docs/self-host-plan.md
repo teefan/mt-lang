@@ -107,12 +107,21 @@ annotations and undefined names (the two former `check`-silence bugs).
 - directory `lint` silently-reporting-clean bug fixed (same UAF)
 - parser now records `else` keyword line on `stmt_if` (was hardcoded 0)
 
-**Language lowering:**
+**Language lowering (15182 lines, ~490 functions):**
 - Loop break/continue with goto labels, async frame release, ready-flag
   ordering, CPS return defer ordering, match equality/guard patterns, CPS
   for-loop spilling, async main entrypoint, array-by-value C ABI
 - Cached common types (`bool_ty`, `void_ty`, `ptr_void_ty` in `LowerCtx`)
 - Naming consistency pass (`gsi_*` → `generic_instance_*`, etc.)
+- **8 of 8 Ruby lowering modules analyzed: full parity on 7, partial on 1**
+  - Type resolution (resolve) — **EXISTS** (all functions present)
+  - Dyn trait objects — **EXISTS** (adapt, vtable, wrapper, cross-module)
+  - Events — **EXISTS** (subscribe/emit/wait, runtime synthesis, snapshots)
+  - str_buffer[N] — **EXISTS** (all 9 methods, struct emission)
+  - Proc expressions — **EXISTS** (captures, env structs, invoke/release/retain)
+  - Pre-lowering scans — **EXISTS** (enhanced — more explicit than Ruby)
+  - Statement type coverage — **EXISTS** (all 18+ types; async CPS on 7)
+  - Foreign cstr boundary — **PARTIAL** (basic `as cstr` works; cstr-list boundary and metadata tracking missing — see §2.7)
 
 **Earlier fixes (cross-module, generics, async CPS core):**
 - Cross-module same-name type collision, nullable fn-pointer locals, global var
@@ -315,7 +324,25 @@ mapping from the analyzer into the linter visitors.
 | `.mt-lint.yml` config | Medium | TOML parsing + rule configuration |
 | Wire lint into `check` (`lint_tier: :full`) | Small | Call `lint_source` from `check_program` |
 
-### 2.6 Out-of-scope subsystems (separate projects)
+### 2.6 Lowering gaps
+
+The self-host lowering (15182 lines, ~490 functions) was compared against all 8
+Ruby lowering modules.  Overall status: **7 of 8 modules at full parity**,
+1 partial, plus 1 known correctness bug.
+
+| Area | Status | Details |
+|------|--------|---------|
+| Type resolution | **Full** | `resolve_type_ref`, `resolve_generic_type_ref`, `resolve_function_type_ref`, `resolve_field_type_ref`, `resolve_param_type`, `resolve_return_type`, `resolve_scalar_type_ref`, `resolve_array_length` — all present |
+| Dyn trait objects | **Full** | `adapt[I](val)`, vtable generation, wrapper functions, global vtable constants, cross-module interface lookup, generic type substitution — all present |
+| Events | **Full** | subscribe/subscribe_once/subscribe_stateful/unsubscribe/emit/wait, `EventRuntimeInfo` struct, snapshot-based emit dispatch, wait-frame lifecycle — all present |
+| str_buffer[N] | **Full** | All 9 methods (clear/assign/append/len/capacity/as_str/as_cstr/assign_format/append_format), struct emission per N, C runtime integration — all present |
+| Proc expressions | **Full** | Capture detection, env struct generation, invoke/release/retain lifecycle, fn→proc coercion — all present |
+| Statement coverage | **Full** | All 18+ statement types handled; self-host additionally has async CPS awareness in 7 of them (return, local, assignment, while, if, match, expression) — going beyond Ruby's sync-only lowering |
+| Pre-lowering scans | **Full (enhanced)** | Self-host has explicit `collect_foreign_functions`, `collect_function_returns`, `collect_variants`, `collect_program_returns` — more structured than Ruby's implicit pass-through |
+| Foreign cstr boundary | **Partial** | Basic `as cstr` for string literals works. Missing: `str[] → cstr[]` list conversion (`mt_foreign_strs_to_cstrs_temp` / `mt_free_foreign_cstrs_temp`), cstr metadata tracking in bindings, cstr flow analysis through if/assignment, inlineability optimizations. This only affects foreign functions with `span[str]` parameters — rare in practice. |
+| Match expression hoisting | **Bug** | `lowering.mt:9214-9218`: non-return-position multi-arm match expressions fall back to a placeholder `match_expr` name in the IR. `return match` is handled correctly; any `let x = match { ... }` in a non-return position will produce wrong C code. This is the only known correctness gap in the lowering. |
+
+### 2.7 Out-of-scope subsystems (separate projects)
 
 | Gap | Effort | Notes |
 |-----|--------|-------|
