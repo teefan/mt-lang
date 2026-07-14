@@ -941,37 +941,29 @@ function effective_source_path(raw_path: str, roots: ref[vec.Vec[str]], entry_ow
 ## Walk up from `source_path` to find the nearest parent directory that
 ## contains a `std/` subdirectory, and push it onto `roots`.
 ## The backing string is stored in the module-level `owned_roots` Vec.
-var owned_roots: vec.Vec[string.String]
-
-function owners_ready() -> void:
-    if owned_roots.capacity() == 0:
-        owned_roots = vec.Vec[string.String].create()
-
+## Walk up from `source_path` to find the nearest parent directory that
+## contains a `std/` subdirectory, and push it onto `roots`.
+## Works entirely with non-owning str views borrowed from `source_path`,
+## so no allocations are needed.
 function discover_project_root(source_path: str, roots: ref[vec.Vec[str]]) -> void:
-    owners_ready()
-    var start = string.String.from_str(if fs.is_directory(source_path): source_path else: path_ops.dirname(source_path))
+    var current = if fs.is_directory(source_path): source_path else: path_ops.dirname(source_path)
     while true:
-        var candidate = path_ops.join(start.as_str(), "std")
-        defer candidate.release()
-        if fs.is_directory(candidate.as_str()):
-            let view = start.as_str()
+        var joined = path_ops.join(current, "std")
+        defer joined.release()
+        if fs.is_directory(joined.as_str()):
             var i: ptr_uint = 0
             while i < roots.len():
                 let ep = roots.get(i) else:
                     break
-                if view.equal(unsafe: read(ep)):
-                    start.release()
+                if current.equal(unsafe: read(ep)):
                     return
                 i += 1
-            roots.push(view)
-            owned_roots.push(start)
+            roots.push(current)
             return
-        let parent = path_ops.dirname(start.as_str())
-        if parent.equal(start.as_str()):
-            start.release()
+        let parent = path_ops.dirname(current)
+        if parent.equal(current):
             return
-        start.release()
-        start = string.String.from_str(parent)
+        current = parent
 
 
 ## Build a program (`mtc build`).  Supports both single `.mt` files and package
