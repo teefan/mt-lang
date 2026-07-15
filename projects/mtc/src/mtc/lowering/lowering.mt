@@ -10336,6 +10336,28 @@ function imported_extern_call(ctx: ref[LowerCtx], target_module: str, name: str)
     return result
 
 
+## The C linkage name of an external function declared in `target_module`,
+## honoring a `= c"..."` rename mapping (`external function foo = c"__real"`
+## resolves to `__real`).  Returns none when `name` is not an external function
+## of that module, so callers can fall back to the bare member name.
+function imported_extern_c_name(ctx: ref[LowerCtx], target_module: str, name: str) -> Option[str]:
+    let owner_a = find_imported_analysis(ctx, target_module) else:
+        return Option[str].none
+    var di: ptr_uint = 0
+    while di < owner_a.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(owner_a.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_extern_function as ef:
+                if ef.name == name:
+                    return Option[str].some(value = extern_c_name(ef.name, ef.mapping))
+            _:
+                pass
+        di += 1
+    return Option[str].none
+
+
 ## Lower a cross-module external function call.  External functions use their
 ## bare C name; `out`/`inout` parameters are passed by address (`&arg`) so the C
 ## function can write back through the pointer, mirroring Ruby's
@@ -10605,9 +10627,13 @@ function extern_c_name(name: str, mapping: ptr[ast.Expr]?) -> str:
 
 ## The C name a foreign function maps to: resolve its `= target` identifier
 ## through the external registry (so `= atoi` yields the external's C name),
-## falling back to the target name.  Complex inline mapping expressions are
-## handled by lower_inline_foreign_mapping instead; this resolver only needs
-## the bare-name forms and returns "" for anything else.
+## falling back to the target name.  A `= c.Name` member mapping resolves the
+## receiver alias to its module and honors the external function's own
+## `= c"..."` rename there (so `= c.tracy_emit_zone_begin` yields
+## `___tracy_emit_zone_begin`), mirroring Ruby's external_function_c_name.
+## Complex inline mapping expressions are handled by
+## lower_inline_foreign_mapping instead; this resolver only needs the
+## bare-name forms and returns "" for anything else.
 function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> str:
     unsafe:
         match read(mapping):
@@ -10617,6 +10643,17 @@ function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> s
                     return read(ext)
                 return id.name
             ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as recv_id:
+                        let mod_ptr = ctx.analysis.imports.get(recv_id.name)
+                        if mod_ptr != null:
+                            match imported_extern_c_name(ctx, read(mod_ptr), ma.member_name):
+                                Option.some as renamed:
+                                    return renamed.value
+                                Option.none:
+                                    pass
+                    _:
+                        pass
                 return ma.member_name
             ast.Expr.expr_prefix_cast as pc:
                 return resolve_foreign_c_name(ctx, pc.expression)
