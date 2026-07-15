@@ -14,17 +14,18 @@ import std.str
 import std.vec as vec
 
 import mtc.loader.module_loader as loader
-import mtc.lowering.lowering as lowering
+import mtc.ir as ir
 import mtc.c_backend.c_backend as c_backend
 import mtc.parser.ast as ast
 
 
 ## Build a checked program to `output_path` using `c_compiler`.  `roots` are the
 ## module search roots (as passed on the CLI): the one containing `std/c` supplies
-## the C ABI header include path.  On success the success value is the output
-## path; on failure the error is a human-readable message.
-public function build(program: loader.Program, output_path: str, c_compiler: str, roots: span[str]) -> Result[string.String, string.String]:
-    let ir_program = lowering.lower(program)
+## the C ABI header include path.  `ir_program` is the caller-lowered IR (the CLI
+## lowers once, so the entrypoint check and the build share a single lowering).
+## On success the success value is the output path; on failure the error is a
+## human-readable message.
+public function build(program: loader.Program, ir_program: ir.Program, output_path: str, c_compiler: str, roots: span[str]) -> Result[string.String, string.String]:
     var c_source = c_backend.generate_c(ir_program)
     defer c_source.release()
 

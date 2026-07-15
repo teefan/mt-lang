@@ -227,3 +227,17 @@ public function empty_program(module_name: str, source_path: str) -> Program:
         functions = span[Function](),
         source_path = source_path,
     )
+
+
+## True when the program declares a C entrypoint (a lowered root `main` with a
+## supported executable signature).  Mirrors Ruby's
+## `ir_program.functions.any?(&:entry_point)`, which Build uses to decide whether
+## a target is an executable.
+public function has_entrypoint(program: Program) -> bool:
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            if read(program.functions.data + i).entry_point:
+                return true
+        i += 1
+    return false

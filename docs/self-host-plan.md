@@ -2,12 +2,13 @@
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED.** Stage2 == stage3 byte-identical.
 177/177 self-tests pass across 9 test files. **Raylib parity: 215/219 build**
-(98%; the 4 remaining are 2 non-buildable support files and 2 vendored-library
-(GLFW/Tracy) build gaps — no self-host-only codegen bug remains, and every
-example the Ruby compiler can build the self-host now also builds). 13/13
-language examples build. **`mtc lint` has 31 rules** (4 new Tier-1/3 AST rules,
-2 new tooling features). `--select`/`--ignore` supported. Lint wired into
-`mtc check`. Bootstrap via `tools/bootstrap.sh`.
+(98%; the 4 remaining are 2 non-buildable support files — now rejected with
+byte-identical Ruby messages, see §2.4 — and 2 vendored-library (GLFW/Tracy)
+build gaps. No self-host-only codegen bug remains, and every example the Ruby
+compiler can build the self-host now also builds). 13/13 language examples build.
+**`mtc lint` has 31 rules** (4 new Tier-1/3 AST rules, 2 new tooling features).
+`--select`/`--ignore` supported. Lint wired into `mtc check`. Bootstrap via
+`tools/bootstrap.sh`.
 
 **Next-session work is in §5.**
 
@@ -76,6 +77,13 @@ fixed point, 177/177 tests, 13/13 language examples):
 | External include order | Binding headers emitted in deterministic sorted order so `raylib.h` precedes `rlgl.h` regardless of import order; fixes `cel_shading` |
 | Aggregate array-call fields | `S(arr = f(...))` where `f` returns an array omits the field from the C initializer and fills it via `f(&s.arr, ...)` after the struct is built; fixes `basic_pbr` (Ruby cannot build it) |
 | Build driver | Add raygui/rlgl/gl binding build flags (`-I<vendored raygui>`, `-DRAYGUI_IMPLEMENTATION`, `-DGRAPHICS_API_OPENGL_43`, `-DMT_LANG_GL_REGISTRY_HAVE_RAYLIB`, and `-DMT_LANG_GL_REGISTRY_HELPERS_IMPLEMENTATION` for the header-only OpenGL registry — GL entry points resolve dynamically through raylib's loader, no `-lGL`) |
+| **Runtime correctness audit** | 6 miscompilations found by diffing runtime output against Ruby (all had no C compile error — "builds OK but runs wrong"): |
+| Float-literal rendering | Whole-number floats (`1.0`) formatted without `.0` → C parsed as `int` → `1.0 / 3.0 == 0` |
+| Integer literal overflow | Parser stored `long`-width literals in 32-bit `int` AST field → `9000000000l` truncated |
+| `ir_expr_type` gaps | Missing `expr_float_literal` + 7 other variants in `ir_expr_type` → float in tuples typed `void`, `size_of`/`offset_of`/`reinterpret` in expressions typed `error` |
+| Native vector typedefs | `emit_builtin_type_defs` gated on `use_string_view` and didn't collect from function bodies → `mt_vec3` undefined |
+| Flags/enum binary ops | `infer_binary` didn't handle flags `\| & ^` or enum arithmetic → `void p = Perm.read \| Perm.write` |
+| `reinterpret[T](x)` numeric cast | Lowering turned `reinterpret` into a plain `expr_cast` → `reinterpret[uint](3.14f)` yielded `3`, not the IEEE bit pattern; silently broke float hashing |
 
 ### 0.4 CLI parity
 
@@ -160,19 +168,22 @@ generated C from both compilers. None is a self-host codegen gap: 2 are
 non-buildable support files (both compilers correctly refuse them) and 2 need the
 vendored-library build subsystem.
 
-### 2.1 Not buildable executables (2 files) — both compilers correctly refuse
+### 2.1 Not buildable executables (2 files) — both compilers refuse with matching messages
+
+Both files are now rejected cleanly with byte-identical messages to Ruby (the
+CLI-polish item from §5.2 is landed — see §2.4):
 
 | Example | Root cause |
 |---------|-----------|
-| `rlgl_loader` | An `external` file (raw ABI bindings), not a program. Ruby reports "cannot emit C for external file". The self-host emits a `main`-less C file that fails at link; it should detect external-file build targets and reject them cleanly (a CLI-polish item, not codegen). |
-| `boxed_text` | A helper library with no `main` (only `draw_*` functions). Both compilers report "no executable entrypoint found". |
+| `rlgl_loader` | An `external` file (raw ABI bindings), not a program. Both compilers now report `cannot emit C for external file examples.raylib.others.rlgl_loader` and exit 1 for `build`/`run`/`lower`/`emit-c`. |
+| `boxed_text` | A helper library with no `main` (only `draw_*` functions). Both compilers report `no executable entrypoint found; define \`main\` with one of the supported executable signatures` and exit 1 for `build`/`run`; `emit-c`/`lower` still emit the `main`-less C. |
 
 ### 2.2 Vendored-library builds (2 files) — compiler emits correct C
 
 | Example | Root cause + status |
 |---------|--------------------|
 | `tracy_profiler` | `#include "TracyC.h"` needs the vendored Tracy include path and `-ltracyclient`, which must be compiled from `third_party/tracy-upstream`. No system package provides it. |
-| `rlgl_standalone` | **Codegen now compiles cleanly** (the opaque-nullable and opaque-typedef fixes — §2.3 — resolved every codegen error; verified with the vendored GLFW header, 0 C errors). The only remaining blocker is GLFW linking: the binding links `-lglfw3` while the system provides `libglfw`, and `GLFW_UNLIMITED_MOUSE_BUTTONS` exists only in `third_party/glfw-upstream`. Needs the vendored GLFW build (→ `libglfw3`), i.e. the §5.2 subsystem. |
+| `rlgl_standalone` | **Codegen now compiles cleanly** (the opaque-nullable and opaque-typedef fixes — §2.3 — resolved every codegen error; verified with the vendored GLFW header, 0 C errors). The only remaining blocker is GLFW linking: the binding links `-lglfw3` while the system provides `libglfw`, and `GLFW_UNLIMITED_MOUSE_BUTTONS` exists only in `third_party/glfw-upstream`. Needs the vendored GLFW build (→ `libglfw3`), i.e. the §5.3 subsystem. |
 
 ### 2.3 Landed: opaque codegen fixes (general correctness)
 
@@ -194,6 +205,32 @@ Two opaque fixes landed this pass:
 Verified end-to-end (`FILE* f = fopen(...)` compiles and runs; rlgl_standalone
 codegen compiles with 0 C errors), fixed point holds, 177/177 tests, 13/13
 language examples, zero raylib regressions.
+
+### 2.4 Landed: non-buildable-target rejection (CLI parity, 2026-07-15)
+
+The §5.2 CLI-polish item is done. The self-host previously lowered raw
+`external` files and `main`-less programs into C that failed at link with an
+opaque `undefined reference to 'main'` linker error. It now rejects both cleanly
+with the exact Ruby messages, before invoking the C compiler:
+
+- **External-file rejection** — `build`/`run`/`lower`/`emit-c` on a raw
+  `external` file print `cannot emit C for external file <module.name>` and exit
+  1, mirroring Ruby's `LoweringError` (raised in `lower_modules` for
+  `:raw_module`). Implemented as `Program.root_is_raw_module()` +
+  `reject_external_root` at the CLI layer.
+- **Missing-entrypoint rejection** — `build`/`run` on a program with no valid
+  executable `main` print `no executable entrypoint found; ...`, or
+  `root main is not a valid executable entrypoint; ...` when a `main` exists with
+  an unsupported signature — matching Ruby's `Build.ensure_program_has_entrypoint!`.
+  Implemented as `ir.has_entrypoint(ir_program)` (the lowered-IR
+  `entry_point` check) + `Program.root_has_main()` + `reject_missing_entrypoint`.
+  `emit-c`/`lower` still emit the `main`-less C, exactly as Ruby does.
+
+Refactor: `build_driver.build` now takes the caller-lowered `ir.Program`, so the
+CLI lowers once and shares that IR between the entrypoint check, `--keep-c`, and
+the build (previously lowering happened inside `build` and again in
+`keep_c_to_file`). Fixed point holds, 177/177 tests, 13/13 language examples,
+41-example raylib spot-check with zero regressions.
 
 ---
 
@@ -254,18 +291,52 @@ tests, 13/13 language, 215/219 raylib); everything below is additive.
 
 **Done this pass (§0.3 table):** module-level generic `var` monomorphization,
 opaque-nullable → pointer, opaque re-export typedefs, deterministic external
-include ordering (fixed `cel_shading`), and aggregate array-call-field
-materialisation (fixed `basic_pbr`). Every example the Ruby compiler can build,
-the self-host now also builds. The items below remain.
+include ordering (fixed `cel_shading`), aggregate array-call-field
+materialisation (fixed `basic_pbr`), and 6 runtime miscompilations found by
+diffing runtime output against Ruby (float-literal C rendering, integer literal
+overflow, `ir_expr_type` gaps, native vector typedef emission, flags/enum binary
+op inference, and `reinterpret[T]` bit reinterpret). Every example the Ruby
+compiler can build, the self-host now also builds.
 
-### 5.1 Remaining raylib gaps (both need out-of-codegen work)
+**Done next pass (§2.4):** non-buildable-target rejection — `external` files and
+`main`-less programs are now rejected with byte-identical Ruby messages and exit
+codes across `build`/`run`/`lower`/`emit-c` instead of emitting a `main`-less
+binary that fails at link (§5.2 item 2 closed). The items below remain.
+
+### 5.1 Architectural finding: analyzer fallback reliance
+
+The self-host's semantic analyzer is deliberately conservative — it records
+`ty_error` for expressions involving imported types, cross-module calls, and
+struct-field chains. In a full raylib example (julia_set), **77% of expression
+type lookups fall back** to lowering's `fallback_type` heuristic, and **133
+expressions get a bad (void/error) type even after fallback**.  The `ir_expr_type`
+function had 8 missing expression-variant arms, each silently returning
+`ty_error`.
+
+This two-phase architecture (conservative validator-analyser + best-effort
+lowering heuristic) means **every new IR expression node and every new
+analyser-supported pattern creates a latent gap in the fallback**: if the
+analyser records `ty_error` and `fallback_type`/`ir_expr_type` both miss the
+expression kind, the C type becomes `void` — a silent miscompilation, not a
+crash.
+
+**Lesson for future work:** any new expression kind added to the IR must be
+handled in `ir_expr_type` (lowering) and the C-backend renderer, and any new
+pattern added to the analyser should be verified by a *runtime* comparison
+against Ruby, not just `"BUILDS OK"`.  A `"BUILDS OK"` test only proves the C
+compiled — it says nothing about runtime values.  The 6 bugs fixed this pass all
+produced valid C programs with wrong numeric output.
+
+### 5.2 Remaining raylib gaps
+
+Only one gap remains, and it needs out-of-codegen work:
 
 | # | Example(s) | Fix | Effort |
 |---|-----------|-----|--------|
-| 1 | `rlgl_standalone`, `tracy_profiler` | Vendored-library build subsystem (§5.2). Codegen is already correct. | Large |
-| 2 | `rlgl_loader`, `boxed_text` | CLI polish: detect `external`-file / no-`main` build targets and reject cleanly (match Ruby's messages) instead of emitting a `main`-less binary that fails at link. Does not make them "build" (they are not executables) but improves parity/UX. | Small |
+| 1 | `rlgl_standalone`, `tracy_profiler` | Vendored-library build subsystem (§5.3). Codegen is already correct. | Large |
+| 2 | `rlgl_loader`, `boxed_text` | **DONE (§2.4).** CLI polish: detect `external`-file / no-`main` build targets and reject cleanly with byte-identical Ruby messages instead of emitting a `main`-less binary that fails at link. They still do not "build" (they are not executables) but the messages and exit codes now match Ruby. | Small |
 
-### 5.2 Vendored-library build subsystem (large; unblocks rlgl_standalone + tracy + box2d etc.)
+### 5.3 Vendored-library build subsystem (large; unblocks rlgl_standalone + tracy + box2d etc.)
 
 Needed for `rlgl_standalone` (GLFW; codegen already compiles cleanly) and
 `tracy_profiler` (Tracy), and any binding with a `vendored_library`. Port the
@@ -275,19 +346,19 @@ flag. Note the `-lglfw3` (vendored) vs system `-lglfw` naming and the
 vendored-only `GLFW_UNLIMITED_MOUSE_BUTTONS` header constant. Large; separate from
 compiler codegen.
 
-### 5.3 Linter (§3) and CLI (§0.4) parity
+### 5.4 Linter (§3) and CLI (§0.4) parity
 
 - Linter: `owning-release-leak`, `redundant-cast`, `prefer-own-ptr` (need
   sema-facts), 5 CFG rules (low ROI), `--fix`, `.mt-lint.yml` config.
 - CLI not-implemented: `run-module`, `new`, `debug`, `deps`, `toolchain`,
   `bindgen`, `cache`, `docs`, `snapshot`, `completions`.
 
-### 5.4 Out-of-scope subsystems (§4)
+### 5.5 Out-of-scope subsystems (§4)
 
 Package-graph resolution (`--locked`/`--frozen`), build cache, `--bundle` /
 `--archive`, wasm/emcc + preview server, `--jobs` parallel tests, `--sanitize`.
 
-### 5.5 Verification checklist for any change
+### 5.6 Verification checklist for any change
 
 Run before considering a change done:
 
@@ -301,3 +372,12 @@ build/stage2/mtc build examples/language_baseline.mt -I . -o /tmp/lb   # 13/13 l
 A change is safe only if: stage2.c == stage3.c, 177/177 tests pass, 13/13
 language examples build, and the raylib passing set does not shrink (currently
 215).
+
+For **runtime correctness**, diff against the Ruby compiler on arithmetic / type
+patterns:
+```sh
+# compile a compute-heavy test with both compilers, compare stdout:
+build/stage2/mtc build /tmp/test.mt -I . -o /tmp/sh --no-cache && /tmp/sh > /tmp/sh_out
+ruby -Ilib bin/mtc build /tmp/test.mt -I . -o /tmp/rb --no-cache && /tmp/rb > /tmp/rb_out
+diff /tmp/sh_out /tmp/rb_out   # must be empty
+```

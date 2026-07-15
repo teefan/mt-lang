@@ -25,6 +25,7 @@ import mtc.loader.path_resolver as resolver
 import mtc.loader.module_loader as loader
 import mtc.lowering.lowering as lowering
 import mtc.c_backend.c_backend as c_backend
+import mtc.ir as ir
 import mtc.build as build_driver
 import mtc.pretty_printer.ast_formatter as fmt
 import mtc.linter.linter as linter
@@ -716,6 +717,32 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], platfor
             return Option[str].none
 
 
+## Reject a raw `external`-file target for a C-emitting command (lower, emit-c,
+## build, run), printing the same message Ruby's Lowering raises.  Returns true
+## when the root is a raw module (message already printed); the caller then
+## cleans up and returns 1.
+function reject_external_root(program: loader.Program) -> bool:
+    if not program.root_is_raw_module():
+        return false
+    let name = program.root_module_name()
+    stdio.print_format(c"cannot emit C for external file %.*s\n", int<-(name.len), name.data)
+    return true
+
+
+## Reject a build/run target with no valid executable entrypoint, mirroring
+## Ruby's Build.ensure_program_has_entrypoint!.  Call after external-file
+## rejection with the lowered IR.  Returns true when there is no entrypoint
+## (message already printed); the caller then cleans up and returns 1.
+function reject_missing_entrypoint(program: loader.Program, ir_program: ir.Program) -> bool:
+    if ir.has_entrypoint(ir_program):
+        return false
+    if program.root_has_main():
+        stdio.print_line("root main is not a valid executable entrypoint; expected `function main() -> int|void`, `function main(argc: int, argv: ptr[cstr]) -> int|void`, `function main(argc: int, argv: ptr[ptr[char]]) -> int|void`, or `function main(args: span[str]) -> int|void`")
+    else:
+        stdio.print_line("no executable entrypoint found; define `main` with one of the supported executable signatures")
+    return true
+
+
 ## Lower a checked program to IR and print it (`mtc lower`).
 ## Supports both `.mt` files and package directory targets.
 function lower_command(args: span[str]) -> int:
@@ -732,6 +759,11 @@ function lower_command(args: span[str]) -> int:
 
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
+
+    if reject_external_root(program):
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
 
     let ir_program = lowering.lower(program)
     var rendered = ir_formatter.format_program(ir_program)
@@ -759,6 +791,11 @@ function emit_c_command(args: span[str]) -> int:
 
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
+
+    if reject_external_root(program):
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
 
     let ir_program = lowering.lower(program)
     var c_source = c_backend.generate_c(ir_program)
@@ -1082,8 +1119,20 @@ function build_command(args: span[str]) -> int:
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
+    if reject_external_root(program):
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
+
+    let ir_program = lowering.lower(program)
+
+    if reject_missing_entrypoint(program, ir_program):
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
+
     if keep_c_path.is_some():
-        keep_c_to_file(program, keep_c_path.unwrap())
+        keep_c_to_file(ir_program, keep_c_path.unwrap())
 
     var output_path: string.String
     if output_override.is_some():
@@ -1091,7 +1140,7 @@ function build_command(args: span[str]) -> int:
     else:
         output_path = default_output_path(effective)
 
-    match build_driver.build(program, output_path.as_str(), c_compiler, roots.as_span()):
+    match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span()):
         Result.success as built:
             var output = built.value
             defer output.release()
@@ -1202,13 +1251,25 @@ function run_command(args: span[str]) -> int:
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
+    if reject_external_root(program):
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
+
+    let ir_program = lowering.lower(program)
+
+    if reject_missing_entrypoint(program, ir_program):
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
+
     var output_path: string.String
     if output_override.is_some():
         output_path = string.String.from_str(output_override.unwrap())
     else:
         output_path = default_output_path(effective)
 
-    match build_driver.build(program, output_path.as_str(), c_compiler, roots.as_span()):
+    match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span()):
         Result.success as built:
             var built_path = built.value
             defer built_path.release()
@@ -1334,8 +1395,7 @@ function default_output_path(path: str) -> string.String:
     return j2_path(path, ".out")
 
 
-function keep_c_to_file(program: loader.Program, output_path_str: str) -> void:
-    let ir_program = lowering.lower(program)
+function keep_c_to_file(ir_program: ir.Program, output_path_str: str) -> void:
     var c_source = c_backend.generate_c(ir_program)
     defer c_source.release()
     match fs.write_text(output_path_str, c_source.as_str()):

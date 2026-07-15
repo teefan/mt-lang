@@ -88,6 +88,25 @@ extending Program:
         return unsafe: read(root).module_name
 
 
+    ## True when the root program is a raw `external` file.  The C backend cannot
+    ## emit a translation unit for a raw ABI-binding file (it has no ordinary
+    ## module logic), so build/lower/emit-c reject it — mirroring Ruby's
+    ## LoweringError for `:raw_module`.
+    public function root_is_raw_module() -> bool:
+        let root = this.analyses.last() else:
+            return false
+        return unsafe: read(root).module_kind == ast.ModuleKind.module_raw
+
+
+    ## True when the root program declares a `main` function (regardless of
+    ## signature validity).  Distinguishes "no main at all" from "main with an
+    ## unsupported signature" when reporting a missing executable entrypoint.
+    public function root_has_main() -> bool:
+        let root = this.analyses.last() else:
+            return false
+        return unsafe: read(root).functions.contains("main")
+
+
     public function diagnostic_error_count() -> ptr_uint:
         var count: ptr_uint = 0
         var i: ptr_uint = 0
