@@ -1676,21 +1676,95 @@ function span_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], col
         match read(sp):
             ir.Stmt.stmt_local as loc:
                 maybe_add_span(loc.ty, seen, collected)
+                span_from_expr(loc.value, seen, collected)
+            ir.Stmt.stmt_assignment as asg:
+                span_from_expr(asg.target, seen, collected)
+                span_from_expr(asg.value, seen, collected)
+            ir.Stmt.stmt_expression as ex:
+                span_from_expr(ex.expression, seen, collected)
+            ir.Stmt.stmt_return as r:
+                let rv = r.value else:
+                    return
+                span_from_expr(rv, seen, collected)
             ir.Stmt.stmt_block as blk:
                 span_from_stmts(blk.body, seen, collected)
             ir.Stmt.stmt_if as iff:
+                span_from_expr(iff.condition, seen, collected)
                 span_from_stmts(iff.then_body, seen, collected)
                 span_from_stmts(iff.else_body, seen, collected)
             ir.Stmt.stmt_while as w:
+                span_from_expr(w.condition, seen, collected)
                 span_from_stmts(w.body, seen, collected)
             ir.Stmt.stmt_for as f:
                 span_from_stmt(f.init, seen, collected)
+                span_from_expr(f.condition, seen, collected)
                 span_from_stmts(f.body, seen, collected)
             ir.Stmt.stmt_switch as sw:
+                span_from_expr(sw.expression, seen, collected)
                 var ci: ptr_uint = 0
                 while ci < sw.cases.len:
                     span_from_stmts(read(sw.cases.data + ci).body, seen, collected)
                     ci += 1
+            _:
+                pass
+
+
+## Walk an IR expression for span-typed subexpressions, most importantly the
+## local declarations inside a statement-expression (`({ mt_span_ubyte t = ...;
+## ... })`) produced by inline foreign-mapping lowering, whose span typedefs
+## would otherwise never be emitted.
+function span_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    maybe_add_span(expr_result_type(ep), seen, collected)
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_stmt_expr as se:
+                span_from_stmts(se.setup, seen, collected)
+                span_from_expr(se.result, seen, collected)
+            ir.Expr.expr_call as c:
+                var i: ptr_uint = 0
+                while i < c.arguments.len:
+                    span_from_expr(c.arguments.data + i, seen, collected)
+                    i += 1
+            ir.Expr.expr_call_indirect as c:
+                span_from_expr(c.callee, seen, collected)
+                var i: ptr_uint = 0
+                while i < c.arguments.len:
+                    span_from_expr(c.arguments.data + i, seen, collected)
+                    i += 1
+            ir.Expr.expr_binary as b:
+                span_from_expr(b.left, seen, collected)
+                span_from_expr(b.right, seen, collected)
+            ir.Expr.expr_unary as u:
+                span_from_expr(u.operand, seen, collected)
+            ir.Expr.expr_conditional as cd:
+                span_from_expr(cd.condition, seen, collected)
+                span_from_expr(cd.then_expression, seen, collected)
+                span_from_expr(cd.else_expression, seen, collected)
+            ir.Expr.expr_member as m:
+                span_from_expr(m.receiver, seen, collected)
+            ir.Expr.expr_index as ix:
+                span_from_expr(ix.receiver, seen, collected)
+                span_from_expr(ix.index, seen, collected)
+            ir.Expr.expr_checked_index as ci:
+                span_from_expr(ci.receiver, seen, collected)
+                span_from_expr(ci.index, seen, collected)
+            ir.Expr.expr_checked_span_index as ci:
+                span_from_expr(ci.receiver, seen, collected)
+                span_from_expr(ci.index, seen, collected)
+            ir.Expr.expr_cast as cx:
+                span_from_expr(cx.expression, seen, collected)
+            ir.Expr.expr_address_of as ad:
+                span_from_expr(ad.expression, seen, collected)
+            ir.Expr.expr_aggregate_literal as agg:
+                var i: ptr_uint = 0
+                while i < agg.fields.len:
+                    span_from_expr(read(agg.fields.data + i).value, seen, collected)
+                    i += 1
+            ir.Expr.expr_array_literal as arr:
+                var i: ptr_uint = 0
+                while i < arr.elements.len:
+                    span_from_expr(arr.elements.data + i, seen, collected)
+                    i += 1
             _:
                 pass
 
@@ -1992,9 +2066,11 @@ function c_declaration(t: types.Type, name: str) -> str:
         let inner_name = if name.len > 0 and name.byte_at(0) == '*': j3("(", name, ")") else: name
         let elem_t = array_element_type(t)
         # When the element is itself an array, emit correct C multi-dimensional
-        # syntax: `float name[N][M]` not `float[M] name[N]`.
+        # syntax with the OUTER dimension first: `array[array[float, M], N]`
+        # declares as `float name[N][M]` (N rows of M), matching row-major
+        # indexing `name[row][col]` and the Ruby backend.
         if is_array_type(elem_t):
-            return j2(c_declaration(elem_t, name), j3("[", long_to_str(array_length(t)), "]"))
+            return c_declaration(elem_t, j4(inner_name, "[", long_to_str(array_length(t)), "]"))
         return j6(c_type(elem_t), " ", inner_name, "[", long_to_str(array_length(t)), "]")
     # Function-pointer types need declarator syntax: `ret_type (*name)(...)`.
     # Pointer/reference types: `T*` instead of `ptr_T`.
@@ -2412,11 +2488,16 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
         types.Type.ty_generic as g:
             if g.name == "array" and g.args.len >= 1:
                 return by_value_dep_key(unsafe: read(g.args.data + 0))
+            # `str_buffer[N]` is embedded by value (`mt_str_buffer_N field;`), so
+            # a struct field of that type depends on the full str_buffer struct
+            # definition being ordered first.
+            if g.name == "str_buffer" and g.args.len >= 1:
+                return Option[str].some(value = j3("mt_str_buffer_", naming.type_c_key(unsafe: read(g.args.data + 0)), ""))
             # Pointer-like generics need only a forward declaration, not a
             # by-value dependency.
             if (
                 g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref"
-                or g.name == "span" or g.name == "str_buffer" or g.name == "atomic"
+                or g.name == "span" or g.name == "atomic"
                 or g.name == "SoA"
             ):
                 return Option[str].none
@@ -2861,6 +2942,12 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     emit_line(e, j5(inner, c_declaration(arr_ty, "__mt_arr_tmp"), " = ", render_initializer(e, asg.value), ";"))
                     emit_line(e, j6(inner, "memcpy(", target_c, ", __mt_arr_tmp, sizeof(__mt_arr_tmp)", ");", ""))
                     emit_line(e, j2(indent, "}"))
+                    return
+                # `arr = other_arr` — C forbids assigning one array to another;
+                # emit a memcpy of the whole array instead.
+                if asg.operator == "=" and is_array_type(expr_result_type(asg.target)):
+                    let target_c = render_expression(e, asg.target)
+                    emit_line(e, j6(indent, "memcpy(", target_c, ", ", render_expression(e, asg.value), j3(", sizeof(", target_c, "));")))
                     return
                 emit_line(e, j6(indent, render_expression(e, asg.target), " ", asg.operator, " ", j2(render_expression(e, asg.value), ";")))
             ir.Stmt.stmt_expression as ex:
@@ -4386,6 +4473,12 @@ function emit_str_buffer_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  result.data = data;")
     emit_line(e, "  result.len = *len;")
     emit_line(e, "  return result;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static char* mt_str_buffer_prepare_write(char* data, uintptr_t cap, bool* dirty) {")
+    emit_line(e, "  data[cap] = '\\0';")
+    emit_line(e, "  *dirty = true;")
+    emit_line(e, "  return data;")
     emit_line(e, "}")
 
 

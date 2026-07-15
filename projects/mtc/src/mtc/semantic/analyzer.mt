@@ -1195,6 +1195,17 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
     # type refs, not struct-field types).
     if is_all_digits(name):
         return types.literal_int(parse_str_int(name))
+    # A module-level integer constant in type-argument position (an array or
+    # str_buffer length such as `array[bool, WORLD_SIZE]`) folds to its value,
+    # so array sizes resolve consistently across the analyzer, lowering, and
+    # the C backend's checked-index helpers.
+    let cv = ctx.const_values.get(name)
+    if cv != null:
+        match const_eval_int_expr(ctx, unsafe: read(cv)):
+            Option.some as folded:
+                return types.literal_int(folded.value)
+            Option.none:
+                pass
     if name.find_byte('.').is_some():
         return types.Type.ty_error
     if ctx.suppressed_type_names.contains(name):
@@ -2611,6 +2622,65 @@ function is_builtin_call_name(name: str) -> bool:
 ## evaluated value when the expression is a literal, a reference to another
 ## const, an enum-member access, or a size_of/align_of call.  Returns none for
 ## anything the self-host cannot evaluate at compile time (runtime-only).
+## Evaluate a compile-time integer constant expression (literals, named const
+## chains, and arithmetic).  Returns none when the expression is not a
+## statically-known integer.  Used to fold a named constant in array-length
+## type-argument position (`array[T, WORLD_SIZE]`) to a concrete size, matching
+## the Ruby analyzer.
+function const_eval_int_expr(ctx: ref[Context], ep: ptr[ast.Expr]) -> Option[long]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal as lit:
+                return Option[long].some(value = long<-lit.value)
+            ast.Expr.expr_char_literal as ch:
+                return Option[long].some(value = long<-ch.value)
+            ast.Expr.expr_identifier as id:
+                let chain = ctx.const_values.get(id.name)
+                if chain != null:
+                    return const_eval_int_expr(ctx, read(chain))
+                return Option[long].none
+            ast.Expr.expr_unary_op as un:
+                let v = const_eval_int_expr(ctx, un.operand) else:
+                    return Option[long].none
+                if un.operator == "-":
+                    return Option[long].some(value = -v)
+                if un.operator == "~":
+                    return Option[long].some(value = ~v)
+                return Option[long].some(value = v)
+            ast.Expr.expr_binary_op as bin:
+                let l = const_eval_int_expr(ctx, bin.left) else:
+                    return Option[long].none
+                let r = const_eval_int_expr(ctx, bin.right) else:
+                    return Option[long].none
+                if bin.operator == "+":
+                    return Option[long].some(value = l + r)
+                if bin.operator == "-":
+                    return Option[long].some(value = l - r)
+                if bin.operator == "*":
+                    return Option[long].some(value = l * r)
+                if bin.operator == "/":
+                    if r == 0:
+                        return Option[long].none
+                    return Option[long].some(value = l / r)
+                if bin.operator == "%":
+                    if r == 0:
+                        return Option[long].none
+                    return Option[long].some(value = l % r)
+                if bin.operator == "<<":
+                    return Option[long].some(value = l << r)
+                if bin.operator == ">>":
+                    return Option[long].some(value = l >> r)
+                if bin.operator == "|":
+                    return Option[long].some(value = l | r)
+                if bin.operator == "&":
+                    return Option[long].some(value = l & r)
+                if bin.operator == "^":
+                    return Option[long].some(value = l ^ r)
+                return Option[long].none
+            _:
+                return Option[long].none
+
+
 function evaluate_const_expr(ctx: ref[Context], ep: ptr[ast.Expr]?) -> Option[types.Type]:
     let p = ep else:
         return Option[types.Type].none

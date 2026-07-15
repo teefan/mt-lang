@@ -70,6 +70,20 @@ public function build(program: loader.Program, output_path: str, c_compiler: str
             command.push(read(flag_ptr).as_str())
         lfi += 1
 
+    # Binding build flags (include paths and implementation defines) that the
+    # raw std.c.* modules require but do not express as source directives — e.g.
+    # raygui needs its header include path plus -DRAYGUI_IMPLEMENTATION.  These
+    # mirror the Ruby raw-binding registry entries.
+    var binding_flags = collect_binding_flags(program, roots)
+    defer binding_flags.release()
+    var bfi: ptr_uint = 0
+    while bfi < binding_flags.len():
+        let flag_ptr = binding_flags.get(bfi) else:
+            break
+        unsafe:
+            command.push(read(flag_ptr).as_str())
+        bfi += 1
+
     match process.capture(command.as_span()):
         Result.success as captured:
             var result = captured.value
@@ -158,3 +172,80 @@ function link_lib_seen(link_libs: ref[vec.Vec[string.String]], flag: str) -> boo
                 return true
         i += 1
     return false
+
+
+## Collect binding-specific C build flags (include paths and implementation
+## defines) required by raw `std.c.*` modules that do not carry them as source
+## directives.  These mirror the essential entries of the Ruby raw-binding
+## registry: raygui needs its vendored header include path plus
+## `-DRAYGUI_IMPLEMENTATION -DGRAPHICS_API_OPENGL_43`, and rlgl-facing modules
+## need `-DGRAPHICS_API_OPENGL_43 -DMT_LANG_GL_REGISTRY_HAVE_RAYLIB`.  Header
+## paths are resolved relative to whichever module root contains the vendored
+## raylib tree, so no absolute machine path is baked in.
+function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec.Vec[string.String]:
+    var result = vec.Vec[string.String].create()
+    var uses_raygui = false
+    var uses_rlgl = false
+    var uses_gl = false
+    var mi: ptr_uint = 0
+    while mi < program.analyses.len():
+        let a_ptr = program.analyses.get(mi) else:
+            break
+        var analysis = unsafe: read(a_ptr)
+        if analysis.module_name == "std.c.raygui":
+            uses_raygui = true
+        if analysis.module_name == "std.c.rlgl":
+            uses_rlgl = true
+        if analysis.module_name == "std.c.gl":
+            uses_gl = true
+        mi += 1
+
+    if uses_raygui:
+        var include_dir = vendored_raylib_include(roots, "examples/shapes")
+        defer include_dir.release()
+        if include_dir.len() > 0:
+            result.push(string.String.from_str(j2("-I", include_dir.as_str())))
+        result.push(string.String.from_str("-DRAYGUI_IMPLEMENTATION"))
+        result.push(string.String.from_str("-DGRAPHICS_API_OPENGL_43"))
+
+    if uses_rlgl:
+        result.push(string.String.from_str("-DGRAPHICS_API_OPENGL_43"))
+        result.push(string.String.from_str("-DMT_LANG_GL_REGISTRY_HAVE_RAYLIB"))
+
+    # `std.c.gl` includes the header-only OpenGL registry helpers; the
+    # `..._IMPLEMENTATION` define compiles the loader/wrapper bodies (GL entry
+    # points are resolved dynamically through raylib's loader, so no `-lGL` is
+    # needed), matching the Ruby gl binding's implementation_define.
+    if uses_gl:
+        result.push(string.String.from_str("-DMT_LANG_GL_REGISTRY_HELPERS_IMPLEMENTATION"))
+        result.push(string.String.from_str("-DMT_LANG_GL_REGISTRY_HAVE_RAYLIB"))
+
+    return result
+
+
+## Absolute path to a subdirectory of the vendored raylib tree
+## (`third_party/raylib-upstream/<sub>`), searched under each module root.
+## Returns an empty string when no root contains the vendored tree.
+function vendored_raylib_include(roots: span[str], sub: str) -> string.String:
+    var i: ptr_uint = 0
+    while i < roots.len:
+        var root: str
+        unsafe:
+            root = read(roots.data + i)
+        var relative = string.String.from_str("third_party/raylib-upstream/")
+        relative.append(sub)
+        var candidate = path_ops.join(root, relative.as_str())
+        relative.release()
+        if fs.is_directory(candidate.as_str()):
+            return candidate
+        candidate.release()
+        i += 1
+    return string.String.create()
+
+
+## Multi-string join helper (mirrors c_backend j2).
+function j2(a: str, b: str) -> str:
+    var buf = string.String.create()
+    buf.append(a)
+    buf.append(b)
+    return buf.as_str()

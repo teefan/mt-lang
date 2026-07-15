@@ -59,10 +59,16 @@ struct DeferGroup:
 
 ## A foreign function's lowering info: the C function it maps to, its return
 ## type, and its declared parameters (carrying `as cstr` boundary projections).
+## `simple` is true when the mapping is a bare name (`= c.InitWindow`) so the
+## call lowers 1:1; otherwise `mapping` holds the full inline mapping
+## expression (`= c.GuiSetStyle(int<-control, property, value)`) that is
+## expanded with argument substitution at each call site.
 struct ForeignInfo:
     c_name: str
     return_ty: types.Type
     params: span[ast.ForeignParam]
+    mapping: ptr[ast.Expr]?
+    simple: bool
 
 
 ## One arm of a variant, as needed by lowering: its name, payload field names and
@@ -235,6 +241,10 @@ struct LowerCtx:
     bool_ty: types.Type
     void_ty: types.Type
     ptr_void_ty: types.Type
+    # Program-wide set of opaque type C keys (e.g. `std_c_stdio_FILE`), so a
+    # nullable over an opaque base (`FILE?`) lowers to a nullable C pointer
+    # rather than an invalid value-optional struct over an incomplete C type.
+    opaque_keys: map_mod.Map[str, bool]
 
 
 ## Per-event runtime linkage information.  Each declared `event Name[N]`
@@ -284,12 +294,14 @@ function ensure_str_buffer_struct(ctx: ref[LowerCtx], sb_ty: types.Type) -> void
     if ctx.str_buffer_structs.contains(c_name):
         return
     ctx.str_buffer_structs.set(c_name, c_name)
-    var capacity: ptr_uint = 64z
     var fields = vec.Vec[ir.Field].create()
     let char_ty = types.primitive("char")
     let ptr_uint_ty = types.primitive("ptr_uint")
     let bool_ty = ctx.bool_ty
-    var data_ty = types.Type.ty_generic(name = "array", args = sp_type2(char_ty, types.literal_int(65)))
+    # The inline storage is `char data[N + 1]` (N usable bytes plus a NUL), so
+    # the buffer's declared capacity is honoured rather than a fixed size.
+    let n_val = parse_decimal(n_str)
+    var data_ty = types.Type.ty_generic(name = "array", args = sp_type2(char_ty, types.literal_int(n_val + 1)))
     fields.push(ir.Field(name = "data", ty = data_ty))
     fields.push(ir.Field(name = "len", ty = ptr_uint_ty))
     fields.push(ir.Field(name = "dirty", ty = bool_ty))
@@ -645,6 +657,7 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[
     var saved_type_subst = ctx.type_substitution
     ctx.type_substitution = read(sub)
     var ir_params = vec.Vec[ir.Param].create()
+    var param_setup = vec.Vec[ir.Stmt].create()
     var pi: ptr_uint = 0
     while pi < params.len:
         var p: ast.Param
@@ -663,7 +676,8 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[
             p_ty = qualify_type(ctx, substitute_type_params(ctx, resolve_field_type_ref(ctx, fn_tref), sub))
         let p_c = utils.c_local_name(p.name)
         let p_ptr = is_pointer_or_ref_type(p_ty)
-        ir_params.push(ir.Param(name = p.name, linkage_name = p_c, ty = p_ty, pointer = p_ptr))
+        let p_link = array_param_input_name(p_ty, p_c, ref_of(param_setup))
+        ir_params.push(ir.Param(name = p.name, linkage_name = p_link, ty = p_ty, pointer = p_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = p_c, ty = p_ty, pointer = p_ptr))
         pi += 1
     var ret_ty = ctx.void_ty
@@ -677,7 +691,7 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[
             ret_ty = qualify_type(ctx, substitute_type_params(ctx, resolve_field_type_ref(ctx, rt_raw), sub))
     var saved_sub = ctx.type_substitution
     ctx.type_substitution = read(sub)
-    let body_ir = lower_function_body(ctx, body)
+    let body_ir = prepend_param_setup(ref_of(param_setup), lower_function_body(ctx, body))
     ctx.type_substitution = saved_sub
     ctx.type_substitution = saved_type_subst
     return ir.Function(
@@ -816,7 +830,34 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         bool_ty = types.primitive("bool"),
         void_ty = types.primitive("void"),
         ptr_void_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))),
+        opaque_keys = collect_opaque_keys(prog_analyses),
     )
+
+
+## Build the program-wide set of opaque type C keys by scanning every module's
+## declarations (including raw external `std.c.*` files) for `opaque` decls.
+## Keyed by `naming.type_c_key(ty_imported(module, name))` so lowering can
+## recognise an opaque type after import/alias resolution.
+function collect_opaque_keys(prog_analyses: span[analyzer.Analysis]) -> map_mod.Map[str, bool]:
+    var keys = map_mod.Map[str, bool].create()
+    var mi: ptr_uint = 0
+    while mi < prog_analyses.len:
+        var analysis: analyzer.Analysis
+        unsafe:
+            analysis = read(prog_analyses.data + mi)
+        var di: ptr_uint = 0
+        while di < analysis.source_file.declarations.len:
+            var d: ast.Decl
+            unsafe:
+                d = read(analysis.source_file.declarations.data + di)
+            match d:
+                ast.Decl.decl_opaque as op:
+                    keys.set(naming.type_c_key(types.Type.ty_imported(module_name = analysis.module_name, name = op.name, args = span[types.Type]())), true)
+                _:
+                    pass
+            di += 1
+        mi += 1
+    return keys
 
 
 ## Pre-scan every module's function declarations and record each one's resolved
@@ -1301,6 +1342,7 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
     let sig = lookup_fn_sig(ctx, m.name)
 
     var ir_params = vec.Vec[ir.Param].create()
+    var param_setup = vec.Vec[ir.Stmt].create()
     if m.method_kind != ast.MethodKind.mk_static:
         let recv_ty = if m.method_kind == ast.MethodKind.mk_editable: types.Type.ty_generic(name = "ptr", args = sp_type(receiver_ty)) else: receiver_ty
         let recv_is_ptr = is_pointer_or_ref_type(recv_ty)
@@ -1314,14 +1356,15 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
         let param_ty = resolve_param_type(ctx, sig, pi, p.param_type)
         let c_pname = utils.c_local_name(p.name)
         let is_ptr = is_pointer_or_ref_type(param_ty)
-        ir_params.push(ir.Param(name = p.name, linkage_name = c_pname, ty = param_ty, pointer = is_ptr))
+        let link_name = array_param_input_name(param_ty, c_pname, ref_of(param_setup))
+        ir_params.push(ir.Param(name = p.name, linkage_name = link_name, ty = param_ty, pointer = is_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = param_ty, pointer = is_ptr))
         pi += 1
 
     let ret_ty = resolve_return_type(ctx, sig, m.return_type)
     var saved_fn_ret = ctx.current_fn_return_type
     ctx.current_fn_return_type = ret_ty
-    let body_stmts = lower_function_body(ctx, m.body)
+    let body_stmts = prepend_param_setup(ref_of(param_setup), lower_function_body(ctx, m.body))
     ctx.current_fn_return_type = saved_fn_ret
 
     return ir.Function(
@@ -1388,6 +1431,56 @@ function canonical_type_name(module_name: str, t: types.Type) -> str:
             return "unknown"
 
 
+## For an array-typed by-value parameter, C decays the array argument to a
+## pointer, so the IR parameter is renamed `<c>_input` and a `<c> = <c>_input`
+## local decl is appended to `setup` (the C backend renders it as an array
+## declaration plus memcpy), preserving pass-by-value semantics and keeping
+## `&<c>` a pointer-to-array for checked-index helpers.  For every other type
+## the linkage name passes through unchanged.  Mirrors Ruby's
+## `input_linkage_name` handling in lowering/functions.rb.
+function array_param_input_name(param_ty: types.Type, c_name: str, setup: ref[vec.Vec[ir.Stmt]]) -> str:
+    if not is_array_type(param_ty):
+        return c_name
+    let input_name = j2(c_name, "_input")
+    let input_ref = alloc_expr(ir.Expr.expr_name(name = input_name, ty = param_ty, pointer = false))
+    setup.push(ir.Stmt.stmt_local(name = c_name, linkage_name = c_name, ty = param_ty, value = input_ref, line = 0, source_path = ""))
+    return input_name
+
+
+## Prepend `setup` (array-parameter copies) to a lowered function body.
+function prepend_param_setup(setup: ref[vec.Vec[ir.Stmt]], body_stmts: span[ir.Stmt]) -> span[ir.Stmt]:
+    if setup.len() == 0:
+        return body_stmts
+    var full_body = vec.Vec[ir.Stmt].create()
+    append_span_stmts(ref_of(full_body), setup.as_span())
+    append_span_stmts(ref_of(full_body), body_stmts)
+    return full_body.as_span()
+
+
+## A bare string literal returned from a `-> cstr` function is a C string, not
+## an `mt_str`.  When the enclosing function returns `cstr` and the return value
+## is a plain (non-`c"..."`) string literal, re-emit it as a cstr literal so the
+## C return type matches.  Mirrors Ruby's contextual string-literal coercion.
+function coerce_return_literal_to_cstr(ctx: ref[LowerCtx], value: ptr[ast.Expr], lowered: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    var is_cstr_ret = false
+    match ctx.current_fn_return_type:
+        types.Type.ty_primitive as p:
+            if p.name == "cstr":
+                is_cstr_ret = true
+        _:
+            pass
+    if not is_cstr_ret:
+        return lowered
+    unsafe:
+        match read(value):
+            ast.Expr.expr_string_literal as lit:
+                if not lit.is_cstring:
+                    return alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = types.primitive("cstr"), cstring = true))
+            _:
+                pass
+    return lowered
+
+
 ## Multi-string join helpers (mirror c_backend j2, j6).
 function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, is_async: bool) -> ir.Function:
     ctx.locals.clear()
@@ -1395,6 +1488,7 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
     let sig = lookup_fn_sig(ctx, name)
 
     var ir_params = vec.Vec[ir.Param].create()
+    var param_setup = vec.Vec[ir.Stmt].create()
     var pi: ptr_uint = 0
     while pi < params.len:
         var p: ast.Param
@@ -1403,7 +1497,8 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
         let param_ty = resolve_param_type(ctx, sig, pi, p.param_type)
         let c_name = utils.c_local_name(p.name)
         let f_ptr = is_pointer_or_ref_type(param_ty)
-        ir_params.push(ir.Param(name = p.name, linkage_name = c_name, ty = param_ty, pointer = f_ptr))
+        let link_name = array_param_input_name(param_ty, c_name, ref_of(param_setup))
+        ir_params.push(ir.Param(name = p.name, linkage_name = link_name, ty = param_ty, pointer = f_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_name, ty = param_ty, pointer = f_ptr))
         pi += 1
 
@@ -1413,7 +1508,7 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
     ctx.inside_async = is_async
     var saved_fn_ret = ctx.current_fn_return_type
     ctx.current_fn_return_type = ret_ty
-    let body_stmts = lower_function_body(ctx, body)
+    let body_stmts = prepend_param_setup(ref_of(param_setup), lower_function_body(ctx, body))
     ctx.current_fn_return_type = saved_fn_ret
     ctx.inside_async = false
 
@@ -1779,7 +1874,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # is not a trivial literal, hoist it into a temp so running the
                 # defers cannot invalidate it (mirrors Ruby's return-value hoist +
                 # cleanup preamble).
-                let lowered = lower_expr(ctx, value)
+                let lowered = coerce_return_literal_to_cstr(ctx, value, lower_expr(ctx, value))
                 let wrapped = if ctx.inside_async: make_task_literal(lowered) else: lowered
                 if has_pending_defers(ctx) and not cleanup_safe_return_expr(value):
                     let ret_ty = ir_expr_type(wrapped)
@@ -1811,11 +1906,14 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     lower_guard_local(ctx, output, loc.name, loc.else_binding, loc.value, loc.else_body)
                     return
                 # let _ = expr / var _ = expr — evaluate the expression for side
-                # effects only; no local binding is introduced.
+                # effects only; no local binding is introduced.  The lowered
+                # expression must still be emitted as an expression statement so
+                # its side effects (e.g. a method call) actually run.
                 if loc.name == "_":
                     let init_val = loc.value
                     if init_val != null:
-                        lower_expr(ctx, init_val)
+                        let discard_ir = lower_expr(ctx, init_val)
+                        output.push(ir.Stmt.stmt_expression(expression = discard_ir, line = 0, source_path = ""))
                     return
                 let init_val = loc.value
                 if init_val != null:
@@ -2751,6 +2849,18 @@ function struct_field_type_at(ctx: ref[LowerCtx], struct_name: str, index: ptr_u
 ## and pointer types so nested imported generics are also resolved.
 ## Raw type parameters (`T`, `K`, `V`, etc.) inside generic bodies are
 ## replaced with `void` to avoid undeclared C type names.
+## True when a resolved type is a declared opaque type (`opaque X = c"..."`),
+## looked up by its C key in the program-wide opaque set.
+function is_opaque_base(ctx: ref[LowerCtx], t: types.Type) -> bool:
+    match t:
+        types.Type.ty_imported:
+            return ctx.opaque_keys.get(naming.type_c_key(t)) != null
+        types.Type.ty_named:
+            return ctx.opaque_keys.get(naming.type_c_key(t)) != null
+        _:
+            return false
+
+
 function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
     match t:
         types.Type.ty_named as n:
@@ -2844,7 +2954,16 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
                 return resolved
             return types.Type.ty_generic(name = g.name, args = args.as_span())
         types.Type.ty_nullable as nl:
-            return types.Type.ty_nullable(base = types.alloc_type(qualify_type(ctx, unsafe: read(nl.base))))
+            let qbase = qualify_type(ctx, unsafe: read(nl.base))
+            # An opaque type is an incomplete C type used only through pointers,
+            # so `Opaque?` is a nullable C pointer.  Wrap the base in `ptr[...]`
+            # so it flows through the existing pointer-nullable machinery
+            # (rendered as `<backing>*`) instead of an invalid value-optional
+            # struct over an incomplete type.
+            if is_opaque_base(ctx, qbase):
+                let ptr_base = types.Type.ty_generic(name = "ptr", args = sp_type(qbase))
+                return types.Type.ty_nullable(base = types.alloc_type(ptr_base))
+            return types.Type.ty_nullable(base = types.alloc_type(qbase))
         types.Type.ty_function as fnt:
             if fnt.is_proc:
                 let proc_name = proc_type_name_from_signature(t)
@@ -3199,6 +3318,16 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
                 var alias_target = ctx.analysis.type_alias_types.get(name)
                 if alias_target != null:
                     resolved = unsafe: read(alias_target)
+                    # A `type Gen = proc(...) -> T` alias resolves to its closure
+                    # struct (`mt_proc_...`), not a bare function pointer, so it
+                    # matches direct `proc(...)` syntax when used as an array
+                    # element, field, or parameter.
+                    match resolved:
+                        types.Type.ty_function as fnt:
+                            if fnt.is_proc:
+                                resolved = proc_ensure_struct_decl(ctx, proc_type_name_from_signature(resolved), resolved)
+                        _:
+                            pass
                 else:
                     resolved = types.Type.ty_imported(module_name = ctx.module_name, name = name, args = span[types.Type]())
             else:
@@ -3242,11 +3371,12 @@ function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.T
     # str_buffer[N]: ensure the struct type exists and return the resolved type.
     if name == "str_buffer" and t.arguments.len == 1:
         var sb_args = vec.Vec[types.Type].create()
-        # The capacity N is an integer type argument: resolve it as a
-        # `ty_literal_int` (like `array[T, N]`) so str_buffer method lowering can
-        # recover the capacity.  A plain `resolve_type_ref` would not yield a
-        # literal-int form, leaving the capacity as 0 and aborting at runtime.
-        sb_args.push(types.literal_int(resolve_array_length(unsafe: t.arguments.data + 0)))
+        # The capacity N is an integer type argument: resolve it (like
+        # `array[T, N]`) so it folds a literal, a generic type parameter bound by
+        # the current specialization (`str_buffer[N]` with `N = 16`), or a
+        # module-level constant to a `ty_literal_int`.  A plain
+        # `resolve_array_length` would leave a substituted `N` as 0.
+        sb_args.push(resolve_array_length_type(ctx, unsafe: t.arguments.data + 0))
         let sb_ty = types.Type.ty_generic(name = "str_buffer", args = sb_args.as_span())
         ensure_str_buffer_struct(ctx, sb_ty)
         return sb_ty
@@ -3301,8 +3431,10 @@ function resolve_array_length(tp: ptr[ast.TypeRef]) -> long:
 ## Resolve an array-length type argument to a `ty_literal_int`.  A numeric
 ## literal (`4`) parses directly.  A named length parameter (`N` in
 ## `array[T, N]`) resolves through `ctx.type_substitution` when the enclosing
-## generic is being specialized (`N -> ty_literal_int(4)`); otherwise it is left
-## as a `ty_named` so a later `substitute_type_params` can fill it in.
+## generic is being specialized (`N -> ty_literal_int(4)`); a module-level
+## integer constant (`array[T, ENV_ITEM_COUNT]`) folds through
+## `ctx.analysis.const_values`; otherwise it is left as a `ty_named` so a later
+## `substitute_type_params` can fill it in.
 function resolve_array_length_type(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Type:
     let t = unsafe: read(tp)
     if t.name.parts.len == 1:
@@ -3313,6 +3445,10 @@ function resolve_array_length_type(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> 
         let concrete_ptr = ctx.type_substitution.get(text)
         if concrete_ptr != null:
             return unsafe: read(concrete_ptr)
+        # A module-level integer constant used as a length: fold to its value.
+        let const_ptr = ctx.analysis.const_values.get(text)
+        if const_ptr != null:
+            return types.literal_int(const_eval_int(unsafe: read(const_ptr)))
         return types.Type.ty_named(module_name = "", name = text)
     return types.literal_int(resolve_array_length(tp))
 
@@ -5755,7 +5891,7 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                 if id.name == "array" and type_args.len == 2:
                     var array_args = vec.Vec[types.Type].create()
                     array_args.push(resolve_type_ref(ctx, read(type_args.data + 0).value))
-                    array_args.push(types.literal_int(resolve_array_length(read(type_args.data + 1).value)))
+                    array_args.push(resolve_array_length_type(ctx, read(type_args.data + 1).value))
                     let array_ty = types.Type.ty_generic(name = "array", args = array_args.as_span())
                     var elements = vec.Vec[ir.Expr].create()
                     var ai: ptr_uint = 0
@@ -9514,7 +9650,10 @@ function coerce_fn_arg_to_proc(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], 
 ## literal); str-variable projection (runtime str->cstr) and in/out/inout/
 ## consuming modes arrive later.
 function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    if not info.simple:
+        return lower_inline_foreign_mapping(ctx, info, args, call_ep)
     var ir_args = vec.Vec[ir.Expr].create()
+    var setup = vec.Vec[ir.Stmt].create()
     var i: ptr_uint = 0
     while i < args.len:
         var arg: ast.Argument
@@ -9525,13 +9664,352 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
             var param: ast.ForeignParam
             unsafe:
                 param = read(info.params.data + i)
-            lowered = lower_foreign_arg(ctx, param, arg.arg_value)
+            lowered = materialize_foreign_address_arg(ctx, lower_foreign_arg(ctx, param, arg.arg_value), ref_of(setup))
         else:
             lowered = lower_expr(ctx, arg.arg_value)
         unsafe:
             ir_args.push(read(lowered))
         i += 1
-    return alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
+    let call = alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
+    if setup.len() == 0:
+        return call
+    return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = call, ty = expr_type(ctx, call_ep)))
+
+
+## When a foreign `in`/`out`/`inout` argument lowered to `&<non-lvalue>` (e.g.
+## `set_shader_value(..., 0, ...)` producing `&(0)`), C rejects the address of a
+## non-lvalue.  Materialize the operand into a temporary local and take that
+## temp's address instead, appending the temp declaration to `setup` (the call
+## is then wrapped in a statement-expression).  Mirrors Ruby's
+## prepare_foreign_in_argument temp binding.
+function materialize_foreign_address_arg(ctx: ref[LowerCtx], lowered: ptr[ir.Expr], setup: ref[vec.Vec[ir.Stmt]]) -> ptr[ir.Expr]:
+    unsafe:
+        match read(lowered):
+            ir.Expr.expr_address_of as addr:
+                if ir_is_addressable(addr.expression):
+                    return lowered
+                let op_ty = ir_expr_type(addr.expression)
+                let tc = fresh_c_temp_name(ctx, "foreign_in")
+                setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = op_ty, value = addr.expression, line = 0, source_path = ""))
+                let name_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = op_ty, pointer = false))
+                return alloc_expr(ir.Expr.expr_address_of(expression = name_ref, ty = addr.ty))
+            _:
+                return lowered
+
+
+## True when an IR expression denotes a C lvalue whose address can be taken
+## directly (a name, field/element access, or pointer dereference).  Literals,
+## casts, calls, and arithmetic are not addressable and must be materialized
+## into a temporary first.
+function ir_is_addressable(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name:
+                return true
+            ir.Expr.expr_member as m:
+                return ir_is_addressable(m.receiver)
+            ir.Expr.expr_index:
+                return true
+            ir.Expr.expr_checked_index:
+                return true
+            ir.Expr.expr_checked_span_index:
+                return true
+            ir.Expr.expr_nullable_index:
+                return true
+            ir.Expr.expr_nullable_span_index:
+                return true
+            ir.Expr.expr_unary as u:
+                if u.operator == "*":
+                    return true
+                return false
+            _:
+                return false
+
+
+## True when a foreign parameter is a `str_buffer[N] as ptr[char]` boundary,
+## the shape raygui text widgets use for a writable char buffer.
+function is_str_buffer_char_ptr_boundary(param: ast.ForeignParam) -> bool:
+    if param.boundary_type.is_none():
+        return false
+    if param.param_type.name.parts.len != 1:
+        return false
+    return unsafe: read(param.param_type.name.parts.data + 0) == "str_buffer"
+
+
+## The capacity N of a concrete `str_buffer[N]` type (the `ty_literal_int` type
+## argument), or 0 when it cannot be recovered.
+function str_buffer_capacity_of(ty: types.Type) -> long:
+    match ty:
+        types.Type.ty_generic as g:
+            if g.name == "str_buffer" and g.args.len >= 1:
+                match unsafe: read(g.args.data + 0):
+                    types.Type.ty_literal_int as lit:
+                        return lit.value
+                    _:
+                        return 0
+        _:
+            pass
+    return 0
+
+
+## Lower a foreign call whose `= target` mapping is an inline expression such as
+## `c.GuiSetStyle(int<-control, property, value)` or
+## `c.SaveFileData(file_name, data.data, int<-data.len)`.  Each referenced
+## parameter is projected once into a temporary local (so a parameter used more
+## than once in the mapping is evaluated only once) and the mapping expression
+## is then re-lowered with those temporaries in scope, mirroring Ruby's
+## lower_inline_foreign_mapping_expression.  The whole thing renders as a
+## GCC/Clang statement-expression `({ tmp = ...; MappedCall(...); })`.
+function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let mapping = info.mapping else:
+        fatal(c"lowering: inline foreign mapping missing expression")
+
+    var setup = vec.Vec[ir.Stmt].create()
+    let saved_locals_len = ctx.locals.len()
+
+    var i: ptr_uint = 0
+    while i < info.params.len and i < args.len:
+        var param: ast.ForeignParam
+        unsafe:
+            param = read(info.params.data + i)
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+
+        # `text: str_buffer[N] as ptr[char]` (raygui text widgets): the C side
+        # writes into the buffer through a `char*`.  Materialize the buffer into
+        # one public temp, bind `<name>_public` to it (for `.capacity()` etc.),
+        # and bind `<name>` to `mt_str_buffer_prepare_write(&pub.data[0], N,
+        # &pub.dirty)`, which NUL-terminates and returns the writable pointer.
+        if is_str_buffer_char_ptr_boundary(param):
+            let pub_ir = lower_expr(ctx, arg.arg_value)
+            let sb_ty = ir_expr_type(pub_ir)
+            let n_val = str_buffer_capacity_of(sb_ty)
+            let pub_tc = fresh_c_temp_name(ctx, "foreign_arg_public")
+            setup.push(ir.Stmt.stmt_local(name = pub_tc, linkage_name = pub_tc, ty = sb_ty, value = pub_ir, line = 0, source_path = ""))
+            ctx.locals.push(LocalBinding(name = j2(param.name, "_public"), c_name = pub_tc, ty = sb_ty, pointer = false))
+
+            let char_ty = types.primitive("char")
+            let char_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(char_ty))
+            let bool_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.bool_ty))
+            let pub_ref = alloc_expr(ir.Expr.expr_name(name = pub_tc, ty = sb_ty, pointer = false))
+            let data_member = alloc_expr(ir.Expr.expr_member(receiver = pub_ref, member = "data", ty = types.Type.ty_generic(name = "array", args = sp_type2(char_ty, types.literal_int(n_val + 1)))))
+            let data0 = alloc_expr(ir.Expr.expr_index(receiver = data_member, index = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("ptr_uint"))), ty = char_ty))
+            let data_ptr = alloc_expr(ir.Expr.expr_address_of(expression = data0, ty = char_ptr_ty))
+            let dirty_member = alloc_expr(ir.Expr.expr_member(receiver = pub_ref, member = "dirty", ty = ctx.bool_ty))
+            let dirty_ptr = alloc_expr(ir.Expr.expr_address_of(expression = dirty_member, ty = bool_ptr_ty))
+            var pw_args = vec.Vec[ir.Expr].create()
+            unsafe:
+                pw_args.push(read(data_ptr))
+                pw_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = n_val, ty = types.primitive("ptr_uint")))))
+                pw_args.push(read(dirty_ptr))
+            let pw_call = alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_prepare_write", arguments = pw_args.as_span(), ty = char_ptr_ty))
+            let proj_tc = fresh_c_temp_name(ctx, "foreign_arg")
+            setup.push(ir.Stmt.stmt_local(name = proj_tc, linkage_name = proj_tc, ty = char_ptr_ty, value = pw_call, line = 0, source_path = ""))
+            ctx.locals.push(LocalBinding(name = param.name, c_name = proj_tc, ty = char_ptr_ty, pointer = false))
+            i += 1
+            continue
+
+        if mapping_references_name(mapping, param.name):
+            var projected: ptr[ir.Expr]
+            var temp_ty: types.Type
+            if param.param_mode == ast.ForeignParamMode.fmode_out or param.param_mode == ast.ForeignParamMode.fmode_inout:
+                # out/inout: pass the address, typed as ptr[param type] (not the
+                # generic void* that lower_foreign_arg would produce) so the C
+                # call receives a correctly-typed pointer.
+                let operand = lower_expr(ctx, arg.arg_value)
+                var pt_copy = param.param_type
+                let pty = qualify_type(ctx, resolve_type_ref(ctx, ptr_of(pt_copy)))
+                let ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(pty))
+                projected = alloc_expr(ir.Expr.expr_address_of(expression = operand, ty = ptr_ty))
+                temp_ty = ptr_ty
+            else:
+                projected = lower_foreign_arg(ctx, param, arg.arg_value)
+                temp_ty = ir_expr_type(projected)
+            let tc = fresh_c_temp_name(ctx, "foreign_arg")
+            setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = temp_ty, value = projected, line = 0, source_path = ""))
+            ctx.locals.push(LocalBinding(name = param.name, c_name = tc, ty = temp_ty, pointer = false))
+
+        if param.boundary_type.is_some():
+            let pub_name = j2(param.name, "_public")
+            if mapping_references_name(mapping, pub_name):
+                let public_ir = lower_expr(ctx, arg.arg_value)
+                let uty = ir_expr_type(public_ir)
+                let tcp = fresh_c_temp_name(ctx, "foreign_arg_public")
+                setup.push(ir.Stmt.stmt_local(name = tcp, linkage_name = tcp, ty = uty, value = public_ir, line = 0, source_path = ""))
+                ctx.locals.push(LocalBinding(name = pub_name, c_name = tcp, ty = uty, pointer = false))
+
+        i += 1
+
+    let result = walk_mapping_expr(ctx, mapping, info.return_ty)
+
+    while ctx.locals.len() > saved_locals_len:
+        if ctx.locals.pop().is_none():
+            break
+
+    if setup.len() == 0:
+        return result
+    return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = result, ty = info.return_ty))
+
+
+## Re-lower a foreign mapping expression with the call's projected parameter
+## temporaries in scope.  Any subtree that does not itself contain an external
+## `c.CFunc(...)` call is lowered directly via lower_expr (which resolves the
+## parameter temporaries as ordinary locals, along with casts, member access,
+## and method calls such as `text_public.capacity()`).  Only the external call,
+## cast, binary, and span/aggregate-construction nodes that wrap such a call are
+## rebuilt here, because `c` (the external module alias) is not in scope in the
+## caller and its members map 1:1 to their C function names.
+function walk_mapping_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr], top_ret_ty: types.Type) -> ptr[ir.Expr]:
+    if not mapping_contains_external_call(ctx, ep):
+        return lower_expr(ctx, ep)
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_member_access as ma:
+                        if not member_receiver_is_local(ctx, ma.receiver):
+                            var cargs = vec.Vec[ir.Expr].create()
+                            var k: ptr_uint = 0
+                            while k < call.args.len:
+                                var a: ast.Argument
+                                a = read(call.args.data + k)
+                                cargs.push(read(walk_mapping_expr(ctx, a.arg_value, top_ret_ty)))
+                                k += 1
+                            return alloc_expr(ir.Expr.expr_call(callee = ma.member_name, arguments = cargs.as_span(), ty = top_ret_ty))
+                        return lower_expr(ctx, ep)
+                    ast.Expr.expr_specialization:
+                        return walk_mapping_construction(ctx, call.args, top_ret_ty)
+                    _:
+                        return lower_expr(ctx, ep)
+            ast.Expr.expr_prefix_cast as pc:
+                let target = qualify_type(ctx, resolve_type_ref(ctx, pc.target_type))
+                let inner = walk_mapping_expr(ctx, pc.expression, top_ret_ty)
+                return alloc_expr(ir.Expr.expr_cast(target_type = target, expression = inner, ty = target))
+            ast.Expr.expr_member_access as ma:
+                # Field access on an external call result (`c.MatrixToFloatV(mat).v`):
+                # walk the receiver so the external call is rebuilt, then take the
+                # member.  The member's type is the mapping's own return type here
+                # (the field IS the projected result).
+                let recv = walk_mapping_expr(ctx, ma.receiver, top_ret_ty)
+                return alloc_expr(ir.Expr.expr_member(receiver = recv, member = ma.member_name, ty = top_ret_ty))
+            ast.Expr.expr_binary_op as bin:
+                let l = walk_mapping_expr(ctx, bin.left, top_ret_ty)
+                let r = walk_mapping_expr(ctx, bin.right, top_ret_ty)
+                return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = l, right = r, ty = ir_expr_type(l)))
+            ast.Expr.expr_unary_op as un:
+                let operand = walk_mapping_expr(ctx, un.operand, top_ret_ty)
+                return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = ir_expr_type(operand)))
+            _:
+                return lower_expr(ctx, ep)
+
+
+## Build the aggregate literal for a type-constructor mapping such as
+## `span[uint](data = c.GuiGetIcons(), len = 2048)`, walking each named field
+## value so any embedded external call is expanded.  The aggregate type is the
+## foreign function's declared return type.
+function walk_mapping_construction(ctx: ref[LowerCtx], args: span[ast.Argument], result_ty: types.Type) -> ptr[ir.Expr]:
+    var fields = vec.Vec[ir.AggregateField].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        var a: ast.Argument
+        unsafe:
+            a = read(args.data + i)
+        let fname = a.arg_name else:
+            fatal(c"lowering: inline foreign construction requires named fields")
+        fields.push(ir.AggregateField(name = fname, value = walk_mapping_expr(ctx, a.arg_value, result_ty)))
+        i += 1
+    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = result_ty, fields = fields.as_span()))
+
+
+## True when `ep` (or a subexpression) is a call through an external-module
+## alias, i.e. `alias.CFunc(...)` where `alias` is not a bound local — the shape
+## a foreign mapping uses to name its underlying C function.  Method calls on a
+## bound parameter temporary (`text_public.capacity()`) do not count.
+function mapping_contains_external_call(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_member_access as ma:
+                        if not member_receiver_is_local(ctx, ma.receiver):
+                            return true
+                    _:
+                        pass
+                if mapping_contains_external_call(ctx, call.callee):
+                    return true
+                var k: ptr_uint = 0
+                while k < call.args.len:
+                    var a: ast.Argument
+                    a = read(call.args.data + k)
+                    if mapping_contains_external_call(ctx, a.arg_value):
+                        return true
+                    k += 1
+                return false
+            ast.Expr.expr_member_access as ma:
+                return mapping_contains_external_call(ctx, ma.receiver)
+            ast.Expr.expr_prefix_cast as pc:
+                return mapping_contains_external_call(ctx, pc.expression)
+            ast.Expr.expr_binary_op as bin:
+                return mapping_contains_external_call(ctx, bin.left) or mapping_contains_external_call(ctx, bin.right)
+            ast.Expr.expr_unary_op as un:
+                return mapping_contains_external_call(ctx, un.operand)
+            ast.Expr.expr_index_access as ix:
+                return mapping_contains_external_call(ctx, ix.receiver) or mapping_contains_external_call(ctx, ix.index)
+            ast.Expr.expr_named as nm:
+                return mapping_contains_external_call(ctx, nm.value)
+            ast.Expr.expr_specialization as spec:
+                return mapping_contains_external_call(ctx, spec.callee)
+            _:
+                return false
+
+
+## True when `ep` is an identifier bound as a local (a projected parameter
+## temporary during inline foreign mapping lowering).
+function member_receiver_is_local(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier as id:
+                return lookup_local(ctx, id.name).is_some()
+            _:
+                return false
+
+
+## True when the mapping expression references an identifier named `name`
+## (a parameter or its `_public` alias).
+function mapping_references_name(ep: ptr[ast.Expr], name: str) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier as id:
+                return id.name == name
+            ast.Expr.expr_member_access as ma:
+                return mapping_references_name(ma.receiver, name)
+            ast.Expr.expr_call as call:
+                if mapping_references_name(call.callee, name):
+                    return true
+                var k: ptr_uint = 0
+                while k < call.args.len:
+                    var a: ast.Argument
+                    a = read(call.args.data + k)
+                    if mapping_references_name(a.arg_value, name):
+                        return true
+                    k += 1
+                return false
+            ast.Expr.expr_prefix_cast as pc:
+                return mapping_references_name(pc.expression, name)
+            ast.Expr.expr_binary_op as bin:
+                return mapping_references_name(bin.left, name) or mapping_references_name(bin.right, name)
+            ast.Expr.expr_unary_op as un:
+                return mapping_references_name(un.operand, name)
+            ast.Expr.expr_index_access as ix:
+                return mapping_references_name(ix.receiver, name) or mapping_references_name(ix.index, name)
+            ast.Expr.expr_named as nm:
+                return mapping_references_name(nm.value, name)
+            ast.Expr.expr_specialization as spec:
+                return mapping_references_name(spec.callee, name)
+            _:
+                return false
+
 
 
 function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr[ast.Expr]) -> ptr[ir.Expr]:
@@ -9577,20 +10055,31 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
             return lower_expr(ctx, arg)
         Option.none:
             let lowered = lower_expr(ctx, arg)
-            var needs_address = param.param_mode == ast.ForeignParamMode.fmode_out or param.param_mode == ast.ForeignParamMode.fmode_inout
-            if not needs_address:
-                var pt_copy = param.param_type
-                let param_ty = resolve_type_ref(ctx, ptr_of(pt_copy))
-                if types.is_raw_pointer(param_ty) or types.is_ref_type(param_ty):
-                    if not is_null_ir_expr(lowered):
-                        let arg_ty = ir_expr_type(lowered)
-                        if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
-                            needs_address = true
-            if needs_address:
+            # `out`/`inout` pass the address of the argument's storage slot.  The
+            # exception is when the slot's declared type is a value type but the
+            # lowered argument is already a pointer to it (an editable method's
+            # `this` receiver, `Image*`) — then it is passed through unchanged.
+            # A pointer-typed slot (`out glyph_recs: ptr[Rectangle]`) still takes
+            # its address, so the C function receives `Rectangle**`.
+            let mode_needs_address = param.param_mode == ast.ForeignParamMode.fmode_out or param.param_mode == ast.ForeignParamMode.fmode_inout
+            if mode_needs_address:
+                if is_null_ir_expr(lowered):
+                    return lowered
                 let arg_ty = ir_expr_type(lowered)
-                if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty) and not types.is_ref_type(arg_ty):
-                    return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
-                return lowered
+                var pt_copy0 = param.param_type
+                let slot_ty = resolve_type_ref(ctx, ptr_of(pt_copy0))
+                let slot_is_pointer = types.is_raw_pointer(slot_ty) or types.is_ref_type(slot_ty) or types.is_own_type(slot_ty)
+                if types.is_raw_pointer(arg_ty) and not slot_is_pointer:
+                    return lowered
+                return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
+            # A plain pointer/ref param passed a non-pointer value borrows it.
+            var pt_copy = param.param_type
+            let param_ty = resolve_type_ref(ctx, ptr_of(pt_copy))
+            if types.is_raw_pointer(param_ty) or types.is_ref_type(param_ty):
+                if not is_null_ir_expr(lowered):
+                    let arg_ty = ir_expr_type(lowered)
+                    if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
+                        return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
             return lowered
 
 
@@ -9628,10 +10117,16 @@ function collect_foreign_functions(ctx: ref[LowerCtx], decls: span[ast.Decl]) ->
             d = read(decls.data + i)
         match d:
             ast.Decl.decl_foreign_function as ff:
+                let ff_simple = foreign_mapping_is_simple(ff.mapping)
+                var ff_c_name = ""
+                if ff_simple:
+                    ff_c_name = resolve_foreign_c_name(ctx, ff.mapping)
                 ctx.foreign_map.set(ff.name, ForeignInfo(
-                    c_name = resolve_foreign_c_name(ctx, ff.mapping),
+                    c_name = ff_c_name,
                     return_ty = qualify_type(ctx, resolve_scalar_type_ref(ff.return_type)),
                     params = ff.foreign_params,
+                    mapping = ff.mapping,
+                    simple = ff_simple,
                 ))
             _:
                 pass
@@ -9658,10 +10153,16 @@ function imported_foreign_call(ctx: ref[LowerCtx], target_module: str, name: str
         match d:
             ast.Decl.decl_foreign_function as ff:
                 if ff.name == name:
+                    let ff_simple = foreign_mapping_is_simple(ff.mapping)
+                    var ff_c_name = ""
+                    if ff_simple:
+                        ff_c_name = resolve_foreign_c_name(ctx, ff.mapping)
                     result = Option[ForeignInfo].some(value = ForeignInfo(
-                        c_name = resolve_foreign_c_name(ctx, ff.mapping),
+                        c_name = ff_c_name,
                         return_ty = qualify_type(ctx, resolve_type_ref(ctx, ff.return_type)),
                         params = ff.foreign_params,
+                        mapping = ff.mapping,
+                        simple = ff_simple,
                     ))
             _:
                 pass
@@ -9699,6 +10200,8 @@ function imported_extern_call(ctx: ref[LowerCtx], target_module: str, name: str)
                         c_name = extern_c_name(ef.name, ef.mapping),
                         return_ty = ret,
                         params = ef.extern_params,
+                        mapping = null,
+                        simple = true,
                     ))
             _:
                 pass
@@ -9977,7 +10480,9 @@ function extern_c_name(name: str, mapping: ptr[ast.Expr]?) -> str:
 
 ## The C name a foreign function maps to: resolve its `= target` identifier
 ## through the external registry (so `= atoi` yields the external's C name),
-## falling back to the target name.
+## falling back to the target name.  Complex inline mapping expressions are
+## handled by lower_inline_foreign_mapping instead; this resolver only needs
+## the bare-name forms and returns "" for anything else.
 function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> str:
     unsafe:
         match read(mapping):
@@ -9993,7 +10498,29 @@ function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> s
             ast.Expr.expr_call as call:
                 return resolve_foreign_c_name(ctx, call.callee)
             _:
-                fatal(c"lowering: unsupported foreign function mapping")
+                return ""
+
+
+## True when a foreign `= target` mapping is a bare name (`= atoi`,
+## `= c.InitWindow`): the call then lowers 1:1 through the mapped C function.
+## Call, cast, and construction mappings are inline expressions that must be
+## expanded with argument substitution instead.
+function foreign_mapping_is_simple(mapping: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(mapping):
+            ast.Expr.expr_identifier:
+                return true
+            ast.Expr.expr_member_access as ma:
+                # `c.Name` is a simple 1:1 mapping; `c.Call(...).field` is an
+                # inline mapping (field access on a call result), so it is simple
+                # only when its receiver is a bare module-alias identifier.
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier:
+                        return true
+                    _:
+                        return false
+            _:
+                return false
 
 
 ## The resolved type of `member` on a receiver that is an instance of a struct
@@ -10469,6 +10996,14 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str) -> Option[ir.StructDec
                 if ctx.analysis.events.contains(nt.name):
                     var info = ensure_event_runtime(ctx, nt.name)
                     fty = types.Type.ty_named(module_name = "", name = info.event_c_name)
+            _:
+                pass
+        # A `str_buffer[N]` used only as a struct field still needs its backing
+        # struct emitted, otherwise the field has an incomplete type in C.
+        match fty:
+            types.Type.ty_generic as g:
+                if g.name == "str_buffer":
+                    ensure_str_buffer_struct(ctx, fty)
             _:
                 pass
         ir_fields.push(ir.Field(name = entry.name, ty = qualify_type(ctx, fty)))
@@ -12421,6 +12956,10 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
         match read(ep):
             ast.Expr.expr_integer_literal:
                 return types.primitive("int")
+            ast.Expr.expr_float_literal:
+                return types.primitive("float")
+            ast.Expr.expr_char_literal:
+                return types.primitive("ubyte")
             ast.Expr.expr_bool_literal:
                 return ctx.bool_ty
             ast.Expr.expr_identifier as id:
@@ -12486,7 +13025,22 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                         return ty.value
                     Option.none:
                         pass
-                return fallback_type(ctx, ma.receiver)
+                # A field access on a struct value (`rect.height`) resolves to
+                # the field's type, not the receiver's type.  Recover the
+                # receiver's type and look the field up; fall back to the
+                # receiver type only when the field cannot be resolved.
+                let recv_fallback = fallback_type(ctx, ma.receiver)
+                match concrete_field_type(ctx, recv_fallback, ma.member_name):
+                    Option.some as ft:
+                        return ft.value
+                    Option.none:
+                        pass
+                match imported_field_type(ctx, recv_fallback, ma.member_name):
+                    Option.some as ft:
+                        return ft.value
+                    Option.none:
+                        pass
+                return recv_fallback
             ast.Expr.expr_specialization as spec:
                 match try_spec_type_name(ep):
                     Option.some as tn:
