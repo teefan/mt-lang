@@ -3305,7 +3305,13 @@ function checked_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], 
 
 
 function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -> void:
-    let elem_c = c_type(array_element_type(receiver_type))
+    let elem_type = array_element_type(receiver_type)
+    # When the element is itself an array (e.g. array[array[float,512],N]),
+    # the C function signature would be malformed.  Skip the helper — the
+    # outer array indexing doesn't need a bounds-check wrapper.
+    if array_length(elem_type) > 0:
+        return
+    let elem_c = c_type(elem_type)
     let n = long_to_str(array_length(receiver_type))
     let name = checked_array_index_helper_name(receiver_type)
     var sig = string.String.create()

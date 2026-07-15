@@ -5094,6 +5094,18 @@ function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
                 return types.Type.ty_error
 
 
+## True when the IR expression is a null literal (ALL lowercase `NULL` or
+## `null` in the source).  Address-of on a null literal produces `&(NULL)`
+## which is not valid C — skip address-of for these expressions.
+function is_null_ir_expr(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_null_literal:
+                return true
+            _:
+                return false
+
+
 function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(callee):
@@ -9552,6 +9564,8 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
             # Take the address so we pass a pointer, not the value itself.
             if param.param_mode == ast.ForeignParamMode.fmode_in:
                 let lowered_val = lower_expr(ctx, arg)
+                if is_null_ir_expr(lowered_val):
+                    return lowered_val
                 let arg_ty = ir_expr_type(lowered_val)
                 if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
                     return alloc_expr(ir.Expr.expr_address_of(expression = lowered_val, ty = types.primitive("ptr[void]")))
@@ -9564,12 +9578,10 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                 var pt_copy = param.param_type
                 let param_ty = resolve_type_ref(ctx, ptr_of(pt_copy))
                 if types.is_raw_pointer(param_ty) or types.is_ref_type(param_ty):
-                    let arg_ty = ir_expr_type(lowered)
-                    # An `own[T]` is already a pointer to `T`, so passing it to a
-                    # `ptr[T]`/`const_ptr[T]` foreign param must NOT take its
-                    # address (that would pass `own[T]*` — a double pointer).
-                    if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
-                        needs_address = true
+                    if not is_null_ir_expr(lowered):
+                        let arg_ty = ir_expr_type(lowered)
+                        if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
+                            needs_address = true
             if needs_address:
                 return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
             return lowered
