@@ -4925,7 +4925,11 @@ function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
             elem_ty = qualify_type(ctx, generic_first_arg(recv_ty))
         if types.is_error(elem_ty):
             elem_ty = qualify_type(ctx, generic_first_arg(receiver_type))
+    # element types produce malformed C syntax (checked-index array-of-arrays).
     if is_array_type(receiver_type):
+        let elem_t = generic_first_arg(receiver_type)
+        if is_array_type(elem_t):
+            return alloc_expr(ir.Expr.expr_index(receiver = recv, index = index_expr, ty = elem_ty))
         return alloc_expr(ir.Expr.expr_checked_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))
     if is_span_type(receiver_type):
         return alloc_expr(ir.Expr.expr_checked_span_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))

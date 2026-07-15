@@ -3309,7 +3309,7 @@ function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -
     # When the element is itself an array (e.g. array[array[float,512],N]),
     # the C function signature would be malformed.  Skip the helper — the
     # outer array indexing doesn't need a bounds-check wrapper.
-    if array_length(elem_type) > 0:
+    if is_array_type(elem_type):
         return
     let elem_c = c_type(elem_type)
     let n = long_to_str(array_length(receiver_type))
