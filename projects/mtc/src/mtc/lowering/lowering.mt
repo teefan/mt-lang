@@ -9571,7 +9571,7 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                 if is_null_ir_expr(lowered_val):
                     return lowered_val
                 let arg_ty = ir_expr_type(lowered_val)
-                if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
+                if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty) and not types.is_ref_type(arg_ty):
                     return alloc_expr(ir.Expr.expr_address_of(expression = lowered_val, ty = types.primitive("ptr[void]")))
                 return lowered_val
             return lower_expr(ctx, arg)
@@ -9587,7 +9587,10 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                         if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
                             needs_address = true
             if needs_address:
-                return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
+                let arg_ty = ir_expr_type(lowered)
+                if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty) and not types.is_ref_type(arg_ty):
+                    return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
+                return lowered
             return lowered
 
 
