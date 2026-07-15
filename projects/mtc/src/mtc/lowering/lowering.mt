@@ -5315,6 +5315,22 @@ function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
                 return x.ty
             ir.Expr.expr_integer_literal as x:
                 return x.ty
+            ir.Expr.expr_float_literal as x:
+                return x.ty
+            ir.Expr.expr_null_literal as x:
+                return x.ty
+            ir.Expr.expr_sizeof as x:
+                return x.ty
+            ir.Expr.expr_alignof as x:
+                return x.ty
+            ir.Expr.expr_offsetof as x:
+                return x.ty
+            ir.Expr.expr_reinterpret as x:
+                return x.ty
+            ir.Expr.expr_nullable_index as x:
+                return x.ty
+            ir.Expr.expr_nullable_span_index as x:
+                return x.ty
             ir.Expr.expr_boolean_literal as x:
                 return x.ty
             ir.Expr.expr_string_literal as x:

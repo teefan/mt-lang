@@ -171,7 +171,11 @@ public function generate_c(program: ir.Program) -> string.String:
     if use_string_view:
         emit_string_type(ref_of(e))
         emit_line(ref_of(e), "")
-        emit_builtin_type_defs(ref_of(e), program)
+
+    # Native vector/matrix/quaternion typedefs are needed whenever those types
+    # are used, independently of the string view — emit only what the program
+    # references (the function is a no-op when none are used).
+    emit_builtin_type_defs(ref_of(e), program)
 
     if use_fatal:
         emit_fatal_helper(ref_of(e))
@@ -5215,6 +5219,102 @@ function is_void_type(t: types.Type) -> bool:
 
 
 
+## Walk statements/expressions collecting native builtin (vec/mat/quat) types
+## used only inside a function body (local declarations, expression results), so
+## their typedefs are emitted.
+function builtin_from_stmts(body: span[ir.Stmt], needed: ref[map_mod.Map[str, bool]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            builtin_from_stmt(body.data + i, needed)
+        i += 1
+
+
+function builtin_from_stmt(sp: ptr[ir.Stmt], needed: ref[map_mod.Map[str, bool]]) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_local as loc:
+                collect_builtin_types(needed, loc.ty)
+                builtin_from_expr(loc.value, needed)
+            ir.Stmt.stmt_assignment as asg:
+                builtin_from_expr(asg.target, needed)
+                builtin_from_expr(asg.value, needed)
+            ir.Stmt.stmt_expression as ex:
+                builtin_from_expr(ex.expression, needed)
+            ir.Stmt.stmt_return as r:
+                let rv = r.value else:
+                    return
+                builtin_from_expr(rv, needed)
+            ir.Stmt.stmt_block as blk:
+                builtin_from_stmts(blk.body, needed)
+            ir.Stmt.stmt_if as iff:
+                builtin_from_expr(iff.condition, needed)
+                builtin_from_stmts(iff.then_body, needed)
+                builtin_from_stmts(iff.else_body, needed)
+            ir.Stmt.stmt_while as w:
+                builtin_from_expr(w.condition, needed)
+                builtin_from_stmts(w.body, needed)
+            ir.Stmt.stmt_for as f:
+                builtin_from_stmt(f.init, needed)
+                builtin_from_expr(f.condition, needed)
+                builtin_from_stmts(f.body, needed)
+            ir.Stmt.stmt_switch as sw:
+                builtin_from_expr(sw.expression, needed)
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    builtin_from_stmts(read(sw.cases.data + ci).body, needed)
+                    ci += 1
+            _:
+                pass
+
+
+function builtin_from_expr(ep: ptr[ir.Expr], needed: ref[map_mod.Map[str, bool]]) -> void:
+    collect_builtin_types(needed, expr_result_type(ep))
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_stmt_expr as se:
+                builtin_from_stmts(se.setup, needed)
+                builtin_from_expr(se.result, needed)
+            ir.Expr.expr_call as c:
+                var i: ptr_uint = 0
+                while i < c.arguments.len:
+                    builtin_from_expr(c.arguments.data + i, needed)
+                    i += 1
+            ir.Expr.expr_call_indirect as c:
+                builtin_from_expr(c.callee, needed)
+                var i: ptr_uint = 0
+                while i < c.arguments.len:
+                    builtin_from_expr(c.arguments.data + i, needed)
+                    i += 1
+            ir.Expr.expr_binary as b:
+                builtin_from_expr(b.left, needed)
+                builtin_from_expr(b.right, needed)
+            ir.Expr.expr_unary as u:
+                builtin_from_expr(u.operand, needed)
+            ir.Expr.expr_conditional as cd:
+                builtin_from_expr(cd.condition, needed)
+                builtin_from_expr(cd.then_expression, needed)
+                builtin_from_expr(cd.else_expression, needed)
+            ir.Expr.expr_member as m:
+                builtin_from_expr(m.receiver, needed)
+            ir.Expr.expr_cast as cx:
+                builtin_from_expr(cx.expression, needed)
+            ir.Expr.expr_address_of as ad:
+                builtin_from_expr(ad.expression, needed)
+            ir.Expr.expr_aggregate_literal as agg:
+                var i: ptr_uint = 0
+                while i < agg.fields.len:
+                    builtin_from_expr(read(agg.fields.data + i).value, needed)
+                    i += 1
+            ir.Expr.expr_array_literal as arr:
+                var i: ptr_uint = 0
+                while i < arr.elements.len:
+                    builtin_from_expr(arr.elements.data + i, needed)
+                    i += 1
+            _:
+                pass
+
+
 function emit_builtin_type_defs(e: ref[Emitter], program: ir.Program) -> void:
 
     var needed = map_mod.Map[str, bool].create()
@@ -5240,6 +5340,11 @@ function emit_builtin_type_defs(e: ref[Emitter], program: ir.Program) -> void:
                 collect_builtin_types(ref_of(needed), read(f.params.data + pi).ty)
 
             pi += 1
+
+        # Function bodies use native vector/matrix types in local declarations
+        # and expressions that never appear in a signature (`let v = vec3(...)`),
+        # so their typedefs must be collected from the body too.
+        builtin_from_stmts(f.body, ref_of(needed))
 
         fi += 1
 
