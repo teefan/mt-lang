@@ -306,6 +306,36 @@ reuse; full raylib sweep 217/219 (the 2 remaining are the §2.4
 correctly-rejected non-executables); fixed point holds, 177/177 tests, 13/13
 language examples; Ruby still builds both with the self-host-produced archives.
 
+### 2.7 Landed: vendored raylib linking — run parity on Wayland (2026-07-16)
+
+The self-host previously linked **system `libraylib.so`** for all raylib
+examples. They built, but every binary failed at startup on Wayland sessions
+(`GLX: Failed to create context: GLXBadFBConfig`) because the system raylib
+package embeds an X11-only GLFW. Ruby's raylib binding instead links the
+**vendored static raylib** (`tmp/vendored-raylib-opengl43/libraylib.a`, built
+with `-DPLATFORM_DESKTOP_GLFW -DGRAPHICS_API_OPENGL_43` against the
+Wayland-capable system `libglfw.so.3`), so Ruby-built binaries ran and
+self-host-built ones did not — a *run*-parity gap invisible to build sweeps.
+
+The vendored subsystem (§2.6) now covers raylib: when `std.c.raylib`,
+`std.c.raygui`, or `std.c.rlgl` is in the module closure (the three bindings
+with `vendored_library: vendored_raylib_library` in Ruby's registry), the
+self-host builds the archive when missing (the six raylib modules `rcore
+rshapes rtextures rtext rmodels raudio` compiled with the archive defines, then
+`ar rcs`), compiles the program against the vendored headers
+(`-I third_party/raylib-upstream/src` plus the archive defines, matching what
+bindgen generated the bindings from), and links `-L tmp/vendored-raylib-opengl43
+-lglfw -lm -ldl -lpthread -lrt -lX11` (VendoredRaylib's
+`DESKTOP_SYSTEM_LINK_FLAGS`; the `link "raylib"` directive's `-lraylib` then
+resolves to the vendored archive). `std.c.raymath` adds
+`-DRAYMATH_STATIC_INLINE`.
+
+Verified: `mtc run examples/raylib/others/raylib_opengl_interop.mt` (the
+reported case) and spot checks across shapes/textures/text/core all initialize
+`GLFW - Wayland` and render; from-scratch archive build works and Ruby accepts
+the self-host-built archive; full sweep still 217/219; fixed point, 177/177
+tests, 13/13 language examples.
+
 ---
 
 ## 3. Remaining Linter Gaps (unchanged from previous)

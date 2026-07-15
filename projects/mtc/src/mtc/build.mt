@@ -200,7 +200,10 @@ function link_lib_seen(link_libs: ref[vec.Vec[string.String]], flag: str) -> boo
 ## Collect binding-specific C build flags (include paths and implementation
 ## defines) required by raw `std.c.*` modules that do not carry them as source
 ## directives.  These mirror the essential entries of the Ruby raw-binding
-## registry: raygui needs its vendored header include path plus
+## registry: raylib-family modules compile against the vendored raylib headers
+## with the vendored archive's build defines (`-DPLATFORM_DESKTOP_GLFW
+## -DGRAPHICS_API_OPENGL_43`, matching how tmp/vendored-raylib-opengl43 is
+## built), raygui needs its vendored header include path plus
 ## `-DRAYGUI_IMPLEMENTATION -DGRAPHICS_API_OPENGL_43`, rlgl-facing modules
 ## need `-DGRAPHICS_API_OPENGL_43 -DMT_LANG_GL_REGISTRY_HAVE_RAYLIB`, glfw needs
 ## the vendored GLFW headers (the pinned tree defines constants such as
@@ -210,6 +213,8 @@ function link_lib_seen(link_libs: ref[vec.Vec[string.String]], flag: str) -> boo
 ## absolute machine path is baked in.
 function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec.Vec[string.String]:
     var result = vec.Vec[string.String].create()
+    var uses_raylib = false
+    var uses_raymath = false
     var uses_raygui = false
     var uses_rlgl = false
     var uses_gl = false
@@ -220,6 +225,10 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
         let a_ptr = program.analyses.get(mi) else:
             break
         var analysis = unsafe: read(a_ptr)
+        if analysis.module_name == "std.c.raylib":
+            uses_raylib = true
+        if analysis.module_name == "std.c.raymath":
+            uses_raymath = true
         if analysis.module_name == "std.c.raygui":
             uses_raygui = true
         if analysis.module_name == "std.c.rlgl":
@@ -231,6 +240,22 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
         if analysis.module_name == "std.c.tracy":
             uses_tracy = true
         mi += 1
+
+    # Any raylib-family binding compiles against the vendored raylib headers
+    # (the source the bindings were generated from) with the same defines the
+    # vendored archive is built with, so the TU and the linked libraylib.a
+    # agree on platform (GLFW) and GL version (4.3).
+    if uses_raylib or uses_raygui or uses_rlgl:
+        var raylib_src = vendored_raylib_include(roots, "src")
+        defer raylib_src.release()
+        if raylib_src.len() > 0:
+            result.push(string.String.from_str(j2("-I", raylib_src.as_str())))
+        result.push(string.String.from_str("-DMT_LANG_GL_REGISTRY_HAVE_RAYLIB"))
+        result.push(string.String.from_str("-DPLATFORM_DESKTOP_GLFW"))
+        result.push(string.String.from_str("-DGRAPHICS_API_OPENGL_43"))
+
+    if uses_raymath:
+        result.push(string.String.from_str("-DRAYMATH_STATIC_INLINE"))
 
     if uses_raygui:
         var include_dir = vendored_raylib_include(roots, "examples/shapes")
@@ -335,6 +360,11 @@ function uses_binding_module(program: loader.Program, name: str) -> bool:
 
 ## Build the vendored static libraries required by the program's raw bindings
 ## when their archives are not already present:
+##   - raylib family → `tmp/vendored-raylib-opengl43/libraylib.a` (the six
+##     raylib modules compiled with `-DPLATFORM_DESKTOP_GLFW
+##     -DGRAPHICS_API_OPENGL_43`, linking the system Wayland-capable
+##     `libglfw.so` — the system raylib package embeds its own X11-only GLFW
+##     and fails GL context creation on Wayland sessions)
 ##   - `std.c.glfw`  → `tmp/vendored-glfw-prefix/lib/libglfw3.a` (CMake + Ninja
 ##     from `third_party/glfw-upstream`; the binding's `link "glfw3"` expects the
 ##     vendored archive — system packages ship `libglfw`, not `libglfw3`)
@@ -344,6 +374,13 @@ function uses_binding_module(program: loader.Program, name: str) -> bool:
 ## as-is.  Mirrors Ruby's VendoredCLibrary CMake/Archive `prepare!` flow in
 ## minimal form.
 function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -> Result[bool, string.String]:
+    if uses_vendored_raylib(program):
+        match prepare_vendored_raylib(roots):
+            Result.failure as failure:
+                return Result[bool, string.String].failure(error = failure.error)
+            Result.success:
+                pass
+
     if uses_binding_module(program, "std.c.glfw"):
         match prepare_vendored_glfw(roots):
             Result.failure as failure:
@@ -357,6 +394,93 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
                 return Result[bool, string.String].failure(error = failure.error)
             Result.success:
                 pass
+
+    return Result[bool, string.String].success(value = true)
+
+
+## True when the program uses a binding backed by the vendored raylib archive
+## (the raylib, raygui, and rlgl bindings in Ruby's registry all set
+## `vendored_library: vendored_raylib_library`).
+function uses_vendored_raylib(program: loader.Program) -> bool:
+    if uses_binding_module(program, "std.c.raylib"):
+        return true
+    if uses_binding_module(program, "std.c.raygui"):
+        return true
+    return uses_binding_module(program, "std.c.rlgl")
+
+
+function prepare_vendored_raylib(roots: span[str]) -> Result[bool, string.String]:
+    let root = vendored_source_root(roots, "raylib-upstream") else:
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored raylib source not found: the raylib binding needs third_party/raylib-upstream to build libraylib"
+        ))
+
+    var build_dir = path_ops.join(root, "tmp/vendored-raylib-opengl43")
+    defer build_dir.release()
+    var archive = path_ops.join(build_dir.as_str(), "libraylib.a")
+    defer archive.release()
+    if fs.is_file(archive.as_str()):
+        return Result[bool, string.String].success(value = true)
+
+    match fs.create_directories(build_dir.as_str()):
+        Result.failure as dir_failure:
+            var dir_error = dir_failure.error
+            dir_error.release()
+            return Result[bool, string.String].failure(error = string.String.from_str(
+                "could not create tmp/vendored-raylib-opengl43 for the vendored raylib build"
+            ))
+        Result.success:
+            pass
+
+    var src_dir = path_ops.join(root, "third_party/raylib-upstream/src")
+    defer src_dir.release()
+    var include_flag = string.String.from_str("-I")
+    include_flag.append(src_dir.as_str())
+    defer include_flag.release()
+
+    let sources = array[str, 6]("rcore.c", "rshapes.c", "rtextures.c", "rtext.c", "rmodels.c", "raudio.c")
+
+    var ar_cmd = vec.Vec[str].create()
+    defer ar_cmd.release()
+    ar_cmd.push("ar")
+    ar_cmd.push("rcs")
+    ar_cmd.push(archive.as_str())
+
+    var si: ptr_uint = 0
+    while si < 6:
+        let source_name = sources[si]
+        let source_file = j2(src_dir.as_str(), j2("/", source_name))
+        let object_file = j2(build_dir.as_str(), j2("/", j2(source_name, ".o")))
+
+        var compile = vec.Vec[str].create()
+        defer compile.release()
+        compile.push("cc")
+        compile.push("-c")
+        compile.push(source_file)
+        compile.push(include_flag.as_str())
+        compile.push("-DPLATFORM_DESKTOP_GLFW")
+        compile.push("-DGRAPHICS_API_OPENGL_43")
+        compile.push("-o")
+        compile.push(object_file)
+        match run_build_tool(compile.as_span(), "vendored raylib compile"):
+            Result.failure as failure:
+                return Result[bool, string.String].failure(error = failure.error)
+            Result.success:
+                pass
+
+        ar_cmd.push(object_file)
+        si += 1
+
+    match run_build_tool(ar_cmd.as_span(), "vendored raylib archive"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    if not fs.is_file(archive.as_str()):
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored raylib build did not produce libraylib.a"
+        ))
 
     return Result[bool, string.String].success(value = true)
 
@@ -501,6 +625,29 @@ function prepare_vendored_tracy(roots: span[str]) -> Result[bool, string.String]
 ## regardless of command-line order.
 function collect_vendored_link_flags(program: loader.Program, roots: span[str]) -> vec.Vec[string.String]:
     var result = vec.Vec[string.String].create()
+
+    # `-lraylib` (from the bindings' `link "raylib"` directive) must resolve to
+    # the vendored static archive, not the system libraylib.so: the system
+    # package embeds an X11-only GLFW whose GLX context creation fails on
+    # Wayland sessions, while the vendored build links the system libglfw.so
+    # (Wayland-capable).  These are the DESKTOP_SYSTEM_LINK_FLAGS of Ruby's
+    # VendoredRaylib.
+    if uses_vendored_raylib(program):
+        match vendored_source_root(roots, "raylib-upstream"):
+            Option.some as raylib_root:
+                var lib_dir = path_ops.join(raylib_root.value, "tmp/vendored-raylib-opengl43")
+                var search_flag = string.String.from_str("-L")
+                search_flag.append(lib_dir.as_str())
+                lib_dir.release()
+                result.push(search_flag)
+                result.push(string.String.from_str("-lglfw"))
+                result.push(string.String.from_str("-lm"))
+                result.push(string.String.from_str("-ldl"))
+                result.push(string.String.from_str("-lpthread"))
+                result.push(string.String.from_str("-lrt"))
+                result.push(string.String.from_str("-lX11"))
+            Option.none:
+                pass
 
     if uses_binding_module(program, "std.c.glfw"):
         match vendored_source_root(roots, "glfw-upstream"):
