@@ -2927,6 +2927,16 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     # call the callee with `&a` as its out-param.
                     emit_line(e, j3(indent, c_declaration(loc.ty, loc.linkage_name), ";"))
                     emit_line(e, j3(indent, emit_array_call(e, loc.value, j2("&", loc.linkage_name)), ";"))
+                else if aggregate_has_array_call_field(e, loc.value):
+                    # `let s = S(arr = <array-returning call>, ...)` — build the
+                    # struct with the array-call field omitted, then fill it via
+                    # the callee's out-param `f(&s.arr, ...)`.
+                    unsafe:
+                        match read(loc.value):
+                            ir.Expr.expr_aggregate_literal as agg:
+                                emit_aggregate_with_array_call_fields(e, indent, c_declaration(loc.ty, loc.linkage_name), loc.linkage_name, agg.fields)
+                            _:
+                                pass
                 else if is_array_type(loc.ty) and not array_direct_initializer(loc.value):
                     emit_line(e, j3(indent, c_declaration(loc.ty, loc.linkage_name), ";"))
                     emit_line(e, j6(indent, "memcpy(", loc.linkage_name, ", ", render_expression(e, loc.value), j3(", sizeof(", loc.linkage_name, "));")))
@@ -3710,6 +3720,70 @@ function render_aggregate_initializer(e: ref[Emitter], fields: span[ir.Aggregate
 
 function render_aggregate_literal(e: ref[Emitter], ty: types.Type, fields: span[ir.AggregateField]) -> str:
     return j4("(", c_type(ty), ")", render_aggregate_initializer(e, fields))
+
+
+## True when `ep` is a named (non-positional) struct aggregate literal with at
+## least one field whose value is an array-returning call.  Such a field cannot
+## appear in a C initializer (array-returning calls use the `void f(T
+## (*__mt_out)[N], ...)` out-param convention); the field is filled with an
+## out-param call after the struct is built (see
+## emit_aggregate_with_array_call_fields).
+function aggregate_has_array_call_field(e: ref[Emitter], ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_aggregate_literal as agg:
+                if agg.fields.len == 0:
+                    return false
+                if read(agg.fields.data + 0).name.starts_with("_"):
+                    return false
+                var i: ptr_uint = 0
+                while i < agg.fields.len:
+                    if expr_is_array_call(e, read(agg.fields.data + i).value):
+                        return true
+                    i += 1
+                return false
+            _:
+                return false
+
+
+## Render a struct aggregate initializer that omits any array-returning-call
+## fields (they are filled afterwards); the omitted fields are left
+## zero-initialized by C's partial initialization.
+function render_aggregate_omitting_array_calls(e: ref[Emitter], fields: span[ir.AggregateField]) -> str:
+    var buf = string.String.create()
+    buf.append("{ ")
+    var first = true
+    var i: ptr_uint = 0
+    while i < fields.len:
+        unsafe:
+            let f = read(fields.data + i)
+            if not expr_is_array_call(e, f.value):
+                if not first:
+                    buf.append(", ")
+                first = false
+                buf.append(".")
+                buf.append(f.name)
+                buf.append(" = ")
+                buf.append(render_initializer(e, f.value))
+        i += 1
+    if first:
+        buf.append("0")
+    buf.append(" }")
+    return buf.as_str()
+
+
+## Emit `<decl> = { non-array-call fields }; f(&<target>.field, args);` for a
+## struct aggregate with array-returning-call fields.  `target_ref` is the C
+## lvalue of the struct (e.g. `light`).
+function emit_aggregate_with_array_call_fields(e: ref[Emitter], indent: str, decl: str, target_ref: str, fields: span[ir.AggregateField]) -> void:
+    emit_line(e, j5(indent, decl, " = ", render_aggregate_omitting_array_calls(e, fields), ";"))
+    var i: ptr_uint = 0
+    while i < fields.len:
+        unsafe:
+            let f = read(fields.data + i)
+            if expr_is_array_call(e, f.value):
+                emit_line(e, j3(indent, emit_array_call(e, f.value, j4("&", target_ref, ".", f.name)), ";"))
+        i += 1
 
 
 ## Render an array literal in initializer position: `{ e0, e1, ... }`.  An empty
