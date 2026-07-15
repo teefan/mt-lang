@@ -1,9 +1,9 @@
 # Self-Host Plan
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED.** Stage2 == stage3 byte-identical.
-177/177 self-tests pass across 9 test files. **Raylib parity: 213/219 build**
-(97%; the 6 remaining are 2 non-buildable support files, 2 shared-with-Ruby
-compiler limitations, and 2 vendored-library (GLFW/Tracy) build gaps — none is a
+177/177 self-tests pass across 9 test files. **Raylib parity: 214/219 build**
+(98%; the 5 remaining are 2 non-buildable support files, 1 shared-with-Ruby
+limitation, and 2 vendored-library (GLFW/Tracy) build gaps — none is a
 self-host-only codegen bug). 13/13 language examples build. **`mtc lint` has 31
 rules** (4 new Tier-1/3 AST rules, 2 new tooling features). `--select`/`--ignore`
 supported. Lint wired into `mtc check`. Bootstrap via `tools/bootstrap.sh`.
@@ -35,20 +35,19 @@ libuv runtime bug).
 
 ### 0.3 Example parity — raylib
 
-**213 of 219 raylib examples build** (97%, up from 178). Zero regressions
-against the previously-passing set. The 6 remaining are **not self-host-only
+**214 of 219 raylib examples build** (98%, up from 178). Zero regressions
+against the previously-passing set. The 5 remaining are **not self-host-only
 codegen gaps** — see §2 for the exact, generated-C-verified root cause of each:
 
 - **2 non-buildable support files** (`rlgl_loader`, `boxed_text`): an `external`
   raw-binding file and a `main`-less helper library. Both compilers correctly
   refuse them (they are not executables).
-- **2 shared compiler limitations** (`basic_pbr`, `cel_shading`): both compilers
-  fail identically — an array-returning call used as an aggregate-literal field
-  initializer, and an `rlgl.h`-before-`raylib.h` include-order `struct Matrix`
-  redefinition.
+- **1 shared compiler limitation** (`basic_pbr`): both compilers fail on an
+  array-returning call used as an aggregate-literal field initializer.
 - **2 vendored-library builds** (`rlgl_standalone`, `tracy_profiler`): the
-  compiler emits correct C but the build driver would need to compile a
-  vendored library from source (GLFW → `libglfw3`, the Tracy client).
+  compiler now emits correct C (rlgl_standalone compiles cleanly after the
+  opaque fixes) but the build driver would need to compile a vendored library
+  from source (GLFW → `libglfw3`, the Tracy client).
 
 The 2026-07-15 gap-closing landed the following fixes (all under a held
 fixed point, 177/177 tests, 13/13 language examples):
@@ -72,6 +71,9 @@ fixed point, 177/177 tests, 13/13 language examples):
 | `proc` type aliases | `type Gen = proc(...)` resolves to its closure struct, matching direct `proc(...)` syntax |
 | Opaque nullables | `File?` / any opaque `T?` lowers to a nullable C pointer (`FILE*`) instead of an invalid value-optional over an incomplete type (see §2.4) |
 | `cstr` return coercion | Bare string literals returned from `-> cstr` functions lower as C strings |
+| Module-level generic `var` | `var m: Map[str, str]` qualifies its declared type → `std_map_Map_str_str` (globals previously skipped `qualify_type`, emitting the never-defined `std_map_Map`) |
+| Opaque re-export typedefs | Non-`std.c` opaques (`std.glfw.Window = c"GLFWwindow"`) emit `typedef GLFWwindow std_glfw_Window;` so their qualified name resolves; completes `rlgl_standalone` codegen |
+| External include order | Binding headers emitted in deterministic sorted order so `raylib.h` precedes `rlgl.h` regardless of import order; fixes `cel_shading` |
 | Build driver | Add raygui/rlgl/gl binding build flags (`-I<vendored raygui>`, `-DRAYGUI_IMPLEMENTATION`, `-DGRAPHICS_API_OPENGL_43`, `-DMT_LANG_GL_REGISTRY_HAVE_RAYLIB`, and `-DMT_LANG_GL_REGISTRY_HELPERS_IMPLEMENTATION` for the header-only OpenGL registry — GL entry points resolve dynamically through raylib's loader, no `-lGL`) |
 
 ### 0.4 CLI parity
@@ -153,7 +155,7 @@ type aliases.
 ## 2. Remaining raylib Gaps (6 files) — deep root-cause analysis
 
 Each remaining failure has been traced to its exact root cause by inspecting the
-generated C from both compilers. **4 of the 6 fail identically under the Ruby
+generated C from both compilers. **3 of the 5 fail identically under the Ruby
 compiler** (they are not self-host gaps); the other 2 need the vendored-library
 build subsystem.
 
@@ -164,31 +166,39 @@ build subsystem.
 | `rlgl_loader` | An `external` file (raw ABI bindings), not a program. Ruby reports "cannot emit C for external file". The self-host emits a `main`-less C file that fails at link; it should detect external-file build targets and reject them cleanly (a CLI-polish item, not codegen). |
 | `boxed_text` | A helper library with no `main` (only `draw_*` functions). Both compilers report "no executable entrypoint found". |
 
-### 2.2 Shared compiler limitations (2 files) — both compilers fail
+### 2.2 Shared compiler limitation (1 file) — both compilers fail
 
 | Example | Exact root cause |
 |---------|-----------------|
-| `basic_pbr` | `Light(color = color_vector(color), ...)` uses an **array-returning function call as a struct-field initializer** inside an aggregate literal. Array-returning functions use the `void f(T (*__mt_out)[N], ...)` out-param convention, which cannot appear as a value in a C initializer. Ruby hoists the call into a temp but then still cannot initialise the array field from an array temp; the self-host does not hoist it at all. Fully supporting this needs aggregate-array-field materialisation (build the aggregate, then `memcpy` each array field from a hoisted temp) — absent in **both** compilers. |
-| `cel_shading` | **Include ordering.** The example imports `std.c.rlgl` on line 1 (before `std.raylib` on line 3), so `rlgl.h` is `#include`d before `raylib.h`. rlgl.h guards `struct Matrix` on `RL_MATRIX_TYPE`, but raylib.h `#define`s `RL_MATRIX_TYPE` and then defines `struct Matrix` **unconditionally**; with rlgl.h first, raylib.h's unconditional definition is a redefinition. Correct order is raylib.h before rlgl.h. Both compilers emit includes in module order and hit this. Fixing it requires modelling the rlgl.h→raylib.h C-header dependency, which neither compiler does. |
+| `basic_pbr` | `Light(color = color_vector(color), ...)` uses an **array-returning function call as a struct-field initializer** inside an aggregate literal. Array-returning functions use the `void f(T (*__mt_out)[N], ...)` out-param convention, which cannot appear as a value in a C initializer. Ruby hoists the call into a temp but still cannot initialise the array field from an array temp; the self-host does not hoist it at all. Fix (self-host can then surpass Ruby): in aggregate-literal lowering, omit array-returning-call fields from the initializer and call each with `&target.field` as the out-param after the struct is built (needs statement context; see §5.2). |
 
 ### 2.3 Vendored-library builds (2 files) — compiler emits correct C
 
 | Example | Root cause + status |
 |---------|--------------------|
 | `tracy_profiler` | `#include "TracyC.h"` needs the vendored Tracy include path and `-ltracyclient`, which must be compiled from `third_party/tracy-upstream`. No system package provides it. |
-| `rlgl_standalone` | Needs the vendored GLFW build (`GLFW_UNLIMITED_MOUSE_BUTTONS` exists only in `third_party/glfw-upstream`; the binding links `-lglfw3` while the system provides `libglfw`). The **opaque-nullable codegen bug it exercised is now fixed** (see §2.4); the only remaining codegen item is a C typedef for the non-`std.c` opaque re-export `std.glfw.Window` (`typedef GLFWwindow std_glfw_Window;`), which has no build payoff while GLFW linking is unavailable. |
+| `rlgl_standalone` | **Codegen now compiles cleanly** (the opaque-nullable and opaque-typedef fixes — §2.4 — resolved every codegen error; verified with the vendored GLFW header, 0 C errors). The only remaining blocker is GLFW linking: the binding links `-lglfw3` while the system provides `libglfw`, and `GLFW_UNLIMITED_MOUSE_BUTTONS` exists only in `third_party/glfw-upstream`. Needs the vendored GLFW build (→ `libglfw3`), i.e. the §5.3 subsystem. |
 
-### 2.4 Landed: opaque-nullable codegen fix (general correctness)
+### 2.4 Landed: opaque codegen fixes (general correctness)
 
-An opaque type used as `T?` (e.g. `stdio.File?`/`FILE?`, `GLFWwindow?`) is
-pointer-like and must lower to a nullable C pointer. The self-host previously
-wrapped it in a value tagged-optional struct (`mt_opt_..._FILE` with a `FILE
-value` field) — an invalid initializer for `fopen()`'s `FILE*` return. Now
-`qualify_type` recognises opaque bases (via a program-wide opaque-key set built
-from every module's `decl_opaque`, including raw `std.c.*` files) and wraps them
-in `ptr[...]`, so `File? -> FILE*`, matching Ruby. Verified end-to-end
-(`FILE* f = fopen(...)`, compiles and runs), fixed point holds, 177/177 tests
-pass, 13/13 language examples build, zero raylib regressions.
+Two opaque fixes landed this pass:
+
+- **Opaque nullable → pointer** (`stdio.File?`/`FILE?`, `GLFWwindow?`): an opaque
+  type is pointer-like, so `T?` must lower to a nullable C pointer. The self-host
+  previously wrapped it in a value tagged-optional struct (`mt_opt_..._FILE` with
+  a `FILE value` field) — an invalid initializer for `fopen()`'s `FILE*` return.
+  Now `qualify_type` recognises opaque bases (via a program-wide opaque-key set
+  built from every module's `decl_opaque`, including raw `std.c.*` files) and
+  wraps them in `ptr[...]`, so `File? -> FILE*`, matching Ruby.
+- **Opaque re-export typedef** (`std.glfw.Window`): a non-`std.c` opaque
+  re-export renders as its module-qualified name (`std_glfw_Window`); now
+  `typedef GLFWwindow std_glfw_Window;` is emitted so it resolves. Only opaques
+  with an explicit `= c"..."` backing get a typedef (a bare `opaque X` is a
+  forward-declared struct).
+
+Verified end-to-end (`FILE* f = fopen(...)` compiles and runs; rlgl_standalone
+codegen compiles with 0 C errors), fixed point holds, 177/177 tests, 13/13
+language examples, zero raylib regressions.
 
 ---
 
@@ -245,44 +255,42 @@ Combined impact: 9 warnings across the self-host codebase.
 ## 5. Next-Session TODO
 
 Prioritized remaining work. The compiler is at a held fixed point (177/177
-tests, 13/13 language, 213/219 raylib); everything below is additive.
+tests, 13/13 language, 214/219 raylib); everything below is additive.
 
-### 5.1 Self-host codegen bugs found during research (fix first — real correctness)
+**Done this pass (§0.3 table):** module-level generic `var` monomorphization,
+opaque-nullable → pointer, opaque re-export typedefs, and deterministic external
+include ordering (fixed `cel_shading`). The items below remain.
 
-| # | Bug | Root cause / fix | Effort | Payoff |
-|---|-----|-------------------|--------|--------|
-| 1 | Module-level generic `var` not monomorphized | A module-level `var x: Map[str, str] = ...` emits the unspecialized `std_map_Map` C type instead of `std_map_Map_str_str` (found when trying a backend-global opaque set). Monomorphization must run on module-level `var`/`const` initializer + declared types. | Medium | General correctness; unblocks program-scoped generic state |
-| 2 | Non-`std.c` opaque re-export has no C typedef | `std.glfw.Window` (`opaque Window = c"GLFWwindow"`) renders as the undeclared `std_glfw_Window`. Emit `typedef GLFWwindow std_glfw_Window;` for opaques whose module is not `std.c.*` (populate `program.opaques` — `collect_opaques` was prototyped then reverted — and emit typedefs after includes). Completes `rlgl_standalone` codegen. | Small | Correctness for opaque re-exports (glfw etc.) |
-
-### 5.2 Raylib example gaps (self-host can surpass Ruby here)
+### 5.1 Raylib example gaps (self-host can surpass Ruby here)
 
 | # | Example(s) | Fix | Effort |
 |---|-----------|-----|--------|
-| 3 | `cel_shading` | Order raw-module `#include`s so a header's C-level prerequisites precede it (raylib.h before rlgl.h/raygui.h). Needs a header-dependency model or a raylib-family ordering rule. Makes self-host build it (Ruby still fails). | Medium |
-| 4 | `basic_pbr` | Aggregate-literal array-field materialisation: when a struct field is `array[T,N]` initialised from an array-returning call, hoist the aggregate into a temp, then `memcpy` each such field from the call's `__mt_out` temp. | Medium–Large |
-| 5 | `rlgl_loader`, `boxed_text` | CLI polish: detect `external`-file / no-`main` build targets and reject cleanly (match Ruby's messages) instead of emitting a `main`-less binary that fails at link. Does not make them "build" (they are not executables) but improves parity/UX. | Small |
+| 1 | `basic_pbr` | Aggregate-literal array-field materialisation. Cleanest: in aggregate lowering, when a struct field's value is an array-returning call, omit it from the initializer and emit `f(&target.field, args...)` after the struct is built (uses the existing `__mt_out` convention — no memcpy needed). Requires a statement context; for aggregate expressions in value position, wrap in a statement-expression. Makes the self-host build it (Ruby still fails). | Medium |
+| 2 | `rlgl_loader`, `boxed_text` | CLI polish: detect `external`-file / no-`main` build targets and reject cleanly (match Ruby's messages) instead of emitting a `main`-less binary that fails at link. Does not make them "build" (they are not executables) but improves parity/UX. | Small |
 
-### 5.3 Vendored-library build subsystem (large; unblocks 2 examples + box2d etc.)
+### 5.2 Vendored-library build subsystem (large; unblocks rlgl_standalone + tracy + box2d etc.)
 
-Needed for `rlgl_standalone` (GLFW) and `tracy_profiler` (Tracy), and any binding
-with a `vendored_library`. Port the Ruby binding registry's `prepare:` /
-`vendored_library` flow: build the C library from `third_party/<lib>` (or resolve
-a system lib), add its include path + link flag. Large; separate from compiler
-codegen.
+Needed for `rlgl_standalone` (GLFW; codegen already compiles cleanly) and
+`tracy_profiler` (Tracy), and any binding with a `vendored_library`. Port the
+Ruby binding registry's `prepare:` / `vendored_library` flow: build the C library
+from `third_party/<lib>` (or resolve a system lib), add its include path + link
+flag. Note the `-lglfw3` (vendored) vs system `-lglfw` naming and the
+vendored-only `GLFW_UNLIMITED_MOUSE_BUTTONS` header constant. Large; separate from
+compiler codegen.
 
-### 5.4 Linter (§3) and CLI (§0.4) parity
+### 5.3 Linter (§3) and CLI (§0.4) parity
 
 - Linter: `owning-release-leak`, `redundant-cast`, `prefer-own-ptr` (need
   sema-facts), 5 CFG rules (low ROI), `--fix`, `.mt-lint.yml` config.
 - CLI not-implemented: `run-module`, `new`, `debug`, `deps`, `toolchain`,
   `bindgen`, `cache`, `docs`, `snapshot`, `completions`.
 
-### 5.5 Out-of-scope subsystems (§4)
+### 5.4 Out-of-scope subsystems (§4)
 
 Package-graph resolution (`--locked`/`--frozen`), build cache, `--bundle` /
 `--archive`, wasm/emcc + preview server, `--jobs` parallel tests, `--sanitize`.
 
-### 5.6 Verification checklist for any change
+### 5.5 Verification checklist for any change
 
 Run before considering a change done:
 
@@ -295,4 +303,4 @@ build/stage2/mtc build examples/language_baseline.mt -I . -o /tmp/lb   # 13/13 l
 
 A change is safe only if: stage2.c == stage3.c, 177/177 tests pass, 13/13
 language examples build, and the raylib passing set does not shrink (currently
-213).
+214).
