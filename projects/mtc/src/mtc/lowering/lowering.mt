@@ -9807,32 +9807,7 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
         i += 1
     let ret_ty = expr_type(ctx, call_ep)
     let call = alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = ret_ty))
-
-    if cstr_temps.len() == 0:
-        if setup.len() == 0:
-            return call
-        return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = call, ty = ret_ty))
-
-    # Hoisted cstr temporaries to free: run the call, then free each temp.  For a
-    # non-void return the call is bound to a temp yielded as the result; for a
-    # void return the trailing free call is the (void) result.
-    if types.is_void(ret_ty):
-        setup.push(ir.Stmt.stmt_expression(expression = call, line = 0, source_path = ""))
-        var fi: ptr_uint = 0
-        while fi + 1 < cstr_temps.len():
-            setup.push(free_cstr_temp_stmt(cstr_temp_name(ref_of(cstr_temps), fi)))
-            fi += 1
-        let last_result = free_cstr_temp_call(cstr_temp_name(ref_of(cstr_temps), cstr_temps.len() - 1))
-        return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = last_result, ty = ret_ty))
-
-    let rt = fresh_c_temp_name(ctx, "foreign_ret")
-    setup.push(ir.Stmt.stmt_local(name = rt, linkage_name = rt, ty = ret_ty, value = call, line = 0, source_path = ""))
-    var fj: ptr_uint = 0
-    while fj < cstr_temps.len():
-        setup.push(free_cstr_temp_stmt(cstr_temp_name(ref_of(cstr_temps), fj)))
-        fj += 1
-    let ret_result = alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = false))
-    return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = ret_result, ty = ret_ty))
+    return wrap_foreign_cstr_frees(ctx, ref_of(setup), call, ret_ty, ref_of(cstr_temps))
 
 
 ## True when a lowered IR expression is a call to the malloc-backed
@@ -9852,6 +9827,37 @@ function cstr_temp_name(names: ref[vec.Vec[str]], index: ptr_uint) -> str:
     let p = names.get(index) else:
         fatal(c"lowering: missing foreign cstr temp name")
     return unsafe: read(p)
+
+
+## Wrap a foreign call `result` — whose argument temporaries are already declared
+## in `setup` — so each hoisted `str as cstr` temp named in `cstr_temps` is freed
+## after the call.  With no temps to free it returns the plain call, or a
+## statement-expression when `setup` already holds address-argument temps.  For a
+## non-void return the call is bound to a temp yielded as the result; for a void
+## return the trailing free call is the (void) result.
+function wrap_foreign_cstr_frees(ctx: ref[LowerCtx], setup: ref[vec.Vec[ir.Stmt]], result: ptr[ir.Expr], ret_ty: types.Type, cstr_temps: ref[vec.Vec[str]]) -> ptr[ir.Expr]:
+    if cstr_temps.len() == 0:
+        if setup.len() == 0:
+            return result
+        return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = result, ty = ret_ty))
+
+    if types.is_void(ret_ty):
+        setup.push(ir.Stmt.stmt_expression(expression = result, line = 0, source_path = ""))
+        var fi: ptr_uint = 0
+        while fi + 1 < cstr_temps.len():
+            setup.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, fi)))
+            fi += 1
+        let last_result = free_cstr_temp_call(cstr_temp_name(cstr_temps, cstr_temps.len() - 1))
+        return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = last_result, ty = ret_ty))
+
+    let rt = fresh_c_temp_name(ctx, "foreign_ret")
+    setup.push(ir.Stmt.stmt_local(name = rt, linkage_name = rt, ty = ret_ty, value = result, line = 0, source_path = ""))
+    var fj: ptr_uint = 0
+    while fj < cstr_temps.len():
+        setup.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, fj)))
+        fj += 1
+    let ret_result = alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = false))
+    return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = ret_result, ty = ret_ty))
 
 
 ## `mt_free_foreign_cstr_temp(<name>)` as an IR call expression (void).
@@ -9958,6 +9964,7 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
         fatal(c"lowering: inline foreign mapping missing expression")
 
     var setup = vec.Vec[ir.Stmt].create()
+    var cstr_temps = vec.Vec[str].create()
     let saved_locals_len = ctx.locals.len()
 
     var i: ptr_uint = 0
@@ -10022,6 +10029,8 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
             let tc = fresh_c_temp_name(ctx, "foreign_arg")
             setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = temp_ty, value = projected, line = 0, source_path = ""))
             ctx.locals.push(LocalBinding(name = param.name, c_name = tc, ty = temp_ty, pointer = false))
+            if is_foreign_cstr_temp_call(projected):
+                cstr_temps.push(tc)
 
         if param.boundary_type.is_some():
             let pub_name = j2(param.name, "_public")
@@ -10040,9 +10049,7 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
         if ctx.locals.pop().is_none():
             break
 
-    if setup.len() == 0:
-        return result
-    return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = result, ty = info.return_ty))
+    return wrap_foreign_cstr_frees(ctx, ref_of(setup), result, info.return_ty, ref_of(cstr_temps))
 
 
 ## Re-lower a foreign mapping expression with the call's projected parameter
