@@ -1,14 +1,13 @@
 # Self-Host Plan
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED.** Stage2 == stage3 byte-identical.
-177/177 self-tests pass across 9 test files. **Raylib parity: 215/219 build**
-(98%; the 4 remaining are 2 non-buildable support files — now rejected with
-byte-identical Ruby messages, see §2.4 — and 2 vendored-library (GLFW/Tracy)
-build gaps. No self-host-only codegen bug remains, and every example the Ruby
-compiler can build the self-host now also builds). 13/13 language examples build.
-**`mtc lint` has 31 rules** (4 new Tier-1/3 AST rules, 2 new tooling features).
-`--select`/`--ignore` supported. Lint wired into `mtc check`. Bootstrap via
-`tools/bootstrap.sh`.
+177/177 self-tests pass across 9 test files. **Raylib parity: 217/219 build**
+(the 2 remaining are non-executable support files — an `external` ABI file and a
+`main`-less helper — rejected with byte-identical Ruby messages, see §2.4;
+`rlgl_standalone` and `tracy_profiler` now build via the vendored-library
+subsystem, §2.6). 13/13 language examples build. **`mtc lint` has 31 rules**
+(4 new Tier-1/3 AST rules, 2 new tooling features). `--select`/`--ignore`
+supported. Lint wired into `mtc check`. Bootstrap via `tools/bootstrap.sh`.
 
 **Next-session work is in §5.**
 
@@ -178,16 +177,14 @@ CLI-polish item from §5.2 is landed — see §2.4):
 | `rlgl_loader` | An `external` file (raw ABI bindings), not a program. Both compilers now report `cannot emit C for external file examples.raylib.others.rlgl_loader` and exit 1 for `build`/`run`/`lower`/`emit-c`. |
 | `boxed_text` | A helper library with no `main` (only `draw_*` functions). Both compilers report `no executable entrypoint found; define \`main\` with one of the supported executable signatures` and exit 1 for `build`/`run`; `emit-c`/`lower` still emit the `main`-less C. |
 
-### 2.2 Vendored-library builds (2 files) — compiler emits correct C
+### 2.2 Vendored-library builds (2 files) — DONE (§2.6)
 
-| Example | Root cause + status |
-|---------|--------------------|
-| `tracy_profiler` | **Codegen now correct (was NOT before — see §2.5).** Needs the vendored Tracy include path (`-I third_party/tracy-upstream/public{,/tracy} -DTRACY_ENABLE`) and the Tracy client archive (`c++ -c TracyClient.cpp` → `ar rcs libtracyclient.a`, linked `-ltracyclient -lstdc++`), compiled from `third_party/tracy-upstream`. System raylib suffices for linking. Verified: with those flags the self-host C compiles+links cleanly. |
-| `rlgl_standalone` | **Codegen compiles cleanly.** Needs the vendored GLFW header on the include path (`-I third_party/glfw-upstream/include`, which defines `GLFW_UNLIMITED_MOUSE_BUTTONS`) and the vendored `libglfw3.a` (CMake: `-DBUILD_SHARED_LIBS=OFF -DGLFW_BUILD_{EXAMPLES,TESTS,DOCS}=OFF` → install → `-lglfw3 -lrt -lm -ldl -lpthread -lX11`). System raylib + `-DGRAPHICS_API_OPENGL_43 -DMT_LANG_GL_REGISTRY_HAVE_RAYLIB` suffices. Verified: with those flags the self-host C compiles+links cleanly (500 KB binary). |
+Both examples now build with the self-host via the vendored-library subsystem:
 
-Both remaining gaps are the vendored-library build subsystem (§5.3), not codegen.
-The exact `cc` invocations were captured by `strace`-ing the Ruby build and the
-self-host C was confirmed to compile+link byte-clean under them.
+| Example | Status |
+|---------|--------|
+| `tracy_profiler` | **Builds.** Codegen fixed in §2.5 (extern rename); the vendored Tracy client (`libtracyclient.a`) is now built on demand (`c++ TracyClient.cpp -DTRACY_ENABLE` + `ar rcs`) and linked with `-L tmp/tracy-lib` (the `-ltracyclient -lstdc++` come from the binding's `link` directives), plus `-I .../public{,/tracy} -DTRACY_ENABLE` compile flags. System raylib suffices. |
+| `rlgl_standalone` | **Builds.** The vendored GLFW headers (`-I third_party/glfw-upstream/include`, which define `GLFW_UNLIMITED_MOUSE_BUTTONS`) are on the include path and `libglfw3.a` is built on demand via CMake+Ninja (`-DBUILD_SHARED_LIBS=OFF`, examples/tests/docs off), linked with `-L tmp/vendored-glfw-prefix/lib -lrt -lm -ldl` (glfw3.pc `Libs.private`; the `-lglfw3` comes from the binding's `link "glfw3"` directive). System raylib + the existing rlgl defines suffice. |
 
 ### 2.3 Landed: opaque codegen fixes (general correctness)
 
@@ -280,6 +277,35 @@ verification sweep, not just a compile check.
 All three landed under a held fixed point (stage2.c == stage3.c), 177/177 tests,
 13/13 language examples, and a full 215/219 raylib build with zero regressions.
 
+### 2.6 Landed: vendored-library build subsystem (2026-07-16) — raylib 217/219
+
+`build.mt` now builds vendored static libraries on demand before the link step
+(`prepare_vendored_libraries`, mirroring Ruby's `VendoredCLibrary`
+CMake/Archive `prepare!` flow in minimal form):
+
+- **GLFW** (`std.c.glfw` in the module closure): builds
+  `tmp/vendored-glfw-prefix/lib/libglfw3.a` via CMake + Ninja from
+  `third_party/glfw-upstream` (`-DBUILD_SHARED_LIBS=OFF`, examples/tests/docs
+  off, Release, PIC) when the archive is missing. Compile flags add
+  `-I third_party/glfw-upstream/include` (the pinned tree defines
+  `GLFW_UNLIMITED_MOUSE_BUTTONS`) and `-DMT_LANG_GL_REGISTRY_HAVE_GLFW`; link
+  flags add `-L <prefix>/lib -lrt -lm -ldl` (glfw3.pc `Libs.private`).
+- **Tracy** (`std.c.tracy`): builds `tmp/tracy-lib/libtracyclient.a`
+  (`c++ -c TracyClient.cpp -DTRACY_ENABLE` + `ar rcs`) when missing. Compile
+  flags add `-I .../tracy-upstream/public{,/tracy}` and `-DTRACY_ENABLE`; link
+  flags add `-L tmp/tracy-lib`.
+
+Design points: the `-l<lib>` flags themselves come from the bindings'
+`link "..."` directives (`glfw3`, `tracyclient`, `stdc++`) — GNU ld applies
+`-L` to all `-l` regardless of order; artifacts land in the same `tmp/` layout
+Ruby uses, so the two compilers share built archives (verified both directions);
+vendored sources are pinned trees, so an existing archive is reused as-is
+(existence check — rebuilds take ~30 s for GLFW, ~5 s for Tracy; reuse is
+~0.2 s). Verified: both examples build from scratch (archives deleted) and from
+reuse; full raylib sweep 217/219 (the 2 remaining are the §2.4
+correctly-rejected non-executables); fixed point holds, 177/177 tests, 13/13
+language examples; Ruby still builds both with the self-host-produced archives.
+
 ---
 
 ## 3. Remaining Linter Gaps (unchanged from previous)
@@ -335,7 +361,8 @@ Combined impact: 9 warnings across the self-host codebase.
 ## 5. Next-Session TODO
 
 Prioritized remaining work. The compiler is at a held fixed point (177/177
-tests, 13/13 language, 215/219 raylib); everything below is additive.
+tests, 13/13 language, 217/219 raylib — the 2 non-builds are correct
+rejections); everything below is additive.
 
 **Done this pass (§0.3 table):** module-level generic `var` monomorphization,
 opaque-nullable → pointer, opaque re-export typedefs, deterministic external
@@ -356,8 +383,12 @@ against Ruby — the extern `= c"..."` rename dropped in foreign mappings (fixed
 `tracy_profiler` codegen, which the plan had wrongly called correct),
 const-expression array lengths folding to 0 (a runtime abort in `raw_data` /
 `screen_buffer`), and the leaked foreign `str as cstr` temporaries (≈130
-examples). The only remaining raylib gaps are the two vendored-library builds
-(§5.3). The items below remain.
+examples).
+
+**Done this session (§2.6):** the vendored-library build subsystem for
+GLFW/Tracy — `rlgl_standalone` and `tracy_profiler` now build, closing the last
+raylib gap (217/219; the other 2 are correct rejections). The items below
+remain.
 
 ### 5.1 Architectural finding: analyzer fallback reliance
 
@@ -383,27 +414,28 @@ against Ruby, not just `"BUILDS OK"`.  A `"BUILDS OK"` test only proves the C
 compiled — it says nothing about runtime values.  The 6 bugs fixed this pass all
 produced valid C programs with wrong numeric output.
 
-### 5.2 Remaining raylib gaps
+### 5.2 Remaining raylib gaps — NONE
 
-Only one gap remains, and it needs out-of-codegen work (the vendored-library
-build subsystem). Every self-host **codegen** bug is fixed — including three
-found this session by C-diffing against Ruby (§2.5): the tracy extern-rename,
-const-expression array lengths, and the foreign `str as cstr` temp leak.
+**Raylib parity is complete: 217/219 build, and the 2 non-builds are correct
+rejections.** Every self-host codegen bug is fixed — including three found by
+C-diffing against Ruby (§2.5): the tracy extern-rename, const-expression array
+lengths, and the foreign `str as cstr` temp leak.
 
-| # | Example(s) | Fix | Effort |
+| # | Example(s) | Fix | Status |
 |---|-----------|-----|--------|
-| 1 | `rlgl_standalone`, `tracy_profiler` | Vendored-library build subsystem (§5.3). Codegen is now correct for both (tracy needed the §2.5 extern-rename fix). Exact flags captured — see §2.2. | Large |
-| 2 | `rlgl_loader`, `boxed_text` | **DONE (§2.4).** CLI polish: detect `external`-file / no-`main` build targets and reject cleanly with byte-identical Ruby messages instead of emitting a `main`-less binary that fails at link. They still do not "build" (they are not executables) but the messages and exit codes now match Ruby. | Small |
+| 1 | `rlgl_standalone`, `tracy_profiler` | **DONE (§2.6).** Vendored-library build subsystem: GLFW built via CMake+Ninja, the Tracy client via `c++`+`ar`, on demand before the link step. | Landed |
+| 2 | `rlgl_loader`, `boxed_text` | **DONE (§2.4).** CLI polish: `external`-file / no-`main` build targets rejected cleanly with byte-identical Ruby messages. They are not executables, so "reject" is the correct terminal state. | Landed |
 
-### 5.3 Vendored-library build subsystem (large; unblocks rlgl_standalone + tracy + box2d etc.)
+### 5.3 Vendored-library build subsystem — DONE for GLFW/Tracy (§2.6)
 
-Needed for `rlgl_standalone` (GLFW; codegen already compiles cleanly) and
-`tracy_profiler` (Tracy), and any binding with a `vendored_library`. Port the
-Ruby binding registry's `prepare:` / `vendored_library` flow: build the C library
-from `third_party/<lib>` (or resolve a system lib), add its include path + link
-flag. Note the `-lglfw3` (vendored) vs system `-lglfw` naming and the
-vendored-only `GLFW_UNLIMITED_MOUSE_BUTTONS` header constant. Large; separate from
-compiler codegen.
+Landed in minimal form for the two bindings the raylib examples need. Remaining
+scope if ever needed: other `vendored_library` bindings (box2d, sdl3, flecs,
+pcre2, libuv static, steamworks) follow the same pattern — an archive-existence
+check plus a CMake or compile+`ar` recipe in `prepare_vendored_libraries` and a
+`-L` entry in `collect_vendored_link_flags`. Ruby's signature-based rebuild
+detection (tool/flag changes) was deliberately not ported: vendored sources are
+pinned trees, so existence-checking is deterministic; delete the `tmp/` artifact
+to force a rebuild.
 
 ### 5.4 Linter (§3) and CLI (§0.4) parity
 
