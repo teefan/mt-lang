@@ -1974,7 +1974,12 @@ function c_fn_ptr_declarator(t: types.Type, name: str) -> str:
 function c_declaration(t: types.Type, name: str) -> str:
     if is_array_type(t):
         let inner_name = if name.len > 0 and name.byte_at(0) == '*': j3("(", name, ")") else: name
-        return j6(c_type(array_element_type(t)), " ", inner_name, "[", long_to_str(array_length(t)), "]")
+        let elem_t = array_element_type(t)
+        # When the element is itself an array, emit correct C multi-dimensional
+        # syntax: `float name[N][M]` not `float[M] name[N]`.
+        if is_array_type(elem_t):
+            return j2(c_declaration(elem_t, name), j3("[", long_to_str(array_length(t)), "]"))
+        return j6(c_type(elem_t), " ", inner_name, "[", long_to_str(array_length(t)), "]")
     # Function-pointer types need declarator syntax: `ret_type (*name)(...)`.
     # Pointer/reference types: `T*` instead of `ptr_T`.
     # Generic variants: build `name_type0_type1_...` directly.
