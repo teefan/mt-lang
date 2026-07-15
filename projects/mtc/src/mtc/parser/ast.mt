@@ -276,7 +276,7 @@ public enum FormatSpecKind: ubyte
 public variant Expr:
     # Literals
     expr_identifier(name: str, line: ptr_uint, column: ptr_uint)
-    expr_integer_literal(lexeme: str, value: int)
+    expr_integer_literal(lexeme: str, value: long)
     expr_float_literal(lexeme: str, value: double)
     expr_string_literal(lexeme: str, value: str, is_cstring: bool)
     expr_char_literal(lexeme: str, value: ubyte, line: ptr_uint, column: ptr_uint)

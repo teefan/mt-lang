@@ -692,6 +692,28 @@ function double_to_str(value: double) -> str:
     return buf.as_str()
 
 
+## Render a float/double literal as a C *floating-point* literal.  A whole-number
+## double like `1.0` formats as `"1"`, which C parses as an `int` — so `1.0 /
+## 3.0` would become integer division `1 / 3 == 0`.  Append `.0` when the text
+## has no decimal point, exponent, or inf/nan marker, so the value stays
+## floating-point (matches Ruby, which emits `1.0`).
+function c_float_literal(value: double) -> str:
+    let s = double_to_str(value)
+    if float_literal_needs_decimal(s):
+        return j2(s, ".0")
+    return s
+
+
+function float_literal_needs_decimal(s: str) -> bool:
+    var i: ptr_uint = 0
+    while i < s.len:
+        let c = s.byte_at(i)
+        if c == '.' or c == 'e' or c == 'E' or c == 'n' or c == 'N' or c == 'i' or c == 'I':
+            return false
+        i += 1
+    return true
+
+
 function ptr_uint_to_str(value: ptr_uint) -> str:
     var buf = string.String.create()
     fmt.append_ptr_uint(ref_of(buf), value)
@@ -3147,7 +3169,7 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
             ir.Expr.expr_integer_literal as lit:
                 return long_to_str(lit.value)
             ir.Expr.expr_float_literal as lit:
-                return double_to_str(lit.value)
+                return c_float_literal(lit.value)
             ir.Expr.expr_boolean_literal as b:
                 return if b.value: "true" else: "false"
             ir.Expr.expr_string_literal as s:

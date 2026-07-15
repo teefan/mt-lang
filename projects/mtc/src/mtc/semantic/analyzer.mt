@@ -2424,7 +2424,7 @@ function int_literal_value(p: ptr[ast.Expr]) -> Option[int]:
     unsafe:
         match read(p):
             ast.Expr.expr_integer_literal as lit:
-                return Option[int].some(value = lit.value)
+                return Option[int].some(value = int<-lit.value)
             ast.Expr.expr_char_literal as ch:
                 return Option[int].some(value = int<-ch.value)
             _:

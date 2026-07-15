@@ -475,7 +475,7 @@ function parse_comma_separated_until(s: ref[pstate.ParserState], closing_type: t
 #  Literal value extraction (now in parser/literal_parsing.mt)
 # =============================================================================
 
-function parse_int_literal(lexeme: str) -> int:
+function parse_int_literal(lexeme: str) -> long:
     return lparse.parse_int_literal(lexeme)
 
 
@@ -3525,12 +3525,12 @@ function enum_auto_after(value: ptr[ast.Expr], current: int) -> int:
     unsafe:
         match read(value):
             ast.Expr.expr_integer_literal as lit:
-                return lit.value + 1
+                return int<-(lit.value + 1)
             ast.Expr.expr_unary_op as un:
                 if un.operator == "-":
                     match read(un.operand):
                         ast.Expr.expr_integer_literal as lit2:
-                            return -lit2.value + 1
+                            return int<-(-lit2.value + 1)
                         _:
                             return current
                 return current
@@ -3925,7 +3925,7 @@ function parse_event_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeA
     let name = previous_lexeme(s)
     consume(s, tk.TokenKind.lbracket, c"expected '[' after event name")
     consume(s, tk.TokenKind.integer, c"expected capacity")
-    let capacity = parse_int_literal(previous_lexeme(s))
+    let capacity = int<-parse_int_literal(previous_lexeme(s))
     consume(s, tk.TokenKind.rbracket, c"expected ']'")
     var payload_type: ptr[ast.TypeRef]? = null
     if match_kind(s, tk.TokenKind.lparen):

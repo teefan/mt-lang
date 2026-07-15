@@ -21,12 +21,12 @@ const PLUS_BYTE_V: ubyte = '+'
 const MINUS_BYTE_V: ubyte = '-'
 
 
-public function parse_int_literal(lexeme: str) -> int:
+public function parse_int_literal(lexeme: str) -> long:
     if lexeme.len == 0:
         return 0
     var pos: ptr_uint = 0
     var negative = false
-    var value: int = 0
+    var value: long = 0
 
     unsafe:
         let first = ubyte<-read(lexeme.data)
@@ -46,11 +46,11 @@ public function parse_int_literal(lexeme: str) -> int:
                         continue
                     value = value * 16
                     if b >= '0' and b <= '9':
-                        value += int<-(b - '0')
+                        value += long<-(b - '0')
                     else if b >= 'a' and b <= 'f':
-                        value += int<-(b - 'a' + 10)
+                        value += long<-(b - 'a' + 10)
                     else if b >= 'A' and b <= 'F':
-                        value += int<-(b - 'A' + 10)
+                        value += long<-(b - 'A' + 10)
                     else:
                         break
                     pos += 1
@@ -82,7 +82,7 @@ public function parse_int_literal(lexeme: str) -> int:
                 pos += 1
                 continue
             if b >= '0' and b <= '9':
-                value = value * 10 + int<-(b - '0')
+                value = value * 10 + long<-(b - '0')
             else:
                 break
             pos += 1
