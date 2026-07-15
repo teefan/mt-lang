@@ -1240,18 +1240,20 @@ function collect_opaque_decls(program: loader.Program) -> span[ir.OpaqueDecl]:
                 d = read(analysis.source_file.declarations.data + di)
             match d:
                 ast.Decl.decl_opaque as op:
-                    var backing = op.name
+                    # Only opaque re-exports with an explicit C backing name
+                    # (`= c"GLFWwindow"`) need a typedef aliasing that backing
+                    # type.  A bare `opaque X` has no C backing and is emitted as
+                    # its own forward-declared struct elsewhere.
                     match op.c_name:
                         Option.some as cn:
-                            backing = cn.value
+                            opaques.push(ir.OpaqueDecl(
+                                name = naming.qualified_c_name(analysis.module_name, op.name),
+                                linkage_name = cn.value,
+                                forward_declarable = false,
+                                source_module = Option[str].some(value = analysis.module_name),
+                            ))
                         Option.none:
                             pass
-                    opaques.push(ir.OpaqueDecl(
-                        name = naming.qualified_c_name(analysis.module_name, op.name),
-                        linkage_name = backing,
-                        forward_declarable = false,
-                        source_module = Option[str].some(value = analysis.module_name),
-                    ))
                 _:
                     pass
             di += 1
@@ -1272,6 +1274,7 @@ function collect_includes(program: loader.Program) -> span[ir.Include]:
     seen.set("<stdio.h>", true)
 
     var mi: ptr_uint = 0
+    var raw_headers = vec.Vec[str].create()
     while mi < program.analyses.len():
         let a_ptr = program.analyses.get(mi) else:
             mi += 1
@@ -1290,13 +1293,63 @@ function collect_includes(program: loader.Program) -> span[ir.Include]:
                     let header = normalized_include_header(inc.value)
                     if not seen.contains(header):
                         seen.set(header, true)
-                        includes.push(ir.Include(header = header))
+                        raw_headers.push(header)
                 _:
                     pass
             di += 1
         mi += 1
 
+    # Emit the external-binding headers in a deterministic sorted order so that
+    # base headers precede the extension headers that depend on them regardless
+    # of module import order — e.g. `raylib.h` before `rlgl.h` (rlgl.h guards
+    # `struct Matrix` on raylib.h having defined it first).  Module order alone
+    # can place `rlgl.h` first (a direct `import std.c.rlgl`), which C rejects.
+    sort_str_vec(ref_of(raw_headers))
+    var ri: ptr_uint = 0
+    while ri < raw_headers.len():
+        let h_ptr = raw_headers.get(ri) else:
+            break
+        includes.push(ir.Include(header = unsafe: read(h_ptr)))
+        ri += 1
+
     return includes.as_span()
+
+
+## In-place ascending insertion sort of a `str` vector by byte order.
+function sort_str_vec(items: ref[vec.Vec[str]]) -> void:
+    var i: ptr_uint = 1
+    while i < items.len():
+        var j = i
+        while j > 0:
+            let a_ptr = items.get(j - 1) else:
+                break
+            let b_ptr = items.get(j) else:
+                break
+            var a: str
+            var b: str
+            unsafe:
+                a = read(a_ptr)
+                b = read(b_ptr)
+            if str_less_than(a, b):
+                break
+            items.swap(j - 1, j)
+            j -= 1
+        i += 1
+
+
+## True when `left` sorts strictly before `right` in byte order.
+function str_less_than(left: str, right: str) -> bool:
+    var index: ptr_uint = 0
+    let shared = if left.len < right.len: left.len else: right.len
+    while index < shared:
+        let lb = left.byte_at(index)
+        let rb = right.byte_at(index)
+        if lb < rb:
+            return true
+        if lb > rb:
+            return false
+        index += 1
+    return left.len < right.len
 
 
 ## Wrap an include header: standard C runtime headers use `<angle>` brackets,
