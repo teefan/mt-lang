@@ -346,6 +346,22 @@ public function generate_c(program: ir.Program) -> string.String:
             i += 1
 
     else:
+        # No structs/unions/variants — but span types may still be needed.
+        var span_si: ptr_uint = 0
+        while span_si < span_types.len():
+            let ty_ptr = span_types.get(span_si) else:
+                break
+            unsafe:
+                emit_line(ref_of(e), j3("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
+            span_si += 1
+        span_si = 0
+        while span_si < span_types.len():
+            let ty_ptr = span_types.get(span_si) else:
+                break
+            unsafe:
+                emit_span_type(ref_of(e), read(ty_ptr))
+                emit_line(ref_of(e), "")
+            span_si += 1
         emit_enums_block(ref_of(e), program)
 
     if funcs.len > 0:
@@ -1415,7 +1431,7 @@ function c_type(t: types.Type) -> str:
             return c_fn_ptr_declarator(t, "")
         types.Type.ty_imported as im:
             if im.module_name.starts_with("std.c."):
-                if im.name == "sockaddr" or im.name == "sockaddr_storage" or im.name == "sockaddr_in" or im.name == "sockaddr_in6":
+                if im.name == "sockaddr" or im.name == "sockaddr_storage" or im.name == "sockaddr_in" or im.name == "sockaddr_in6" or im.name == "tm":
                     return j2("struct ", im.name)
                 return im.name
             return naming.qualified_c_name(im.module_name, im.name)
