@@ -3549,7 +3549,7 @@ function resolve_array_length_type(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> 
         # A module-level integer constant used as a length: fold to its value.
         let const_ptr = ctx.analysis.const_values.get(text)
         if const_ptr != null:
-            return types.literal_int(const_eval_int(unsafe: read(const_ptr)))
+            return types.literal_int(const_eval_int(ctx, unsafe: read(const_ptr)))
         return types.Type.ty_named(module_name = "", name = text)
     return types.literal_int(resolve_array_length(tp))
 
@@ -11629,7 +11629,7 @@ function lower_enum_decl(ctx: ref[LowerCtx], name: str, backing_type: ptr[ast.Ty
         let explicit = m.value
         if explicit != null:
             value_expr = lower_expr(ctx, explicit)
-            next_auto = const_eval_int(explicit) + 1
+            next_auto = const_eval_int(ctx, explicit) + 1
         else:
             value_expr = alloc_expr(ir.Expr.expr_integer_literal(value = next_auto, ty = backing))
             next_auto += 1
@@ -11645,26 +11645,33 @@ function lower_enum_decl(ctx: ref[LowerCtx], name: str, backing_type: ptr[ast.Ty
     )
 
 
-## Compile-time integer evaluation for enum/flags member values (literals plus
-## the arithmetic/bitwise/shift operators used in flag definitions).  Used only
-## to advance the auto-increment counter after an explicit member value.
-function const_eval_int(ep: ptr[ast.Expr]) -> long:
+## Compile-time integer evaluation for enum/flags member values and array-length
+## constants (literals, other integer constants by name, plus the
+## arithmetic/bitwise/shift operators).  A bare `expr_identifier` resolves
+## through `ctx.analysis.const_values`, so a length like `WIDTH * HEIGHT` (each a
+## module-level `const int`) folds to its product instead of 0.
+function const_eval_int(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> long:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
                 return long<-lit.value
             ast.Expr.expr_char_literal as ch:
                 return long<-ch.value
+            ast.Expr.expr_identifier as id:
+                let const_ptr = ctx.analysis.const_values.get(id.name)
+                if const_ptr != null:
+                    return const_eval_int(ctx, read(const_ptr))
+                return 0
             ast.Expr.expr_unary_op as un:
-                let v = const_eval_int(un.operand)
+                let v = const_eval_int(ctx, un.operand)
                 if un.operator == "-":
                     return -v
                 if un.operator == "~":
                     return ~v
                 return v
             ast.Expr.expr_binary_op as bin:
-                let l = const_eval_int(bin.left)
-                let r = const_eval_int(bin.right)
+                let l = const_eval_int(ctx, bin.left)
+                let r = const_eval_int(ctx, bin.right)
                 if bin.operator == "+":
                     return l + r
                 if bin.operator == "-":

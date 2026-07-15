@@ -2627,6 +2627,12 @@ function is_builtin_call_name(name: str) -> bool:
 ## statically-known integer.  Used to fold a named constant in array-length
 ## type-argument position (`array[T, WORLD_SIZE]`) to a concrete size, matching
 ## the Ruby analyzer.
+## True for the comparison and logical operators, whose const result type is
+## `bool` rather than the operand type.
+function is_comparison_or_logical_op(op: str) -> bool:
+    return op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">=" or op == "and" or op == "or"
+
+
 function const_eval_int_expr(ctx: ref[Context], ep: ptr[ast.Expr]) -> Option[long]:
     unsafe:
         match read(ep):
@@ -2703,6 +2709,20 @@ function evaluate_const_expr(ctx: ref[Context], ep: ptr[ast.Expr]?) -> Option[ty
                 if chain != null:
                     return evaluate_const_expr(ctx, read(chain))
                 return Option[types.Type].none
+            ast.Expr.expr_unary_op as un:
+                let ut = evaluate_const_expr(ctx, un.operand) else:
+                    return Option[types.Type].none
+                if un.operator == "not":
+                    return Option[types.Type].some(value = types.primitive("bool"))
+                return Option[types.Type].some(value = ut)
+            ast.Expr.expr_binary_op as bin:
+                let lt = evaluate_const_expr(ctx, bin.left) else:
+                    return Option[types.Type].none
+                let _rt = evaluate_const_expr(ctx, bin.right) else:
+                    return Option[types.Type].none
+                if is_comparison_or_logical_op(bin.operator):
+                    return Option[types.Type].some(value = types.primitive("bool"))
+                return Option[types.Type].some(value = lt)
             ast.Expr.expr_member_access as ma:
                 return Option[types.Type].some(value = types.Type.ty_error)
             ast.Expr.expr_prefix_cast as c:
