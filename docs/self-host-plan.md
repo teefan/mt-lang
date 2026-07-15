@@ -182,8 +182,12 @@ CLI-polish item from §5.2 is landed — see §2.4):
 
 | Example | Root cause + status |
 |---------|--------------------|
-| `tracy_profiler` | `#include "TracyC.h"` needs the vendored Tracy include path and `-ltracyclient`, which must be compiled from `third_party/tracy-upstream`. No system package provides it. |
-| `rlgl_standalone` | **Codegen now compiles cleanly** (the opaque-nullable and opaque-typedef fixes — §2.3 — resolved every codegen error; verified with the vendored GLFW header, 0 C errors). The only remaining blocker is GLFW linking: the binding links `-lglfw3` while the system provides `libglfw`, and `GLFW_UNLIMITED_MOUSE_BUTTONS` exists only in `third_party/glfw-upstream`. Needs the vendored GLFW build (→ `libglfw3`), i.e. the §5.3 subsystem. |
+| `tracy_profiler` | **Codegen now correct (was NOT before — see §2.5).** Needs the vendored Tracy include path (`-I third_party/tracy-upstream/public{,/tracy} -DTRACY_ENABLE`) and the Tracy client archive (`c++ -c TracyClient.cpp` → `ar rcs libtracyclient.a`, linked `-ltracyclient -lstdc++`), compiled from `third_party/tracy-upstream`. System raylib suffices for linking. Verified: with those flags the self-host C compiles+links cleanly. |
+| `rlgl_standalone` | **Codegen compiles cleanly.** Needs the vendored GLFW header on the include path (`-I third_party/glfw-upstream/include`, which defines `GLFW_UNLIMITED_MOUSE_BUTTONS`) and the vendored `libglfw3.a` (CMake: `-DBUILD_SHARED_LIBS=OFF -DGLFW_BUILD_{EXAMPLES,TESTS,DOCS}=OFF` → install → `-lglfw3 -lrt -lm -ldl -lpthread -lX11`). System raylib + `-DGRAPHICS_API_OPENGL_43 -DMT_LANG_GL_REGISTRY_HAVE_RAYLIB` suffices. Verified: with those flags the self-host C compiles+links cleanly (500 KB binary). |
+
+Both remaining gaps are the vendored-library build subsystem (§5.3), not codegen.
+The exact `cc` invocations were captured by `strace`-ing the Ruby build and the
+self-host C was confirmed to compile+link byte-clean under them.
 
 ### 2.3 Landed: opaque codegen fixes (general correctness)
 
@@ -231,6 +235,50 @@ CLI lowers once and shares that IR between the entrypoint check, `--keep-c`, and
 the build (previously lowering happened inside `build` and again in
 `keep_c_to_file`). Fixed point holds, 177/177 tests, 13/13 language examples,
 41-example raylib spot-check with zero regressions.
+
+### 2.5 Landed: three codegen/runtime bugs found by C-diffing vs Ruby (2026-07-15)
+
+A systematic audit (diffing self-host vs Ruby generated C across all 219 raylib
+examples — comparing the *called C symbols* and *array-length helpers*, which is
+formatting-independent) surfaced three real bugs the "BUILDS OK" checks missed:
+
+1. **Extern `= c"..."` rename dropped in foreign mappings** (§tracy_profiler —
+   the plan had wrongly listed this as "codegen already correct"). A foreign
+   function targeting a renamed external (`std.tracy.zone_begin = c.tracy_emit_zone_begin`
+   where `external function tracy_emit_zone_begin = c"___tracy_emit_zone_begin"`)
+   lowered to the Milk Tea name, not the C symbol → implicit-declaration errors.
+   Fixed in `resolve_foreign_c_name` + new `imported_extern_c_name` (resolves the
+   receiver alias to its module and honors the extern's own rename). Affected all
+   33 renamed externs in `std/c/tracy.mt`; the C now matches Ruby byte-for-byte.
+
+2. **Const-expression array lengths folded to 0** (`raw_data`, `screen_buffer`):
+   `const N = WIDTH * HEIGHT; var buf: array[T, N]` produced a zero-length C array
+   whose bounds check (`index >= 0`) aborts on the *first* access — a silent
+   "builds OK, aborts at runtime" bug. Two causes: the analyzer's
+   `evaluate_const_expr` had no binary/unary-op arm (so the const was never
+   registered in `const_values`), and lowering's `const_eval_int` did not resolve
+   `expr_identifier`. Both fixed; lengths now match Ruby (e.g. `Color[460800]`).
+
+3. **Foreign `str as cstr` temporaries leaked** (≈130 examples): a dynamic
+   `str as cstr` argument mallocs a NUL-terminated copy via
+   `mt_foreign_str_to_cstr_temp` but the self-host never freed it — e.g.
+   `DrawText(dynamic_str, ...)` in a frame loop leaks every frame. Both the simple
+   and inline foreign-call paths now hoist the temp, emit the call, and free it
+   after (yielding the return value for non-void) via a statement-expression,
+   matching Ruby's `mt_free_foreign_cstr_temp`. Every alloc across all 219 examples
+   is now paired with a free. This also exposed and fixed a latent gap: the
+   checked-index / checked-span-index helper-collection passes did not traverse
+   `expr_stmt_expr`, so helpers used only inside a statement-expression were not
+   emitted.
+
+**Method note (reinforces §5.1):** all three were invisible to "BUILDS OK" — #1
+and #2 needed a C-symbol/array-length diff against Ruby, #3 needed an alloc/free
+balance check. Bug #1 in particular means the previous "no self-host-only codegen
+bug remains" claim was false; a C-symbol diff should be part of the standard
+verification sweep, not just a compile check.
+
+All three landed under a held fixed point (stage2.c == stage3.c), 177/177 tests,
+13/13 language examples, and a full 215/219 raylib build with zero regressions.
 
 ---
 
@@ -301,7 +349,15 @@ compiler can build, the self-host now also builds.
 **Done next pass (§2.4):** non-buildable-target rejection — `external` files and
 `main`-less programs are now rejected with byte-identical Ruby messages and exit
 codes across `build`/`run`/`lower`/`emit-c` instead of emitting a `main`-less
-binary that fails at link (§5.2 item 2 closed). The items below remain.
+binary that fails at link (§5.2 item 2 closed).
+
+**Done this session (§2.5):** three codegen/runtime bugs found by C-diffing
+against Ruby — the extern `= c"..."` rename dropped in foreign mappings (fixed
+`tracy_profiler` codegen, which the plan had wrongly called correct),
+const-expression array lengths folding to 0 (a runtime abort in `raw_data` /
+`screen_buffer`), and the leaked foreign `str as cstr` temporaries (≈130
+examples). The only remaining raylib gaps are the two vendored-library builds
+(§5.3). The items below remain.
 
 ### 5.1 Architectural finding: analyzer fallback reliance
 
@@ -329,11 +385,14 @@ produced valid C programs with wrong numeric output.
 
 ### 5.2 Remaining raylib gaps
 
-Only one gap remains, and it needs out-of-codegen work:
+Only one gap remains, and it needs out-of-codegen work (the vendored-library
+build subsystem). Every self-host **codegen** bug is fixed — including three
+found this session by C-diffing against Ruby (§2.5): the tracy extern-rename,
+const-expression array lengths, and the foreign `str as cstr` temp leak.
 
 | # | Example(s) | Fix | Effort |
 |---|-----------|-----|--------|
-| 1 | `rlgl_standalone`, `tracy_profiler` | Vendored-library build subsystem (§5.3). Codegen is already correct. | Large |
+| 1 | `rlgl_standalone`, `tracy_profiler` | Vendored-library build subsystem (§5.3). Codegen is now correct for both (tracy needed the §2.5 extern-rename fix). Exact flags captured — see §2.2. | Large |
 | 2 | `rlgl_loader`, `boxed_text` | **DONE (§2.4).** CLI polish: detect `external`-file / no-`main` build targets and reject cleanly with byte-identical Ruby messages instead of emitting a `main`-less binary that fails at link. They still do not "build" (they are not executables) but the messages and exit codes now match Ruby. | Small |
 
 ### 5.3 Vendored-library build subsystem (large; unblocks rlgl_standalone + tracy + box2d etc.)
