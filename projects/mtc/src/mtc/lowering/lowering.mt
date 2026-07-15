@@ -9779,6 +9779,10 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
         return lower_inline_foreign_mapping(ctx, info, args, call_ep)
     var ir_args = vec.Vec[ir.Expr].create()
     var setup = vec.Vec[ir.Stmt].create()
+    # Names of hoisted `str as cstr` temporaries (malloc'd by
+    # mt_foreign_str_to_cstr_temp) that must be freed after the call so a foreign
+    # call in a loop (e.g. DrawText(dynamic_str, ...) each frame) does not leak.
+    var cstr_temps = vec.Vec[str].create()
     var i: ptr_uint = 0
     while i < args.len:
         var arg: ast.Argument
@@ -9792,13 +9796,77 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
             lowered = materialize_foreign_address_arg(ctx, lower_foreign_arg(ctx, param, arg.arg_value), ref_of(setup))
         else:
             lowered = lower_expr(ctx, arg.arg_value)
+        if is_foreign_cstr_temp_call(lowered):
+            let cstr_ty = types.primitive("cstr")
+            let tc = fresh_c_temp_name(ctx, "foreign_cstr")
+            setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = cstr_ty, value = lowered, line = 0, source_path = ""))
+            cstr_temps.push(tc)
+            lowered = alloc_expr(ir.Expr.expr_name(name = tc, ty = cstr_ty, pointer = false))
         unsafe:
             ir_args.push(read(lowered))
         i += 1
-    let call = alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
-    if setup.len() == 0:
-        return call
-    return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = call, ty = expr_type(ctx, call_ep)))
+    let ret_ty = expr_type(ctx, call_ep)
+    let call = alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = ret_ty))
+
+    if cstr_temps.len() == 0:
+        if setup.len() == 0:
+            return call
+        return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = call, ty = ret_ty))
+
+    # Hoisted cstr temporaries to free: run the call, then free each temp.  For a
+    # non-void return the call is bound to a temp yielded as the result; for a
+    # void return the trailing free call is the (void) result.
+    if types.is_void(ret_ty):
+        setup.push(ir.Stmt.stmt_expression(expression = call, line = 0, source_path = ""))
+        var fi: ptr_uint = 0
+        while fi + 1 < cstr_temps.len():
+            setup.push(free_cstr_temp_stmt(cstr_temp_name(ref_of(cstr_temps), fi)))
+            fi += 1
+        let last_result = free_cstr_temp_call(cstr_temp_name(ref_of(cstr_temps), cstr_temps.len() - 1))
+        return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = last_result, ty = ret_ty))
+
+    let rt = fresh_c_temp_name(ctx, "foreign_ret")
+    setup.push(ir.Stmt.stmt_local(name = rt, linkage_name = rt, ty = ret_ty, value = call, line = 0, source_path = ""))
+    var fj: ptr_uint = 0
+    while fj < cstr_temps.len():
+        setup.push(free_cstr_temp_stmt(cstr_temp_name(ref_of(cstr_temps), fj)))
+        fj += 1
+    let ret_result = alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = false))
+    return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = ret_result, ty = ret_ty))
+
+
+## True when a lowered IR expression is a call to the malloc-backed
+## `mt_foreign_str_to_cstr_temp` helper (a dynamic `str as cstr` foreign
+## argument), so the caller can hoist and free it after the call.
+function is_foreign_cstr_temp_call(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_call as c:
+                return c.callee == "mt_foreign_str_to_cstr_temp"
+            _:
+                return false
+
+
+## The stored name of the cstr temporary at `index`.
+function cstr_temp_name(names: ref[vec.Vec[str]], index: ptr_uint) -> str:
+    let p = names.get(index) else:
+        fatal(c"lowering: missing foreign cstr temp name")
+    return unsafe: read(p)
+
+
+## `mt_free_foreign_cstr_temp(<name>)` as an IR call expression (void).
+function free_cstr_temp_call(name: str) -> ptr[ir.Expr]:
+    let cstr_ty = types.primitive("cstr")
+    let name_ref = alloc_expr(ir.Expr.expr_name(name = name, ty = cstr_ty, pointer = false))
+    var free_args = vec.Vec[ir.Expr].create()
+    unsafe:
+        free_args.push(read(name_ref))
+    return alloc_expr(ir.Expr.expr_call(callee = "mt_free_foreign_cstr_temp", arguments = free_args.as_span(), ty = types.primitive("void")))
+
+
+## The same free call wrapped as an expression statement.
+function free_cstr_temp_stmt(name: str) -> ir.Stmt:
+    return ir.Stmt.stmt_expression(expression = free_cstr_temp_call(name), line = 0, source_path = "")
 
 
 ## When a foreign `in`/`out`/`inout` argument lowered to `&<non-lvalue>` (e.g.

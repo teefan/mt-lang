@@ -220,6 +220,10 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_foreign_cstr_helper(ref_of(e))
         emit_line(ref_of(e), "")
 
+    if uses_free_foreign_cstr_helper(funcs):
+        emit_free_foreign_cstr_helper(ref_of(e))
+        emit_line(ref_of(e), "")
+
     if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0 or program.variants.len > 0 or gen_variants.len() > 0 or opt_structs.len() > 0:
         var sorted_structs = topo_sort_structs(program.structs)
         let sorted = sorted_structs.as_span()
@@ -3463,6 +3467,9 @@ function checked_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], 
                 while i < agg.fields.len:
                     checked_from_expr(read(agg.fields.data + i).value, seen, collected)
                     i += 1
+            ir.Expr.expr_stmt_expr as se:
+                checked_from_stmts(se.setup, seen, collected)
+                checked_from_expr(se.result, seen, collected)
             _:
                 pass
 
@@ -3615,6 +3622,9 @@ function span_index_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]
                 while i < agg.fields.len:
                     span_index_from_expr(read(agg.fields.data + i).value, seen, collected)
                     i += 1
+            ir.Expr.expr_stmt_expr as se:
+                span_index_from_stmts(se.setup, seen, collected)
+                span_index_from_expr(se.result, seen, collected)
             _:
                 pass
 
@@ -6472,6 +6482,17 @@ function uses_foreign_cstr_helper(functions: span[ir.Function]) -> bool:
     return false
 
 
+## True when any emitted function frees a foreign str-to-cstr temporary.
+function uses_free_foreign_cstr_helper(functions: span[ir.Function]) -> bool:
+    var i: ptr_uint = 0
+    while i < functions.len:
+        unsafe:
+            if body_calls(read(functions.data + i).body, "mt_free_foreign_cstr_temp"):
+                return true
+        i += 1
+    return false
+
+
 ## Emit the `mt_foreign_str_to_cstr_temp` runtime helper: malloc's a
 ## null-terminated copy of a str value for passing to C foreign functions.
 ## Mirrors Ruby's c_backend/runtime_helpers.rb `mt_foreign_str_to_cstr_temp`.
@@ -6486,4 +6507,13 @@ function emit_foreign_cstr_helper(e: ref[Emitter]) -> void:
     emit_line(e, "  }")
     emit_line(e, "  data[value.len] = '\\0';")
     emit_line(e, "  return data;")
+    emit_line(e, "}")
+
+
+## Emit the `mt_free_foreign_cstr_temp` runtime helper: frees a malloc'd
+## str-to-cstr temporary after the foreign call returns.  Mirrors Ruby's
+## c_backend/runtime_helpers.rb `mt_free_foreign_cstr_temp`.
+function emit_free_foreign_cstr_helper(e: ref[Emitter]) -> void:
+    emit_line(e, "static void mt_free_foreign_cstr_temp(const char* value) {")
+    emit_line(e, "  free((void*)value);")
     emit_line(e, "}")
