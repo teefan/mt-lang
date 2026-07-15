@@ -2946,6 +2946,11 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
         return lt
     if is_vec_math_name(rt_name) and types.is_numeric(lt):
         return rt
+    # Enum/flags binary ops on same-typed operands yield that nominal type
+    # (flags `| & ^ ~`; enum/flags value arithmetic through the backing int).
+    # Comparisons were already handled above (they return bool).
+    if lt_name != "" and lt_name == rt_name and ctx.static_member_types.contains(lt_name):
+        return lt
     return types.Type.ty_error
 
 
