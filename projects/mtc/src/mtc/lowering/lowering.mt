@@ -6066,6 +6066,14 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                 if id.name == "reinterpret" and type_args.len == 1:
                     let target_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
                     let lowered = lower_expr(ctx, unsafe: read(call_args.data + 0).arg_value)
+                    let source_ty = ir_expr_type(lowered)
+                    # A C cast preserves the numeric VALUE, not the bit pattern —
+                    # correct for pointer/integer reinterprets (same representation)
+                    # but wrong for float<->int, where `reinterpret` must keep the
+                    # raw bits (`reinterpret[uint](3.14f)` is the IEEE bits, not 3).
+                    # Emit a real bit reinterpret in that case.
+                    if types.is_float_type(source_ty) or types.is_float_type(target_ty):
+                        return alloc_expr(ir.Expr.expr_reinterpret(target_type = target_ty, source_type = source_ty, expression = lowered, ty = target_ty))
                     return alloc_expr(ir.Expr.expr_cast(target_type = target_ty, expression = lowered, ty = target_ty))
                 # Builtin `zero[T]` → zero-initialized value of type T.
                 if id.name == "zero" and type_args.len == 1:

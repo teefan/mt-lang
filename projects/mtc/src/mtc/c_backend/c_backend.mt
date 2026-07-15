@@ -3257,6 +3257,19 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return buf.as_str()
             ir.Expr.expr_offsetof as off:
                 return j5("offsetof(", c_type(off.target_type), ", ", off.field, ")")
+            ir.Expr.expr_reinterpret as rin:
+                # Bit reinterpret (not a numeric cast): a union compound literal
+                # copies the source bits into the target representation, so
+                # `reinterpret[uint](f)` yields the IEEE bits rather than `(uint)f`.
+                var rbuf = string.String.create()
+                rbuf.append("((union { ")
+                rbuf.append(c_type(rin.source_type))
+                rbuf.append(" __s; ")
+                rbuf.append(c_type(rin.ty))
+                rbuf.append(" __t; }){ .__s = (")
+                rbuf.append(render_expression(e, rin.expression))
+                rbuf.append(") }).__t")
+                return rbuf.as_str()
             ir.Expr.expr_array_literal as arr:
                 return render_array_literal_initializer(e, arr.elements)
             ir.Expr.expr_conditional as cond:
