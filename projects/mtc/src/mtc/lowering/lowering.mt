@@ -512,7 +512,7 @@ public function lower(program: loader.Program) -> ir.Program:
         includes = collect_includes(program),
         constants = constants.as_span(),
         globals = globals.as_span(),
-        opaques = opaques.as_span(),
+        opaques = collect_opaque_decls(program),
         structs = structs.as_span(),
         unions = unions.as_span(),
         enums = enums.as_span(),
@@ -970,7 +970,12 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 var g_ty = types.primitive("void")
                 if v.var_type != null:
                     var vt: ptr[ast.TypeRef] = unsafe: ptr[ast.TypeRef]<-v.var_type
-                    g_ty = resolve_type_ref(ctx, vt)
+                    # `qualify_type` (not just `resolve_type_ref`) registers the
+                    # generic instance and produces the monomorphized C name, so a
+                    # module-level `var m: Map[str, str]` declares
+                    # `std_map_Map_str_str m` rather than the unspecialized
+                    # `std_map_Map` (which is never defined).
+                    g_ty = qualify_type(ctx, resolve_type_ref(ctx, vt))
                 # A top-level `var` initializer must be static-storage-safe (the
                 # analyzer enforces this), so it lowers to a C static initializer.
                 # A no-capture `proc` initializer, for example, becomes a static
@@ -1211,6 +1216,49 @@ function lowerable_function(is_async: bool, is_const: bool, type_params: span[as
 ## directive from raw (`external`) module analyses (e.g. `std.c.fs` →
 ## `fs_support.h`).  Mirrors Ruby's `collect_includes` so external ABI struct
 ## types declared in those headers are in scope.  Deduplicated, base headers first.
+## Collect the non-`std.c` `opaque` re-exports (e.g. `std.glfw.Window =
+## c"GLFWwindow"`) that need a C typedef, because they render as their
+## module-qualified name (`std_glfw_Window`) which is not otherwise declared.
+## `name` is that qualified alias name; `linkage_name` is the C backing type
+## (`GLFWwindow`).  `std.c.*` opaques render as their raw C name directly and
+## need no typedef, so they are skipped.
+function collect_opaque_decls(program: loader.Program) -> span[ir.OpaqueDecl]:
+    var opaques = vec.Vec[ir.OpaqueDecl].create()
+    var mi: ptr_uint = 0
+    while mi < program.analyses.len():
+        let a_ptr = program.analyses.get(mi) else:
+            mi += 1
+            continue
+        var analysis = unsafe: read(a_ptr)
+        if analysis.module_name.starts_with("std.c."):
+            mi += 1
+            continue
+        var di: ptr_uint = 0
+        while di < analysis.source_file.declarations.len:
+            var d: ast.Decl
+            unsafe:
+                d = read(analysis.source_file.declarations.data + di)
+            match d:
+                ast.Decl.decl_opaque as op:
+                    var backing = op.name
+                    match op.c_name:
+                        Option.some as cn:
+                            backing = cn.value
+                        Option.none:
+                            pass
+                    opaques.push(ir.OpaqueDecl(
+                        name = naming.qualified_c_name(analysis.module_name, op.name),
+                        linkage_name = backing,
+                        forward_declarable = false,
+                        source_module = Option[str].some(value = analysis.module_name),
+                    ))
+                _:
+                    pass
+            di += 1
+        mi += 1
+    return opaques.as_span()
+
+
 function collect_includes(program: loader.Program) -> span[ir.Include]:
     var includes = vec.Vec[ir.Include].create()
     var seen = map_mod.Map[str, bool].create()

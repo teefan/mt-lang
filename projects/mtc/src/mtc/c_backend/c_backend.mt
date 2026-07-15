@@ -162,6 +162,12 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_line(ref_of(e), "#include \"uv.h\"")
     emit_line(ref_of(e), "")
 
+    # Typedefs for non-std.c opaque re-exports (`std.glfw.Window ->
+    # typedef GLFWwindow std_glfw_Window;`), so their module-qualified C name is
+    # a declared type.  Emitted right after the includes that declare the
+    # backing C types.
+    emit_opaque_typedefs(ref_of(e), program)
+
     if use_string_view:
         emit_string_type(ref_of(e))
         emit_line(ref_of(e), "")
@@ -5653,6 +5659,22 @@ function collect_builtin_types(needed: ref[map_mod.Map[str, bool]], t: types.Typ
 
 
 
+
+
+## Emit `typedef <backing> <alias>;` for each non-std.c opaque re-export so its
+## module-qualified C name (`std_glfw_Window`) resolves to the backing C type
+## (`GLFWwindow`).
+function emit_opaque_typedefs(e: ref[Emitter], program: ir.Program) -> void:
+    var seen = map_mod.Map[str, bool].create()
+    var i: ptr_uint = 0
+    while i < program.opaques.len:
+        var od: ir.OpaqueDecl
+        unsafe:
+            od = read(program.opaques.data + i)
+        if od.name != od.linkage_name and not seen.contains(od.name):
+            seen.set(od.name, true)
+            emit_line(e, j5("typedef ", od.linkage_name, " ", od.name, ";"))
+        i += 1
 
 
 function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
