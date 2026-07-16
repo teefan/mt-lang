@@ -15,6 +15,10 @@
 ##   - event-capacity                 (warning)  event capacity >= 128
 ##   - trailing-list-comma            (hint)     redundant comma before a call's `)`
 ##   - doc-tag                        (hint)     malformed / mismatched `## @param` / `## @return`
+##   - dead-assignment                (hint)     assigned value is never read
+##   - unreachable-code               (warning)  statement after return/fatal
+##   - constant-condition             (hint)     `if true` / `while false`
+##   - loop-single-iteration          (hint)     loop body always breaks/returns
 ##
 ## The token-based trailing-list-comma pass re-lexes the source and doc-tag
 ## reads source lines; all others work from the AST alone.
@@ -35,6 +39,7 @@ import mtc.lexer.lexer as lexer
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.linter.scope_tracking as scope_tracking
+import mtc.linter.cfg as cfg
 
 
 public struct Warning:
@@ -74,6 +79,10 @@ public function lint_source(file: ast.SourceFile, source: str, path: str, owning
     lint_events(file.declarations, "", path, ref_of(warnings))
     lint_trailing_commas(file.declarations, source, path, ref_of(warnings))
     lint_line_too_long(source, path, ref_of(warnings))
+    lint_dead_assignment(file, path, ref_of(warnings))
+    lint_unreachable_code(file, path, ref_of(warnings))
+    lint_constant_condition(file, path, ref_of(warnings))
+    lint_loop_single_iteration(file, path, ref_of(warnings))
     return warnings
 
 
@@ -3488,3 +3497,279 @@ function borrow_vec_contains(vec_ref: ref[vec.Vec[str]], name: str) -> bool:
             return true
         i += 1
     return false
+
+
+# =============================================================================
+#  dead-assignment — assignment whose value is never read
+# =============================================================================
+
+## Walk every function body, build a liveness CFG, and flag assignments whose
+## written name is dead immediately after the assignment (not in live_out).
+function lint_dead_assignment(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        unsafe:
+            match read(file.declarations.data + i):
+                ast.Decl.decl_function as fun:
+                    lint_dead_in_body(fun.body, path, warnings)
+                ast.Decl.decl_extending_block as ex:
+                    var j: ptr_uint = 0
+                    while j < ex.methods.len:
+                        lint_dead_in_body(read(ex.methods.data + j).body, path, warnings)
+                        j += 1
+                _:
+                    pass
+        i += 1
+
+
+function lint_dead_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var dead = cfg.collect_dead_writes(body)
+    defer dead.release()
+    var di: ptr_uint = 0
+    while di < dead.len():
+        let dp = dead.get(di) else:
+            break
+        unsafe:
+            let dw = read(dp)
+            var buf = string.String.create()
+            buf.append("assigned value '")
+            buf.append(dw.name)
+            buf.append("' is never read")
+            push_warning(warnings, path, dw.line, "dead-assignment", buf.as_str(), "hint")
+        di += 1
+
+
+# =============================================================================
+#  unreachable-code — statement after a return/fatal/terminating branch
+# =============================================================================
+
+## Walk function bodies and flag statements that follow a terminating statement
+## in the same block.  Uses the existing structural `stmt_always_returns`.
+function lint_unreachable_code(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        unsafe:
+            match read(file.declarations.data + i):
+                ast.Decl.decl_function as fun:
+                    lint_unreachable_in_body(fun.body, path, warnings)
+                ast.Decl.decl_extending_block as ex:
+                    var j: ptr_uint = 0
+                    while j < ex.methods.len:
+                        lint_unreachable_in_body(read(ex.methods.data + j).body, path, warnings)
+                        j += 1
+                _:
+                    pass
+        i += 1
+
+
+function lint_unreachable_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let bp = body else:
+        return
+    unsafe:
+        match read(bp):
+            ast.Stmt.stmt_block as blk:
+                lint_unreachable_stmts(blk.statements, path, warnings)
+            _:
+                pass
+
+
+function lint_unreachable_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var dead = false
+    var si: ptr_uint = 0
+    while si < stmts.len:
+        unsafe:
+            if dead:
+                let sp = stmts.data + si
+                let line = statement_line(sp)
+                push_warning(warnings, path, line, "unreachable-code", "unreachable code after a terminating statement", "warning")
+                si += 1
+                continue
+            if stmt_always_returns(stmts.data + si):
+                dead = true
+            # Also recurse into nested blocks.
+            match read(stmts.data + si):
+                ast.Stmt.stmt_if as iff:
+                    var bi: ptr_uint = 0
+                    while bi < iff.branches.len:
+                        lint_unreachable_in_body(read(iff.branches.data + bi).body, path, warnings)
+                        bi += 1
+                    lint_unreachable_in_body(iff.else_body, path, warnings)
+                ast.Stmt.stmt_while as wh:
+                    lint_unreachable_in_body(wh.body, path, warnings)
+                ast.Stmt.stmt_for as fr:
+                    lint_unreachable_in_body(fr.body, path, warnings)
+                ast.Stmt.stmt_match as mt:
+                    var ai: ptr_uint = 0
+                    while ai < mt.arms.len:
+                        lint_unreachable_in_body(read(mt.arms.data + ai).body, path, warnings)
+                        ai += 1
+                ast.Stmt.stmt_unsafe as un:
+                    lint_unreachable_in_body(un.body, path, warnings)
+                ast.Stmt.stmt_block as blk:
+                    lint_unreachable_stmts(blk.statements, path, warnings)
+                _:
+                    pass
+        si += 1
+
+
+# =============================================================================
+#  constant-condition — `if true` / `while false` / `x == x`
+# =============================================================================
+
+## Flag if-condition branches and while-loop conditions that are trivially
+## constant (boolean literal or self-comparison).
+function lint_constant_condition(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        unsafe:
+            match read(file.declarations.data + i):
+                ast.Decl.decl_function as fun:
+                    lint_const_cond_in_body(fun.body, path, warnings)
+                _:
+                    pass
+        i += 1
+
+
+function lint_const_cond_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let bp = body else:
+        return
+    unsafe:
+        match read(bp):
+            ast.Stmt.stmt_block as blk:
+                var si: ptr_uint = 0
+                while si < blk.statements.len:
+                    lint_const_cond_stmt(blk.statements.data + si, path, warnings)
+                    si += 1
+            _:
+                pass
+
+
+function lint_const_cond_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    let br = read(iff.branches.data + bi)
+                    if is_constant_condition(br.condition):
+                        push_warning(warnings, path, br.line, "constant-condition", "if condition is always a constant boolean", "hint")
+                    lint_const_cond_in_body(br.body, path, warnings)
+                    bi += 1
+                lint_const_cond_in_body(iff.else_body, path, warnings)
+            ast.Stmt.stmt_while as wh:
+                if is_constant_condition(wh.condition):
+                    push_warning(warnings, path, wh.line, "constant-condition", "while condition is always a constant boolean", "hint")
+                lint_const_cond_in_body(wh.body, path, warnings)
+            ast.Stmt.stmt_for as fr:
+                lint_const_cond_in_body(fr.body, path, warnings)
+            ast.Stmt.stmt_match as mt:
+                var ai: ptr_uint = 0
+                while ai < mt.arms.len:
+                    lint_const_cond_in_body(read(mt.arms.data + ai).body, path, warnings)
+                    ai += 1
+            _:
+                pass
+
+
+## True when the expression is a trivially constant boolean: literal true/false,
+## or a self-comparison like `x == x`.
+function is_constant_condition(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_bool_literal:
+                return true
+            ast.Expr.expr_binary_op as b:
+                if b.operator == "==" or b.operator == "!=":
+                    return exprs_equal(b.left, b.right)
+            ast.Expr.expr_unary_op as u:
+                if u.operator == "not":
+                    return is_constant_condition(u.operand)
+            _:
+                return false
+    return false
+
+
+function exprs_equal(left: ptr[ast.Expr], right: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(left):
+            ast.Expr.expr_identifier as li:
+                match read(right):
+                    ast.Expr.expr_identifier as ri:
+                        return li.name == ri.name
+                    _:
+                        return false
+            ast.Expr.expr_bool_literal as lb:
+                match read(right):
+                    ast.Expr.expr_bool_literal as rb:
+                        return lb.value == rb.value
+                    _:
+                        return false
+            _:
+                return false
+
+
+# =============================================================================
+#  loop-single-iteration — loop body always breaks/returns on first iteration
+# =============================================================================
+
+## Walk function bodies and flag while/for loops whose body always exits
+## (returns or breaks) before reaching the back-edge.
+function lint_loop_single_iteration(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        unsafe:
+            match read(file.declarations.data + i):
+                ast.Decl.decl_function as fun:
+                    lint_loop_single_in_body(fun.body, path, warnings)
+                _:
+                    pass
+        i += 1
+
+
+function lint_loop_single_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let bp = body else:
+        return
+    unsafe:
+        match read(bp):
+            ast.Stmt.stmt_block as blk:
+                var si: ptr_uint = 0
+                while si < blk.statements.len:
+                    lint_loop_single_stmt(blk.statements.data + si, path, warnings)
+                    si += 1
+            _:
+                pass
+
+
+function lint_loop_single_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_while as wh:
+                let always_exits = always_returns_body(wh.body) or body_can_break(wh.body)
+                if always_exits and not is_true_literal(wh.condition):
+                    push_warning(warnings, path, wh.line, "loop-single-iteration", "while loop body always exits on first iteration", "hint")
+                lint_loop_single_in_body(wh.body, path, warnings)
+            ast.Stmt.stmt_for as fr:
+                let always_exits = always_returns_body(fr.body) or body_can_break(fr.body)
+                if always_exits:
+                    push_warning(warnings, path, fr.line, "loop-single-iteration", "for loop body always exits on first iteration", "hint")
+                lint_loop_single_in_body(fr.body, path, warnings)
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    lint_loop_single_in_body(read(iff.branches.data + bi).body, path, warnings)
+                    bi += 1
+                lint_loop_single_in_body(iff.else_body, path, warnings)
+            ast.Stmt.stmt_match as mt:
+                var ai: ptr_uint = 0
+                while ai < mt.arms.len:
+                    lint_loop_single_in_body(read(mt.arms.data + ai).body, path, warnings)
+                    ai += 1
+            ast.Stmt.stmt_unsafe as un:
+                lint_loop_single_in_body(un.body, path, warnings)
+            ast.Stmt.stmt_block as blk:
+                var bsi: ptr_uint = 0
+                while bsi < blk.statements.len:
+                    lint_loop_single_stmt(blk.statements.data + bsi, path, warnings)
+                    bsi += 1
+            _:
+                pass
