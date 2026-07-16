@@ -2798,7 +2798,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 record_call_kind(ctx, ep, call_expr_kind(ctx, call.callee))
                 return ty
             ast.Expr.expr_specialization as spec:
-                let ty = check_specialization_call(ctx, scope, spec.callee, spec.arguments)
+                let ty = check_specialization_call(ctx, scope, spec.callee, spec.arguments, span[types.Type]())
                 record_call_kind(ctx, ep, specialization_kind(ctx, spec.callee, spec.arguments))
                 return ty
             ast.Expr.expr_await as aw:
@@ -3047,7 +3047,7 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
                     ast.Expr.expr_member_access as ma:
                         return check_member_call(ctx, scope, ma.receiver, ma.member_name, args, arg_span, any_named, ma.line, ma.column)
                     ast.Expr.expr_specialization as spec:
-                        return check_specialization_call(ctx, scope, spec.callee, spec.arguments)
+                        return check_specialization_call(ctx, scope, spec.callee, spec.arguments, arg_span)
                     ast.Expr.expr_identifier:
                         return check_call(ctx, scope, callee, args, arg_span, any_named)
                     _:
@@ -3060,14 +3060,14 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
 ## is a fully-known local struct, the required hook must exist.  Everything else
 ## (primitives, imported types, type variables, user generic functions) stays
 ## permissive.
-function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument]) -> types.Type:
+function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], arg_types: span[types.Type]) -> types.Type:
     unsafe:
         match read(spec_callee):
             ast.Expr.expr_identifier as id:
                 if id.name == "zero" and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
                     return check_zero_call(ctx, type_args, id.line, id.column)
                 if id.name == "reinterpret" and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
-                    return check_reinterpret_call(ctx, type_args, id.line, id.column)
+                    return check_reinterpret_call(ctx, type_args, arg_types, id.line, id.column)
                 if is_hook_name(id.name) and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
                     return check_hook_call(ctx, id.name, type_args, id.line, id.column)
                 if id.name == "adapt" and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
@@ -3085,7 +3085,7 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
 
 
 ## `reinterpret[T](v)` returns T; requires unsafe context.
-function check_reinterpret_call(ctx: ref[Context], type_args: span[ast.TypeArgument], line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_reinterpret_call(ctx: ref[Context], type_args: span[ast.TypeArgument], arg_types: span[types.Type], line: ptr_uint, column: ptr_uint) -> types.Type:
     if type_args.len != 1:
         return types.Type.ty_error
     if ctx.unsafe_depth == 0:
@@ -3093,7 +3093,67 @@ function check_reinterpret_call(ctx: ref[Context], type_args: span[ast.TypeArgum
     var arg_ref: ptr[ast.TypeRef]
     unsafe:
         arg_ref = read(type_args.data + 0).value
-    return resolve_type(ctx, arg_ref)
+    let target = resolve_type(ctx, arg_ref)
+    # `reinterpret` is a bit-pattern reinterpretation, so both sides must have
+    # the same size.  Enforced when both sizes are statically known (primitives
+    # and raw pointers); other types stay permissive, matching the conservative
+    # analyzer posture.  Mirrors Ruby's equal-size diagnostic.
+    if arg_types.len == 1:
+        var source: types.Type
+        unsafe:
+            source = read(arg_types.data + 0)
+        let source_size = known_byte_size(source) else:
+            return target
+        let target_size = known_byte_size(target) else:
+            return target
+        if source_size != target_size:
+            var message = string.String.from_str("reinterpret requires equal-size types, got ")
+            message.append(types.type_to_string(source))
+            message.append(" (")
+            message.append(byte_size_label(source_size))
+            message.append(" bytes) -> ")
+            message.append(types.type_to_string(target))
+            message.append(" (")
+            message.append(byte_size_label(target_size))
+            message.append(" bytes)")
+            report(ctx, line, column, message.as_str())
+    return target
+
+
+## The byte size of a type when statically known: primitives and raw pointers.
+## Returns none for structs, generics, and anything layout-dependent.
+function known_byte_size(ty: types.Type) -> Option[long]:
+    match ty:
+        types.Type.ty_primitive as p:
+            if p.name == "bool" or p.name == "byte" or p.name == "ubyte" or p.name == "char":
+                return Option[long].some(value = 1)
+            if p.name == "short" or p.name == "ushort":
+                return Option[long].some(value = 2)
+            if p.name == "int" or p.name == "uint" or p.name == "float":
+                return Option[long].some(value = 4)
+            if (
+                p.name == "long" or p.name == "ulong" or p.name == "double"
+                or p.name == "ptr_int" or p.name == "ptr_uint" or p.name == "cstr"
+            ):
+                return Option[long].some(value = 8)
+            return Option[long].none
+        types.Type.ty_generic as g:
+            if g.name == "ptr" or g.name == "const_ptr" or g.name == "own":
+                return Option[long].some(value = 8)
+            return Option[long].none
+        _:
+            return Option[long].none
+
+
+## Digits for the small power-of-two byte sizes known_byte_size can produce.
+function byte_size_label(size: long) -> str:
+    if size == 1:
+        return "1"
+    if size == 2:
+        return "2"
+    if size == 4:
+        return "4"
+    return "8"
 
 
 ## `zero[T]` returns T (zero-initialized value type).
