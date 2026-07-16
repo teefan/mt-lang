@@ -1176,6 +1176,8 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
         return types.Type.ty_str
     if is_primitive_type_name(name):
         return types.primitive(name)
+    if name == "type":
+        return types.Type.ty_type_meta
     if is_generic_constructor_name(name):
         var args = vec.Vec[types.Type].create()
         var i: ptr_uint = 0
@@ -1578,6 +1580,18 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_
         scope_set(ref_of(scope), p.name, resolve_type_value(ctx, p.param_type))
         pi += 1
     seen.release()
+    # Generic value params (`[N: int]`) are compile-time integer constants.
+    # Bind them as immutable locals so `N == 8` resolves in the body.
+    var tpi: ptr_uint = 0
+    while tpi < type_params.len:
+        var tp: ast.TypeParam
+        unsafe:
+            tp = read(type_params.data + tpi)
+        if tp.is_value:
+            let vtype = tp.value_type
+            if vtype != null:
+                scope_set(ref_of(scope), tp.name, resolve_type_value(ctx, unsafe: read(vtype)))
+        tpi += 1
     var ret = types.primitive("void")
     let rt = return_type
     if rt != null:
@@ -2874,7 +2888,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
 ## function (fn-pointer), a type or type parameter, an import alias, or a
 ## built-in type constructor.  Used to avoid false "unknown name" reports.
 function is_known_value_identifier(ctx: ref[Context], name: str) -> bool:
-    return (
+    if (
         ctx.value_names.contains(name)
         or ctx.value_types.contains(name)
         or ctx.functions.contains(name)
@@ -2884,7 +2898,28 @@ function is_known_value_identifier(ctx: ref[Context], name: str) -> bool:
         or is_generic_constructor_name(name)
         or is_primitive_type_name(name)
         or name == "str"
-    )
+    ):
+        return true
+    # Compile-time reflection builtins (`field_of(Labeled, value)`) pass bare
+    # field and attribute names as arguments — these are declared names even
+    # though they have no value-type entry.
+    if ctx.declared_attributes.contains(name):
+        return true
+    var keys = ctx.structs.keys()
+    while true:
+        let key_ptr = keys.next() else:
+            break
+        let struct_name = unsafe: read(key_ptr)
+        let fields_ptr = ctx.structs.get(struct_name) else:
+            continue
+        unsafe:
+            let fields = read(fields_ptr)
+            var fi: ptr_uint = 0
+            while fi < fields.len:
+                if read(fields.data + fi).name == name:
+                    return true
+                fi += 1
+    return false
 
 
 function infer_identifier(ctx: ref[Context], scope: ref[sscope.Scope], name: str, line: ptr_uint, column: ptr_uint) -> types.Type:
@@ -3783,7 +3818,10 @@ function resolve_constraint_method(ctx: ref[Context], var_name: str, method_name
                 Option.some as methods:
                     match interface_method_named(methods.value, method_name):
                         Option.some as m:
-                            return Option[FnSig].some(value = build_fn_sig(ctx, m.value.name, m.value.method_params, m.value.return_type, m.value.method_kind, false))
+                            enter_suppressed_interface_method(ctx, m.value)
+                            let result = build_fn_sig(ctx, m.value.name, m.value.method_params, m.value.return_type, m.value.method_kind, false)
+                            ctx.suppressed_type_names.clear()
+                            return Option[FnSig].some(value = result)
                         Option.none:
                             pass
                 Option.none:
@@ -3804,6 +3842,27 @@ function interface_method_named(methods: span[ast.InterfaceMethod], name: str) -
     return Option[ast.InterfaceMethod].none
 
 
+## Resolve `alias.Type` where `alias` is an imported module and `Type` is one of
+## its exported types (struct, enum, flags, variant, type alias, interface, or
+## opaque).  Returns an imported-type reference or `none` for anything else.
+function try_imported_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str) -> Option[types.Type]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                if scope_get(scope, id.name) != null:
+                    return Option[types.Type].none
+                let module_name_ptr = ctx.import_aliases.get(id.name) else:
+                    return Option[types.Type].none
+                let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                    return Option[types.Type].none
+                let binding = read(binding_ptr)
+                if binding.structs.contains(member) or binding.type_aliases.contains(member) or binding.static_member_types.contains(member) or binding.interfaces.contains(member) or binding.types.contains(member):
+                    return Option[types.Type].some(value = types.Type.ty_imported(module_name = read(module_name_ptr), name = member, args = span[types.Type]()))
+                return Option[types.Type].none
+            _:
+                return Option[types.Type].none
+
+
 ## Dispatch a member access: a bare type-name receiver of an enum/flags/variant
 ## is a static member access (validate against members/arms/methods); anything
 ## else is an instance access (struct field/method or permissive).
@@ -3821,8 +3880,12 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
                             check_static_member(ctx, tn.value, member, line, column)
                             return types.Type.ty_named(module_name = ctx.module_name, name = tn.value)
                         Option.none:
-                            let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
-                            return check_member(ctx, recv, member, is_method_call, line, column)
+                            match try_imported_type(ctx, scope, receiver, member):
+                                Option.some as imported_type:
+                                    return imported_type.value
+                                Option.none:
+                                    let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
+                                    return check_member(ctx, recv, member, is_method_call, line, column)
 
 
 ## Resolve `alias.Type.member` where `alias` is an imported module and `Type` is
@@ -3844,7 +3907,7 @@ function imported_static_member(ctx: ref[Context], scope: ref[sscope.Scope], rec
                             return Option[types.Type].none
                         if not binding_has_member(read(binding_ptr), inner.member_name, member):
                             report(ctx, line, column, unknown_member_message("member", inner.member_name, member))
-                        return Option[types.Type].some(value = types.Type.ty_error)
+                        return Option[types.Type].some(value = types.Type.ty_imported(module_name = read(module_name_ptr), name = inner.member_name, args = span[types.Type]()))
                     _:
                         return Option[types.Type].none
             _:
@@ -4055,11 +4118,18 @@ function check_type_var_member(ctx: ref[Context], var_name: str, member: str, is
 ## permissive; anything else is reported as unknown.  Permissive if the module is
 ## no longer bound.
 function check_imported_member(ctx: ref[Context], module_name: str, type_name: str, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+    return check_imported_member_depth(ctx, module_name, type_name, member, is_method_call, line, column, 0)
+
+
+function check_imported_member_depth(ctx: ref[Context], module_name: str, type_name: str, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint, depth: int) -> types.Type:
+    if depth > 10:
+        return types.Type.ty_error
     let binding_ptr = lookup_binding(ctx, module_name) else:
         return types.Type.ty_error
 
     unsafe:
-        let fields_ptr = read(binding_ptr).structs.get(type_name)
+        let binding = read(binding_ptr)
+        let fields_ptr = binding.structs.get(type_name)
         if fields_ptr != null:
             let fields = read(fields_ptr)
             var i: ptr_uint = 0
@@ -4069,14 +4139,43 @@ function check_imported_member(ctx: ref[Context], module_name: str, type_name: s
                     return fe.ty
                 i += 1
 
-        if member == "with" or binding_has_member(read(binding_ptr), type_name, member):
+        if member == "with" or binding_has_member(binding, type_name, member):
             return types.Type.ty_error
+
+    # Follow a type alias to its source module when the member is not found
+    # directly (e.g. `public type uv_run_mode = c.uv_run_mode` re-exports an
+    # external enum whose members live in the source external module).
+    match follow_type_alias(ctx, binding_ptr, type_name):
+        Option.some as source_info:
+            return check_imported_member_depth(ctx, source_info.value.module_name, source_info.value.type_name, member, is_method_call, line, column, depth + 1)
+        Option.none:
+            pass
 
     if is_method_call:
         report(ctx, line, column, unknown_member_message("method", type_name, member))
     else:
         report(ctx, line, column, unknown_member_message("field", type_name, member))
     return types.Type.ty_error
+
+
+## When `type_name` is a type alias in the binding, resolve it to its source
+## module and type name.  Returns `(source_module, source_type)` or `none` when
+## the type is not a resolvable alias or is not imported from another module.
+struct AliasSource:
+    module_name: str
+    type_name: str
+
+function follow_type_alias(ctx: ref[Context], binding_ptr: ptr[ModuleBinding], type_name: str) -> Option[AliasSource]:
+    unsafe:
+        let resolved_ptr = read(binding_ptr).type_alias_types.get(type_name) else:
+            return Option[AliasSource].none
+        match read(resolved_ptr):
+            types.Type.ty_imported as im:
+                if im.module_name == "":
+                    return Option[AliasSource].none
+                return Option[AliasSource].some(value = AliasSource(module_name = im.module_name, type_name = im.name))
+            _:
+                return Option[AliasSource].none
 
 
 ## Return the result type of a known builtin call (read, ptr_of, const_ptr_of,

@@ -787,7 +787,7 @@ function lower_command(args: span[str]) -> int:
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
-    if program.diagnostic_module_error_count() > 0:
+    if program.diagnostic_error_count() > 0:
         print_program_diagnostics(ref_of(program))
         entry_path_owner.release()
         source_root_owner.release()
@@ -825,7 +825,7 @@ function emit_c_command(args: span[str]) -> int:
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
-    if program.diagnostic_module_error_count() > 0:
+    if program.diagnostic_error_count() > 0:
         print_program_diagnostics(ref_of(program))
         entry_path_owner.release()
         source_root_owner.release()
@@ -1148,7 +1148,7 @@ function build_command(args: span[str]) -> int:
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
-    if program.diagnostic_module_error_count() > 0:
+    if program.diagnostic_error_count() > 0:
         print_program_diagnostics(ref_of(program))
         entry_path_owner.release()
         source_root_owner.release()
@@ -1310,7 +1310,7 @@ function run_command(args: span[str]) -> int:
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
-    if program.diagnostic_module_error_count() > 0:
+    if program.diagnostic_error_count() > 0:
         print_program_diagnostics(ref_of(program))
         entry_path_owner.release()
         source_root_owner.release()
