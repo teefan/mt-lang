@@ -4,9 +4,9 @@ Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE.*
 Stage2 == stage3 byte-identical. 177/177 self-tests pass across 9 test files.
 **Raylib parity: 217/219 build and run** (the 2 remaining are non-executable
 support files rejected with byte-identical Ruby messages, §2.4; vendored-library
-subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language
-parity: 13/13 build, 11/13 byte-identical runtime output vs Ruby** — the two
-exceptions are *Ruby-side* bugs (§2.9). Layout attributes, `static_assert`
+subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parity: 13/13 build, 12/13 byte-identical runtime output vs Ruby**
+(the only exception is `async_stress_test`, a shared libuv crash, and
+`integration_test`'s Ruby `dyn` bug is now fixed, §5.2). Layout attributes, `static_assert`
 evaluation, and the `reinterpret` size rule landed in §2.9. CLI: 15 commands at
 parity incl. build cache (§0.4, §2.8). **`mtc lint` has 31 rules.** Bootstrap
 via `tools/bootstrap.sh`.
@@ -33,17 +33,16 @@ fixed-point verification (`diff stage2.c stage3.c` must be empty).
 ### 0.2 Example parity — language
 
 13/13 language examples build with the self-hosted compiler. The §2.9 audit
-(runtime diff of stdout+exit against Ruby, simple → advanced) found **11/13
-byte-identical**; the remaining differences are on Ruby's side:
+(runtime diff of stdout+exit against Ruby, simple → advanced) plus the §5.2
+verification pass leaves **12/13 byte-identical under both compilers**:
 
 - `async_stress_test` — crashes under **both** compilers (pre-existing libuv
-  runtime bug).
-- `async_network_lobby` — the self-host binary runs to `SUCCESS`; the
-  **Ruby-built** binary aborts (SIGABRT, reproducible 3/3) — a Ruby CPS-async
-  runtime bug the self-host does not share.
-- `integration_test` — builds and runs under the self-host; **Ruby fails to
-  build it** (`__dyn_..._measure` C error: too few arguments — a Ruby `dyn`
-  vtable-wrapper codegen bug).
+  runtime bug, verified identical: exit 134 under each).
+- `async_network_lobby` — identical output once build configs match: the
+  earlier "Ruby crash" was the debug loop guard tripping in a long-polling
+  CPS resume loop (`--no-debug-guards` runs to `SUCCESS`); see §5.2.
+- `integration_test` — Ruby's `dyn` vtable wrapper arity bug is **fixed**
+  (§5.2); both compilers now build and run it identically.
 
 ### 0.3 Example parity — raylib
 
@@ -489,8 +488,9 @@ Combined impact: 9 warnings across the self-host codebase.
 ## 5. Remaining Gaps (new-session context)
 
 The compiler is at a held fixed point (177/177 tests, 13/13 language examples,
-217/219 raylib — the 2 non-builds are correct rejections; 11/13 language
-examples byte-identical at runtime, the other 2 blocked by Ruby-side bugs).
+217/219 raylib — the 2 non-builds are correct rejections; 12/13 language
+examples byte-identical at runtime after the §5.2 `dyn` fix, the one exception
+is the pre-existing shared libuv crash).
 **No known self-host codegen, runtime, or example-parity bug remains.** All
 landed work is recorded in §1 (external-type fixes) and §2 (per-session logs
 §2.1–§2.9). What follows is the complete remaining-gap inventory, prioritized.
@@ -591,9 +591,9 @@ diff /tmp/sh_out /tmp/rb_out   # must be empty
 
 The full-language variant of this (the §2.9 audit): build every
 `examples/*.mt` with both compilers and diff stdout+exit. Expected baseline:
-**11/13 byte-identical**; `async_stress_test` crashes under both;
-`async_network_lobby` and `integration_test` differ only because of the
-Ruby-side bugs in §5.2.
+**12/13 byte-identical**; `async_stress_test` crashes under both; the
+`async_network_lobby` guard-config asymmetry and the `integration_test` Ruby
+`dyn` bug are resolved (see §5.2).
 
 For **codegen parity on GUI examples** (which cannot be runtime-diffed
 headless), C-diff against Ruby with formatting-independent extracts — this is
