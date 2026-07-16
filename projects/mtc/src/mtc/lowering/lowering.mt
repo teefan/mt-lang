@@ -914,6 +914,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
     var variants = vec.Vec[ir.VariantDecl].create()
     var globals = vec.Vec[ir.Global].create()
     var constants = vec.Vec[ir.Constant].create()
+    var module_static_asserts = vec.Vec[ir.StaticAssert].create()
     var pending_decls = vec.Vec[ast.Decl].create()
 
     var i: ptr_uint = 0
@@ -946,6 +947,8 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 enums.push(lower_enum_decl(ref_of(ctx), en.name, en.backing_type, en.enum_members, false))
             ast.Decl.decl_flags as fl:
                 enums.push(lower_enum_decl(ref_of(ctx), fl.name, fl.backing_type, fl.flags_members, true))
+            ast.Decl.decl_static_assert as sa:
+                module_static_asserts.push(lower_static_assert(ref_of(ctx), sa.condition, sa.message))
             ast.Decl.decl_struct as s:
                 # Skip generic structs — only their concrete specializations
                 # (emitted by `ensure_generic_struct_decl`) carry resolved
@@ -953,7 +956,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 # are not generic in the monomorphization sense and should
                 # be emitted directly.
                 if not has_non_lifetime_type_params(s.type_params):
-                    match lower_struct_decl(ref_of(ctx), s.name):
+                    match lower_struct_decl(ref_of(ctx), s.name, s.packed, s.alignment):
                         Option.some as sd:
                             structs.push(sd.value)
                         Option.none:
@@ -1191,7 +1194,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         unions = unions.as_span(),
         enums = enums.as_span(),
         variants = variants.as_span(),
-        static_asserts = span[ir.StaticAssert](),
+        static_asserts = module_static_asserts.as_span(),
         functions = functions.as_span(),
         type_aliases = span[ir.TypeAlias](),
         source_path = "",
@@ -2285,6 +2288,9 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     output.push(ir.Stmt.stmt_goto(label = ctx.loop_continue_label))
                 else:
                     output.push(ir.Stmt.stmt_continue())
+            ast.Stmt.stmt_static_assert as sa:
+                let assertion = lower_static_assert(ctx, sa.condition, sa.message)
+                output.push(ir.Stmt.stmt_static_assert(condition = assertion.condition, message = assertion.message))
             ast.Stmt.stmt_unsafe as u:
                 if u.body != null:
                     # Lower the unsafe body into its own statement list and wrap it
@@ -11215,7 +11221,7 @@ function is_tuple_type(t: types.Type) -> bool:
 ## Lower a struct declaration to an IR StructDecl, resolving its fields from the
 ## analyzer's struct table (which carries resolved field types) and qualifying
 ## named field types with the current module for backend C-naming.
-function lower_struct_decl(ctx: ref[LowerCtx], name: str) -> Option[ir.StructDecl]:
+function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignment: int) -> Option[ir.StructDecl]:
     let fields_ptr = ctx.analysis.structs.get(name) else:
         return Option[ir.StructDecl].none
     let entries = unsafe: read(fields_ptr)
@@ -11249,8 +11255,8 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str) -> Option[ir.StructDec
         name = name,
         linkage_name = naming.qualified_c_name(ctx.module_name, name),
         fields = ir_fields.as_span(),
-        packed = false,
-        alignment = 0,
+        packed = packed,
+        alignment = alignment,
         source_module = Option[str].none,
     ))
 
@@ -11264,7 +11270,7 @@ function lower_nested_struct_decls(ctx: ref[LowerCtx], nested: span[ast.Decl], p
         match d:
             ast.Decl.decl_struct as s:
                 if s.type_params.len == 0:
-                    match lower_struct_decl(ctx, s.name):
+                    match lower_struct_decl(ctx, s.name, s.packed, s.alignment):
                         Option.some as sd:
                             structs.push(sd.value)
                         Option.none:
@@ -11770,6 +11776,172 @@ function const_eval_int(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> long:
                 return 0
             _:
                 return 0
+
+
+## Option-returning compile-time integer evaluation for static_assert folding:
+## literals, module-level constants by name, and arithmetic/bitwise operators.
+## Unlike `const_eval_int`, an unfoldable expression (a `size_of(Struct)` call,
+## a runtime name) yields none instead of 0, so the caller can keep it as a
+## C-evaluable expression rather than mis-folding it.
+function try_const_eval_int(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[long]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal as lit:
+                return Option[long].some(value = long<-lit.value)
+            ast.Expr.expr_char_literal as ch:
+                return Option[long].some(value = long<-ch.value)
+            ast.Expr.expr_identifier as id:
+                let const_ptr = ctx.analysis.const_values.get(id.name)
+                if const_ptr != null:
+                    return try_const_eval_int(ctx, read(const_ptr))
+                return Option[long].none
+            ast.Expr.expr_unary_op as un:
+                let v = try_const_eval_int(ctx, un.operand) else:
+                    return Option[long].none
+                if un.operator == "-":
+                    return Option[long].some(value = -v)
+                if un.operator == "~":
+                    return Option[long].some(value = ~v)
+                return Option[long].none
+            ast.Expr.expr_binary_op as bin:
+                let l = try_const_eval_int(ctx, bin.left) else:
+                    return Option[long].none
+                let r = try_const_eval_int(ctx, bin.right) else:
+                    return Option[long].none
+                if bin.operator == "+":
+                    return Option[long].some(value = l + r)
+                if bin.operator == "-":
+                    return Option[long].some(value = l - r)
+                if bin.operator == "*":
+                    return Option[long].some(value = l * r)
+                if bin.operator == "/":
+                    if r == 0:
+                        return Option[long].none
+                    return Option[long].some(value = l / r)
+                if bin.operator == "%":
+                    if r == 0:
+                        return Option[long].none
+                    return Option[long].some(value = l % r)
+                if bin.operator == "<<":
+                    return Option[long].some(value = l << r)
+                if bin.operator == ">>":
+                    return Option[long].some(value = l >> r)
+                if bin.operator == "|":
+                    return Option[long].some(value = l | r)
+                if bin.operator == "&":
+                    return Option[long].some(value = l & r)
+                if bin.operator == "^":
+                    return Option[long].some(value = l ^ r)
+                return Option[long].none
+            _:
+                return Option[long].none
+
+
+## Compile-time boolean evaluation for a static_assert condition: boolean
+## literals, `not`, `and`/`or`, and integer comparisons over foldable operands.
+## Yields none when any operand cannot be folded (e.g. contains `size_of` over a
+## struct), in which case the condition is emitted as a C constant expression
+## for the C compiler to evaluate.
+function try_const_eval_bool(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[bool]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_bool_literal as b:
+                return Option[bool].some(value = b.value)
+            ast.Expr.expr_unary_op as un:
+                if un.operator == "not":
+                    let inner = try_const_eval_bool(ctx, un.operand) else:
+                        return Option[bool].none
+                    return Option[bool].some(value = not inner)
+                return Option[bool].none
+            ast.Expr.expr_binary_op as bin:
+                if bin.operator == "and" or bin.operator == "or":
+                    let lb = try_const_eval_bool(ctx, bin.left) else:
+                        return Option[bool].none
+                    let rb = try_const_eval_bool(ctx, bin.right) else:
+                        return Option[bool].none
+                    if bin.operator == "and":
+                        return Option[bool].some(value = lb and rb)
+                    return Option[bool].some(value = lb or rb)
+                let is_comparison = (
+                    bin.operator == "==" or bin.operator == "!="
+                    or bin.operator == "<" or bin.operator == "<="
+                    or bin.operator == ">" or bin.operator == ">="
+                )
+                if not is_comparison:
+                    return Option[bool].none
+                let l = try_const_eval_int(ctx, bin.left) else:
+                    return Option[bool].none
+                let r = try_const_eval_int(ctx, bin.right) else:
+                    return Option[bool].none
+                if bin.operator == "==":
+                    return Option[bool].some(value = l == r)
+                if bin.operator == "!=":
+                    return Option[bool].some(value = l != r)
+                if bin.operator == "<":
+                    return Option[bool].some(value = l < r)
+                if bin.operator == "<=":
+                    return Option[bool].some(value = l <= r)
+                if bin.operator == ">":
+                    return Option[bool].some(value = l > r)
+                return Option[bool].some(value = l >= r)
+            _:
+                return Option[bool].none
+
+
+## Lower a static_assert condition for C emission.  Foldable subexpressions
+## (constants, literal arithmetic) become integer literals; the rest —
+## `size_of` / `align_of` / `offset_of` and comparisons over them — lowers
+## normally, producing a C integer constant expression that `_Static_assert`
+## evaluates itself.
+function lower_static_assert_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    match try_const_eval_int(ctx, ep):
+        Option.some as folded:
+            return alloc_expr(ir.Expr.expr_integer_literal(value = folded.value, ty = types.primitive("long")))
+        Option.none:
+            pass
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_binary_op as bin:
+                let left = lower_static_assert_expr(ctx, bin.left)
+                let right = lower_static_assert_expr(ctx, bin.right)
+                var op = bin.operator
+                if op == "and":
+                    op = "&&"
+                if op == "or":
+                    op = "||"
+                return alloc_expr(ir.Expr.expr_binary(operator = op, left = left, right = right, ty = ctx.bool_ty))
+            ast.Expr.expr_unary_op as un:
+                if un.operator == "not":
+                    return alloc_expr(ir.Expr.expr_unary(operator = "not", operand = lower_static_assert_expr(ctx, un.operand), ty = ctx.bool_ty))
+                return lower_expr(ctx, ep)
+            _:
+                return lower_expr(ctx, ep)
+
+
+## Lower a `static_assert(condition, "message")` declaration or statement to the
+## IR form the C backend renders as `_Static_assert(cond, "message")`.  A fully
+## foldable condition emits its folded `true` / `false` (matching Ruby, which
+## folds and lets the C compiler report `static assertion failed`); otherwise
+## the partially-folded condition is emitted for C to evaluate.
+function lower_static_assert(ctx: ref[LowerCtx], condition: ptr[ast.Expr], message: ptr[ast.Expr]?) -> ir.StaticAssert:
+    var cond_ir: ptr[ir.Expr]
+    match try_const_eval_bool(ctx, condition):
+        Option.some as folded:
+            cond_ir = alloc_expr(ir.Expr.expr_boolean_literal(value = folded.value, ty = ctx.bool_ty))
+        Option.none:
+            cond_ir = lower_static_assert_expr(ctx, condition)
+
+    var message_text = "static assertion failed"
+    let message_expr = message
+    if message_expr != null:
+        unsafe:
+            match read(ptr[ast.Expr]<-message_expr):
+                ast.Expr.expr_string_literal as lit:
+                    message_text = lit.value
+                _:
+                    pass
+    let message_ir = alloc_expr(ir.Expr.expr_string_literal(value = message_text, ty = types.primitive("cstr"), cstring = true))
+    return ir.StaticAssert(condition = cond_ir, message = message_ir)
 
 
 # =============================================================================

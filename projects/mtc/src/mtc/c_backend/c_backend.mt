@@ -432,6 +432,17 @@ public function generate_c(program: ir.Program) -> string.String:
             gi += 1
         emit_line(ref_of(e), "")
 
+    # Top-level static asserts, evaluated by the C compiler.  Emitted after all
+    # type definitions so `sizeof` over user structs sees complete types.
+    if program.static_asserts.len > 0:
+        var sai: ptr_uint = 0
+        while sai < program.static_asserts.len:
+            unsafe:
+                let assertion = read(program.static_asserts.data + sai)
+                emit_line(ref_of(e), render_static_assert(ref_of(e), assertion.condition, assertion.message))
+            sai += 1
+        emit_line(ref_of(e), "")
+
     # Emit str_buffer runtime helpers if any str_buffer struct is present.
     if has_str_buffer_structs(program):
         emit_str_buffer_helpers(ref_of(e))
@@ -2189,7 +2200,22 @@ function emit_struct(e: ref[Emitter], s: ir.StructDecl) -> void:
             if not is_void_type(f.ty):
                 emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
         i += 1
-    emit_line(e, "};")
+    emit_line(e, struct_closer(s.packed, s.alignment))
+
+
+## The closing line of a struct definition, carrying GNU-style layout
+## attributes for `@[packed]` / `@[align(N)]` declarations — `};`,
+## `} __attribute__((packed));`, `} __attribute__((aligned(16)));`, or the
+## combined `} __attribute__((packed, aligned(8)));` — matching Ruby's
+## rendering exactly.
+function struct_closer(packed: bool, alignment: int) -> str:
+    if packed and alignment > 0:
+        return j3("} __attribute__((packed, aligned(", long_to_str(long<-alignment), ")));")
+    if packed:
+        return "} __attribute__((packed));"
+    if alignment > 0:
+        return j3("} __attribute__((aligned(", long_to_str(long<-alignment), ")));")
+    return "};"
 
 
 function emit_union(e: ref[Emitter], u: ir.UnionDecl) -> void:
@@ -2925,6 +2951,13 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
     materialize_stmt_array_calls(e, sp, level)
     unsafe:
         match read(sp):
+            ir.Stmt.stmt_static_assert as sa:
+                emit_line(e, j2(indent, render_static_assert(e, sa.condition, sa.message)))
+                return
+            _:
+                pass
+    unsafe:
+        match read(sp):
             ir.Stmt.stmt_return as r:
                 let value = r.value else:
                     emit_line(e, j2(indent, "return;"))
@@ -3288,6 +3321,12 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
 ## statement kinds produced by dynamic format-string lowering are supported
 ## (local declaration, assignment, and expression statement); sub-expressions go
 ## through `render_expression` so their string literals still register globally.
+## `_Static_assert(<condition>, "<message>");` — the message expr is a cstring
+## literal, rendered as a bare C string.
+function render_static_assert(e: ref[Emitter], condition: ptr[ir.Expr], message: ptr[ir.Expr]) -> str:
+    return j5("_Static_assert(", render_expression(e, condition), ", ", render_expression(e, message), ");")
+
+
 function render_stmt_expr(e: ref[Emitter], setup: span[ir.Stmt], result: ptr[ir.Expr]) -> str:
     var buf = string.String.create()
     buf.append("({ ")

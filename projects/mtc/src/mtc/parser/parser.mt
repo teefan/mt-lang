@@ -3430,13 +3430,40 @@ function parse_struct_decl(s: ref[pstate.ParserState], attrs: span[ast.Attribute
             fields.push(parse_struct_member(s, member_attrs))
         skip_newlines(s)
     consume(s, tk.TokenKind.dedent, c"expected end of struct body")
+    var packed = false
+    var alignment: int = 0
+    extract_layout_attributes(attrs, ref_of(packed), ref_of(alignment))
     var node = alloc_decl(s)
     unsafe:
         read(node) = ast.Decl.decl_struct(name = name, type_params = type_params, impl_list = impl_list,
             c_name = c_name, struct_fields = fields.as_span(), struct_events = events.as_span(),
-            nested_types = nested.as_span(), struct_attrs = attrs, packed = false, alignment = 0,
+            nested_types = nested.as_span(), struct_attrs = attrs, packed = packed, alignment = alignment,
             visibility = visibility, lifetime_params = span[ast.TypeParam](), line = ln, column = cn)
     return node
+
+
+## Extract the built-in layout attributes from a declaration's attribute list:
+## `@[packed]` sets `packed`; `@[align(N)]` with an integer-literal argument
+## sets `alignment`.  Other attributes are user-defined and stay in the generic
+## attribute list.
+function extract_layout_attributes(attrs: span[ast.AttributeApplication], packed: ref[bool], alignment: ref[int]) -> void:
+    var i: ptr_uint = 0
+    while i < attrs.len:
+        var applied: ast.AttributeApplication
+        unsafe:
+            applied = read(attrs.data + i)
+        if applied.name.parts.len == 1:
+            let attr_name = unsafe: read(applied.name.parts.data + 0)
+            if attr_name == "packed":
+                read(packed) = true
+            if attr_name == "align" and applied.arguments.len == 1:
+                unsafe:
+                    match read(read(applied.arguments.data + 0).arg_value):
+                        ast.Expr.expr_integer_literal as lit:
+                            read(alignment) = int<-lit.value
+                        _:
+                            pass
+        i += 1
 
 
 function parse_struct_member(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication]) -> ast.Field:
