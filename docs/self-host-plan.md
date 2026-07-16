@@ -1,17 +1,19 @@
 # Self-Host Plan
 
-Status: **SELF-HOSTING FIXED POINT ACHIEVED.** Stage2 == stage3 byte-identical.
-177/177 self-tests pass across 9 test files. **Raylib parity: 217/219 build**
-(the 2 remaining are non-executable support files — an `external` ABI file and a
-`main`-less helper — rejected with byte-identical Ruby messages, see §2.4;
-`rlgl_standalone` and `tracy_profiler` now build via the vendored-library
-subsystem, §2.6). 13/13 language examples build. **`mtc lint` has 31 rules**
-(4 new Tier-1/3 AST rules, 2 new tooling features). `--select`/`--ignore`
-supported. Lint wired into `mtc check`. Bootstrap via `tools/bootstrap.sh`.
+Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB PARITY COMPLETE.**
+Stage2 == stage3 byte-identical. 177/177 self-tests pass across 9 test files.
+**Raylib parity: 217/219 build and run** (the 2 remaining are non-executable
+support files — an `external` ABI file and a `main`-less helper — rejected with
+byte-identical Ruby messages, see §2.4; `rlgl_standalone` and `tracy_profiler`
+build via the vendored-library subsystem, §2.6; binaries link the vendored
+static raylib so they run on Wayland exactly like Ruby's, §2.7). 13/13 language
+examples build. **`mtc lint` has 31 rules** (4 new Tier-1/3 AST rules, 2 new
+tooling features). `--select`/`--ignore` supported. Lint wired into `mtc check`.
+Bootstrap via `tools/bootstrap.sh`.
 
 **Next-session work is in §5.**
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 ---
 
@@ -36,18 +38,15 @@ libuv runtime bug).
 
 ### 0.3 Example parity — raylib
 
-**215 of 219 raylib examples build** (98%, up from 178). Zero regressions
-against the previously-passing set, and the self-host now builds every example
-the Ruby compiler can (it also builds `cel_shading` and `basic_pbr`, which Ruby
-cannot). The 4 remaining are **not self-host codegen gaps** — see §2:
-
-- **2 non-buildable support files** (`rlgl_loader`, `boxed_text`): an `external`
-  raw-binding file and a `main`-less helper library. Both compilers correctly
-  refuse them (they are not executables).
-- **2 vendored-library builds** (`rlgl_standalone`, `tracy_profiler`): the
-  compiler now emits correct C (rlgl_standalone compiles cleanly after the
-  opaque fixes) but the build driver would need to compile a vendored library
-  from source (GLFW → `libglfw3`, the Tracy client).
+**217 of 219 raylib examples build and run** (up from 178 at the start of the
+effort). Zero regressions against the previously-passing set, and the self-host
+builds every example the Ruby compiler can (it also builds `cel_shading` and
+`basic_pbr`, which Ruby cannot). The 2 non-builds are **correct rejections**,
+not gaps (§2.1/§2.4): `rlgl_loader` (an `external` ABI file) and `boxed_text`
+(a `main`-less helper library) are refused with byte-identical Ruby messages.
+`rlgl_standalone` and `tracy_profiler` build via the on-demand vendored-library
+subsystem (§2.6), and all binaries link the vendored static raylib so they run
+on Wayland sessions exactly like Ruby's (§2.7).
 
 The 2026-07-15 gap-closing landed the following fixes (all under a held
 fixed point, 177/177 tests, 13/13 language examples):
@@ -160,12 +159,13 @@ type aliases.
 
 ---
 
-## 2. Remaining raylib Gaps (4 files) — deep root-cause analysis
+## 2. Raylib Gap Root-Cause Analysis and Resolutions — ALL RESOLVED
 
-Each remaining failure has been traced to its exact root cause by inspecting the
-generated C from both compilers. None is a self-host codegen gap: 2 are
-non-buildable support files (both compilers correctly refuse them) and 2 need the
-vendored-library build subsystem.
+Each failure was traced to its exact root cause by inspecting the generated C
+from both compilers, and every item is now landed: 2 non-executable support
+files are rejected with byte-identical Ruby messages (§2.1/§2.4), the 2
+vendored-library examples build via the on-demand vendored subsystem
+(§2.2/§2.6), and binaries run on Wayland via vendored raylib linking (§2.7).
 
 ### 2.1 Not buildable executables (2 files) — both compilers refuse with matching messages
 
@@ -417,8 +417,13 @@ examples).
 
 **Done this session (§2.6):** the vendored-library build subsystem for
 GLFW/Tracy — `rlgl_standalone` and `tracy_profiler` now build, closing the last
-raylib gap (217/219; the other 2 are correct rejections). The items below
-remain.
+raylib gap (217/219; the other 2 are correct rejections).
+
+**Done this session (§2.7):** vendored raylib linking — self-host binaries
+previously linked system `libraylib.so` (X11-only embedded GLFW) and failed at
+startup on Wayland (`GLXBadFBConfig`) while Ruby's ran; raylib-family programs
+now compile against the vendored headers and link the vendored static raylib +
+system `libglfw`, restoring **run** parity. The items below remain.
 
 ### 5.1 Architectural finding: analyzer fallback reliance
 
@@ -467,12 +472,26 @@ detection (tool/flag changes) was deliberately not ported: vendored sources are
 pinned trees, so existence-checking is deterministic; delete the `tmp/` artifact
 to force a rebuild.
 
-### 5.4 Linter (§3) and CLI (§0.4) parity
+### 5.4 Linter (§3), CLI (§0.4), and known minor parity gaps
 
 - Linter: `owning-release-leak`, `redundant-cast`, `prefer-own-ptr` (need
   sema-facts), 5 CFG rules (low ROI), `--fix`, `.mt-lint.yml` config.
 - CLI not-implemented: `run-module`, `new`, `debug`, `deps`, `toolchain`,
   `bindgen`, `cache`, `docs`, `snapshot`, `completions`.
+- **Missing-file exit code** (small): `emit-c`/`lower` on a nonexistent source
+  file print empty boilerplate and exit 0; Ruby prints
+  `source file not found: <path>` and exits 1. `check`/`build`/`run` already
+  exit 1 correctly.
+- **Nested-array outer bounds checks** (deliberate divergence, documented in
+  §1.5): `array[array[T, M], N]` outer-dimension indexing emits a plain C index
+  while Ruby emits a bounds-checked helper (`mt_checked_index_array_array_*`).
+  Values are identical; only the runtime out-of-bounds abort is missing on the
+  outer dimension. Affects 6 examples (julia_set, mandelbrot_set, basic_voxel,
+  palette_switch, clock_of_clocks, spectrum_visualizer).
+- **Inline-mapping public temp count** (cosmetic): Ruby materializes more
+  `foreign_arg_public` temporaries in some inline mappings than the self-host
+  (e.g. `models/loading`: 12 cstr temps vs 7); both are internally
+  alloc/free-balanced and behaviorally equivalent.
 
 ### 5.5 Out-of-scope subsystems (§4)
 
@@ -492,7 +511,7 @@ build/stage2/mtc build examples/language_baseline.mt -I . -o /tmp/lb   # 13/13 l
 
 A change is safe only if: stage2.c == stage3.c, 177/177 tests pass, 13/13
 language examples build, and the raylib passing set does not shrink (currently
-215).
+217; the 2 non-builds must remain clean rejections with Ruby's messages).
 
 For **runtime correctness**, diff against the Ruby compiler on arithmetic / type
 patterns:
@@ -501,4 +520,17 @@ patterns:
 build/stage2/mtc build /tmp/test.mt -I . -o /tmp/sh --no-cache && /tmp/sh > /tmp/sh_out
 ruby -Ilib bin/mtc build /tmp/test.mt -I . -o /tmp/rb --no-cache && /tmp/rb > /tmp/rb_out
 diff /tmp/sh_out /tmp/rb_out   # must be empty
+```
+
+For **codegen parity on GUI examples** (which cannot be runtime-diffed
+headless), C-diff against Ruby with formatting-independent extracts — this is
+what caught all three §2.5 bugs:
+
+```sh
+# per example, emit C with both compilers, then compare:
+#  1. called C ABI symbols (catches wrong linkage names, e.g. extern renames)
+#  2. checked-index helper names (catches wrong array lengths, e.g. _Color_0)
+#  3. mt_foreign_str_to_cstr_temp vs mt_free_foreign_cstr_temp counts
+#     (catches unpaired allocs — leaks)
+build/stage2/mtc emit-c FILE -I . | grep -oE '[A-Za-z_][A-Za-z0-9_]*\(' | sort | uniq -c
 ```
