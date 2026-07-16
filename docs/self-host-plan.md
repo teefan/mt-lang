@@ -377,6 +377,54 @@ Four items landed together (fixed point held, 177/177 tests, 13/13 language,
   a wrong binary. Measured: language_baseline rebuild 0.41 s → 0.09 s; full
   217-example raylib re-sweep 16 s.
 
+### 2.9 Landed: language-example parity audit — layout attrs, static_assert, reinterpret (2026-07-16)
+
+A systematic simple→advanced audit of all 13 language examples plus focused
+feature probes: **runtime diff** (build with both compilers, compare
+stdout+exit — 11/13 byte-identical; `async_stress_test` crashes under both,
+`async_network_lobby` crashes under *Ruby only*, a pre-existing Ruby async
+runtime bug the self-host does not share; `integration_test` fails to build
+under *Ruby only*, a Ruby `dyn` codegen bug) and **structural C diff**
+(external-symbol sets + string-literal sets, formatting-independent). Three
+real self-host feature gaps found and fixed:
+
+1. **`@[packed]` / `@[align(N)]` silently dropped** — the parser stored the
+   attributes in the generic list but never set `decl_struct.packed/alignment`,
+   lowering hardcoded `packed = false`, and the C backend never rendered the
+   closer. A packed `{ubyte, int}` struct sized 8 instead of 5; `@[align(16)]`
+   got natural alignment — silent ABI/layout miscompilation for any packed
+   file/network format. Now parsed, threaded through IR (top-level + nested
+   structs), and rendered as `__attribute__((packed, aligned(N)))`
+   byte-identical to Ruby; runtime `size_of`/`align_of` match.
+
+2. **`static_assert` never evaluated or emitted** — the analyzer only
+   type-checked the condition; `static_assert(false, ...)` compiled cleanly and
+   no `_Static_assert` reached the C. Both declaration and statement forms now
+   emit `_Static_assert`: fully foldable conditions (literals, const
+   arithmetic/comparisons, and/or/not — via new Option-returning
+   `try_const_eval_int/bool`) fold to `true`/`false` exactly like Ruby;
+   `size_of`/`align_of`/`offset_of` conditions partially fold (const
+   identifiers → literals) and are emitted as C integer constant expressions
+   the C compiler evaluates — packed-layout asserts work without a Milk Tea
+   layout calculator. Failing asserts abort the build with
+   `static assertion failed: <message>` under both compilers.
+
+3. **`reinterpret[T]` equal-size rule unenforced** — `reinterpret[int](a_long)`
+   was accepted (and truncated). `check_reinterpret_call` now receives the
+   argument types and reports Ruby's diagnostic
+   (`reinterpret requires equal-size types, got long (8 bytes) -> int (4 bytes)`)
+   when both sizes are statically known (primitives, raw pointers, cstr);
+   layout-dependent types stay permissive. Surfaced via `mtc check` (the build
+   gate still aborts only on module errors until §5.1 removes analyzer false
+   positives).
+
+Remaining structural diffs are verified-cosmetic: runtime-helper
+implementation details (`fwrite`/`malloc` in `mt_fatal`/format machinery),
+UTF-8 string-literal escaping style (raw bytes vs `\xNN`, identical content),
+Ruby's CPS-async `cancel`/`UINT64_C`/`_Static_assert` runtime scaffolding, and
+extra self-host format-fallback literals — all confirmed by identical runtime
+output on the affected examples.
+
 ---
 
 ## 3. Remaining Linter Gaps (unchanged from previous)
