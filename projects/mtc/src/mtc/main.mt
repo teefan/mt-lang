@@ -114,6 +114,9 @@ function main(args: span[str]) -> int:
     if cmd == "format":
         return format_command(args)
 
+    if cmd == "cache":
+        return cache_command(args)
+
     if cmd == "help":
         print_help()
         return 0
@@ -338,7 +341,7 @@ function check_command(args: span[str]) -> int:
                     var diags = vec.Vec[pstate.ParseDiagnostic].create()
                     defer diags.release()
                     let lfile = parser.parse_source(src.as_str(), ref_of(diags))
-                    var lwarns = linter.lint_source(lfile, src.as_str(), effective)
+                    var lwarns = linter.lint_source(lfile, src.as_str(), effective, span[str]())
                     defer lwarns.release()
                     if lwarns.len() > 0:
                         var lwi: ptr_uint = 0
@@ -576,7 +579,7 @@ function lint_command(args: span[str]) -> int:
                 var diags = vec.Vec[pstate.ParseDiagnostic].create()
                 defer diags.release()
                 let file = parser.parse_source(src.as_str(), ref_of(diags))
-                var warns = linter.lint_source(file, src.as_str(), fp)
+                var warns = linter.lint_source(file, src.as_str(), fp, span[str]())
                 defer warns.release()
                 var filtered = vec.Vec[linter.Warning].create()
                 defer filtered.release()
@@ -1054,6 +1057,7 @@ function build_command(args: span[str]) -> int:
     var platform = resolver.Platform.linux
     var clean_mode = false
     var use_cache = true
+    var sanitize = false
     var filtered = vec.Vec[str].create()
     defer filtered.release()
     filtered.push("build")
@@ -1086,6 +1090,11 @@ function build_command(args: span[str]) -> int:
             ai += 2
             continue
         if arg == "--no-cache":
+            use_cache = false
+            ai += 1
+            continue
+        if arg == "--sanitize":
+            sanitize = true
             use_cache = false
             ai += 1
             continue
@@ -1203,7 +1212,7 @@ function build_command(args: span[str]) -> int:
             Option.none:
                 pass
 
-    match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span()):
+    match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span(), sanitize):
         Result.success as built:
             var output = built.value
             defer output.release()
@@ -1238,6 +1247,7 @@ function run_command(args: span[str]) -> int:
     var profile_name = "debug"
     var platform = resolver.Platform.linux
     var use_cache = true
+    var sanitize = false
     var program_args = vec.Vec[str].create()
     defer program_args.release()
     var filtered = vec.Vec[str].create()
@@ -1356,7 +1366,7 @@ function run_command(args: span[str]) -> int:
             Option.none:
                 pass
 
-    match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span()):
+    match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span(), sanitize):
         Result.success as built:
             var built_path = built.value
             defer built_path.release()
@@ -1698,6 +1708,52 @@ function completions_command(args: span[str]) -> int:
             fi += 1
         return 0
     stdio.print_line("completions: shell must be bash, zsh, or fish")
+    return 1
+
+
+function cache_command(args: span[str]) -> int:
+    if args.len < 2:
+        stdio.print_line("mtc cache <subcommand>")
+        stdio.print_line("")
+        stdio.print_line("Commands:")
+        stdio.print_line("  purge   Delete the build cache")
+        stdio.print_line("  status  Show cache entry count and total size")
+        stdio.print_line("")
+        stdio.print_line("Flags:")
+        stdio.print_line("  --help  Show cache command help")
+        return 1
+    let sub = args[1]
+    if sub == "--help" or sub == "-h":
+        stdio.print_line("mtc cache <subcommand>")
+        stdio.print_line("")
+        stdio.print_line("Commands:")
+        stdio.print_line("  purge   Delete the build cache")
+        stdio.print_line("  status  Show cache entry count and total size")
+        return 0
+    if sub == "purge":
+        match build_cache.purge():
+            Result.failure as failure:
+                var msg = string.String.from_str("cache purge failed: ")
+                msg.append(failure.error.as_str())
+                let msg_text = msg.as_str()
+                stdio.print_format(c"%.*s\n", int<-(msg_text.len), msg_text.data)
+                msg.release()
+                return 1
+            Result.success as payload:
+                var root = payload.value
+                let text = root.as_str()
+                stdio.print_format(c"purged %.*s\n", int<-(text.len), text.data)
+                root.release()
+                return 0
+    if sub == "status":
+        var st = build_cache.status()
+        var root = build_cache.cache_root_path()
+        let root_text = root.as_str()
+        stdio.print_format(c"cache  %zu programs  %zu bytes\n", st.count, st.total_bytes)
+        stdio.print_format(c"  root  %.*s\n", int<-(root_text.len), root_text.data)
+        root.release()
+        return 0
+    stdio.print_line("unknown cache subcommand")
     return 1
 
 

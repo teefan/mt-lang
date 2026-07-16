@@ -15,7 +15,7 @@ function lint_text(source: str) -> vec.Vec[linter.Warning]:
     var diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer diags.release()
     let file = parser.parse_source(source, ref_of(diags))
-    return linter.lint_source(file, source, "test.mt")
+    return linter.lint_source(file, source, "test.mt", span[str]())
 
 
 ## Count warnings whose code equals `code`.

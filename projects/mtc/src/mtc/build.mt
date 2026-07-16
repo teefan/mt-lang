@@ -23,9 +23,10 @@ import mtc.parser.ast as ast
 ## module search roots (as passed on the CLI): the one containing `std/c` supplies
 ## the C ABI header include path.  `ir_program` is the caller-lowered IR (the CLI
 ## lowers once, so the entrypoint check and the build share a single lowering).
+## When `sanitize` is true, the binary is compiled with AddressSanitizer and UBSan.
 ## On success the success value is the output path; on failure the error is a
 ## human-readable message.
-public function build(program: loader.Program, ir_program: ir.Program, output_path: str, c_compiler: str, roots: span[str]) -> Result[string.String, string.String]:
+public function build(program: loader.Program, ir_program: ir.Program, output_path: str, c_compiler: str, roots: span[str], sanitize: bool) -> Result[string.String, string.String]:
     # Vendored static libraries (GLFW, the Tracy client) must exist before the
     # link step; build them on demand for raw bindings that require them.
     match prepare_vendored_libraries(program, roots):
@@ -55,6 +56,10 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
     command.push(c_compiler)
     command.push("-std=c11")
     command.push("-D_GNU_SOURCE")
+    if sanitize:
+        command.push("-fsanitize=address,undefined")
+        command.push("-fno-sanitize-recover=all")
+        command.push("-fno-omit-frame-pointer")
 
     # C ABI struct definitions (`fs_support.h`, etc.) live under `<root>/std/c`;
     # add the include path from whichever root contains that directory.

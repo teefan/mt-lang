@@ -251,3 +251,81 @@ function copy_binary(source_path: str, destination_path: str) -> bool:
                     return false
                 Result.success:
                     return true
+
+
+## The cache root directory path.
+public function cache_root_path() -> string.String:
+    return cache_root()
+
+
+## Delete every cached entry, returning the path of the (now-empty) cache root.
+public function purge() -> Result[string.String, string.String]:
+    var root = cache_root()
+    if not fs.exists(root.as_str()):
+        return Result[string.String, string.String].success(value = root)
+    match fs.remove_tree(root.as_str()):
+        Result.failure as failure:
+            var msg = failure.error.message
+            defer msg.release()
+            return Result[string.String, string.String].failure(error = string.String.from_str(msg.as_str()))
+        Result.success:
+            pass
+    return Result[string.String, string.String].success(value = root)
+
+
+struct CacheStatus:
+    count: ptr_uint
+    total_bytes: ptr_uint
+
+
+## Count cached entries and total bytes used.
+public function status() -> CacheStatus:
+    var root = cache_root()
+    var count: ptr_uint = 0
+    var total_bytes: ptr_uint = 0
+    if not fs.is_directory(root.as_str()):
+        return CacheStatus(count = 0, total_bytes = 0)
+    match fs.list_entries(root.as_str()):
+        Result.failure as failure:
+            var err = failure.error
+            err.release()
+            return CacheStatus(count = 0, total_bytes = 0)
+        Result.success as entries_payload:
+            var entries = entries_payload.value
+            defer entries.release()
+            var ei: ptr_uint = 0
+            while ei < entries.len():
+                match entries.get(ei):
+                    Option.none:
+                        break
+                    Option.some as entry:
+                        var entry_path = path_ops.join(root.as_str(), entry.value)
+                        let is_dir = fs.is_directory(entry_path.as_str())
+                        if is_dir:
+                            match fs.list_entries(entry_path.as_str()):
+                                Result.failure:
+                                    pass
+                                Result.success as sub_payload:
+                                    var subs = sub_payload.value
+                                    defer subs.release()
+                                    var si: ptr_uint = 0
+                                    while si < subs.len():
+                                        match subs.get(si):
+                                            Option.none:
+                                                break
+                                            Option.some as sub:
+                                                var sub_path = path_ops.join(entry_path.as_str(), sub.value)
+                                                defer sub_path.release()
+                                                let is_file = fs.is_file(sub_path.as_str())
+                                                if is_file:
+                                                    match fs.metadata(sub_path.as_str()):
+                                                        Result.failure:
+                                                            pass
+                                                        Result.success as meta_payload:
+                                                            var meta = meta_payload.value
+                                                            total_bytes += meta.size
+                                                si += 1
+                            count += 1
+                        entry_path.release()
+                ei += 1
+            return CacheStatus(count = count, total_bytes = total_bytes)

@@ -13,7 +13,7 @@ via `tools/bootstrap.sh`.
 
 **Remaining gaps for the next session are consolidated in §5.**
 
-Last updated: 2026-07-16 (post language-parity audit)
+Last updated: 2026-07-16 (post analyzer false-positive elimination — §5.1 DONE)
 
 ---
 
@@ -97,7 +97,7 @@ fixed point, 177/177 tests, 13/13 language examples):
 | Status | Commands |
 |--------|----------|
 | **FULL**  | lex, parse, lower, emit-c, format, help, version, check, build, run, run-module, test, lint, new, completions |
-| **NOT IMPL** | debug, deps, toolchain, bindgen, cache, docs, snapshot |
+| **NOT IMPL** | debug, deps, toolchain, bindgen, docs, snapshot |
 
 The build cache is implemented (§2.8): `build`/`run` reuse a previously built
 binary when nothing changed (`built ... [cached]`), and `--no-cache` bypasses
@@ -438,11 +438,14 @@ output on the affected examples.
 
 ## 3. Remaining Linter Gaps (unchanged from previous)
 
-### 3.1 Ownership — 1 remaining
+### 3.1 Ownership — DONE (2026-07-16)
 
-| Rule | Status |
-|------|--------|
-| `owning-release-leak` | DEFERRED — needs sema_facts for `own[T]` type detection |
+`owning-release-leak` is now active. The owning type set is built from method_keys
+in `module_loader.check_program` (types with a `.release()` method), stored in
+`Program.owning_type_names`, and threaded to `lint_source`. The leak detection
+uses both constructor-pattern recognition (`create`/`with_capacity`/`from_str`/
+`empty`) and type-annotation inspection (`let x: Vec[int] = ...` against the
+owning set). The previously-disabled leak-reporting loop is uncommented.
 
 ### 3.2 Semantic-facts — 2 remaining
 
@@ -481,7 +484,7 @@ Combined impact: 9 warnings across the self-host codebase.
 | `--bundle` / `--archive` | Medium |
 | Wasm compilation (emcc) + preview server | Large |
 | `--jobs` parallel test execution | Medium |
-| `--sanitize` | Medium |
+| ~~`--sanitize`~~ **DONE** | — |
 | ~~`run-module`, `new`, `completions`~~ **DONE (§2.8)**; `debug`, `deps`, `toolchain`, `bindgen`, `cache`, `docs`, `snapshot` | Varies |
 
 ---
@@ -496,30 +499,35 @@ is the pre-existing shared libuv crash).
 landed work is recorded in §1 (external-type fixes) and §2 (per-session logs
 §2.1–§2.9). What follows is the complete remaining-gap inventory, prioritized.
 
-### 5.1 Analyzer false positives → semantic-error gate (highest-value correctness item)
+### 5.1 Analyzer false positives → semantic-error gate (DONE — 2026-07-16)
 
-The self-host's semantic analyzer is deliberately conservative — it records
+The self-host's semantic analyzer was deliberately conservative — it recorded
 `ty_error` for expressions involving imported types, cross-module calls, and
-struct-field chains. In a full raylib example (julia_set), **77% of expression
-type lookups fall back** to lowering's `fallback_type` heuristic.
+struct-field chains. This blocked the semantic-error gate: gating on sema errors
+would reject valid programs because the analyzer reported false positives on
+perfectly valid code.
 
-This blocks one behavioral parity item: **Ruby exits 1 on semantic errors for
-all C-emitting commands; the self-host gates only on `module/*` loader errors**
-(`diagnostic_module_error_count`, §2.8), because gating on sema errors would
-reject valid programs. Known false-positive classes to eliminate first:
+**All 13 check errors on `language_baseline.mt` are eliminated.** `mtc check` is
+now 0 errors / 184 warnings (linter hints only). The gate is flipped from
+`diagnostic_module_error_count()` to `diagnostic_error_count()` at all 4 sites
+(lower, emit-c, build, run).
 
-- `unknown type type` — `-> type` (type-returning) functions, 13 hits in
-  language_baseline alone.
-- Imported-type expression chains recorded as `ty_error` (the 77% fallback).
+Fixes applied (all in `analyzer.mt`):
 
-Once `mtc check` is clean on all 13 language examples + the compiler itself +
-a raylib sample, flip `lower`/`emit-c`/`build`/`run` to gate on
-`diagnostic_error_count() > 0` and delete `diagnostic_module_error_count`.
+| Issue | Root cause | Fix |
+|-------|-----------|-----|
+| `unknown type type` (3) | `resolve_named` had no `"type" -> ty_type_meta` branch | Added check before generic-constructor resolution |
+| `unknown type U` (2) | `resolve_constraint_method` called `build_fn_sig` without suppressing interface type params | Added `enter_suppressed_interface_method` + `suppressed_type_names.clear()` |
+| `unknown name N` (4) | Generic value params `[N: int]` were not bound in the local scope for expression use | Bind value params as immutable locals in `check_function_body` |
+| `unknown name value/rename/traced` (3) | Compile-time reflection builtins (`field_of`, `attribute_of`) pass bare field/attribute names that are not value identifiers | Extended `is_known_value_identifier` to recognize declared attribute names and struct field names |
+| `unknown field` on re-exported enum members (4) | Type-aliased external enums (`type uv_run_mode = c.uv_run_mode`) had member lookups fail because the wrapper binding lacks member keys | `check_imported_member` now follows type-alias chains via `follow_type_alias` to the source external module |
+| Imported types in expression position | `resolve_member_access` had no path for `alias.Type` as a type reference in expression context | Added `try_imported_type` dispatch between `static_type_receiver` and the `check_member` fallback |
+| `imported_static_member` return type | Always returned `ty_error` for valid enum/flags/variant members | Returns `ty_imported(module, type_name)` for precise type tracking |
 
-**Architecture lesson (unchanged):** every new IR expression node must be
-handled in `ir_expr_type` (lowering) and the C-backend renderer; every new
-analyzer pattern must be verified by *runtime* comparison against Ruby, not
-"BUILDS OK" (see §2.5/§2.9 for the bug classes each audit method caught).
+Fixed point holds, 177/177 tests pass, language examples build and run, raylib
+examples unaffected. The 77% fallback rate in lowering remains — the analyzer
+still delegates most expression type resolution to the lowering — but it no
+longer reports false-positive errors on valid code in the common patterns.
 
 ### 5.2 Ruby-side bugs from the parity audits — verified with minimal repros (2026-07-16)
 

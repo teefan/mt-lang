@@ -55,6 +55,7 @@ public struct Program:
     order: vec.Vec[ptr_uint]
     analyses: vec.Vec[analyzer.Analysis]
     diagnostics: vec.Vec[LoadDiagnostic]
+    owning_type_names: vec.Vec[str]
 
 
 extending LoadedModule:
@@ -74,6 +75,11 @@ extending LoadDiagnostic:
 extending Program:
     public function module_count() -> ptr_uint:
         return this.modules.len()
+
+
+    ## Owning type names: types with a `.release()` method in any loaded module.
+    public function owning_type_span() -> span[str]:
+        return this.owning_type_names.as_span()
 
 
     public function diagnostic_count() -> ptr_uint:
@@ -249,7 +255,41 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
         check_and_bind_module(module_ptr, bindings_ptr, ref_of(analyses), ref_of(diagnostics))
         oi += 1
 
-    return Program(modules = modules, order = order, analyses = analyses, diagnostics = diagnostics)
+    var owning_type_names = build_owning_type_names(ref_of(analyses))
+
+    return Program(modules = modules, order = order, analyses = analyses, diagnostics = diagnostics, owning_type_names = owning_type_names)
+
+
+## Scan all loaded module analyses' method_keys for entries ending with ".release"
+## and extract the type name part.  Types with a `release()` method are "owning"
+## types — bindings of these types should trigger an owning-release-leak warning
+## when they are never released.
+function build_owning_type_names(analyses: ref[vec.Vec[analyzer.Analysis]]) -> vec.Vec[str]:
+    var seen = map_mod.Map[str, bool].create()
+    var names = vec.Vec[str].create()
+    var ai: ptr_uint = 0
+    while ai < analyses.len():
+        let analysis_ptr = analyses.get(ai) else:
+            break
+        unsafe:
+            var keys = read(analysis_ptr).method_keys.keys()
+            while true:
+                let key_ptr = keys.next() else:
+                    break
+                var key = read(key_ptr)
+                let dot = key.find_byte('.')
+                if dot.is_some():
+                    let dot_pos = dot.unwrap()
+                    if dot_pos + 1 < key.len:
+                        let suffix = key.slice(dot_pos + 1, key.len - dot_pos - 1)
+                        if suffix.equal("release"):
+                            let base = key.slice(0, dot_pos)
+                            if not seen.contains(base):
+                                seen.set(base, true)
+                                names.push(base)
+        ai += 1
+    seen.release()
+    return names
 
 
 ## Resolve and parse a prelude module (e.g. std.option) into the module set so
