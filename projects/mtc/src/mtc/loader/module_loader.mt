@@ -119,6 +119,23 @@ extending Program:
         return count
 
 
+    ## Count only loader-level errors (module/error code prefix) — source file
+    ## not found, import failures, etc.  These are hard failures that prevent
+    ## lowering and must abort the build; semantic errors are excluded because
+    ## the self-host analyzer has known false-positive patterns on valid code.
+    public function diagnostic_module_error_count() -> ptr_uint:
+        var count: ptr_uint = 0
+        var i: ptr_uint = 0
+        while i < this.diagnostics.len():
+            let d = this.diagnostics.get(i) else:
+                break
+            unsafe:
+                if read(d).severity == "error" and read(d).code.starts_with("module"):
+                    count += 1
+            i += 1
+        return count
+
+
     public function diagnostic_warning_count() -> ptr_uint:
         var count: ptr_uint = 0
         var i: ptr_uint = 0

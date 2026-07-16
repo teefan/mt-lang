@@ -27,6 +27,7 @@ import mtc.lowering.lowering as lowering
 import mtc.c_backend.c_backend as c_backend
 import mtc.ir as ir
 import mtc.build as build_driver
+import mtc.build_cache as build_cache
 import mtc.pretty_printer.ast_formatter as fmt
 import mtc.linter.linter as linter
 
@@ -95,6 +96,18 @@ function main(args: span[str]) -> int:
             return 1
         return run_command(args)
 
+    if cmd == "run-module":
+        if args.len < 2:
+            print_help()
+            return 1
+        return run_module_command(args)
+
+    if cmd == "new":
+        return new_command(args)
+
+    if cmd == "completions":
+        return completions_command(args)
+
     if cmd == "test":
         return test_command(args)
 
@@ -123,8 +136,11 @@ function print_help() -> void:
     stdio.print_line("  emit-c <file|dir> [-I DIR]... [--platform NAME]    compile to C and print it")
     stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache] [--clean]")
     stdio.print_line("  run   <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache] [-- ARGS...]")
+    stdio.print_line("  run-module <module> [run options...]                resolve, build, and run a module by name")
     stdio.print_line("  test  <dir> [-I DIR]... [-n NAME] [--timeout SECONDS] [--mem MB] [--format human|tap|junit]  discover and run @[test] functions")
+    stdio.print_line("  new   <path>                                        scaffold a new package")
     stdio.print_line("  format <file> [--check|--write]                     format source and print, check, or write back")
+    stdio.print_line("  completions bash|zsh|fish                           print a shell completion script")
     stdio.print_line("  version|--version|-V                                print version and exit")
     stdio.print_line("  help                                                print this help")
 
@@ -671,6 +687,17 @@ function parse_platform_name(name: str) -> Option[resolver.Platform]:
     return Option[resolver.Platform].none
 
 
+## The canonical name of a target platform (inverse of parse_platform_name).
+function platform_label(platform: resolver.Platform) -> str:
+    match platform:
+        resolver.Platform.windows:
+            return "windows"
+        resolver.Platform.wasm:
+            return "wasm"
+        _:
+            return "linux"
+
+
 ## Parse the `[-I DIR]... [--platform NAME] <source>` argument tail shared by
 ## the lower, emit-c, and build commands.  Fills `roots` (defaulting to the source
 ## directory when none is given), sets `platform` to the parsed platform (defaults
@@ -760,6 +787,12 @@ function lower_command(args: span[str]) -> int:
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
+    if program.diagnostic_module_error_count() > 0:
+        print_program_diagnostics(ref_of(program))
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
+
     if reject_external_root(program):
         entry_path_owner.release()
         source_root_owner.release()
@@ -791,6 +824,12 @@ function emit_c_command(args: span[str]) -> int:
 
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
+
+    if program.diagnostic_module_error_count() > 0:
+        print_program_diagnostics(ref_of(program))
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
 
     if reject_external_root(program):
         entry_path_owner.release()
@@ -1015,6 +1054,7 @@ function build_command(args: span[str]) -> int:
     var profile_name = "debug"
     var platform = resolver.Platform.linux
     var clean_mode = false
+    var use_cache = true
     var filtered = vec.Vec[str].create()
     defer filtered.release()
     filtered.push("build")
@@ -1055,7 +1095,7 @@ function build_command(args: span[str]) -> int:
             ai += 1
             continue
         if arg == "--no-cache":
-            # Accepted but a no-op: the current build driver always rebuilds.
+            use_cache = false
             ai += 1
             continue
         if arg == "--profile":
@@ -1119,6 +1159,12 @@ function build_command(args: span[str]) -> int:
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
+    if program.diagnostic_module_error_count() > 0:
+        print_program_diagnostics(ref_of(program))
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
+
     if reject_external_root(program):
         entry_path_owner.release()
         source_root_owner.release()
@@ -1140,11 +1186,41 @@ function build_command(args: span[str]) -> int:
     else:
         output_path = default_output_path(effective)
 
+    # Binary cache: an unchanged program (same mtc executable, C compiler,
+    # configuration, and module sources) reuses the previously built binary.
+    # --keep-c always rebuilds so the saved C matches the produced binary.
+    let cache_enabled = use_cache and keep_c_path.is_none()
+    var cache_key = string.String.create()
+    defer cache_key.release()
+    if cache_enabled:
+        var computed_key = build_cache.compute_key(ref_of(program), c_compiler, debug_guards, platform_label(platform))
+        cache_key.append(computed_key.as_str())
+        computed_key.release()
+        match build_cache.lookup(cache_key.as_str()):
+            Option.some as hit:
+                var cached = hit.value
+                let copied = build_cache.materialize(cached.as_str(), output_path.as_str())
+                cached.release()
+                if copied:
+                    stdio.print_format(
+                        c"built %.*s -> %.*s  [cached]\n",
+                        int<-(effective.len), effective.data,
+                        int<-(output_path.as_str().len), output_path.as_str().data,
+                    )
+                    output_path.release()
+                    entry_path_owner.release()
+                    source_root_owner.release()
+                    return 0
+            Option.none:
+                pass
+
     match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span()):
         Result.success as built:
             var output = built.value
             defer output.release()
             output_path.release()
+            if cache_enabled:
+                build_cache.store(cache_key.as_str(), output.as_str())
             stdio.print_format(
                 c"built %.*s -> %.*s\n",
                 int<-(effective.len), effective.data,
@@ -1173,6 +1249,7 @@ function run_command(args: span[str]) -> int:
     var debug_guards = true
     var profile_name = "debug"
     var platform = resolver.Platform.linux
+    var use_cache = true
     var program_args = vec.Vec[str].create()
     defer program_args.release()
     var filtered = vec.Vec[str].create()
@@ -1213,7 +1290,7 @@ function run_command(args: span[str]) -> int:
             ai += 1
             continue
         if arg == "--no-cache":
-            # Accepted but a no-op: the current build driver always rebuilds.
+            use_cache = false
             ai += 1
             continue
         if arg == "--profile":
@@ -1251,6 +1328,12 @@ function run_command(args: span[str]) -> int:
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer program.release()
 
+    if program.diagnostic_module_error_count() > 0:
+        print_program_diagnostics(ref_of(program))
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
+
     if reject_external_root(program):
         entry_path_owner.release()
         source_root_owner.release()
@@ -1269,6 +1352,28 @@ function run_command(args: span[str]) -> int:
     else:
         output_path = default_output_path(effective)
 
+    # Binary cache: reuse the previously built binary when nothing changed.
+    var cache_key = string.String.create()
+    defer cache_key.release()
+    if use_cache:
+        var computed_key = build_cache.compute_key(ref_of(program), c_compiler, debug_guards, platform_label(platform))
+        cache_key.append(computed_key.as_str())
+        computed_key.release()
+        match build_cache.lookup(cache_key.as_str()):
+            Option.some as hit:
+                var cached = hit.value
+                let copied = build_cache.materialize(cached.as_str(), output_path.as_str())
+                cached.release()
+                if copied:
+                    var cached_output = string.String.from_str(output_path.as_str())
+                    defer cached_output.release()
+                    output_path.release()
+                    entry_path_owner.release()
+                    source_root_owner.release()
+                    return execute_binary(cached_output.as_str(), ref_of(program_args))
+            Option.none:
+                pass
+
     match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span()):
         Result.success as built:
             var built_path = built.value
@@ -1278,34 +1383,9 @@ function run_command(args: span[str]) -> int:
             defer owned_output.release()
             entry_path_owner.release()
             source_root_owner.release()
-
-            var cmd = vec.Vec[str].create()
-            defer cmd.release()
-            cmd.push(owned_output.as_str())
-            var pai: ptr_uint = 0
-            while pai < program_args.len():
-                let pa_ptr = program_args.get(pai) else:
-                    break
-                unsafe:
-                    cmd.push(read(pa_ptr))
-                pai += 1
-
-            match process.capture(cmd.as_span()):
-                Result.success as captured:
-                    var capture_result = captured.value
-                    defer capture_result.release()
-                    let stdout_text_opt = capture_result.stdout_text()
-                    if stdout_text_opt.is_some():
-                        let stdout_text = stdout_text_opt.unwrap()
-                        stdio.print_format(c"%.*s", int<-(stdout_text.len), stdout_text.data)
-                    let stderr_text_opt = capture_result.stderr_text()
-                    if stderr_text_opt.is_some():
-                        let stderr_text = stderr_text_opt.unwrap()
-                        let _w = terminal.write_stderr(stderr_text)
-                    return capture_result.status.normalized_code()
-                Result.failure:
-                    stdio.print_format(c"error: cannot execute '%.*s'\n", int<-(owned_output.as_str().len), owned_output.as_str().data)
-                    return 1
+            if use_cache:
+                build_cache.store(cache_key.as_str(), owned_output.as_str())
+            return execute_binary(owned_output.as_str(), ref_of(program_args))
         Result.failure as failure:
             var message = failure.error
             defer message.release()
@@ -1315,6 +1395,367 @@ function run_command(args: span[str]) -> int:
             entry_path_owner.release()
             source_root_owner.release()
             return 1
+
+
+## Execute a built binary with the forwarded program arguments, streaming its
+## captured stdout/stderr and returning the normalized exit code.
+function execute_binary(binary_path: str, program_args: ref[vec.Vec[str]]) -> int:
+    var cmd = vec.Vec[str].create()
+    defer cmd.release()
+    cmd.push(binary_path)
+    var pai: ptr_uint = 0
+    while pai < program_args.len():
+        let pa_ptr = program_args.get(pai) else:
+            break
+        unsafe:
+            cmd.push(read(pa_ptr))
+        pai += 1
+
+    match process.capture(cmd.as_span()):
+        Result.success as captured:
+            var capture_result = captured.value
+            defer capture_result.release()
+            let stdout_text_opt = capture_result.stdout_text()
+            if stdout_text_opt.is_some():
+                let stdout_text = stdout_text_opt.unwrap()
+                stdio.print_format(c"%.*s", int<-(stdout_text.len), stdout_text.data)
+            let stderr_text_opt = capture_result.stderr_text()
+            if stderr_text_opt.is_some():
+                let stderr_text = stderr_text_opt.unwrap()
+                let _w = terminal.write_stderr(stderr_text)
+            return capture_result.status.normalized_code()
+        Result.failure:
+            stdio.print_format(c"error: cannot execute '%.*s'\n", int<-(binary_path.len), binary_path.data)
+            return 1
+
+
+## Resolve, build, and run a module by name (`mtc run-module std.tool.x`).
+## The module name maps to `<name with . as />.mt`, resolved against each
+## module root as `<root>/std/<rel>` then `<root>/<rel>` — mirroring Ruby's
+## resolve_app_module.  The resolved file then flows through the ordinary
+## `run` path with all other arguments preserved.
+function run_module_command(args: span[str]) -> int:
+    var module_name: Option[str] = Option[str].none
+    var module_index: ptr_uint = 0
+    var roots = vec.Vec[str].create()
+    defer roots.release()
+
+    var ai: ptr_uint = 1
+    while ai < args.len:
+        let arg = args[ai]
+        if arg == "--":
+            break
+        if arg == "--root" or arg == "-I":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: -I requires a directory")
+                return 1
+            roots.push(args[ai + 1])
+            ai += 2
+            continue
+        if arg == "-o" or arg == "--cc" or arg == "--profile" or arg == "--platform" or arg == "--keep-c":
+            ai += 2
+            continue
+        if arg.starts_with("-"):
+            ai += 1
+            continue
+        module_name = Option[str].some(value = arg)
+        module_index = ai
+        break
+
+    let name = module_name else:
+        stdio.print_line("missing module name")
+        return 1
+
+    # Ambient roots: the current directory plus its enclosing project root.
+    var cwd = string.String.create()
+    defer cwd.release()
+    match fs.current_directory():
+        Result.success as dir_payload:
+            cwd.release()
+            cwd = dir_payload.value
+        Result.failure as dir_failure:
+            var dir_error = dir_failure.error
+            dir_error.release()
+    if cwd.len() > 0:
+        roots.push(cwd.as_str())
+        discover_project_root(cwd.as_str(), ref_of(roots))
+
+    var resolved = resolve_app_module(name, ref_of(roots)) else:
+        stdio.print_format(c"run-module module not found: %.*s\n", int<-(name.len), name.data)
+        return 1
+    defer resolved.release()
+
+    var run_args = vec.Vec[str].create()
+    defer run_args.release()
+    run_args.push("run")
+    var ri: ptr_uint = 1
+    while ri < args.len:
+        if ri == module_index:
+            run_args.push(resolved.as_str())
+        else:
+            run_args.push(args[ri])
+        ri += 1
+    return run_command(run_args.as_span())
+
+
+## Resolve a module name (`a.b.c`) to a source file against the module roots,
+## preferring `<root>/std/a/b/c.mt` over `<root>/a/b/c.mt`.
+function resolve_app_module(name: str, roots: ref[vec.Vec[str]]) -> Option[string.String]:
+    var relative = string.String.create()
+    defer relative.release()
+    var ni: ptr_uint = 0
+    while ni < name.len:
+        let b = name.byte_at(ni)
+        if b == '.':
+            relative.push_byte('/')
+        else:
+            relative.push_byte(b)
+        ni += 1
+    relative.append(".mt")
+
+    var i: ptr_uint = 0
+    while i < roots.len():
+        let root_ptr = roots.get(i) else:
+            break
+        let root = unsafe: read(root_ptr)
+        var std_prefix = path_ops.join(root, "std")
+        var std_candidate = path_ops.join(std_prefix.as_str(), relative.as_str())
+        std_prefix.release()
+        if fs.is_file(std_candidate.as_str()):
+            return Option[string.String].some(value = std_candidate)
+        std_candidate.release()
+        var candidate = path_ops.join(root, relative.as_str())
+        if fs.is_file(candidate.as_str()):
+            return Option[string.String].some(value = candidate)
+        candidate.release()
+        i += 1
+    return Option[string.String].none
+
+
+## Scaffold a new application package (`mtc new my-project`): package.toml with
+## a snake_case package name derived from the directory basename, plus an
+## `src/main.mt` entry — mirroring Ruby's ProjectScaffold.
+function new_command(args: span[str]) -> int:
+    if args.len < 2:
+        stdio.print_line("missing project name")
+        return 1
+    if args.len > 2:
+        let extra = args[2]
+        stdio.print_format(c"unknown new option %.*s\n", int<-(extra.len), extra.data)
+        return 1
+
+    let target = args[1]
+    var absolute = string.String.create()
+    defer absolute.release()
+    if path_ops.is_absolute(target):
+        absolute.append(target)
+    else:
+        match fs.current_directory():
+            Result.success as dir_payload:
+                var cwd = dir_payload.value
+                var joined = path_ops.join(cwd.as_str(), target)
+                cwd.release()
+                absolute.append(joined.as_str())
+                joined.release()
+            Result.failure as dir_failure:
+                var dir_error = dir_failure.error
+                dir_error.release()
+                absolute.append(target)
+
+    let abs_path = absolute.as_str()
+    if fs.exists(abs_path) and not fs.is_directory(abs_path):
+        stdio.print_format(c"project path is not a directory: %.*s\n", int<-(abs_path.len), abs_path.data)
+        return 1
+    if fs.is_directory(abs_path):
+        match fs.list_entries(abs_path):
+            Result.success as entries_payload:
+                var entries = entries_payload.value
+                let count = entries.len()
+                entries.release()
+                if count > 0:
+                    stdio.print_format(
+                        c"project directory already exists and is not empty: %.*s\n",
+                        int<-(abs_path.len), abs_path.data,
+                    )
+                    return 1
+            Result.failure as list_failure:
+                var list_error = list_failure.error
+                list_error.release()
+
+    var entry_dir = path_ops.join(abs_path, "src")
+    defer entry_dir.release()
+    match fs.create_directories(entry_dir.as_str()):
+        Result.failure as dir_failure:
+            var dir_error = dir_failure.error
+            dir_error.release()
+            stdio.print_format(c"could not create project directory: %.*s\n", int<-(abs_path.len), abs_path.data)
+            return 1
+        Result.success:
+            pass
+
+    var package_name = snake_case_identifier(path_ops.basename(abs_path))
+    defer package_name.release()
+
+    var manifest = string.String.create()
+    defer manifest.release()
+    manifest.append("[package]\nname = \"")
+    manifest.append(package_name.as_str())
+    manifest.append("\"\nversion = \"0.1.0\"\nsource_root = \"src\"\n\n[build]\nentry = \"src/main.mt\"\n")
+
+    var manifest_path = path_ops.join(abs_path, "package.toml")
+    defer manifest_path.release()
+    match fs.write_text(manifest_path.as_str(), manifest.as_str()):
+        Result.failure as write_failure:
+            var write_error = write_failure.error
+            write_error.release()
+            stdio.print_line("could not write package.toml")
+            return 1
+        Result.success:
+            pass
+
+    var entry_path = path_ops.join(entry_dir.as_str(), "main.mt")
+    defer entry_path.release()
+    match fs.write_text(entry_path.as_str(), "function main() -> int:\n    return 0\n"):
+        Result.failure as entry_failure:
+            var entry_error = entry_failure.error
+            entry_error.release()
+            stdio.print_line("could not write src/main.mt")
+            return 1
+        Result.success:
+            pass
+
+    stdio.print_format(c"created %.*s\n", int<-(abs_path.len), abs_path.data)
+    return 0
+
+
+## Normalize a directory basename to a snake_case package identifier, matching
+## Ruby's PackageManifest.snake_case_identifier: camelCase boundaries become
+## underscores, `-` and spaces map to `_`, runs of `_` collapse, and the result
+## is lowercased (`MyProject` → `my_project`, `demo-app` → `demo_app`).
+function snake_case_identifier(name: str) -> string.String:
+    var result = string.String.create()
+    var i: ptr_uint = 0
+    while i < name.len:
+        let b = name.byte_at(i)
+        var mapped = b
+        var boundary = false
+        if b == '-' or b == ' ':
+            mapped = '_'
+        else if b >= 'A' and b <= 'Z':
+            mapped = b + 32
+            if i > 0:
+                let prev = name.byte_at(i - 1)
+                let prev_lower_or_digit = (prev >= 'a' and prev <= 'z') or (prev >= '0' and prev <= '9')
+                let prev_upper_or_digit = (prev >= 'A' and prev <= 'Z') or (prev >= '0' and prev <= '9')
+                var next_is_lower = false
+                if i + 1 < name.len:
+                    let next = name.byte_at(i + 1)
+                    next_is_lower = next >= 'a' and next <= 'z'
+                if prev_lower_or_digit:
+                    boundary = true
+                else if prev_upper_or_digit and next_is_lower:
+                    boundary = true
+        if boundary:
+            result.push_byte('_')
+        # Collapse runs of underscores (including pre-existing ones).
+        if mapped == '_':
+            if result.len() > 0 and result.as_str().byte_at(result.len() - 1) == '_':
+                i += 1
+                continue
+        result.push_byte(mapped)
+        i += 1
+    return result
+
+
+## Print a shell completion script (`mtc completions bash|zsh|fish`), mirroring
+## Ruby's completions_command for the self-host's implemented command set.
+function completions_command(args: span[str]) -> int:
+    if args.len < 2:
+        stdio.print_line("completions: shell must be bash, zsh, or fish")
+        return 1
+    let shell = args[1]
+    if shell == "bash":
+        stdio.print_line("# mtc bash completion. Source this file or install it into your bash")
+        stdio.print_line("# completion directory (e.g. /etc/bash_completion.d/mtc).")
+        stdio.print_line("_mtc() {")
+        stdio.print_line("  local cur=\"${COMP_WORDS[COMP_CWORD]}\"")
+        stdio.print_line("  if [ \"${COMP_CWORD}\" -eq 1 ]; then")
+        stdio.print_line("    COMPREPLY=( $(compgen -W \"check build run run-module test new format lint lex parse lower emit-c completions help version\" -- \"${cur}\") )")
+        stdio.print_line("  fi")
+        stdio.print_line("}")
+        stdio.print_line("complete -F _mtc mtc")
+        return 0
+    if shell == "zsh":
+        stdio.print_line("#compdef mtc")
+        stdio.print_line("# mtc zsh completion. Install onto your $fpath as _mtc.")
+        stdio.print_line("_mtc() {")
+        stdio.print_line("  local -a commands")
+        stdio.print_line("  commands=(")
+        var zi: ptr_uint = 0
+        while zi < command_summary_count():
+            let entry = command_summary_at(zi)
+            stdio.print_format(c"    '%.*s:%.*s'\n", int<-(entry.name.len), entry.name.data, int<-(entry.summary.len), entry.summary.data)
+            zi += 1
+        stdio.print_line("  )")
+        stdio.print_line("  if (( CURRENT == 2 )); then")
+        stdio.print_line("    _describe 'mtc command' commands")
+        stdio.print_line("  fi")
+        stdio.print_line("}")
+        stdio.print_line("_mtc \"$@\"")
+        return 0
+    if shell == "fish":
+        stdio.print_line("# mtc fish completion. Install into ~/.config/fish/completions/mtc.fish.")
+        var fi: ptr_uint = 0
+        while fi < command_summary_count():
+            let entry = command_summary_at(fi)
+            stdio.print_format(
+                c"complete -c mtc -f -n '__fish_use_subcommand' -a %.*s -d '%.*s'\n",
+                int<-(entry.name.len), entry.name.data,
+                int<-(entry.summary.len), entry.summary.data,
+            )
+            fi += 1
+        return 0
+    stdio.print_line("completions: shell must be bash, zsh, or fish")
+    return 1
+
+
+struct CommandSummary:
+    name: str
+    summary: str
+
+
+## The self-host's implemented command set with the same one-line summaries as
+## Ruby's CLI::COMMANDS (used by the zsh/fish completion scripts).
+function command_summary_count() -> ptr_uint:
+    return 13
+
+
+function command_summary_at(index: ptr_uint) -> CommandSummary:
+    if index == 0:
+        return CommandSummary(name = "check", summary = "Type-check and lint source files")
+    if index == 1:
+        return CommandSummary(name = "build", summary = "Compile a source file or package")
+    if index == 2:
+        return CommandSummary(name = "run", summary = "Build and execute a program")
+    if index == 3:
+        return CommandSummary(name = "run-module", summary = "Resolve, build, and run a module by name")
+    if index == 4:
+        return CommandSummary(name = "test", summary = "Discover and run @[test] functions")
+    if index == 5:
+        return CommandSummary(name = "new", summary = "Scaffold a new package")
+    if index == 6:
+        return CommandSummary(name = "format", summary = "Format source files in place or check formatting")
+    if index == 7:
+        return CommandSummary(name = "lint", summary = "Lint source files and report warnings")
+    if index == 8:
+        return CommandSummary(name = "lex", summary = "Print the lexer token stream")
+    if index == 9:
+        return CommandSummary(name = "parse", summary = "Parse source and print the AST")
+    if index == 10:
+        return CommandSummary(name = "lower", summary = "Lower source to IR and print it")
+    if index == 11:
+        return CommandSummary(name = "emit-c", summary = "Compile source to C and print it")
+    return CommandSummary(name = "completions", summary = "Print a shell completion script")
 
 
 ## Format a source file: parse, pretty-print, and either print to stdout,

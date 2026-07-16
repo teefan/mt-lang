@@ -87,8 +87,12 @@ fixed point, 177/177 tests, 13/13 language examples):
 
 | Status | Commands |
 |--------|----------|
-| **FULL**  | lex, parse, lower, emit-c, format, help, version, check, build, run, test, lint |
-| **NOT IMPL** | run-module, new, debug, deps, toolchain, bindgen, cache, docs, snapshot, completions |
+| **FULL**  | lex, parse, lower, emit-c, format, help, version, check, build, run, run-module, test, lint, new, completions |
+| **NOT IMPL** | debug, deps, toolchain, bindgen, cache, docs, snapshot |
+
+The build cache is implemented (§2.8): `build`/`run` reuse a previously built
+binary when nothing changed (`built ... [cached]`), and `--no-cache` bypasses
+it. The `cache` *inspection subcommand* is not implemented.
 
 ### 0.5 Linter
 
@@ -336,6 +340,43 @@ reported case) and spot checks across shapes/textures/text/core all initialize
 the self-host-built archive; full sweep still 217/219; fixed point, 177/177
 tests, 13/13 language examples.
 
+### 2.8 Landed: CLI parity batch — diagnostics gate, new/run-module/completions, build cache (2026-07-16)
+
+Four items landed together (fixed point held, 177/177 tests, 13/13 language,
+217/219 raylib, cached full raylib re-sweep in 16 s):
+
+- **Loader-diagnostics gate** (closes the missing-file gap): `lower`, `emit-c`,
+  `build`, and `run` now print program diagnostics and exit 1 when the loader
+  reports a module error (`source file not found`, import failures) via a new
+  `Program.diagnostic_module_error_count()`. Deliberately scoped to
+  `module/*` errors: gating on *semantic* errors would break valid programs
+  because the conservative analyzer has known false positives (e.g.
+  `unknown type type` for `-> type` functions in language_baseline) — that
+  stricter gate needs the analyzer-fallback work in §5.1 first.
+- **`mtc new`**: scaffolds `package.toml` + `src/main.mt`, snake_case package
+  name from the directory basename (`MyCamelApp` → `my_camel_app`), Ruby's
+  exact validation messages (`missing project name`, `project directory
+  already exists and is not empty: <path>`, `unknown new option <arg>`).
+- **`mtc run-module`**: resolves `a.b.c` against each module root as
+  `<root>/std/a/b/c.mt` then `<root>/a/b/c.mt` (ambient roots: cwd + discovered
+  project root), then delegates to the ordinary `run` path with all flags
+  preserved. `run-module module not found: <name>` on failure, matching Ruby.
+- **`mtc completions bash|zsh|fish`**: prints the completion script for the
+  self-host's implemented command set (same summaries as Ruby's `COMMANDS`
+  table; Ruby-only commands are not advertised).
+- **Build cache** (`mtc.build_cache`): `build`/`run` reuse the previously built
+  binary when nothing changed, reporting `built ... [cached]`; `--no-cache`
+  bypasses; `--keep-c` always rebuilds so the saved C matches the binary.
+  Cache root `$XDG_CACHE_HOME/milk_tea/mtc-cache` (else `~/.cache/...`).
+  **Correct by construction**: the full key material — the mtc executable's own
+  content hash (`/proc/self/exe`, so a rebuilt compiler can never serve stale
+  output, unlike Ruby's backend-sources heuristic), the `cc --version`
+  identity, debug-guards/platform config, and every module path+length+source —
+  is stored beside the binary and compared byte-for-byte on lookup; the FNV-1a
+  hash only names the entry directory, so a collision degrades to a miss, never
+  a wrong binary. Measured: language_baseline rebuild 0.41 s → 0.09 s; full
+  217-example raylib re-sweep 16 s.
+
 ---
 
 ## 3. Remaining Linter Gaps (unchanged from previous)
@@ -379,12 +420,12 @@ Combined impact: 9 warnings across the self-host codebase.
 | Gap | Effort |
 |-----|--------|
 | Package-graph resolution (`--locked`/`--frozen`) | Large |
-| Build cache | Large |
+| ~~Build cache~~ **DONE (§2.8)** | — |
 | `--bundle` / `--archive` | Medium |
 | Wasm compilation (emcc) + preview server | Large |
 | `--jobs` parallel test execution | Medium |
 | `--sanitize` | Medium |
-| `run-module`, `new`, `debug`, `deps`, `toolchain`, `bindgen`, `cache`, `docs`, `snapshot`, `completions` | Varies |
+| ~~`run-module`, `new`, `completions`~~ **DONE (§2.8)**; `debug`, `deps`, `toolchain`, `bindgen`, `cache`, `docs`, `snapshot` | Varies |
 
 ---
 
@@ -423,7 +464,13 @@ raylib gap (217/219; the other 2 are correct rejections).
 previously linked system `libraylib.so` (X11-only embedded GLFW) and failed at
 startup on Wayland (`GLXBadFBConfig`) while Ruby's ran; raylib-family programs
 now compile against the vendored headers and link the vendored static raylib +
-system `libglfw`, restoring **run** parity. The items below remain.
+system `libglfw`, restoring **run** parity.
+
+**Done this session (§2.8):** the CLI parity batch — the loader-diagnostics
+gate (missing-file exit codes for `lower`/`emit-c`/`build`/`run`), `mtc new`,
+`mtc run-module`, `mtc completions`, and the verified content-addressed build
+cache with `[cached]` reporting and `--no-cache` bypass. The items below
+remain.
 
 ### 5.1 Architectural finding: analyzer fallback reliance
 
@@ -476,12 +523,15 @@ to force a rebuild.
 
 - Linter: `owning-release-leak`, `redundant-cast`, `prefer-own-ptr` (need
   sema-facts), 5 CFG rules (low ROI), `--fix`, `.mt-lint.yml` config.
-- CLI not-implemented: `run-module`, `new`, `debug`, `deps`, `toolchain`,
-  `bindgen`, `cache`, `docs`, `snapshot`, `completions`.
-- **Missing-file exit code** (small): `emit-c`/`lower` on a nonexistent source
-  file print empty boilerplate and exit 0; Ruby prints
-  `source file not found: <path>` and exits 1. `check`/`build`/`run` already
-  exit 1 correctly.
+- CLI not-implemented: `debug`, `deps`, `toolchain`, `bindgen`, `cache`
+  (inspection subcommand), `docs`, `snapshot`. (`run-module`, `new`, and
+  `completions` landed in §2.8.)
+- ~~Missing-file exit code~~ **DONE (§2.8)**: `emit-c`/`lower`/`build`/`run` now
+  print the loader diagnostic and exit 1 on a nonexistent source file.
+- **Semantic-error gate for emit-c/lower** (blocked on §5.1): Ruby exits 1 when
+  a program has semantic errors; the self-host still emits C because its
+  conservative analyzer has false positives on valid code (e.g. `-> type`
+  functions). Requires eliminating analyzer false positives first.
 - **Nested-array outer bounds checks** (deliberate divergence, documented in
   §1.5): `array[array[T, M], N]` outer-dimension indexing emits a plain C index
   while Ruby emits a bounds-checked helper (`mt_checked_index_array_array_*`).
@@ -495,8 +545,9 @@ to force a rebuild.
 
 ### 5.5 Out-of-scope subsystems (§4)
 
-Package-graph resolution (`--locked`/`--frozen`), build cache, `--bundle` /
-`--archive`, wasm/emcc + preview server, `--jobs` parallel tests, `--sanitize`.
+Package-graph resolution (`--locked`/`--frozen`), `--bundle` / `--archive`,
+wasm/emcc + preview server, `--jobs` parallel tests, `--sanitize`. (The build
+cache landed in §2.8.)
 
 ### 5.6 Verification checklist for any change
 
