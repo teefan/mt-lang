@@ -148,14 +148,14 @@ MTC_STAGE0="$(resolve_bootstrap "$BOOTSTRAP")"
 # Stage 1: build by stage0
 $MTC_STAGE0 build -I . --profile "$PROFILE" \
     --cc "$CC" \
-    --no-cache --no-debug-guards \
+    --no-cache \
     -o "$BUILD_DIR/stage1/mtc" \
     projects/mtc
 
 # Stage 2: build by stage1 (distributable artifact)
 $BUILD_DIR/stage1/mtc build -I . --profile "$PROFILE" \
     --cc "$CC" \
-    --no-cache --no-debug-guards \
+    --no-cache \
     -o "$BUILD_DIR/stage2/mtc" \
     --keep-c "$BUILD_DIR/stage2.c" \
     projects/mtc
@@ -167,7 +167,7 @@ fi
 # Stage 3: build by stage2 (verify fixed point)
 $BUILD_DIR/stage2/mtc build -I . --profile "$PROFILE" \
     --cc "$CC" \
-    --no-cache --no-debug-guards \
+    --no-cache \
     -o "$BUILD_DIR/stage3/mtc" \
     --keep-c "$BUILD_DIR/stage3.c" \
     projects/mtc
@@ -184,8 +184,6 @@ Notes on the flags:
   root during compilation.
 - `--no-cache` forces a clean build from source — without it the build cache
   may serve stale output from a previous compiler version.
-- `--no-debug-guards` is already implied by `--profile release` (the default
-  in the script), but is listed explicitly for clarity.
 
 ### 3.3 Development shortcuts
 

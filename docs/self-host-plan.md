@@ -40,7 +40,8 @@ verification pass leaves **12/13 byte-identical under both compilers**:
   runtime bug, verified identical: exit 134 under each).
 - `async_network_lobby` — identical output once build configs match: the
   earlier "Ruby crash" was the debug loop guard tripping in a long-polling
-  CPS resume loop (`--no-debug-guards` runs to `SUCCESS`); see §5.2.
+  CPS resume loop (`--no-debug-guards` on the Ruby side disables it, and
+  the self-host has no guard injection); see §5.2.
 - `integration_test` — Ruby's `dyn` vtable wrapper arity bug is **fixed**
   (§5.2); both compilers now build and run it identically.
 
@@ -379,7 +380,7 @@ Four items landed together (fixed point held, 177/177 tests, 13/13 language,
   **Correct by construction**: the full key material — the mtc executable's own
   content hash (`/proc/self/exe`, so a rebuilt compiler can never serve stale
   output, unlike Ruby's backend-sources heuristic), the `cc --version`
-  identity, debug-guards/platform config, and every module path+length+source —
+  identity, platform config, and every module path+length+source —
   is stored beside the binary and compared byte-for-byte on lookup; the FNV-1a
   hash only names the entry directory, so a collision degrades to a miss, never
   a wrong binary. Measured: language_baseline rebuild 0.41 s → 0.09 s; full
@@ -389,10 +390,10 @@ Four items landed together (fixed point held, 177/177 tests, 13/13 language,
 
 A systematic simple→advanced audit of all 13 language examples plus focused
 feature probes: **runtime diff** (build with both compilers, compare
-stdout+exit — 11/13 byte-identical; `async_stress_test` crashes under both,
-`async_network_lobby` crashes under *Ruby only*, a pre-existing Ruby async
-runtime bug the self-host does not share; `integration_test` fails to build
-under *Ruby only*, a Ruby `dyn` codegen bug) and **structural C diff**
+stdout+exit — at the time 11/13 byte-identical, with `async_network_lobby` and
+`integration_test` flagged as Ruby-side anomalies; both were subsequently
+resolved — the former as a debug loop-guard config asymmetry, §5.2, and the
+latter via a `dyn` fix) and **structural C diff**
 (external-symbol sets + string-literal sets, formatting-independent). Three
 real self-host feature gaps found and fixed:
 
@@ -523,7 +524,8 @@ analyzer pattern must be verified by *runtime* comparison against Ruby, not
 ### 5.2 Ruby-side bugs from the parity audits — verified with minimal repros (2026-07-16)
 
 All three were re-examined with small tmp apps and gdb. Only one was a real
-Ruby compiler bug, and it is **fixed**:
+Ruby compiler bug, and it is **fixed** (the other two are a guard-config
+asymmetry and a shared libuv crash, neither compiler-specific):
 
 | Item | Verdict |
 |------|---------|
