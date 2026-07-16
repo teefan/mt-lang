@@ -3500,26 +3500,45 @@ function borrow_vec_contains(vec_ref: ref[vec.Vec[str]], name: str) -> bool:
 
 
 # =============================================================================
-#  dead-assignment — assignment whose value is never read
+#  Shared helpers for CFG-based rules
 # =============================================================================
 
-## Walk every function body, build a liveness CFG, and flag assignments whose
-## written name is dead immediately after the assignment (not in live_out).
-function lint_dead_assignment(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+## Walk all function-like bodies in a source file (free functions and extending
+## methods) and pass each body pointer to the given action.
+function for_each_func_body(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]], kind: ptr_uint) -> void:
     var i: ptr_uint = 0
     while i < file.declarations.len:
         unsafe:
             match read(file.declarations.data + i):
                 ast.Decl.decl_function as fun:
-                    lint_dead_in_body(fun.body, path, warnings)
+                    dispatch_cfg_rule(fun.body, path, warnings, kind)
                 ast.Decl.decl_extending_block as ex:
                     var j: ptr_uint = 0
                     while j < ex.methods.len:
-                        lint_dead_in_body(read(ex.methods.data + j).body, path, warnings)
+                        dispatch_cfg_rule(read(ex.methods.data + j).body, path, warnings, kind)
                         j += 1
                 _:
                     pass
         i += 1
+
+
+function dispatch_cfg_rule(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]], kind: ptr_uint) -> void:
+    if kind == 0:
+        lint_dead_in_body(body, path, warnings)
+    else if kind == 1:
+        lint_unreachable_in_body(body, path, warnings)
+    else if kind == 2:
+        lint_const_cond_in_body(body, path, warnings)
+    else if kind == 3:
+        lint_loop_single_in_body(body, path, warnings)
+
+
+# =============================================================================
+#  dead-assignment — assignment whose value is never read
+# =============================================================================
+
+function lint_dead_assignment(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    for_each_func_body(file, path, warnings, 0)
 
 
 function lint_dead_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -3540,26 +3559,11 @@ function lint_dead_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Ve
 
 
 # =============================================================================
-#  unreachable-code — statement after a return/fatal/terminating branch
+#  unreachable-code — statement after a terminating statement
 # =============================================================================
 
-## Walk function bodies and flag statements that follow a terminating statement
-## in the same block.  Uses the existing structural `stmt_always_returns`.
 function lint_unreachable_code(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var i: ptr_uint = 0
-    while i < file.declarations.len:
-        unsafe:
-            match read(file.declarations.data + i):
-                ast.Decl.decl_function as fun:
-                    lint_unreachable_in_body(fun.body, path, warnings)
-                ast.Decl.decl_extending_block as ex:
-                    var j: ptr_uint = 0
-                    while j < ex.methods.len:
-                        lint_unreachable_in_body(read(ex.methods.data + j).body, path, warnings)
-                        j += 1
-                _:
-                    pass
-        i += 1
+    for_each_func_body(file, path, warnings, 1)
 
 
 function lint_unreachable_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -3616,18 +3620,8 @@ function lint_unreachable_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[
 #  constant-condition — `if true` / `while false` / `x == x`
 # =============================================================================
 
-## Flag if-condition branches and while-loop conditions that are trivially
-## constant (boolean literal or self-comparison).
 function lint_constant_condition(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var i: ptr_uint = 0
-    while i < file.declarations.len:
-        unsafe:
-            match read(file.declarations.data + i):
-                ast.Decl.decl_function as fun:
-                    lint_const_cond_in_body(fun.body, path, warnings)
-                _:
-                    pass
-        i += 1
+    for_each_func_body(file, path, warnings, 2)
 
 
 function lint_const_cond_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -3685,7 +3679,7 @@ function is_constant_condition(ep: ptr[ast.Expr]) -> bool:
                 if u.operator == "not":
                     return is_constant_condition(u.operand)
             _:
-                return false
+                pass
     return false
 
 
@@ -3712,18 +3706,8 @@ function exprs_equal(left: ptr[ast.Expr], right: ptr[ast.Expr]) -> bool:
 #  loop-single-iteration — loop body always breaks/returns on first iteration
 # =============================================================================
 
-## Walk function bodies and flag while/for loops whose body always exits
-## (returns or breaks) before reaching the back-edge.
 function lint_loop_single_iteration(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var i: ptr_uint = 0
-    while i < file.declarations.len:
-        unsafe:
-            match read(file.declarations.data + i):
-                ast.Decl.decl_function as fun:
-                    lint_loop_single_in_body(fun.body, path, warnings)
-                _:
-                    pass
-        i += 1
+    for_each_func_body(file, path, warnings, 3)
 
 
 function lint_loop_single_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
