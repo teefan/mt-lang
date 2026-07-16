@@ -520,13 +520,16 @@ handled in `ir_expr_type` (lowering) and the C-backend renderer; every new
 analyzer pattern must be verified by *runtime* comparison against Ruby, not
 "BUILDS OK" (see §2.5/§2.9 for the bug classes each audit method caught).
 
-### 5.2 Ruby-side bugs found by the parity audits (fix in Ruby, or verify further)
+### 5.2 Ruby-side bugs from the parity audits — verified with minimal repros (2026-07-16)
 
-| Bug | Evidence |
-|-----|----------|
-| CPS-async runtime abort | `async_network_lobby`: Ruby-built binary SIGABRTs reproducibly; self-host binary completes with correct output (§0.2) |
-| `dyn` vtable wrapper arity | `integration_test`: Ruby emits `__dyn_..._MeasurableCounter_measure` calling the method with 0 args where 1 is expected → C compile error; self-host builds and runs it |
-| Pre-existing libuv crash | `async_stress_test` crashes under both compilers |
+All three were re-examined with small tmp apps and gdb. Only one was a real
+Ruby compiler bug, and it is **fixed**:
+
+| Item | Verdict |
+|------|---------|
+| `dyn` vtable wrapper arity | **REAL BUG — FIXED.** Minimal repro: a value-receiver interface method whose body touches `this` only through a PrefixCast (`return float<-(this.value)`). The wrapper's private `method_uses_this?` AST walk had no PrefixCast arm (nor Call/Index/If/Match arms), so it omitted the receiver argument while the C backend — which authoritatively counts name references in the lowered IR — kept the receiver parameter → arity mismatch, C error. Fix: deleted the duplicated heuristic; the wrapper always passes the receiver and uses a String callee so the backend's single-source-of-truth omitted-receiver logic drops it when (and only when) the target's receiver param was omitted. 11/11 dyn tests pass; `integration_test` + repro build and run. |
+| `async_network_lobby` abort | **NOT a Ruby bug — reclassified.** gdb showed `mt_fatal("loop iteration limit exceeded in std_net_discovery_announce__resume")`: the *debug loop guard* (50k iterations) tripping in a legitimately long-polling discovery loop. My audit built the Ruby binary with guards on and the self-host comparison binary effectively without; with `--no-debug-guards` the Ruby binary runs to `SUCCESS` with output identical to the self-host's. Real issue (minor, pre-existing): resume-loop iteration guards are miscounted across CPS awaits — a suspended/resumed loop accumulates guard counts per resume, so long-running async polls can trip the guard spuriously in debug profile. |
+| `async_stress_test` crash | **Confirmed shared** (exit 134 under both compilers, identical behavior) — the known pre-existing libuv runtime bug, not compiler-specific. |
 
 ### 5.3 Linter gaps (§3)
 
