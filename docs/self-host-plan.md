@@ -1,19 +1,19 @@
 # Self-Host Plan
 
-Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB PARITY COMPLETE.**
+Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE.**
 Stage2 == stage3 byte-identical. 177/177 self-tests pass across 9 test files.
 **Raylib parity: 217/219 build and run** (the 2 remaining are non-executable
-support files — an `external` ABI file and a `main`-less helper — rejected with
-byte-identical Ruby messages, see §2.4; `rlgl_standalone` and `tracy_profiler`
-build via the vendored-library subsystem, §2.6; binaries link the vendored
-static raylib so they run on Wayland exactly like Ruby's, §2.7). 13/13 language
-examples build. **`mtc lint` has 31 rules** (4 new Tier-1/3 AST rules, 2 new
-tooling features). `--select`/`--ignore` supported. Lint wired into `mtc check`.
-Bootstrap via `tools/bootstrap.sh`.
+support files rejected with byte-identical Ruby messages, §2.4; vendored-library
+subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language
+parity: 13/13 build, 11/13 byte-identical runtime output vs Ruby** — the two
+exceptions are *Ruby-side* bugs (§2.9). Layout attributes, `static_assert`
+evaluation, and the `reinterpret` size rule landed in §2.9. CLI: 15 commands at
+parity incl. build cache (§0.4, §2.8). **`mtc lint` has 31 rules.** Bootstrap
+via `tools/bootstrap.sh`.
 
-**Next-session work is in §5.**
+**Remaining gaps for the next session are consolidated in §5.**
 
-Last updated: 2026-07-16
+Last updated: 2026-07-16 (post language-parity audit)
 
 ---
 
@@ -32,9 +32,18 @@ fixed-point verification (`diff stage2.c stage3.c` must be empty).
 
 ### 0.2 Example parity — language
 
-13/13 language examples build with the self-hosted compiler. 12/13 run
-identically to Ruby; `async_stress_test` crashes under both (a pre-existing
-libuv runtime bug).
+13/13 language examples build with the self-hosted compiler. The §2.9 audit
+(runtime diff of stdout+exit against Ruby, simple → advanced) found **11/13
+byte-identical**; the remaining differences are on Ruby's side:
+
+- `async_stress_test` — crashes under **both** compilers (pre-existing libuv
+  runtime bug).
+- `async_network_lobby` — the self-host binary runs to `SUCCESS`; the
+  **Ruby-built** binary aborts (SIGABRT, reproducible 3/3) — a Ruby CPS-async
+  runtime bug the self-host does not share.
+- `integration_test` — builds and runs under the self-host; **Ruby fails to
+  build it** (`__dyn_..._measure` C error: too few arguments — a Ruby `dyn`
+  vtable-wrapper codegen bug).
 
 ### 0.3 Example parity — raylib
 
@@ -174,7 +183,7 @@ vendored-library examples build via the on-demand vendored subsystem
 ### 2.1 Not buildable executables (2 files) — both compilers refuse with matching messages
 
 Both files are now rejected cleanly with byte-identical messages to Ruby (the
-CLI-polish item from §5.2 is landed — see §2.4):
+CLI-polish item, landed — see §2.4):
 
 | Example | Root cause |
 |---------|-----------|
@@ -213,7 +222,7 @@ language examples, zero raylib regressions.
 
 ### 2.4 Landed: non-buildable-target rejection (CLI parity, 2026-07-15)
 
-The §5.2 CLI-polish item is done. The self-host previously lowered raw
+The CLI-polish item is done. The self-host previously lowered raw
 `external` files and `main`-less programs into C that failed at link with an
 opaque `undefined reference to 'main'` linker error. It now rejects both cleanly
 with the exact Ruby messages, before invoking the C compiler:
@@ -477,127 +486,83 @@ Combined impact: 9 warnings across the self-host codebase.
 
 ---
 
-## 5. Next-Session TODO
+## 5. Remaining Gaps (new-session context)
 
-Prioritized remaining work. The compiler is at a held fixed point (177/177
-tests, 13/13 language, 217/219 raylib — the 2 non-builds are correct
-rejections); everything below is additive.
+The compiler is at a held fixed point (177/177 tests, 13/13 language examples,
+217/219 raylib — the 2 non-builds are correct rejections; 11/13 language
+examples byte-identical at runtime, the other 2 blocked by Ruby-side bugs).
+**No known self-host codegen, runtime, or example-parity bug remains.** All
+landed work is recorded in §1 (external-type fixes) and §2 (per-session logs
+§2.1–§2.9). What follows is the complete remaining-gap inventory, prioritized.
 
-**Done this pass (§0.3 table):** module-level generic `var` monomorphization,
-opaque-nullable → pointer, opaque re-export typedefs, deterministic external
-include ordering (fixed `cel_shading`), aggregate array-call-field
-materialisation (fixed `basic_pbr`), and 6 runtime miscompilations found by
-diffing runtime output against Ruby (float-literal C rendering, integer literal
-overflow, `ir_expr_type` gaps, native vector typedef emission, flags/enum binary
-op inference, and `reinterpret[T]` bit reinterpret). Every example the Ruby
-compiler can build, the self-host now also builds.
-
-**Done next pass (§2.4):** non-buildable-target rejection — `external` files and
-`main`-less programs are now rejected with byte-identical Ruby messages and exit
-codes across `build`/`run`/`lower`/`emit-c` instead of emitting a `main`-less
-binary that fails at link (§5.2 item 2 closed).
-
-**Done this session (§2.5):** three codegen/runtime bugs found by C-diffing
-against Ruby — the extern `= c"..."` rename dropped in foreign mappings (fixed
-`tracy_profiler` codegen, which the plan had wrongly called correct),
-const-expression array lengths folding to 0 (a runtime abort in `raw_data` /
-`screen_buffer`), and the leaked foreign `str as cstr` temporaries (≈130
-examples).
-
-**Done this session (§2.6):** the vendored-library build subsystem for
-GLFW/Tracy — `rlgl_standalone` and `tracy_profiler` now build, closing the last
-raylib gap (217/219; the other 2 are correct rejections).
-
-**Done this session (§2.7):** vendored raylib linking — self-host binaries
-previously linked system `libraylib.so` (X11-only embedded GLFW) and failed at
-startup on Wayland (`GLXBadFBConfig`) while Ruby's ran; raylib-family programs
-now compile against the vendored headers and link the vendored static raylib +
-system `libglfw`, restoring **run** parity.
-
-**Done this session (§2.8):** the CLI parity batch — the loader-diagnostics
-gate (missing-file exit codes for `lower`/`emit-c`/`build`/`run`), `mtc new`,
-`mtc run-module`, `mtc completions`, and the verified content-addressed build
-cache with `[cached]` reporting and `--no-cache` bypass. The items below
-remain.
-
-### 5.1 Architectural finding: analyzer fallback reliance
+### 5.1 Analyzer false positives → semantic-error gate (highest-value correctness item)
 
 The self-host's semantic analyzer is deliberately conservative — it records
 `ty_error` for expressions involving imported types, cross-module calls, and
 struct-field chains. In a full raylib example (julia_set), **77% of expression
-type lookups fall back** to lowering's `fallback_type` heuristic, and **133
-expressions get a bad (void/error) type even after fallback**.  The `ir_expr_type`
-function had 8 missing expression-variant arms, each silently returning
-`ty_error`.
+type lookups fall back** to lowering's `fallback_type` heuristic.
 
-This two-phase architecture (conservative validator-analyser + best-effort
-lowering heuristic) means **every new IR expression node and every new
-analyser-supported pattern creates a latent gap in the fallback**: if the
-analyser records `ty_error` and `fallback_type`/`ir_expr_type` both miss the
-expression kind, the C type becomes `void` — a silent miscompilation, not a
-crash.
+This blocks one behavioral parity item: **Ruby exits 1 on semantic errors for
+all C-emitting commands; the self-host gates only on `module/*` loader errors**
+(`diagnostic_module_error_count`, §2.8), because gating on sema errors would
+reject valid programs. Known false-positive classes to eliminate first:
 
-**Lesson for future work:** any new expression kind added to the IR must be
-handled in `ir_expr_type` (lowering) and the C-backend renderer, and any new
-pattern added to the analyser should be verified by a *runtime* comparison
-against Ruby, not just `"BUILDS OK"`.  A `"BUILDS OK"` test only proves the C
-compiled — it says nothing about runtime values.  The 6 bugs fixed this pass all
-produced valid C programs with wrong numeric output.
+- `unknown type type` — `-> type` (type-returning) functions, 13 hits in
+  language_baseline alone.
+- Imported-type expression chains recorded as `ty_error` (the 77% fallback).
 
-### 5.2 Remaining raylib gaps — NONE
+Once `mtc check` is clean on all 13 language examples + the compiler itself +
+a raylib sample, flip `lower`/`emit-c`/`build`/`run` to gate on
+`diagnostic_error_count() > 0` and delete `diagnostic_module_error_count`.
 
-**Raylib parity is complete: 217/219 build, and the 2 non-builds are correct
-rejections.** Every self-host codegen bug is fixed — including three found by
-C-diffing against Ruby (§2.5): the tracy extern-rename, const-expression array
-lengths, and the foreign `str as cstr` temp leak.
+**Architecture lesson (unchanged):** every new IR expression node must be
+handled in `ir_expr_type` (lowering) and the C-backend renderer; every new
+analyzer pattern must be verified by *runtime* comparison against Ruby, not
+"BUILDS OK" (see §2.5/§2.9 for the bug classes each audit method caught).
 
-| # | Example(s) | Fix | Status |
-|---|-----------|-----|--------|
-| 1 | `rlgl_standalone`, `tracy_profiler` | **DONE (§2.6).** Vendored-library build subsystem: GLFW built via CMake+Ninja, the Tracy client via `c++`+`ar`, on demand before the link step. | Landed |
-| 2 | `rlgl_loader`, `boxed_text` | **DONE (§2.4).** CLI polish: `external`-file / no-`main` build targets rejected cleanly with byte-identical Ruby messages. They are not executables, so "reject" is the correct terminal state. | Landed |
+### 5.2 Ruby-side bugs found by the parity audits (fix in Ruby, or verify further)
 
-### 5.3 Vendored-library build subsystem — DONE for GLFW/Tracy (§2.6)
+| Bug | Evidence |
+|-----|----------|
+| CPS-async runtime abort | `async_network_lobby`: Ruby-built binary SIGABRTs reproducibly; self-host binary completes with correct output (§0.2) |
+| `dyn` vtable wrapper arity | `integration_test`: Ruby emits `__dyn_..._MeasurableCounter_measure` calling the method with 0 args where 1 is expected → C compile error; self-host builds and runs it |
+| Pre-existing libuv crash | `async_stress_test` crashes under both compilers |
 
-Landed in minimal form for the two bindings the raylib examples need. Remaining
-scope if ever needed: other `vendored_library` bindings (box2d, sdl3, flecs,
-pcre2, libuv static, steamworks) follow the same pattern — an archive-existence
-check plus a CMake or compile+`ar` recipe in `prepare_vendored_libraries` and a
-`-L` entry in `collect_vendored_link_flags`. Ruby's signature-based rebuild
-detection (tool/flag changes) was deliberately not ported: vendored sources are
-pinned trees, so existence-checking is deterministic; delete the `tmp/` artifact
-to force a rebuild.
+### 5.3 Linter gaps (§3)
 
-### 5.4 Linter (§3), CLI (§0.4), and known minor parity gaps
+`owning-release-leak`, `redundant-cast`, `prefer-own-ptr` (need sema-facts);
+5 CFG rules (low ROI — 9 warnings total across the codebase); `--fix`;
+`.mt-lint.yml` config.
 
-- Linter: `owning-release-leak`, `redundant-cast`, `prefer-own-ptr` (need
-  sema-facts), 5 CFG rules (low ROI), `--fix`, `.mt-lint.yml` config.
-- CLI not-implemented: `debug`, `deps`, `toolchain`, `bindgen`, `cache`
-  (inspection subcommand), `docs`, `snapshot`. (`run-module`, `new`, and
-  `completions` landed in §2.8.)
-- ~~Missing-file exit code~~ **DONE (§2.8)**: `emit-c`/`lower`/`build`/`run` now
-  print the loader diagnostic and exit 1 on a nonexistent source file.
-- **Semantic-error gate for emit-c/lower** (blocked on §5.1): Ruby exits 1 when
-  a program has semantic errors; the self-host still emits C because its
-  conservative analyzer has false positives on valid code (e.g. `-> type`
-  functions). Requires eliminating analyzer false positives first.
-- **Nested-array outer bounds checks** (deliberate divergence, documented in
-  §1.5): `array[array[T, M], N]` outer-dimension indexing emits a plain C index
-  while Ruby emits a bounds-checked helper (`mt_checked_index_array_array_*`).
-  Values are identical; only the runtime out-of-bounds abort is missing on the
-  outer dimension. Affects 6 examples (julia_set, mandelbrot_set, basic_voxel,
-  palette_switch, clock_of_clocks, spectrum_visualizer).
-- **Inline-mapping public temp count** (cosmetic): Ruby materializes more
-  `foreign_arg_public` temporaries in some inline mappings than the self-host
-  (e.g. `models/loading`: 12 cstr temps vs 7); both are internally
-  alloc/free-balanced and behaviorally equivalent.
+### 5.4 CLI commands not implemented (§0.4)
 
-### 5.5 Out-of-scope subsystems (§4)
+`debug`, `deps`, `toolchain`, `bindgen`, `cache` (inspection subcommand; the
+cache itself is live, §2.8), `docs`, `snapshot`. The other 15 commands are at
+parity, incl. `new` / `run-module` / `completions` (§2.8).
 
-Package-graph resolution (`--locked`/`--frozen`), `--bundle` / `--archive`,
-wasm/emcc + preview server, `--jobs` parallel tests, `--sanitize`. (The build
-cache landed in §2.8.)
+### 5.5 Subsystems not ported (§4)
 
-### 5.6 Verification checklist for any change
+Package-graph resolution (`--locked`/`--frozen`, Large), `--bundle` /
+`--archive` (Medium), wasm/emcc + preview server (Large), `--jobs` parallel
+tests (Medium), `--sanitize` (Medium). Additional vendored-library recipes
+(box2d, sdl3, flecs, pcre2, steamworks) follow the §2.6 pattern when an example
+needs them: an archive-existence check + CMake or compile+`ar` recipe in
+`prepare_vendored_libraries` and a `-L` entry in `collect_vendored_link_flags`.
+
+### 5.6 Accepted minor divergences (verified benign)
+
+- **Nested-array outer bounds checks** (§1.5, deliberate): the self-host emits a
+  plain C index for `array[array[T, M], N]` outer-dimension access where Ruby
+  emits a checked helper. Values identical; only the OOB abort is missing.
+  Affects 6 examples.
+- **Inline-mapping temp counts** (cosmetic): Ruby materializes more
+  `foreign_arg_public` temporaries; both compilers are alloc/free-balanced.
+- **Structural C cosmetics** (§2.9): runtime-helper internals (`fwrite`/`malloc`
+  usage in fatal/format paths), UTF-8 string-literal escaping style, Ruby's
+  CPS-async scaffolding symbols, format-fallback literals — all confirmed by
+  identical runtime output.
+
+### 5.7 Verification checklist for any change
 
 Run before considering a change done:
 
@@ -621,9 +586,15 @@ ruby -Ilib bin/mtc build /tmp/test.mt -I . -o /tmp/rb --no-cache && /tmp/rb > /t
 diff /tmp/sh_out /tmp/rb_out   # must be empty
 ```
 
+The full-language variant of this (the §2.9 audit): build every
+`examples/*.mt` with both compilers and diff stdout+exit. Expected baseline:
+**11/13 byte-identical**; `async_stress_test` crashes under both;
+`async_network_lobby` and `integration_test` differ only because of the
+Ruby-side bugs in §5.2.
+
 For **codegen parity on GUI examples** (which cannot be runtime-diffed
 headless), C-diff against Ruby with formatting-independent extracts — this is
-what caught all three §2.5 bugs:
+what caught all three §2.5 bugs and all three §2.9 gaps:
 
 ```sh
 # per example, emit C with both compilers, then compare:
