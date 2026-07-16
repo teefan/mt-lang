@@ -124,7 +124,7 @@ function cc_identity(c_compiler: str) -> string.String:
 ## compiler, the C compiler, the configuration, or any module source — produces
 ## a different key.  Module entries embed the source length so concatenation
 ## boundaries are unambiguous.
-public function compute_key(program: ref[loader.Program], c_compiler: str, debug_guards: bool, platform_name: str) -> string.String:
+public function compute_key(program: ref[loader.Program], c_compiler: str, platform_name: str) -> string.String:
     var key = string.String.create()
     key.append("mtc-exe:")
     var exe_digest = compiler_identity()
@@ -136,11 +136,6 @@ public function compute_key(program: ref[loader.Program], c_compiler: str, debug
     var compiler_version = cc_identity(c_compiler)
     key.append(compiler_version.as_str())
     compiler_version.release()
-    key.append("\ndebug-guards:")
-    if debug_guards:
-        key.append("on")
-    else:
-        key.append("off")
     key.append("\nplatform:")
     key.append(platform_name)
     key.append("\n")

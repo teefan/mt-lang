@@ -143,7 +143,7 @@ MTC_STAGE0="$(resolve_stage0)"
 
 # ── build flags ──────────────────────────────────────────────────────────────
 
-FLAGS=(-I . --no-cache --no-debug-guards)
+FLAGS=(-I . --no-cache)
 if [[ "$PROFILE" == "release" ]]; then
     FLAGS+=(--profile release)
 fi

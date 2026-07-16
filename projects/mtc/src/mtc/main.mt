@@ -134,8 +134,8 @@ function print_help() -> void:
     stdio.print_line("  lint  <file|dir>...                                 report style/correctness warnings")
     stdio.print_line("  lower <file|dir> [-I DIR]... [--platform NAME]     lower to IR and print it")
     stdio.print_line("  emit-c <file|dir> [-I DIR]... [--platform NAME]    compile to C and print it")
-    stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache] [--clean]")
-    stdio.print_line("  run   <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--no-cache] [-- ARGS...]")
+    stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--no-cache] [--clean]")
+    stdio.print_line("  run   <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--profile debug|release] [--platform linux|windows|wasm] [--no-cache] [-- ARGS...]")
     stdio.print_line("  run-module <module> [run options...]                resolve, build, and run a module by name")
     stdio.print_line("  test  <dir> [-I DIR]... [-n NAME] [--timeout SECONDS] [--mem MB] [--format human|tap|junit]  discover and run @[test] functions")
     stdio.print_line("  new   <path>                                        scaffold a new package")
@@ -1050,7 +1050,6 @@ function build_command(args: span[str]) -> int:
     var output_override: Option[str] = Option[str].none
     var keep_c_path: Option[str] = Option[str].none
     var c_compiler = "cc"
-    var debug_guards = true
     var profile_name = "debug"
     var platform = resolver.Platform.linux
     var clean_mode = false
@@ -1086,14 +1085,6 @@ function build_command(args: span[str]) -> int:
             c_compiler = args[ai + 1]
             ai += 2
             continue
-        if arg == "--debug-guards":
-            debug_guards = true
-            ai += 1
-            continue
-        if arg == "--no-debug-guards":
-            debug_guards = false
-            ai += 1
-            continue
         if arg == "--no-cache":
             use_cache = false
             ai += 1
@@ -1106,8 +1097,6 @@ function build_command(args: span[str]) -> int:
             if not profile_name == "debug" and not profile_name == "release":
                 stdio.print_line("error: --profile must be debug or release")
                 return 1
-            if profile_name == "release":
-                debug_guards = false
             ai += 2
             continue
         if arg == "--platform":
@@ -1193,7 +1182,7 @@ function build_command(args: span[str]) -> int:
     var cache_key = string.String.create()
     defer cache_key.release()
     if cache_enabled:
-        var computed_key = build_cache.compute_key(ref_of(program), c_compiler, debug_guards, platform_label(platform))
+        var computed_key = build_cache.compute_key(ref_of(program), c_compiler, platform_label(platform))
         cache_key.append(computed_key.as_str())
         computed_key.release()
         match build_cache.lookup(cache_key.as_str()):
@@ -1246,7 +1235,6 @@ function run_command(args: span[str]) -> int:
     defer roots.release()
     var output_override: Option[str] = Option[str].none
     var c_compiler = "cc"
-    var debug_guards = true
     var profile_name = "debug"
     var platform = resolver.Platform.linux
     var use_cache = true
@@ -1267,13 +1255,6 @@ function run_command(args: span[str]) -> int:
             seen_dashdash = true
             ai += 1
             continue
-        if arg == "-o":
-            if ai + 1 >= args.len:
-                stdio.print_line("error: -o requires an output path")
-                return 1
-            output_override = Option[str].some(value= args[ai + 1])
-            ai += 2
-            continue
         if arg == "--cc":
             if ai + 1 >= args.len:
                 stdio.print_line("error: --cc requires a compiler name")
@@ -1281,13 +1262,16 @@ function run_command(args: span[str]) -> int:
             c_compiler = args[ai + 1]
             ai += 2
             continue
-        if arg == "--debug-guards":
-            debug_guards = true
+        if arg == "--no-cache":
+            use_cache = false
             ai += 1
             continue
-        if arg == "--no-debug-guards":
-            debug_guards = false
-            ai += 1
+        if arg == "--cc":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --cc requires a compiler name")
+                return 1
+            c_compiler = args[ai + 1]
+            ai += 2
             continue
         if arg == "--no-cache":
             use_cache = false
@@ -1301,8 +1285,6 @@ function run_command(args: span[str]) -> int:
             if not profile_name == "debug" and not profile_name == "release":
                 stdio.print_line("error: --profile must be debug or release")
                 return 1
-            if profile_name == "release":
-                debug_guards = false
             ai += 2
             continue
         if arg == "--platform":
@@ -1356,7 +1338,7 @@ function run_command(args: span[str]) -> int:
     var cache_key = string.String.create()
     defer cache_key.release()
     if use_cache:
-        var computed_key = build_cache.compute_key(ref_of(program), c_compiler, debug_guards, platform_label(platform))
+        var computed_key = build_cache.compute_key(ref_of(program), c_compiler, platform_label(platform))
         cache_key.append(computed_key.as_str())
         computed_key.release()
         match build_cache.lookup(cache_key.as_str()):
@@ -2657,7 +2639,6 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
         bri += 1
     build_cmd.push("-o")
     build_cmd.push(runner_bin_str.as_str())
-    build_cmd.push("--no-debug-guards")
 
     var build_failed = false
     match process.capture(build_cmd.as_span()):
@@ -2785,7 +2766,7 @@ function run_death_test(file_path: str, source_text: str, test_name: str, roots:
         bri += 1
     build_cmd.push("-o")
     build_cmd.push(runner_bin_str.as_str())
-    build_cmd.push("--no-debug-guards")
+
 
     var build_ok = false
     match process.capture(build_cmd.as_span()):
