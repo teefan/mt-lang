@@ -30,6 +30,7 @@ import mtc.build as build_driver
 import mtc.build_cache as build_cache
 import mtc.pretty_printer.ast_formatter as fmt
 import mtc.linter.linter as linter
+import mtc.lsp.server as lsp
 
 
 function main(args: span[str]) -> int:
@@ -113,6 +114,9 @@ function main(args: span[str]) -> int:
 
     if cmd == "format":
         return format_command(args)
+
+    if cmd == "lsp":
+        return lsp.run(args)
 
     if cmd == "cache":
         return cache_command(args)
@@ -1764,7 +1768,7 @@ struct CommandSummary:
 ## The self-host's implemented command set with the same one-line summaries as
 ## Ruby's CLI::COMMANDS (used by the zsh/fish completion scripts).
 function command_summary_count() -> ptr_uint:
-    return 13
+    return 14
 
 
 function command_summary_at(index: ptr_uint) -> CommandSummary:
@@ -1785,12 +1789,14 @@ function command_summary_at(index: ptr_uint) -> CommandSummary:
     if index == 7:
         return CommandSummary(name = "lint", summary = "Lint source files and report warnings")
     if index == 8:
-        return CommandSummary(name = "lex", summary = "Print the lexer token stream")
+        return CommandSummary(name = "lsp", summary = "Start the language server (stdio JSON-RPC)")
     if index == 9:
-        return CommandSummary(name = "parse", summary = "Parse source and print the AST")
+        return CommandSummary(name = "lex", summary = "Print the lexer token stream")
     if index == 10:
-        return CommandSummary(name = "lower", summary = "Lower source to IR and print it")
+        return CommandSummary(name = "parse", summary = "Parse source and print the AST")
     if index == 11:
+        return CommandSummary(name = "lower", summary = "Lower source to IR and print it")
+    if index == 12:
         return CommandSummary(name = "emit-c", summary = "Compile source to C and print it")
     return CommandSummary(name = "completions", summary = "Print a shell completion script")
 
