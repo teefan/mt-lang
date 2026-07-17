@@ -19,6 +19,8 @@
 ##   - unreachable-code               (warning)  statement after return/fatal
 ##   - constant-condition             (hint)     `if true` / `while false`
 ##   - loop-single-iteration          (hint)     loop body always breaks/returns
+##   - prefer-own-ptr                 (hint)     ptr[T] binding only used inside unsafe
+##   - redundant-cast                 (hint)     cast to same type as declared
 ##
 ## The token-based trailing-list-comma pass re-lexes the source and doc-tag
 ## reads source lines; all others work from the AST alone.
@@ -40,6 +42,8 @@ import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.linter.scope_tracking as scope_tracking
 import mtc.linter.cfg as cfg
+import mtc.linter.own_ptr as own_ptr
+import mtc.linter.redundant_cast as redundant_cast
 
 
 public struct Warning:
@@ -81,6 +85,8 @@ public function lint_source(file: ast.SourceFile, source: str, path: str, owning
     lint_line_too_long(source, path, ref_of(warnings))
     lint_dead_assignment(file, path, ref_of(warnings))
     lint_unreachable_code(file, path, ref_of(warnings))
+    lint_prefer_own_ptr(file, path, ref_of(warnings))
+    lint_redundant_cast(file, path, ref_of(warnings))
     lint_constant_condition(file, path, ref_of(warnings))
     lint_loop_single_iteration(file, path, ref_of(warnings))
     return warnings
@@ -3757,3 +3763,37 @@ function lint_loop_single_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.V
                     bsi += 1
             _:
                 pass
+
+
+function lint_prefer_own_ptr(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var diags = own_ptr.check(file)
+    defer diags.release()
+    var di: ptr_uint = 0
+    while di < diags.len():
+        let dp = diags.get(di) else:
+            break
+        unsafe:
+            let d = read(dp)
+            var buf = string.String.create()
+            buf.append("binding '")
+            buf.append(d.name)
+            buf.append("' is only used inside unsafe — consider converting from ptr to own for auto-deref")
+            push_warning(warnings, path, d.line, "prefer-own-ptr", buf.as_str(), "hint")
+        di += 1
+
+
+function lint_redundant_cast(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var diags = redundant_cast.check(file)
+    defer diags.release()
+    var di: ptr_uint = 0
+    while di < diags.len():
+        let dp = diags.get(di) else:
+            break
+        unsafe:
+            let d = read(dp)
+            var buf = string.String.create()
+            buf.append("redundant cast: ")
+            buf.append(d.name)
+            buf.append(" is already declared as this type")
+            push_warning(warnings, path, d.line, "redundant-cast", buf.as_str(), "hint")
+        di += 1

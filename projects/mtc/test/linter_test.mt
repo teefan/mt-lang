@@ -618,3 +618,56 @@ function test_loop_normal_with_break_clean() -> t.Check:
             return x
     SRC
     return expect_none(source, "loop-single-iteration")
+
+
+# =============================================================================
+#  prefer-own-ptr
+# =============================================================================
+
+@[test]
+function test_prefer_own_ptr_flagged() -> t.Check:
+    var source = <<-SRC
+        import std.mem.heap as heap
+        function demo() -> int:
+            var p: ptr[int] = heap.must_alloc[int](1)
+            unsafe:
+                read(p) = 42
+                return read(p)
+    SRC
+    return expect_one(source, "prefer-own-ptr")
+
+
+@[test]
+function test_ptr_used_outside_unsafe_clean() -> t.Check:
+    var source = <<-SRC
+        import std.mem.heap as heap
+        function demo() -> int:
+            var p: ptr[int] = heap.must_alloc[int](1)
+            var q = p
+            heap.release(q)
+            return 0
+    SRC
+    return expect_none(source, "prefer-own-ptr")
+
+
+# =============================================================================
+#  redundant-cast
+# =============================================================================
+
+@[test]
+function test_redundant_cast_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo(x: int) -> int:
+            var y: int = x
+            return int<-y
+    SRC
+    return expect_one(source, "redundant-cast")
+
+
+@[test]
+function test_valid_cast_clean() -> t.Check:
+    var source = <<-SRC
+        function demo(x: float) -> int:
+            return int<-x
+    SRC
+    return expect_none(source, "redundant-cast")
