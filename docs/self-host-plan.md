@@ -113,8 +113,10 @@ deletes all cached entries.
 rules + 5 CFG/flow rules + 2 ownership rules + 2 sema-facts rules).
 58 linter tests total (linter_test.mt). The five CFG/flow rules and the two
 sema-facts rules are implemented in separate modules (`linter/cfg.mt`,
-`linter/nullcheck.mt`, `linter/own_ptr.mt`, `linter/redundant_cast.mt`) to
-avoid the large-file codegen issue discovered during inline integration.
+`linter/nullcheck.mt`, `linter/own_ptr.mt`, `linter/redundant_cast.mt`) —
+the module split was a workaround for a parser step-counter limit that was
+fixed in 2026-07-17 (§5.6); combined inlining is now safe but kept separate
+for architectural clarity.
 
 `redundant-null-check` (2026-07-17) uses a structural forward narrowing walk
 (`linter/nullcheck.mt`): non-null name sets threaded through statements with
@@ -614,6 +616,17 @@ pcre2, steamworks) follow the §2.6 pattern when an example needs them.
 
 ### 5.6 Accepted minor divergences (verified benign)
 
+- **Parser step-counter limit** — **FIXED (2026-07-17).** The parser's loop guard
+  (`MAX_LOOP_STEPS = 100000` in `state.mt`) was a cumulative counter spanning
+  the entire parse session. Large files (e.g. a combined linter with ~170K
+  tokens) triggered a `fatal("parse loop guard: stuck at ...")` abort whose
+  `fputs` in `mt_fatal` then segfaulted inside glibc — manifesting as "C codegen
+  issues" / SIGSEGV at `0x7fff...` in libc. The prior module split was a
+  workaround: each sub-module had its own fresh `ParserState` + counter. Fix:
+  raised the limit from 100K to 2M, enough for ~57K functions or any practical
+  single-file program. Verified: 3K-function × Vec+String-body file
+  (parse→emit→build→run), 8K-function file (280K C lines emitted), full
+  bootstrap fixed point, 13/13 `--no-cache`.
 - **Stateful emit dispatch** — **FIXED (2026-07-17).** The self-host emit function
   previously cast all listeners as `((void (*)(void)) listener)()`, silently
   dropping the state pointer for stateful subscriptions. Now dispatches

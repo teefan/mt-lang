@@ -21,7 +21,7 @@ public struct ParseDiagnostic:
     lexeme: str
     kind: str
 
-const MAX_LOOP_STEPS: ptr_uint = 100000
+const MAX_LOOP_STEPS: ptr_uint = 5000
 
 
 public struct ParserState:
@@ -39,20 +39,24 @@ public struct ParserState:
 
 
 # =============================================================================
-#  Loop guard
+#  Loop guard — per-declaration safety net against parser bugs.
+#  The caller (parse_declaration) resets step_counter to zero before each
+#  top-level declaration, so a single stuck loop aborts quickly without
+#  blocking legitimate large files (cumulative steps across many declarations
+#  are intentionally not counted — only steps within one declaration matter).
 # =============================================================================
 
 public function step(s: ref[ParserState]) -> void:
     s.step_counter += 1
     if s.step_counter > MAX_LOOP_STEPS:
         let tok = peek(s) else:
-            fatal(c"parse loop guard: exceeded max iterations (no token)")
+            fatal(c"internal parser error: loop guard triggered — this is a compiler bug, please report it")
         unsafe:
             let t = read(tok)
             let lexeme = token_mod.token_lexeme(t, s.source)
             let kn = token_mod.kind_name(t.kind)
             var buf: str_buffer[256]
-            buf.assign("parse loop guard: stuck at L")
+            buf.assign("internal parser error: loop guard triggered at L")
             buf.append_format(f"#{int<-(t.line)}")
             buf.append(":C")
             buf.append_format(f"#{int<-(t.column)}")
@@ -60,6 +64,7 @@ public function step(s: ref[ParserState]) -> void:
             buf.append(lexeme)
             buf.append("' kind=")
             buf.append(kn)
+            buf.append(" — this is a compiler bug, please report it")
             fatal(buf.as_cstr())
 
 

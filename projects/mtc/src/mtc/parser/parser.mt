@@ -853,6 +853,7 @@ function parse_raw_module_body(s: ref[pstate.ParserState]) -> ast.SourceFile:
 
 
 function parse_external_declaration(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
+    s.step_counter = 0
     if match_kind(s, tk.TokenKind.tk_const):
         return parse_const_decl(s, span[ast.AttributeApplication](), false)
     else if match_kind(s, tk.TokenKind.tk_type):
@@ -1023,6 +1024,7 @@ function parse_raw_module_directive(s: ref[pstate.ParserState]) -> ptr[ast.Decl]
 
 
 function parse_declaration(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
+    s.step_counter = 0
     let attrs = parse_attribute_applications(s)
     let visibility = match_kind(s, tk.TokenKind.tk_public)
     if visibility:
