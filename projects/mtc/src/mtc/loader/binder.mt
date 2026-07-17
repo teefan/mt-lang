@@ -53,6 +53,19 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                         functions.set(fun.name, sig)
                     else:
                         private_functions.set(fun.name, sig)
+            ast.Decl.decl_foreign_function as ff:
+                let sig_ptr = analysis.functions.get(ff.name)
+                if sig_ptr != null:
+                    let sig = unsafe: read(sig_ptr)
+                    if exports_all or ff.visibility:
+                        functions.set(ff.name, sig)
+                    else:
+                        private_functions.set(ff.name, sig)
+            ast.Decl.decl_extern_function as ef:
+                let sig_ptr = analysis.functions.get(ef.name)
+                if sig_ptr != null:
+                    let sig = unsafe: read(sig_ptr)
+                    functions.set(ef.name, sig)
             ast.Decl.decl_struct as s:
                 let fields_ptr = analysis.structs.get(s.name)
                 if exports_all or s.visibility:

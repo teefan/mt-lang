@@ -48,6 +48,14 @@ public struct FnSig:
     ## True for `async function`/`async` methods.  Lets the lowering wrap the
     ## call's return type in `Task[T]` and route the definition through CPS.
     is_async: bool
+    ## True for variadic functions (`external function f(..., ...)`).  The
+    ## param count in `params` covers only the fixed parameters; arity checks
+    ## are skipped because callers may pass additional variadic arguments.
+    is_variadic: bool
+    ## True for foreign/external functions.  When set, `check_call` skips
+    ## signature checking (the parameter types are boundary projections, not
+    ## Milk Tea types the analyzer can validate) and just returns the type.
+    is_extern: bool
 
 
 public struct FieldEntry:
@@ -658,7 +666,7 @@ function register_event_methods(ctx: ref[Context]) -> void:
 
 
 function fn_sig_no_params(type_name: str, method_name: str, return_type: types.Type) -> FnSig:
-    return FnSig(name = method_name, params = span[ParamEntry](), return_type = return_type, has_return_type = true, method_kind = ast.MethodKind.mk_plain, is_async = false)
+    return FnSig(name = method_name, params = span[ParamEntry](), return_type = return_type, has_return_type = true, method_kind = ast.MethodKind.mk_plain, is_async = false, is_variadic = false, is_extern = false)
 
 
 function check_attribute_applications(ctx: ref[Context], file: ast.SourceFile) -> void:
@@ -1021,8 +1029,20 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                     if fun.type_params.len > 0:
                         ctx.function_type_params.set(fun.name, fun.type_params)
             ast.Decl.decl_extern_function as ef:
+                enter_suppressed_type_params(ctx, ef.type_params)
+                var extern_ret = types.primitive("void")
+                let er_ptr = ef.return_type
+                if er_ptr != null:
+                    extern_ret = resolve_type(ctx, er_ptr)
+                let sig = build_foreign_fn_sig(ctx, ef.name, ef.extern_params, extern_ret)
+                ctx.suppressed_type_names.clear()
+                ctx.functions.set(ef.name, sig)
                 declare_value(ctx, ef.name, ef.line, 1)
             ast.Decl.decl_foreign_function as ff:
+                enter_suppressed_type_params(ctx, ff.type_params)
+                let sig = build_foreign_fn_sig(ctx, ff.name, ff.foreign_params, resolve_type(ctx, ff.return_type))
+                ctx.suppressed_type_names.clear()
+                ctx.functions.set(ff.name, sig)
                 declare_value(ctx, ff.name, ff.line, 1)
             ast.Decl.decl_event as ev:
                 if declare_value(ctx, ev.name, ev.line, ev.column):
@@ -1079,6 +1099,26 @@ function dup_message(kind: str, name: str) -> str:
     return buf.as_str()
 
 
+## Build a FnSig for a foreign or external function declaration.  Resolves
+## each ForeignParam.param_type through the same resolution pipeline that
+## `build_fn_sig` uses for ordinary Params.  The return type is resolved at the
+## call site and passed in already, because the two declarations have different
+## return_type pointer types (`ptr[TypeRef]?` vs `ptr[TypeRef]`).
+function build_foreign_fn_sig(ctx: ref[Context], name: str, params: span[ast.ForeignParam], ret: types.Type) -> FnSig:
+    var param_entries = vec.Vec[ParamEntry].create()
+    var i: ptr_uint = 0
+    while i < params.len:
+        var p: ast.ForeignParam
+        unsafe:
+            p = read(params.data + i)
+        param_entries.push(ParamEntry(name = p.name, ty = resolve_type_value(ctx, p.param_type)))
+        i += 1
+    return FnSig(name = name, params = param_entries.as_span(),
+        return_type = ret, has_return_type = true,
+        method_kind = ast.MethodKind.mk_plain, is_async = false,
+        is_variadic = true, is_extern = true)
+
+
 function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, method_kind: ast.MethodKind, is_async: bool) -> FnSig:
     var param_entries = vec.Vec[ParamEntry].create()
     var i: ptr_uint = 0
@@ -1095,11 +1135,13 @@ function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], ret
         if is_async:
             final_ret = make_task_type(final_ret)
         return FnSig(name = name, params = param_entries.as_span(),
-            return_type = final_ret, has_return_type = true, method_kind = method_kind, is_async = is_async)
+            return_type = final_ret, has_return_type = true, method_kind = method_kind, is_async = is_async,
+            is_variadic = false, is_extern = false)
     if is_async:
         final_ret = make_task_type(final_ret)
     return FnSig(name = name, params = param_entries.as_span(),
-        return_type = final_ret, has_return_type = false, method_kind = method_kind, is_async = is_async)
+        return_type = final_ret, has_return_type = false, method_kind = method_kind, is_async = is_async,
+        is_variadic = false, is_extern = false)
 
 
 # =============================================================================
@@ -3839,14 +3881,12 @@ function str_buffer_method_sig(args: span[types.Type], method_name: str) -> Opti
         return_type = return_type,
         has_return_type = true,
         method_kind = ast.MethodKind.mk_plain,
-        is_async = false
+        is_async = false,
+        is_variadic = false,
+        is_extern = false
     ))
 
 
-## Synthetic FnSig for a builtin atomic[T] method.  The element type T is the
-## single generic argument; `load`/`add`/`sub`/`exchange` return T, `store`
-## returns void.  `store`/`add`/`sub`/`exchange` mutate and so are editable;
-## `load` is read-only.  Mirrors Ruby's check_atomic_method_call return types.
 function atomic_method_sig(args: span[types.Type], method_name: str) -> Option[FnSig]:
     if args.len != 1:
         return Option[FnSig].none
@@ -3872,7 +3912,9 @@ function atomic_method_sig(args: span[types.Type], method_name: str) -> Option[F
         return_type = return_type,
         has_return_type = true,
         method_kind = method_kind,
-        is_async = false
+        is_async = false,
+        is_variadic = false,
+        is_extern = false
     ))
 
 
@@ -4350,7 +4392,9 @@ function check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast
 ## narrowing-int checks on numeric literal sources (mirroring Ruby's
 ## exact_compile_time_numeric_compatibility?).
 function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> void:
-    if arg_types.len != sig.params.len:
+    if sig.is_extern:
+        return
+    if not sig.is_variadic and arg_types.len != sig.params.len:
         report(ctx, line, column, arity_message(display_name, sig.params.len, arg_types.len))
         return
     if any_named:

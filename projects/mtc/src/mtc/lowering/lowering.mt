@@ -2821,12 +2821,14 @@ function guard_success_type(ctx: ref[LowerCtx], kind: str, storage_ty: types.Typ
     if args.len > 0:
         return qualify_type(ctx, unsafe: read(args.data + 0))
     # Collapsed concrete form (Option_str / Result_..._): recover the success
-    # payload field type from the concrete variant decl, mirroring the prelude
-    # payload specialization (arg-less `ty_named` carries no type args).
+    # payload field type via the program-wide prelude arm registry (the
+    # concrete decl may have been emitted in another module's context, e.g.
+    # `Result[Value, Error]` from an imported `json.parse`), then the local
+    # pending decls, then the scrutinee's own type args.
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
     let success_arm = if kind == "result": "success" else: "some"
     let payload_c = variant_arm_type_name(outer_c, success_arm)
-    match prelude_field_type_from_variants(ctx, payload_c, success_arm):
+    match concrete_prelude_field_type(ctx, payload_c, success_arm, storage_ty):
         Option.some as ft:
             return ft.value
         Option.none:
@@ -2868,8 +2870,10 @@ function emit_result_failure_binding(ctx: ref[LowerCtx], else_stmts: ref[vec.Vec
     if args.len >= 2:
         error_ty = qualify_type(ctx, unsafe: read(args.data + 1))
     else:
-        # Collapsed concrete form: recover the error field type from the decl.
-        match prelude_field_type_from_variants(ctx, variant_arm_type_name(outer_c, "failure"), "failure"):
+        # Collapsed concrete form: recover the error field type via the
+        # program-wide prelude arm registry (the concrete decl may come from
+        # another module's context), then the local pending decls.
+        match concrete_prelude_field_type(ctx, variant_arm_type_name(outer_c, "failure"), "failure", storage_ty):
             Option.some as ft:
                 error_ty = ft.value
             Option.none:
@@ -7502,11 +7506,14 @@ function dyn_vtable_c_type(t: types.Type) -> str:
 
 
 ## Resolved method call info: the C function name and the method kind (needed to
-## decide whether to pass the receiver by pointer or by value).
+## decide whether to pass the receiver by pointer or by value).  `params` holds
+## the declared parameter entries so argument lowering can coerce pointer
+## arguments (e.g. `this` inside an editable method) to by-value parameters.
 struct MethodInfo:
     c_name: str
     method_kind: ast.MethodKind
     return_type: types.Type
+    params: span[analyzer.ParamEntry]
 
 
 ## True when `name` names a primitive type or `str` — the receiver types whose
@@ -7653,6 +7660,7 @@ function resolve_primitive_method_info(ctx: ref[LowerCtx], type_name: str, metho
             c_name = primitive_method_c_name(type_name, method_name, sig.method_kind == ast.MethodKind.mk_static),
             method_kind = sig.method_kind,
             return_type = qualify_type(ctx, ret),
+            params = sig.params,
         ))
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len:
@@ -7674,6 +7682,7 @@ function resolve_primitive_method_info(ctx: ref[LowerCtx], type_name: str, metho
                 c_name = primitive_method_c_name(type_name, method_name, sig.method_kind == ast.MethodKind.mk_static),
                 method_kind = sig.method_kind,
                 return_type = qualify_type(ctx, ret),
+                params = sig.params,
             ))
         ai += 1
     return Option[MethodInfo].none
@@ -7706,7 +7715,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
                     var ret = sig.return_type
                     if not sig.has_return_type:
                         ret = ctx.void_ty
-                    return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, gv.value, method_name), method_kind = sig.method_kind, return_type = ret))
+                    return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, gv.value, method_name), method_kind = sig.method_kind, return_type = ret, params = sig.params))
             Option.none:
                 pass
         return Option[MethodInfo].none
@@ -7727,7 +7736,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
         var ret = sig.return_type
         if not sig.has_return_type:
             ret = ctx.void_ty
-        return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name(ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = qualify_type(ctx, ret)))
+        return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name(ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = qualify_type(ctx, ret), params = sig.params))
     # Search imported modules' method_sigs when the method is not found locally.
     # When the receiver type carries a specific originating module (ty_imported),
     # restrict the search to that module first so that structs with the same name
@@ -7772,6 +7781,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
                 c_name = method_c_name(a.module_name, type_name, method_name, sig.method_kind),
                 method_kind = sig.method_kind,
                 return_type = resolve_method_return_from_import(ctx, a.module_name, sig, effective_ty),
+                params = sig.params,
             ))
         ai += 1
     return Option[MethodInfo].none
@@ -7815,6 +7825,7 @@ function resolve_method_info_imported(ctx: ref[LowerCtx], receiver_ty: types.Typ
                     c_name = method_c_name(a.module_name, type_name, method_name, sig.method_kind),
                     method_kind = sig.method_kind,
                     return_type = resolve_method_return_from_import(ctx, a.module_name, sig, effective_ty),
+                    params = sig.params,
                 ))
             return Option[MethodInfo].none
         ai += 1
@@ -7831,7 +7842,17 @@ function lower_static_call_args(ctx: ref[LowerCtx], mi: MethodInfo, args: span[a
         var arg: ast.Argument
         unsafe:
             arg = read(args.data + i)
-        let lowered = lower_expr(ctx, arg.arg_value)
+        var lowered = lower_expr(ctx, arg.arg_value)
+        # A pointer argument (e.g. `this` inside an editable method) passed to
+        # a by-value parameter is dereferenced, mirroring Ruby's `*this`
+        # projection and the monomorphized-path `coerce_arg_to_param`.
+        if i < mi.params.len:
+            var declared: types.Type
+            unsafe:
+                declared = read(mi.params.data + i).ty
+            let arg_ty = ir_expr_type(lowered)
+            if is_pointer_or_ref_type(arg_ty) and not is_pointer_or_ref_type(declared):
+                lowered = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = lowered, ty = types.pointer_element(arg_ty)))
         unsafe:
             ir_args.push(read(lowered))
         i += 1
