@@ -1977,6 +1977,13 @@ function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags
                 apply_refinements_to_scope_frame(scope, ref_of(post_refinements))
                 post_refinements.release()
             ast.Stmt.stmt_while as w:
+                if w.is_inline:
+                    match evaluate_const_expr(ctx, w.condition):
+                        Option.none:
+                            report(ctx, w.line, w.column, "inline while condition must be a compile-time constant")
+                            return
+                        Option.some:
+                            pass
                 check_condition(ctx, scope, w.condition, "while", w.line, w.column)
                 check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, chk.inside_parallel), w.body)
             ast.Stmt.stmt_for as fr:

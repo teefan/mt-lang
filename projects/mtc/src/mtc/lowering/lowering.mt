@@ -2166,6 +2166,9 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 value = nullable_some_literal(target_ty, value)
                 output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
             ast.Stmt.stmt_while as w:
+                if w.is_inline:
+                    lower_inline_while(ctx, output, w.condition, w.body)
+                    return
                 # Async CPS: an await in the loop condition must be re-evaluated
                 # (and may suspend) each iteration.  Restructure to
                 # `while (true) { <cond awaits>; if (!cond) break; <body> }`.
@@ -14275,6 +14278,30 @@ function lower_inline_match_statement(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
                 i += 1
         Option.none:
             pass
+
+
+## Lower an `inline while` statement.  Evaluate the condition at compile time;
+## if constantly true, unroll the loop body (capped at MAX_INLINE_WHILE_ITERS).
+## Mirrors Ruby's lower_inline_while_stmt.
+const MAX_INLINE_WHILE_ITERS: ptr_uint = 10000
+
+function lower_inline_while(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], condition: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+    let body = body_ptr else:
+        return
+    var iter: ptr_uint = 0
+    while iter < MAX_INLINE_WHILE_ITERS:
+        match try_evaluate_const_expr(ctx, condition):
+            Option.some as val:
+                match val.value:
+                    ConstValue.cv_bool as bv:
+                        if not bv.value:
+                            return
+                    _:
+                        return
+            Option.none:
+                return
+        lower_block_stmts(ctx, output, body)
+        iter += 1
 
 
 ## Lower an `inline for` statement: evaluate the iterable at compile time and

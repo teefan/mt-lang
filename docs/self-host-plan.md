@@ -616,6 +616,17 @@ pcre2, steamworks) follow the §2.6 pattern when an example needs them.
 
 ### 5.6 Accepted minor divergences (verified benign)
 
+- **Inline-while compile-time unrolling** — **FIXED (2026-07-17).** The self-host
+  parsed `inline while` as `stmt_while.is_inline = true` but the lowering path
+  never checked `is_inline` — it always emitted a runtime C `while` loop. The
+  semantic analyzer also didn't validate that the condition is a compile-time
+  constant, silently accepting `inline while n < LIMIT` where `n` is a `var`.
+  Fix: analyzer now rejects non-constant inline-while conditions (mirroring
+  Ruby's `check_inline_while_stmt`); lowering now intercepts `is_inline` and
+  unrolls the body via `lower_inline_while` (capped at 10 000 iterations,
+  matching Ruby's `lower_inline_while_stmt`). Verified: literal `5 > 0` →
+  0 `while` keywords in C; const `N > 0` → 0 `while` keywords; var `n < LIMIT`
+  → rejected; `language_baseline.mt` builds/runs.
 - **Parser step-counter limit** — **FIXED (2026-07-17).** The parser's loop guard
   (`MAX_LOOP_STEPS = 100000` in `state.mt`) was a cumulative counter spanning
   the entire parse session. Large files (e.g. a combined linter with ~170K
