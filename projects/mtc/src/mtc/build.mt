@@ -225,6 +225,7 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
     var uses_gl = false
     var uses_glfw = false
     var uses_tracy = false
+    var uses_cjson = false
     var mi: ptr_uint = 0
     while mi < program.analyses.len():
         let a_ptr = program.analyses.get(mi) else:
@@ -244,6 +245,8 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
             uses_glfw = true
         if analysis.module_name == "std.c.tracy":
             uses_tracy = true
+        if analysis.module_name == "std.cjson":
+            uses_cjson = true
         mi += 1
 
     # Any raylib-family binding compiles against the vendored raylib headers
@@ -299,6 +302,12 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
         if tracy_public.len() > 0:
             result.push(string.String.from_str(j2("-I", tracy_public.as_str())))
         result.push(string.String.from_str("-DTRACY_ENABLE"))
+
+    if uses_cjson:
+        var cjson_include = vendored_tree_path(roots, "cjson-upstream")
+        defer cjson_include.release()
+        if cjson_include.len() > 0:
+            result.push(string.String.from_str(j2("-I", cjson_include.as_str())))
 
     return result
 
@@ -395,6 +404,13 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
 
     if uses_binding_module(program, "std.c.tracy"):
         match prepare_vendored_tracy(roots):
+            Result.failure as failure:
+                return Result[bool, string.String].failure(error = failure.error)
+            Result.success:
+                pass
+
+    if uses_binding_module(program, "std.cjson"):
+        match prepare_vendored_cjson(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
             Result.success:
@@ -622,6 +638,77 @@ function prepare_vendored_tracy(roots: span[str]) -> Result[bool, string.String]
     return Result[bool, string.String].success(value = true)
 
 
+## Build the vendored cJSON static library from third_party/cjson-upstream when
+## the program imports `std.cjson`.  cJSON is a single-source C library; we
+## compile cJSON.c and archive it as libcjson.a.
+function prepare_vendored_cjson(roots: span[str]) -> Result[bool, string.String]:
+    let root = vendored_source_root(roots, "cjson-upstream") else:
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored cJSON source not found: std.json needs third_party/cjson-upstream to build libcjson"
+        ))
+
+    var lib_dir = path_ops.join(root, "tmp/vendored-cjson")
+    defer lib_dir.release()
+    var archive = path_ops.join(lib_dir.as_str(), "libcjson.a")
+    defer archive.release()
+    if fs.is_file(archive.as_str()):
+        return Result[bool, string.String].success(value = true)
+
+    match fs.create_directories(lib_dir.as_str()):
+        Result.failure as dir_failure:
+            var dir_error = dir_failure.error
+            dir_error.release()
+            return Result[bool, string.String].failure(error = string.String.from_str(
+                "could not create tmp/vendored-cjson for the vendored cJSON build"
+            ))
+        Result.success:
+            pass
+
+    var src_dir = path_ops.join(root, "third_party/cjson-upstream")
+    defer src_dir.release()
+    var include_flag = string.String.from_str("-I")
+    include_flag.append(src_dir.as_str())
+    defer include_flag.release()
+
+    var source_file = path_ops.join(src_dir.as_str(), "cJSON.c")
+    defer source_file.release()
+    var object_file = path_ops.join(lib_dir.as_str(), "cJSON.o")
+    defer object_file.release()
+
+    var compile = vec.Vec[str].create()
+    defer compile.release()
+    compile.push("cc")
+    compile.push("-c")
+    compile.push(source_file.as_str())
+    compile.push(include_flag.as_str())
+    compile.push("-o")
+    compile.push(object_file.as_str())
+    match run_build_tool(compile.as_span(), "vendored cJSON compile"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    var ar_cmd = vec.Vec[str].create()
+    defer ar_cmd.release()
+    ar_cmd.push("ar")
+    ar_cmd.push("rcs")
+    ar_cmd.push(archive.as_str())
+    ar_cmd.push(object_file.as_str())
+    match run_build_tool(ar_cmd.as_span(), "vendored cJSON archive"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    if not fs.is_file(archive.as_str()):
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored cJSON build did not produce libcjson.a"
+        ))
+
+    return Result[bool, string.String].success(value = true)
+
+
 ## Vendored library link flags: the `-L` search path for each vendored archive
 ## the program's raw bindings need, plus the static-link system dependencies the
 ## vendored pkg-config metadata declares (GLFW's `Libs.private: -lrt -lm -ldl`).
@@ -672,6 +759,17 @@ function collect_vendored_link_flags(program: loader.Program, roots: span[str]) 
         match vendored_source_root(roots, "tracy-upstream"):
             Option.some as tracy_root:
                 var lib_dir = path_ops.join(tracy_root.value, "tmp/tracy-lib")
+                var search_flag = string.String.from_str("-L")
+                search_flag.append(lib_dir.as_str())
+                lib_dir.release()
+                result.push(search_flag)
+            Option.none:
+                pass
+
+    if uses_binding_module(program, "std.cjson"):
+        match vendored_source_root(roots, "cjson-upstream"):
+            Option.some as cjson_root:
+                var lib_dir = path_ops.join(cjson_root.value, "tmp/vendored-cjson")
                 var search_flag = string.String.from_str("-L")
                 search_flag.append(lib_dir.as_str())
                 lib_dir.release()
