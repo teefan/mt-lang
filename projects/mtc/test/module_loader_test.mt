@@ -44,15 +44,621 @@ function write_file(dir: str, relative: str, content: str) -> bool:
             return true
 
 
+# =============================================================================
+#  Shared source strings — every inline module source is a heredoc so tests
+#  are readable and maintainable without embedded \n escapes.
+# =============================================================================
+
+# --- single-module helpers (lines 47–180) ---
+
+const S_MOD_MAIN_IMPORT_FOO: str = <<-SRC
+import foo
+
+function run() -> int:
+    return 0
+SRC
+
+const S_MOD_HELPER: str = <<-SRC
+function helper() -> int:
+    return 1
+SRC
+
+const S_MOD_MAIN_IMPORT_A_B: str = <<-SRC
+import a
+import b
+
+function run() -> int:
+    return 0
+SRC
+
+const S_MOD_A_IMPORT_C: str = <<-SRC
+import c
+
+function fa() -> int:
+    return 1
+SRC
+
+const S_MOD_B_IMPORT_C: str = <<-SRC
+import c
+
+function fb() -> int:
+    return 2
+SRC
+
+const S_MOD_C: str = <<-SRC
+function fc() -> int:
+    return 3
+SRC
+
+const S_MOD_A_IMPORT_B: str = <<-SRC
+import b
+
+function fa() -> int:
+    return 1
+SRC
+
+const S_MOD_B_IMPORT_A: str = <<-SRC
+import a
+
+function fb() -> int:
+    return 2
+SRC
+
+const S_MOD_MAIN_IMPORT_GHOST: str = <<-SRC
+import ghost
+
+function run() -> int:
+    return 0
+SRC
+
+const S_MOD_MAIN_BOOL_RETURN: str = <<-SRC
+function f() -> int:
+    return true
+SRC
+
+const S_MOD_MAIN_CLEAN: str = <<-SRC
+function f() -> int:
+    return 0
+SRC
+
+# --- cross-module lib sources (load_lib_and_main) ---
+
+const LIB_ADD: str = <<-SRC
+public function add(a: int, b: int) -> int:
+    return a + b
+SRC
+
+const LIB_FLAG: str = <<-SRC
+public function flag() -> bool:
+    return true
+SRC
+
+const LIB_SECRET: str = <<-SRC
+function secret(a: int) -> int:
+    return a
+SRC
+
+const LIB_POINT: str = <<-SRC
+public struct Point:
+    x: int
+    y: int
+SRC
+
+const LIB_POINT_EXTENDED: str = <<-SRC
+public struct Point:
+    x: int
+    y: int
+
+extending Point:
+    public function magnitude() -> int:
+        return this.x + this.y
+SRC
+
+const LIB_POINT_PRIVATE_METHOD: str = <<-SRC
+public struct Point:
+    x: int
+
+extending Point:
+    function secret() -> int:
+        return this.x
+SRC
+
+const LIB_LIMIT: str = <<-SRC
+public const LIMIT: int = 10
+SRC
+
+const LIB_SECRET_CONST: str = <<-SRC
+const SECRET: int = 42
+SRC
+
+const LIB_COLOR: str = <<-SRC
+public enum Color: ubyte
+    red = 0
+    green = 1
+SRC
+
+const LIB_COLOR_PRIVATE: str = <<-SRC
+enum Color: ubyte
+    red = 0
+SRC
+
+const LIB_TOKEN: str = <<-SRC
+public variant Token:
+    ident(name: str)
+    eof
+SRC
+
+const LIB_ADDER: str = <<-SRC
+public struct Adder:
+    base: int
+
+extending Adder:
+    public static function make(start: int) -> Adder:
+        return Adder(base = start)
+
+    public function add(a: int, b: int) -> int:
+        return this.base + a + b
+
+    public function total() -> int:
+        return this.base
+SRC
+
+const LIB_THING: str = <<-SRC
+public struct Thing:
+    n: int
+SRC
+
+const LIB_UNUSED: str = <<-SRC
+public function unused() -> int:
+    return 0
+SRC
+
+const LIB_UNUSED_STR_FIRST_BYTE: str = <<-SRC
+public function unused() -> int:
+    return 0
+
+extending str:
+    public function first_byte() -> ubyte:
+        return 0
+SRC
+
+const LIB_DRAWABLE_INTERFACE: str = <<-SRC
+public interface Drawable:
+    function draw() -> int
+SRC
+
+const LIB_DRAWABLE_WIDGET_PLAIN: str = <<-SRC
+public interface Drawable:
+    function draw() -> int
+
+public struct Widget implements Drawable:
+    w: int
+
+extending Widget:
+    public function draw() -> int:
+        return this.w
+
+public struct Plain:
+    p: int
+SRC
+
+const LIB_DRAWABLE_PLAIN: str = <<-SRC
+public interface Drawable:
+    function draw() -> int
+
+public struct Plain:
+    p: int
+SRC
+
+const LIB_WIDGET: str = <<-SRC
+public struct Widget:
+    w: int
+
+extending Widget:
+    public function draw() -> int:
+        return this.w
+SRC
+
+const LIB_HOLDER_GENERIC: str = <<-SRC
+public struct Holder[T]:
+    value: T
+
+extending Holder[T]:
+    public function get() -> T:
+        return this.value
+SRC
+
+const LIB_CONTAINER_STATIC: str = <<-SRC
+public struct Container:
+    value: int
+
+extending Container:
+    public static function make(v: int) -> Container:
+        return Container(value = v)
+SRC
+
+const LIB_DAMAGEABLE: str = <<-SRC
+public interface Damageable:
+    function is_alive() -> bool
+SRC
+
+# --- cross-module main sources (load_lib_and_main) ---
+
+const MAIN_ADD_ARITY: str = <<-SRC
+import lib
+
+function run() -> int:
+    return lib.add(1)
+SRC
+
+const MAIN_ADD_CORRECT: str = <<-SRC
+import lib
+
+function run() -> int:
+    return lib.add(1, 2)
+SRC
+
+const MAIN_ADD_TYPE: str = <<-SRC
+import lib
+
+function run() -> int:
+    return lib.add(true, 2)
+SRC
+
+const MAIN_FLAG_RETURN: str = <<-SRC
+import lib
+
+function run() -> int:
+    return lib.flag()
+SRC
+
+const MAIN_SECRET_ARITY: str = <<-SRC
+import lib
+
+function run() -> int:
+    return lib.secret(1, 2, 3)
+SRC
+
+const MAIN_POINT_BAD_FIELD: str = <<-SRC
+import lib
+
+function make() -> int:
+    let p = lib.Point(x = 1, z = 2)
+    return 0
+SRC
+
+const MAIN_POINT_CORRECT: str = <<-SRC
+import lib
+
+function make() -> int:
+    let p = lib.Point(x = 1, y = 2)
+    return 0
+SRC
+
+const MAIN_LIMIT_BOOL: str = <<-SRC
+import lib
+
+function f() -> void:
+    let flag: bool = lib.LIMIT
+SRC
+
+const MAIN_LIMIT_INT: str = <<-SRC
+import lib
+
+function f() -> void:
+    let n: int = lib.LIMIT
+SRC
+
+const MAIN_SECRET_CONST_BOOL: str = <<-SRC
+import lib
+
+function f() -> void:
+    let flag: bool = lib.SECRET
+SRC
+
+const MAIN_COLOR_VALID: str = <<-SRC
+import lib
+
+function f() -> void:
+    let c = lib.Color.green
+SRC
+
+const MAIN_COLOR_BAD: str = <<-SRC
+import lib
+
+function f() -> void:
+    let c = lib.Color.purple
+SRC
+
+const MAIN_TOKEN_VALID: str = <<-SRC
+import lib
+
+function f() -> void:
+    let t = lib.Token.ident(name = "x")
+SRC
+
+const MAIN_TOKEN_BAD: str = <<-SRC
+import lib
+
+function f() -> void:
+    let t = lib.Token.bad
+SRC
+
+const MAIN_POINT_MAGNITUDE: str = <<-SRC
+import lib
+
+function f() -> int:
+    let p = lib.Point(x = 1, y = 2)
+    return p.magnitude()
+SRC
+
+const MAIN_POINT_BOGUS: str = <<-SRC
+import lib
+
+function f() -> int:
+    let p = lib.Point(x = 1, y = 2)
+    return p.bogus()
+SRC
+
+const MAIN_POINT_FIELD_X: str = <<-SRC
+import lib
+
+function f() -> int:
+    let p = lib.Point(x = 1, y = 2)
+    return p.x
+SRC
+
+const MAIN_POINT_FIELD_X_BOOL: str = <<-SRC
+import lib
+
+function f() -> bool:
+    let p = lib.Point(x = 1, y = 2)
+    return p.x
+SRC
+
+const MAIN_POINT_FIELD_Z: str = <<-SRC
+import lib
+
+function f() -> int:
+    let p = lib.Point(x = 1, y = 2)
+    return p.z
+SRC
+
+const MAIN_POINT_SECRET: str = <<-SRC
+import lib
+
+function f() -> int:
+    let p = lib.Point(x = 1)
+    return p.secret()
+SRC
+
+const MAIN_ADDER_ADD_ARITY: str = <<-SRC
+import lib
+
+function f() -> int:
+    let x = lib.Adder(base = 0)
+    return x.add(1)
+SRC
+
+const MAIN_ADDER_ADD_TYPE: str = <<-SRC
+import lib
+
+function f() -> int:
+    let x = lib.Adder(base = 0)
+    return x.add(true, 2)
+SRC
+
+const MAIN_ADDER_ADD_CORRECT: str = <<-SRC
+import lib
+
+function f() -> int:
+    let x = lib.Adder(base = 0)
+    return x.add(1, 2)
+SRC
+
+const MAIN_ADDER_TOTAL_BOOL: str = <<-SRC
+import lib
+
+function f() -> bool:
+    let x = lib.Adder(base = 0)
+    return x.total()
+SRC
+
+const MAIN_ADDER_MAKE_VALID: str = <<-SRC
+import lib
+
+function f() -> int:
+    let a = lib.Adder.make(5)
+    return 0
+SRC
+
+const MAIN_ADDER_MAKE_ARITY: str = <<-SRC
+import lib
+
+function f() -> int:
+    let a = lib.Adder.make()
+    return 0
+SRC
+
+const MAIN_ADDER_BOGUS: str = <<-SRC
+import lib
+
+function f() -> int:
+    let a = lib.Adder.bogus()
+    return 0
+SRC
+
+const MAIN_THING_SHADOW: str = <<-SRC
+import lib
+
+function f() -> int:
+    var i: int = 0
+    while i < 3:
+        let lib = lib.Thing(n = i)
+        i += 1
+    let after = lib.Thing(n = 9)
+    return 0
+SRC
+
+const MAIN_DRAWABLE_SPRITE: str = <<-SRC
+import lib
+
+struct Sprite implements lib.Drawable:
+    x: int
+
+extending Sprite:
+    function draw() -> int:
+        return this.x
+SRC
+
+const MAIN_DRAWABLE_MISSING: str = <<-SRC
+import lib
+
+struct Sprite implements lib.Drawable:
+    x: int
+
+extending Sprite:
+    function other() -> int:
+        return this.x
+SRC
+
+const MAIN_STR_FIRST_BYTE_BOOL: str = <<-SRC
+import lib
+
+function f(s: str) -> bool:
+    return s.first_byte()
+SRC
+
+const MAIN_STR_MYSTERY: str = <<-SRC
+import lib
+
+function f(s: str) -> void:
+    s.mystery()
+SRC
+
+const MAIN_DAMAGEABLE_LOCAL: str = <<-SRC
+import lib
+
+struct NPC implements lib.Damageable:
+    hp: int
+
+extending NPC:
+    function is_alive() -> bool:
+        return this.hp > 0
+
+function hurt[T implements lib.Damageable](target: ref[T]) -> void:
+    pass
+
+function f() -> void:
+    var n: NPC
+    hurt(n)
+SRC
+
+const MAIN_DAMAGEABLE_ROCK: str = <<-SRC
+import lib
+
+struct Rock:
+    weight: int
+
+function hurt[T implements lib.Damageable](target: ref[T]) -> void:
+    pass
+
+function f() -> void:
+    var r: Rock
+    hurt(r)
+SRC
+
+const MAIN_DRAWABLE_WIDGET_VALID: str = <<-SRC
+import lib
+
+function render[T implements lib.Drawable](x: ref[T]) -> void:
+    pass
+
+function f() -> void:
+    var widget = lib.Widget(w = 0)
+    render(widget)
+SRC
+
+const MAIN_DRAWABLE_PLAIN_FLAGGED: str = <<-SRC
+import lib
+
+function render[T implements lib.Drawable](x: ref[T]) -> void:
+    pass
+
+function f() -> void:
+    var plain = lib.Plain(p = 0)
+    render(plain)
+SRC
+
+const MAIN_DRAWABLE_EXPLICIT: str = <<-SRC
+import lib
+
+function render[T implements lib.Drawable](x: ref[T]) -> void:
+    pass
+
+function f() -> void:
+    var plain = lib.Plain(p = 0)
+    render[lib.Plain](ref_of(plain))
+SRC
+
+const MAIN_WIDGET_BOGUS: str = <<-SRC
+import lib
+
+function use(w: lib.Widget) -> int:
+    return w.no_such_method()
+SRC
+
+const MAIN_WIDGET_DRAW: str = <<-SRC
+import lib
+
+function use(w: lib.Widget) -> int:
+    return w.draw()
+SRC
+
+const MAIN_COLOR_MISSING_GREEN: str = <<-SRC
+import lib
+
+function f(c: lib.Color) -> int:
+    match c:
+        lib.Color.red:
+            return 1
+SRC
+
+const MAIN_COLOR_EXHAUSTIVE: str = <<-SRC
+import lib
+
+function f(c: lib.Color) -> int:
+    match c:
+        lib.Color.red:
+            return 1
+        lib.Color.green:
+            return 2
+SRC
+
+const MAIN_HOLDER_GET: str = <<-SRC
+import lib
+
+function run(val: lib.Holder[int]) -> int:
+    return val.get()
+SRC
+
+const MAIN_CONTAINER_MAKE: str = <<-SRC
+import lib
+
+function run() -> lib.Container:
+    return lib.Container.make(42)
+SRC
+
+
 @[test]
 function test_loads_root_and_dependency() -> t.Check:
     var root = fs.create_temporary_directory_in_system_temp("mtc_l2_") else:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    if not write_file(root.as_str(), "main.mt", "import foo\n\nfunction run() -> int:\n    return 0\n"):
+    if not write_file(root.as_str(), "main.mt", S_MOD_MAIN_IMPORT_FOO):
         return t.fail("could not write main")
-    if not write_file(root.as_str(), "foo.mt", "function helper() -> int:\n    return 1\n"):
+    if not write_file(root.as_str(), "foo.mt", S_MOD_HELPER):
         return t.fail("could not write foo")
 
     var main_path = path_ops.join(root.as_str(), "main.mt")
@@ -82,13 +688,13 @@ function test_diamond_dependency_loaded_once() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    if not write_file(root.as_str(), "main.mt", "import a\nimport b\n\nfunction run() -> int:\n    return 0\n"):
+    if not write_file(root.as_str(), "main.mt", S_MOD_MAIN_IMPORT_A_B):
         return t.fail("could not write main")
-    if not write_file(root.as_str(), "a.mt", "import c\n\nfunction fa() -> int:\n    return 1\n"):
+    if not write_file(root.as_str(), "a.mt", S_MOD_A_IMPORT_C):
         return t.fail("could not write a")
-    if not write_file(root.as_str(), "b.mt", "import c\n\nfunction fb() -> int:\n    return 2\n"):
+    if not write_file(root.as_str(), "b.mt", S_MOD_B_IMPORT_C):
         return t.fail("could not write b")
-    if not write_file(root.as_str(), "c.mt", "function fc() -> int:\n    return 3\n"):
+    if not write_file(root.as_str(), "c.mt", S_MOD_C):
         return t.fail("could not write c")
 
     var main_path = path_ops.join(root.as_str(), "main.mt")
@@ -108,9 +714,9 @@ function test_import_cycle_is_detected() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    if not write_file(root.as_str(), "a.mt", "import b\n\nfunction fa() -> int:\n    return 1\n"):
+    if not write_file(root.as_str(), "a.mt", S_MOD_A_IMPORT_B):
         return t.fail("could not write a")
-    if not write_file(root.as_str(), "b.mt", "import a\n\nfunction fb() -> int:\n    return 2\n"):
+    if not write_file(root.as_str(), "b.mt", S_MOD_B_IMPORT_A):
         return t.fail("could not write b")
 
     var root_path = path_ops.join(root.as_str(), "a.mt")
@@ -128,7 +734,7 @@ function test_missing_import_is_reported() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    if not write_file(root.as_str(), "main.mt", "import ghost\n\nfunction run() -> int:\n    return 0\n"):
+    if not write_file(root.as_str(), "main.mt", S_MOD_MAIN_IMPORT_GHOST):
         return t.fail("could not write main")
 
     var main_path = path_ops.join(root.as_str(), "main.mt")
@@ -148,7 +754,7 @@ function test_semantic_error_is_surfaced() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    if not write_file(root.as_str(), "main.mt", "function f() -> int:\n    return true\n"):
+    if not write_file(root.as_str(), "main.mt", S_MOD_MAIN_BOOL_RETURN):
         return t.fail("could not write main")
 
     var main_path = path_ops.join(root.as_str(), "main.mt")
@@ -166,7 +772,7 @@ function test_clean_program_has_no_diagnostics() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    if not write_file(root.as_str(), "main.mt", "function f() -> int:\n    return 0\n"):
+    if not write_file(root.as_str(), "main.mt", S_MOD_MAIN_CLEAN):
         return t.fail("could not write main")
 
     var main_path = path_ops.join(root.as_str(), "main.mt")
@@ -206,8 +812,8 @@ function test_cross_module_call_arity_mismatch_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public function add(a: int, b: int) -> int:\n    return a + b\n",
-        "import lib\n\nfunction run() -> int:\n    return lib.add(1)\n",
+        LIB_ADD,
+        MAIN_ADD_ARITY,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -223,8 +829,8 @@ function test_cross_module_call_correct_arity_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public function add(a: int, b: int) -> int:\n    return a + b\n",
-        "import lib\n\nfunction run() -> int:\n    return lib.add(1, 2)\n",
+        LIB_ADD,
+        MAIN_ADD_CORRECT,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -240,8 +846,8 @@ function test_cross_module_argument_type_mismatch_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public function add(a: int, b: int) -> int:\n    return a + b\n",
-        "import lib\n\nfunction run() -> int:\n    return lib.add(true, 2)\n",
+        LIB_ADD,
+        MAIN_ADD_TYPE,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -258,8 +864,8 @@ function test_cross_module_return_type_flows_to_caller() -> t.Check:
     # lib.flag() returns bool; returning it from an int function must be flagged.
     var program = load_lib_and_main(
         ref_of(root),
-        "public function flag() -> bool:\n    return true\n",
-        "import lib\n\nfunction run() -> int:\n    return lib.flag()\n",
+        LIB_FLAG,
+        MAIN_FLAG_RETURN,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -277,8 +883,8 @@ function test_cross_module_call_to_private_is_permissive() -> t.Check:
     # must stay permissive rather than be flagged.
     var program = load_lib_and_main(
         ref_of(root),
-        "function secret(a: int) -> int:\n    return a\n",
-        "import lib\n\nfunction run() -> int:\n    return lib.secret(1, 2, 3)\n",
+        LIB_SECRET,
+        MAIN_SECRET_ARITY,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -294,8 +900,8 @@ function test_cross_module_construction_unknown_field_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public struct Point:\n    x: int\n    y: int\n",
-        "import lib\n\nfunction make() -> int:\n    let p = lib.Point(x = 1, z = 2)\n    return 0\n",
+        LIB_POINT,
+        MAIN_POINT_BAD_FIELD,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -311,8 +917,8 @@ function test_cross_module_construction_valid_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public struct Point:\n    x: int\n    y: int\n",
-        "import lib\n\nfunction make() -> int:\n    let p = lib.Point(x = 1, y = 2)\n    return 0\n",
+        LIB_POINT,
+        MAIN_POINT_CORRECT,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -328,8 +934,8 @@ function test_cross_module_value_type_mismatch_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public const LIMIT: int = 10\n",
-        "import lib\n\nfunction f() -> void:\n    let flag: bool = lib.LIMIT\n",
+        LIB_LIMIT,
+        MAIN_LIMIT_BOOL,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -345,8 +951,8 @@ function test_cross_module_value_correct_type_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public const LIMIT: int = 10\n",
-        "import lib\n\nfunction f() -> void:\n    let n: int = lib.LIMIT\n",
+        LIB_LIMIT,
+        MAIN_LIMIT_INT,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -364,8 +970,8 @@ function test_cross_module_private_value_is_permissive() -> t.Check:
     # it must stay permissive rather than be flagged.
     var program = load_lib_and_main(
         ref_of(root),
-        "const SECRET: int = 42\n",
-        "import lib\n\nfunction f() -> void:\n    let flag: bool = lib.SECRET\n",
+        LIB_SECRET_CONST,
+        MAIN_SECRET_CONST_BOOL,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -381,8 +987,8 @@ function test_cross_module_enum_member_valid_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public enum Color: ubyte\n    red = 0\n    green = 1\n",
-        "import lib\n\nfunction f() -> void:\n    let c = lib.Color.green\n",
+        LIB_COLOR,
+        MAIN_COLOR_VALID,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -398,8 +1004,8 @@ function test_cross_module_enum_unknown_member_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public enum Color: ubyte\n    red = 0\n    green = 1\n",
-        "import lib\n\nfunction f() -> void:\n    let c = lib.Color.purple\n",
+        LIB_COLOR,
+        MAIN_COLOR_BAD,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -415,8 +1021,8 @@ function test_cross_module_variant_arm_valid_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public variant Token:\n    ident(name: str)\n    eof\n",
-        "import lib\n\nfunction f() -> void:\n    let t = lib.Token.ident(name = \"x\")\n",
+        LIB_TOKEN,
+        MAIN_TOKEN_VALID,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -432,8 +1038,8 @@ function test_cross_module_variant_unknown_arm_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public variant Token:\n    ident(name: str)\n    eof\n",
-        "import lib\n\nfunction f() -> void:\n    let t = lib.Token.bad\n",
+        LIB_TOKEN,
+        MAIN_TOKEN_BAD,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -451,8 +1057,8 @@ function test_cross_module_private_enum_member_is_permissive() -> t.Check:
     # must stay permissive rather than be flagged.
     var program = load_lib_and_main(
         ref_of(root),
-        "enum Color: ubyte\n    red = 0\n",
-        "import lib\n\nfunction f() -> void:\n    let c = lib.Color.purple\n",
+        LIB_COLOR_PRIVATE,
+        MAIN_COLOR_BAD,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -464,16 +1070,6 @@ function test_cross_module_private_enum_member_is_permissive() -> t.Check:
 #  Imported methods and imported-typed field access
 # =============================================================================
 
-const POINT_LIB: str = <<-SRC
-public struct Point:
-    x: int
-    y: int
-
-extending Point:
-    public function magnitude() -> int:
-        return this.x + this.y
-SRC
-
 
 @[test]
 function test_cross_module_method_call_valid_is_clean() -> t.Check:
@@ -483,8 +1079,8 @@ function test_cross_module_method_call_valid_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        POINT_LIB,
-        "import lib\n\nfunction f() -> int:\n    let p = lib.Point(x = 1, y = 2)\n    return p.magnitude()\n",
+        LIB_POINT_EXTENDED,
+        MAIN_POINT_MAGNITUDE,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -500,8 +1096,8 @@ function test_cross_module_unknown_method_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        POINT_LIB,
-        "import lib\n\nfunction f() -> int:\n    let p = lib.Point(x = 1, y = 2)\n    return p.bogus()\n",
+        LIB_POINT_EXTENDED,
+        MAIN_POINT_BOGUS,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -517,8 +1113,8 @@ function test_cross_module_field_access_valid_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        POINT_LIB,
-        "import lib\n\nfunction f() -> int:\n    let p = lib.Point(x = 1, y = 2)\n    return p.x\n",
+        LIB_POINT_EXTENDED,
+        MAIN_POINT_FIELD_X,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -535,8 +1131,8 @@ function test_cross_module_field_type_flows_to_caller() -> t.Check:
     # p.x is int; returning it from a bool function must be flagged.
     var program = load_lib_and_main(
         ref_of(root),
-        POINT_LIB,
-        "import lib\n\nfunction f() -> bool:\n    let p = lib.Point(x = 1, y = 2)\n    return p.x\n",
+        LIB_POINT_EXTENDED,
+        MAIN_POINT_FIELD_X_BOOL,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -552,8 +1148,8 @@ function test_cross_module_unknown_field_access_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        POINT_LIB,
-        "import lib\n\nfunction f() -> int:\n    let p = lib.Point(x = 1, y = 2)\n    return p.z\n",
+        LIB_POINT_EXTENDED,
+        MAIN_POINT_FIELD_Z,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -571,29 +1167,13 @@ function test_cross_module_private_method_is_flagged() -> t.Check:
     # another module: the call must be flagged as an unknown method.
     var program = load_lib_and_main(
         ref_of(root),
-        "public struct Point:\n    x: int\n\nextending Point:\n    function secret() -> int:\n        return this.x\n",
-        "import lib\n\nfunction f() -> int:\n    let p = lib.Point(x = 1)\n    return p.secret()\n",
+        LIB_POINT_PRIVATE_METHOD,
+        MAIN_POINT_SECRET,
     ) else:
         return t.fail("could not load program")
     defer program.release()
 
     return t.expect_true(program.has_diagnostic_containing("unknown method"))
-
-
-const ADDER_LIB: str = <<-SRC
-public struct Adder:
-    base: int
-
-extending Adder:
-    public static function make(start: int) -> Adder:
-        return Adder(base = start)
-
-    public function add(a: int, b: int) -> int:
-        return this.base + a + b
-
-    public function total() -> int:
-        return this.base
-SRC
 
 
 @[test]
@@ -604,8 +1184,8 @@ function test_cross_module_method_arity_mismatch_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        ADDER_LIB,
-        "import lib\n\nfunction f() -> int:\n    let x = lib.Adder(base = 0)\n    return x.add(1)\n",
+        LIB_ADDER,
+        MAIN_ADDER_ADD_ARITY,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -621,8 +1201,8 @@ function test_cross_module_method_arg_type_mismatch_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        ADDER_LIB,
-        "import lib\n\nfunction f() -> int:\n    let x = lib.Adder(base = 0)\n    return x.add(true, 2)\n",
+        LIB_ADDER,
+        MAIN_ADDER_ADD_TYPE,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -638,8 +1218,8 @@ function test_cross_module_method_correct_call_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        ADDER_LIB,
-        "import lib\n\nfunction f() -> int:\n    let x = lib.Adder(base = 0)\n    return x.add(1, 2)\n",
+        LIB_ADDER,
+        MAIN_ADDER_ADD_CORRECT,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -656,8 +1236,8 @@ function test_cross_module_method_return_type_flows() -> t.Check:
     # total() returns int; returning it from a bool function must be flagged.
     var program = load_lib_and_main(
         ref_of(root),
-        ADDER_LIB,
-        "import lib\n\nfunction f() -> bool:\n    let x = lib.Adder(base = 0)\n    return x.total()\n",
+        LIB_ADDER,
+        MAIN_ADDER_TOTAL_BOOL,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -673,8 +1253,8 @@ function test_cross_module_static_method_valid_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        ADDER_LIB,
-        "import lib\n\nfunction f() -> int:\n    let a = lib.Adder.make(5)\n    return 0\n",
+        LIB_ADDER,
+        MAIN_ADDER_MAKE_VALID,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -690,8 +1270,8 @@ function test_cross_module_static_method_arity_mismatch_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        ADDER_LIB,
-        "import lib\n\nfunction f() -> int:\n    let a = lib.Adder.make()\n    return 0\n",
+        LIB_ADDER,
+        MAIN_ADDER_MAKE_ARITY,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -707,8 +1287,8 @@ function test_cross_module_unknown_static_method_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        ADDER_LIB,
-        "import lib\n\nfunction f() -> int:\n    let a = lib.Adder.bogus()\n    return 0\n",
+        LIB_ADDER,
+        MAIN_ADDER_BOGUS,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -727,8 +1307,8 @@ function test_loop_local_shadowing_import_alias_is_clean() -> t.Check:
     # method call on a leaked Thing value. Regression test for block scoping.
     var program = load_lib_and_main(
         ref_of(root),
-        "public struct Thing:\n    n: int\n",
-        "import lib\n\nfunction f() -> int:\n    var i: int = 0\n    while i < 3:\n        let lib = lib.Thing(n = i)\n        i += 1\n    let after = lib.Thing(n = 9)\n    return 0\n",
+        LIB_THING,
+        MAIN_THING_SHADOW,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -744,8 +1324,8 @@ function test_cross_module_interface_conformance_valid_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public interface Drawable:\n    function draw() -> int\n",
-        "import lib\n\nstruct Sprite implements lib.Drawable:\n    x: int\n\nextending Sprite:\n    function draw() -> int:\n        return this.x\n",
+        LIB_DRAWABLE_INTERFACE,
+        MAIN_DRAWABLE_SPRITE,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -761,8 +1341,8 @@ function test_cross_module_interface_missing_method_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public interface Drawable:\n    function draw() -> int\n",
-        "import lib\n\nstruct Sprite implements lib.Drawable:\n    x: int\n\nextending Sprite:\n    function other() -> int:\n        return this.x\n",
+        LIB_DRAWABLE_INTERFACE,
+        MAIN_DRAWABLE_MISSING,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -786,8 +1366,8 @@ function test_str_method_return_type_flows_cross_module() -> t.Check:
     # result as a bool. Resolving first_byte requires searching strext's binding.
     var program = load_lib_and_main(
         ref_of(root),
-        "public function unused() -> int:\n    return 0\n\nextending str:\n    public function first_byte() -> ubyte:\n        return 0\n",
-        "import lib\n\nfunction f(s: str) -> bool:\n    return s.first_byte()\n",
+        LIB_UNUSED_STR_FIRST_BYTE,
+        MAIN_STR_FIRST_BYTE_BOOL,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -805,8 +1385,8 @@ function test_unknown_str_method_is_permissive() -> t.Check:
     # the call stays permissive rather than being flagged.
     var program = load_lib_and_main(
         ref_of(root),
-        "public function unused() -> int:\n    return 0\n",
-        "import lib\n\nfunction f(s: str) -> void:\n    s.mystery()\n",
+        LIB_UNUSED,
+        MAIN_STR_MYSTERY,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -828,8 +1408,8 @@ function test_cross_module_constraint_satisfied_local_struct_is_clean() -> t.Che
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public interface Damageable:\n    function is_alive() -> bool\n",
-        "import lib\n\nstruct NPC implements lib.Damageable:\n    hp: int\n\nextending NPC:\n    function is_alive() -> bool:\n        return this.hp > 0\n\nfunction hurt[T implements lib.Damageable](target: ref[T]) -> void:\n    pass\n\nfunction f() -> void:\n    var n: NPC\n    hurt(n)\n",
+        LIB_DAMAGEABLE,
+        MAIN_DAMAGEABLE_LOCAL,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -845,8 +1425,8 @@ function test_cross_module_constraint_unsatisfied_local_struct_is_flagged() -> t
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public interface Damageable:\n    function is_alive() -> bool\n",
-        "import lib\n\nstruct Rock:\n    weight: int\n\nfunction hurt[T implements lib.Damageable](target: ref[T]) -> void:\n    pass\n\nfunction f() -> void:\n    var r: Rock\n    hurt(r)\n",
+        LIB_DAMAGEABLE,
+        MAIN_DAMAGEABLE_ROCK,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -862,8 +1442,8 @@ function test_imported_struct_arg_unsatisfied_constraint_is_flagged() -> t.Check
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public interface Drawable:\n    function draw() -> int\n\npublic struct Widget implements Drawable:\n    w: int\n\nextending Widget:\n    public function draw() -> int:\n        return this.w\n\npublic struct Plain:\n    p: int\n",
-        "import lib\n\nfunction render[T implements lib.Drawable](x: ref[T]) -> void:\n    pass\n\nfunction f() -> void:\n    var plain = lib.Plain(p = 0)\n    render(plain)\n",
+        LIB_DRAWABLE_WIDGET_PLAIN,
+        MAIN_DRAWABLE_PLAIN_FLAGGED,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -879,8 +1459,8 @@ function test_imported_struct_arg_satisfied_constraint_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public interface Drawable:\n    function draw() -> int\n\npublic struct Widget implements Drawable:\n    w: int\n\nextending Widget:\n    public function draw() -> int:\n        return this.w\n",
-        "import lib\n\nfunction render[T implements lib.Drawable](x: ref[T]) -> void:\n    pass\n\nfunction f() -> void:\n    var widget = lib.Widget(w = 0)\n    render(widget)\n",
+        LIB_WIDGET,
+        MAIN_DRAWABLE_WIDGET_VALID,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -904,8 +1484,8 @@ function test_explicit_imported_type_arg_constraint_is_flagged() -> t.Check:
     # lib.Drawable, so the explicit constraint is flagged.
     var program = load_lib_and_main(
         ref_of(root),
-        "public interface Drawable:\n    function draw() -> int\n\npublic struct Plain:\n    p: int\n",
-        "import lib\n\nfunction render[T implements lib.Drawable](x: ref[T]) -> void:\n    pass\n\nfunction f() -> void:\n    var plain = lib.Plain(p = 0)\n    render[lib.Plain](ref_of(plain))\n",
+        LIB_DRAWABLE_PLAIN,
+        MAIN_DRAWABLE_EXPLICIT,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -921,8 +1501,8 @@ function test_annotated_imported_type_unknown_member_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public struct Widget:\n    w: int\n\nextending Widget:\n    public function draw() -> int:\n        return this.w\n",
-        "import lib\n\nfunction use(w: lib.Widget) -> int:\n    return w.no_such_method()\n",
+        LIB_WIDGET,
+        MAIN_WIDGET_BOGUS,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -938,8 +1518,8 @@ function test_annotated_imported_type_valid_member_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public struct Widget:\n    w: int\n\nextending Widget:\n    public function draw() -> int:\n        return this.w\n",
-        "import lib\n\nfunction use(w: lib.Widget) -> int:\n    return w.draw()\n",
+        LIB_WIDGET,
+        MAIN_WIDGET_DRAW,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -961,8 +1541,8 @@ function test_imported_enum_match_missing_case_is_flagged() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public enum Color: ubyte\n    red = 0\n    green = 1\n",
-        "import lib\n\nfunction f(c: lib.Color) -> int:\n    match c:\n        lib.Color.red:\n            return 1\n",
+        LIB_COLOR,
+        MAIN_COLOR_MISSING_GREEN,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -978,8 +1558,8 @@ function test_imported_enum_match_exhaustive_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public enum Color: ubyte\n    red = 0\n    green = 1\n",
-        "import lib\n\nfunction f(c: lib.Color) -> int:\n    match c:\n        lib.Color.red:\n            return 1\n        lib.Color.green:\n            return 2\n",
+        LIB_COLOR,
+        MAIN_COLOR_EXHAUSTIVE,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -1000,8 +1580,8 @@ function test_imported_generic_method_return_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public struct Holder[T]:\n    value: T\n\nextending Holder[T]:\n    public function get() -> T:\n        return this.value\n",
-        "import lib\n\nfunction run(val: lib.Holder[int]) -> int:\n    return val.get()\n",
+        LIB_HOLDER_GENERIC,
+        MAIN_HOLDER_GET,
     ) else:
         return t.fail("could not load program")
     defer program.release()
@@ -1017,8 +1597,8 @@ function test_imported_struct_static_return_is_clean() -> t.Check:
 
     var program = load_lib_and_main(
         ref_of(root),
-        "public struct Container:\n    value: int\n\nextending Container:\n    public static function make(v: int) -> Container:\n        return Container(value = v)\n",
-        "import lib\n\nfunction run() -> lib.Container:\n    return lib.Container.make(42)\n",
+        LIB_CONTAINER_STATIC,
+        MAIN_CONTAINER_MAKE,
     ) else:
         return t.fail("could not load program")
     defer program.release()
