@@ -438,3 +438,183 @@ function test_doc_tag_on_struct_flagged() -> t.Check:
             x: int
     SRC
     return expect_one(source, "doc-tag")
+
+
+# =============================================================================
+#  dead-assignment
+# =============================================================================
+
+@[test]
+function test_dead_assignment_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo() -> int:
+            var x = 1
+            x = 2
+            return x
+    SRC
+    return expect_one(source, "dead-assignment")
+
+
+@[test]
+function test_dead_assignment_clean() -> t.Check:
+    var source = <<-SRC
+        function demo() -> int:
+            var x = 1
+            return x
+    SRC
+    return expect_none(source, "dead-assignment")
+
+
+@[test]
+function test_dead_assignment_reused_clean() -> t.Check:
+    var source = <<-SRC
+        function demo() -> int:
+            var x = 5
+            var y = x + 1
+            return y
+    SRC
+    return expect_none(source, "dead-assignment")
+
+
+# =============================================================================
+#  unreachable-code
+# =============================================================================
+
+@[test]
+function test_unreachable_after_return_flagged() -> t.Check:
+    # Both `var x = 2` and `return x` are dead after the first return.
+    var source = <<-SRC
+        function demo() -> int:
+            return 1
+            var x = 2
+            return x
+    SRC
+    var warns = lint_text(source)
+    defer warns.release()
+    return t.expect_equal_int(int<-(count_code(ref_of(warns), "unreachable-code")), 2)
+
+
+@[test]
+function test_unreachable_statement_clean() -> t.Check:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            if a > 0:
+                return 1
+            else:
+                return -1
+    SRC
+    return expect_none(source, "unreachable-code")
+
+
+# =============================================================================
+#  constant-condition
+# =============================================================================
+
+@[test]
+function test_constant_condition_true_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo() -> int:
+            if true:
+                return 1
+            return 0
+    SRC
+    return expect_one(source, "constant-condition")
+
+
+@[test]
+function test_constant_condition_false_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo() -> int:
+            var x = 0
+            while false:
+                x += 1
+            return x
+    SRC
+    return expect_one(source, "constant-condition")
+
+
+@[test]
+function test_constant_condition_self_equal_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            if a == a:
+                return 1
+            return 0
+    SRC
+    return expect_one(source, "constant-condition")
+
+
+@[test]
+function test_constant_condition_not_self_not_equal_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            if not (a != a):
+                return 1
+            return 0
+    SRC
+    return expect_one(source, "constant-condition")
+
+
+@[test]
+function test_constant_condition_normal_clean() -> t.Check:
+    var source = <<-SRC
+        function demo(a: int, b: int) -> int:
+            if a > b:
+                return 1
+            return 0
+    SRC
+    return expect_none(source, "constant-condition")
+
+
+@[test]
+function test_constant_condition_different_vars_clean() -> t.Check:
+    var source = <<-SRC
+        function demo(a: int, b: int) -> int:
+            if a == b:
+                return 1
+            return 0
+    SRC
+    return expect_none(source, "constant-condition")
+
+
+# =============================================================================
+#  loop-single-iteration
+# =============================================================================
+
+@[test]
+function test_loop_single_break_flagged() -> t.Check:
+    # Loop body always returns on first iteration.
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            while a < 100:
+                return a
+            return 0
+    SRC
+    return expect_one(source, "loop-single-iteration")
+
+
+@[test]
+function test_loop_normal_clean() -> t.Check:
+    var source = <<-SRC
+        function demo() -> int:
+            var x = 0
+            while x < 10:
+                x += 1
+            return x
+    SRC
+    return expect_none(source, "loop-single-iteration")
+
+
+@[test]
+function test_loop_normal_with_break_clean() -> t.Check:
+    # A loop that CAN break but doesn't always exit is not single-iteration.
+    var source = <<-SRC
+        function demo() -> int:
+            var x = 0
+            while x < 10:
+                x += 1
+                if x > 5:
+                    break
+            return x
+    SRC
+    return expect_none(source, "loop-single-iteration")

@@ -58,6 +58,8 @@ function walk_stmt_backward(sp: ptr[ast.Stmt], result: ref[vec.Vec[DeadWrite]], 
         match read(sp):
             ast.Stmt.stmt_local as l:
                 add_expr_reads(l.value, live)
+                if l.name != "_" and l.value != null and not is_live(live, l.name):
+                    result.push(DeadWrite(name = l.name, line = l.line))
                 remove_from_live(live, l.name)
             ast.Stmt.stmt_assignment as a:
                 add_expr_reads(a.value, live)

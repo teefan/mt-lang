@@ -3728,12 +3728,12 @@ function lint_loop_single_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.V
     unsafe:
         match read(sp):
             ast.Stmt.stmt_while as wh:
-                let always_exits = always_returns_body(wh.body) or body_can_break(wh.body)
+                let always_exits = always_returns_body(wh.body)
                 if always_exits and not is_true_literal(wh.condition):
                     push_warning(warnings, path, wh.line, "loop-single-iteration", "while loop body always exits on first iteration", "hint")
                 lint_loop_single_in_body(wh.body, path, warnings)
             ast.Stmt.stmt_for as fr:
-                let always_exits = always_returns_body(fr.body) or body_can_break(fr.body)
+                let always_exits = always_returns_body(fr.body)
                 if always_exits:
                     push_warning(warnings, path, fr.line, "loop-single-iteration", "for loop body always exits on first iteration", "hint")
                 lint_loop_single_in_body(fr.body, path, warnings)
