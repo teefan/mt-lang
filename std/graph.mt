@@ -118,7 +118,7 @@ extending Graph[T]:
         if n == 0 or start >= n:
             return order
 
-        var visited = heap.must_alloc[ubyte](n)
+        var visited = heap.must_alloc_zeroed[ubyte](n)
         var queue = deque.Deque[ptr_uint].create()
 
         queue.push_back(start)
@@ -152,7 +152,7 @@ extending Graph[T]:
         if n == 0 or start >= n:
             return order
 
-        var visited = heap.must_alloc[ubyte](n)
+        var visited = heap.must_alloc_zeroed[ubyte](n)
 
         var stack = deque.Deque[ptr_uint].create()
         stack.push_back(start)
@@ -187,7 +187,7 @@ extending Graph[T]:
         if n == 0:
             return order
 
-        var in_degree = heap.must_alloc[ptr_uint](n)
+        var in_degree = heap.must_alloc_zeroed[ptr_uint](n)
 
         let edge_span = this.edges.as_span()
         var i: ptr_uint = 0
@@ -283,8 +283,20 @@ extending Graph[T]:
         heap.release(counts)
         heap.release(pos)
 
+        # The dense graph owns an independent copy of the node values: Vec
+        # copies are shallow (they share the data pointer), so handing
+        # `this.nodes` to the DenseGraph directly would double-free when both
+        # graphs are released.
+        var node_copy = vec.Vec[T].with_capacity(n)
+        var old_span = this.nodes.as_span()
+        var ci: ptr_uint = 0
+        while ci < n:
+            unsafe:
+                node_copy.push(read(old_span.data + ci))
+            ci += 1
+
         return DenseGraph[T](
-            nodes = this.nodes,
+            nodes = node_copy,
             offsets = offsets,
             targets = targets,
             weights = weights,
@@ -362,7 +374,7 @@ extending DenseGraph[T]:
         if n == 0 or start >= n:
             return order
 
-        var visited = heap.must_alloc[ubyte](n)
+        var visited = heap.must_alloc_zeroed[ubyte](n)
         var queue = deque.Deque[ptr_uint].create()
 
         queue.push_back(start)
@@ -402,7 +414,7 @@ extending DenseGraph[T]:
         if n == 0 or start >= n:
             return order
 
-        var visited = heap.must_alloc[ubyte](n)
+        var visited = heap.must_alloc_zeroed[ubyte](n)
         var stack = deque.Deque[ptr_uint].create()
         stack.push_back(start)
 
