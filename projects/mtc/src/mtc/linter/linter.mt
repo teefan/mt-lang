@@ -42,6 +42,7 @@ import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.linter.scope_tracking as scope_tracking
 import mtc.linter.cfg as cfg
+import mtc.linter.nullcheck as nullcheck
 import mtc.linter.own_ptr as own_ptr
 import mtc.linter.redundant_cast as redundant_cast
 
@@ -89,6 +90,7 @@ public function lint_source(file: ast.SourceFile, source: str, path: str, owning
     lint_redundant_cast(file, path, ref_of(warnings))
     lint_constant_condition(file, path, ref_of(warnings))
     lint_loop_single_iteration(file, path, ref_of(warnings))
+    lint_redundant_null_check(file, path, ref_of(warnings))
     return warnings
 
 
@@ -3796,4 +3798,25 @@ function lint_redundant_cast(file: ast.SourceFile, path: str, warnings: ref[vec.
             buf.append(d.name)
             buf.append(" is already declared as this type")
             push_warning(warnings, path, d.line, "redundant-cast", buf.as_str(), "hint")
+        di += 1
+
+
+# =============================================================================
+#  redundant-null-check — `x != null` where x is already narrowed non-null
+# =============================================================================
+
+function lint_redundant_null_check(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var diags = nullcheck.check(file)
+    defer diags.release()
+    var di: ptr_uint = 0
+    while di < diags.len():
+        let dp = diags.get(di) else:
+            break
+        unsafe:
+            let d = read(dp)
+            var buf = string.String.create()
+            buf.append("'")
+            buf.append(d.name)
+            buf.append("' is already known to be non-null here — this nil check is redundant")
+            push_warning(warnings, path, d.line, "redundant-null-check", buf.as_str(), "hint")
         di += 1

@@ -9231,6 +9231,29 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     var else_wait_body = vec.Vec[ir.Stmt].create()
     let slot_listener = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty))
     let null_check = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = slot_listener, right = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty)), ty = bool_ty))
+    let slot_state = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "state", ty = void_ptr_ty))
+    let slot_stateful = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = slot_state, right = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty)), ty = bool_ty))
+
+    # Stateful listener path: prepend the state pointer to the call args and
+    # type the function pointer as void(*)(void*, [payload_type]).
+    var stateful_call_body = vec.Vec[ir.Stmt].create()
+    var stateful_call_args = vec.Vec[ir.Expr].create()
+    unsafe:
+        stateful_call_args.push(read(slot_state))
+    if info.has_payload:
+        let payload_ref2 = alloc_expr(ir.Expr.expr_name(name = "payload", ty = info.payload_type, pointer = false))
+        unsafe:
+            stateful_call_args.push(read(payload_ref2))
+    var stateful_fn_params = vec.Vec[types.Type].create()
+    stateful_fn_params.push(void_ptr_ty)
+    if info.has_payload:
+        stateful_fn_params.push(info.payload_type)
+    let stateful_fn_ty = types.Type.ty_function(params = stateful_fn_params.as_span(), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false)
+    let stateful_fn_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(stateful_fn_ty))
+    let stateful_cast = alloc_expr(ir.Expr.expr_cast(target_type = stateful_fn_ptr_ty, expression = slot_listener, ty = stateful_fn_ptr_ty))
+    stateful_call_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = stateful_cast, arguments = stateful_call_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
+
+    # Stateless listener path — existing logic, unchanged.
     var call_body = vec.Vec[ir.Stmt].create()
     var call_args = vec.Vec[ir.Expr].create()
     if info.has_payload:
@@ -9244,8 +9267,10 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     let fn_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_fn_ty))
     let cast_listener = alloc_expr(ir.Expr.expr_cast(target_type = fn_ptr_ty, expression = slot_listener, ty = fn_ptr_ty))
     call_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_listener, arguments = call_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
-    let call_stmt = ir.Stmt.stmt_if(condition = null_check, then_body = call_body.as_span(), else_body = span[ir.Stmt]())
-    else_wait_body.push(call_stmt)
+
+    var dispatch_body = vec.Vec[ir.Stmt].create()
+    dispatch_body.push(ir.Stmt.stmt_if(condition = null_check, then_body = stateful_call_body.as_span(), else_body = call_body.as_span()))
+    else_wait_body.push(ir.Stmt.stmt_if(condition = slot_stateful, then_body = dispatch_body.as_span(), else_body = span_from_one(ir.Stmt.stmt_if(condition = null_check, then_body = call_body.as_span(), else_body = span[ir.Stmt]()))))
     let slot_once = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "once", ty = bool_ty))
     var deact_body = vec.Vec[ir.Stmt].create()
     deact_body.push(ir.Stmt.stmt_assignment(target = slot_active, operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))))

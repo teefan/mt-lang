@@ -671,3 +671,161 @@ function test_valid_cast_clean() -> t.Check:
             return int<-x
     SRC
     return expect_none(source, "redundant-cast")
+
+
+# =============================================================================
+#  redundant-null-check
+# =============================================================================
+
+@[test]
+function test_redundant_null_check_nested_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo(x: ptr[int]?) -> int:
+            if x != null:
+                if x != null:
+                    return 1
+                return 2
+            return 0
+    SRC
+    return expect_one(source, "redundant-null-check")
+
+
+@[test]
+function test_first_null_check_clean() -> t.Check:
+    var source = <<-SRC
+        function demo(x: ptr[int]?) -> int:
+            if x != null:
+                return 1
+            return 0
+    SRC
+    return expect_none(source, "redundant-null-check")
+
+
+@[test]
+function test_null_check_after_guard_return_flagged() -> t.Check:
+    # `if x == null: return` narrows x for the rest of the body.
+    var source = <<-SRC
+        function demo(x: ptr[int]?) -> int:
+            if x == null:
+                return 0
+            if x != null:
+                return 1
+            return 2
+    SRC
+    return expect_one(source, "redundant-null-check")
+
+
+@[test]
+function test_null_check_after_write_clean() -> t.Check:
+    # Reassignment kills the narrowing.
+    var source = <<-SRC
+        function source_ptr() -> ptr[int]?:
+            return null
+
+        function demo() -> int:
+            var x = source_ptr()
+            if x != null:
+                x = source_ptr()
+                if x != null:
+                    return 1
+            return 0
+    SRC
+    return expect_none(source, "redundant-null-check")
+
+
+@[test]
+function test_null_check_in_loop_with_write_clean() -> t.Check:
+    # Narrowing before a loop does not survive into a body that writes x.
+    var source = <<-SRC
+        function source_ptr() -> ptr[int]?:
+            return null
+
+        function demo() -> int:
+            var x = source_ptr()
+            var total = 0
+            if x == null:
+                return 0
+            while total < 3:
+                if x != null:
+                    total += 1
+                x = source_ptr()
+            return total
+    SRC
+    return expect_none(source, "redundant-null-check")
+
+
+@[test]
+function test_null_check_narrowed_by_while_condition_flagged() -> t.Check:
+    # The while condition re-narrows x at the top of every iteration.
+    var source = <<-SRC
+        function source_ptr() -> ptr[int]?:
+            return null
+
+        function demo() -> int:
+            var x = source_ptr()
+            var n = 0
+            while x != null:
+                if x != null:
+                    n += 1
+                x = source_ptr()
+            return n
+    SRC
+    return expect_one(source, "redundant-null-check")
+
+
+@[test]
+function test_null_check_and_composition_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo(x: ptr[int]?, y: ptr[int]?) -> int:
+            if x != null and y != null:
+                if y != null:
+                    return 1
+            return 0
+    SRC
+    return expect_one(source, "redundant-null-check")
+
+
+@[test]
+function test_null_check_not_composition_flagged() -> t.Check:
+    var source = <<-SRC
+        function demo(x: ptr[int]?) -> int:
+            if not (x == null):
+                if x != null:
+                    return 1
+            return 0
+    SRC
+    return expect_one(source, "redundant-null-check")
+
+
+@[test]
+function test_equality_null_check_not_reported() -> t.Check:
+    # Only `!=` guards are reported, matching the Ruby rule.
+    var source = <<-SRC
+        function demo(x: ptr[int]?) -> int:
+            if x != null:
+                if x == null:
+                    return 1
+            return 0
+    SRC
+    return expect_none(source, "redundant-null-check")
+
+
+@[test]
+function test_null_check_after_borrow_clean() -> t.Check:
+    # ref_of hands out a mutable alias; the narrowing is killed.
+    var source = <<-SRC
+        function reset(slot: ref[ptr[int]?]) -> void:
+            read(slot) = null
+
+        function source_ptr() -> ptr[int]?:
+            return null
+
+        function demo() -> int:
+            var x = source_ptr()
+            if x != null:
+                reset(ref_of(x))
+                if x != null:
+                    return 1
+            return 0
+    SRC
+    return expect_none(source, "redundant-null-check")

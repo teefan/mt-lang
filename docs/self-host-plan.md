@@ -1,19 +1,22 @@
 # Self-Host Plan
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE.**
-Stage2 == stage3 byte-identical. 177/177 self-tests pass across 9 test files.
+Stage2 == stage3 byte-identical. 471 self-tests pass across 9 test files.
 **Raylib parity: 217/219 build and run** (the 2 remaining are non-executable
 support files rejected with byte-identical Ruby messages, §2.4; vendored-library
-subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parity: 13/13 build, 12/13 byte-identical runtime output vs Ruby**
-(the only exception is `async_stress_test`, a shared libuv crash, and
-`integration_test`'s Ruby `dyn` bug is now fixed, §5.2). Layout attributes, `static_assert`
+subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parity:
+13/13 build under `--no-cache`** (the §5.3a sema-gate regression is fixed —
+2026-07-17); all 11 examples runnable headless produce byte-identical
+stdout+exit vs Ruby, including two with shared pre-existing runtime bugs
+(§5.3b). Layout attributes, `static_assert`
 evaluation, and the `reinterpret` size rule landed in §2.9. CLI: 16 commands at
-parity (added `cache`). **`mtc lint` has 35 rules.** `mtc check` on
+parity (added `cache`). **`mtc lint` has 36 rules** (all 5 CFG/flow rules done,
+incl. `redundant-null-check`; lint double-count bug fixed). `mtc check` on
 `language_baseline.mt`: 0 errors. Bootstrap via `tools/bootstrap.sh`.
 
 **Remaining gaps for the next session are consolidated in §5.**
 
-Last updated: 2026-07-17 (post linter rules — §3/§5 updated, check=0 errors, 35 lint rules)
+Last updated: 2026-07-17 (sema-gate regression fixed; stateful emit bug fixed; event/graph std bugs debugged)
 
 ---
 
@@ -106,12 +109,26 @@ deletes all cached entries.
 
 ### 0.5 Linter
 
-35 rules implemented (12 original AST-only + 5 scope-tracking + 10 Tier-1 AST
-rules + 4 Tier-3/heuristic rules + 2 ownership rules + 2 sema-facts rules).
-48 linter tests total (linter_test.mt). The four CFG-based rules and the two
+36 rules implemented (12 original AST-only + 5 scope-tracking + 10 Tier-1 AST
+rules + 5 CFG/flow rules + 2 ownership rules + 2 sema-facts rules).
+58 linter tests total (linter_test.mt). The five CFG/flow rules and the two
 sema-facts rules are implemented in separate modules (`linter/cfg.mt`,
-`linter/own_ptr.mt`, `linter/redundant_cast.mt`) to avoid the large-file
-codegen issue discovered during inline integration.
+`linter/nullcheck.mt`, `linter/own_ptr.mt`, `linter/redundant_cast.mt`) to
+avoid the large-file codegen issue discovered during inline integration.
+
+`redundant-null-check` (2026-07-17) uses a structural forward narrowing walk
+(`linter/nullcheck.mt`): non-null name sets threaded through statements with
+intersection at merges, `null_check_pairs`-style condition refinements
+(`not`/`and`/`or` composition), write kills (including `ref_of`/`ptr_of`
+borrows), loop kill-sets, and termination-aware `if x == null: return`
+narrowing. Verified byte-identical findings vs Ruby across `projects/mtc/src`
+(2 warnings, same lines) and `std/` (clean under both).
+
+The `mtc lint` command previously double-counted warnings
+(`total_warnings += warns.len()` after already adding the filtered count),
+inflating "Found N warnings" 2× and forcing exit 1 when `--ignore`/`--select`
+filtered everything out. Fixed (2026-07-17); `--ignore` now reports
+`clean ...`/exit 0 at parity with Ruby.
 
 ---
 
@@ -461,7 +478,7 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 - `redundant-cast`: collects declared types from `let`/`var` TypeRef annotations,
   compares cast target TypeRef against declared type.
 
-### 3.3 Full CFG — 4 of 5 rules DONE (2026-07-16)
+### 3.3 Full CFG — 5 of 5 rules DONE (2026-07-17)
 
 | Rule | Status |
 |------|--------|
@@ -469,14 +486,14 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 | `unreachable-code` | **DONE** — `stmt_always_returns`-based structural check |
 | `constant-condition` | **DONE** — AST pattern matching for literals and self-comparisons |
 | `loop-single-iteration` | **DONE** — `always_returns_body`-based structural check |
-| `redundant-null-check` | DEFERRED — needs full CFG with edge refinements (1 warning in self-host codebase) |
+| `redundant-null-check` | **DONE** — structural forward narrowing walk in `linter/nullcheck.mt` (§0.5); findings byte-identical to Ruby on `projects/mtc/src` and `std/` |
 
 ### 3.4 Tooling — 2 remaining
 
 | Gap | Effort | Status |
 |-----|--------|--------|
-| `--fix` | Medium | Not started — needs `Warning` column/length fields + per-rule edit generators |
-| `.mt-lint.toml` config | Small | Code written in `linter.mt` (`load_lint_config`, `parse_lint_toml`) but not wired into `main.mt` lint command — causes runtime hang in directory walk |
+| `--fix` | Medium | Not started — needs `Warning` column/length fields + per-rule edit generators (port of Ruby `fix_engine.rb`; multi-pass rule-isolating loop) |
+| `.mt-lint.yml` config | Small | Not started — no config code exists in the tree (an earlier claim of unwired `load_lint_config`/`parse_lint_toml` code was stale; `git log -S` shows it was never committed). Note the Ruby format is YAML (`.mt-lint.yml`), not TOML. Use `std.fs.find_ancestor_containing` for the ancestor walk (correctly terminating, avoids the previously reported hang) plus a minimal YAML-subset parser for `select:`/`ignore:` lists and `max_line_length:` |
 
 ---
 
@@ -550,9 +567,38 @@ asymmetry and a shared libuv crash, neither compiler-specific):
 
 ### 5.3 Linter gaps (§3)
 
-Only `redundant-null-check` (needs full CFG with edge refinements — 1 warning
-in the self-host codebase) and tooling (`--fix`, `.mt-lint.toml` wiring) remain.
-All other rules are implemented.
+`redundant-null-check` is **DONE** (2026-07-17, §0.5/§3.3). Only tooling
+(`--fix`, `.mt-lint.yml` config wiring) remains — see §3.4.
+
+### 5.3a RESOLVED: 5 language examples failed the sema gate (found + fixed 2026-07-17)
+
+A `--no-cache` sweep of all 13 language examples revealed 5 build failures
+(`async_network_lobby`, `async_stress_test`, `data_structures`,
+`event_stress_test`, `option_and_result_surface`) — analyzer **false
+positives** the §5.1 gate flip did not cover, present since the gate flip and
+masked by cached sweeps. All five error classes were fixed in one pass
+(fixed point held, 471 tests, 13/13 language build, 19-example raylib
+`--no-cache` spot check clean, runtime byte-identical to Ruby on every
+headless-runnable example):
+
+| False positive | Root cause | Fix |
+|---|---|---|
+| `unknown method Task.map_error` | `expr_await` returned the lifted `Task[T]` type unchanged | `await` now unwraps `Task[T] -> T` (mirrors Ruby `infer_await`) |
+| `return type mismatch: expected ubyte, got int` (`return 48 + value`), `cannot assign int to uint` (`1 << uint<-x`) | `infer_binary` always returned the left operand's type | Literal harmonization: an integer-literal operand adapts to the other operand's integer type; float literals likewise (mirrors Ruby `harmonize_binary_*_literal_types`) |
+| `unknown method Option.expect` / `Result.expect` | Hardcoded prelude method list was stale vs `std/option.mt` / `std/result.mt` | `install_prelude_types` now merges the seeded `std.option`/`std.result` binding exports (`merge_prelude_binding_methods`), so new std methods are known automatically; fallback list also completed (`expect`, `expect_error`, `unwrap_or_else`) |
+| `unknown name EventError` | Built-in event enum never registered by the analyzer (Ruby registers it in type_declaration.rb) | `register_builtin_event_types`: `EventError` (member `full`, match-exhaustive) + opaque `Subscription` |
+| `return type mismatch: expected Keys[<error>, ptr_uint], got Keys` | (a) top-level-only `ty_error` suppression missed error *components*; (b) `nominal_key` compared `module.name` vs bare `name` for the same type | (a) new `types.contains_error` deep check gates `types_compatible`; (b) `nominal_definitely_different`: names must differ, or both carry known-but-different module qualifiers |
+
+### 5.3b FIXED: Shared runtime bugs surfaced by the §5.3a sweep (2026-07-17)
+
+A `valgrind`/`gdb` session traced both exit-134 / exit-4 anomalies:
+
+| Example | Symptom | Root cause | Fix |
+|---|---|---|---|
+| `data_structures` | `free(): double free` (exit 134) before output | `std/graph.mt` `compile()` shallow-copied `this.nodes` (a `Vec[T]`) into the returned `DenseGraph`; both `release()` paths freed the same `data` pointer. Also, `must_alloc` used for `visited`/`in_degree` arrays in bfs/dfs/toposort — never zeroed → uninitialized reads (UB). | std/graph.mt: deep-copy nodes in `compile()` (new `Vec` + copy span); `must_alloc_zeroed` for bfs/dfs/toposort arrays |
+| `event_stress_test` | exit 4 (`unsubscribe_active_subscription`); exit 8 (`subscribe_once_stateful_and_emit`); exit 12 (`stale_unsubscribe_ignored_on_emit`) | **Test-authored bugs**: four subscription-lifecycle leaks (listeners never unsubscribed after checks 1/3/7/9/11), filling 4-slot capacity so later checks' `subscribe` silently returned `false`. Exit 4 persisted because the global `no_payload_count` started >1 from a stale listener. **Compiler bug**: the self-host emit function dispatched stateful listeners as `((void (*)(void)) listener)()`, dropping the stored `slot.state` pointer → stateful callbacks had no state parameter and their writes went to garbage addresses. | examples/event_stress_test.mt: `subscribe_and_emit`, `subscribe_with_payload`, `stateful_subscribe_and_emit`, `multiple_subscribers`, `unsubscribe_and_resubscribe` all capture+unsubscribe their handles; `unsubscribe_active_subscription` assertion fixed (`== 0` → `== 1`, the persistent count from check #1 after cleanup). self-host `lowering.mt` `build_event_emit_fn`: added a `slot.state != NULL` guard that dispatches stateful listeners as `void(*)(void*, [payload])` — matching Ruby's snapshot-based dispatch. |
+
+Both examples now exit 0 with byte-identical stdout+exit under both compilers, valgrind-clean (`data_structures`), and `--no-cache` build passes for all 13 language examples. The user's initial hypothesis of compiler-inserted auto-release was a red herring — the valgrind trace showed explicit `release()` calls were the double-free source, and the compiler does not inject scope-exit releases for `Vec[String]` fields (verified with a minimal probe via `Holder.items` copy).
 
 ### 5.4 CLI commands not implemented (§0.4)
 
@@ -568,6 +614,12 @@ pcre2, steamworks) follow the §2.6 pattern when an example needs them.
 
 ### 5.6 Accepted minor divergences (verified benign)
 
+- **Stateful emit dispatch** — **FIXED (2026-07-17).** The self-host emit function
+  previously cast all listeners as `((void (*)(void)) listener)()`, silently
+  dropping the state pointer for stateful subscriptions. Now dispatches
+  `slot.state != NULL` paths as `void(*)(void*, [payload])` — byte-identical
+  to Ruby's snapshot-based dispatch. (Lowering `build_event_emit_fn`,
+  `lowering.mt`.)
 - **Nested-array outer bounds checks** (§1.5, deliberate): the self-host emits a
   plain C index for `array[array[T, M], N]` outer-dimension access where Ruby
   emits a checked helper. Values identical; only the OOB abort is missing.
@@ -586,7 +638,9 @@ Run before considering a change done:
 ```sh
 tools/bootstrap.sh                              # 3-stage + fixed point + tests
 # then, from repo root, for a representative sweep:
-build/stage2/mtc build examples/language_baseline.mt -I . -o /tmp/lb   # 13/13 language
+build/stage2/mtc build examples/language_baseline.mt -I . -o /tmp/lb --no-cache
+# full language sweep MUST use --no-cache (cached binaries masked the §5.3a
+# 5-example sema-gate regression for two days); baseline: 13/13 build
 # raylib parity sweep (per-file build, compare against the passing baseline)
 ```
 

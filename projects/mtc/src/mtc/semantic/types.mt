@@ -78,6 +78,40 @@ public function is_error(t: Type) -> bool:
             return false
 
 
+## True when the type is, or structurally contains, an unresolved `ty_error`
+## component — e.g. a generic instantiated with an unresolved type parameter
+## (`Keys[<error>, ptr_uint]`).  A partially-unknown type must never force a
+## mismatch diagnostic, mirroring the top-level `ty_error` suppression.
+public function contains_error(t: Type) -> bool:
+    match t:
+        Type.ty_error:
+            return true
+        Type.ty_nullable as n:
+            return contains_error(unsafe: read(n.base))
+        Type.ty_generic as g:
+            return any_contains_error(g.args)
+        Type.ty_imported as im:
+            return any_contains_error(im.args)
+        Type.ty_function as f:
+            if contains_error(unsafe: read(f.return_type)):
+                return true
+            return any_contains_error(f.params)
+        Type.ty_tuple as tp:
+            return any_contains_error(tp.elements)
+        _:
+            return false
+
+
+function any_contains_error(args: span[Type]) -> bool:
+    var i: ptr_uint = 0
+    while i < args.len:
+        unsafe:
+            if contains_error(read(args.data + i)):
+                return true
+        i += 1
+    return false
+
+
 public function is_bool(t: Type) -> bool:
     match t:
         Type.ty_primitive as p:
@@ -516,6 +550,45 @@ public function nominal_key(t: Type) -> str:
             return ""
 
 
+## Bare (unqualified) nominal type name, "" for non-nominal types.
+function nominal_name(t: Type) -> str:
+    match t:
+        Type.ty_named as n:
+            return n.name
+        Type.ty_imported as im:
+            return im.name
+        _:
+            return ""
+
+
+## Module qualifier of a nominal type, "" when unqualified/unknown.
+function nominal_module(t: Type) -> str:
+    match t:
+        Type.ty_named as n:
+            return n.module_name
+        Type.ty_imported as im:
+            return im.module_name
+        _:
+            return ""
+
+
+## Two nominal types are provably distinct only when their bare names differ,
+## or when both carry a known module qualifier and the modules differ.  A bare
+## `ty_named` is often a degraded representation of the same imported type
+## (e.g. an imported method's return type resolved without its module), so a
+## missing qualifier on either side stays permissive.
+function nominal_definitely_different(a: Type, b: Type) -> bool:
+    if not nominal_name(a) == nominal_name(b):
+        return true
+
+    let module_a = nominal_module(a)
+    let module_b = nominal_module(b)
+    if module_a.len == 0 or module_b.len == 0:
+        return false
+
+    return not module_a == module_b
+
+
 const kind_unknown: int = 0
 const kind_scalar: int = 1
 const kind_nominal: int = 2
@@ -618,7 +691,7 @@ public function definitely_different(a: Type, b: Type) -> bool:
     if ka == kind_scalar and kb == kind_scalar:
         return scalar_definitely_different(a, b)
     if ka == kind_nominal and kb == kind_nominal:
-        return not nominal_key(a) == nominal_key(b)
+        return nominal_definitely_different(a, b)
     if ka == kind_generic and kb == kind_generic:
         return generic_definitely_different(a, b)
     # Cross-kind: only a nominal-vs-scalar pair is provably incompatible.  Any

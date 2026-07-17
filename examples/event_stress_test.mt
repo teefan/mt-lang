@@ -58,10 +58,12 @@ function on_once() -> void:
     once_count += 1
 
 function subscribe_and_emit() -> bool:
-    let _ = no_payload_event.subscribe(on_no_payload) else:
+    let sub = no_payload_event.subscribe(on_no_payload) else:
         return false
     no_payload_event.emit()
-    return no_payload_count == 1
+    let result = no_payload_count == 1
+    let _ = no_payload_event.unsubscribe(sub)
+    return result
 
 function subscribe_once_and_emit_twice() -> bool:
     let _ = no_payload_event.subscribe_once(on_once) else:
@@ -73,17 +75,19 @@ function subscribe_once_and_emit_twice() -> bool:
     return after_first == 1 and after_second == 1
 
 function subscribe_with_payload() -> bool:
-    let _ = payload_event.subscribe(on_payload) else:
+    let sub = payload_event.subscribe(on_payload) else:
         return false
     payload_event.emit(5)
-    return payload_count == 5
+    let result = payload_count == 5
+    let _ = payload_event.unsubscribe(sub)
+    return result
 
 function unsubscribe_active_subscription() -> bool:
     let sub = no_payload_event.subscribe(on_no_payload) else:
         return false
     let removed = no_payload_event.unsubscribe(sub)
     no_payload_event.emit()
-    return removed and no_payload_count == 0
+    return removed and no_payload_count == 1
 
 function unsubscribe_twice_returns_false() -> bool:
     let sub = no_payload_event.subscribe(on_no_payload) else:
@@ -127,10 +131,12 @@ function on_tick(state: ptr[Counter]) -> void:
 
 function stateful_subscribe_and_emit() -> bool:
     var c = Counter(count = 0)
-    let _ = no_payload_event.subscribe(ptr_of(c), on_tick) else:
+    let sub = no_payload_event.subscribe(ptr_of(c), on_tick) else:
         return false
     no_payload_event.emit()
-    return c.count == 1
+    let result = c.count == 1
+    let _ = no_payload_event.unsubscribe(sub)
+    return result
 
 # ---------------------------------------------------------------------------
 # 5  subscribe_once stateful
@@ -173,10 +179,12 @@ function multiple_subscribers() -> bool:
         return false
     let _ = no_payload_event.subscribe(on_multi_2) else:
         return false
-    let _ = no_payload_event.subscribe(on_multi_3) else:
+    let s3 = no_payload_event.subscribe(on_multi_3) else:
         return false
     no_payload_event.emit()
-    return multi_count_1 == 1 and multi_count_2 == 1 and multi_count_3 == 1
+    let result = multi_count_1 == 1 and multi_count_2 == 1 and multi_count_3 == 1
+    let _ = no_payload_event.unsubscribe(s3)
+    return result
 
 # ---------------------------------------------------------------------------
 # 7  Capacity exhaustion (EventError.full)
@@ -217,10 +225,12 @@ function unsubscribe_and_resubscribe() -> bool:
     let sub = no_payload_event.subscribe(on_reuse) else:
         return false
     let removed = no_payload_event.unsubscribe(sub)
-    let _ = no_payload_event.subscribe(on_reuse) else:
+    let sub2 = no_payload_event.subscribe(on_reuse) else:
         return false
     no_payload_event.emit()
-    return removed and reuse_count == 1
+    let result = removed and reuse_count == 1
+    let _ = no_payload_event.unsubscribe(sub2)
+    return result
 
 # ---------------------------------------------------------------------------
 # 9  emit does not fire subscribed_once that was already unsubscribed

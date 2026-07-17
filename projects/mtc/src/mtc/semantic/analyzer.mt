@@ -557,6 +557,43 @@ function declare_values_and_functions_extra(ctx: ref[Context], extra: span[ast.D
 function install_prelude_types(ctx: ref[Context]) -> void:
     register_prelude_type(ctx, "Option", "some", "none")
     register_prelude_type(ctx, "Result", "success", "failure")
+    # Program builds seed std.option / std.result (module_loader.check_program),
+    # so their real method surfaces are available as bindings — merge them so
+    # new std methods are known without touching the fallback lists above.
+    merge_prelude_binding_methods(ctx, "std.option")
+    merge_prelude_binding_methods(ctx, "std.result")
+    register_builtin_event_types(ctx)
+
+
+## Copy the exported member/method keys of a seeded prelude module's binding
+## (e.g. `Option.expect` from std.option's `extending Option[T]`) into the
+## current module's method-key set.  No-op when the binding is absent
+## (single-file checks without a loaded program).
+function merge_prelude_binding_methods(ctx: ref[Context], module_name: str) -> void:
+    let binding_ptr = lookup_binding(ctx, module_name) else:
+        return
+    unsafe:
+        var keys = read(binding_ptr).member_keys.keys()
+        while true:
+            let key_ptr = keys.next() else:
+                break
+            ctx.method_keys.set(read(key_ptr), true)
+
+
+## Register the built-in event support types: `EventError` (built-in enum with
+## the single member `full`) and the opaque `Subscription` handle — mirroring
+## Ruby's type_declaration.rb built-in registration.
+function register_builtin_event_types(ctx: ref[Context]) -> void:
+    if not ctx.type_names.contains("EventError"):
+        ctx.types.set("EventError", types.Type.ty_named(module_name = "", name = "EventError"))
+        ctx.static_member_types.set("EventError", true)
+        ctx.match_case_types.set("EventError", true)
+        ctx.method_keys.set(method_key("EventError", "full"), true)
+        var members = vec.Vec[str].create()
+        members.push("full")
+        ctx.match_case_names.set("EventError", members.as_span())
+    if not ctx.type_names.contains("Subscription"):
+        ctx.types.set("Subscription", types.Type.ty_named(module_name = "", name = "Subscription"))
 
 
 function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: str) -> void:
@@ -572,10 +609,13 @@ function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: 
     arms.push(arm_b)
     ctx.match_case_names.set(name, arms.as_span())
     # Method keys for common prelude methods (existence-only, no type-check).
+    # Fallback surface for single-file checks; program builds also merge the
+    # real std.option / std.result exports (merge_prelude_binding_methods).
     if arm_a == "some":
         ctx.method_keys.set(method_key(name, "is_some"), true)
         ctx.method_keys.set(method_key(name, "is_none"), true)
         ctx.method_keys.set(method_key(name, "unwrap"), true)
+        ctx.method_keys.set(method_key(name, "expect"), true)
         ctx.method_keys.set(method_key(name, "unwrap_or"), true)
         ctx.method_keys.set(method_key(name, "unwrap_or_else"), true)
         ctx.method_keys.set(method_key(name, "ok"), true)
@@ -587,8 +627,11 @@ function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: 
         ctx.method_keys.set(method_key(name, "is_success"), true)
         ctx.method_keys.set(method_key(name, "is_failure"), true)
         ctx.method_keys.set(method_key(name, "unwrap"), true)
+        ctx.method_keys.set(method_key(name, "expect"), true)
         ctx.method_keys.set(method_key(name, "unwrap_error"), true)
+        ctx.method_keys.set(method_key(name, "expect_error"), true)
         ctx.method_keys.set(method_key(name, "unwrap_or"), true)
+        ctx.method_keys.set(method_key(name, "unwrap_or_else"), true)
         ctx.method_keys.set(method_key(name, "ok"), true)
         ctx.method_keys.set(method_key(name, "error"), true)
         ctx.method_keys.set(method_key(name, "map_error"), true)
@@ -2818,7 +2861,16 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
             ast.Expr.expr_await as aw:
                 if not ctx.inside_async:
                     report(ctx, 0, 0, "await is only allowed inside async functions")
-                return infer_expr(ctx, scope, aw.expression)
+                # `await` unwraps the lifted Task type: Task[T] -> T (mirrors
+                # Ruby's infer_await returning task_type.result_type).
+                let awaited = infer_expr(ctx, scope, aw.expression)
+                match awaited:
+                    types.Type.ty_generic as task_g:
+                        if task_g.name == "Task" and task_g.args.len == 1:
+                            return unsafe: read(task_g.args.data + 0)
+                    _:
+                        pass
+                return awaited
             ast.Expr.expr_null_literal as nl:
                 let target = nl.target_type
                 if target != null:
@@ -2986,6 +3038,18 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
     if (types.is_raw_pointer(lt) or types.is_raw_pointer(rt)) and ctx.unsafe_depth == 0:
         report(ctx, 0, 0, "pointer arithmetic requires unsafe")
     if types.is_numeric(lt) and types.is_numeric(rt):
+        # A literal operand adapts to the other operand's numeric type, so
+        # `48 + value` types as `value`'s type and `1 << uint<-x` as uint —
+        # mirrors Ruby's harmonize_binary_integer_literal_types /
+        # harmonize_binary_float_literal_types.
+        if is_bare_integer_literal(left) and types.is_integer_type(rt):
+            return rt
+        if is_bare_integer_literal(right) and types.is_integer_type(lt):
+            return lt
+        if is_float_literal_expr(left) and types.is_float_type(rt):
+            return rt
+        if is_float_literal_expr(right) and types.is_float_type(lt):
+            return lt
         return lt
     if types.is_raw_pointer(lt) and not types.is_raw_pointer(rt):
         return lt
@@ -3015,6 +3079,30 @@ function is_vec_math_name(name: str) -> bool:
         or name == "ivec2" or name == "ivec3" or name == "ivec4"
         or name == "mat3" or name == "mat4" or name == "quat"
     )
+
+
+## A bare integer literal operand (Ruby's integer_literal_expression?).
+function is_bare_integer_literal(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal:
+                return true
+            _:
+                return false
+
+
+## A float literal, optionally under unary +/- (Ruby's float_literal_expression?).
+function is_float_literal_expr(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_float_literal:
+                return true
+            ast.Expr.expr_unary_op as u:
+                if u.operator == "-" or u.operator == "+":
+                    return is_float_literal_expr(u.operand)
+                return false
+            _:
+                return false
 
 
 function primitive_type_name_static(t: types.Type) -> str:

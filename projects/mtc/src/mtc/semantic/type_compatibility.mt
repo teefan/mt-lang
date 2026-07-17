@@ -49,8 +49,10 @@ public function types_compatible(expected: types.Type, actual: types.Type, sourc
         if types.is_numeric(bare) or types.is_char_type(bare):
             return true
 
-    # 2  Unresolved types never force a mismatch.
-    if types.is_error(expected) or types.is_error(actual):
+    # 2  Unresolved types never force a mismatch — including types that merely
+    #     contain an unresolved component (e.g. `Keys[<error>, ptr_uint]` from
+    #     an unsubstituted type parameter).
+    if types.contains_error(expected) or types.contains_error(actual):
         return true
 
     # 3  Structural identity — the common fast path.

@@ -609,7 +609,6 @@ function lint_command(args: span[str]) -> int:
                             int<-(w.message.len), w.message.data,
                         )
                     wi += 1
-                total_warnings += warns.len()
             Result.failure as read_err:
                 var em = read_err.error
                 em.release()
