@@ -492,6 +492,7 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 | ~~`--sanitize`~~ **DONE (2026-07-17)** | — |
 | ~~`cache` inspection~~ **DONE (2026-07-17)** | — |
 | ~~`run-module`, `new`, `completions`~~ **DONE (§2.8)**; `debug`, `deps`, `toolchain`, `bindgen`, `docs`, `snapshot` | Varies |
+| LSP server | Medium | Proposed — see `docs/lsp-design.md` for tiered architecture |
 
 ---
 
