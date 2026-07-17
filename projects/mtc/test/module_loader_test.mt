@@ -985,3 +985,42 @@ function test_imported_enum_match_exhaustive_is_clean() -> t.Check:
     defer program.release()
 
     return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+# =============================================================================
+#  Regression: imported generic return types must not produce false-positive
+#  type mismatches (contains_error + nominal_definitely_different fixes).
+# =============================================================================
+
+@[test]
+function test_imported_generic_method_return_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public struct Holder[T]:\n    value: T\n\nextending Holder[T]:\n    public function get() -> T:\n        return this.value\n",
+        "import lib\n\nfunction run(val: lib.Holder[int]) -> int:\n    return val.get()\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)
+
+
+@[test]
+function test_imported_struct_static_return_is_clean() -> t.Check:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        return t.fail("could not create temp dir")
+    defer cleanup_dir(ref_of(root))
+
+    var program = load_lib_and_main(
+        ref_of(root),
+        "public struct Container:\n    value: int\n\nextending Container:\n    public static function make(v: int) -> Container:\n        return Container(value = v)\n",
+        "import lib\n\nfunction run() -> lib.Container:\n    return lib.Container.make(42)\n",
+    ) else:
+        return t.fail("could not load program")
+    defer program.release()
+
+    return t.expect_equal_int(int<-program.diagnostic_count(), 0)

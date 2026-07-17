@@ -301,3 +301,77 @@ function test_generic_function_is_monomorphized() -> t.Check:
     ## The `int` specialization is emitted with a type-suffixed C name.
     expect_contains(text, "main_identity_int(int32_t x)")?
     return t.ok()
+
+
+# =============================================================================
+#  Inline-while compile-time unrolling
+# =============================================================================
+
+@[test]
+function test_inline_while_literal_unrolled_no_c_while() -> t.Check:
+    var source = <<-SRC
+        function main() -> int:
+            inline while 5 > 0:
+                return 42
+            return 0
+    SRC
+    var c = compile_to_c(source)
+    defer c.release()
+    let text = c.as_str()
+    # Unrolled: no C while loop keyword in the output.
+    if text.contains_substring("while") or text.contains_substring("While"):
+        return t.fail("inline while should be unrolled, but C output contains 'while'")
+    expect_contains(text, "return 42")?
+    return t.ok()
+
+
+@[test]
+function test_inline_while_const_condition_unrolled() -> t.Check:
+    var source = <<-SRC
+        const N: int = 3
+        function main() -> int:
+            var total: int = 0
+            inline while N > 0:
+                return 10
+            return 0
+    SRC
+    var c = compile_to_c(source)
+    defer c.release()
+    let text = c.as_str()
+    if text.contains_substring("while") or text.contains_substring("While"):
+        return t.fail("inline while with const condition should be unrolled")
+    return t.ok()
+
+
+# =============================================================================
+#  Stateful event emit — state pointer must be passed to listener
+# =============================================================================
+
+@[test]
+function test_stateful_event_listener_receives_state_pointer() -> t.Check:
+    var source = <<-SRC
+        event stateful_probe[4]
+
+        struct Counter:
+            count: int
+
+        function on_tick(state: ptr[Counter]) -> void:
+            unsafe:
+                state.count += 1
+
+        function main() -> int:
+            var c = Counter(count = 0)
+            match stateful_probe.subscribe(ptr_of(c), on_tick):
+                Result.success:
+                    stateful_probe.emit()
+                    return c.count
+                Result.failure:
+                    return -1
+    SRC
+    var c = compile_to_c(source)
+    defer c.release()
+    let text = c.as_str()
+    # The emit dispatch for stateful slots must include the state argument.
+    # Self-host emits: ((void (*)(void*)) event->slots[i].listener)(event->slots[i].state)
+    expect_contains(text, "listener)(event->slots")?
+    return t.ok()
