@@ -7,13 +7,13 @@ support files rejected with byte-identical Ruby messages, §2.4; vendored-librar
 subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parity: 13/13 build, 12/13 byte-identical runtime output vs Ruby**
 (the only exception is `async_stress_test`, a shared libuv crash, and
 `integration_test`'s Ruby `dyn` bug is now fixed, §5.2). Layout attributes, `static_assert`
-evaluation, and the `reinterpret` size rule landed in §2.9. CLI: 15 commands at
-parity incl. build cache (§0.4, §2.8). **`mtc lint` has 31 rules.** Bootstrap
-via `tools/bootstrap.sh`.
+evaluation, and the `reinterpret` size rule landed in §2.9. CLI: 16 commands at
+parity (added `cache`). **`mtc lint` has 35 rules.** `mtc check` on
+`language_baseline.mt`: 0 errors. Bootstrap via `tools/bootstrap.sh`.
 
 **Remaining gaps for the next session are consolidated in §5.**
 
-Last updated: 2026-07-16 (post analyzer false-positive elimination — §5.1 DONE)
+Last updated: 2026-07-17 (post linter rules — §3/§5 updated, check=0 errors, 35 lint rules)
 
 ---
 
@@ -96,17 +96,22 @@ fixed point, 177/177 tests, 13/13 language examples):
 
 | Status | Commands |
 |--------|----------|
-| **FULL**  | lex, parse, lower, emit-c, format, help, version, check, build, run, run-module, test, lint, new, completions |
+| **FULL**  | lex, parse, lower, emit-c, format, help, version, check, build, run, run-module, test, lint, new, completions, cache |
 | **NOT IMPL** | debug, deps, toolchain, bindgen, docs, snapshot |
 
 The build cache is implemented (§2.8): `build`/`run` reuse a previously built
 binary when nothing changed (`built ... [cached]`), and `--no-cache` bypasses
-it. The `cache` *inspection subcommand* is not implemented.
+it. `mtc cache status` reports entry count and total bytes; `mtc cache purge`
+deletes all cached entries.
 
 ### 0.5 Linter
 
-31 rules implemented (12 original AST-only + 5 scope-tracking + 9 new Tier-1
-AST rules + 4 new Tier-3/heuristic rules + 1 ownership rule).
+35 rules implemented (12 original AST-only + 5 scope-tracking + 10 Tier-1 AST
+rules + 4 Tier-3/heuristic rules + 2 ownership rules + 2 sema-facts rules).
+48 linter tests total (linter_test.mt). The four CFG-based rules and the two
+sema-facts rules are implemented in separate modules (`linter/cfg.mt`,
+`linter/own_ptr.mt`, `linter/redundant_cast.mt`) to avoid the large-file
+codegen issue discovered during inline integration.
 
 ---
 
@@ -436,42 +441,42 @@ output on the affected examples.
 
 ---
 
-## 3. Remaining Linter Gaps (unchanged from previous)
+## 3. Remaining Linter Gaps
 
 ### 3.1 Ownership — DONE (2026-07-16)
 
-`owning-release-leak` is now active. The owning type set is built from method_keys
-in `module_loader.check_program` (types with a `.release()` method), stored in
-`Program.owning_type_names`, and threaded to `lint_source`. The leak detection
-uses both constructor-pattern recognition (`create`/`with_capacity`/`from_str`/
-`empty`) and type-annotation inspection (`let x: Vec[int] = ...` against the
-owning set). The previously-disabled leak-reporting loop is uncommented.
+`owning-release-leak` and `owning-release-double` are both active. The owning
+type set is built from method_keys in `module_loader.check_program` (types with
+a `.release()` method), stored in `Program.owning_type_names`, and threaded to
+`lint_source`.
 
-### 3.2 Semantic-facts — 2 remaining
+### 3.2 Semantic-facts — DONE (2026-07-17)
+
+`prefer-own-ptr` and `redundant-cast` are now implemented as separate modules
+(`linter/own_ptr.mt`, `linter/redundant_cast.mt`) with thin wrappers in
+`linter.mt`. Both work at the AST level without sema_facts:
+
+- `prefer-own-ptr`: detects `ptr[T]`/`const_ptr[T]` type annotations, tracks
+  unsafe depth per variable read, flags when all uses are inside `unsafe:` blocks.
+- `redundant-cast`: collects declared types from `let`/`var` TypeRef annotations,
+  compares cast target TypeRef against declared type.
+
+### 3.3 Full CFG — 4 of 5 rules DONE (2026-07-16)
 
 | Rule | Status |
 |------|--------|
-| `redundant-cast` | Needs expression type resolution |
-| `prefer-own-ptr` | Needs `own[T]` vs `ptr[T]` distinction |
-
-### 3.3 Full CFG — 5 rules (very low ROI)
-
-| Rule | Needs |
-|------|-------|
-| `dead-assignment` | Builder + Liveness |
-| `unreachable-code` | Builder + Reachability |
-| `constant-condition` | Builder + ConstantPropagation |
-| `redundant-null-check` | Builder + NullabilityFlow |
-| `loop-single-iteration` | Builder + Termination |
-
-Combined impact: 9 warnings across the self-host codebase.
+| `dead-assignment` | **DONE** — backward liveness walk in `linter/cfg.mt` |
+| `unreachable-code` | **DONE** — `stmt_always_returns`-based structural check |
+| `constant-condition` | **DONE** — AST pattern matching for literals and self-comparisons |
+| `loop-single-iteration` | **DONE** — `always_returns_body`-based structural check |
+| `redundant-null-check` | DEFERRED — needs full CFG with edge refinements (1 warning in self-host codebase) |
 
 ### 3.4 Tooling — 2 remaining
 
-| Gap | Effort |
-|-----|--------|
-| `--fix` | Medium — per-rule auto-fix logic |
-| `.mt-lint.yml` config | Medium — TOML parsing + rule config |
+| Gap | Effort | Status |
+|-----|--------|--------|
+| `--fix` | Medium | Not started — needs `Warning` column/length fields + per-rule edit generators |
+| `.mt-lint.toml` config | Small | Code written in `linter.mt` (`load_lint_config`, `parse_lint_toml`) but not wired into `main.mt` lint command — causes runtime hang in directory walk |
 
 ---
 
@@ -484,8 +489,9 @@ Combined impact: 9 warnings across the self-host codebase.
 | `--bundle` / `--archive` | Medium |
 | Wasm compilation (emcc) + preview server | Large |
 | `--jobs` parallel test execution | Medium |
-| ~~`--sanitize`~~ **DONE** | — |
-| ~~`run-module`, `new`, `completions`~~ **DONE (§2.8)**; `debug`, `deps`, `toolchain`, `bindgen`, `cache`, `docs`, `snapshot` | Varies |
+| ~~`--sanitize`~~ **DONE (2026-07-17)** | — |
+| ~~`cache` inspection~~ **DONE (2026-07-17)** | — |
+| ~~`run-module`, `new`, `completions`~~ **DONE (§2.8)**; `debug`, `deps`, `toolchain`, `bindgen`, `docs`, `snapshot` | Varies |
 
 ---
 
@@ -543,24 +549,21 @@ asymmetry and a shared libuv crash, neither compiler-specific):
 
 ### 5.3 Linter gaps (§3)
 
-`owning-release-leak`, `redundant-cast`, `prefer-own-ptr` (need sema-facts);
-5 CFG rules (low ROI — 9 warnings total across the codebase); `--fix`;
-`.mt-lint.yml` config.
+Only `redundant-null-check` (needs full CFG with edge refinements — 1 warning
+in the self-host codebase) and tooling (`--fix`, `.mt-lint.toml` wiring) remain.
+All other rules are implemented.
 
 ### 5.4 CLI commands not implemented (§0.4)
 
-`debug`, `deps`, `toolchain`, `bindgen`, `cache` (inspection subcommand; the
-cache itself is live, §2.8), `docs`, `snapshot`. The other 15 commands are at
-parity, incl. `new` / `run-module` / `completions` (§2.8).
+`debug`, `deps`, `toolchain`, `bindgen`, `docs`, `snapshot`. The other 16 commands
+are at parity, incl. `cache` / `new` / `run-module` / `completions`.
 
 ### 5.5 Subsystems not ported (§4)
 
 Package-graph resolution (`--locked`/`--frozen`, Large), `--bundle` /
 `--archive` (Medium), wasm/emcc + preview server (Large), `--jobs` parallel
-tests (Medium), `--sanitize` (Medium). Additional vendored-library recipes
-(box2d, sdl3, flecs, pcre2, steamworks) follow the §2.6 pattern when an example
-needs them: an archive-existence check + CMake or compile+`ar` recipe in
-`prepare_vendored_libraries` and a `-L` entry in `collect_vendored_link_flags`.
+tests (Medium). Additional vendored-library recipes (box2d, sdl3, flecs,
+pcre2, steamworks) follow the §2.6 pattern when an example needs them.
 
 ### 5.6 Accepted minor divergences (verified benign)
 
