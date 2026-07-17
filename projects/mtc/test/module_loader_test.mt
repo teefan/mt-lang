@@ -810,11 +810,7 @@ function test_cross_module_call_arity_mismatch_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_ADD,
-        MAIN_ADD_ARITY,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_ADD, MAIN_ADD_ARITY) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -827,11 +823,7 @@ function test_cross_module_call_correct_arity_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_ADD,
-        MAIN_ADD_CORRECT,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_ADD, MAIN_ADD_CORRECT) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -844,11 +836,7 @@ function test_cross_module_argument_type_mismatch_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_ADD,
-        MAIN_ADD_TYPE,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_ADD, MAIN_ADD_TYPE) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -862,11 +850,7 @@ function test_cross_module_return_type_flows_to_caller() -> t.Check:
     defer cleanup_dir(ref_of(root))
 
     # lib.flag() returns bool; returning it from an int function must be flagged.
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_FLAG,
-        MAIN_FLAG_RETURN,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_FLAG, MAIN_FLAG_RETURN) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -881,11 +865,7 @@ function test_cross_module_call_to_private_is_permissive() -> t.Check:
 
     # `secret` is not public, so it is not exported: the mismatched-arity call
     # must stay permissive rather than be flagged.
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_SECRET,
-        MAIN_SECRET_ARITY,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_SECRET, MAIN_SECRET_ARITY) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -898,11 +878,7 @@ function test_cross_module_construction_unknown_field_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_POINT,
-        MAIN_POINT_BAD_FIELD,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_POINT, MAIN_POINT_BAD_FIELD) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -915,11 +891,7 @@ function test_cross_module_construction_valid_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_POINT,
-        MAIN_POINT_CORRECT,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_POINT, MAIN_POINT_CORRECT) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -932,11 +904,7 @@ function test_cross_module_value_type_mismatch_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_LIMIT,
-        MAIN_LIMIT_BOOL,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_LIMIT, MAIN_LIMIT_BOOL) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -949,11 +917,7 @@ function test_cross_module_value_correct_type_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_LIMIT,
-        MAIN_LIMIT_INT,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_LIMIT, MAIN_LIMIT_INT) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -968,11 +932,7 @@ function test_cross_module_private_value_is_permissive() -> t.Check:
 
     # SECRET is not public, so it is not exported: a mismatched assignment from
     # it must stay permissive rather than be flagged.
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_SECRET_CONST,
-        MAIN_SECRET_CONST_BOOL,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_SECRET_CONST, MAIN_SECRET_CONST_BOOL) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -985,11 +945,7 @@ function test_cross_module_enum_member_valid_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_COLOR,
-        MAIN_COLOR_VALID,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_COLOR, MAIN_COLOR_VALID) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1002,11 +958,7 @@ function test_cross_module_enum_unknown_member_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_COLOR,
-        MAIN_COLOR_BAD,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_COLOR, MAIN_COLOR_BAD) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1019,11 +971,7 @@ function test_cross_module_variant_arm_valid_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_TOKEN,
-        MAIN_TOKEN_VALID,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_TOKEN, MAIN_TOKEN_VALID) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1036,11 +984,7 @@ function test_cross_module_variant_unknown_arm_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_TOKEN,
-        MAIN_TOKEN_BAD,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_TOKEN, MAIN_TOKEN_BAD) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1055,11 +999,7 @@ function test_cross_module_private_enum_member_is_permissive() -> t.Check:
 
     # Color is not public, so its members are not exported: unknown-member access
     # must stay permissive rather than be flagged.
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_COLOR_PRIVATE,
-        MAIN_COLOR_BAD,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_COLOR_PRIVATE, MAIN_COLOR_BAD) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1077,11 +1017,7 @@ function test_cross_module_method_call_valid_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_POINT_EXTENDED,
-        MAIN_POINT_MAGNITUDE,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_POINT_EXTENDED, MAIN_POINT_MAGNITUDE) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1094,11 +1030,7 @@ function test_cross_module_unknown_method_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_POINT_EXTENDED,
-        MAIN_POINT_BOGUS,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_POINT_EXTENDED, MAIN_POINT_BOGUS) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1111,11 +1043,7 @@ function test_cross_module_field_access_valid_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_POINT_EXTENDED,
-        MAIN_POINT_FIELD_X,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_POINT_EXTENDED, MAIN_POINT_FIELD_X) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1129,11 +1057,7 @@ function test_cross_module_field_type_flows_to_caller() -> t.Check:
     defer cleanup_dir(ref_of(root))
 
     # p.x is int; returning it from a bool function must be flagged.
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_POINT_EXTENDED,
-        MAIN_POINT_FIELD_X_BOOL,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_POINT_EXTENDED, MAIN_POINT_FIELD_X_BOOL) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1146,11 +1070,7 @@ function test_cross_module_unknown_field_access_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_POINT_EXTENDED,
-        MAIN_POINT_FIELD_Z,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_POINT_EXTENDED, MAIN_POINT_FIELD_Z) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1165,11 +1085,7 @@ function test_cross_module_private_method_is_flagged() -> t.Check:
 
     # `secret` is not public, so it is not exported and cannot be called from
     # another module: the call must be flagged as an unknown method.
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_POINT_PRIVATE_METHOD,
-        MAIN_POINT_SECRET,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_POINT_PRIVATE_METHOD, MAIN_POINT_SECRET) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1182,11 +1098,7 @@ function test_cross_module_method_arity_mismatch_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_ADDER,
-        MAIN_ADDER_ADD_ARITY,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_ADDER, MAIN_ADDER_ADD_ARITY) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1199,11 +1111,7 @@ function test_cross_module_method_arg_type_mismatch_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_ADDER,
-        MAIN_ADDER_ADD_TYPE,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_ADDER, MAIN_ADDER_ADD_TYPE) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1216,11 +1124,7 @@ function test_cross_module_method_correct_call_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_ADDER,
-        MAIN_ADDER_ADD_CORRECT,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_ADDER, MAIN_ADDER_ADD_CORRECT) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1234,11 +1138,7 @@ function test_cross_module_method_return_type_flows() -> t.Check:
     defer cleanup_dir(ref_of(root))
 
     # total() returns int; returning it from a bool function must be flagged.
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_ADDER,
-        MAIN_ADDER_TOTAL_BOOL,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_ADDER, MAIN_ADDER_TOTAL_BOOL) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1251,11 +1151,7 @@ function test_cross_module_static_method_valid_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_ADDER,
-        MAIN_ADDER_MAKE_VALID,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_ADDER, MAIN_ADDER_MAKE_VALID) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1268,11 +1164,7 @@ function test_cross_module_static_method_arity_mismatch_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_ADDER,
-        MAIN_ADDER_MAKE_ARITY,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_ADDER, MAIN_ADDER_MAKE_ARITY) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1285,11 +1177,7 @@ function test_cross_module_unknown_static_method_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_ADDER,
-        MAIN_ADDER_BOGUS,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_ADDER, MAIN_ADDER_BOGUS) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1305,11 +1193,7 @@ function test_loop_local_shadowing_import_alias_is_clean() -> t.Check:
     # A loop-local `lib` shadows the import alias inside the loop; after the loop
     # the alias must be visible again so lib.Thing(...) is a construction, not a
     # method call on a leaked Thing value. Regression test for block scoping.
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_THING,
-        MAIN_THING_SHADOW,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_THING, MAIN_THING_SHADOW) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1322,11 +1206,7 @@ function test_cross_module_interface_conformance_valid_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_DRAWABLE_INTERFACE,
-        MAIN_DRAWABLE_SPRITE,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_DRAWABLE_INTERFACE, MAIN_DRAWABLE_SPRITE) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1339,11 +1219,7 @@ function test_cross_module_interface_missing_method_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_DRAWABLE_INTERFACE,
-        MAIN_DRAWABLE_MISSING,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_DRAWABLE_INTERFACE, MAIN_DRAWABLE_MISSING) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1364,11 +1240,7 @@ function test_str_method_return_type_flows_cross_module() -> t.Check:
 
     # `strext` extends str with first_byte() -> ubyte; main misuses that ubyte
     # result as a bool. Resolving first_byte requires searching strext's binding.
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_UNUSED_STR_FIRST_BYTE,
-        MAIN_STR_FIRST_BYTE_BOOL,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_UNUSED_STR_FIRST_BYTE, MAIN_STR_FIRST_BYTE_BOOL) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1383,11 +1255,7 @@ function test_unknown_str_method_is_permissive() -> t.Check:
 
     # No module provides str.mystery, and str's method set is not fully owned, so
     # the call stays permissive rather than being flagged.
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_UNUSED,
-        MAIN_STR_MYSTERY,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_UNUSED, MAIN_STR_MYSTERY) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1406,11 +1274,7 @@ function test_cross_module_constraint_satisfied_local_struct_is_clean() -> t.Che
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_DAMAGEABLE,
-        MAIN_DAMAGEABLE_LOCAL,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_DAMAGEABLE, MAIN_DAMAGEABLE_LOCAL) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1423,11 +1287,7 @@ function test_cross_module_constraint_unsatisfied_local_struct_is_flagged() -> t
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_DAMAGEABLE,
-        MAIN_DAMAGEABLE_ROCK,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_DAMAGEABLE, MAIN_DAMAGEABLE_ROCK) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1440,11 +1300,7 @@ function test_imported_struct_arg_unsatisfied_constraint_is_flagged() -> t.Check
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_DRAWABLE_WIDGET_PLAIN,
-        MAIN_DRAWABLE_PLAIN_FLAGGED,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_DRAWABLE_WIDGET_PLAIN, MAIN_DRAWABLE_PLAIN_FLAGGED) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1457,11 +1313,7 @@ function test_imported_struct_arg_satisfied_constraint_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_WIDGET,
-        MAIN_DRAWABLE_WIDGET_VALID,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_WIDGET, MAIN_DRAWABLE_WIDGET_VALID) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1482,11 +1334,7 @@ function test_explicit_imported_type_arg_constraint_is_flagged() -> t.Check:
 
     # render[lib.Plain] resolves the type argument; Plain does not implement
     # lib.Drawable, so the explicit constraint is flagged.
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_DRAWABLE_PLAIN,
-        MAIN_DRAWABLE_EXPLICIT,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_DRAWABLE_PLAIN, MAIN_DRAWABLE_EXPLICIT) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1499,11 +1347,7 @@ function test_annotated_imported_type_unknown_member_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_WIDGET,
-        MAIN_WIDGET_BOGUS,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_WIDGET, MAIN_WIDGET_BOGUS) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1516,11 +1360,7 @@ function test_annotated_imported_type_valid_member_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_WIDGET,
-        MAIN_WIDGET_DRAW,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_WIDGET, MAIN_WIDGET_DRAW) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1539,11 +1379,7 @@ function test_imported_enum_match_missing_case_is_flagged() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_COLOR,
-        MAIN_COLOR_MISSING_GREEN,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_COLOR, MAIN_COLOR_MISSING_GREEN) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1556,11 +1392,7 @@ function test_imported_enum_match_exhaustive_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_COLOR,
-        MAIN_COLOR_EXHAUSTIVE,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_COLOR, MAIN_COLOR_EXHAUSTIVE) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1578,11 +1410,7 @@ function test_imported_generic_method_return_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_HOLDER_GENERIC,
-        MAIN_HOLDER_GET,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_HOLDER_GENERIC, MAIN_HOLDER_GET) else:
         return t.fail("could not load program")
     defer program.release()
 
@@ -1595,11 +1423,7 @@ function test_imported_struct_static_return_is_clean() -> t.Check:
         return t.fail("could not create temp dir")
     defer cleanup_dir(ref_of(root))
 
-    var program = load_lib_and_main(
-        ref_of(root),
-        LIB_CONTAINER_STATIC,
-        MAIN_CONTAINER_MAKE,
-    ) else:
+    var program = load_lib_and_main(ref_of(root), LIB_CONTAINER_STATIC, MAIN_CONTAINER_MAKE) else:
         return t.fail("could not load program")
     defer program.release()
 
