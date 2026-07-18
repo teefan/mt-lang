@@ -10,13 +10,6 @@ import std.string as string
 import mtc.lsp.protocol as proto
 
 
-## Pre-built result portion of the initialize response (after the id).
-const INIT_RESULT: str = (
-    ",\"result\":{\"capabilities\":{\"textDocumentSync\""
-    ":{\"openClose\":true,\"change\":1,\"save\":true}}}}"
-)
-
-
 ## Handle the `initialize` request.
 public function handle_initialize(id: json.Value) -> void:
     var response_text = string.String.create()
@@ -25,7 +18,9 @@ public function handle_initialize(id: json.Value) -> void:
     response_text.append("{\"jsonrpc\":\"2.0\"")
     response_text.append(",\"id\":")
     proto.append_json_value(ref_of(response_text), id)
-    response_text.append(INIT_RESULT)
+    response_text.append(",\"result\":{\"capabilities\":")
+    response_text.append("{\"textDocumentSync\":")
+    response_text.append("{\"openClose\":true,\"change\":1,\"save\":true}}}}")
 
     proto.write_framed_json(response_text.as_str())
 

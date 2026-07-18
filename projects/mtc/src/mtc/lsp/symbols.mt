@@ -1,6 +1,7 @@
 ## Document symbols — extract top-level symbol definitions from a parsed
 ## source file and return them as LSP DocumentSymbol JSON.
 
+import std.fs as fs_mod
 import std.json as json
 import std.string as string
 import std.vec as vec
@@ -30,7 +31,13 @@ public function handle_document_symbols(uri: str, id: json.Value) -> void:
 
     var content = string.String.create()
     defer content.release()
-    content.assign(owned_path.as_str())
+    var read_result = fs_mod.read_text(owned_path.as_str())
+    match read_result:
+        Result.success as c:
+            content.assign(c.value.as_str())
+        Result.failure:
+            proto.write_error(id, -32800, "symbol request failed: could not read file")
+            return
 
     let source = content.as_str()
     if source.len == 0:

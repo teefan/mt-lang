@@ -36,11 +36,6 @@ public function file_uri_to_path(uri: str) -> Option[string.String]:
 
     var pos = prefix.len
 
-    # On Windows, file:///C:/... — the third slash is a host separator.
-    # Skip it when present.
-    if uri.len > pos and uri.byte_at(pos) == 47:
-        pos += 1
-
     var result = string.String.with_capacity(uri.len)
     while pos < uri.len:
         let b = uri.byte_at(pos)
