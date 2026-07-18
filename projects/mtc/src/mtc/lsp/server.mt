@@ -7,7 +7,9 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.lsp.call_hierarchy as call_hier
 import mtc.lsp.code_actions as code_actions
+import mtc.lsp.code_lens as code_lens
 import mtc.lsp.completion as completion
 import mtc.lsp.debug_info as debug_info
 import mtc.lsp.diagnostics as diag
@@ -29,6 +31,7 @@ import mtc.lsp.semantic_tokens as semtok
 import mtc.lsp.signature_help as sighelp
 import mtc.lsp.symbols as symbols
 import mtc.lsp.text_docs as text_docs
+import mtc.lsp.type_hierarchy as type_hier
 import mtc.lsp.workspace as workspace
 import mtc.lsp.workspace_symbols as wsym
 
@@ -121,6 +124,31 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         positions.release()
     else if method == "workspace/symbol":
         wsym.handle_workspace_symbol(ws, extract_query(msg.params), msg.id)
+
+    # Code lens
+    else if method == "textDocument/codeLens":
+        let uri = extract_text_doc_uri(msg.params)
+        code_lens.handle_code_lens(ws, uri, msg.id)
+    else if method == "codeLens/resolve":
+        code_lens.handle_code_lens_resolve(ws, msg.params, msg.id)
+
+    # Type hierarchy
+    else if method == "textDocument/prepareTypeHierarchy":
+        var pos = extract_position_params(msg.params)
+        type_hier.handle_prepare_type_hierarchy(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "typeHierarchy/supertypes":
+        type_hier.handle_supertypes(ws, msg.params, msg.id)
+    else if method == "typeHierarchy/subtypes":
+        type_hier.handle_subtypes(ws, msg.params, msg.id)
+
+    # Call hierarchy
+    else if method == "textDocument/prepareCallHierarchy":
+        var pos = extract_position_params(msg.params)
+        call_hier.handle_prepare_call_hierarchy(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "callHierarchy/incomingCalls":
+        call_hier.handle_incoming_calls(ws, msg.params, msg.id)
+    else if method == "callHierarchy/outgoingCalls":
+        call_hier.handle_outgoing_calls(ws, msg.params, msg.id)
 
     # Document links
     else if method == "textDocument/documentLink":

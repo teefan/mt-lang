@@ -40,6 +40,9 @@ public function handle_initialize(id: json.Value) -> void:
     r.append(",\"rangeFormattingProvider\":true")
     r.append(",\"linkedEditingRangeProvider\":true")
     r.append(",\"documentLinkProvider\":{}")
+    r.append(",\"codeLensProvider\":{\"resolveProvider\":true}")
+    r.append(",\"typeHierarchyProvider\":true")
+    r.append(",\"callHierarchyProvider\":true")
     # semantic tokens: legend + full + range
     r.append(",\"semanticTokensProvider\":{\"legend\":{")
     r.append("\"tokenTypes\":[\"namespace\",\"type\",\"keyword\",\"string\",\"number\",\"comment\",\"operator\",\"variable\",\"function\",\"parameter\",\"property\",\"regexp\"]")
