@@ -20,18 +20,22 @@ public function handle_initialize(id: json.Value) -> void:
     r.append(",\"definitionProvider\":true")
     r.append(",\"hoverProvider\":true")
     r.append(",\"referencesProvider\":true")
+    r.append(",\"documentHighlightProvider\":true")
     r.append(",\"documentSymbolProvider\":true")
+    r.append(",\"workspaceSymbolProvider\":true")
     r.append(",\"documentFormattingProvider\":true")
+    r.append(",\"foldingRangeProvider\":true")
+    r.append(",\"selectionRangeProvider\":true")
     r.append(",\"completionProvider\":{\"triggerCharacters\":[\".\"],\"resolveProvider\":false}")
     # signatureHelp: trigger on open-paren and comma
     r.append(",\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"],\"retriggerCharacters\":[\",\"]}")
-    r.append(",\"renameProvider\":{\"prepareProvider\":false}")
+    r.append(",\"renameProvider\":{\"prepareProvider\":true}")
     r.append(",\"codeActionProvider\":{\"codeActionKinds\":[]}")
-    # semantic tokens: legend + full
+    # semantic tokens: legend + full + range
     r.append(",\"semanticTokensProvider\":{\"legend\":{")
     r.append("\"tokenTypes\":[\"namespace\",\"type\",\"keyword\",\"string\",\"number\",\"comment\",\"operator\",\"variable\",\"function\",\"parameter\",\"property\",\"regexp\"]")
     r.append(",\"tokenModifiers\":[\"declaration\",\"defaultLibrary\"]")
-    r.append("},\"full\":true}")
+    r.append("},\"full\":true,\"range\":true}")
     r.append("}}}")
 
     proto.write_framed_json(r.as_str())

@@ -44,6 +44,45 @@ public function handle_rename(
     edits_json.release()
 
 
+## Handle textDocument/prepareRename: the range of the identifier under the
+## cursor when there is one, else null (rename not possible here).
+public function handle_prepare_rename(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+    id: json.Value,
+) -> void:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer file_path.release()
+
+    var content = ws.document_source(file_path.as_str()) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer content.release()
+
+    let target = cursor.identifier_at(content.as_str(), line, character) else:
+        proto.write_response(id, json.null_value())
+        return
+
+    let lz = if target.line > 0: target.line - 1 else: 0z
+    let col = if target.column > 0: target.column - 1 else: 0z
+    var json_text = string.String.create()
+    defer json_text.release()
+    json_text.append("{\"start\":{\"line\":")
+    json_text.append_format(f"#{lz}")
+    json_text.append(",\"character\":")
+    json_text.append_format(f"#{col}")
+    json_text.append("},\"end\":{\"line\":")
+    json_text.append_format(f"#{lz}")
+    json_text.append(",\"character\":")
+    json_text.append_format(f"#{col + target.length}")
+    json_text.append("}}")
+    proto.write_response_raw(id, json_text.as_str())
+
+
 ## Build a WorkspaceEdit JSON with a TextEdit for every identifier-token
 ## occurrence of `old_name`.
 function build_rename_edits_json(source: str, old_name: str, uri: str, new_name: str) -> string.String:

@@ -1,7 +1,7 @@
 # Self-Host LSP Architecture
 
 Status: **Implementation complete — all 3 tiers delivered.** Last updated: 2026-07-18.
-15 modules, 2,529 lines, 13 capabilities advertised, valgrind-clean.
+20 modules, 3,969 lines, 19 capabilities advertised, valgrind-clean.
 All features parity-verified via piped JSON-RPC fixtures.
 
 ## 0. Design Principles
@@ -76,7 +76,7 @@ projects/mtc/src/mtc/
   semantic/         ← existing
   parser/           ← existing
 
-  lsp/              ← new (15 modules, 2,529 lines)
+  lsp/              ← new (20 modules, 3,969 lines)
     protocol.mt     ← JSON-RPC transport (Content-Length framing)
     server.mt       ← message loop, if/else handler dispatch
     workspace.mt    ← document state, module roots
@@ -85,6 +85,10 @@ projects/mtc/src/mtc/
     text_docs.mt    ← didOpen, didChange, didClose, didSave
     uri.mt          ← file:// URI percent-decode
     cursor.mt       ← shared token-at-position resolution (Phase 0)
+    highlight.mt    ← documentHighlight (Phase 2)
+    folding.mt      ← foldingRange: indent blocks, imports, comments (Phase 2)
+    selection.mt    ← selectionRange: word/line/statement/block (Phase 2)
+    workspace_symbols.mt ← workspace/symbol with text prefilter (Phase 2)
 
     # Tier 2
     navigation.mt   ← go-to-definition, hover, references (combined)
@@ -351,12 +355,12 @@ fixed the same day.
 
 | Aspect | Ruby LSP | Self-Host LSP |
 |--------|----------|---------------|
-| Lines | ~11,900 | 2,529 (15 modules) |
+| Lines | ~11,900 | 3,969 (20 modules) |
 | Threads | Worker pool (8 threads) | Single-threaded |
 | Dispatch | 22 mixin modules | if/else chain |
 | JSON | `JSON.parse` / `JSON.dump` | `std.json.parse` / raw-string rendering |
 | Transport | Stdio `Content-Length` framing | Same (getchar loop) |
-| Capabilities | 49 advertised | 13 advertised |
+| Capabilities | 49 advertised | 19 advertised |
 | Caches | Multi-layer (tokens, AST, facts, semantic tokens) | Single document cache |
 | Module resolution | `ModuleLoader` (shared) | Same `module_loader.mt` |
 | Linter | Ruby `Linter.lint_source` | Same `linter.lint_source` |
@@ -373,4 +377,4 @@ fixed the same day.
 | ~~Name-only hover~~ | **FIXED (2026-07-18, Phase 1)** — markdown hover with full signatures (functions incl. async/variadic/return, const/var types, struct fields, enum/variant members) and attached `##` doc comments; definition ranges point at the name token |
 | ~~Lexer-class-only semantic tokens~~ | **FIXED (2026-07-18, Phase 1)** — identifiers classified via Analysis facts: function/type/namespace/parameter/variable, plus builtin type names |
 | Stdio-based editor smoke test | Not performed (all verification via piped fixtures) |
-| 36 remaining Ruby-only capabilities (call hierarchy, inlay hints, etc.) | Out of scope |
+| 30 remaining Ruby-only capabilities (call hierarchy, inlay hints, etc.) | Out of scope — Phase 2 (2026-07-18) added documentHighlight, prepareRename, foldingRange, workspace/symbol, selectionRange, and semanticTokens/range. workspace/symbol requires a non-empty query (no workspace index yet; Ruby returns all symbols on empty query) and caps at 200 results. |

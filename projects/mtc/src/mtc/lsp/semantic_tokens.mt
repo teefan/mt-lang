@@ -40,6 +40,29 @@ const TOKEN_PARAMETER: uint = 9
 
 ## Handle textDocument/semanticTokens/full.
 public function handle_semantic_tokens(ws: ref[workspace.Workspace], uri: str, id: json.Value) -> void:
+    emit_semantic_tokens(ws, uri, id, false, 0, 0)
+
+
+## Handle textDocument/semanticTokens/range: the full token pass clipped to
+## whole lines of the requested range (0-based, inclusive).
+public function handle_semantic_tokens_range(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    start_line: ptr_uint,
+    end_line: ptr_uint,
+    id: json.Value,
+) -> void:
+    emit_semantic_tokens(ws, uri, id, true, start_line, end_line)
+
+
+function emit_semantic_tokens(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    id: json.Value,
+    clip: bool,
+    clip_start_line: ptr_uint,
+    clip_end_line: ptr_uint,
+) -> void:
     var file_path = uri_ops.file_uri_to_path(uri) else:
         proto.write_response(id, json.null_value())
         return
@@ -81,6 +104,9 @@ public function handle_semantic_tokens(ws: ref[workspace.Workspace], uri: str, i
             ti += 1
             continue
         let line_num: uint = if tok.line > 0: uint<-(tok.line - 1) else: 0
+        if clip and (line_num < uint<-clip_start_line or line_num > uint<-clip_end_line):
+            ti += 1
+            continue
         let char_num: uint = uint<-tok.end_offset - uint<-tok.start_offset
         # Use column (1-based in lexer) converted to 0-based for LSP.
         let col_num: uint = if tok.column > 0: uint<-(tok.column - 1) else: 0
