@@ -14,6 +14,8 @@ import mtc.parser.ast as ast
 public struct Diag:
     name: str
     line: ptr_uint
+    ## 1-based column of the cast target type (`int<-x` points at `int`).
+    column: ptr_uint
 
 
 public function check(file: ast.SourceFile) -> vec.Vec[Diag]:
@@ -68,6 +70,8 @@ function check_casts(stmts: span[ast.Stmt], declared: ref[map_mod.Map[str, str]]
     while si < stmts.len:
         unsafe:
             match read(stmts.data + si):
+                ast.Stmt.stmt_local as loc:
+                    check_expr(loc.value, declared, diags)
                 ast.Stmt.stmt_assignment as a:
                     check_expr(a.value, declared, diags)
                 ast.Stmt.stmt_expression as e:
@@ -84,6 +88,8 @@ function check_expr(ep: ptr[ast.Expr]?, declared: ref[map_mod.Map[str, str]], di
         return
     unsafe:
         match read(p):
+            ast.Expr.expr_unsafe as u:
+                check_expr(u.expression, declared, diags)
             ast.Expr.expr_prefix_cast as c:
                 match read(c.expression):
                     ast.Expr.expr_identifier as id:
@@ -93,7 +99,7 @@ function check_expr(ep: ptr[ast.Expr]?, declared: ref[map_mod.Map[str, str]], di
                             return
                         let ct = type_last_name(c.target_type)
                         if unsafe: read(dt).equal(ct):
-                            diags.push(Diag(name = id.name, line = id.line))
+                            diags.push(Diag(name = id.name, line = c.line, column = c.column))
                     _:
                         pass
             _:

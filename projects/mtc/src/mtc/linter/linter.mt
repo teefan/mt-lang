@@ -1610,7 +1610,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
             ast.Stmt.stmt_local as loc:
                 visit_expr_opt(loc.value, path, warnings)
                 visit_stmt_opt(loc.else_body, path, warnings)
-                check_redundant_type_annotation(loc.is_let, loc.name, loc.stmt_type, loc.value, path, warnings)
+                check_redundant_type_annotation(loc.is_let, loc.name, loc.stmt_type, loc.value, loc.line, path, warnings)
             ast.Stmt.stmt_assignment as asgn:
                 visit_expr(asgn.value, path, warnings)
                 visit_expr(asgn.target, path, warnings)
@@ -2633,7 +2633,15 @@ function expr_source_name(expr: ptr[ast.Expr]?) -> str:
 #  redundant-type-annotation — `let x: T = value` where T matches literal type.
 # =============================================================================
 
-function check_redundant_type_annotation(is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_redundant_type_annotation(
+    is_let: bool,
+    name: str,
+    stmt_type: ptr[ast.TypeRef]?,
+    value: ptr[ast.Expr]?,
+    line: ptr_uint,
+    path: str,
+    warnings: ref[vec.Vec[Warning]],
+) -> void:
     if not is_let:
         return
     let st = stmt_type else:
@@ -2649,7 +2657,7 @@ function check_redundant_type_annotation(is_let: bool, name: str, stmt_type: ptr
         buf.append("type annotation ': ")
         buf.append(declared)
         buf.append("' is redundant, inferred from initializer")
-        push_warning(warnings, path, 0, "redundant-type-annotation", buf.as_str(), "hint")
+        push_warning(warnings, path, line, "redundant-type-annotation", buf.as_str(), "hint")
 
 
 ## Extract the leaf name from a simple TypeRef (e.g. `int` → `"int"`),
@@ -3852,7 +3860,7 @@ function lint_redundant_cast(file: ast.SourceFile, path: str, warnings: ref[vec.
             buf.append("redundant cast: ")
             buf.append(d.name)
             buf.append(" is already declared as this type")
-            push_warning(warnings, path, d.line, "redundant-cast", buf.as_str(), "hint")
+            push_warning_at(warnings, path, d.line, d.column, 0, "redundant-cast", buf.as_str(), "hint")
         di += 1
 
 

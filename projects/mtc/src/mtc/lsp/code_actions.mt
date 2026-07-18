@@ -1,13 +1,14 @@
 ## Code actions — quick fixes derived from the diagnostics the client sends
-## with the request context.  Supported fixes:
+## with the request context.  Every auto-fixable lint rule (the same set as
+## `mtc lint --fix`, via the linter's fix engine) gets a quickfix, plus:
 ##   unused-local / unused-param → prefix the binding with `_`
-##   prefer-let                  → replace the line's `var` keyword with `let`
 
 import std.fmt
 import std.json as json
 import std.str
 import std.string as string
 
+import mtc.linter.fix_engine as fix_engine
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
@@ -86,8 +87,8 @@ function append_fix_for_diagnostic(
             let info = info_payload.value
             if info.code.equal("unused-local") or info.code.equal("unused-param"):
                 append_underscore_fix(json_text, emitted, uri, source, info)
-            else if info.code.equal("prefer-let"):
-                append_prefer_let_fix(json_text, emitted, uri, source, info)
+            else if fix_engine.is_fixable(info.code):
+                append_engine_fix(json_text, emitted, uri, source, info)
 
 
 ## `unused-*` fix: insert `_` before the binding name.
@@ -113,24 +114,47 @@ function append_underscore_fix(
     append_action(json_text, emitted, title.as_str(), uri, info.line, info.start_char, info.start_char, "_")
 
 
-## `prefer-let` fix: replace the line's leading `var ` keyword with `let`.
-function append_prefer_let_fix(
+## Any fixable lint rule: compute the fix edit through the linter's fix
+## engine against the current buffer, exactly as `mtc lint --fix` would.
+function append_engine_fix(
     json_text: ref[string.String],
     emitted: ref[ptr_uint],
     uri: str,
     source: str,
     info: DiagnosticInfo,
 ) -> void:
-    let line_text = cursor.source_line(source, info.line + 1)
-    var indent: ptr_uint = 0
-    while indent < line_text.len and line_text.byte_at(indent) == 32:
-        indent += 1
-    if indent + 4 > line_text.len:
-        return
-    if not line_text.slice(indent, 4).equal("var "):
-        return
+    match fix_engine.lsp_edit_for_warning(source, info.code, info.line + 1, info.start_char + 1):
+        Option.none:
+            return
+        Option.some as edit_payload:
+            var edit = edit_payload.value
 
-    append_action(json_text, emitted, "Replace 'var' with 'let'", uri, info.line, indent, indent + 3, "let")
+            var title = string.String.create()
+            defer title.release()
+            title.append("Fix ")
+            title.append(info.code)
+
+            if unsafe: read(emitted) > 0:
+                json_text.append(",")
+            unsafe:
+                read(emitted) = read(emitted) + 1
+
+            json_text.append("{\"title\":\"")
+            proto.append_escaped(json_text, title.as_str())
+            json_text.append("\",\"kind\":\"quickfix\",\"edit\":{\"changes\":{\"")
+            proto.append_escaped(json_text, uri)
+            json_text.append("\":[{\"range\":{\"start\":{\"line\":")
+            json_text.append_format(f"#{edit.start_line}")
+            json_text.append(",\"character\":")
+            json_text.append_format(f"#{edit.start_char}")
+            json_text.append("},\"end\":{\"line\":")
+            json_text.append_format(f"#{edit.end_line}")
+            json_text.append(",\"character\":")
+            json_text.append_format(f"#{edit.end_char}")
+            json_text.append("}},\"newText\":\"")
+            proto.append_escaped(json_text, edit.new_text.as_str())
+            json_text.append("\"}]}}}")
+            edit.new_text.release()
 
 
 ## Emit one quickfix CodeAction with a single-file TextEdit.

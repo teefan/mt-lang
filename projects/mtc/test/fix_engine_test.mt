@@ -120,6 +120,113 @@ function test_fix_trailing_comma() -> t.Check:
 
 
 # =============================================================================
+#  redundant-cast
+# =============================================================================
+
+@[test]
+function test_fix_redundant_cast() -> t.Check:
+    let source = <<-SRC
+        function demo(n: int) -> int:
+            var total: int = n
+            total = int<-total
+            return total
+    SRC
+    let expected = <<-SRC
+        function demo(n: int) -> int:
+            var total: int = n
+            total = total
+            return total
+    SRC
+    return expect_fixed(source, expected)
+
+
+@[test]
+function test_fix_redundant_cast_unwraps_unsafe() -> t.Check:
+    let source = <<-SRC
+        function demo(n: int) -> int:
+            var total: int = n
+            let mirrored = unsafe: int<-total
+            return mirrored
+    SRC
+    # prefer-let also fires here: `total` is never reassigned.
+    let expected = <<-SRC
+        function demo(n: int) -> int:
+            let total: int = n
+            let mirrored = total
+            return mirrored
+    SRC
+    return expect_fixed(source, expected)
+
+
+# =============================================================================
+#  redundant-bool-compare
+# =============================================================================
+
+@[test]
+function test_fix_bool_compare_true() -> t.Check:
+    let source = <<-SRC
+        function demo(flag: bool) -> int:
+            if flag == true:
+                return 1
+            return 0
+    SRC
+    let expected = <<-SRC
+        function demo(flag: bool) -> int:
+            if flag:
+                return 1
+            return 0
+    SRC
+    return expect_fixed(source, expected)
+
+
+@[test]
+function test_fix_bool_compare_false_inverts() -> t.Check:
+    let source = <<-SRC
+        function demo(flag: bool) -> int:
+            if flag == false:
+                return 1
+            return 0
+    SRC
+    let expected = <<-SRC
+        function demo(flag: bool) -> int:
+            if not flag:
+                return 1
+            return 0
+    SRC
+    return expect_fixed(source, expected)
+
+
+@[test]
+function test_fix_bool_compare_literal_first_untouched() -> t.Check:
+    let source = <<-SRC
+        function demo(flag: bool) -> int:
+            if true == flag:
+                return 1
+            return 0
+    SRC
+    return expect_fixed(source, source)
+
+
+# =============================================================================
+#  redundant-type-annotation
+# =============================================================================
+
+@[test]
+function test_fix_redundant_type_annotation() -> t.Check:
+    let source = <<-SRC
+        function demo() -> int:
+            let count: int = 5
+            return count
+    SRC
+    let expected = <<-SRC
+        function demo() -> int:
+            let count = 5
+            return count
+    SRC
+    return expect_fixed(source, expected)
+
+
+# =============================================================================
 #  unused-import must never be auto-fixed
 # =============================================================================
 
