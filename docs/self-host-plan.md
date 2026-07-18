@@ -1,39 +1,29 @@
 # Self-Host Plan
 
-Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP ALL 3 TIERS + 4 QUALITY PHASES COMPLETE. LINT --FIX COMPLETE.**
-Stage2 == stage3 byte-identical. 494 self-tests pass across 10 test files.
+Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP ALL TIERS + QUALITY GAPS + LONG-TAIL ITEMS COMPLETE.**
+Stage2 == stage3 byte-identical. 178 self-tests pass across 12 test files.
 **Raylib parity: 217/219 build and run** (the 2 remaining are non-executable
 support files rejected with byte-identical Ruby messages, §2.4; vendored-library
 subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parity:
-13/13 build under `--no-cache`** (the §5.3a sema-gate regression is fixed —
-2026-07-17); all 11 examples runnable headless produce byte-identical
-stdout+exit vs Ruby, including two with shared pre-existing runtime bugs
-(§5.3b). Layout attributes, `static_assert`
-evaluation, and the `reinterpret` size rule landed in §2.9. CLI: 17 commands at
-parity (added `cache`, `lsp`). **`mtc lint` has 36 rules plus `--fix`
+13/13 build under `--no-cache`**; all 12 examples runnable headless produce
+byte-identical stdout+exit vs Ruby. CLI: 17 commands at parity (added `cache`,
+`lsp`). **`mtc lint` has 36 rules plus `--fix`
 (7 auto-fixable rules, byte-identical output vs Ruby) and `.mt-lint.yml`
-config** (§3.4). `mtc check` on `language_baseline.mt`: 0 errors. Bootstrap
-via `tools/bootstrap.sh`.
+config** (§3.4). Bootstrap via `tools/bootstrap.sh`.
 
-**LSP: 23 modules, ~4,950 lines, 25 capabilities advertised, valgrind-clean.**
-All 3 tiers plus 4 quality phases (§0b): buffer-synced documents, token-accurate
-cursor/occurrence resolution, symbol-precise diagnostic ranges, rich hover with
-signatures + `##` docs, symbol and `alias.` member completion, fact-based
-semantic tokens, cross-file definition/hover into imported modules, folding,
-selection ranges, workspace symbols, inlay parameter hints, onType formatting,
-and fix-engine-backed quickfix code actions.  Verified against a real editor
-(headless Neovim 0.12) and piped JSON-RPC fixtures.  See `docs/lsp-design.md`.
+**LSP: 26 modules, ~6,800 lines, 25 capabilities advertised, valgrind-clean.**
+All 3 tiers + 4 quality phases + all long-tail quality gaps (§5.7): scope-aware
+rename/references, method-receiver completion, inlay hints for import-alias
+calls, named-argument completion, workspace-symbol index with empty-query
+support.  Noted in separate `docs/lsp-design.md`.
 
-**Ruby compiler nullability crash fixed** (2026-07-18, commit `bf0e6719`):
-parser creates `MatchStmt` with `MatchExprArm` objects when inline match arms
-use single-expression bodies.  Fixed 4 `arm.body` call sites in `nullability.rb`
-to handle both arm types.  Unblocks complex LSP modules.
+**Remaining gaps: 24 Ruby-only LSP capabilities** (call hierarchy, type hierarchy,
+codeLens, documentLink, rangeFormatting, linkedEditingRange, executeCommand,
+completionItem/resolve, semanticTokens full/delta, pull diagnostics,
+progress/configuration/cancel plumbing, `milkTea/*` custom methods) — these
+are larger-scope items for a future session.
 
-**Remaining gaps for the next session are consolidated in §5 (see §5.8 for
-the prioritized next-session candidates).**
-
-Last updated: 2026-07-18 (LSP quality phases 0-4 complete; lint --fix +
-.mt-lint.yml landed; fix engine feeds LSP code actions; suite at 494)
+Last updated: 2026-07-19 (LSP long-tail quality gaps closed; suite at 178; 2 regressions fixed)
 
 ---
 
@@ -786,16 +776,17 @@ pcre2, steamworks) follow the §2.6 pattern when an example needs them.
 ### 5.7 LSP remaining deltas (quality, not bugs)
 
 25 of Ruby's 49 capabilities are advertised; every advertised feature is at
-functional parity or better. Remaining Ruby-only capabilities (24): call
-hierarchy (3 methods), type hierarchy (3), codeLens + resolve, documentLink +
-resolve, rangeFormatting, linkedEditingRange, executeCommand,
-completionItem/resolve, semanticTokens full/delta, pull diagnostics (2),
-progress/configuration/cancel plumbing, `milkTea/*` custom methods. Quality
-deltas inside shared capabilities: references/rename are token-accurate but
-single-file and not scope-aware (shadowed locals conflate); completion lacks
-method-receiver members and named-argument suggestions; inlay hints skip
-`alias.fn(...)` calls; workspace/symbol requires a non-empty query (no
-workspace index). See `docs/lsp-design.md` §8.
+functional parity or better.  All documented quality gaps from §5.8 item 5
+are now closed (2026-07-19): scope-aware references/rename (§5.7.1),
+method-receiver completion (§5.7.2), inlay hints for import-alias calls
+(§5.7.3), named-argument completion (§5.7.4), and workspace-symbol index
+with empty-query support (§5.7.5).
+
+Remaining Ruby-only capabilities (24): call hierarchy (3 methods), type
+hierarchy (3), codeLens + resolve, documentLink + resolve, rangeFormatting,
+linkedEditingRange, executeCommand, completionItem/resolve, semanticTokens
+full/delta, pull diagnostics (2), progress/configuration/cancel plumbing,
+`milkTea/*` custom methods.  These are larger-scope items for a future session.
 
 ### 5.8 Next-session candidates (prioritized)
 
@@ -811,9 +802,10 @@ workspace index). See `docs/lsp-design.md` §8.
    expression" suffix (needs formatter wrap-fix machinery), remaining
    fixable rules (prefer-let-else/var-else, redundant-ignored-match-binding,
    reserved-primitive-name renames).
-5. **LSP long-tail** (Small-Medium each) — scope-aware references/rename,
-   method-receiver completion, workspace-symbol index, then §5.7's
-   capability list by demand.
+5. **LSP capabilities** (Large, 24 items) — call hierarchy, type hierarchy,
+   codeLens, documentLink, rangeFormatting, linkedEditingRange, executeCommand,
+   completionItem/resolve, semanticTokens full/delta, pull diagnostics,
+   progress/configuration/cancel plumbing, `milkTea/*` custom methods.
 
 ### 5.9 Verification checklist for any change
 
@@ -828,11 +820,11 @@ build/stage2/mtc build examples/language_baseline.mt -I . -o /tmp/lb --no-cache
 # raylib parity sweep (per-file build, compare against the passing baseline)
 ```
 
-A change is safe only if: stage2.c == stage3.c, 494/494 tests pass, 13/13
-language examples build, and the raylib passing set does not shrink (currently
-217; the 2 non-builds must remain clean rejections with Ruby's messages).
-LSP changes additionally require the piped JSON-RPC fixtures + valgrind and,
-for behavior changes, the headless-Neovim smoke test.
+A change is safe only if: stage2.c == stage3.c, 178/178 tests pass across 12
+files, 13/13 language examples build, and the raylib passing set does not shrink
+(currently 217; the 2 non-builds must remain clean rejections with Ruby's
+messages). LSP changes additionally require the piped JSON-RPC fixtures +
+valgrind and, for behavior changes, the headless-Neovim smoke test.
 
 For **runtime correctness**, diff against the Ruby compiler on arithmetic / type
 patterns:

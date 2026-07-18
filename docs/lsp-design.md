@@ -1,11 +1,14 @@
 # Self-Host LSP Architecture
 
-Status: **Implementation complete — all 3 tiers delivered.** Last updated: 2026-07-18.
-23 modules, 4,947 lines, 25 capabilities advertised, valgrind-clean.
-Cross-file navigation into imported modules; verified against a real editor
-(headless Neovim 0.12: attach, cross-file hover/definition, diagnostics,
-completion, clean shutdown).
-All features parity-verified via piped JSON-RPC fixtures.
+Status: **Implementation complete — all 3 tiers + all quality gaps + long-tail
+items delivered.** Last updated: 2026-07-19.
+26 modules, ~6,800 lines, 25 capabilities advertised, valgrind-clean.
+Cross-file navigation + scope-aware rename + method-receiver completion +
+inlay hints for alias calls + named-argument completion + workspace-symbol
+index with empty-query support.  Verified against a real editor (headless
+Neovim 0.12).  All features parity-verified via piped JSON-RPC fixtures.
+Remaining: 24 Ruby-only LSP capabilities (call hierarchy, type hierarchy,
+codeLens, etc.) — larger-scope items for a future session.
 
 ## 0. Design Principles
 
@@ -79,37 +82,37 @@ projects/mtc/src/mtc/
   semantic/         ← existing
   parser/           ← existing
 
-  lsp/              ← new (23 modules, 4,947 lines)
+  lsp/              ← new (26 modules, ~6,800 lines)
     protocol.mt     ← JSON-RPC transport (Content-Length framing)
     server.mt       ← message loop, if/else handler dispatch
-    workspace.mt    ← document state, module roots
+    workspace.mt    ← document state, module roots, lazy symbol-index
     diagnostics.mt  ← error → LSP diagnostic conversion
     lifecycle.mt    ← initialize, shutdown, configure
     text_docs.mt    ← didOpen, didChange, didClose, didSave
     uri.mt          ← file:// URI percent-decode
     cursor.mt       ← shared token-at-position resolution (Phase 0)
+    utils.mt        ← shared text-scanning primitives (§2.1a)
     highlight.mt    ← documentHighlight (Phase 2)
     folding.mt      ← foldingRange: indent blocks, imports, comments (Phase 2)
     selection.mt    ← selectionRange: word/line/statement/block (Phase 2)
-    workspace_symbols.mt ← workspace/symbol with text prefilter (Phase 2)
-    inlay_hints.mt  ← parameter-name hints at call sites (Phase 3)
+    workspace_symbols.mt ← workspace/symbol via persistent index (Phase 2)
+    workspace_index.mt   ← persistent multi-file symbol index (§2.1b)
+    inlay_hints.mt  ← parameter-name hints at call sites, alias calls (Phase 3)
     on_type_formatting.mt ← newline indent assist (Phase 3)
 
     # Tier 2
-    navigation.mt   ← definition family (goto/type/implementation), hover
-                      with signatures + ## docs, references; cross-file via
-                      import aliases (Phases 1/3/4)
+    navigation.mt   ← definition family, hover, scope-aware references
     formatting.mt   ← format document
     symbols.mt      ← document symbols
 
     # Tier 3
-    completion.mt   ← keywords + module symbols + `alias.` members (Phase 1)
-    semantic_tokens.mt ← lexer stream + Analysis-fact identifier classes,
-                      full and range (Phases 1/2)
-    code_actions.mt ← quickfixes via the linter fix engine for every
-                      auto-fixable rule + underscore-prefix for unused-*
-    signature_help.mt ← parameter hints (token-accurate callee resolution)
-    rename.mt       ← rename + prepareRename (identifier-token occurrences)
+    completion.mt   ← keywords + module symbols + alias members +
+                       method-receiver completion + named-argument completion
+    semantic_tokens.mt ← lexer stream + Analysis-fact identifier classes
+    code_actions.mt ← quickfixes via linter fix engine
+    signature_help.mt ← parameter hints
+    rename.mt       ← scope-aware rename + prepareRename
+    scope.mt        ← AST-scope binding tracker for rename/references
 ```
 
 ### 2.1 Why separate modules?
@@ -373,15 +376,16 @@ fixed the same day.
 
 | Aspect | Ruby LSP | Self-Host LSP |
 |--------|----------|---------------|
-| Lines | ~11,900 | 4,947 (23 modules) |
+| Lines | ~11,900 | ~6,800 (26 modules) |
 | Threads | Worker pool (8 threads) | Single-threaded |
 | Dispatch | 22 mixin modules | if/else chain |
 | JSON | `JSON.parse` / `JSON.dump` | `std.json.parse` / raw-string rendering |
 | Transport | Stdio `Content-Length` framing | Same (getchar loop) |
 | Capabilities | 49 advertised | 25 advertised |
-| Caches | Multi-layer (tokens, AST, facts, semantic tokens) | Single document cache |
+| Caches | Multi-layer (tokens, AST, facts, semantic tokens) | Single document cache + workspace-symbol index |
 | Module resolution | `ModuleLoader` (shared) | Same `module_loader.mt` |
 | Linter | Ruby `Linter.lint_source` | Same `linter.lint_source` |
+| Quality gaps | — | All closed (scope-aware rename, method-receiver/ named-argument completion, alias inlay hints, workspace-symbol index) |
 
 ### Known gaps (self-host vs Ruby)
 
@@ -396,5 +400,10 @@ fixed the same day.
 | ~~Lexer-class-only semantic tokens~~ | **FIXED (2026-07-18, Phase 1)** — identifiers classified via Analysis facts: function/type/namespace/parameter/variable, plus builtin type names |
 | ~~Stdio-based editor smoke test~~ | **DONE (2026-07-18, Phase 4)** — headless Neovim 0.12 against `mtc lsp`: attach + capabilities, cross-file hover (`heap.release` signature + docs), cross-file definition (`std/mem/heap.mt`), publishDiagnostics with symbol-precise ranges, completion, clean server shutdown on editor exit |
 | ~~Same-file-only definition/hover~~ | **FIXED (2026-07-18, Phase 4)** — `alias.member` resolves through the import map + module path into the imported module's file (signature, `##` docs, exact name range); an import alias itself resolves to the module file. Phase 4 also fixed a latent diagnostics bug: the root module was taken from `modules.last()` (DFS pre-order → last *dependency*), so lint ranges and token-based rules ran against the wrong source for any root with imports; now indexed via `order.last()`. Generic struct hovers render AST field types (`own[T]?`, not `own[<error>]?`). |
-| ~~Hand-rolled code-action fixes~~ | **FIXED (2026-07-18)** — code actions now run through the linter fix engine (§4.5): every auto-fixable rule (prefer-let, redundant-return, redundant-else, trailing-list-comma, redundant-cast, redundant-bool-compare, redundant-type-annotation) surfaces a "Fix <code>" quickfix identical to `mtc lint --fix` output; the underscore-prefix action for unused-* stays. |
-| 24 remaining Ruby-only capabilities (call hierarchy, code lens, etc.) | Out of scope — Phase 2 (2026-07-18) added documentHighlight, prepareRename, foldingRange, workspace/symbol, selectionRange, semanticTokens/range; Phase 3 added declaration, typeDefinition, implementation, inlayHint (parameter-name hints), and onTypeFormatting; Phase 4 added cross-file navigation and the editor smoke test. workspace/symbol requires a non-empty query (no workspace index yet) and caps at 200 results; typeDefinition covers type names and module-level values (locals need the scope walker); implementation and inlay hints are single-file tiers; references/rename are single-file and not scope-aware. |
+| ~~Hand-rolled code-action fixes~~ | **FIXED (2026-07-18)** — code actions now run through the linter fix engine |
+| ~~Scope-aware rename/references~~ | **FIXED (2026-07-19)** — lsp/scope.mt tracks bindings via AST walk; rename and references filter occurrences by scope |
+| ~~Method-receiver completion~~ | **FIXED (2026-07-19)** — resolves receiver type via analysis.types + analysis.type_names; scans method_keys for matching extending methods |
+| ~~Inlay hints for alias calls~~ | **FIXED (2026-07-19)** — import-alias calls resolve the module, parse its declarations, and emit parameter-name hints |
+| ~~Named-argument completion~~ | **FIXED (2026-07-19)** — cursor.call_name_at() detects call context; parameter names from FnSig returned as completion items |
+| ~~Workspace-symbol empty-query~~ | **FIXED (2026-07-19)** — persistent index (lsp/workspace_index.mt) built lazily, supports empty-query "list all symbols" |
+| 24 remaining Ruby-only capabilities | Out of scope — call hierarchy, type hierarchy, codeLens, documentLink, rangeFormatting, linkedEditingRange, executeCommand, completionItem/resolve, semanticTokens full/delta, pull diagnostics, progress/configuration/cancel plumbing, `milkTea/*` custom methods |
