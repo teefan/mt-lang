@@ -1,16 +1,20 @@
 ## Rename — find all occurrences of an identifier and return a WorkspaceEdit.
 ##
-## Both the rename target and its occurrences are resolved token-accurately
-## via lsp.cursor, so identifiers inside string literals and comments are
-## never rewritten.
+## Token-accurate cursor resolution ensures identifiers inside string literals
+## and comments are never rewritten.  Scope-aware filtering via lsp.scope
+## prevents shadowed locals in unrelated scopes from being renamed alongside.
 
 import std.fmt
 import std.json as json
 import std.str
 import std.string as string
+import std.vec as vec
 
+import mtc.parser.parser as parser
+import mtc.parser.state as pstate
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
+import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
@@ -39,7 +43,16 @@ public function handle_rename(
         proto.write_response(id, json.null_value())
         return
 
-    var edits_json = build_rename_edits_json(source, target.text, uri, new_name)
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var bindings = scope_mod.collect_bindings(source, ast_file)
+    defer bindings.release()
+
+    var filtered = filter_occurrences(source, target.text, target.line, ref_of(bindings))
+    defer filtered.release()
+
+    var edits_json = build_rename_edits_json(source, target.text, uri, new_name, ref_of(filtered))
     proto.write_response_raw(id, edits_json.as_str())
     edits_json.release()
 
@@ -83,16 +96,30 @@ public function handle_prepare_rename(
     proto.write_response_raw(id, json_text.as_str())
 
 
-## Build a WorkspaceEdit JSON with a TextEdit for every identifier-token
-## occurrence of `old_name`.
-function build_rename_edits_json(source: str, old_name: str, uri: str, new_name: str) -> string.String:
+## Filter cursor occurrences to only those in scope.
+function filter_occurrences(source: str, name: str, target_line: ptr_uint, bindings: ref[vec.Vec[scope_mod.Binding]]) -> vec.Vec[cursor.CursorToken]:
+    var all = cursor.identifier_occurrences(source, name)
+    var filtered = vec.Vec[cursor.CursorToken].create()
+
+    var oi: ptr_uint = 0
+    while oi < all.len():
+        let op = all.get(oi) else:
+            break
+        let occ = unsafe: read(op)
+        if scope_mod.is_in_same_scope(bindings, name, target_line, occ.line):
+            filtered.push(cursor.CursorToken(text = occ.text, line = occ.line, column = occ.column, length = occ.length))
+        oi += 1
+
+    all.release()
+    return filtered
+
+
+## Build a WorkspaceEdit JSON with a TextEdit for each occurrence.
+function build_rename_edits_json(source: str, old_name: str, uri: str, new_name: str, occurrences: ref[vec.Vec[cursor.CursorToken]]) -> string.String:
     var result = string.String.create()
     result.append("{\"changes\":{\"")
     append_escaped(ref_of(result), uri)
     result.append("\":[")
-
-    var occurrences = cursor.identifier_occurrences(source, old_name)
-    defer occurrences.release()
 
     var oi: ptr_uint = 0
     while oi < occurrences.len():
@@ -126,4 +153,3 @@ function append_escaped(output: ref[string.String], text: str) -> void:
         let b = text.byte_at(i)
         if b == 34: output.append("\\\"") else if b == 92: output.append("\\\\") else: output.push_byte(b)
         i += 1
-

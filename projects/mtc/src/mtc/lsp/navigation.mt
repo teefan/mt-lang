@@ -19,6 +19,7 @@ import mtc.semantic.types as types
 import mtc.loader.path_resolver as resolver
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
+import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 import mtc.pretty_printer.ast_formatter as ast_formatter
@@ -120,7 +121,7 @@ public function handle_references(
         proto.write_response(id, json.null_value())
         return
 
-    var refs_json = build_references_json(source, target.text, uri)
+    var refs_json = build_references_json(source, target.text, target.line, uri)
     proto.write_response_raw(id, refs_json.as_str())
     refs_json.release()
 
@@ -379,20 +380,30 @@ function append_location(json_text: ref[string.String], uri: str, source: str, d
 
 
 ## Build a JSON array of Location objects for all references to `name` in
-## `source`.  Occurrences are identifier tokens, so text inside string
-## literals and comments never matches.
-function build_references_json(source: str, name: str, uri: str) -> string.String:
+## `source` that are in the same scope as the declaration at `target_line`.
+## Occurrences are identifier tokens, so text inside string literals and
+## comments never matches.  Scope-aware via lsp.scope.
+function build_references_json(source: str, name: str, target_line: ptr_uint, uri: str) -> string.String:
     var result = string.String.create()
     result.append("[")
 
-    var occurrences = cursor.identifier_occurrences(source, name)
-    defer occurrences.release()
+    var all_occurrences = cursor.identifier_occurrences(source, name)
+    defer all_occurrences.release()
+
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var bindings = scope_mod.collect_bindings(source, ast_file)
+    defer bindings.release()
 
     var oi: ptr_uint = 0
-    while oi < occurrences.len():
-        let op = occurrences.get(oi) else:
+    while oi < all_occurrences.len():
+        let op = all_occurrences.get(oi) else:
             break
         let occ = unsafe: read(op)
+        if not scope_mod.is_in_same_scope(ref_of(bindings), name, target_line, occ.line):
+            oi += 1
+            continue
         if oi > 0:
             result.append(",")
         let lz = if occ.line > 0: occ.line - 1 else: 0z
