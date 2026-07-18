@@ -142,7 +142,7 @@ module MilkTea
                 end
               end
 
-              preassign_local_binding_ids_in_statements(arm.body || [])
+              preassign_local_binding_ids_in_statements(if arm.respond_to?(:body) then (arm.body || []) else [arm.value].compact end)
             end
           when AST::UnsafeStmt
             preassign_local_binding_ids_in_statements(statement.body || [])
@@ -200,7 +200,7 @@ module MilkTea
           expression.arms.each do |arm|
             preassign_local_binding_ids_in_expression(arm.pattern)
             @preassigned_local_binding_ids[arm.object_id] ||= allocate_binding_id if arm.binding_name
-            preassign_local_binding_ids_in_expression(arm.value)
+            preassign_local_binding_ids_in_expression(if arm.respond_to?(:value) then arm.value else arm.body end)
           end
         when AST::UnsafeExpr
           preassign_local_binding_ids_in_expression(expression.expression)
@@ -304,7 +304,7 @@ module MilkTea
                 arm_scopes.last[arm.binding_name] = binding_id
                 declaration_ids[arm.object_id] = binding_id
               end
-              walk_statements_for_precheck_resolution(arm.body || [], arm_scopes, declaration_ids, identifier_ids)
+              walk_statements_for_precheck_resolution(if arm.respond_to?(:body) then (arm.body || []) else [arm.value].compact end, arm_scopes, declaration_ids, identifier_ids)
             end
           when AST::UnsafeStmt, AST::WhileStmt
             walk_expression_for_precheck_resolution(statement.condition, block_scopes, identifier_ids, declaration_ids) if statement.is_a?(AST::WhileStmt)
@@ -373,7 +373,7 @@ module MilkTea
               arm_scopes = scopes + [{ arm.binding_name => binding_id }]
               declaration_ids[arm.object_id] = binding_id if declaration_ids
             end
-            walk_expression_for_precheck_resolution(arm.value, arm_scopes, identifier_ids, declaration_ids)
+            walk_expression_for_precheck_resolution(if arm.respond_to?(:value) then arm.value else arm.body end, arm_scopes, identifier_ids, declaration_ids)
           end
         when AST::UnsafeExpr
           walk_expression_for_precheck_resolution(expression.expression, scopes, identifier_ids, declaration_ids)
