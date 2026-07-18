@@ -5,6 +5,7 @@
 ## by walking the AST and querying the semantic Analysis structures.
 
 import std.fmt
+import std.fs as fs_mod
 import std.json as json
 import std.str
 import std.string as string
@@ -15,6 +16,7 @@ import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
+import mtc.loader.path_resolver as resolver
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
@@ -117,6 +119,259 @@ public function handle_references(
     var refs_json = build_references_json(source, target.text, uri)
     proto.write_response_raw(id, refs_json.as_str())
     refs_json.release()
+
+
+## Handle textDocument/typeDefinition: for a type name, its own declaration;
+## for a module-level value, the declaration of its type — including types
+## re-exported from imported modules.
+public function handle_type_definition(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+    id: json.Value,
+) -> void:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer file_path.release()
+
+    var content = ws.document_source(file_path.as_str()) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer content.release()
+
+    let source = content.as_str()
+    let target = cursor.identifier_at(source, line, character) else:
+        proto.write_response(id, json.null_value())
+        return
+
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var analysis = analyzer.check_source_file(ast_file)
+
+    # The identifier is itself a type name: its own declaration.
+    let is_type_name = analysis.structs.contains(target.text) or
+        analysis.static_member_types.contains(target.text) or
+        analysis.interfaces.contains(target.text)
+    if is_type_name:
+        let decl_line = find_declaration_line(ast_file, target.text, "struct")
+        if decl_line > 0:
+            respond_single_location(id, uri, source, decl_line, target.text)
+            return
+        proto.write_response(id, json.null_value())
+        return
+
+    # A module-level value: jump to its declared type's definition.  The
+    # declared TypeRef is read straight from the AST, so `alias.Type`
+    # annotations resolve through the import map without needing bindings.
+    let tref = type_ref_of_value(ast_file, target.text)
+    if tref != null:
+        let t = unsafe: read(tref)
+        if not t.is_fn and not t.is_proc and not t.is_tuple:
+            if t.name.parts.len == 1:
+                let type_name = unsafe: read(t.name.parts.data + 0)
+                let decl_line = find_declaration_line(ast_file, type_name, "struct")
+                if decl_line > 0:
+                    respond_single_location(id, uri, source, decl_line, type_name)
+                    return
+            else if t.name.parts.len == 2:
+                let alias_name = unsafe: read(t.name.parts.data + 0)
+                let type_name = unsafe: read(t.name.parts.data + 1)
+                unsafe:
+                    let module_ptr = analysis.imports.get(alias_name)
+                    if module_ptr != null:
+                        if respond_imported_type_location(ws, id, read(module_ptr), type_name):
+                            return
+
+    proto.write_response(id, json.null_value())
+
+
+## The declared TypeRef of a module-level const or var, or null.
+function type_ref_of_value(file: ast.SourceFile, name: str) -> ptr[ast.TypeRef]?:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_const as c:
+                if c.name == name:
+                    return c.const_type
+            ast.Decl.decl_var as v:
+                if v.name == name:
+                    return v.var_type
+            _:
+                pass
+        di += 1
+    return null
+
+
+## Locate `type_name`'s declaration inside `module_name`'s source file and
+## respond with a cross-file location.
+function respond_imported_type_location(
+    ws: ref[workspace.Workspace],
+    id: json.Value,
+    module_name: str,
+    type_name: str,
+) -> bool:
+    var roots = ws.effective_module_roots_for("")
+    defer roots.release()
+    match resolver.resolve_module_path(module_name, roots.as_span(), resolver.Platform.linux):
+        Result.failure as failure_payload:
+            var err = failure_payload.error
+            err.release()
+            return false
+        Result.success as path_payload:
+            var module_path = path_payload.value
+            defer module_path.release()
+
+            var module_source = ws.document_source(module_path.as_str()) else:
+                return false
+            defer module_source.release()
+
+            var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+            defer parse_diags.release()
+            var module_file = parser.parse_source(module_source.as_str(), ref_of(parse_diags))
+            let decl_line = find_declaration_line(module_file, type_name, "struct")
+            if decl_line == 0:
+                return false
+
+            var absolute_path = string.String.from_str(module_path.as_str())
+            match fs_mod.canonicalize(module_path.as_str()):
+                Result.success as canonical:
+                    absolute_path.release()
+                    absolute_path = canonical.value
+                Result.failure as canon_failure:
+                    var canon_err = canon_failure.error
+                    canon_err.release()
+            defer absolute_path.release()
+
+            var target_uri = string.String.from_str("file://")
+            defer target_uri.release()
+            target_uri.append(absolute_path.as_str())
+            respond_single_location(id, target_uri.as_str(), module_source.as_str(), decl_line, type_name)
+            return true
+
+
+## Respond with a one-element Location array pointing at `name` on its
+## declaration line.
+function respond_single_location(id: json.Value, uri: str, source: str, decl_line: ptr_uint, name: str) -> void:
+    let lz = if decl_line > 0: decl_line - 1 else: 0z
+    var column: ptr_uint = 0
+    match cursor.token_start_in_line(cursor.source_line(source, decl_line), name):
+        Option.some as pos:
+            column = pos.value
+        Option.none:
+            pass
+
+    var json_text = string.String.create()
+    defer json_text.release()
+    json_text.append("[{\"uri\":\"")
+    proto.append_escaped(ref_of(json_text), uri)
+    json_text.append("\",\"range\":{\"start\":{\"line\":")
+    json_text.append_format(f"#{lz}")
+    json_text.append(",\"character\":")
+    json_text.append_format(f"#{column}")
+    json_text.append("},\"end\":{\"line\":")
+    json_text.append_format(f"#{lz}")
+    json_text.append(",\"character\":")
+    json_text.append_format(f"#{column + name.len}")
+    json_text.append("}}}]")
+    proto.write_response_raw(id, json_text.as_str())
+
+
+## Handle textDocument/implementation: for an interface name, the
+## declarations of every type in this file that implements it.
+public function handle_implementation(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+    id: json.Value,
+) -> void:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer file_path.release()
+
+    var content = ws.document_source(file_path.as_str()) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer content.release()
+
+    let source = content.as_str()
+    let target = cursor.identifier_at(source, line, character) else:
+        proto.write_response_raw(id, "[]")
+        return
+
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var analysis = analyzer.check_source_file(ast_file)
+
+    if not analysis.interfaces.contains(target.text):
+        proto.write_response_raw(id, "[]")
+        return
+
+    var json_text = string.String.create()
+    defer json_text.release()
+    json_text.append("[")
+    var emitted: ptr_uint = 0
+
+    unsafe:
+        var impl_entries = analysis.implemented_interfaces.entries()
+        while impl_entries.next():
+            let entry = impl_entries.current()
+            let interfaces = read(entry.value)
+            var qi: ptr_uint = 0
+            while qi < interfaces.len:
+                let qn = read(interfaces.data + qi)
+                if qualified_name_matches(qn, target.text):
+                    let struct_name = read(entry.key)
+                    let decl_line = find_declaration_line(ast_file, struct_name, "struct")
+                    if decl_line > 0:
+                        if emitted > 0:
+                            json_text.append(",")
+                        emitted += 1
+                        append_location(ref_of(json_text), uri, source, decl_line, struct_name)
+                    break
+                qi += 1
+
+    json_text.append("]")
+    proto.write_response_raw(id, json_text.as_str())
+
+
+## True when the qualified name's last part equals `name` (`Damageable` and
+## `lib.Damageable` both match "Damageable").
+function qualified_name_matches(qn: ast.QualifiedName, name: str) -> bool:
+    if qn.parts.len == 0:
+        return false
+    let last = unsafe: read(qn.parts.data + qn.parts.len - 1)
+    return last.equal(name)
+
+
+## Append one Location object pointing at `name` on `decl_line`.
+function append_location(json_text: ref[string.String], uri: str, source: str, decl_line: ptr_uint, name: str) -> void:
+    let lz = if decl_line > 0: decl_line - 1 else: 0z
+    var column: ptr_uint = 0
+    match cursor.token_start_in_line(cursor.source_line(source, decl_line), name):
+        Option.some as pos:
+            column = pos.value
+        Option.none:
+            pass
+    json_text.append("{\"uri\":\"")
+    proto.append_escaped(json_text, uri)
+    json_text.append("\",\"range\":{\"start\":{\"line\":")
+    json_text.append_format(f"#{lz}")
+    json_text.append(",\"character\":")
+    json_text.append_format(f"#{column}")
+    json_text.append("},\"end\":{\"line\":")
+    json_text.append_format(f"#{lz}")
+    json_text.append(",\"character\":")
+    json_text.append_format(f"#{column + name.len}")
+    json_text.append("}}}")
 
 
 ## Build a JSON array of Location objects for all references to `name` in

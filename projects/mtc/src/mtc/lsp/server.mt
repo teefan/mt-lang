@@ -13,8 +13,10 @@ import mtc.lsp.diagnostics as diag
 import mtc.lsp.folding as folding
 import mtc.lsp.formatting as formatting
 import mtc.lsp.highlight as highlight
+import mtc.lsp.inlay_hints as inlay
 import mtc.lsp.lifecycle as lifecycle
 import mtc.lsp.navigation as nav
+import mtc.lsp.on_type_formatting as on_type
 import mtc.lsp.protocol as proto
 import mtc.lsp.rename as rename_mod
 import mtc.lsp.selection as selection
@@ -82,9 +84,15 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         symbols.handle_document_symbols(ws, uri, msg.id)
 
     # Navigation (Tier 2)
-    else if method == "textDocument/definition":
+    else if method == "textDocument/definition" or method == "textDocument/declaration":
         var pos = extract_position_params(msg.params)
         nav.handle_definition(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "textDocument/typeDefinition":
+        var pos = extract_position_params(msg.params)
+        nav.handle_type_definition(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "textDocument/implementation":
+        var pos = extract_position_params(msg.params)
+        nav.handle_implementation(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/hover":
         var pos = extract_position_params(msg.params)
         nav.handle_hover(ws, pos.uri, pos.line, pos.character, msg.id)
@@ -128,7 +136,14 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         rename_mod.handle_rename(ws, pos.uri, pos.line, pos.character, new_name_ptr, msg.id)
     else if method == "textDocument/codeAction":
         let uri = extract_text_doc_uri(msg.params)
-        code_actions.handle_code_actions(uri, msg.id)
+        code_actions.handle_code_actions(ws, uri, msg.params, msg.id)
+    else if method == "textDocument/inlayHint":
+        let uri = extract_text_doc_uri(msg.params)
+        var range = extract_range_lines(msg.params)
+        inlay.handle_inlay_hint(ws, uri, range.start_line, range.end_line, msg.id)
+    else if method == "textDocument/onTypeFormatting":
+        var pos = extract_position_params(msg.params)
+        on_type.handle_on_type_formatting(ws, pos.uri, pos.line, extract_trigger_character(msg.params), msg.id)
 
     else:
         if not msg.id.is_null():
@@ -284,3 +299,15 @@ function number_field(obj: ptr[json.Object], name: str) -> ptr_uint:
         if value < 0.0:
             return 0
         return ptr_uint<-int<-value
+
+
+## Extract the onTypeFormatting trigger character ("ch" field).
+function extract_trigger_character(params: json.Value) -> str:
+    let obj_ptr = params.as_object()
+    if obj_ptr == null: return ""
+    unsafe:
+        let ch_ptr = read(obj_ptr).get("ch")
+        if ch_ptr == null: return ""
+        let ch_str = read(ch_ptr).as_string() else:
+            return ""
+        return ch_str
