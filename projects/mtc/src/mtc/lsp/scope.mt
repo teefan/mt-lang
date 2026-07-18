@@ -129,7 +129,7 @@ function branch_body_end(body_node: ptr[ast.Stmt]?, fallback: ptr_uint) -> ptr_u
     unsafe:
         match read(b):
             ast.Stmt.stmt_block as blk:
-                return block_last_line(blk.statements)
+                return block_last_line(blk.statements) - 1
             _:
                 return fallback
 
@@ -251,7 +251,7 @@ function block_last_line(stmts: span[ast.Stmt]) -> ptr_uint:
         if sl > last:
             last = sl
         si += 1
-    return last + 0
+    return last + 1
 
 
 function stmt_line(sp: ptr[ast.Stmt]) -> ptr_uint:
@@ -285,7 +285,7 @@ function last_line(source: str) -> ptr_uint:
 ## occurrence.  If the target is a module-level declaration (no enclosing
 ## function scope), all occurrences are in scope (global rename).
 public function is_in_same_scope(bindings: ref[vec.Vec[Binding]], name: str, target_line: ptr_uint, occ_line: ptr_uint) -> bool:
-    var scope_end: ptr_uint = 0
+    var target_end: ptr_uint = 0
     var found: bool = false
 
     var bi: ptr_uint = 0
@@ -295,15 +295,26 @@ public function is_in_same_scope(bindings: ref[vec.Vec[Binding]], name: str, tar
         let b = unsafe: read(bp)
         if b.name.equal(name):
             if b.line == target_line:
-                scope_end = b.scope_end
+                target_end = b.scope_end
                 found = true
-            else if b.line != target_line:
-                if occ_line >= b.line and occ_line <= b.scope_end:
-                    let target_in_shadow = target_line >= b.line and target_line <= b.scope_end
-                    return target_in_shadow
+                break
+            bi += 1
+            continue
         bi += 1
 
     if not found:
         return true
 
-    return occ_line <= scope_end
+    bi = 0
+    while bi < bindings.len():
+        let bp = bindings.get(bi) else:
+            break
+        let b = unsafe: read(bp)
+        if b.name.equal(name) and b.line != target_line:
+            if occ_line >= b.line and occ_line <= b.scope_end:
+                let target_in_this = target_line >= b.line and target_line <= b.scope_end
+                if not target_in_this:
+                    return false
+        bi += 1
+
+    return occ_line >= target_line and occ_line <= target_end
