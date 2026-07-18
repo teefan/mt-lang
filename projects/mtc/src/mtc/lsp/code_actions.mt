@@ -4,7 +4,6 @@
 ## linter's fix-rule logic to be exposed via a public API, which is deferred.
 
 import std.json as json
-import std.vec as vec
 import mtc.lsp.protocol as proto
 
 

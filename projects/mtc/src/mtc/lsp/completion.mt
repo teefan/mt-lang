@@ -18,10 +18,6 @@ import mtc.lsp.uri as uri_ops
 
 
 const COMPLETION_KIND_KEYWORD: double  = 14.0
-const COMPLETION_KIND_FUNCTION: double = 3.0
-const COMPLETION_KIND_VARIABLE: double = 6.0
-const COMPLETION_KIND_STRUCT: double   = 7.0
-const COMPLETION_KIND_CONST: double    = 21.0
 
 
 ## Handle textDocument/completion.
@@ -77,13 +73,13 @@ function build_completions_json(analysis: ref[analyzer.Analysis]) -> string.Stri
     unsafe:
         var fns = read(analysis).functions
     collect_map_keys(ref_of(fn_names))
-    append_completions_from_set(ref_of(result), ref_of(fn_names), COMPLETION_KIND_FUNCTION, ref_of(first))
+    append_completions_from_set(ref_of(result), ref_of(fn_names), 3.0, ref_of(first))
     fn_names.release()
 
     # Structs from analysis
     var struct_names = vec.Vec[str].create()
     collect_map_keys_from_structs(analysis, ref_of(struct_names))
-    append_completions_from_set(ref_of(result), ref_of(struct_names), COMPLETION_KIND_STRUCT, ref_of(first))
+    append_completions_from_set(ref_of(result), ref_of(struct_names), 7.0, ref_of(first))
     struct_names.release()
 
     result.append("]")
