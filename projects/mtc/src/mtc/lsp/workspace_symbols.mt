@@ -239,8 +239,8 @@ function contains_case_insensitive(text: str, needle: str) -> bool:
 
 
 function ascii_fold(value: ubyte) -> ubyte:
-    if value >= 65 and value <= 90:
-        return value + 32
+    if value >= 'A' and value <= 'Z':
+        return value + ('a' - 'A')
     return value
 
 

@@ -64,9 +64,9 @@ function parse_content_length(line: str) -> Option[ptr_uint]:
     var index = prefix.len
     while index < line.len:
         let b = line.byte_at(index)
-        if b > 47 and b < 58:
-            value = value * 10 + ptr_uint<-(b - 48)
-        else if b != 32:
+        if b >= '0' and b <= '9':
+            value = value * 10 + ptr_uint<-(b - '0')
+        else if b != ' ':
             return Option[ptr_uint].none
         index += 1
 
@@ -327,15 +327,15 @@ public function append_escaped(output: ref[string.String], text: str) -> void:
     var i: ptr_uint = 0
     while i < text.len:
         let b = text.byte_at(i)
-        if b == 34:
+        if b == '"':
             output.append("\\\"")
-        else if b == 92:
+        else if b == '\\':
             output.append("\\\\")
-        else if b == 10:
+        else if b == '\n':
             output.append("\\n")
-        else if b == 13:
+        else if b == '\r':
             output.append("\\r")
-        else if b == 9:
+        else if b == '\t':
             output.append("\\t")
         else:
             output.push_byte(b)

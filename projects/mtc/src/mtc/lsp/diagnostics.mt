@@ -270,9 +270,9 @@ function default_platform() -> resolver.Platform:
 function extract_quoted_name(message: str) -> str:
     var i: ptr_uint = 0
     while i < message.len:
-        if message.byte_at(i) == 39:
+        if message.byte_at(i) == '\'':
             var j = i + 1
-            while j < message.len and message.byte_at(j) != 39:
+            while j < message.len and message.byte_at(j) != '\'':
                 j += 1
             if j < message.len and j > i + 1:
                 return message.slice(i + 1, j - i - 1)

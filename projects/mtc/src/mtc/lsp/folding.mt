@@ -11,6 +11,7 @@ import std.vec as vec
 
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
 
@@ -37,7 +38,7 @@ public function handle_folding_range(ws: ref[workspace.Workspace], uri: str, id:
         return
     defer content.release()
 
-    var lines = split_lines(content.as_str())
+    var lines = utils.split_lines(content.as_str())
     defer lines.release()
 
     var folds = vec.Vec[FoldRange].create()
@@ -237,15 +238,15 @@ function starts_with_keyword(text: str, kw: str) -> bool:
     if text.len == kw.len:
         return true
     let next_byte = text.byte_at(kw.len)
-    return not ((next_byte >= 65 and next_byte <= 90) or (next_byte >= 97 and next_byte <= 122) or
-        next_byte == 95 or (next_byte >= 48 and next_byte <= 57))
+    return not ((next_byte >= 'A' and next_byte <= 'Z') or (next_byte >= 'a' and next_byte <= 'z') or
+        next_byte == '_' or (next_byte >= '0' and next_byte <= '9'))
 
 
 ## Strip a leading `kw ` prefix when present.
 function skip_keyword(text: str, kw: str) -> str:
-    if starts_with_keyword(text, kw) and text.len > kw.len and text.byte_at(kw.len) == 32:
+    if starts_with_keyword(text, kw) and text.len > kw.len and text.byte_at(kw.len) == ' ':
         var rest = text.slice(kw.len + 1, text.len - kw.len - 1)
-        while rest.len > 0 and rest.byte_at(0) == 32:
+        while rest.len > 0 and rest.byte_at(0) == ' ':
             rest = rest.slice(1, rest.len - 1)
         return rest
     return text
@@ -263,20 +264,9 @@ function strip_comment(line: str) -> str:
 ## Left-strip ASCII spaces and tabs.
 function lstrip(line: str) -> str:
     var start: ptr_uint = 0
-    while start < line.len and (line.byte_at(start) == 32 or line.byte_at(start) == 9):
+    while start < line.len and (line.byte_at(start) == ' ' or line.byte_at(start) == '\t'):
         start += 1
     return line.slice(start, line.len - start)
 
 
 ## Split source into line views (no newline characters included).
-public function split_lines(source: str) -> vec.Vec[str]:
-    var result = vec.Vec[str].create()
-    var start: ptr_uint = 0
-    var i: ptr_uint = 0
-    while i < source.len:
-        if source.byte_at(i) == 10:
-            result.push(source.slice(start, i - start))
-            start = i + 1
-        i += 1
-    result.push(source.slice(start, source.len - start))
-    return result

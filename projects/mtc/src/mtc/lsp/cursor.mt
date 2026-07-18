@@ -12,6 +12,7 @@
 import std.str
 import std.vec as vec
 
+import mtc.lsp.utils as utils
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
@@ -193,7 +194,7 @@ public function dot_receiver_at(source: str, line: ptr_uint, character: ptr_uint
         pos = line_text.len
 
     # Skip back over the word prefix being typed.
-    while pos > 0 and is_ident_byte(line_text.byte_at(pos - 1)):
+    while pos > 0 and utils.is_word_byte(line_text.byte_at(pos - 1)):
         pos -= 1
 
     if pos == 0 or line_text.byte_at(pos - 1) != 46:
@@ -201,7 +202,7 @@ public function dot_receiver_at(source: str, line: ptr_uint, character: ptr_uint
     pos -= 1
 
     var start = pos
-    while start > 0 and is_ident_byte(line_text.byte_at(start - 1)):
+    while start > 0 and utils.is_word_byte(line_text.byte_at(start - 1)):
         start -= 1
     if start == pos:
         return Option[str].none
@@ -216,7 +217,7 @@ public function source_line(source: str, line_no: ptr_uint) -> str:
     var start: ptr_uint = 0
     var i: ptr_uint = 0
     while i < source.len:
-        if source.byte_at(i) == 10:
+        if source.byte_at(i) == '\n':
             if current == line_no:
                 return source.slice(start, i - start)
             current += 1
@@ -246,16 +247,14 @@ public function token_start_in_line(line_text: str, name: str) -> Option[ptr_uin
         if matched:
             var before_ok = true
             if n > 0:
-                before_ok = not is_ident_byte(line_text.byte_at(n - 1))
+                before_ok = not utils.is_word_byte(line_text.byte_at(n - 1))
             var after_ok = true
             let after = n + name.len
             if after < line_text.len:
-                after_ok = not is_ident_byte(line_text.byte_at(after))
+                after_ok = not utils.is_word_byte(line_text.byte_at(after))
             if before_ok and after_ok:
                 return Option[ptr_uint].some(value = n)
         n += 1
     return Option[ptr_uint].none
 
 
-function is_ident_byte(ch: ubyte) -> bool:
-    return (ch >= 65 and ch <= 90) or (ch >= 97 and ch <= 122) or ch == 95 or (ch >= 48 and ch <= 57)

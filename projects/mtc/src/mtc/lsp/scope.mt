@@ -271,7 +271,7 @@ function last_line(source: str) -> ptr_uint:
     var line: ptr_uint = 1
     var i: ptr_uint = 0
     while i < source.len:
-        if source.byte_at(i) == 10:
+        if source.byte_at(i) == '\n':
             line += 1
         i += 1
     return line

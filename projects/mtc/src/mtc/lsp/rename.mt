@@ -148,8 +148,4 @@ function build_rename_edits_json(source: str, old_name: str, uri: str, new_name:
 
 
 function append_escaped(output: ref[string.String], text: str) -> void:
-    var i: ptr_uint = 0
-    while i < text.len:
-        let b = text.byte_at(i)
-        if b == 34: output.append("\\\"") else if b == 92: output.append("\\\\") else: output.push_byte(b)
-        i += 1
+    proto.append_escaped(output, text)

@@ -64,7 +64,7 @@ public function handle_formatting(ws: ref[workspace.Workspace], params: json.Val
     var last_line_start: ptr_uint = 0
     var bi: ptr_uint = 0
     while bi < source.len:
-        if source.byte_at(bi) == 10:
+        if source.byte_at(bi) == '\n':
             line_count += 1
             last_line_start = bi + 1
         bi += 1

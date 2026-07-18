@@ -10,6 +10,7 @@ import std.string as string
 import std.vec as vec
 
 import mtc.lsp.folding as folding
+import mtc.lsp.utils as utils
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
@@ -39,7 +40,7 @@ public function handle_selection_range(
         return
     defer content.release()
 
-    var lines = folding.split_lines(content.as_str())
+    var lines = utils.split_lines(content.as_str())
     defer lines.release()
 
     var json_text = string.String.create()
@@ -63,7 +64,7 @@ function append_selection_range(
     line: ptr_uint,
     character: ptr_uint,
 ) -> void:
-    let line_text = line_at(lines, line)
+    let line_text = utils.line_at(lines, line)
     if line_text.len == 0:
         json_text.append("null")
         return
@@ -143,13 +144,13 @@ function word_bounds(line_text: str, character: ptr_uint) -> Option[WordBounds]:
     var col = character
     if col >= line_text.len:
         col = line_text.len - 1
-    if not is_word_byte(line_text.byte_at(col)):
+    if not utils.is_word_byte(line_text.byte_at(col)):
         return Option[WordBounds].none
     var left = col
-    while left > 0 and is_word_byte(line_text.byte_at(left - 1)):
+    while left > 0 and utils.is_word_byte(line_text.byte_at(left - 1)):
         left -= 1
     var right = col
-    while right + 1 < line_text.len and is_word_byte(line_text.byte_at(right + 1)):
+    while right + 1 < line_text.len and utils.is_word_byte(line_text.byte_at(right + 1)):
         right += 1
     return Option[WordBounds].some(value = WordBounds(start_char = left, end_char = right + 1))
 
@@ -157,52 +158,52 @@ function word_bounds(line_text: str, character: ptr_uint) -> Option[WordBounds]:
 ## The run of lines at >= the cursor line's indent that forms one statement
 ## group.
 function statement_range(lines: ref[vec.Vec[str]], line: ptr_uint) -> Option[LineRange]:
-    let indent = indent_of(line_at(lines, line))
+    let indent = utils.indent_of(utils.line_at(lines, line))
 
     var start_line = line
     while start_line > 0:
-        let prev = line_at(lines, start_line - 1)
-        if is_blank(prev):
+        let prev = utils.line_at(lines, start_line - 1)
+        if utils.is_blank(prev):
             break
-        if indent_of(prev) < indent:
+        if utils.indent_of(prev) < indent:
             break
         start_line -= 1
 
     var end_line = line
     while end_line + 1 < lines.len():
-        let next = line_at(lines, end_line + 1)
-        if not is_blank(next) and indent_of(next) <= indent:
+        let next = utils.line_at(lines, end_line + 1)
+        if not utils.is_blank(next) and utils.indent_of(next) <= indent:
             break
         end_line += 1
 
-    if start_line == end_line and is_blank(line_at(lines, start_line)):
+    if start_line == end_line and utils.is_blank(utils.line_at(lines, start_line)):
         return Option[LineRange].none
     return Option[LineRange].some(value = LineRange(
         start_line = start_line,
         end_line = end_line,
-        end_character = line_at(lines, end_line).len
+        end_character = utils.line_at(lines, end_line).len
     ))
 
 
 ## The enclosing indentation block: every contiguous line indented at least
 ## as deep as the cursor line, plus its header line.
 function enclosing_block_range(lines: ref[vec.Vec[str]], line: ptr_uint) -> Option[LineRange]:
-    let indent = indent_of(line_at(lines, line))
+    let indent = utils.indent_of(utils.line_at(lines, line))
     if indent == 0:
         return Option[LineRange].none
 
     var start_line = line
     while start_line > 0:
-        let prev = line_at(lines, start_line - 1)
-        if not is_blank(prev) and indent_of(prev) < indent:
+        let prev = utils.line_at(lines, start_line - 1)
+        if not utils.is_blank(prev) and utils.indent_of(prev) < indent:
             start_line -= 1
             break
         start_line -= 1
 
     var end_line = line
     while end_line + 1 < lines.len():
-        let next = line_at(lines, end_line + 1)
-        if not is_blank(next) and indent_of(next) < indent:
+        let next = utils.line_at(lines, end_line + 1)
+        if not utils.is_blank(next) and utils.indent_of(next) < indent:
             break
         end_line += 1
 
@@ -211,26 +212,10 @@ function enclosing_block_range(lines: ref[vec.Vec[str]], line: ptr_uint) -> Opti
     return Option[LineRange].some(value = LineRange(
         start_line = start_line,
         end_line = end_line,
-        end_character = line_at(lines, end_line).len
+        end_character = utils.line_at(lines, end_line).len
     ))
 
 
-function line_at(lines: ref[vec.Vec[str]], index: ptr_uint) -> str:
-    let lp = lines.get(index) else:
-        return ""
-    return unsafe: read(lp)
 
 
-function indent_of(line_text: str) -> ptr_uint:
-    var count: ptr_uint = 0
-    while count < line_text.len and line_text.byte_at(count) == 32:
-        count += 1
-    return count
 
-
-function is_blank(line_text: str) -> bool:
-    return line_text.trim_ascii_whitespace().len == 0
-
-
-function is_word_byte(ch: ubyte) -> bool:
-    return (ch >= 65 and ch <= 90) or (ch >= 97 and ch <= 122) or ch == 95 or (ch >= 48 and ch <= 57)

@@ -13,6 +13,7 @@ import std.vec as vec
 import mtc.lsp.folding as folding
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
 
@@ -39,7 +40,7 @@ public function handle_on_type_formatting(
         return
     defer content.release()
 
-    var lines = folding.split_lines(content.as_str())
+    var lines = utils.split_lines(content.as_str())
     defer lines.release()
 
     if line == 0 or line >= lines.len():
@@ -48,14 +49,14 @@ public function handle_on_type_formatting(
 
     # The previous non-blank line drives the indent.
     var prev_index = line - 1
-    while prev_index > 0 and is_blank(line_at(ref_of(lines), prev_index)):
+    while prev_index > 0 and utils.is_blank(utils.line_at(ref_of(lines), prev_index)):
         prev_index -= 1
-    let prev_line = line_at(ref_of(lines), prev_index)
-    if is_blank(prev_line):
+    let prev_line = utils.line_at(ref_of(lines), prev_index)
+    if utils.is_blank(prev_line):
         proto.write_response_raw(id, "[]")
         return
 
-    let prev_indent = indent_of(prev_line)
+    let prev_indent = utils.indent_of(prev_line)
     var indent = prev_indent
     let prev_stripped = strip_indent(prev_line)
     if prev_stripped.ends_with(":") and opens_block(prev_stripped):
@@ -63,16 +64,16 @@ public function handle_on_type_formatting(
 
     # When the next non-blank line dedents below the target, follow it.
     var below_index = line + 1
-    while below_index < lines.len() and is_blank(line_at(ref_of(lines), below_index)):
+    while below_index < lines.len() and utils.is_blank(utils.line_at(ref_of(lines), below_index)):
         below_index += 1
     if below_index < lines.len():
-        let below_line = line_at(ref_of(lines), below_index)
-        let below_indent = indent_of(below_line)
+        let below_line = utils.line_at(ref_of(lines), below_index)
+        let below_indent = utils.indent_of(below_line)
         if below_indent < indent and not strip_indent(below_line).ends_with(":"):
             indent = below_indent
 
-    let current_line = line_at(ref_of(lines), line)
-    let current_indent = indent_of(current_line)
+    let current_line = utils.line_at(ref_of(lines), line)
+    let current_indent = utils.indent_of(current_line)
     if indent == current_indent:
         proto.write_response_raw(id, "[]")
         return
@@ -97,7 +98,7 @@ public function handle_on_type_formatting(
 ## True when the line's first word is a block-introducing keyword.
 function opens_block(stripped: str) -> bool:
     var word_end: ptr_uint = 0
-    while word_end < stripped.len and is_word_byte(stripped.byte_at(word_end)):
+    while word_end < stripped.len and utils.is_word_byte(stripped.byte_at(word_end)):
         word_end += 1
     if word_end == 0:
         return false
@@ -111,27 +112,8 @@ function opens_block(stripped: str) -> bool:
         first_word.equal("defer") or first_word.equal("when")
 
 
-function line_at(lines: ref[vec.Vec[str]], index: ptr_uint) -> str:
-    let lp = lines.get(index) else:
-        return ""
-    return unsafe: read(lp)
-
-
-function indent_of(line_text: str) -> ptr_uint:
-    var count: ptr_uint = 0
-    while count < line_text.len and line_text.byte_at(count) == 32:
-        count += 1
-    return count
 
 
 function strip_indent(line_text: str) -> str:
-    let indent = indent_of(line_text)
+    let indent = utils.indent_of(line_text)
     return line_text.slice(indent, line_text.len - indent)
-
-
-function is_blank(line_text: str) -> bool:
-    return line_text.trim_ascii_whitespace().len == 0
-
-
-function is_word_byte(ch: ubyte) -> bool:
-    return (ch >= 65 and ch <= 90) or (ch >= 97 and ch <= 122) or ch == 95

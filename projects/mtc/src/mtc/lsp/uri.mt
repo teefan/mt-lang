@@ -13,12 +13,12 @@ function decode_hex_pair(text: str, index: ptr_uint) -> ubyte:
     var i = index
     while i <= index + 1:
         let b = text.byte_at(i)
-        if b >= 48 and b <= 57:
-            value = value * 16 + (b - 48)
-        else if b >= 65 and b <= 70:
-            value = value * 16 + (b - 65 + 10)
-        else if b >= 97 and b <= 102:
-            value = value * 16 + (b - 97 + 10)
+        if b >= '0' and b <= '9':
+            value = value * 16 + (b - '0')
+        else if b >= 'A' and b <= 'F':
+            value = value * 16 + (b - 'A' + 10)
+        else if b >= 'a' and b <= 'f':
+            value = value * 16 + (b - 'a' + 10)
         else:
             return 0
         i += 1
@@ -39,9 +39,9 @@ public function file_uri_to_path(uri: str) -> Option[string.String]:
     var result = string.String.with_capacity(uri.len)
     while pos < uri.len:
         let b = uri.byte_at(pos)
-        if b == 37:
+        if b == '%':
             let decoded = decode_hex_pair(uri, pos + 1)
-            if decoded == 0 and uri.byte_at(pos + 1) == 37:
+            if decoded == 0 and uri.byte_at(pos + 1) == '%':
                 result.push_byte(37)
                 pos += 3
             else:

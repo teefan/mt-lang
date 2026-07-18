@@ -409,7 +409,7 @@ function build_references_json(source: str, name: str, target_line: ptr_uint, ur
         let lz = if occ.line > 0: occ.line - 1 else: 0z
         let col = if occ.column > 0: occ.column - 1 else: 0z
         result.append("{\"uri\":\"")
-        append_ref_escaped(ref_of(result), uri)
+        proto.append_escaped(ref_of(result), uri)
         result.append("\",\"range\":{\"start\":{\"line\":")
         result.append_format(f"#{lz}")
         result.append(",\"character\":")
@@ -425,11 +425,7 @@ function build_references_json(source: str, name: str, target_line: ptr_uint, ur
 
 
 function append_ref_escaped(output: ref[string.String], text: str) -> void:
-    var i: ptr_uint = 0
-    while i < text.len:
-        let b = text.byte_at(i)
-        if b == 34: output.append("\\\"") else if b == 92: output.append("\\\\") else: output.push_byte(b)
-        i += 1
+    proto.append_escaped(output, text)
 
 
 ## Cursor resolution result — the definition position (1-based line, 0-based
@@ -797,7 +793,7 @@ function doc_lines_above(source: str, decl_line: ptr_uint) -> string.String:
     var probe = decl_line - 1
     while probe >= 1:
         let text = cursor.source_line(source, probe).trim_ascii_whitespace()
-        if text.len >= 2 and text.byte_at(0) == 35 and text.byte_at(1) == 35:
+        if text.len >= 2 and text.byte_at(0) == '#' and text.byte_at(1) == '#':
             first_doc_line = probe
             if probe == 1:
                 break
@@ -811,7 +807,7 @@ function doc_lines_above(source: str, decl_line: ptr_uint) -> string.String:
         if text.len < 2:
             break
         var body = text.slice(2, text.len - 2)
-        if body.len > 0 and body.byte_at(0) == 32:
+        if body.len > 0 and body.byte_at(0) == ' ':
             body = body.slice(1, body.len - 1)
         if not docs.is_empty():
             docs.append("\n")

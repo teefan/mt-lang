@@ -136,7 +136,7 @@ function build_symbol_string(name: str, kind: double, line: ptr_uint) -> string.
     var result = string.String.create()
     let lz = if line > 0: ptr_uint<-(int<-(line) - 1) else: 0z
     result.append("{\"name\":\"")
-    append_json_escape(ref_of(result), name)
+    proto.append_escaped(ref_of(result), name)
     result.append("\",\"kind\":")
     result.append_format(f"#{kind}")
     result.append(",\"range\":")
@@ -151,7 +151,7 @@ function build_symbol_string_with_children(name: str, kind: double, line: ptr_ui
     var result = string.String.create()
     let lz = if line > 0: ptr_uint<-(int<-(line) - 1) else: 0z
     result.append("{\"name\":\"")
-    append_json_escape(ref_of(result), name)
+    proto.append_escaped(ref_of(result), name)
     result.append("\",\"kind\":")
     result.append_format(f"#{kind}")
     result.append(",\"range\":")
@@ -180,14 +180,6 @@ function append_range_json(output: ref[string.String], line_zero: ptr_uint) -> v
     output.append(",\"character\":0},\"end\":{\"line\":")
     output.append_format(f"#{line_zero}")
     output.append(",\"character\":0}}")
-
-
-function append_json_escape(output: ref[string.String], text: str) -> void:
-    var i: ptr_uint = 0
-    while i < text.len:
-        let b = text.byte_at(i)
-        if b == 34: output.append("\\\"") else if b == 92: output.append("\\\\") else: output.push_byte(b)
-        i += 1
 
 
 function release_symbol_strings(symbols: ref[vec.Vec[string.String]]) -> void:
