@@ -1,11 +1,15 @@
-## Completion — keyword, symbol, and module-member completion at cursor.
+## Completion — keyword, symbol, module-member, and method-receiver completion
+## at cursor.
 ##
 ## Returns Milk Tea keywords plus function/type/value names from the semantic
 ## Analysis maps.  In a dot-member context after an import alias (`vec.|`),
-## returns the public declarations of the imported module instead.
+## returns the public declarations of the imported module.  In a dot-member
+## context after a typed value (`s.|`), returns the methods declared on the
+## value's type.
 
 import std.fmt
 import std.json as json
+import std.mem.heap as heap
 import std.str
 import std.string as string
 import std.vec as vec
@@ -14,6 +18,7 @@ import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.types as types
 import mtc.loader.path_resolver as resolver
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
@@ -59,10 +64,21 @@ public function handle_completion(
     # Dot-member context after an import alias: complete the module's exports.
     match cursor.dot_receiver_at(source, line, character):
         Option.some as recv:
-            var items = module_member_completions(ws, ref_of(analysis), recv.value)
-            defer items.release()
-            proto.write_response_raw(id, items.as_str())
-            return
+            # Import alias: complete the module's exports.
+            let module_ptr = analysis.imports.get(recv.value)
+            if module_ptr != null:
+                var items = module_member_completions(ws, ref_of(analysis), recv.value)
+                defer items.release()
+                proto.write_response_raw(id, items.as_str())
+                return
+
+            # Not an import alias — try method completions.
+            var methods = type_method_completions(ref_of(analysis), recv.value)
+            if methods != null:
+                proto.write_response_raw(id, unsafe: read(methods).as_str())
+                unsafe: read(methods).release()
+                heap.release(methods)
+                return
         Option.none:
             pass
 
@@ -279,3 +295,88 @@ function collect_keywords() -> vec.Vec[str]:
     result.push("or")
     result.push("not")
     return result
+
+
+## Completions for `receiver.` when the receiver is a value or type name.
+## Resolves the receiver name via analysis.types and analysis.type_names,
+## then looks up methods declared for that type in analysis.method_keys.
+## Returns a heap-allocated string.String on success, null otherwise.
+function type_method_completions(
+    analysis: ref[analyzer.Analysis],
+    receiver_name: str,
+) -> ptr[string.String]?:
+    let type_name = resolve_receiver_type_name(analysis, receiver_name)
+    if type_name.len == 0:
+        return null
+
+    var result = string.String.create()
+    result.append("[")
+
+    var prefix_buf = string.String.create()
+    prefix_buf.append(type_name)
+    prefix_buf.append(".")
+    let prefix = prefix_buf.as_str()
+    let prefix_len = prefix.len
+    var first = true
+
+    var method_entries = unsafe: read(analysis).method_keys.entries()
+    while method_entries.next():
+        let entry = method_entries.current()
+        let whole_key = unsafe: read(entry.key)
+        if whole_key.starts_with(prefix):
+            let method_name = whole_key.slice(prefix_len, whole_key.len - prefix_len)
+            if method_name.len > 0:
+                append_item(ref_of(result), method_name, method_kind_for(analysis, type_name, method_name), ref_of(first))
+                first = false
+
+    result.append("]")
+
+    if first:
+        result.release()
+        return null
+
+    let alloc = heap.must_alloc[string.String](1)
+    unsafe: read(alloc) = result
+    return alloc
+
+
+## Resolve a receiver name to its Milk Tea type name (e.g. "v" → "Vec").
+public function resolve_receiver_type_name(analysis: ref[analyzer.Analysis], name: str) -> str:
+    unsafe:
+        let a = read(analysis)
+
+        let tp = a.types.get(name)
+        if tp != null:
+            let t = read(tp)
+            return type_to_key_name(t)
+
+        if a.type_names.contains(name):
+            return name
+
+        return ""
+
+
+## Extract the key name from a Type (e.g. Vec[int] → "Vec").
+function type_to_key_name(t: types.Type) -> str:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name
+        types.Type.ty_named as n:
+            return n.name
+        types.Type.ty_imported as im:
+            return im.name
+        types.Type.ty_opaque as op:
+            return op.name
+        types.Type.ty_primitive as p:
+            return p.name
+        _:
+            return ""
+
+
+## LSP CompletionItemKind for a method on `type_name`.
+function method_kind_for(analysis: ref[analyzer.Analysis], type_name: str, method_name: str) -> int:
+    let key = analyzer.method_key(type_name, method_name)
+    let sig_ptr = unsafe: read(analysis).method_sigs.get(key)
+    if sig_ptr == null:
+        return KIND_FUNCTION
+    return KIND_FUNCTION
