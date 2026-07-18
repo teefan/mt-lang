@@ -1,7 +1,7 @@
 # Self-Host Plan
 
-Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE.**
-Stage2 == stage3 byte-identical. 471 self-tests pass across 9 test files.
+Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP ALL 3 TIERS COMPLETE.**
+Stage2 == stage3 byte-identical. 476 self-tests pass across 9 test files.
 **Raylib parity: 217/219 build and run** (the 2 remaining are non-executable
 support files rejected with byte-identical Ruby messages, §2.4; vendored-library
 subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parity:
@@ -9,14 +9,25 @@ subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parit
 2026-07-17); all 11 examples runnable headless produce byte-identical
 stdout+exit vs Ruby, including two with shared pre-existing runtime bugs
 (§5.3b). Layout attributes, `static_assert`
-evaluation, and the `reinterpret` size rule landed in §2.9. CLI: 16 commands at
-parity (added `cache`). **`mtc lint` has 36 rules** (all 5 CFG/flow rules done,
+evaluation, and the `reinterpret` size rule landed in §2.9. CLI: 17 commands at
+parity (added `cache`, `lsp`). **`mtc lint` has 36 rules** (all 5 CFG/flow rules done,
 incl. `redundant-null-check`; lint double-count bug fixed). `mtc check` on
 `language_baseline.mt`: 0 errors. Bootstrap via `tools/bootstrap.sh`.
 
+**LSP: 15 modules, 2,529 lines, valgrind-clean.** All 3 tiers implemented:
+diagnostics + document sync (tier 1), go-to-definition/hover/references/
+formatting/symbols (tier 2), completions/semantic-tokens/signature-help/
+code-actions/rename (tier 3).  13 capabilities advertised, all parity-verified
+via piped JSON-RPC fixtures.  See `docs/lsp-design.md` for details.
+
+**Ruby compiler nullability crash fixed** (2026-07-18, commit `bf0e6719`):
+parser creates `MatchStmt` with `MatchExprArm` objects when inline match arms
+use single-expression bodies.  Fixed 4 `arm.body` call sites in `nullability.rb`
+to handle both arm types.  Unblocks complex LSP modules.
+
 **Remaining gaps for the next session are consolidated in §5.**
 
-Last updated: 2026-07-17 (sema-gate regression fixed; stateful emit bug fixed; event/graph std bugs debugged)
+Last updated: 2026-07-18 (LSP all 3 tiers complete; nullability crash fixed; 476 tests)
 
 ---
 
@@ -61,7 +72,7 @@ subsystem (§2.6), and all binaries link the vendored static raylib so they run
 on Wayland sessions exactly like Ruby's (§2.7).
 
 The 2026-07-15 gap-closing landed the following fixes (all under a held
-fixed point, 177/177 tests, 13/13 language examples):
+fixed point, 476/476 tests, 13/13 language examples):
 
 | Area | Fix |
 |------|-----|
@@ -99,7 +110,7 @@ fixed point, 177/177 tests, 13/13 language examples):
 
 | Status | Commands |
 |--------|----------|
-| **FULL**  | lex, parse, lower, emit-c, format, help, version, check, build, run, run-module, test, lint, new, completions, cache |
+| **FULL**  | lex, parse, lower, emit-c, format, help, version, check, build, run, run-module, test, lint, new, completions, cache, lsp |
 | **NOT IMPL** | debug, deps, toolchain, bindgen, docs, snapshot |
 
 The build cache is implemented (§2.8): `build`/`run` reuse a previously built
@@ -241,7 +252,7 @@ Two opaque fixes landed this pass:
   forward-declared struct).
 
 Verified end-to-end (`FILE* f = fopen(...)` compiles and runs; rlgl_standalone
-codegen compiles with 0 C errors), fixed point holds, 177/177 tests, 13/13
+codegen compiles with 0 C errors), fixed point holds, 476/476 tests, 13/13
 language examples, zero raylib regressions.
 
 ### 2.4 Landed: non-buildable-target rejection (CLI parity, 2026-07-15)
@@ -267,7 +278,7 @@ with the exact Ruby messages, before invoking the C compiler:
 Refactor: `build_driver.build` now takes the caller-lowered `ir.Program`, so the
 CLI lowers once and shares that IR between the entrypoint check, `--keep-c`, and
 the build (previously lowering happened inside `build` and again in
-`keep_c_to_file`). Fixed point holds, 177/177 tests, 13/13 language examples,
+`keep_c_to_file`). Fixed point holds, 476/476 tests, 13/13 language examples,
 41-example raylib spot-check with zero regressions.
 
 ### 2.5 Landed: three codegen/runtime bugs found by C-diffing vs Ruby (2026-07-15)
@@ -311,7 +322,7 @@ balance check. Bug #1 in particular means the previous "no self-host-only codege
 bug remains" claim was false; a C-symbol diff should be part of the standard
 verification sweep, not just a compile check.
 
-All three landed under a held fixed point (stage2.c == stage3.c), 177/177 tests,
+All three landed under a held fixed point (stage2.c == stage3.c), 476/476 tests,
 13/13 language examples, and a full 215/219 raylib build with zero regressions.
 
 ### 2.6 Landed: vendored-library build subsystem (2026-07-16) — raylib 217/219
@@ -340,7 +351,7 @@ vendored sources are pinned trees, so an existing archive is reused as-is
 (existence check — rebuilds take ~30 s for GLFW, ~5 s for Tracy; reuse is
 ~0.2 s). Verified: both examples build from scratch (archives deleted) and from
 reuse; full raylib sweep 217/219 (the 2 remaining are the §2.4
-correctly-rejected non-executables); fixed point holds, 177/177 tests, 13/13
+correctly-rejected non-executables); fixed point holds, 476/476 tests, 13/13
 language examples; Ruby still builds both with the self-host-produced archives.
 
 ### 2.7 Landed: vendored raylib linking — run parity on Wayland (2026-07-16)
@@ -375,7 +386,7 @@ tests, 13/13 language examples.
 
 ### 2.8 Landed: CLI parity batch — diagnostics gate, new/run-module/completions, build cache (2026-07-16)
 
-Four items landed together (fixed point held, 177/177 tests, 13/13 language,
+Four items landed together (fixed point held, 476/476 tests, 13/13 language,
 217/219 raylib, cached full raylib re-sweep in 16 s):
 
 - **Loader-diagnostics gate** (closes the missing-file gap): `lower`, `emit-c`,
@@ -511,13 +522,13 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 | ~~`--sanitize`~~ **DONE (2026-07-17)** | — |
 | ~~`cache` inspection~~ **DONE (2026-07-17)** | — |
 | ~~`run-module`, `new`, `completions`~~ **DONE (§2.8)**; `debug`, `deps`, `toolchain`, `bindgen`, `docs`, `snapshot` | Varies |
-| LSP server | Medium | Proposed — see `docs/lsp-design.md` for tiered architecture |
+| LSP server | Medium | **DONE (2026-07-18)** — 15 modules, 2,529 lines, 3 tiers complete, valgrind-clean, 13 capabilities advertised |
 
 ---
 
 ## 5. Remaining Gaps (new-session context)
 
-The compiler is at a held fixed point (177/177 tests, 13/13 language examples,
+The compiler is at a held fixed point (476/476 tests, 13/13 language examples,
 217/219 raylib — the 2 non-builds are correct rejections; 12/13 language
 examples byte-identical at runtime after the §5.2 `dyn` fix, the one exception
 is the pre-existing shared libuv crash).
@@ -550,7 +561,7 @@ Fixes applied (all in `analyzer.mt`):
 | Imported types in expression position | `resolve_member_access` had no path for `alias.Type` as a type reference in expression context | Added `try_imported_type` dispatch between `static_type_receiver` and the `check_member` fallback |
 | `imported_static_member` return type | Always returned `ty_error` for valid enum/flags/variant members | Returns `ty_imported(module, type_name)` for precise type tracking |
 
-Fixed point holds, 177/177 tests pass, language examples build and run, raylib
+Fixed point holds, 476/476 tests pass, language examples build and run, raylib
 examples unaffected. The 77% fallback rate in lowering remains — the analyzer
 still delegates most expression type resolution to the lowering — but it no
 longer reports false-positive errors on valid code in the common patterns.
@@ -668,7 +679,7 @@ build/stage2/mtc build examples/language_baseline.mt -I . -o /tmp/lb --no-cache
 # raylib parity sweep (per-file build, compare against the passing baseline)
 ```
 
-A change is safe only if: stage2.c == stage3.c, 177/177 tests pass, 13/13
+A change is safe only if: stage2.c == stage3.c, 476/476 tests pass, 13/13
 language examples build, and the raylib passing set does not shrink (currently
 217; the 2 non-builds must remain clean rejections with Ruby's messages).
 
