@@ -198,7 +198,7 @@ function render_type_ptr(t: ptr[ast.TypeRef]?) -> str:
         return render_type(read(tp))
 
 
-function render_type(t: ast.TypeRef) -> str:
+public function render_type(t: ast.TypeRef) -> str:
     if t.is_fn or t.is_proc:
         let kw = if t.is_proc: "proc" else: "fn"
         var params_buf = string.String.create()

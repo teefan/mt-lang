@@ -21,6 +21,7 @@ import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
+import mtc.pretty_printer.ast_formatter as ast_formatter
 
 
 ## Handle textDocument/definition: find the definition of the symbol at the
@@ -36,11 +37,12 @@ public function handle_definition(
     match result:
         Option.some as res:
             var payload = res.value
+            let target_uri = if payload.target_uri.len() > 0: payload.target_uri.as_str() else: uri
             let lz = if payload.line > 0: ptr_uint<-(int<-(payload.line) - 1) else: 0z
             var json_text = string.String.create()
             defer json_text.release()
             json_text.append("[{\"uri\":\"")
-            proto.append_escaped(ref_of(json_text), uri)
+            proto.append_escaped(ref_of(json_text), target_uri)
             json_text.append("\",\"range\":{\"start\":{\"line\":")
             json_text.append_format(f"#{lz}")
             json_text.append(",\"character\":")
@@ -53,6 +55,7 @@ public function handle_definition(
             proto.write_response_raw(id, json_text.as_str())
             payload.hover_text.release()
             payload.docs.release()
+            payload.target_uri.release()
         Option.none:
             proto.write_response(id, json.null_value())
 
@@ -88,6 +91,7 @@ public function handle_hover(
                 proto.write_response(id, json.null_value())
             payload.hover_text.release()
             payload.docs.release()
+            payload.target_uri.release()
         Option.none:
             proto.write_response(id, json.null_value())
 
@@ -419,18 +423,21 @@ function append_ref_escaped(output: ref[string.String], text: str) -> void:
 
 ## Cursor resolution result — the definition position (1-based line, 0-based
 ## name column), the signature rendered for hover, and any attached `##`
-## documentation lines.
+## documentation lines.  `target_uri` carries a cross-file definition target;
+## empty means the request's own document.
 struct CursorResult:
     line: ptr_uint
     column: ptr_uint
     name_len: ptr_uint
     hover_text: string.String
     docs: string.String
+    target_uri: string.String
 
 
 ## Resolve the symbol at the given cursor position.  Parses the file, runs
 ## semantic analysis, finds the identifier under the cursor, and looks up its
-## definition or type in the analysis maps.
+## definition or type in the analysis maps.  `alias.member` accesses and
+## import aliases resolve cross-file into the imported module.
 function resolve_cursor(
     ws: ref[workspace.Workspace],
     uri: str,
@@ -460,7 +467,100 @@ function resolve_cursor(
 
     var analysis = analyzer.check_source_file(ast_file)
 
+    # `alias.member`: resolve the member inside the imported module's file.
+    match cursor.dot_receiver_at(source, line, character):
+        Option.some as recv:
+            unsafe:
+                let module_ptr = analysis.imports.get(recv.value)
+                if module_ptr != null:
+                    return resolve_module_member(ws, read(module_ptr), target.text)
+        Option.none:
+            pass
+
+    # The identifier is an import alias: the module file itself.
+    unsafe:
+        let alias_module_ptr = analysis.imports.get(target.text)
+        if alias_module_ptr != null:
+            return resolve_module_reference(ws, read(alias_module_ptr))
+
     return resolve_name_in_analysis(ast_file, ref_of(analysis), target.text, source)
+
+
+## Resolve `member` inside imported module `module_name`: parse and check the
+## module's file, reuse the same-file resolver there, and stamp the result
+## with the module file's URI.
+function resolve_module_member(ws: ref[workspace.Workspace], module_name: str, member: str) -> Option[CursorResult]:
+    var module_path = resolve_module_source_path(ws, module_name) else:
+        return Option[CursorResult].none
+    defer module_path.release()
+
+    var module_source = ws.document_source(module_path.as_str()) else:
+        return Option[CursorResult].none
+    defer module_source.release()
+
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer parse_diags.release()
+    var module_file = parser.parse_source(module_source.as_str(), ref_of(parse_diags))
+    var module_analysis = analyzer.check_source_file(module_file)
+
+    match resolve_name_in_analysis(module_file, ref_of(module_analysis), member, module_source.as_str()):
+        Option.some as res:
+            var stamped = res.value
+            stamped.target_uri.release()
+            stamped.target_uri = file_uri_for_path(module_path.as_str())
+            return Option[CursorResult].some(value = stamped)
+        Option.none:
+            return Option[CursorResult].none
+
+
+## Resolve an import alias to its module file (top of file, hover shows the
+## module name).
+function resolve_module_reference(ws: ref[workspace.Workspace], module_name: str) -> Option[CursorResult]:
+    var module_path = resolve_module_source_path(ws, module_name) else:
+        return Option[CursorResult].none
+    defer module_path.release()
+
+    var hover = string.String.create()
+    hover.append("module ")
+    hover.append(module_name)
+    return Option[CursorResult].some(value = CursorResult(
+        line = 1,
+        column = 0,
+        name_len = 0,
+        hover_text = hover,
+        docs = string.String.create(),
+        target_uri = file_uri_for_path(module_path.as_str())
+    ))
+
+
+## The resolved source path of `module_name` against the workspace roots.
+function resolve_module_source_path(ws: ref[workspace.Workspace], module_name: str) -> Option[string.String]:
+    var roots = ws.effective_module_roots_for("")
+    defer roots.release()
+    match resolver.resolve_module_path(module_name, roots.as_span(), resolver.Platform.linux):
+        Result.failure as failure_payload:
+            var err = failure_payload.error
+            err.release()
+            return Option[string.String].none
+        Result.success as path_payload:
+            return Option[string.String].some(value = path_payload.value)
+
+
+## An absolute file:// URI for a workspace-relative or absolute path.
+function file_uri_for_path(path: str) -> string.String:
+    var absolute_path = string.String.from_str(path)
+    match fs_mod.canonicalize(path):
+        Result.success as canonical:
+            absolute_path.release()
+            absolute_path = canonical.value
+        Result.failure as failure_payload:
+            var err = failure_payload.error
+            err.release()
+
+    var result = string.String.from_str("file://")
+    result.append(absolute_path.as_str())
+    absolute_path.release()
+    return result
 
 
 ## Resolve `name` against the semantic analysis maps.  Returns the definition
@@ -505,16 +605,19 @@ function resolve_name_in_analysis(
                 var hover = string.String.create()
                 hover.append("struct ")
                 hover.append(name)
-                hover.append(":")
-                let fields = read(fields_ptr)
-                var fi: ptr_uint = 0
-                while fi < fields.len:
-                    let fe = read(fields.data + fi)
-                    hover.append("\n    ")
-                    hover.append(fe.name)
-                    hover.append(": ")
-                    hover.append(types.type_to_string(fe.ty))
-                    fi += 1
+                if not append_struct_fields_from_ast(ref_of(hover), file, name):
+                    # Fallback to resolved field types when the AST decl is
+                    # not found (should not happen for same-file structs).
+                    hover.append(":")
+                    let fields = read(fields_ptr)
+                    var fi: ptr_uint = 0
+                    while fi < fields.len:
+                        let fe = read(fields.data + fi)
+                        hover.append("\n    ")
+                        hover.append(fe.name)
+                        hover.append(": ")
+                        hover.append(types.type_to_string(fe.ty))
+                        fi += 1
                 return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
 
         # Enum, flags, or variant: render the member list.
@@ -554,7 +657,8 @@ function make_result(decl_line: ptr_uint, name: str, source: str, hover: string.
         column = column,
         name_len = name.len,
         hover_text = hover,
-        docs = doc_lines_above(source, decl_line)
+        docs = doc_lines_above(source, decl_line),
+        target_uri = string.String.create()
     )
 
 
@@ -585,6 +689,46 @@ function format_fn_signature(sig: analyzer.FnSig, name: str) -> string.String:
         sig_text.append(" -> ")
         sig_text.append(types.type_to_string(sig.return_type))
     return sig_text
+
+
+## Append `[T, ...]` type params, `:`, and per-field lines rendered from the
+## struct's AST declaration (accurate for generic field types, which resolve
+## permissively in the analysis).  False when the declaration is not found.
+function append_struct_fields_from_ast(hover: ref[string.String], file: ast.SourceFile, name: str) -> bool:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_struct as s:
+                if s.name == name:
+                    if s.type_params.len > 0:
+                        hover.append("[")
+                        var ti: ptr_uint = 0
+                        while ti < s.type_params.len:
+                            if ti > 0:
+                                hover.append(", ")
+                            unsafe:
+                                hover.append(read(s.type_params.data + ti).name)
+                            ti += 1
+                        hover.append("]")
+                    hover.append(":")
+                    var fi: ptr_uint = 0
+                    while fi < s.struct_fields.len:
+                        var field: ast.Field
+                        unsafe:
+                            field = read(s.struct_fields.data + fi)
+                        hover.append("\n    ")
+                        hover.append(field.name)
+                        hover.append(": ")
+                        hover.append(ast_formatter.render_type(field.field_type))
+                        fi += 1
+                    return true
+            _:
+                pass
+        di += 1
+    return false
 
 
 ## The declaration keyword for a module-level value: "const" or "var".

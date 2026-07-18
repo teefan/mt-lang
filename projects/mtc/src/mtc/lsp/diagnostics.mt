@@ -50,16 +50,22 @@ public function collect_diagnostics(root_path: str, roots: span[str]) -> json.Va
     # Lint the root module's source file.
     var lint_warnings = vec.Vec[linter_mod.Warning].create()
     var root_source: str = ""
-    # Only lint when the root module parsed and checked successfully.
-    if program.analyses.len() > 0 and program.modules.len() > 0:
+    # Only lint when the root module parsed and checked successfully.  The
+    # root's ANALYSIS is last in dependency order, but `modules` is filled in
+    # DFS pre-order, so the root MODULE is found through the order vector
+    # (order.last() indexes the root), not modules.last().
+    if program.analyses.len() > 0 and program.modules.len() > 0 and program.order.len() > 0:
         let last_analysis_ptr = program.analyses.last() else:
             program.release()
             return diag_array
-        let last_module_ptr = program.modules.last() else:
+        let root_index_ptr = program.order.last() else:
+            program.release()
+            return diag_array
+        let root_module_ptr = program.modules.get(unsafe: read(root_index_ptr)) else:
             program.release()
             return diag_array
         unsafe:
-            root_source = read(last_module_ptr).source.as_str()
+            root_source = read(root_module_ptr).source.as_str()
             lint_warnings = linter_mod.lint_source(
                 read(last_analysis_ptr).source_file,
                 root_source,
