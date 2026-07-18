@@ -19,6 +19,7 @@ public struct Workspace:
     root_path: string.String
     module_roots: vec.Vec[string.String]
     open_docs: map_mod.Map[string.String, string.String]
+    document_contexts: map_mod.Map[string.String, string.String]
     index_built: bool
     index: idx.Index
 
@@ -31,6 +32,7 @@ extending Workspace:
             root_path = string.String.from_str(root),
             module_roots = roots,
             open_docs = map_mod.Map[string.String, string.String].create(),
+            document_contexts = map_mod.Map[string.String, string.String].create(),
             index_built = false,
             index = idx.Index(entries = vec.Vec[idx.Entry].create()),
         )
@@ -103,10 +105,44 @@ extending Workspace:
             this.index_built = true
 
 
+    ## Number of currently open documents.
+    public function open_document_count() -> ptr_uint:
+        return this.open_docs.len()
+
+
+    ## Keys (file paths) of all currently open documents.  The caller must
+    ## release each key and the returned Vec.
+    public function open_document_keys() -> vec.Vec[string.String]:
+        var result = vec.Vec[string.String].create()
+        var key_iter = this.open_docs.keys()
+        while true:
+            let kp = key_iter.next() else:
+                break
+            unsafe:
+                result.push(string.String.from_str(read(kp).as_str()))
+        return result
+
+
+    ## Number of entries in the workspace symbol index.
+    public function index_entries() -> ptr_uint:
+        return this.index.entries.len()
+
+
+    ## Store the document context type (foreground / background) for a URI.
+    public editable function set_document_context(uri: str, context: str) -> void:
+        let path_result = uri_ops.file_uri_to_path(uri)
+        match path_result:
+            Option.some as path_payload:
+                this.document_contexts.set(path_payload.value, string.String.from_str(context))
+            Option.none:
+                pass
+
+
     public editable function release() -> void:
         this.root_path.release()
         release_module_roots(ref_of(this.module_roots))
         this.open_docs.release()
+        this.document_contexts.release()
         if this.index_built:
             idx.release_index(ref_of(this.index))
 

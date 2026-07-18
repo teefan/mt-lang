@@ -8,6 +8,7 @@
 ## value's type.
 
 import std.fmt
+import std.fs as fs_mod
 import std.json as json
 import std.mem.heap as heap
 import std.str
@@ -24,6 +25,7 @@ import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
+import mtc.lsp.workspace_index as workspace_index
 
 
 ## LSP CompletionItemKind values.
@@ -97,6 +99,154 @@ public function handle_completion(
     var items_json = build_completions_json(ref_of(analysis))
     proto.write_response_raw(id, items_json.as_str())
     items_json.release()
+
+
+## Handle completionItem/resolve.  When the editor resolves a completion
+## item, look up the symbol name in the workspace index, find its
+## declaration file, extract ## doc comments above it, and add
+## `documentation` markdown to the item.
+public function handle_completion_resolve(
+    ws: ref[workspace.Workspace],
+    params: json.Value,
+    id: json.Value,
+) -> void:
+    let label = extract_string_field(params, "label")
+    if label.len == 0:
+        proto.write_response(id, params)
+        return
+
+    # Look up the label in the workspace symbol index.
+    let ws_root = ws.root_path.as_str()
+    ws.build_index_if_needed()
+    var match_indices = workspace_index.query_index(ref_of(ws.index), label, 1)
+    defer match_indices.release()
+    if match_indices.len() == 0:
+        proto.write_response(id, params)
+        return
+
+    let ei = match_indices.get(0) else:
+        proto.write_response(id, params)
+        return
+    let entry = unsafe: workspace_index.read_entry(ref_of(ws.index), read(ei))
+    let path = unsafe: read(entry).path.as_str()
+
+    # Read doc comments from the target file above the declaration.
+    var doc_text = collect_doc_text(path, label)
+    defer doc_text.release()
+    if doc_text.len() == 0:
+        proto.write_response(id, params)
+        return
+
+    # Build response JSON with documentation injected.
+    var result_json = string.String.create()
+    defer result_json.release()
+    result_json.append("{\"label\":\"")
+    proto.append_escaped(ref_of(result_json), label)
+    result_json.append("\",\"documentation\":{\"kind\":\"markdown\",\"value\":\"")
+    proto.append_escaped(ref_of(result_json), doc_text.as_str())
+    result_json.append("\"}}")
+
+    proto.write_response_raw(id, result_json.as_str())
+
+
+## Extract a string field from a JSON Value.  Returns "" when absent.
+function extract_string_field(value: json.Value, field: str) -> str:
+    let obj_ptr = value.as_object()
+    if obj_ptr == null:
+        return ""
+    unsafe:
+        let field_ptr = read(obj_ptr).get(field)
+        if field_ptr == null:
+            return ""
+        let field_str = read(field_ptr).as_string() else:
+            return ""
+        return field_str
+
+
+## Collect ## documentation comment lines above a named declaration.
+function collect_doc_text(path: str, name: str) -> string.String:
+    var result = string.String.create()
+
+    match fs_mod.read_text(path):
+        Result.success as payload:
+            var source = payload.value
+            defer source.release()
+
+            # Find the declaration line.
+            var target_line: ptr_uint = 0
+            var current_line: ptr_uint = 1
+            var li: ptr_uint = 0
+            while li < source.as_str().len:
+                let ch = source.as_str().byte_at(li)
+                if ch == '\n':
+                    current_line += 1
+                    li += 1
+                    continue
+                # Check if this line starts with the name followed by
+                # a non-word character or at end of line.
+                if source.as_str().slice(li, name.len).equal(name):
+                    let after = li + name.len
+                    var is_decl = false
+                    if after >= source.as_str().len:
+                        is_decl = true
+                    else:
+                        let c = source.as_str().byte_at(after)
+                        is_decl = c == '(' or c == ':' or c == '<' or
+                            c == ' ' or c == '\n' or c == '{'
+                    if is_decl:
+                        target_line = current_line
+                li += 1
+
+            if target_line == 0:
+                return result
+
+            # Walk backward from the target line, collecting ## lines.
+            var doc_lines = vec.Vec[str].create()
+            defer doc_lines.release()
+            current_line = 1
+            li = 0
+            while li < source.as_str().len and current_line < target_line:
+                let line_start = li
+                while li < source.as_str().len and source.as_str().byte_at(li) != '\n':
+                    li += 1
+                let line_text = source.as_str().slice(line_start, li - line_start)
+                if line_text.starts_with("##"):
+                    let doc_content = line_text.slice(2, line_text.len - 2)
+                    var trimmed = trim_left(doc_content)
+                    doc_lines.push(trimmed)
+                else:
+                    doc_lines.clear()
+                if li < source.as_str().len:
+                    li += 1
+                current_line += 1
+
+            var di: ptr_uint = 0
+            while di < doc_lines.len():
+                let dp = doc_lines.get(di) else:
+                    break
+                if di > 0:
+                    result.append("\n")
+                unsafe:
+                    result.append(read(dp))
+                di += 1
+
+        Result.failure:
+            pass
+
+    return result
+
+
+## Strip leading whitespace from the start of a string.
+function trim_left(text: str) -> str:
+    var start: ptr_uint = 0
+    while start < text.len:
+        let b = text.byte_at(start)
+        if b != ' ':
+            break
+        start += 1
+    if start >= text.len:
+        return ""
+    return text.slice(start, text.len - start)
 
 
 ## Completions for `alias.` — the public declarations of the module the

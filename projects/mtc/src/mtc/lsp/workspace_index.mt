@@ -61,6 +61,13 @@ public function query_index(index: ref[Index], query: str, max_results: ptr_uint
     return results
 
 
+## Read a single entry by index from the index.  Fatal on out-of-bounds.
+public function read_entry(index: ref[Index], idx_val: ptr_uint) -> ptr[Entry]:
+    let ep = index.entries.get(idx_val) else:
+        fatal(c"workspace_index.read_entry index out of bounds")
+    return ep
+
+
 public function release_index(index: ref[Index]) -> void:
     var ei: ptr_uint = 0
     while ei < index.entries.len():

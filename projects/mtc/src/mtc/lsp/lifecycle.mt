@@ -31,11 +31,15 @@ public function handle_initialize(id: json.Value) -> void:
     r.append(",\"foldingRangeProvider\":true")
     r.append(",\"selectionRangeProvider\":true")
     r.append(",\"inlayHintProvider\":true")
-    r.append(",\"completionProvider\":{\"triggerCharacters\":[\".\"],\"resolveProvider\":false}")
+    r.append(",\"completionProvider\":{\"triggerCharacters\":[\".\"],\"resolveProvider\":true}")
     # signatureHelp: trigger on open-paren and comma
     r.append(",\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"],\"retriggerCharacters\":[\",\"]}")
     r.append(",\"renameProvider\":{\"prepareProvider\":true}")
     r.append(",\"codeActionProvider\":{\"codeActionKinds\":[\"quickfix\"]}")
+    r.append(",\"executeCommandProvider\":{\"commands\":[\"mtc.restartServer\"]}")
+    r.append(",\"rangeFormattingProvider\":true")
+    r.append(",\"linkedEditingRangeProvider\":true")
+    r.append(",\"documentLinkProvider\":{}")
     # semantic tokens: legend + full + range
     r.append(",\"semanticTokensProvider\":{\"legend\":{")
     r.append("\"tokenTypes\":[\"namespace\",\"type\",\"keyword\",\"string\",\"number\",\"comment\",\"operator\",\"variable\",\"function\",\"parameter\",\"property\",\"regexp\"]")
