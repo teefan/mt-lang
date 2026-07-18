@@ -248,6 +248,26 @@ extending Workspace:
         this.semantic_token_cache.set(key, entry)
 
 
+    ## Remove a specific cached semantic token entry.
+    public editable function semantic_token_cache_remove(path: str) -> void:
+        var key = string.String.from_str(path)
+        defer key.release()
+        this.semantic_token_cache.remove(key)
+
+
+    ## Clear all cached semantic token entries.
+    public editable function semantic_token_cache_remove_all() -> void:
+        this.semantic_token_cache.clear()
+
+
+    ## Force a full workspace symbol index rebuild on the next query.
+    public editable function force_reindex() -> void:
+        if this.index_built:
+            idx.release_index(ref_of(this.index))
+            this.index = idx.Index(entries = vec.Vec[idx.Entry].create())
+            this.index_built = false
+
+
     ## Record the outgoing config pull request id.
     public editable function set_pending_config_request(id: ptr_uint) -> void:
         this.config_request_id = id
