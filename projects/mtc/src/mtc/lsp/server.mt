@@ -25,6 +25,7 @@ import mtc.lsp.linked_editing_range as linked_range
 import mtc.lsp.navigation as nav
 import mtc.lsp.on_type_formatting as on_type
 import mtc.lsp.protocol as proto
+import mtc.lsp.pull_diagnostics as pull_diag
 import mtc.lsp.rename as rename_mod
 import mtc.lsp.selection as selection
 import mtc.lsp.semantic_tokens as semtok
@@ -183,6 +184,12 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         doc_ctx.handle_document_context(ws, msg.params)
     else if method == "milkTea/debugInfo":
         debug_info.handle_debug_info(ws, msg.id)
+
+    # Pull diagnostics
+    else if method == "textDocument/diagnostic":
+        pull_diag.handle_document_diagnostic(ws, msg.params, msg.id)
+    else if method == "workspace/diagnostic":
+        pull_diag.handle_workspace_diagnostic(ws, msg.params, msg.id)
 
     # Workspace notifications
     else if method == "workspace/didChangeConfiguration":

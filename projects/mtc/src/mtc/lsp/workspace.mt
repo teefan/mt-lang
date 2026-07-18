@@ -15,12 +15,26 @@ import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace_index as idx
 
 
+struct DiagnosticCacheEntry:
+    source_hash: uint
+    result_id: string.String
+    diagnostics_json: string.String
+
+
+## Workspace state for pull diagnostics.  Caches the last computed
+## diagnostics per file so subsequent pulls with an unchanged source can
+## return `kind: "unchanged"` without recomputing.
+public struct DiagnosticCache:
+    entries: map_mod.Map[string.String, DiagnosticCacheEntry]
+
+
 public struct Workspace:
     root_path: string.String
     module_roots: vec.Vec[string.String]
     open_docs: map_mod.Map[string.String, string.String]
     document_contexts: map_mod.Map[string.String, string.String]
     cancelled_ids: vec.Vec[ptr_uint]
+    diagnostic_cache: DiagnosticCache
     index_built: bool
     index: idx.Index
 
@@ -35,6 +49,7 @@ extending Workspace:
             open_docs = map_mod.Map[string.String, string.String].create(),
             document_contexts = map_mod.Map[string.String, string.String].create(),
             cancelled_ids = vec.Vec[ptr_uint].create(),
+            diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create()),
             index_built = false,
             index = idx.Index(entries = vec.Vec[idx.Entry].create()),
         )
@@ -171,12 +186,49 @@ extending Workspace:
             i += 1
 
 
+    ## Look up a cached diagnostic entry for a file path.  Returns the
+    ## cache entry pointer when present, or null on miss.
+    public function diagnostic_cache_get(path: str) -> ptr[DiagnosticCacheEntry]?:
+        var key = string.String.from_str(path)
+        defer key.release()
+        return this.diagnostic_cache.entries.get(key)
+
+
+    ## Store or replace a cached diagnostic entry for a file path.
+    public editable function diagnostic_cache_set(
+        path: str,
+        source_hash: uint,
+        result_id: string.String,
+        diagnostics_json: string.String,
+    ) -> void:
+        var key = string.String.from_str(path)
+        var entry = DiagnosticCacheEntry(
+            source_hash = source_hash,
+            result_id = result_id,
+            diagnostics_json = diagnostics_json,
+        )
+        this.diagnostic_cache.entries.set(key, entry)
+
+
+    ## Clear the diagnostic cache entry for a single file.
+    public editable function diagnostic_cache_clear(path: str) -> void:
+        var key = string.String.from_str(path)
+        defer key.release()
+        this.diagnostic_cache.entries.remove(key)
+
+
+    ## Clear the entire diagnostic cache.
+    public editable function diagnostic_cache_clear_all() -> void:
+        this.diagnostic_cache.entries.clear()
+
+
     public editable function release() -> void:
         this.root_path.release()
         release_module_roots(ref_of(this.module_roots))
         this.open_docs.release()
         this.document_contexts.release()
         this.cancelled_ids.release()
+        release_diagnostic_cache(ref_of(this.diagnostic_cache))
         if this.index_built:
             idx.release_index(ref_of(this.index))
 
@@ -214,3 +266,15 @@ function release_module_roots(roots: ref[vec.Vec[string.String]]) -> void:
         unsafe:
             read(ptr).release()
         i += 1
+    roots.release()
+
+
+function release_diagnostic_cache(cache: ref[DiagnosticCache]) -> void:
+    var entries_iter = cache.entries.entries()
+    while entries_iter.next():
+        let entry = entries_iter.current()
+        unsafe:
+            var entry_value = read(entry.value)
+            entry_value.result_id.release()
+            entry_value.diagnostics_json.release()
+    cache.entries.release()
