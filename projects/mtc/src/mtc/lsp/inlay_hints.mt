@@ -13,9 +13,12 @@ import std.vec as vec
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
+import mtc.loader.path_resolver as resolver
+import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.types as types
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
@@ -67,13 +70,60 @@ public function handle_inlay_hint(
         if unsafe: read(next_ptr).kind != tk.TokenKind.lparen:
             ti += 1
             continue
-        # Skip declarations (`function name(...)`) and member calls
-        # (`value.method(...)` — receiver-typed lookup is a later tier).
+        # Skip `function name(...)` declarations; try import-alias calls.
         if ti > 0:
             let prev_ptr = tokens.get(ti - 1) else:
                 break
             let prev_kind = unsafe: read(prev_ptr).kind
-            if prev_kind == tk.TokenKind.tk_function or prev_kind == tk.TokenKind.dot:
+            if prev_kind == tk.TokenKind.tk_function:
+                ti += 1
+                continue
+            if prev_kind == tk.TokenKind.dot:
+                # Only handle `alias.fn(...)` where the receiver is an import alias.
+                let alias_ok = ti > 1
+                if not alias_ok:
+                    ti += 1
+                    continue
+                let alias_ptr = tokens.get(ti - 2) else:
+                    break
+                let alias_tok = unsafe: read(alias_ptr)
+                if alias_tok.kind != tk.TokenKind.identifier:
+                    ti += 1
+                    continue
+                let alias_name = cursor.token_text(source, alias_tok)
+                let module_name_ptr = analysis.imports.get(alias_name)
+                if module_name_ptr == null:
+                    ti += 1
+                    continue
+
+                let module_name = unsafe: read(module_name_ptr)
+                let fn_name = cursor.token_text(source, callee)
+
+                var roots = ws.effective_module_roots_for("")
+                defer roots.release()
+                match resolver.resolve_module_path(module_name, roots.as_span(), resolver.Platform.linux):
+                    Result.failure:
+                        ti += 1
+                        continue
+                    Result.success as path_payload:
+                        var module_path = path_payload.value
+                        defer module_path.release()
+
+                        var module_source = ws.document_source(module_path.as_str()) else:
+                            ti += 1
+                            continue
+                        defer module_source.release()
+
+                        var parse_diags_mod = vec.Vec[pstate.ParseDiagnostic].create()
+                        defer parse_diags_mod.release()
+                        var module_file = parser.parse_source(module_source.as_str(), ref_of(parse_diags_mod))
+
+                        let psig = find_function_params(module_file.declarations, fn_name)
+                        match psig:
+                            Option.some as sig:
+                                emit_call_hints(ref_of(json_text), ref_of(emitted), source, ref_of(tokens), ti + 1, sig.value, start_line, end_line)
+                            Option.none:
+                                pass
                 ti += 1
                 continue
 
@@ -194,3 +244,58 @@ function is_named_argument(source: str, tokens: ref[vec.Vec[token_mod.Token]], a
     let next_ptr = tokens.get(arg_index + 1) else:
         return false
     return unsafe: read(next_ptr).kind == tk.TokenKind.equal
+
+
+## Find a function in `decls` and return its parameter entry list, or none.
+function find_function_params(decls: span[ast.Decl], fn_name: str) -> Option[analyzer.FnSig]:
+    var di: ptr_uint = 0
+    while di < decls.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(decls.data + di)
+        match d:
+            ast.Decl.decl_function as fun:
+                if fun.name.equal(fn_name):
+                    var params = vec.Vec[analyzer.ParamEntry].create()
+                    var pi: ptr_uint = 0
+                    while pi < fun.method_params.len:
+                        var p: ast.Param
+                        unsafe:
+                            p = read(fun.method_params.data + pi)
+                        params.push(analyzer.ParamEntry(name = p.name, ty = types.Type.ty_primitive(name = "bool")))
+                        pi += 1
+                    var sig = analyzer.FnSig(
+                        name = fn_name,
+                        params = params.as_span(),
+                        return_type = types.Type.ty_primitive(name = "void"),
+                        has_return_type = false,
+                        method_kind = ast.MethodKind.mk_plain,
+                        is_async = fun.is_async,
+                        is_variadic = false,
+                        is_extern = false,
+                    )
+                    return Option[analyzer.FnSig].some(value = sig)
+            ast.Decl.decl_foreign_function as ff:
+                if ff.name.equal(fn_name):
+                    var params = vec.Vec[analyzer.ParamEntry].create()
+                    var pi: ptr_uint = 0
+                    while pi < ff.foreign_params.len:
+                        var fp: ast.ForeignParam
+                        unsafe:
+                            fp = read(ff.foreign_params.data + pi)
+                        params.push(analyzer.ParamEntry(name = fp.name, ty = types.Type.ty_primitive(name = "bool")))
+                        pi += 1
+                    return Option[analyzer.FnSig].some(value = analyzer.FnSig(
+                        name = fn_name,
+                        params = params.as_span(),
+                        return_type = types.Type.ty_primitive(name = "void"),
+                        has_return_type = false,
+                        method_kind = ast.MethodKind.mk_plain,
+                        is_async = false,
+                        is_variadic = ff.variadic,
+                        is_extern = true,
+                    ))
+            _:
+                pass
+        di += 1
+    return Option[analyzer.FnSig].none
