@@ -33,6 +33,7 @@ import mtc.linter.linter as linter
 import mtc.linter.config as lint_config
 import mtc.linter.fix_engine as fix_engine
 import mtc.lsp.server as lsp
+import mtc.dap.server as dap
 
 
 function main(args: span[str]) -> int:
@@ -119,6 +120,9 @@ function main(args: span[str]) -> int:
 
     if cmd == "lsp":
         return lsp.run(args)
+
+    if cmd == "dap":
+        return dap.run(args)
 
     if cmd == "cache":
         return cache_command(args)
