@@ -27,6 +27,9 @@ public struct Message:
     id: json.Value
     method: string.String
     params: json.Value
+    result: json.Value
+    error_msg: json.Value
+    is_response: bool
     raw_body: string.String
     parsed_root: json.Value
 
@@ -142,6 +145,9 @@ public function read_message() -> Option[Message]:
     var owned_jsonrpc = string.String.create()
     var id_val = json.null_value()
     var params_val = json.null_value()
+    var result_val = json.null_value()
+    var error_val = json.null_value()
+    var is_resp = false
 
     unsafe:
         let method_opt = read(parsed_obj).get_string("method")
@@ -166,6 +172,31 @@ public function read_message() -> Option[Message]:
         if params_opt != null:
             params_val = read(params_opt)
 
+        let result_opt = read(parsed_obj).get("result")
+        if result_opt != null:
+            result_val = read(result_opt)
+            is_resp = true
+
+        let error_opt = read(parsed_obj).get("error")
+        if error_opt != null:
+            error_val = read(error_opt)
+            is_resp = true
+
+    # Accept responses (no method, but has id + result/error).
+    if is_resp and not id_val.is_null():
+        return Option[Message].some(value = Message(
+            jsonrpc = owned_jsonrpc,
+            id = id_val,
+            method = owned_method,
+            params = params_val,
+            result = result_val,
+            error_msg = error_val,
+            is_response = true,
+            raw_body = raw_body_owned,
+            parsed_root = parsed
+        ))
+
+    # Accept requests/notifications (must have method).
     if owned_method.len() == 0:
         raw_body_owned.release()
         owned_method.release()
@@ -178,6 +209,9 @@ public function read_message() -> Option[Message]:
         id = id_val,
         method = owned_method,
         params = params_val,
+        result = result_val,
+        error_msg = error_val,
+        is_response = false,
         raw_body = raw_body_owned,
         parsed_root = parsed
     ))
@@ -326,6 +360,29 @@ var progress_token_counter: ptr_uint = 0
 function next_progress_token() -> ptr_uint:
     progress_token_counter += 1
     return progress_token_counter
+
+
+## Send a JSON-RPC request to the client and return the numeric id.
+public function send_request(method: str, params_json: str) -> ptr_uint:
+    var id = next_outgoing_id()
+    var request_text = string.String.create()
+    defer request_text.release()
+    request_text.append("{\"jsonrpc\":\"2.0\",\"id\":")
+    request_text.append_format(f"#{id}")
+    request_text.append(",\"method\":\"")
+    append_escaped(ref_of(request_text), method)
+    request_text.append("\",\"params\":")
+    request_text.append(params_json)
+    request_text.append("}")
+    write_framed_json(request_text.as_str())
+    return id
+
+
+var outgoing_id_counter: ptr_uint = 0
+
+function next_outgoing_id() -> ptr_uint:
+    outgoing_id_counter += 1
+    return outgoing_id_counter
 
 
 ## Append a json.Value as its JSON representation.

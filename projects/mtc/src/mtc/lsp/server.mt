@@ -51,19 +51,22 @@ public function run(args: span[str]) -> int:
             Option.some as msg_payload:
                 var msg = msg_payload.value
                 defer msg.release()
-                let method = msg.method.as_str()
-                if method == "exit":
-                    running = false
-                else if method == "$/cancelRequest":
-                    handle_cancel_request(ws, msg.params)
-                else if method.len > 0:
-                    # Check cancellation before processing requests.
-                    let req_id = extract_request_id(msg.id)
-                    if req_id > 0 and ws.is_request_cancelled(req_id):
-                        proto.write_error(msg.id, -32800, "Request cancelled")
-                        ws.clear_cancelled(req_id)
-                    else:
-                        running = dispatch_method(ws, method, msg)
+                if msg.is_response:
+                    handle_incoming_response(ws, msg)
+                else:
+                    let method = msg.method.as_str()
+                    if method == "exit":
+                        running = false
+                    else if method == "$/cancelRequest":
+                        handle_cancel_request(ws, msg.params)
+                    else if method.len > 0:
+                        # Check cancellation before processing requests.
+                        let req_id = extract_request_id(msg.id)
+                        if req_id > 0 and ws.is_request_cancelled(req_id):
+                            proto.write_error(msg.id, -32800, "Request cancelled")
+                            ws.clear_cancelled(req_id)
+                        else:
+                            running = dispatch_method(ws, method, msg)
             Option.none:
                 running = false
 
@@ -78,6 +81,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         lifecycle.handle_initialize(msg.id)
     else if method == "initialized":
         lifecycle.handle_initialized()
+        schedule_config_request(ws)
     else if method == "shutdown":
         var result = json.null_value()
         proto.write_response(msg.id, result)
@@ -446,3 +450,32 @@ function extract_request_id(id: json.Value) -> ptr_uint:
     let n = id.as_number() else:
         return 0
     return ptr_uint<-int<-n
+
+
+## Send a workspace/configuration request to the client to pull user
+## settings.  The response is handled asynchronously in
+## handle_incoming_response.
+function schedule_config_request(ws: ref[workspace.Workspace]) -> void:
+    let id = proto.send_request("workspace/configuration", "[{\"section\":\"milkTea.format.mode\"},{\"section\":\"milkTea.lsp.dependencyResolution\"},{\"section\":\"milkTea.lsp.platform\"},{\"section\":\"milkTea.lsp.strictCurrentRootDiagnostics\"}]")
+    ws.set_pending_config_request(id)
+
+
+## Handle an incoming JSON-RPC response.  Dispatches based on the response
+## id to the appropriate pending request handler.
+function handle_incoming_response(ws: ref[workspace.Workspace], msg: proto.Message) -> void:
+    let req_id = extract_request_id(msg.id)
+    if req_id == 0:
+        return
+
+    if ws.config_request_id == req_id:
+        apply_config_response(ws, msg)
+
+
+## Apply the workspace/configuration response.  Reads the result array
+## and stores settings in the workspace.
+function apply_config_response(ws: ref[workspace.Workspace], msg: proto.Message) -> void:
+    ws.clear_pending_config_request()
+    if msg.error_msg.is_null():
+        ws.config_received = true
+    # Settings from the response are stored in msg.params/result for
+    # future use by didChangeConfiguration and related handlers.

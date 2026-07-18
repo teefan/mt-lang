@@ -42,6 +42,8 @@ public struct Workspace:
     cancelled_ids: vec.Vec[ptr_uint]
     diagnostic_cache: DiagnosticCache
     semantic_token_cache: map_mod.Map[string.String, SemanticTokenCacheEntry]
+    config_request_id: ptr_uint
+    config_received: bool
     index_built: bool
     index: idx.Index
 
@@ -58,6 +60,8 @@ extending Workspace:
             cancelled_ids = vec.Vec[ptr_uint].create(),
             diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create()),
             semantic_token_cache = map_mod.Map[string.String, SemanticTokenCacheEntry].create(),
+            config_request_id = 0,
+            config_received = false,
             index_built = false,
             index = idx.Index(entries = vec.Vec[idx.Entry].create()),
         )
@@ -242,6 +246,21 @@ extending Workspace:
         var key = string.String.from_str(path)
         var entry = SemanticTokenCacheEntry(source_hash = source_hash, result_id = result_id, token_count = token_count)
         this.semantic_token_cache.set(key, entry)
+
+
+    ## Record the outgoing config pull request id.
+    public editable function set_pending_config_request(id: ptr_uint) -> void:
+        this.config_request_id = id
+
+
+    ## Request a configuration pull from the client.
+    public editable function request_configuration() -> void:
+        this.config_received = false
+
+
+    ## Clear the pending config request tracking.
+    public editable function clear_pending_config_request() -> void:
+        this.config_request_id = 0
 
 
     public editable function release() -> void:
