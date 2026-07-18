@@ -37,7 +37,7 @@ public function handle_initialize(id: json.Value) -> void:
     r.append(",\"renameProvider\":{\"prepareProvider\":true}")
     r.append(",\"codeActionProvider\":{\"codeActionKinds\":[\"quickfix\",\"source.fixAll\"]}")
     r.append(",\"executeCommandProvider\":{\"commands\":[\"mtc.restartServer\"]}")
-    r.append(",\"rangeFormattingProvider\":true")
+    r.append(",\"documentRangeFormattingProvider\":true")
     r.append(",\"linkedEditingRangeProvider\":true")
     r.append(",\"documentLinkProvider\":{}")
     r.append(",\"codeLensProvider\":{\"resolveProvider\":true}")

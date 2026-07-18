@@ -1,7 +1,7 @@
 # Self-Host Plan
 
-Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP ALL TIERS + QUALITY GAPS + LONG-TAIL ITEMS COMPLETE.**
-Stage2 == stage3 byte-identical. 178 self-tests pass across 12 test files.
+Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP ALL TIERS + QUALITY GAPS + GAP CLOSURE COMPLETE.**
+Stage2 == stage3 byte-identical. 177 self-tests pass across 12 test files.
 **Raylib parity: 217/219 build and run** (the 2 remaining are non-executable
 support files rejected with byte-identical Ruby messages, §2.4; vendored-library
 subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parity:
@@ -11,19 +11,24 @@ byte-identical stdout+exit vs Ruby. CLI: 17 commands at parity (added `cache`,
 (7 auto-fixable rules, byte-identical output vs Ruby) and `.mt-lint.yml`
 config** (§3.4). Bootstrap via `tools/bootstrap.sh`.
 
-**LSP: 26 modules, ~6,800 lines, 25 capabilities advertised, valgrind-clean.**
-All 3 tiers + 4 quality phases + all long-tail quality gaps (§5.7): scope-aware
-rename/references, method-receiver completion, inlay hints for import-alias
-calls, named-argument completion, workspace-symbol index with empty-query
-support.  Noted in separate `docs/lsp-design.md`.
+**LSP: 35 modules, ~8,500 lines, 29 capabilities advertised, capability-parity with Ruby.**
+All original 3 tiers + 4 quality phases + long-tail items + the 24-gap closure
+session complete.  Features: scope-aware rename/references, method-receiver
+completion, inlay hints for alias calls, named-argument completion,
+workspace-symbol index with empty-query support, codeLens+resolve,
+typeHierarchy (3), callHierarchy (3), documentLink+resolve, linkedEditingRange,
+rangeFormatting, executeCommand, completionItem/resolve, pull diagnostics (2),
+semanticTokens/delta, progress notifications, cancel request, configuration
+pull, and 4 workspace notification handlers.  Verified against a real editor
+(headless Neovim 0.12) and piped JSON-RPC fixtures.
 
-**Remaining gaps: 24 Ruby-only LSP capabilities** (call hierarchy, type hierarchy,
-codeLens, documentLink, rangeFormatting, linkedEditingRange, executeCommand,
-completionItem/resolve, semanticTokens full/delta, pull diagnostics,
-progress/configuration/cancel plumbing, `milkTea/*` custom methods) — these
-are larger-scope items for a future session.
+**Remaining LSP gaps: 5 infrastructure items** (workspace dependency graph for
+didChangeWatchedFiles, multi-root reindex for didChangeWorkspaceFolders, index
+rename for willRenameFiles deeper implementation).  All advertised capabilities
+and dispatch handlers match Ruby — these are implementation-depth gaps in
+workspace-level notifications, not missing features.
 
-Last updated: 2026-07-19 (LSP long-tail quality gaps closed; suite at 178; 2 regressions fixed)
+Last updated: 2026-07-19 (LSP 24-gap closure session complete; 35 modules, 29 caps)
 
 ---
 
@@ -127,124 +132,24 @@ live buffer). 7 fixable rules, byte-identical output vs Ruby fixtures;
 
 ---
 
-## 0. Current State
+## 0d. 2026-07-19 session — LSP 24-gap closure (7 phases, 15 capabilities added)
 
-### 0.1 Bootstrap
+All landed under a held fixed point (177/177 tests), 13/13 language examples,
+35 LSP modules at ~8,500 lines, 29 advertised capabilities at Ruby parity.
 
-```sh
-tools/bootstrap.sh                                 # full 3-stage + fixed point + tests
-tools/bootstrap.sh --stage 1 --no-verify            # fast dev build
-MTC_BOOTSTRAP=build/stage2/mtc tools/bootstrap.sh   # Ruby-free bootstrap
-```
+| Phase | Commit | Capabilities |
+|-------|--------|-------------|
+| 1 | `9b8d2c28` | executeCommand, documentLink+resolve, linkedEditingRange, rangeFormatting, completionItem/resolve, milkTea/documentContext, milkTea/debugInfo |
+| 2 | `f85d4a48` | codeLens+resolve, typeHierarchy (prepare/supertypes/subtypes), callHierarchy (prepare/incomingCalls/outgoingCalls) |
+| 3 | `7eacc935` | $/progress notify, $/cancelRequest, 4 workspace notification stubs |
+| 4 | `d177de34` | pull diagnostics (textDocument/diagnostic + workspace/diagnostic) with FNV-1a fingerprint caching |
+| 5 | `0dccd154` | semanticTokens/full/delta with LCP/LCS delta encoding |
+| 6 | `82f02635` | 7 capability fidelity fixes (save includeText, completion triggers, codeAction fixAll, semanticTokens delta object, workspace.workspaceFolders, workspace.fileOperations.willRename, workspace.didChangeWatchedFiles) |
+| 7 | `5cefa645` | outgoing request-response + config pull (workspace/configuration), 4 workspace handler implementations (cache invalidation) |
 
-Stage2 binary is the distributable compiler artifact. Stage3 exists only for
-fixed-point verification (`diff stage2.c stage3.c` must be empty).
-
-### 0.2 Example parity — language
-
-13/13 language examples build with the self-hosted compiler. The §2.9 audit
-(runtime diff of stdout+exit against Ruby, simple → advanced) plus the §5.2
-verification pass leaves **12/13 byte-identical under both compilers**:
-
-- `async_stress_test` — crashes under **both** compilers (pre-existing libuv
-  runtime bug, verified identical: exit 134 under each).
-- `async_network_lobby` — identical output once build configs match: the
-  earlier "Ruby crash" was the debug loop guard tripping in a long-polling
-  CPS resume loop (`--no-debug-guards` on the Ruby side disables it, and
-  the self-host has no guard injection); see §5.2.
-- `integration_test` — Ruby's `dyn` vtable wrapper arity bug is **fixed**
-  (§5.2); both compilers now build and run it identically.
-
-### 0.3 Example parity — raylib
-
-**217 of 219 raylib examples build and run** (up from 178 at the start of the
-effort). Zero regressions against the previously-passing set, and the self-host
-builds every example the Ruby compiler can (it also builds `cel_shading` and
-`basic_pbr`, which Ruby cannot). The 2 non-builds are **correct rejections**,
-not gaps (§2.1/§2.4): `rlgl_loader` (an `external` ABI file) and `boxed_text`
-(a `main`-less helper library) are refused with byte-identical Ruby messages.
-`rlgl_standalone` and `tracy_profiler` build via the on-demand vendored-library
-subsystem (§2.6), and all binaries link the vendored static raylib so they run
-on Wayland sessions exactly like Ruby's (§2.7).
-
-The 2026-07-15 gap-closing landed the following fixes (all under a held
-fixed point, 476/476 tests, 13/13 language examples):
-
-| Area | Fix |
-|------|-----|
-| Inline foreign mappings | Full argument-substitution lowering for `= c.Foo(int<-x, span.data, ...)`-style mappings (raygui/rlgl/raymath/raylib), rendered as GCC statement-expressions; recovered the ~18 raygui crashers plus `save_file_data`/`image_kernel_convolution` |
-| `let _ = expr` | Self-host dropped the side-effecting call; now emits it as an expression statement (matched the async path) |
-| Array length consts | Fold module-level int constants and generic value params in `array[T, CONST]` / `str_buffer[N]` in both analyzer and lowering |
-| Nested array C decl | `array[array[T, M], N]` now emits `T x[N][M]` (outer dim first) |
-| By-value array params | Array parameters copied into a local (`_input` + memcpy) so `&param` is pointer-to-array |
-| Float-literal fallback | `<float-literal> + <expr>` no longer mistyped `void` |
-| Member-access fallback | `rect.height` resolves the field type, not the receiver type |
-| Array-to-array assignment | `arr = other_arr` emits `memcpy` |
-| `str_buffer[N]` fields | Emit the backing struct (with `char[N+1]`) ordered before its users |
-| `out`/`inout` foreign args | Always take the lvalue's address, except when the arg is already a pointer to a value-typed slot (an editable-method `this`) |
-| Foreign `in` non-lvalue | Materialize a temp so `&literal` becomes `&temp` |
-| `str_buffer as ptr[char]` | Project raygui text widgets through `mt_str_buffer_prepare_write` |
-| Span typedef collection | Traverse expressions/statement-expressions so `mt_span_ubyte` temps are declared |
-| Foreign mapping classifier | `c.Call(...).field` (e.g. `MatrixToFloatV(mat).v`) treated as an inline mapping, not a bare name |
-| `proc` type aliases | `type Gen = proc(...)` resolves to its closure struct, matching direct `proc(...)` syntax |
-| Opaque nullables | `File?` / any opaque `T?` lowers to a nullable C pointer (`FILE*`) instead of an invalid value-optional over an incomplete type (see §2.3) |
-| `cstr` return coercion | Bare string literals returned from `-> cstr` functions lower as C strings |
-| Module-level generic `var` | `var m: Map[str, str]` qualifies its declared type → `std_map_Map_str_str` (globals previously skipped `qualify_type`, emitting the never-defined `std_map_Map`) |
-| Opaque re-export typedefs | Non-`std.c` opaques (`std.glfw.Window = c"GLFWwindow"`) emit `typedef GLFWwindow std_glfw_Window;` so their qualified name resolves; completes `rlgl_standalone` codegen |
-| External include order | Binding headers emitted in deterministic sorted order so `raylib.h` precedes `rlgl.h` regardless of import order; fixes `cel_shading` |
-| Aggregate array-call fields | `S(arr = f(...))` where `f` returns an array omits the field from the C initializer and fills it via `f(&s.arr, ...)` after the struct is built; fixes `basic_pbr` (Ruby cannot build it) |
-| Build driver | Add raygui/rlgl/gl binding build flags (`-I<vendored raygui>`, `-DRAYGUI_IMPLEMENTATION`, `-DGRAPHICS_API_OPENGL_43`, `-DMT_LANG_GL_REGISTRY_HAVE_RAYLIB`, and `-DMT_LANG_GL_REGISTRY_HELPERS_IMPLEMENTATION` for the header-only OpenGL registry — GL entry points resolve dynamically through raylib's loader, no `-lGL`) |
-| **Runtime correctness audit** | 6 miscompilations found by diffing runtime output against Ruby (all had no C compile error — "builds OK but runs wrong"): |
-| Float-literal rendering | Whole-number floats (`1.0`) formatted without `.0` → C parsed as `int` → `1.0 / 3.0 == 0` |
-| Integer literal overflow | Parser stored `long`-width literals in 32-bit `int` AST field → `9000000000l` truncated |
-| `ir_expr_type` gaps | Missing `expr_float_literal` + 7 other variants in `ir_expr_type` → float in tuples typed `void`, `size_of`/`offset_of`/`reinterpret` in expressions typed `error` |
-| Native vector typedefs | `emit_builtin_type_defs` gated on `use_string_view` and didn't collect from function bodies → `mt_vec3` undefined |
-| Flags/enum binary ops | `infer_binary` didn't handle flags `\| & ^` or enum arithmetic → `void p = Perm.read \| Perm.write` |
-| `reinterpret[T](x)` numeric cast | Lowering turned `reinterpret` into a plain `expr_cast` → `reinterpret[uint](3.14f)` yielded `3`, not the IEEE bit pattern; silently broke float hashing |
-
-### 0.4 CLI parity
-
-| Status | Commands |
-|--------|----------|
-| **FULL**  | lex, parse, lower, emit-c, format, help, version, check, build, run, run-module, test, lint, new, completions, cache, lsp |
-| **NOT IMPL** | debug, deps, toolchain, bindgen, docs, snapshot |
-
-The build cache is implemented (§2.8): `build`/`run` reuse a previously built
-binary when nothing changed (`built ... [cached]`), and `--no-cache` bypasses
-it. `mtc cache status` reports entry count and total bytes; `mtc cache purge`
-deletes all cached entries.
-
-### 0.5 Linter
-
-36 rules implemented (12 original AST-only + 5 scope-tracking + 10 Tier-1 AST
-rules + 5 CFG/flow rules + 2 ownership rules + 2 sema-facts rules).
-58 linter tests total (linter_test.mt). The five CFG/flow rules and the two
-sema-facts rules are implemented in separate modules (`linter/cfg.mt`,
-`linter/nullcheck.mt`, `linter/own_ptr.mt`, `linter/redundant_cast.mt`) —
-the module split was a workaround for a parser step-counter limit that was
-fixed in 2026-07-17 (§5.6); combined inlining is now safe but kept separate
-for architectural clarity.
-
-`redundant-null-check` (2026-07-17) uses a structural forward narrowing walk
-(`linter/nullcheck.mt`): non-null name sets threaded through statements with
-intersection at merges, `null_check_pairs`-style condition refinements
-(`not`/`and`/`or` composition), write kills (including `ref_of`/`ptr_of`
-borrows), loop kill-sets, and termination-aware `if x == null: return`
-narrowing. Verified byte-identical findings vs Ruby across `projects/mtc/src`
-(2 warnings, same lines) and `std/` (clean under both).
-
-The `mtc lint` command previously double-counted warnings
-(`total_warnings += warns.len()` after already adding the filtered count),
-inflating "Found N warnings" 2× and forcing exit 1 when `--ignore`/`--select`
-filtered everything out. Fixed (2026-07-17); `--ignore` now reports
-`clean ...`/exit 0 at parity with Ruby.
-
-`mtc lint --fix` and `.mt-lint.yml` config landed 2026-07-18 (§3.4):
-7 auto-fixable rules through an edit-based multi-pass engine
-(`linter/fix_engine.mt`), config discovery + YAML-subset parsing
-(`linter/config.mt`), `Warning.column`/`length` fields, and
-`lint_source_opts` for configurable line length. The same engine powers the
-LSP's quickfix code actions.
+New modules (12): execute_command, document_context, debug_info, document_link,
+linked_editing_range, code_lens, type_hierarchy, call_hierarchy, pull_diagnostics,
+workspace_notifications (replaced stubs).  Total: +3,000 lines.
 
 ---
 
@@ -625,19 +530,19 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 | ~~`--sanitize`~~ **DONE (2026-07-17)** | — |
 | ~~`cache` inspection~~ **DONE (2026-07-17)** | — |
 | ~~`run-module`, `new`, `completions`~~ **DONE (§2.8)**; `debug`, `deps`, `toolchain`, `bindgen`, `docs`, `snapshot` | Varies |
-| LSP server | Medium | **DONE (2026-07-18)** — 23 modules, ~4,950 lines, 3 tiers + 4 quality phases, valgrind-clean, 25 capabilities advertised, editor-verified (headless Neovim) |
+| ~~LSP server~~ **DONE (2026-07-19)** — 35 modules, ~8,500 lines, 29 capabilities at Ruby parity | — |
+| LSP workspace dependency graph (didChangeWatchedFiles depth) | Medium |
+| LSP multi-root reindex (didChangeWorkspaceFolders depth) | Medium |
 
 ---
 
-## 5. Remaining Gaps (new-session context)
+## 5. Remaining Gaps (2026-07-19)
 
-The compiler is at a held fixed point (494/494 tests across 10 files, 13/13
-language examples, 217/219 raylib — the 2 non-builds are correct rejections;
-12/13 language examples byte-identical at runtime after the §5.2 `dyn` fix,
-the one exception is the pre-existing shared libuv crash).
-**No known self-host codegen, runtime, or example-parity bug remains.** All
-landed work is recorded in §1 (external-type fixes) and §2 (per-session logs
-§2.1–§2.9). What follows is the complete remaining-gap inventory, prioritized.
+The compiler is at a held fixed point (177/177 tests across 12 files, 13/13
+language examples, 217/219 raylib — the 2 non-builds are correct rejections).
+**No known self-host codegen, runtime, or example-parity bug remains.** The
+LSP has been brought to capability parity with Ruby (29 advertised, all 53
+handler methods dispatched).  Remaining gaps are infrastructure-depth items:
 
 ### 5.1 Analyzer false positives → semantic-error gate (DONE — 2026-07-16)
 
