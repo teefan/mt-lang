@@ -33,6 +33,7 @@ import mtc.lsp.symbols as symbols
 import mtc.lsp.text_docs as text_docs
 import mtc.lsp.type_hierarchy as type_hier
 import mtc.lsp.workspace as workspace
+import mtc.lsp.workspace_notifications as ws_notif
 import mtc.lsp.workspace_symbols as wsym
 
 
@@ -52,8 +53,16 @@ public function run(args: span[str]) -> int:
                 let method = msg.method.as_str()
                 if method == "exit":
                     running = false
-                else:
-                    running = dispatch_method(ws, method, msg)
+                else if method == "$/cancelRequest":
+                    handle_cancel_request(ws, msg.params)
+                else if method.len > 0:
+                    # Check cancellation before processing requests.
+                    let req_id = extract_request_id(msg.id)
+                    if req_id > 0 and ws.is_request_cancelled(req_id):
+                        proto.write_error(msg.id, -32800, "Request cancelled")
+                        ws.clear_cancelled(req_id)
+                    else:
+                        running = dispatch_method(ws, method, msg)
             Option.none:
                 running = false
 
@@ -174,6 +183,16 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         doc_ctx.handle_document_context(ws, msg.params)
     else if method == "milkTea/debugInfo":
         debug_info.handle_debug_info(ws, msg.id)
+
+    # Workspace notifications
+    else if method == "workspace/didChangeConfiguration":
+        ws_notif.handle_did_change_configuration(ws, msg.params)
+    else if method == "workspace/didChangeWorkspaceFolders":
+        ws_notif.handle_did_change_workspace_folders(ws, msg.params)
+    else if method == "workspace/willRenameFiles":
+        ws_notif.handle_will_rename_files(ws, msg.params)
+    else if method == "workspace/didChangeWatchedFiles":
+        ws_notif.handle_did_change_watched_files(ws, msg.params)
 
     # Tier 3
     else if method == "textDocument/completion":
@@ -389,3 +408,31 @@ function extract_command_name(params: json.Value) -> str:
         let cmd_str = read(cmd_ptr).as_string() else:
             return ""
         return cmd_str
+
+
+## Handle the $/cancelRequest notification by marking the target request
+## id as cancelled in the workspace.
+function handle_cancel_request(ws: ref[workspace.Workspace], params: json.Value) -> void:
+    let req_id = extract_cancel_id(params)
+    if req_id > 0:
+        ws.cancel_request(req_id)
+
+
+## Extract the numeric request id from a $/cancelRequest params.
+function extract_cancel_id(params: json.Value) -> ptr_uint:
+    let obj_ptr = params.as_object()
+    if obj_ptr == null: return 0
+    unsafe:
+        let id_ptr = read(obj_ptr).get("id")
+        if id_ptr == null: return 0
+        let n = read(id_ptr).as_number() else:
+            return 0
+        return ptr_uint<-int<-n
+
+
+## Extract the numeric request id from a json.Value id field, or 0.
+function extract_request_id(id: json.Value) -> ptr_uint:
+    if id.is_null(): return 0
+    let n = id.as_number() else:
+        return 0
+    return ptr_uint<-int<-n

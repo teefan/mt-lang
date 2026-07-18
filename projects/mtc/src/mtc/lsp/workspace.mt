@@ -20,6 +20,7 @@ public struct Workspace:
     module_roots: vec.Vec[string.String]
     open_docs: map_mod.Map[string.String, string.String]
     document_contexts: map_mod.Map[string.String, string.String]
+    cancelled_ids: vec.Vec[ptr_uint]
     index_built: bool
     index: idx.Index
 
@@ -33,6 +34,7 @@ extending Workspace:
             module_roots = roots,
             open_docs = map_mod.Map[string.String, string.String].create(),
             document_contexts = map_mod.Map[string.String, string.String].create(),
+            cancelled_ids = vec.Vec[ptr_uint].create(),
             index_built = false,
             index = idx.Index(entries = vec.Vec[idx.Entry].create()),
         )
@@ -138,11 +140,43 @@ extending Workspace:
                 pass
 
 
+    ## Mark a request as cancelled by its numeric id.
+    public editable function cancel_request(id: ptr_uint) -> void:
+        this.cancelled_ids.push(id)
+
+
+    ## True when the given numeric request id was cancelled.
+    public function is_request_cancelled(id: ptr_uint) -> bool:
+        var i: ptr_uint = 0
+        while i < this.cancelled_ids.len():
+            let cid = this.cancelled_ids.get(i) else:
+                break
+            unsafe:
+                if read(cid) == id:
+                    return true
+            i += 1
+        return false
+
+
+    ## Remove a cancelled id after the request has been processed.
+    public editable function clear_cancelled(id: ptr_uint) -> void:
+        var i: ptr_uint = 0
+        while i < this.cancelled_ids.len():
+            let cid = this.cancelled_ids.get(i) else:
+                break
+            unsafe:
+                if read(cid) == id:
+                    this.cancelled_ids.swap_remove(i)
+                    break
+            i += 1
+
+
     public editable function release() -> void:
         this.root_path.release()
         release_module_roots(ref_of(this.module_roots))
         this.open_docs.release()
         this.document_contexts.release()
+        this.cancelled_ids.release()
         if this.index_built:
             idx.release_index(ref_of(this.index))
 
