@@ -6,11 +6,16 @@ import std.json as json
 import std.str
 import std.string as string
 
+import mtc.lsp.code_actions as code_actions
+import mtc.lsp.completion as completion
 import mtc.lsp.diagnostics as diag
 import mtc.lsp.formatting as formatting
 import mtc.lsp.lifecycle as lifecycle
 import mtc.lsp.navigation as nav
 import mtc.lsp.protocol as proto
+import mtc.lsp.rename as rename_mod
+import mtc.lsp.semantic_tokens as semtok
+import mtc.lsp.signature_help as sighelp
 import mtc.lsp.symbols as symbols
 import mtc.lsp.text_docs as text_docs
 import mtc.lsp.workspace as workspace
@@ -82,6 +87,24 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         var pos = extract_position_params(msg.params)
         nav.handle_references(pos.uri, pos.line, pos.character, msg.id)
 
+    # Tier 3
+    else if method == "textDocument/completion":
+        var pos = extract_position_params(msg.params)
+        completion.handle_completion(pos.uri, pos.line, pos.character, msg.id)
+    else if method == "textDocument/semanticTokens/full":
+        let uri = extract_text_doc_uri(msg.params)
+        semtok.handle_semantic_tokens(uri, msg.id)
+    else if method == "textDocument/signatureHelp":
+        var pos = extract_position_params(msg.params)
+        sighelp.handle_signature_help(pos.uri, pos.line, pos.character, msg.id)
+    else if method == "textDocument/rename":
+        var pos = extract_position_params(msg.params)
+        let new_name_ptr = extract_new_name(msg.params)
+        rename_mod.handle_rename(pos.uri, pos.line, pos.character, new_name_ptr, msg.id)
+    else if method == "textDocument/codeAction":
+        let uri = extract_text_doc_uri(msg.params)
+        code_actions.handle_code_actions(uri, msg.id)
+
     else:
         if not msg.id.is_null():
             proto.write_error(msg.id, -32601, "method not found")
@@ -142,5 +165,16 @@ function workspace_root_from_args(args: span[str]) -> str:
     if args.len >= 1:
         unsafe:
             return read(args.data + 0)
-
     return "."
+
+
+## Extract the newName field from a rename request params.
+function extract_new_name(params: json.Value) -> str:
+    let obj_ptr = params.as_object()
+    if obj_ptr == null: return ""
+    unsafe:
+        let name_ptr = read(obj_ptr).get("newName")
+        if name_ptr == null: return ""
+        let name_str = read(name_ptr).as_string() else:
+            return ""
+        return name_str
