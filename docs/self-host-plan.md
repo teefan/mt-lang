@@ -548,12 +548,12 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 | `loop-single-iteration` | **DONE** — `always_returns_body`-based structural check |
 | `redundant-null-check` | **DONE** — structural forward narrowing walk in `linter/nullcheck.mt` (§0.5); findings byte-identical to Ruby on `projects/mtc/src` and `std/` |
 
-### 3.4 Tooling — 2 remaining
+### 3.4 Tooling — DONE (2026-07-18)
 
-| Gap | Effort | Status |
-|-----|--------|--------|
-| `--fix` | Medium | Not started — needs `Warning` column/length fields + per-rule edit generators (port of Ruby `fix_engine.rb`; multi-pass rule-isolating loop) |
-| `.mt-lint.yml` config | Small | Not started — no config code exists in the tree (an earlier claim of unwired `load_lint_config`/`parse_lint_toml` code was stale; `git log -S` shows it was never committed). Note the Ruby format is YAML (`.mt-lint.yml`), not TOML. Use `std.fs.find_ancestor_containing` for the ancestor walk (correctly terminating, avoids the previously reported hang) plus a minimal YAML-subset parser for `select:`/`ignore:` lists and `max_line_length:` |
+| Gap | Status |
+|-----|--------|
+| `--fix` | **DONE** — `linter/fix_engine.mt` ports Ruby's multi-pass rule-isolating loop (each pass fixes one rule at a time from a fresh re-lint, bottom-up within a file, until fixpoint or 5 passes). Fixable rules: `prefer-let`, `redundant-return`, `redundant-else`, `trailing-list-comma`. `unused-import` is deliberately NOT fixable, matching Ruby's rationale (removing an import can drop extension methods / canonical hooks invisible to per-file linting). `Warning` gained `column`/`length` fields (populated by trailing-list-comma; other rules remain line-granular). Verified byte-identical fix output vs Ruby on a multi-rule fixture; valgrind-clean; 12 new tests (fix_engine_test.mt, suite now 488). |
+| `.mt-lint.yml` config | **DONE** — `linter/config.mt`: ancestor-walk discovery (100-level cap, mirroring Ruby `load_config`) + minimal YAML-subset parser for `select:`/`ignore:` (block and inline lists) and `max_line_length:`. CLI flags override config; `max_line_length` threads through new `lint_source_opts`. Verified same warning sets as Ruby under a shared config. Known pre-existing divergence surfaced at tiny limits: Ruby's line-too-long skips non-wrappable lines (imports, simple statements) and appends "; wrap the expression" when a formatter wrap fix exists — the self-host flags all long lines with the plain message (formatter wrap-fix machinery not ported). |
 
 ---
 
@@ -627,8 +627,12 @@ asymmetry and a shared libuv crash, neither compiler-specific):
 
 ### 5.3 Linter gaps (§3)
 
-`redundant-null-check` is **DONE** (2026-07-17, §0.5/§3.3). Only tooling
-(`--fix`, `.mt-lint.yml` config wiring) remains — see §3.4.
+`redundant-null-check` is **DONE** (2026-07-17, §0.5/§3.3). Tooling
+(`--fix`, `.mt-lint.yml`) is **DONE** (2026-07-18, §3.4). Remaining linter
+delta: Ruby's larger auto-fixable set (prefer-let-else/var-else,
+redundant-bool-compare/cast/type-annotation, redundant-ignored-match-binding,
+reserved-primitive-name renames) needs per-rule column tracking and the
+formatter wrap-fix machinery.
 
 ### 5.3a RESOLVED: 5 language examples failed the sema gate (found + fixed 2026-07-17)
 

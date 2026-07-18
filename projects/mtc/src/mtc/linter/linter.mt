@@ -47,9 +47,14 @@ import mtc.linter.own_ptr as own_ptr
 import mtc.linter.redundant_cast as redundant_cast
 
 
+## `column` is the 1-based character column of the offending token and
+## `length` its character length; both are 0 when the emitting rule does not
+## track positions (most rules are line-granular).
 public struct Warning:
     path: str
     line: ptr_uint
+    column: ptr_uint
+    length: ptr_uint
     code: str
     message: str
     severity: str
@@ -58,6 +63,18 @@ public struct Warning:
 ## Lint a parsed source file, returning warnings in source (traversal) order.
 ## `source` is the original text, re-lexed for the token-based passes.
 public function lint_source(file: ast.SourceFile, source: str, path: str, owning_type_names: span[str]) -> vec.Vec[Warning]:
+    return lint_source_opts(file, source, path, owning_type_names, DEFAULT_MAX_LINE_LENGTH)
+
+
+## lint_source with an explicit line-length limit (from `.mt-lint.yml`'s
+## `max_line_length`).
+public function lint_source_opts(
+    file: ast.SourceFile,
+    source: str,
+    path: str,
+    owning_type_names: span[str],
+    max_line_length: ptr_uint,
+) -> vec.Vec[Warning]:
     var warnings = vec.Vec[Warning].create()
     var i: ptr_uint = 0
     while i < file.declarations.len:
@@ -72,7 +89,15 @@ public function lint_source(file: ast.SourceFile, source: str, path: str, owning
         let sp = scope_warnings.get(i) else:
             break
         let sw = unsafe: read(sp)
-        warnings.push(Warning(path = sw.path, line = sw.line, code = sw.code, message = sw.message, severity = sw.severity))
+        warnings.push(Warning(
+            path = sw.path,
+            line = sw.line,
+            column = 0,
+            length = 0,
+            code = sw.code,
+            message = sw.message,
+            severity = sw.severity
+        ))
         i += 1
     scope_warnings.release()
     # Whole-file passes run after the AST visitor, matching Ruby's emission order.
@@ -83,7 +108,7 @@ public function lint_source(file: ast.SourceFile, source: str, path: str, owning
     lint_doc_tags(file.declarations, source, path, ref_of(warnings))
     lint_events(file.declarations, "", path, ref_of(warnings))
     lint_trailing_commas(file.declarations, source, path, ref_of(warnings))
-    lint_line_too_long(source, path, ref_of(warnings))
+    lint_line_too_long(source, path, max_line_length, ref_of(warnings))
     lint_dead_assignment(file, path, ref_of(warnings))
     lint_unreachable_code(file, path, ref_of(warnings))
     lint_prefer_own_ptr(file, path, ref_of(warnings))
@@ -459,7 +484,28 @@ function int_to_decimal(n: int) -> string.String:
 
 
 function push_warning(warnings: ref[vec.Vec[Warning]], path: str, line: ptr_uint, code: str, message: str, severity: str) -> void:
-    warnings.push(Warning(path = path, line = line, code = code, message = message, severity = severity))
+    push_warning_at(warnings, path, line, 0, 0, code, message, severity)
+
+
+function push_warning_at(
+    warnings: ref[vec.Vec[Warning]],
+    path: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    length: ptr_uint,
+    code: str,
+    message: str,
+    severity: str,
+) -> void:
+    warnings.push(Warning(
+        path = path,
+        line = line,
+        column = column,
+        length = length,
+        code = code,
+        message = message,
+        severity = severity
+    ))
 
 
 # =============================================================================
@@ -671,7 +717,16 @@ function check_trailing_comma(callee: ptr[ast.Expr], args: span[ast.Argument], t
                         let key = location_key(comma_line, comma_col)
                         if not warned.contains(key):
                             warned.set(key, true)
-                            push_warning(warnings, path, comma_line, "trailing-list-comma", "trailing comma in call argument list is redundant", "hint")
+                            push_warning_at(
+                                warnings,
+                                path,
+                                comma_line,
+                                comma_col,
+                                1,
+                                "trailing-list-comma",
+                                "trailing comma in call argument list is redundant",
+                                "hint"
+                            )
                     return
                 if paren_depth > 0:
                     paren_depth -= 1
@@ -2733,7 +2788,7 @@ function uint_to_str(n: ptr_uint) -> str:
 
 const DEFAULT_MAX_LINE_LENGTH: ptr_uint = 120
 
-function lint_line_too_long(source: str, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function lint_line_too_long(source: str, path: str, max_line_length: ptr_uint, warnings: ref[vec.Vec[Warning]]) -> void:
     var start: ptr_uint = 0
     var line_num: ptr_uint = 1
     var i: ptr_uint = 0
@@ -2743,8 +2798,8 @@ function lint_line_too_long(source: str, path: str, warnings: ref[vec.Vec[Warnin
             if should_check_line_length(line_text):
                 # Count UTF-8 characters rather than bytes for accurate column width.
                 let char_count = utf8_char_width(line_text)
-                if char_count > DEFAULT_MAX_LINE_LENGTH:
-                    push_line_too_long(path, line_num, char_count, warnings)
+                if char_count > max_line_length:
+                    push_line_too_long(path, line_num, char_count, max_line_length, warnings)
             start = i + 1
             line_num += 1
         i += 1
@@ -2752,8 +2807,8 @@ function lint_line_too_long(source: str, path: str, warnings: ref[vec.Vec[Warnin
         let line_text = source.slice(start, source.len - start)
         if should_check_line_length(line_text):
             let char_count = utf8_char_width(line_text)
-            if char_count > DEFAULT_MAX_LINE_LENGTH:
-                push_line_too_long(path, line_num, char_count, warnings)
+            if char_count > max_line_length:
+                push_line_too_long(path, line_num, char_count, max_line_length, warnings)
 
 
 function should_check_line_length(line: str) -> bool:
@@ -2783,10 +2838,10 @@ function utf8_char_width(s: str) -> ptr_uint:
     return count
 
 
-function push_line_too_long(path: str, line: ptr_uint, length: ptr_uint, warnings: ref[vec.Vec[Warning]]) -> void:
+function push_line_too_long(path: str, line: ptr_uint, length: ptr_uint, max_line_length: ptr_uint, warnings: ref[vec.Vec[Warning]]) -> void:
     var msg = string.String.create()
     msg.append("line exceeds max length of ")
-    msg.append(uint_to_str(DEFAULT_MAX_LINE_LENGTH))
+    msg.append(uint_to_str(max_line_length))
     msg.append(" columns (")
     msg.append(uint_to_str(length))
     msg.append(")")

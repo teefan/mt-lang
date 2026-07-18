@@ -195,15 +195,20 @@ function diagnostic_from_warning(w: linter_mod.Warning, source: str) -> json.Val
 
     var start_char: ptr_uint = 0
     var end_char: ptr_uint = 1
-    let name = extract_quoted_name(w.message)
-    if name.len > 0 and source.len > 0:
-        let line_text = cursor.source_line(source, w.line)
-        match cursor.token_start_in_line(line_text, name):
-            Option.some as pos:
-                start_char = pos.value
-                end_char = pos.value + name.len
-            Option.none:
-                pass
+    if w.column > 0:
+        # The rule tracked the exact position (e.g. trailing-list-comma).
+        start_char = w.column - 1
+        end_char = start_char + (if w.length > 0: w.length else: 1z)
+    else:
+        let name = extract_quoted_name(w.message)
+        if name.len > 0 and source.len > 0:
+            let line_text = cursor.source_line(source, w.line)
+            match cursor.token_start_in_line(line_text, name):
+                Option.some as pos:
+                    start_char = pos.value
+                    end_char = pos.value + name.len
+                Option.none:
+                    pass
 
     var range = json.create_object_value()
     let range_obj = range.as_object() else:

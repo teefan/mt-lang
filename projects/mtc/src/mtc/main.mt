@@ -30,6 +30,8 @@ import mtc.build as build_driver
 import mtc.build_cache as build_cache
 import mtc.pretty_printer.ast_formatter as fmt
 import mtc.linter.linter as linter
+import mtc.linter.config as lint_config
+import mtc.linter.fix_engine as fix_engine
 import mtc.lsp.server as lsp
 
 
@@ -506,11 +508,16 @@ function lint_command(args: span[str]) -> int:
     defer select_set.release()
     var ignore_set = vec.Vec[str].create()
     defer ignore_set.release()
+    var fix_mode = false
     var i: ptr_uint = 1
     while i < args.len:
         let arg = args[i]
         if arg == "-I" or arg == "--root":
             i += 2
+            continue
+        if arg == "--fix":
+            fix_mode = true
+            i += 1
             continue
         if arg == "--select":
             i += 1
@@ -525,7 +532,7 @@ function lint_command(args: span[str]) -> int:
             i += 1
             continue
         if arg.starts_with("-"):
-            # Other flags (--fix, --init, --locked, --profile) are silently skipped.
+            # Other flags (--init, --locked, --profile) are silently skipped.
             i += 1
             continue
         input_paths.push(arg)
@@ -580,10 +587,43 @@ function lint_command(args: span[str]) -> int:
             Result.success as content:
                 var src = content.value
                 defer src.release()
+
+                # `.mt-lint.yml` supplies select/ignore defaults (CLI flags
+                # win) and the line-length limit.
+                var cfg = lint_config.load_for_path(fp)
+                defer cfg.release()
+                var effective_select = vec.Vec[str].create()
+                defer effective_select.release()
+                var effective_ignore = vec.Vec[str].create()
+                defer effective_ignore.release()
+                merge_filter_codes(ref_of(effective_select), ref_of(select_set), ref_of(cfg.select))
+                merge_filter_codes(ref_of(effective_ignore), ref_of(ignore_set), ref_of(cfg.ignore))
+                let max_line_length = if cfg.max_line_length > 0: cfg.max_line_length else: 120z
+
+                if fix_mode:
+                    var fixed = fix_engine.fix_source(
+                        src.as_str(),
+                        fp,
+                        span[str](),
+                        ref_of(effective_select),
+                        ref_of(effective_ignore)
+                    )
+                    defer fixed.release()
+                    if not fixed.as_str().equal(src.as_str()):
+                        match fs.write_text(fp, fixed.as_str()):
+                            Result.success:
+                                stdio.print_format(c"fixed %.*s\n", int<-(fp.len), fp.data)
+                            Result.failure as write_err:
+                                var wem = write_err.error
+                                defer wem.release()
+                                stdio.print_format(c"error: cannot write %.*s\n", int<-(fp.len), fp.data)
+                    fi += 1
+                    continue
+
                 var diags = vec.Vec[pstate.ParseDiagnostic].create()
                 defer diags.release()
                 let file = parser.parse_source(src.as_str(), ref_of(diags))
-                var warns = linter.lint_source(file, src.as_str(), fp, span[str]())
+                var warns = linter.lint_source_opts(file, src.as_str(), fp, span[str](), max_line_length)
                 defer warns.release()
                 var filtered = vec.Vec[linter.Warning].create()
                 defer filtered.release()
@@ -593,7 +633,7 @@ function lint_command(args: span[str]) -> int:
                         break
                     unsafe:
                         let w = read(wp)
-                        if warning_allowed(w.code, ref_of(select_set), ref_of(ignore_set)):
+                        if warning_allowed(w.code, ref_of(effective_select), ref_of(effective_ignore)):
                             filtered.push(w)
                     wi += 1
                 if filtered.len() > 0:
@@ -617,6 +657,9 @@ function lint_command(args: span[str]) -> int:
                 var em = read_err.error
                 em.release()
         fi += 1
+
+    if fix_mode:
+        return 0
 
     if total_warnings == 0:
         if input_paths.len() == 1:
@@ -644,6 +687,31 @@ function lint_command(args: span[str]) -> int:
         int<-(files_text.len), files_text.data,
     )
     return 1
+
+
+## CLI filter codes win over config-file codes; config is the fallback.
+## The output holds views into the CLI args or the (caller-kept) config.
+function merge_filter_codes(
+    output: ref[vec.Vec[str]],
+    cli_codes: ref[vec.Vec[str]],
+    config_codes: ref[vec.Vec[string.String]],
+) -> void:
+    if cli_codes.len() > 0:
+        var i: ptr_uint = 0
+        while i < cli_codes.len():
+            let cp = cli_codes.get(i) else:
+                break
+            unsafe:
+                output.push(read(cp))
+            i += 1
+        return
+    var i: ptr_uint = 0
+    while i < config_codes.len():
+        let cp = config_codes.get(i) else:
+            break
+        unsafe:
+            output.push(read(cp).as_str())
+        i += 1
 
 
 function warning_allowed(code: str, select_set: ref[vec.Vec[str]], ignore_set: ref[vec.Vec[str]]) -> bool:
