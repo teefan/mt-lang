@@ -73,25 +73,76 @@ public function handle_references(uri: str, line: ptr_uint, character: ptr_uint,
         return
 
     let source = content.as_str()
-    if source.len == 0:
-        proto.write_response(id, json.null_value())
-        return
-
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    if parse_diags.len() > 0:
-        proto.write_response(id, json.null_value())
-        return
-
     var byte_offset = utf16_to_byte_offset(source, line, character)
     var target_name = extract_identifier_at_offset(source, byte_offset)
     if target_name.len == 0:
         proto.write_response(id, json.null_value())
         return
 
-    var references = find_references_in_ast(ast_file, target_name, uri)
-    proto.write_response(id, references)
+    var refs_json = build_references_json(source, target_name, uri)
+    proto.write_response_raw(id, refs_json.as_str())
+    refs_json.release()
+
+
+## Build a JSON array of Location objects for all references to `name` in `source`.
+function build_references_json(source: str, name: str, uri: str) -> string.String:
+    var result = string.String.create()
+    result.append("[")
+    var first = true
+    var n: ptr_uint = 0
+    var line: ptr_uint = 0
+    var line_start: ptr_uint = 0
+    while n < source.len:
+        if source.byte_at(n) == 10:
+            line += 1
+            line_start = n + 1
+            n += 1
+            continue
+        var matched = true
+        var mi: ptr_uint = 0
+        while mi < name.len:
+            if n + mi >= source.len or source.byte_at(n + mi) != name.byte_at(mi):
+                matched = false
+                break
+            mi += 1
+        if matched:
+            var before_ok = true
+            if n > 0:
+                before_ok = not is_ident_cont(source.byte_at(n - 1))
+            var after_ok = true
+            let after = n + name.len
+            if after < source.len:
+                after_ok = not is_ident_cont(source.byte_at(after))
+            if before_ok and after_ok:
+                if not first:
+                    result.append(",")
+                first = false
+                let col = n - line_start
+                let lz = if line > 0: ptr_uint<-(int<-(line) - 1) else: 0z
+                result.append("{\"uri\":\"")
+                append_ref_escaped(ref_of(result), uri)
+                result.append("\",\"range\":{\"start\":{\"line\":")
+                result.append_format(f"#{lz}")
+                result.append(",\"character\":")
+                result.append_format(f"#{col}")
+                result.append("},\"end\":{\"line\":")
+                result.append_format(f"#{lz}")
+                result.append(",\"character\":")
+                result.append_format(f"#{col + name.len}")
+                result.append("}}}")
+            n += name.len
+        else:
+            n += 1
+    result.append("]")
+    return result
+
+
+function append_ref_escaped(output: ref[string.String], text: str) -> void:
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if b == 34: output.append("\\\"") else if b == 92: output.append("\\\\") else: output.push_byte(b)
+        i += 1
 
 
 ## Cursor resolution result — the definition line and hover text for the symbol
@@ -202,6 +253,89 @@ function is_ident_cont(ch: ubyte) -> bool:
 ## of Location objects.
 function find_references_in_ast(file: ast.SourceFile, name: str, uri: str) -> json.Value:
     return json.create_array_value()
+
+
+## Text-based reference scanner: scan the source text for all occurrences of
+## `name` that appear at word boundaries (not inside longer identifiers).
+## Returns a JSON array of Location objects with line numbers.
+function scan_references_in_source(source: str, name: str, uri: str) -> json.Value:
+    var result = json.create_array_value()
+    var result_ptr = result.as_array()
+    if result_ptr == null:
+        return result
+    if name.len == 0:
+        return result
+    var n: ptr_uint = 0
+    var line: ptr_uint = 0
+    var line_start: ptr_uint = 0
+    while n < source.len:
+        # Track line boundaries as we scan.
+        if source.byte_at(n) == 10:
+            line += 1
+            line_start = n + 1
+            n += 1
+            continue
+        # Check for a match at this position.
+        var matched = true
+        var mi: ptr_uint = 0
+        while mi < name.len:
+            if n + mi >= source.len or source.byte_at(n + mi) != name.byte_at(mi):
+                matched = false
+                break
+            mi += 1
+        if matched:
+            # Check word boundaries.
+            var before_ok = true
+            if n > 0:
+                before_ok = not is_ident_cont(source.byte_at(n - 1))
+            var after_ok = true
+            let after = n + name.len
+            if after < source.len:
+                after_ok = not is_ident_cont(source.byte_at(after))
+            if before_ok and after_ok:
+                var loc = build_location_ref(uri, line, n - line_start, name.len)
+                unsafe:
+                    read(result_ptr).push(loc)
+            n += name.len
+        else:
+            n += 1
+    return result
+
+
+function build_location_ref(uri: str, line: ptr_uint, col: ptr_uint, name_len: ptr_uint) -> json.Value:
+    var loc = json.create_object_value()
+    var loc_ptr = loc.as_object()
+    if loc_ptr == null:
+        return json.null_value()
+    var range_val = json.create_object_value()
+    var range_ptr = range_val.as_object()
+    if range_ptr == null:
+        json.release_value(loc)
+        return json.null_value()
+    var start_val = json.create_object_value()
+    var start_ptr = start_val.as_object()
+    if start_ptr == null:
+        json.release_value(range_val)
+        json.release_value(loc)
+        return json.null_value()
+    var end_val = json.create_object_value()
+    var end_ptr = end_val.as_object()
+    if end_ptr == null:
+        json.release_value(start_val)
+        json.release_value(range_val)
+        json.release_value(loc)
+        return json.null_value()
+    let lz = if line > 0: ptr_uint<-(int<-(line) - 1) else: 0z
+    unsafe:
+        read(start_ptr).set("line", json.number_value(double<-lz))
+        read(start_ptr).set("character", json.number_value(double<-col))
+        read(end_ptr).set("line", json.number_value(double<-lz))
+        read(end_ptr).set("character", json.number_value(double<-(col + name_len)))
+        read(range_ptr).set("start", start_val)
+        read(range_ptr).set("end", end_val)
+        read(loc_ptr).set("uri", json.string_from_str(uri))
+        read(loc_ptr).set("range", range_val)
+    return loc
 
 
 ## Resolve `name` against the semantic analysis maps.  Returns the definition

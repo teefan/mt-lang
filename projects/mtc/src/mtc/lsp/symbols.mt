@@ -1,8 +1,10 @@
 ## Document symbols — extract top-level symbol definitions from a parsed
 ## source file and return them as LSP DocumentSymbol JSON.
 
+import std.fmt
 import std.fs as fs_mod
 import std.json as json
+import std.str
 import std.string as string
 import std.vec as vec
 
@@ -52,27 +54,27 @@ public function handle_document_symbols(uri: str, id: json.Value) -> void:
         return
 
     var symbols = collect_declaration_symbols_from_file(ast_file)
-    var result = json.create_array_value()
-    var result_ptr = result.as_array()
-    if result_ptr == null:
-        release_symbol_vec(ref_of(symbols))
-        proto.write_error(id, -32603, "internal error")
-        return
 
+    var json_text = string.String.create()
+    defer json_text.release()
+    json_text.append("[")
+    var first = true
     var si: ptr_uint = 0
     while si < symbols.len():
         let sym_ptr = symbols.get(si) else:
             break
-        unsafe:
-            read(result_ptr).push(read(sym_ptr))
+        if not first:
+            json_text.append(",")
+        first = false
+        json_text.append(unsafe: read(sym_ptr).as_str())
         si += 1
-
+    json_text.append("]")
     symbols.release()
-    proto.write_response(id, result)
+    proto.write_response_raw(id, json_text.as_str())
 
 
-function collect_declaration_symbols_from_file(file: ast.SourceFile) -> vec.Vec[json.Value]:
-    var symbols = vec.Vec[json.Value].create()
+function collect_declaration_symbols_from_file(file: ast.SourceFile) -> vec.Vec[string.String]:
+    var symbols = vec.Vec[string.String].create()
 
     var di: ptr_uint = 0
     while di < file.declarations.len:
@@ -81,52 +83,52 @@ function collect_declaration_symbols_from_file(file: ast.SourceFile) -> vec.Vec[
             decl = read(file.declarations.data + di)
         match decl:
             ast.Decl.decl_function as fun:
-                var sym = build_symbol(fun.name, SYMBOLKIND_FUNCTION, fun.line)
+                var sym = build_symbol_string(fun.name, SYMBOLKIND_FUNCTION, fun.line)
                 symbols.push(sym)
             ast.Decl.decl_struct as s:
-                var children = vec.Vec[json.Value].create()
-                collect_fields(ref_of(children), s.struct_fields)
-                var sym = build_symbol_with_children(s.name, SYMBOLKIND_STRUCT, s.line, ref_of(children))
+                var children = vec.Vec[string.String].create()
+                collect_field_children(ref_of(children), s.struct_fields)
+                var sym = build_symbol_string_with_children(s.name, SYMBOLKIND_STRUCT, s.line, ref_of(children))
                 symbols.push(sym)
             ast.Decl.decl_enum as e:
-                var children = vec.Vec[json.Value].create()
-                collect_enums(ref_of(children), e.enum_members)
-                var sym = build_symbol_with_children(e.name, SYMBOLKIND_ENUM, e.line, ref_of(children))
+                var children = vec.Vec[string.String].create()
+                collect_enum_children(ref_of(children), e.enum_members)
+                var sym = build_symbol_string_with_children(e.name, SYMBOLKIND_ENUM, e.line, ref_of(children))
                 symbols.push(sym)
             ast.Decl.decl_flags as fl:
-                var children = vec.Vec[json.Value].create()
-                collect_enums(ref_of(children), fl.flags_members)
-                var sym = build_symbol_with_children(fl.name, SYMBOLKIND_ENUM, fl.line, ref_of(children))
+                var children = vec.Vec[string.String].create()
+                collect_enum_children(ref_of(children), fl.flags_members)
+                var sym = build_symbol_string_with_children(fl.name, SYMBOLKIND_ENUM, fl.line, ref_of(children))
                 symbols.push(sym)
             ast.Decl.decl_const as c:
-                var sym = build_symbol(c.name, SYMBOLKIND_CONST, c.line)
+                var sym = build_symbol_string(c.name, SYMBOLKIND_CONST, c.line)
                 symbols.push(sym)
             ast.Decl.decl_var as v:
-                var sym = build_symbol(v.name, SYMBOLKIND_VARIABLE, v.line)
+                var sym = build_symbol_string(v.name, SYMBOLKIND_VARIABLE, v.line)
                 symbols.push(sym)
             ast.Decl.decl_interface as iface:
-                var children = vec.Vec[json.Value].create()
-                collect_iface_methods(ref_of(children), iface.interface_methods)
-                var sym = build_symbol_with_children(iface.name, SYMBOLKIND_INTERFACE, iface.line, ref_of(children))
+                var children = vec.Vec[string.String].create()
+                collect_interface_children(ref_of(children), iface.interface_methods)
+                var sym = build_symbol_string_with_children(iface.name, SYMBOLKIND_INTERFACE, iface.line, ref_of(children))
                 symbols.push(sym)
             ast.Decl.decl_event as ev:
-                var sym = build_symbol(ev.name, SYMBOLKIND_EVENT, ev.line)
+                var sym = build_symbol_string(ev.name, SYMBOLKIND_EVENT, ev.line)
                 symbols.push(sym)
             ast.Decl.decl_variant as vr:
-                var children = vec.Vec[json.Value].create()
-                collect_variant_arms(ref_of(children), vr.variant_arms)
-                var sym = build_symbol_with_children(vr.name, SYMBOLKIND_STRUCT, vr.line, ref_of(children))
+                var children = vec.Vec[string.String].create()
+                collect_variant_children(ref_of(children), vr.variant_arms)
+                var sym = build_symbol_string_with_children(vr.name, SYMBOLKIND_STRUCT, vr.line, ref_of(children))
                 symbols.push(sym)
             ast.Decl.decl_type_alias as ta:
-                var sym = build_symbol(ta.name, SYMBOLKIND_TYPEPARAM, ta.line)
+                var sym = build_symbol_string(ta.name, SYMBOLKIND_TYPEPARAM, ta.line)
                 symbols.push(sym)
             ast.Decl.decl_union as u:
-                var children = vec.Vec[json.Value].create()
-                collect_fields(ref_of(children), u.union_fields)
-                var sym = build_symbol_with_children(u.name, SYMBOLKIND_STRUCT, u.line, ref_of(children))
+                var children = vec.Vec[string.String].create()
+                collect_field_children(ref_of(children), u.union_fields)
+                var sym = build_symbol_string_with_children(u.name, SYMBOLKIND_STRUCT, u.line, ref_of(children))
                 symbols.push(sym)
             ast.Decl.decl_opaque as op:
-                var sym = build_symbol(op.name, SYMBOLKIND_STRUCT, op.line)
+                var sym = build_symbol_string(op.name, SYMBOLKIND_STRUCT, op.line)
                 symbols.push(sym)
             _:
                 pass
@@ -135,116 +137,118 @@ function collect_declaration_symbols_from_file(file: ast.SourceFile) -> vec.Vec[
     return symbols
 
 
-function build_symbol(name: str, kind: double, line: ptr_uint) -> json.Value:
-    var result = json.create_object_value()
-    var obj_ptr = result.as_object()
-    if obj_ptr == null:
-        return json.null_value()
-    var range = make_range(line)
-    var sel = make_range(line)
-    unsafe:
-        read(obj_ptr).set("name", json.string_from_str(name))
-        read(obj_ptr).set("kind", json.number_value(kind))
-        read(obj_ptr).set("range", range)
-        read(obj_ptr).set("selectionRange", sel)
+function build_symbol_string(name: str, kind: double, line: ptr_uint) -> string.String:
+    var result = string.String.create()
+    let lz = if line > 0: ptr_uint<-(int<-(line) - 1) else: 0z
+    result.append("{\"name\":\"")
+    append_json_escape(ref_of(result), name)
+    result.append("\",\"kind\":")
+    result.append_format(f"#{kind}")
+    result.append(",\"range\":")
+    append_range_json(ref_of(result), lz)
+    result.append(",\"selectionRange\":")
+    append_range_json(ref_of(result), lz)
+    result.append("}")
     return result
 
 
-function build_symbol_with_children(name: str, kind: double, line: ptr_uint, children: ref[vec.Vec[json.Value]]) -> json.Value:
-    var result = build_symbol(name, kind, line)
-    var obj_ptr = result.as_object()
-    if obj_ptr == null:
-        release_symbol_vec(children)
-        return json.null_value()
-    var child_array = json.create_array_value()
-    var arr_ptr = child_array.as_array()
-    if arr_ptr != null:
-        var i: ptr_uint = 0
-        while i < children.len():
-            let cp = children.get(i) else:
-                break
-            unsafe:
-                read(arr_ptr).push(read(cp))
-            i += 1
-    children.release()
-    unsafe:
-        read(obj_ptr).set("children", child_array)
+function build_symbol_string_with_children(name: str, kind: double, line: ptr_uint, children: ref[vec.Vec[string.String]]) -> string.String:
+    var result = string.String.create()
+    let lz = if line > 0: ptr_uint<-(int<-(line) - 1) else: 0z
+    result.append("{\"name\":\"")
+    append_json_escape(ref_of(result), name)
+    result.append("\",\"kind\":")
+    result.append_format(f"#{kind}")
+    result.append(",\"range\":")
+    append_range_json(ref_of(result), lz)
+    result.append(",\"selectionRange\":")
+    append_range_json(ref_of(result), lz)
+    result.append(",\"children\":[")
+    var first = true
+    var ci: ptr_uint = 0
+    while ci < children.len():
+        let cp = children.get(ci) else:
+            break
+        if not first:
+            result.append(",")
+        first = false
+        result.append(unsafe: read(cp).as_str())
+        ci += 1
+    result.append("]}")
+    release_symbol_strings(children)
     return result
 
 
-function release_symbol_vec(symbols: ref[vec.Vec[json.Value]]) -> void:
+function append_range_json(output: ref[string.String], line_zero: ptr_uint) -> void:
+    output.append("{\"start\":{\"line\":")
+    output.append_format(f"#{line_zero}")
+    output.append(",\"character\":0},\"end\":{\"line\":")
+    output.append_format(f"#{line_zero}")
+    output.append(",\"character\":0}}")
+
+
+function append_json_escape(output: ref[string.String], text: str) -> void:
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if b == 34: output.append("\\\"") else if b == 92: output.append("\\\\") else: output.push_byte(b)
+        i += 1
+
+
+function release_symbol_strings(symbols: ref[vec.Vec[string.String]]) -> void:
     var i: ptr_uint = 0
     while i < symbols.len():
         let sp = symbols.get(i) else:
             break
-        json.release_value(unsafe: read(sp))
+        unsafe:
+            read(sp).release()
         i += 1
     symbols.release()
 
 
-function make_range(line: ptr_uint) -> json.Value:
-    var range = json.create_object_value()
-    var start = json.create_object_value()
-    var end = json.create_object_value()
-    let line_zero = if line > 0: ptr_uint<-(int<-(line) - 1) else: 0z
-    var so_ptr = start.as_object()
-    var eo_ptr = end.as_object()
-    var r_ptr = range.as_object()
-    if so_ptr == null or eo_ptr == null or r_ptr == null:
-        return range
-    unsafe:
-        read(so_ptr).set("line", json.number_value(double<-line_zero))
-        read(so_ptr).set("character", json.number_value(0.0))
-        read(eo_ptr).set("line", json.number_value(double<-line_zero))
-        read(eo_ptr).set("character", json.number_value(0.0))
-        read(r_ptr).set("start", start)
-        read(r_ptr).set("end", end)
-    return range
-
-
-function collect_fields(children: ref[vec.Vec[json.Value]], fields: span[ast.Field]) -> void:
+function collect_field_children(children: ref[vec.Vec[string.String]], fields: span[ast.Field]) -> void:
     var fi: ptr_uint = 0
     while fi < fields.len:
         var field: ast.Field
         unsafe:
             field = read(fields.data + fi)
-        var sym = build_symbol(field.name, SYMBOLKIND_VARIABLE, 0)
+        var sym = build_symbol_string(field.name, SYMBOLKIND_VARIABLE, 0)
         unsafe:
             children.push(sym)
         fi += 1
 
 
-function collect_enums(children: ref[vec.Vec[json.Value]], members: span[ast.EnumMember]) -> void:
+function collect_enum_children(children: ref[vec.Vec[string.String]], members: span[ast.EnumMember]) -> void:
     var mi: ptr_uint = 0
     while mi < members.len:
         var mem: ast.EnumMember
         unsafe:
             mem = read(members.data + mi)
-        var sym = build_symbol(mem.name, SYMBOLKIND_ENUM, 0)
+        var sym = build_symbol_string(mem.name, SYMBOLKIND_ENUM, 0)
         unsafe:
             children.push(sym)
         mi += 1
 
 
-function collect_iface_methods(children: ref[vec.Vec[json.Value]], methods: span[ast.InterfaceMethod]) -> void:
+function collect_interface_children(children: ref[vec.Vec[string.String]], methods: span[ast.InterfaceMethod]) -> void:
     var mi: ptr_uint = 0
     while mi < methods.len:
         var m: ast.InterfaceMethod
         unsafe:
             m = read(methods.data + mi)
-        var sym = build_symbol(m.name, SYMBOLKIND_FUNCTION, 0)
+        var sym = build_symbol_string(m.name, SYMBOLKIND_FUNCTION, 0)
         unsafe:
             children.push(sym)
         mi += 1
 
 
-function collect_variant_arms(children: ref[vec.Vec[json.Value]], arms: span[ast.VariantArm]) -> void:
+function collect_variant_children(children: ref[vec.Vec[string.String]], arms: span[ast.VariantArm]) -> void:
     var ai: ptr_uint = 0
     while ai < arms.len:
         var arm: ast.VariantArm
         unsafe:
             arm = read(arms.data + ai)
-        var sym = build_symbol(arm.name, SYMBOLKIND_ENUM, 0)
+        var sym = build_symbol_string(arm.name, SYMBOLKIND_ENUM, 0)
         unsafe:
             children.push(sym)
         ai += 1
