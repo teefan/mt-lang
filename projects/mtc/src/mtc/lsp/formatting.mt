@@ -3,6 +3,7 @@
 ## Parses the source text, runs the AST formatter, and returns the formatted
 ## text as a TextEdit replacement for the entire document.
 
+import std.fs as fs_mod
 import std.json as json
 import std.str
 import std.string as string
@@ -37,7 +38,13 @@ public function handle_formatting(ws: ref[workspace.Workspace], params: json.Val
         unsafe:
             source_text.assign(read(persisted).as_str())
     else:
-        source_text.assign(owned_path.as_str())
+        var read_result = fs_mod.read_text(owned_path.as_str())
+        match read_result:
+            Result.success as content:
+                source_text.assign(content.value.as_str())
+            Result.failure:
+                proto.write_error(id, -32800, "format request failed: could not read file")
+                return
 
     let source = source_text.as_str()
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
@@ -115,19 +122,4 @@ public function handle_formatting(ws: ref[workspace.Workspace], params: json.Val
 
 ## Extract the textDocument.uri from a formatting notification params object.
 function text_doc_uri_from_params(params: json.Value) -> str:
-    let obj_ptr = params.as_object()
-    if obj_ptr == null:
-        return ""
-    unsafe:
-        let text_doc_ptr = read(obj_ptr).get("textDocument")
-        if text_doc_ptr == null:
-            return ""
-        let td_obj_ptr = read(text_doc_ptr).as_object()
-        if td_obj_ptr == null:
-            return ""
-        let uri_val_ptr = read(td_obj_ptr).get("uri")
-        if uri_val_ptr == null:
-            return ""
-        let uri_str = read(uri_val_ptr).as_string() else:
-            return ""
-        return uri_str
+    return proto.extract_text_doc_uri(params)

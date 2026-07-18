@@ -13,7 +13,6 @@ import mtc.lsp.navigation as nav
 import mtc.lsp.protocol as proto
 import mtc.lsp.symbols as symbols
 import mtc.lsp.text_docs as text_docs
-import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
 
@@ -90,22 +89,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
 
 ## Extract the textDocument.uri from a generic params object.
 function extract_text_doc_uri(params: json.Value) -> str:
-    let obj_ptr = params.as_object()
-    if obj_ptr == null:
-        return ""
-    unsafe:
-        let text_doc_ptr = read(obj_ptr).get("textDocument")
-        if text_doc_ptr == null:
-            return ""
-        let td_obj_ptr = read(text_doc_ptr).as_object()
-        if td_obj_ptr == null:
-            return ""
-        let uri_val_ptr = read(td_obj_ptr).get("uri")
-        if uri_val_ptr == null:
-            return ""
-        let uri_str = read(uri_val_ptr).as_string() else:
-            return ""
-        return uri_str
+    return proto.extract_text_doc_uri(params)
 
 
 struct PositionParams:

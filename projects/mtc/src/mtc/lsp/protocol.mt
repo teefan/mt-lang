@@ -300,6 +300,27 @@ public function append_escaped(output: ref[string.String], text: str) -> void:
         i += 1
 
 
+## Extract the textDocument.uri from a notification/request params object.
+## Shared by text_docs, formatting, server, and diagnostics modules.
+public function extract_text_doc_uri(params: json.Value) -> str:
+    let obj_ptr = params.as_object()
+    if obj_ptr == null:
+        return ""
+    unsafe:
+        let text_doc_ptr = read(obj_ptr).get("textDocument")
+        if text_doc_ptr == null:
+            return ""
+        let td_obj_ptr = read(text_doc_ptr).as_object()
+        if td_obj_ptr == null:
+            return ""
+        let uri_val_ptr = read(td_obj_ptr).get("uri")
+        if uri_val_ptr == null:
+            return ""
+        let uri_str = read(uri_val_ptr).as_string() else:
+            return ""
+        return uri_str
+
+
 extending Message:
     public editable function release() -> void:
         this.jsonrpc.release()

@@ -4,6 +4,7 @@
 ## and returns the definition location, type information, or reference list
 ## by walking the AST and querying the semantic Analysis structures.
 
+import std.fs as fs_mod
 import std.json as json
 import std.str
 import std.string as string
@@ -62,7 +63,9 @@ public function handle_references(uri: str, line: ptr_uint, character: ptr_uint,
 
     var content = string.String.create()
     defer content.release()
-    content.assign(file_path.as_str())
+    if not read_file_into(ref_of(content), file_path.as_str()):
+        proto.write_response(id, json.null_value())
+        return
 
     let source = content.as_str()
     if source.len == 0:
@@ -76,7 +79,8 @@ public function handle_references(uri: str, line: ptr_uint, character: ptr_uint,
         proto.write_response(id, json.null_value())
         return
 
-    var target_name = find_name_at_position_ast(ast_file, line, utf16_to_byte_offset(source, line, character))
+    var byte_offset = utf16_to_byte_offset(source, line, character)
+    var target_name = extract_identifier_at_offset(source, byte_offset)
     if target_name.len == 0:
         proto.write_response(id, json.null_value())
         return
@@ -103,7 +107,8 @@ function resolve_cursor(uri: str, line: ptr_uint, character: ptr_uint) -> Option
 
     var content = string.String.create()
     defer content.release()
-    content.assign(file_path.as_str())
+    if not read_file_into(ref_of(content), file_path.as_str()):
+        return Option[CursorResult].none
 
     let source = content.as_str()
     if source.len == 0:
@@ -116,7 +121,7 @@ function resolve_cursor(uri: str, line: ptr_uint, character: ptr_uint) -> Option
         return Option[CursorResult].none
 
     var byte_offset = utf16_to_byte_offset(source, line, character)
-    var target_name = find_name_at_position_ast(ast_file, line, byte_offset)
+    var target_name = extract_identifier_at_offset(source, byte_offset)
     if target_name.len == 0:
         return Option[CursorResult].none
 
@@ -148,8 +153,44 @@ function utf16_to_byte_offset(source: str, line: ptr_uint, character: ptr_uint) 
 
 ## Walk the AST declarations to find the identifier name at the given position.
 ## Returns the name string, or empty string if no identifier was found.
+function read_file_into(dest: ref[string.String], path: str) -> bool:
+    var read_result = fs_mod.read_text(path)
+    match read_result:
+        Result.success as content:
+            dest.assign(content.value.as_str())
+            return true
+        Result.failure:
+            return false
+
+
 function find_name_at_position_ast(file: ast.SourceFile, line: ptr_uint, byte_offset: ptr_uint) -> str:
     return ""
+
+
+function extract_identifier_at_offset(source: str, byte_offset: ptr_uint) -> str:
+    if byte_offset >= source.len:
+        return ""
+    var pos = byte_offset
+    if pos > 0:
+        if not is_ident_char(source.byte_at(pos)):
+            pos = pos - 1
+    var start = pos
+    while start > 0 and is_ident_cont(source.byte_at(start - 1)):
+        start -= 1
+    var stop = pos
+    while stop < source.len and is_ident_cont(source.byte_at(stop)):
+        stop += 1
+    if stop <= start:
+        return ""
+    return unsafe: str(data = ptr[char]<-source.data + start, len = stop - start)
+
+
+function is_ident_char(ch: ubyte) -> bool:
+    return (ch >= 65 and ch <= 90) or (ch >= 97 and ch <= 122) or ch == 95
+
+
+function is_ident_cont(ch: ubyte) -> bool:
+    return is_ident_char(ch) or (ch >= 48 and ch <= 57)
 
 
 ## Find all references to `name` in the source AST file.  Returns a JSON array
