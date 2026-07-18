@@ -16,7 +16,7 @@ public function handle_initialize(id: json.Value) -> void:
 
     # capabilities
     r.append(",\"result\":{\"capabilities\":{")
-    r.append("\"textDocumentSync\":{\"openClose\":true,\"change\":1,\"save\":true}")
+    r.append("\"textDocumentSync\":{\"openClose\":true,\"change\":1,\"save\":{\"includeText\":true}}")
     r.append(",\"definitionProvider\":true")
     r.append(",\"declarationProvider\":true")
     r.append(",\"typeDefinitionProvider\":true")
@@ -31,11 +31,11 @@ public function handle_initialize(id: json.Value) -> void:
     r.append(",\"foldingRangeProvider\":true")
     r.append(",\"selectionRangeProvider\":true")
     r.append(",\"inlayHintProvider\":true")
-    r.append(",\"completionProvider\":{\"triggerCharacters\":[\".\"],\"resolveProvider\":true}")
+    r.append(",\"completionProvider\":{\"triggerCharacters\":[\".\",\"(\",\" \"],\"resolveProvider\":true}")
     # signatureHelp: trigger on open-paren and comma
     r.append(",\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"],\"retriggerCharacters\":[\",\"]}")
     r.append(",\"renameProvider\":{\"prepareProvider\":true}")
-    r.append(",\"codeActionProvider\":{\"codeActionKinds\":[\"quickfix\"]}")
+    r.append(",\"codeActionProvider\":{\"codeActionKinds\":[\"quickfix\",\"source.fixAll\"]}")
     r.append(",\"executeCommandProvider\":{\"commands\":[\"mtc.restartServer\"]}")
     r.append(",\"rangeFormattingProvider\":true")
     r.append(",\"linkedEditingRangeProvider\":true")
@@ -44,11 +44,15 @@ public function handle_initialize(id: json.Value) -> void:
     r.append(",\"typeHierarchyProvider\":true")
     r.append(",\"callHierarchyProvider\":true")
     r.append(",\"diagnosticProvider\":{\"identifier\":\"mtc\",\"interFileDependencies\":true,\"workspaceDiagnostics\":true}")
-    # semantic tokens: legend + full + range
+    # semantic tokens: legend + full + range + delta
     r.append(",\"semanticTokensProvider\":{\"legend\":{")
     r.append("\"tokenTypes\":[\"namespace\",\"type\",\"keyword\",\"string\",\"number\",\"comment\",\"operator\",\"variable\",\"function\",\"parameter\",\"property\",\"regexp\"]")
     r.append(",\"tokenModifiers\":[\"declaration\",\"defaultLibrary\"]")
-    r.append("},\"full\":true,\"range\":true,\"delta\":true}")
+    r.append("},\"full\":{\"delta\":true},\"range\":true}")
+    # workspace: folders + file operations + watched files
+    r.append(",\"workspace\":{\"workspaceFolders\":{\"supported\":true,\"changeNotifications\":true},")
+    r.append("\"fileOperations\":{\"willRename\":{\"filters\":[{\"pattern\":{\"glob\":\"**/*.mt\"},\"scheme\":\"file\"}]}},")
+    r.append("\"didChangeWatchedFiles\":{\"dynamicRegistration\":true}}")
     r.append("}}}")
 
     proto.write_framed_json(r.as_str())
