@@ -5,6 +5,7 @@
 ## by walking the AST and querying the semantic Analysis structures.
 
 import std.fs as fs_mod
+import std.fmt
 import std.json as json
 import std.str
 import std.string as string
@@ -25,28 +26,32 @@ public function handle_definition(uri: str, line: ptr_uint, character: ptr_uint,
     var result = resolve_cursor(uri, line, character)
     match result:
         Option.some as res:
-            var loc = build_location(uri, res.value.line, res.value.column)
-            var loc_array = json.create_array_value()
-            let arr = loc_array.as_array() else:
-                json.release_value(loc_array)
-                proto.write_error(id, -32603, "internal error")
-                return
-            unsafe:
-                read(arr).push(loc)
-            proto.write_response(id, loc_array)
+            let lz = if res.value.line > 0: ptr_uint<-(int<-(res.value.line) - 1) else: 0z
+            var json_text = string.String.create()
+            defer json_text.release()
+            json_text.append("[{\"uri\":\"")
+            proto.append_escaped(ref_of(json_text), uri)
+            json_text.append("\",\"range\":{\"start\":{\"line\":")
+            json_text.append_format(f"#{lz}")
+            json_text.append(",\"character\":0},\"end\":{\"line\":")
+            json_text.append_format(f"#{lz}")
+            json_text.append(",\"character\":0}}}]")
+            proto.write_response_raw(id, json_text.as_str())
         Option.none:
             proto.write_response(id, json.null_value())
 
 
-## Handle textDocument/hover: return type information for the symbol at the
-## cursor position.
 public function handle_hover(uri: str, line: ptr_uint, character: ptr_uint, id: json.Value) -> void:
     var result = resolve_cursor(uri, line, character)
     match result:
         Option.some as res:
             if res.value.hover_text.len() > 0:
-                var hover = build_hover_result(res.value.hover_text.as_str())
-                proto.write_response(id, hover)
+                var json_text = string.String.create()
+                defer json_text.release()
+                json_text.append("{\"contents\":{\"language\":\"milktea\",\"value\":\"")
+                proto.append_escaped(ref_of(json_text), res.value.hover_text.as_str())
+                json_text.append("\"}}")
+                proto.write_response_raw(id, json_text.as_str())
             else:
                 proto.write_response(id, json.null_value())
         Option.none:

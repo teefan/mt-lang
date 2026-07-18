@@ -20,7 +20,13 @@ public function handle_initialize(id: json.Value) -> void:
     proto.append_json_value(ref_of(response_text), id)
     response_text.append(",\"result\":{\"capabilities\":")
     response_text.append("{\"textDocumentSync\":")
-    response_text.append("{\"openClose\":true,\"change\":1,\"save\":true}}}}")
+    response_text.append("{\"openClose\":true,\"change\":1,\"save\":true}")
+    response_text.append(",\"definitionProvider\":true")
+    response_text.append(",\"hoverProvider\":true")
+    response_text.append(",\"referencesProvider\":true")
+    response_text.append(",\"documentSymbolProvider\":true")
+    response_text.append(",\"documentFormattingProvider\":true")
+    response_text.append("}}")
 
     proto.write_framed_json(response_text.as_str())
 

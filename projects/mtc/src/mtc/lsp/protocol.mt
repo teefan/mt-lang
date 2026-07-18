@@ -199,6 +199,20 @@ public function write_framed_json(json_text: str) -> void:
     stdio.file_flush(null)
 
 
+## Write a successful JSON-RPC response where the result is a pre-built
+## JSON string (avoids serialization through append_json_value, which does
+## not recursively render object/array contents).
+public function write_response_raw(id: json.Value, result_json: str) -> void:
+    var response_text = string.String.create()
+    defer response_text.release()
+    response_text.append("{\"jsonrpc\":\"2.0\",\"id\":")
+    append_json_value(ref_of(response_text), id)
+    response_text.append(",\"result\":")
+    response_text.append(result_json)
+    response_text.append("}")
+    write_framed_json(response_text.as_str())
+
+
 ## Write a successful JSON-RPC response with the given id and result.
 public function write_response(id: json.Value, result: json.Value) -> void:
     var response_text = string.String.create()
@@ -274,8 +288,20 @@ public function append_json_value(output: ref[string.String], value: json.Value)
     if value.as_object() != null:
         output.append("{}")
         return
-    if value.as_array() != null:
-        output.append("[]")
+    var arr_ptr = value.as_array()
+    if arr_ptr != null:
+        output.append("[")
+        var first = true
+        var ai: ptr_uint = 0
+        unsafe:
+            while ai < read(arr_ptr).len():
+                let elem_ptr = read(arr_ptr).get(ai)
+                if elem_ptr == null: break
+                if not first: output.append(",")
+                first = false
+                append_json_value(output, read(elem_ptr))
+                ai += 1
+        output.append("]")
         return
     output.append("null")
 
