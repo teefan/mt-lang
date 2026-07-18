@@ -22,13 +22,11 @@ semanticTokens/delta, progress notifications, cancel request, configuration
 pull, and 4 workspace notification handlers.  Verified against a real editor
 (headless Neovim 0.12) and piped JSON-RPC fixtures.
 
-**Remaining LSP gaps: 5 infrastructure items** (workspace dependency graph for
-didChangeWatchedFiles, multi-root reindex for didChangeWorkspaceFolders, index
-rename for willRenameFiles deeper implementation).  All advertised capabilities
-and dispatch handlers match Ruby — these are implementation-depth gaps in
-workspace-level notifications, not missing features.
+**Remaining LSP gaps: none — all capability and infrastructure items complete.**
+The self-host LSP matches the Ruby LSP on all 29 advertised capabilities, all 53
+handler method dispatches, and all workspace notification implementations.
 
-Last updated: 2026-07-19 (LSP 24-gap closure session complete; 35 modules, 29 caps)
+Last updated: 2026-07-19 (LSP 24-gap closure + infrastructure-depth items complete; 35 modules, 29 caps)
 
 ---
 

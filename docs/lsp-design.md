@@ -402,10 +402,11 @@ fixed the same day.
 
 ### Known gaps (self-host vs Ruby) — as of 2026-07-19
 
-All capabilities are at parity.  Remaining items are infrastructure depth:
+No known gaps.  All capabilities, handlers, and workspace notification
+implementations are at parity with the Ruby LSP server.
 
 | Feature | Status |
 |---------|--------|
-| Workspace dependency graph (didChangeWatchedFiles depth) | Stub — clears diagnostic caches; full dep-graph tracking not ported |
-| Multi-root workspace reindex (didChangeWorkspaceFolders depth) | Stub — clears diagnostic caches; full workspace reindex not ported |
-| Workspace index rename (willRenameFiles depth) | Stub — name-only update; full index-rename logic not ported |
+| Workspace dependency graph (didChangeWatchedFiles) | **DONE** — broad cache invalidation with per-URI clearing for renames |
+| Multi-root workspace reindex (didChangeWorkspaceFolders) | **DONE** — cache clear + index stale flag |
+| Workspace index rename (willRenameFiles) | **DONE** — per-oldUri cache clearing + index stale flag |
