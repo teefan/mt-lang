@@ -2076,13 +2076,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         if types.is_error(ty):
                             ty = ir_expr_type(value_expr)
                     else:
-                        # No annotation: the lowered initializer's IR type is the
-                        # authority (it already carries correct cross-module
-                        # qualification), avoiding re-qualifying an imported type
-                        # against the current module.
-                        ty = ir_expr_type(value_expr)
-                        if types.is_error(ty):
-                            ty = local_decl_type(ctx, loc.stmt_type, init)
+                        ty = qualify_type(ctx, ir_expr_type(value_expr))
                 # Wrap a non-nullable value into a value-type nullable's opt struct.
                 if types.is_nullable_type(ty) and not is_nullable_pointer_like(ty):
                     let value_ty = ir_expr_type(value_expr)
@@ -2359,7 +2353,7 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
     let value_ptr = value else:
         fatal(c"lowering: guard local requires an initializer")
     let value_ir = lower_expr(ctx, value_ptr)
-    let storage_ty = ir_expr_type(value_ir)
+    let storage_ty = qualify_type(ctx, ir_expr_type(value_ir))
 
     # Hidden storage local holding the full Option/Result/nullable value.
     let storage_c = fresh_c_temp_name(ctx, "guard")
@@ -2774,6 +2768,8 @@ function is_nullable_pointer_like(t: types.Type) -> bool:
                         return p.name == "cstr"
                     types.Type.ty_function:
                         return true
+                    types.Type.ty_opaque:
+                        return true
                     _:
                         return false
         _:
@@ -2815,7 +2811,14 @@ function guard_failure_condition(ctx: ref[LowerCtx], kind: str, storage_ty: type
 ## The unwrapped success type `T` of a guard's storage type.
 function guard_success_type(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type) -> types.Type:
     if kind == "nullable":
-        return types.unwrap_nullable(storage_ty)
+        let inner = types.unwrap_nullable(storage_ty)
+        if is_nullable_pointer_like(storage_ty):
+            match inner:
+                types.Type.ty_opaque:
+                    return types.Type.ty_generic(name = "ptr", args = sp_type(inner))
+                _:
+                    return inner
+        return inner
     # Option[T] / Result[T, E] in generic form: first type arg is T.
     let args = variant_type_args(storage_ty)
     if args.len > 0:
@@ -2968,11 +2971,60 @@ function struct_field_type_at(ctx: ref[LowerCtx], struct_name: str, index: ptr_u
 function is_opaque_base(ctx: ref[LowerCtx], t: types.Type) -> bool:
     match t:
         types.Type.ty_imported:
-            return ctx.opaque_keys.get(naming.type_c_key(t)) != null
+            if ctx.opaque_keys.get(naming.type_c_key(t)) != null:
+                return true
+            return module_has_opaque(ctx, t)
         types.Type.ty_named:
-            return ctx.opaque_keys.get(naming.type_c_key(t)) != null
+            if ctx.opaque_keys.get(naming.type_c_key(t)) != null:
+                return true
+            return module_has_opaque(ctx, t)
         _:
             return false
+
+
+struct OpaqueName:
+    module_name: str
+    name: str
+
+
+function opaque_module_name_and_name(t: types.Type) -> OpaqueName:
+    match t:
+        types.Type.ty_imported as im:
+            return OpaqueName(module_name = im.module_name, name = im.name)
+        types.Type.ty_named as n:
+            return OpaqueName(module_name = n.module_name, name = n.name)
+        _:
+            return OpaqueName(module_name = "", name = "")
+
+
+function module_has_opaque(ctx: ref[LowerCtx], t: types.Type) -> bool:
+    match t:
+        types.Type.ty_imported as im:
+            return find_imported_opaque_decl(ctx, im.module_name, im.name)
+        types.Type.ty_named as n:
+            if n.module_name.len > 0:
+                return find_imported_opaque_decl(ctx, n.module_name, n.name)
+            return find_imported_opaque_decl(ctx, ctx.module_name, n.name)
+        _:
+            return false
+
+
+function find_imported_opaque_decl(ctx: ref[LowerCtx], module_name: str, name: str) -> bool:
+    let analysis = find_imported_analysis(ctx, module_name) else:
+        return false
+    var di: ptr_uint = 0
+    while di < analysis.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_opaque as op:
+                if op.name == name:
+                    return true
+            _:
+                pass
+        di += 1
+    return false
 
 
 function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
@@ -3075,6 +3127,10 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             # (rendered as `<backing>*`) instead of an invalid value-optional
             # struct over an incomplete type.
             if is_opaque_base(ctx, qbase):
+                let op_parts = opaque_module_name_and_name(qbase)
+                if op_parts.module_name.len > 0:
+                    let op_ty = types.Type.ty_opaque(module_name = op_parts.module_name, name = op_parts.name)
+                    return types.Type.ty_nullable(base = types.alloc_type(op_ty))
                 let ptr_base = types.Type.ty_generic(name = "ptr", args = sp_type(qbase))
                 return types.Type.ty_nullable(base = types.alloc_type(ptr_base))
             return types.Type.ty_nullable(base = types.alloc_type(qbase))
@@ -9860,7 +9916,7 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
         unsafe:
             ir_args.push(read(lowered))
         i += 1
-    let ret_ty = expr_type(ctx, call_ep)
+    let ret_ty = info.return_ty
     let call = alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = ret_ty))
     return wrap_foreign_cstr_frees(ctx, ref_of(setup), call, ret_ty, ref_of(cstr_temps))
 

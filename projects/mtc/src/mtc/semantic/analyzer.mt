@@ -2541,6 +2541,41 @@ function is_integer_name(name: str) -> bool:
     return types.is_integer_name(name)
 
 
+const int_suffix_ub: str = "ub"
+const int_suffix_us: str = "us"
+const int_suffix_ul: str = "ul"
+const int_suffix_iz: str = "iz"
+
+
+function integer_suffix_type_name(lexeme: str) -> Option[str]:
+    if lexeme.ends_with(int_suffix_ub):
+        return Option[str].some(value = "ubyte")
+    if lexeme.ends_with(int_suffix_us):
+        return Option[str].some(value = "ushort")
+    if lexeme.ends_with(int_suffix_ul):
+        return Option[str].some(value = "ulong")
+    if lexeme.ends_with(int_suffix_iz):
+        return Option[str].some(value = "ptr_int")
+    let last = lexeme.byte_at(lexeme.len - 1)
+    if last == 'u':
+        return Option[str].some(value = "uint")
+    if last == 'i':
+        return Option[str].some(value = "int")
+    if last == 'l':
+        return Option[str].some(value = "long")
+    if last == 'z':
+        return Option[str].some(value = "ptr_uint")
+    if last == 's':
+        return Option[str].some(value = "short")
+    if last == 'b':
+        return Option[str].some(value = "byte")
+    return Option[str].none
+
+
+function float_literal_is_double(lexeme: str) -> bool:
+    return lexeme.ends_with("d")
+
+
 function vec_contains_str(v: ref[vec.Vec[str]], s: str) -> bool:
     var i: ptr_uint = 0
     while i < v.len():
@@ -2859,9 +2894,15 @@ function evaluate_const_builtin_call(callee: ptr[ast.Expr]) -> Option[bool]:
 function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[ast.Expr]) -> types.Type:
     unsafe:
         match read(ep):
-            ast.Expr.expr_integer_literal:
-                return types.primitive("int")
-            ast.Expr.expr_float_literal:
+            ast.Expr.expr_integer_literal as lit:
+                match integer_suffix_type_name(lit.lexeme):
+                    Option.some as st:
+                        return types.primitive(st.value)
+                    Option.none:
+                        return types.primitive("int")
+            ast.Expr.expr_float_literal as flit:
+                if float_literal_is_double(flit.lexeme):
+                    return types.primitive("double")
                 return types.primitive("float")
             ast.Expr.expr_bool_literal:
                 return types.primitive("bool")

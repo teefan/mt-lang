@@ -95,6 +95,8 @@ public function type_c_key(t: types.Type) -> str:
             return sanitize_identifier(v.name)
         types.Type.ty_dyn as d:
             return j2("dyn_", sanitize_identifier(d.iface))
+        types.Type.ty_opaque as op:
+            return qualified_c_name(op.module_name, op.name)
         types.Type.ty_imported as im:
             var buf = string.String.create()
             buf.append(qualified_c_name(im.module_name, im.name))

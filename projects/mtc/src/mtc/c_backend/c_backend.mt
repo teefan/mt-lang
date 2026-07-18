@@ -90,6 +90,17 @@ public function generate_c(program: ir.Program) -> string.String:
     e.array_call_temps = map_mod.Map[ptr_uint, str].create()
     e.array_call_temp_counter = 0
 
+    var opaques = map_mod.Map[str, bool].create()
+    var oi: ptr_uint = 0
+    while oi < program.opaques.len:
+        unsafe:
+            let od = read(program.opaques.data + oi)
+            opaques.set(od.name, true)
+            let bare = extract_bare_name(od.name)
+            if bare.len > 0:
+                opaques.set(bare, true)
+        oi += 1
+
     # Reachability pruning: emit only functions reachable from the entry points,
     # in source order (mirrors c_backend/reachability.rb emitted_functions).
     var emitted = emitted_functions(program)
@@ -109,7 +120,7 @@ public function generate_c(program: ir.Program) -> string.String:
     var checked_span_index_types = collect_checked_span_index_types(funcs)
     var tuple_types = collect_tuple_types(funcs)
     var gen_variants = collect_generic_variants(program)
-    var opt_structs = collect_opt_struct_decls(program)
+    var opt_structs = collect_opt_struct_decls(program, ref_of(opaques))
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
     let use_fatal = uses_fatal_helper(funcs, program) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0 or uses_format_helpers(program) or uses_foreign_cstr_helper(funcs)
@@ -1474,6 +1485,10 @@ function c_type(t: types.Type) -> str:
             return "mt_str"
         types.Type.ty_dyn as d:
             return j3("mt_dyn_", d.iface, "")
+        types.Type.ty_opaque as op:
+            if op.module_name.starts_with("std.c."):
+                return op.name
+            return naming.qualified_c_name(op.module_name, op.name)
         types.Type.ty_function:
             return c_fn_ptr_declarator(t, "")
         types.Type.ty_imported as im:
@@ -1505,7 +1520,11 @@ function c_type(t: types.Type) -> str:
             unsafe:
                 let base = read(nl.base)
                 if is_pointer_like_for_nullable(base):
-                    return c_type(base)
+                    match base:
+                        types.Type.ty_opaque:
+                            return j2(c_type(base), "*")
+                        _:
+                            return c_type(base)
                 return j2("mt_opt_", naming.type_c_key(base))
         _:
             fatal(j2("c_backend: unsupported C type: ", types.type_to_string(t)))
@@ -4276,6 +4295,8 @@ function is_pointer_like_for_nullable(t: types.Type) -> bool:
             return p.name == "cstr"
         types.Type.ty_function:
             return true
+        types.Type.ty_opaque:
+            return true
         _:
             return false
 
@@ -5490,24 +5511,40 @@ function emit_builtin_type_defs(e: ref[Emitter], program: ir.Program) -> void:
 
 ## Collect and emit nullable opt struct definitions for value-type nullables.
 
-function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], t: types.Type) -> void:
+function bare_opaque_name(base: types.Type) -> str:
+    match base:
+        types.Type.ty_imported as im:
+            return im.name
+        types.Type.ty_named as n:
+            return n.name
+        _:
+            return ""
 
+
+function extract_bare_name(qname: str) -> str:
+    var idx = qname.len
+    while idx > 0:
+        idx -= 1
+        if qname.byte_at(idx) == '_':
+            return qname.slice(idx + 1, qname.len - idx - 1)
+    return qname
+
+
+function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], opaques: ref[map_mod.Map[str, bool]], t: types.Type) -> void:
     match t:
-
         types.Type.ty_nullable as nl:
-
             unsafe:
-
                 let base = read(nl.base)
-
                 if not is_pointer_like_for_nullable(base):
-
-                    let c_key = j2("mt_opt_", naming.type_c_key(base))
-
-                    if not needed.contains(c_key):
-
-                        needed.set(c_key, types.Type.ty_nullable(base = types.alloc_type(base)))
-
+                    let c_key = naming.type_c_key(base)
+                    if opaques.get(c_key) != null:
+                        return
+                    let bare_key = bare_opaque_name(base)
+                    if bare_key.len > 0 and opaques.get(bare_key) != null:
+                        return
+                    let opt_key = j2("mt_opt_", c_key)
+                    if not needed.contains(opt_key):
+                        needed.set(opt_key, types.Type.ty_nullable(base = types.alloc_type(base)))
         types.Type.ty_generic as g:
 
             var gi: ptr_uint = 0
@@ -5516,7 +5553,7 @@ function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], t: types.Ty
 
                 unsafe:
 
-                    collect_opt_type(needed, read(g.args.data + gi))
+                    collect_opt_type(needed, opaques, read(g.args.data + gi))
 
                 gi += 1
 
@@ -5528,7 +5565,7 @@ function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], t: types.Ty
 
                 unsafe:
 
-                    collect_opt_type(needed, read(im.args.data + ai))
+                    collect_opt_type(needed, opaques, read(im.args.data + ai))
 
                 ai += 1
 
@@ -5540,13 +5577,13 @@ function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], t: types.Ty
 
                 unsafe:
 
-                    collect_opt_type(needed, read(f.params.data + fi))
+                    collect_opt_type(needed, opaques, read(f.params.data + fi))
 
                 fi += 1
 
             unsafe:
 
-                collect_opt_type(needed, read(f.return_type))
+                collect_opt_type(needed, opaques, read(f.return_type))
 
         types.Type.ty_tuple as tu:
 
@@ -5556,7 +5593,7 @@ function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], t: types.Ty
 
                 unsafe:
 
-                    collect_opt_type(needed, read(tu.elements.data + ei))
+                    collect_opt_type(needed, opaques, read(tu.elements.data + ei))
 
                 ei += 1
 
@@ -5568,7 +5605,7 @@ function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], t: types.Ty
 
 
 
-function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptionStructEntry]:
+function collect_opt_struct_decls(program: ir.Program, opaques: ref[map_mod.Map[str, bool]]) -> vec.Vec[OptionStructEntry]:
 
     var needed = map_mod.Map[str, types.Type].create()
 
@@ -5582,7 +5619,7 @@ function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptionStructEn
 
             f = read(program.functions.data + fi)
 
-            collect_opt_type(ref_of(needed), f.return_type)
+            collect_opt_type(ref_of(needed), opaques, f.return_type)
 
         var pi: ptr_uint = 0
 
@@ -5590,11 +5627,11 @@ function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptionStructEn
 
             unsafe:
 
-                collect_opt_type(ref_of(needed), read(f.params.data + pi).ty)
+                collect_opt_type(ref_of(needed), opaques, read(f.params.data + pi).ty)
 
             pi += 1
 
-        collect_opt_from_stmts(ref_of(needed), f.body)
+        collect_opt_from_stmts(ref_of(needed), opaques, f.body)
 
         fi += 1
 
@@ -5614,7 +5651,7 @@ function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptionStructEn
 
             unsafe:
 
-                collect_opt_type(ref_of(needed), read(s.fields.data + sfi).ty)
+                collect_opt_type(ref_of(needed), opaques, read(s.fields.data + sfi).ty)
 
             sfi += 1
 
@@ -5630,7 +5667,7 @@ function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptionStructEn
 
             ta = read(program.type_aliases.data + ti)
 
-        collect_opt_type(ref_of(needed), ta.target_type)
+        collect_opt_type(ref_of(needed), opaques, ta.target_type)
 
         ti += 1
 
@@ -5640,7 +5677,7 @@ function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptionStructEn
 
         unsafe:
 
-            collect_opt_type(ref_of(needed), read(program.constants.data + ci).ty)
+            collect_opt_type(ref_of(needed), opaques, read(program.constants.data + ci).ty)
 
         ci += 1
 
@@ -5650,7 +5687,7 @@ function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptionStructEn
 
         unsafe:
 
-            collect_opt_type(ref_of(needed), read(program.globals.data + gi).ty)
+            collect_opt_type(ref_of(needed), opaques, read(program.globals.data + gi).ty)
 
         gi += 1
 
@@ -5732,7 +5769,7 @@ function collect_opt_struct_decls(program: ir.Program) -> vec.Vec[OptionStructEn
 
 ## Walk statements to collect nullable value types from local variable declarations.
 
-function collect_opt_from_stmts(needed: ref[map_mod.Map[str, types.Type]], body: span[ir.Stmt]) -> void:
+function collect_opt_from_stmts(needed: ref[map_mod.Map[str, types.Type]], opaques: ref[map_mod.Map[str, bool]], body: span[ir.Stmt]) -> void:
 
     var i: ptr_uint = 0
 
@@ -5744,17 +5781,17 @@ function collect_opt_from_stmts(needed: ref[map_mod.Map[str, types.Type]], body:
 
                 ir.Stmt.stmt_local as loc:
 
-                    collect_opt_type(needed, loc.ty)
+                    collect_opt_type(needed, opaques, loc.ty)
 
-                    collect_opt_from_expr(needed, loc.value)
+                    collect_opt_from_expr(needed, opaques, loc.value)
 
                 ir.Stmt.stmt_assignment as asg:
 
-                    collect_opt_from_expr(needed, asg.value)
+                    collect_opt_from_expr(needed, opaques, asg.value)
 
                 ir.Stmt.stmt_expression as ex:
 
-                    collect_opt_from_expr(needed, ex.expression)
+                    collect_opt_from_expr(needed, opaques, ex.expression)
 
                 ir.Stmt.stmt_return as ret:
 
@@ -5764,21 +5801,21 @@ function collect_opt_from_stmts(needed: ref[map_mod.Map[str, types.Type]], body:
 
                 ir.Stmt.stmt_block as blk:
 
-                    collect_opt_from_stmts(needed, blk.body)
+                    collect_opt_from_stmts(needed, opaques, blk.body)
 
                 ir.Stmt.stmt_if as iff:
 
-                    collect_opt_from_expr(needed, iff.condition)
+                    collect_opt_from_expr(needed, opaques, iff.condition)
 
-                    collect_opt_from_stmts(needed, iff.then_body)
+                    collect_opt_from_stmts(needed, opaques, iff.then_body)
 
-                    collect_opt_from_stmts(needed, iff.else_body)
+                    collect_opt_from_stmts(needed, opaques, iff.else_body)
 
                 ir.Stmt.stmt_while as w:
 
-                    collect_opt_from_expr(needed, w.condition)
+                    collect_opt_from_expr(needed, opaques, w.condition)
 
-                    collect_opt_from_stmts(needed, w.body)
+                    collect_opt_from_stmts(needed, opaques, w.body)
 
                 ir.Stmt.stmt_for as f:
 
@@ -5786,35 +5823,35 @@ function collect_opt_from_stmts(needed: ref[map_mod.Map[str, types.Type]], body:
 
                         ir.Stmt.stmt_local as iloc:
 
-                            collect_opt_type(needed, iloc.ty)
+                            collect_opt_type(needed, opaques, iloc.ty)
 
-                            collect_opt_from_expr(needed, iloc.value)
+                            collect_opt_from_expr(needed, opaques, iloc.value)
 
                         ir.Stmt.stmt_expression as iex:
 
-                            collect_opt_from_expr(needed, iex.expression)
+                            collect_opt_from_expr(needed, opaques, iex.expression)
 
                         _:
 
                             pass
 
-                    collect_opt_from_expr(needed, f.condition)
+                    collect_opt_from_expr(needed, opaques, f.condition)
 
                     match read(f.post):
 
                         ir.Stmt.stmt_expression as pex:
 
-                            collect_opt_from_expr(needed, pex.expression)
+                            collect_opt_from_expr(needed, opaques, pex.expression)
 
                         _:
 
                             pass
 
-                    collect_opt_from_stmts(needed, f.body)
+                    collect_opt_from_stmts(needed, opaques, f.body)
 
                 ir.Stmt.stmt_switch as sw:
 
-                    collect_opt_from_expr(needed, sw.expression)
+                    collect_opt_from_expr(needed, opaques, sw.expression)
 
                     var ci: ptr_uint = 0
 
@@ -5822,7 +5859,7 @@ function collect_opt_from_stmts(needed: ref[map_mod.Map[str, types.Type]], body:
 
                         unsafe:
 
-                            collect_opt_from_stmts(needed, read(sw.cases.data + ci).body)
+                            collect_opt_from_stmts(needed, opaques, read(sw.cases.data + ci).body)
 
                         ci += 1
 
@@ -5838,9 +5875,9 @@ function collect_opt_from_stmts(needed: ref[map_mod.Map[str, types.Type]], body:
 
 ## Walk expression sub-tree to collect nullable value types.
 
-function collect_opt_from_expr(needed: ref[map_mod.Map[str, types.Type]], ep: ptr[ir.Expr]) -> void:
+function collect_opt_from_expr(needed: ref[map_mod.Map[str, types.Type]], opaques: ref[map_mod.Map[str, bool]], ep: ptr[ir.Expr]) -> void:
 
-    collect_opt_type(needed, expr_result_type(ep))
+    collect_opt_type(needed, opaques, expr_result_type(ep))
 
 
 
