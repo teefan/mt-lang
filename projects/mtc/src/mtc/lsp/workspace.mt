@@ -58,6 +58,25 @@ extending Workspace:
                 pass
 
 
+    ## Source text for a file: the open editor buffer when present, else disk.
+    ## Returns an owned copy the caller must release.
+    public function document_source(path: str) -> Option[string.String]:
+        var key = string.String.from_str(path)
+        defer key.release()
+        let doc_ptr = this.open_docs.get(key)
+        if doc_ptr != null:
+            unsafe:
+                return Option[string.String].some(value = string.String.from_str(read(doc_ptr).as_str()))
+
+        match fs_mod.read_text(path):
+            Result.success as content:
+                return Option[string.String].some(value = content.value)
+            Result.failure as failure_payload:
+                var err = failure_payload.error
+                err.release()
+                return Option[string.String].none
+
+
     ## Resolve a source file path to the effective module roots for dependency
     ## loading.  Returns a span of root directory paths.
     public function effective_module_roots_for(path: str) -> vec.Vec[str]:

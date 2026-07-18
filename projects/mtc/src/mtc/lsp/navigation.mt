@@ -4,7 +4,6 @@
 ## and returns the definition location, type information, or reference list
 ## by walking the AST and querying the semantic Analysis structures.
 
-import std.fs as fs_mod
 import std.fmt
 import std.json as json
 import std.str
@@ -16,123 +15,141 @@ import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
+import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.workspace as workspace
 
 
 ## Handle textDocument/definition: find the definition of the symbol at the
 ## given cursor position and return its location.
-public function handle_definition(uri: str, line: ptr_uint, character: ptr_uint, id: json.Value) -> void:
-    var result = resolve_cursor(uri, line, character)
+public function handle_definition(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+    id: json.Value,
+) -> void:
+    var result = resolve_cursor(ws, uri, line, character)
     match result:
         Option.some as res:
-            let lz = if res.value.line > 0: ptr_uint<-(int<-(res.value.line) - 1) else: 0z
+            var payload = res.value
+            let lz = if payload.line > 0: ptr_uint<-(int<-(payload.line) - 1) else: 0z
             var json_text = string.String.create()
             defer json_text.release()
             json_text.append("[{\"uri\":\"")
             proto.append_escaped(ref_of(json_text), uri)
             json_text.append("\",\"range\":{\"start\":{\"line\":")
             json_text.append_format(f"#{lz}")
-            json_text.append(",\"character\":0},\"end\":{\"line\":")
+            json_text.append(",\"character\":")
+            json_text.append_format(f"#{payload.column}")
+            json_text.append("},\"end\":{\"line\":")
             json_text.append_format(f"#{lz}")
-            json_text.append(",\"character\":0}}}]")
+            json_text.append(",\"character\":")
+            json_text.append_format(f"#{payload.column + payload.name_len}")
+            json_text.append("}}}]")
             proto.write_response_raw(id, json_text.as_str())
+            payload.hover_text.release()
+            payload.docs.release()
         Option.none:
             proto.write_response(id, json.null_value())
 
 
-public function handle_hover(uri: str, line: ptr_uint, character: ptr_uint, id: json.Value) -> void:
-    var result = resolve_cursor(uri, line, character)
+public function handle_hover(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+    id: json.Value,
+) -> void:
+    var result = resolve_cursor(ws, uri, line, character)
     match result:
         Option.some as res:
-            if res.value.hover_text.len() > 0:
+            var payload = res.value
+            if payload.hover_text.len() > 0:
+                var value_text = string.String.create()
+                defer value_text.release()
+                value_text.append("```milk-tea\n")
+                value_text.append(payload.hover_text.as_str())
+                value_text.append("\n```")
+                if payload.docs.len() > 0:
+                    value_text.append("\n")
+                    value_text.append(payload.docs.as_str())
+
                 var json_text = string.String.create()
                 defer json_text.release()
-                json_text.append("{\"contents\":{\"language\":\"milktea\",\"value\":\"")
-                proto.append_escaped(ref_of(json_text), res.value.hover_text.as_str())
+                json_text.append("{\"contents\":{\"kind\":\"markdown\",\"value\":\"")
+                proto.append_escaped(ref_of(json_text), value_text.as_str())
                 json_text.append("\"}}")
                 proto.write_response_raw(id, json_text.as_str())
             else:
                 proto.write_response(id, json.null_value())
+            payload.hover_text.release()
+            payload.docs.release()
         Option.none:
             proto.write_response(id, json.null_value())
 
 
 ## Handle textDocument/references: find all references to the symbol at the
 ## cursor position within the same file.
-public function handle_references(uri: str, line: ptr_uint, character: ptr_uint, id: json.Value) -> void:
+public function handle_references(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+    id: json.Value,
+) -> void:
     var file_path = uri_ops.file_uri_to_path(uri) else:
         proto.write_error(id, -32602, "invalid uri")
         return
     defer file_path.release()
 
-    var content = string.String.create()
-    defer content.release()
-    if not read_file_into(ref_of(content), file_path.as_str()):
+    var content = ws.document_source(file_path.as_str()) else:
         proto.write_response(id, json.null_value())
         return
+    defer content.release()
 
     let source = content.as_str()
-    var byte_offset = utf16_to_byte_offset(source, line, character)
-    var target_name = extract_identifier_at_offset(source, byte_offset)
-    if target_name.len == 0:
+    let target = cursor.identifier_at(source, line, character) else:
         proto.write_response(id, json.null_value())
         return
 
-    var refs_json = build_references_json(source, target_name, uri)
+    var refs_json = build_references_json(source, target.text, uri)
     proto.write_response_raw(id, refs_json.as_str())
     refs_json.release()
 
 
-## Build a JSON array of Location objects for all references to `name` in `source`.
+## Build a JSON array of Location objects for all references to `name` in
+## `source`.  Occurrences are identifier tokens, so text inside string
+## literals and comments never matches.
 function build_references_json(source: str, name: str, uri: str) -> string.String:
     var result = string.String.create()
     result.append("[")
-    var first = true
-    var n: ptr_uint = 0
-    var line: ptr_uint = 0
-    var line_start: ptr_uint = 0
-    while n < source.len:
-        if source.byte_at(n) == 10:
-            line += 1
-            line_start = n + 1
-            n += 1
-            continue
-        var matched = true
-        var mi: ptr_uint = 0
-        while mi < name.len:
-            if n + mi >= source.len or source.byte_at(n + mi) != name.byte_at(mi):
-                matched = false
-                break
-            mi += 1
-        if matched:
-            var before_ok = true
-            if n > 0:
-                before_ok = not is_ident_cont(source.byte_at(n - 1))
-            var after_ok = true
-            let after = n + name.len
-            if after < source.len:
-                after_ok = not is_ident_cont(source.byte_at(after))
-            if before_ok and after_ok:
-                if not first:
-                    result.append(",")
-                first = false
-                let col = n - line_start
-                let lz = if line > 0: ptr_uint<-(int<-(line) - 1) else: 0z
-                result.append("{\"uri\":\"")
-                append_ref_escaped(ref_of(result), uri)
-                result.append("\",\"range\":{\"start\":{\"line\":")
-                result.append_format(f"#{lz}")
-                result.append(",\"character\":")
-                result.append_format(f"#{col}")
-                result.append("},\"end\":{\"line\":")
-                result.append_format(f"#{lz}")
-                result.append(",\"character\":")
-                result.append_format(f"#{col + name.len}")
-                result.append("}}}")
-            n += name.len
-        else:
-            n += 1
+
+    var occurrences = cursor.identifier_occurrences(source, name)
+    defer occurrences.release()
+
+    var oi: ptr_uint = 0
+    while oi < occurrences.len():
+        let op = occurrences.get(oi) else:
+            break
+        let occ = unsafe: read(op)
+        if oi > 0:
+            result.append(",")
+        let lz = if occ.line > 0: occ.line - 1 else: 0z
+        let col = if occ.column > 0: occ.column - 1 else: 0z
+        result.append("{\"uri\":\"")
+        append_ref_escaped(ref_of(result), uri)
+        result.append("\",\"range\":{\"start\":{\"line\":")
+        result.append_format(f"#{lz}")
+        result.append(",\"character\":")
+        result.append_format(f"#{col}")
+        result.append("},\"end\":{\"line\":")
+        result.append_format(f"#{lz}")
+        result.append(",\"character\":")
+        result.append_format(f"#{col + occ.length}")
+        result.append("}}}")
+        oi += 1
     result.append("]")
     return result
 
@@ -145,29 +162,39 @@ function append_ref_escaped(output: ref[string.String], text: str) -> void:
         i += 1
 
 
-## Cursor resolution result — the definition line and hover text for the symbol
-## under the cursor.
+## Cursor resolution result — the definition position (1-based line, 0-based
+## name column), the signature rendered for hover, and any attached `##`
+## documentation lines.
 struct CursorResult:
     line: ptr_uint
     column: ptr_uint
+    name_len: ptr_uint
     hover_text: string.String
+    docs: string.String
 
 
 ## Resolve the symbol at the given cursor position.  Parses the file, runs
 ## semantic analysis, finds the identifier under the cursor, and looks up its
 ## definition or type in the analysis maps.
-function resolve_cursor(uri: str, line: ptr_uint, character: ptr_uint) -> Option[CursorResult]:
+function resolve_cursor(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+) -> Option[CursorResult]:
     var file_path = uri_ops.file_uri_to_path(uri) else:
         return Option[CursorResult].none
     defer file_path.release()
 
-    var content = string.String.create()
-    defer content.release()
-    if not read_file_into(ref_of(content), file_path.as_str()):
+    var content = ws.document_source(file_path.as_str()) else:
         return Option[CursorResult].none
+    defer content.release()
 
     let source = content.as_str()
     if source.len == 0:
+        return Option[CursorResult].none
+
+    let target = cursor.identifier_at(source, line, character) else:
         return Option[CursorResult].none
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
@@ -176,211 +203,211 @@ function resolve_cursor(uri: str, line: ptr_uint, character: ptr_uint) -> Option
     if parse_diags.len() > 0:
         return Option[CursorResult].none
 
-    var byte_offset = utf16_to_byte_offset(source, line, character)
-    var target_name = extract_identifier_at_offset(source, byte_offset)
-    if target_name.len == 0:
-        return Option[CursorResult].none
-
     var analysis = analyzer.check_source_file(ast_file)
 
-    return resolve_name_in_analysis(ast_file, ref_of(analysis), target_name)
-
-
-## Convert a line (0-based) and UTF-16 character offset to a byte offset into
-## the UTF-8 source text.  Each ASCII byte is 1 UTF-16 code unit; multi-byte
-## UTF-8 characters may be 1-2 UTF-16 code units (BMP) or 4 (surrogate pairs).
-## For simplicity, this implementation treats character as a byte offset
-## (valid for ASCII sources and approximate for UTF-8).
-function utf16_to_byte_offset(source: str, line: ptr_uint, character: ptr_uint) -> ptr_uint:
-    var current_line: ptr_uint = 0
-    var pos: ptr_uint = 0
-    while pos < source.len and current_line < line:
-        if source.byte_at(pos) == 10:
-            current_line += 1
-        pos += 1
-    # Skip to character offset on the target line.
-    var line_start = pos
-    var remaining = character
-    while pos < source.len and remaining > 0 and source.byte_at(pos) != 10:
-        pos += 1
-        remaining -= 1
-    return pos
-
-
-## Walk the AST declarations to find the identifier name at the given position.
-## Returns the name string, or empty string if no identifier was found.
-function read_file_into(dest: ref[string.String], path: str) -> bool:
-    var read_result = fs_mod.read_text(path)
-    match read_result:
-        Result.success as content:
-            dest.assign(content.value.as_str())
-            return true
-        Result.failure:
-            return false
-
-
-function find_name_at_position_ast(file: ast.SourceFile, line: ptr_uint, byte_offset: ptr_uint) -> str:
-    return ""
-
-
-function extract_identifier_at_offset(source: str, byte_offset: ptr_uint) -> str:
-    if byte_offset >= source.len:
-        return ""
-    var pos = byte_offset
-    if pos > 0:
-        if not is_ident_char(source.byte_at(pos)):
-            pos = pos - 1
-    var start = pos
-    while start > 0 and is_ident_cont(source.byte_at(start - 1)):
-        start -= 1
-    var stop = pos
-    while stop < source.len and is_ident_cont(source.byte_at(stop)):
-        stop += 1
-    if stop <= start:
-        return ""
-    return unsafe: str(data = ptr[char]<-source.data + start, len = stop - start)
-
-
-function is_ident_char(ch: ubyte) -> bool:
-    return (ch >= 65 and ch <= 90) or (ch >= 97 and ch <= 122) or ch == 95
-
-
-function is_ident_cont(ch: ubyte) -> bool:
-    return is_ident_char(ch) or (ch >= 48 and ch <= 57)
-
-
-## Find all references to `name` in the source AST file.  Returns a JSON array
-## of Location objects.
-function find_references_in_ast(file: ast.SourceFile, name: str, uri: str) -> json.Value:
-    return json.create_array_value()
-
-
-## Text-based reference scanner: scan the source text for all occurrences of
-## `name` that appear at word boundaries (not inside longer identifiers).
-## Returns a JSON array of Location objects with line numbers.
-function scan_references_in_source(source: str, name: str, uri: str) -> json.Value:
-    var result = json.create_array_value()
-    var result_ptr = result.as_array()
-    if result_ptr == null:
-        return result
-    if name.len == 0:
-        return result
-    var n: ptr_uint = 0
-    var line: ptr_uint = 0
-    var line_start: ptr_uint = 0
-    while n < source.len:
-        # Track line boundaries as we scan.
-        if source.byte_at(n) == 10:
-            line += 1
-            line_start = n + 1
-            n += 1
-            continue
-        # Check for a match at this position.
-        var matched = true
-        var mi: ptr_uint = 0
-        while mi < name.len:
-            if n + mi >= source.len or source.byte_at(n + mi) != name.byte_at(mi):
-                matched = false
-                break
-            mi += 1
-        if matched:
-            # Check word boundaries.
-            var before_ok = true
-            if n > 0:
-                before_ok = not is_ident_cont(source.byte_at(n - 1))
-            var after_ok = true
-            let after = n + name.len
-            if after < source.len:
-                after_ok = not is_ident_cont(source.byte_at(after))
-            if before_ok and after_ok:
-                var loc = build_location_ref(uri, line, n - line_start, name.len)
-                unsafe:
-                    read(result_ptr).push(loc)
-            n += name.len
-        else:
-            n += 1
-    return result
-
-
-function build_location_ref(uri: str, line: ptr_uint, col: ptr_uint, name_len: ptr_uint) -> json.Value:
-    var loc = json.create_object_value()
-    var loc_ptr = loc.as_object()
-    if loc_ptr == null:
-        return json.null_value()
-    var range_val = json.create_object_value()
-    var range_ptr = range_val.as_object()
-    if range_ptr == null:
-        json.release_value(loc)
-        return json.null_value()
-    var start_val = json.create_object_value()
-    var start_ptr = start_val.as_object()
-    if start_ptr == null:
-        json.release_value(range_val)
-        json.release_value(loc)
-        return json.null_value()
-    var end_val = json.create_object_value()
-    var end_ptr = end_val.as_object()
-    if end_ptr == null:
-        json.release_value(start_val)
-        json.release_value(range_val)
-        json.release_value(loc)
-        return json.null_value()
-    let lz = if line > 0: ptr_uint<-(int<-(line) - 1) else: 0z
-    unsafe:
-        read(start_ptr).set("line", json.number_value(double<-lz))
-        read(start_ptr).set("character", json.number_value(double<-col))
-        read(end_ptr).set("line", json.number_value(double<-lz))
-        read(end_ptr).set("character", json.number_value(double<-(col + name_len)))
-        read(range_ptr).set("start", start_val)
-        read(range_ptr).set("end", end_val)
-        read(loc_ptr).set("uri", json.string_from_str(uri))
-        read(loc_ptr).set("range", range_val)
-    return loc
+    return resolve_name_in_analysis(ast_file, ref_of(analysis), target.text, source)
 
 
 ## Resolve `name` against the semantic analysis maps.  Returns the definition
-## location and hover text for the symbol, or none if unresolvable.
-function resolve_name_in_analysis(file: ast.SourceFile, analysis: ref[analyzer.Analysis], name: str) -> Option[CursorResult]:
-    # Check if name is a known function.
-    if unsafe: read(analysis).functions.contains(name):
-        let decl_line = find_declaration_line(file, name, "function")
-        if decl_line > 0:
-            var hover = string.String.create()
-            hover.append("function ")
-            hover.append(name)
-            return Option[CursorResult].some(value = CursorResult(
-                line = decl_line,
-                column = 0,
-                hover_text = hover
-            ))
+## location, rendered signature, and attached docs, or none if unresolvable.
+function resolve_name_in_analysis(
+    file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    name: str,
+    source: str,
+) -> Option[CursorResult]:
+    unsafe:
+        # Function: render the full signature.
+        let sig_ptr = read(analysis).functions.get(name)
+        if sig_ptr != null:
+            let decl_line = find_declaration_line(file, name, "function")
+            if decl_line > 0:
+                return Option[CursorResult].some(value = make_result(
+                    decl_line,
+                    name,
+                    source,
+                    format_fn_signature(read(sig_ptr), name)
+                ))
 
-    # Check if name is a known value (const/var).
-    if unsafe: read(analysis).value_types.contains(name):
-        let decl_line = find_declaration_line(file, name, "value")
-        if decl_line > 0:
-            var hover = string.String.create()
-            hover.append("const ")
-            hover.append(name)
-            return Option[CursorResult].some(value = CursorResult(
-                line = decl_line,
-                column = 0,
-                hover_text = hover
-            ))
+        # Module-level const or var: render name and type.
+        let value_ptr = read(analysis).value_types.get(name)
+        if value_ptr != null:
+            let decl_line = find_declaration_line(file, name, "value")
+            if decl_line > 0:
+                var hover = string.String.create()
+                hover.append(value_decl_keyword(file, name))
+                hover.append(" ")
+                hover.append(name)
+                hover.append(": ")
+                hover.append(types.type_to_string(read(value_ptr)))
+                return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
 
-    # Check if name is a known struct.
-    if unsafe: read(analysis).structs.contains(name):
-        let decl_line = find_declaration_line(file, name, "struct")
-        if decl_line > 0:
-            var hover = string.String.create()
-            hover.append("struct ")
-            hover.append(name)
-            return Option[CursorResult].some(value = CursorResult(
-                line = decl_line,
-                column = 0,
-                hover_text = hover
-            ))
+        # Struct: render the field list.
+        let fields_ptr = read(analysis).structs.get(name)
+        if fields_ptr != null:
+            let decl_line = find_declaration_line(file, name, "struct")
+            if decl_line > 0:
+                var hover = string.String.create()
+                hover.append("struct ")
+                hover.append(name)
+                hover.append(":")
+                let fields = read(fields_ptr)
+                var fi: ptr_uint = 0
+                while fi < fields.len:
+                    let fe = read(fields.data + fi)
+                    hover.append("\n    ")
+                    hover.append(fe.name)
+                    hover.append(": ")
+                    hover.append(types.type_to_string(fe.ty))
+                    fi += 1
+                return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
+
+        # Enum, flags, or variant: render the member list.
+        if read(analysis).static_member_types.contains(name):
+            let decl_line = find_declaration_line(file, name, "struct")
+            if decl_line > 0:
+                var hover = string.String.create()
+                hover.append(static_type_keyword(file, name))
+                hover.append(" ")
+                hover.append(name)
+                let members_ptr = read(analysis).match_case_names.get(name)
+                if members_ptr != null:
+                    hover.append(":")
+                    let members = read(members_ptr)
+                    var mi: ptr_uint = 0
+                    while mi < members.len:
+                        hover.append("\n    ")
+                        hover.append(read(members.data + mi))
+                        mi += 1
+                return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
 
     return Option[CursorResult].none
+
+
+## Assemble a CursorResult: locate the name on its declaration line and
+## attach any contiguous `##` doc lines directly above it.
+function make_result(decl_line: ptr_uint, name: str, source: str, hover: string.String) -> CursorResult:
+    var column: ptr_uint = 0
+    let line_text = cursor.source_line(source, decl_line)
+    match cursor.token_start_in_line(line_text, name):
+        Option.some as pos:
+            column = pos.value
+        Option.none:
+            pass
+    return CursorResult(
+        line = decl_line,
+        column = column,
+        name_len = name.len,
+        hover_text = hover,
+        docs = doc_lines_above(source, decl_line)
+    )
+
+
+## Render a function signature from its FnSig:
+## `async function name(a: int, b: str) -> int`.
+function format_fn_signature(sig: analyzer.FnSig, name: str) -> string.String:
+    var sig_text = string.String.create()
+    if sig.is_async:
+        sig_text.append("async ")
+    sig_text.append("function ")
+    sig_text.append(name)
+    sig_text.append("(")
+    var pi: ptr_uint = 0
+    while pi < sig.params.len:
+        let param = unsafe: read(sig.params.data + pi)
+        if pi > 0:
+            sig_text.append(", ")
+        sig_text.append(param.name)
+        sig_text.append(": ")
+        sig_text.append(types.type_to_string(param.ty))
+        pi += 1
+    if sig.is_variadic:
+        if sig.params.len > 0:
+            sig_text.append(", ")
+        sig_text.append("...")
+    sig_text.append(")")
+    if sig.has_return_type:
+        sig_text.append(" -> ")
+        sig_text.append(types.type_to_string(sig.return_type))
+    return sig_text
+
+
+## The declaration keyword for a module-level value: "const" or "var".
+function value_decl_keyword(file: ast.SourceFile, name: str) -> str:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_const as c:
+                if c.name == name:
+                    return "const"
+            ast.Decl.decl_var as v:
+                if v.name == name:
+                    return "var"
+            _:
+                pass
+        di += 1
+    return "const"
+
+
+## The declaration keyword for an enum-like type: "enum", "flags", or "variant".
+function static_type_keyword(file: ast.SourceFile, name: str) -> str:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_enum as e:
+                if e.name == name:
+                    return "enum"
+            ast.Decl.decl_flags as fl:
+                if fl.name == name:
+                    return "flags"
+            ast.Decl.decl_variant as vr:
+                if vr.name == name:
+                    return "variant"
+            _:
+                pass
+        di += 1
+    return "enum"
+
+
+## Contiguous `##` documentation lines directly above 1-based `decl_line`,
+## with the comment markers stripped, joined by newlines.
+function doc_lines_above(source: str, decl_line: ptr_uint) -> string.String:
+    var docs = string.String.create()
+    if decl_line <= 1:
+        return docs
+
+    # Find the first line of the contiguous ## block above the declaration.
+    var first_doc_line = decl_line
+    var probe = decl_line - 1
+    while probe >= 1:
+        let text = cursor.source_line(source, probe).trim_ascii_whitespace()
+        if text.len >= 2 and text.byte_at(0) == 35 and text.byte_at(1) == 35:
+            first_doc_line = probe
+            if probe == 1:
+                break
+            probe -= 1
+        else:
+            break
+
+    var i = first_doc_line
+    while i < decl_line:
+        let text = cursor.source_line(source, i).trim_ascii_whitespace()
+        if text.len < 2:
+            break
+        var body = text.slice(2, text.len - 2)
+        if body.len > 0 and body.byte_at(0) == 32:
+            body = body.slice(1, body.len - 1)
+        if not docs.is_empty():
+            docs.append("\n")
+        docs.append(body)
+        i += 1
+    return docs
 
 
 ## Find the declaration line of a named symbol in the source file's AST.
@@ -434,58 +461,3 @@ function find_declaration_line(file: ast.SourceFile, name: str, kind: str) -> pt
                     pass
         di += 1
     return 0
-
-
-## Build an LSP Location JSON object from a URI and line/column (0-based).
-function build_location(uri: str, line: ptr_uint, column: ptr_uint) -> json.Value:
-    var result = json.create_object_value()
-    var range = json.create_object_value()
-    var start = json.create_object_value()
-    var end = json.create_object_value()
-
-    var obj_ptr = result.as_object()
-    var range_ptr = range.as_object()
-    var start_ptr = start.as_object()
-    var end_ptr = end.as_object()
-
-    if obj_ptr == null or range_ptr == null or start_ptr == null or end_ptr == null:
-        json.release_value(start)
-        json.release_value(end)
-        json.release_value(range)
-        json.release_value(result)
-        return json.null_value()
-
-    let line_zero = if line > 0: ptr_uint<-(int<-(line) - 1) else: 0z
-
-    unsafe:
-        read(start_ptr).set("line", json.number_value(double<-line_zero))
-        read(start_ptr).set("character", json.number_value(0.0))
-        read(end_ptr).set("line", json.number_value(double<-line_zero))
-        read(end_ptr).set("character", json.number_value(0.0))
-        read(range_ptr).set("start", start)
-        read(range_ptr).set("end", end)
-        read(obj_ptr).set("uri", json.string_from_str(uri))
-        read(obj_ptr).set("range", range)
-
-    return result
-
-
-## Build an LSP Hover result JSON object.
-function build_hover_result(hover_text: str) -> json.Value:
-    var result = json.create_object_value()
-    var contents = json.create_object_value()
-
-    var obj_ptr = result.as_object()
-    var contents_ptr = contents.as_object()
-
-    if obj_ptr == null or contents_ptr == null:
-        json.release_value(contents)
-        json.release_value(result)
-        return json.null_value()
-
-    unsafe:
-        read(contents_ptr).set("language", json.string_from_str("milktea"))
-        read(contents_ptr).set("value", json.string_from_str(hover_text))
-        read(obj_ptr).set("contents", contents)
-
-    return result

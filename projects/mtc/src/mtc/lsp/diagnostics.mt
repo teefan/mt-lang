@@ -3,12 +3,14 @@
 ## from the module loader, mirroring the CLI's `mtc check` path.
 
 import std.json as json
+import std.str
 import std.string as string
 import std.vec as vec
 
 import mtc.loader.module_loader as loader
 import mtc.loader.path_resolver as resolver
 import mtc.linter.linter as linter_mod
+import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 
 
@@ -47,6 +49,7 @@ public function collect_diagnostics(root_path: str, roots: span[str]) -> json.Va
 
     # Lint the root module's source file.
     var lint_warnings = vec.Vec[linter_mod.Warning].create()
+    var root_source: str = ""
     # Only lint when the root module parsed and checked successfully.
     if program.analyses.len() > 0 and program.modules.len() > 0:
         let last_analysis_ptr = program.analyses.last() else:
@@ -56,9 +59,10 @@ public function collect_diagnostics(root_path: str, roots: span[str]) -> json.Va
             program.release()
             return diag_array
         unsafe:
+            root_source = read(last_module_ptr).source.as_str()
             lint_warnings = linter_mod.lint_source(
                 read(last_analysis_ptr).source_file,
-                read(last_module_ptr).source.as_str(),
+                root_source,
                 root_path,
                 program.owning_type_span()
             )
@@ -69,7 +73,7 @@ public function collect_diagnostics(root_path: str, roots: span[str]) -> json.Va
             break
         unsafe:
             let w = read(w_ptr)
-            let diag = diagnostic_from_warning(w)
+            let diag = diagnostic_from_warning(w, root_source)
             if not diag.is_null():
                 read(array_ptr).push(diag)
 
@@ -113,13 +117,16 @@ public function publish_empty_for_uri(uri: str) -> void:
     proto.write_notification("textDocument/publishDiagnostics", params)
 
 
-## Convert a LoadDiagnostic to an LSP Diagnostic JSON Value.
+## Convert a LoadDiagnostic to an LSP Diagnostic JSON Value.  The range starts
+## at the diagnostic's column and spans one character, mirroring the Ruby
+## LSP's `format_error`.
 function diagnostic_from_load_diagnostic(d: loader.LoadDiagnostic) -> json.Value:
     var diag = json.create_object_value()
     let diag_obj = diag.as_object() else:
         return json.null_value()
 
     let line_zero = if d.line > 0: ptr_uint<-(int<-(d.line) - 1) else: 0z
+    let start_char = if d.column > 0: ptr_uint<-(int<-(d.column) - 1) else: 0z
 
     var range = json.create_object_value()
     let range_obj = range.as_object() else:
@@ -141,9 +148,9 @@ function diagnostic_from_load_diagnostic(d: loader.LoadDiagnostic) -> json.Value
 
     unsafe:
         read(start_obj).set("line", json.number_value(double<-line_zero))
-        read(start_obj).set("character", json.number_value(0.0))
+        read(start_obj).set("character", json.number_value(double<-start_char))
         read(end_obj).set("line", json.number_value(double<-line_zero))
-        read(end_obj).set("character", json.number_value(1000.0))
+        read(end_obj).set("character", json.number_value(double<-(start_char + 1)))
 
         read(range_obj).set("start", start_pos)
         read(range_obj).set("end", end_pos)
@@ -168,14 +175,29 @@ function diagnostic_from_load_diagnostic(d: loader.LoadDiagnostic) -> json.Value
     return diag
 
 
-## Convert a linter Warning to an LSP Diagnostic JSON Value.
-## Warnings only carry line numbers (no column info) — use line-granular ranges.
-function diagnostic_from_warning(w: linter_mod.Warning) -> json.Value:
+## Convert a linter Warning to an LSP Diagnostic JSON Value.  Warnings carry
+## line numbers only, so the character range is recovered by locating the
+## message's quoted symbol on that line — mirroring the Ruby LSP's
+## `extract_warning_range` fallback.  When no symbol is found, the range is
+## [0, 1] like Ruby's.
+function diagnostic_from_warning(w: linter_mod.Warning, source: str) -> json.Value:
     var diag = json.create_object_value()
     let diag_obj = diag.as_object() else:
         return json.null_value()
 
     let line_zero = if w.line > 0: ptr_uint<-(int<-(w.line) - 1) else: 0z
+
+    var start_char: ptr_uint = 0
+    var end_char: ptr_uint = 1
+    let name = extract_quoted_name(w.message)
+    if name.len > 0 and source.len > 0:
+        let line_text = cursor.source_line(source, w.line)
+        match cursor.token_start_in_line(line_text, name):
+            Option.some as pos:
+                start_char = pos.value
+                end_char = pos.value + name.len
+            Option.none:
+                pass
 
     var range = json.create_object_value()
     let range_obj = range.as_object() else:
@@ -183,9 +205,24 @@ function diagnostic_from_warning(w: linter_mod.Warning) -> json.Value:
         return json.null_value()
 
     var start_pos = json.create_object_value()
+    let start_obj = start_pos.as_object() else:
+        json.release_value(range)
+        json.release_value(diag)
+        return json.null_value()
+
     var end_pos = json.create_object_value()
+    let end_obj = end_pos.as_object() else:
+        json.release_value(start_pos)
+        json.release_value(range)
+        json.release_value(diag)
+        return json.null_value()
 
     unsafe:
+        read(start_obj).set("line", json.number_value(double<-line_zero))
+        read(start_obj).set("character", json.number_value(double<-start_char))
+        read(end_obj).set("line", json.number_value(double<-line_zero))
+        read(end_obj).set("character", json.number_value(double<-end_char))
+
         read(range_obj).set("start", start_pos)
         read(range_obj).set("end", end_pos)
 
@@ -214,3 +251,20 @@ function diagnostic_from_warning(w: linter_mod.Warning) -> json.Value:
 ## The default host platform for module resolution (Linux on the current host).
 function default_platform() -> resolver.Platform:
     return resolver.Platform.linux
+
+
+## The first single-quoted 'name' in a warning message, or "" when absent.
+## Linter messages consistently quote the symbol they refer to, e.g.
+## "unused local 'x'" or "assigned value 'total' is never read".
+function extract_quoted_name(message: str) -> str:
+    var i: ptr_uint = 0
+    while i < message.len:
+        if message.byte_at(i) == 39:
+            var j = i + 1
+            while j < message.len and message.byte_at(j) != 39:
+                j += 1
+            if j < message.len and j > i + 1:
+                return message.slice(i + 1, j - i - 1)
+            return ""
+        i += 1
+    return ""

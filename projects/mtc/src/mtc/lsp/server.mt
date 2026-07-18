@@ -74,33 +74,33 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
     # Document symbols (Tier 2)
     else if method == "textDocument/documentSymbol":
         let uri = extract_text_doc_uri(msg.params)
-        symbols.handle_document_symbols(uri, msg.id)
+        symbols.handle_document_symbols(ws, uri, msg.id)
 
     # Navigation (Tier 2)
     else if method == "textDocument/definition":
         var pos = extract_position_params(msg.params)
-        nav.handle_definition(pos.uri, pos.line, pos.character, msg.id)
+        nav.handle_definition(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/hover":
         var pos = extract_position_params(msg.params)
-        nav.handle_hover(pos.uri, pos.line, pos.character, msg.id)
+        nav.handle_hover(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/references":
         var pos = extract_position_params(msg.params)
-        nav.handle_references(pos.uri, pos.line, pos.character, msg.id)
+        nav.handle_references(ws, pos.uri, pos.line, pos.character, msg.id)
 
     # Tier 3
     else if method == "textDocument/completion":
         var pos = extract_position_params(msg.params)
-        completion.handle_completion(pos.uri, pos.line, pos.character, msg.id)
+        completion.handle_completion(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/semanticTokens/full":
         let uri = extract_text_doc_uri(msg.params)
-        semtok.handle_semantic_tokens(uri, msg.id)
+        semtok.handle_semantic_tokens(ws, uri, msg.id)
     else if method == "textDocument/signatureHelp":
         var pos = extract_position_params(msg.params)
-        sighelp.handle_signature_help(pos.uri, pos.line, pos.character, msg.id)
+        sighelp.handle_signature_help(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/rename":
         var pos = extract_position_params(msg.params)
         let new_name_ptr = extract_new_name(msg.params)
-        rename_mod.handle_rename(pos.uri, pos.line, pos.character, new_name_ptr, msg.id)
+        rename_mod.handle_rename(ws, pos.uri, pos.line, pos.character, new_name_ptr, msg.id)
     else if method == "textDocument/codeAction":
         let uri = extract_text_doc_uri(msg.params)
         code_actions.handle_code_actions(uri, msg.id)

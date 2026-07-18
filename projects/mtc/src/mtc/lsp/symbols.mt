@@ -2,7 +2,6 @@
 ## source file and return them as LSP DocumentSymbol JSON.
 
 import std.fmt
-import std.fs as fs_mod
 import std.json as json
 import std.str
 import std.string as string
@@ -13,6 +12,7 @@ import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.protocol as proto
+import mtc.lsp.workspace as workspace
 
 
 const SYMBOLKIND_FUNCTION:  double = 12.0
@@ -25,21 +25,16 @@ const SYMBOLKIND_EVENT:     double = 24.0
 const SYMBOLKIND_TYPEPARAM: double = 25.0
 
 
-public function handle_document_symbols(uri: str, id: json.Value) -> void:
+public function handle_document_symbols(ws: ref[workspace.Workspace], uri: str, id: json.Value) -> void:
     var owned_path = uri_ops.file_uri_to_path(uri) else:
         proto.write_error(id, -32602, "invalid uri")
         return
     defer owned_path.release()
 
-    var content = string.String.create()
+    var content = ws.document_source(owned_path.as_str()) else:
+        proto.write_error(id, -32800, "symbol request failed: could not read file")
+        return
     defer content.release()
-    var read_result = fs_mod.read_text(owned_path.as_str())
-    match read_result:
-        Result.success as c:
-            content.assign(c.value.as_str())
-        Result.failure:
-            proto.write_error(id, -32800, "symbol request failed: could not read file")
-            return
 
     let source = content.as_str()
     if source.len == 0:

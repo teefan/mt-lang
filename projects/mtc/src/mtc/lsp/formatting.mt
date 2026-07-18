@@ -3,7 +3,6 @@
 ## Parses the source text, runs the AST formatter, and returns the formatted
 ## text as a TextEdit replacement for the entire document.
 
-import std.fs as fs_mod
 import std.json as json
 import std.str
 import std.string as string
@@ -31,20 +30,10 @@ public function handle_formatting(ws: ref[workspace.Workspace], params: json.Val
     defer owned_path.release()
 
     # Read source text from the open document if available, otherwise from disk.
-    var source_text = string.String.create()
+    var source_text = ws.document_source(owned_path.as_str()) else:
+        proto.write_error(id, -32800, "format request failed: could not read file")
+        return
     defer source_text.release()
-    let persisted = ws.open_docs.get(owned_path)
-    if persisted != null:
-        unsafe:
-            source_text.assign(read(persisted).as_str())
-    else:
-        var read_result = fs_mod.read_text(owned_path.as_str())
-        match read_result:
-            Result.success as content:
-                source_text.assign(content.value.as_str())
-            Result.failure:
-                proto.write_error(id, -32800, "format request failed: could not read file")
-                return
 
     let source = source_text.as_str()
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()

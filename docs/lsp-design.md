@@ -84,6 +84,7 @@ projects/mtc/src/mtc/
     lifecycle.mt    ← initialize, shutdown, configure
     text_docs.mt    ← didOpen, didChange, didClose, didSave
     uri.mt          ← file:// URI percent-decode
+    cursor.mt       ← shared token-at-position resolution (Phase 0)
 
     # Tier 2
     navigation.mt   ← go-to-definition, hover, references (combined)
@@ -329,12 +330,21 @@ Raw-string rendering used for all responses.  std.json.render not used.
 Explicit `release()` at end of each loop iteration.  Workspace deferred
 on exit.
 
-### 7.7 New: Self-host C codegen — PARTIALLY RESOLVED
+### 7.7 Self-host C codegen — RESOLVED (2026-07-18)
 Recursive JSON object serialization (`entry.key.as_str()` in unsafe while
-loop) generates incorrect C (`const_ptr_as_str`).  Objects render as `{}`.
-Standalone programs with the same pattern work correctly.  Root cause
-traced to `named_type_name` returning generic wrapper names for pointer
-types.  Fix pending.
+loop) generated incorrect C (`const_ptr_as_str`) and objects rendered as
+`{}`.  Root cause: `concrete_field_type`'s bare-name struct lookup scanned
+all program analyses in dependency order, so `std.map.Entry` (with
+`key: const_ptr[K]`) shadowed `std.json.Entry` (with `key: string.String`)
+whenever std.map preceded std.json in the module closure — which is why
+standalone programs worked but the full mtc build did not.  Fixed by
+resolving the struct in the receiver type's owning module first
+(`ty_imported.module_name`), falling back to the ordered scan only when the
+owner has no such struct.  `append_json_value` now renders objects
+recursively, and `publishDiagnostics` params (previously `{}` over the
+wire) carry full diagnostic payloads.  A second latent bug surfaced by the
+fix — `diagnostic_from_warning` never populated its range positions — was
+fixed the same day.
 
 
 ## 8. Comparison: Ruby LSP vs Self-Host LSP (actual)
@@ -355,8 +365,12 @@ types.  Fix pending.
 
 | Feature | Status |
 |---------|--------|
-| Recursive JSON object serialization | Blocked by self-host C codegen bug (const_ptr_as_str); objects render as {} |
-| Full references walker | Stub (text-based word scanner instead) — AST walker triggers Ruby nullability crash |
-| linter.Warning column info | Missing (line-granular LSP diagnostics only) |
+| ~~Recursive JSON object serialization~~ | **FIXED (2026-07-18)** — module-aware struct field lookup in lowering (§7.7); objects and publishDiagnostics params render fully |
+| ~~Editor-buffer document sync~~ | **FIXED (2026-07-18, Phase 0)** — `Workspace.document_source` (buffer first, disk fallback) is now used by every position-based handler; previously they read stale disk content |
+| ~~linter.Warning column info~~ | **BRIDGED (2026-07-18, Phase 0)** — warning ranges are recovered by locating the message's quoted symbol on the warning line (Ruby `extract_warning_range` parity); sema-error ranges use `LoadDiagnostic.column`. True `column`/`length` Warning fields remain future work for `--fix`. |
+| ~~Text-scan references/rename~~ | **FIXED (2026-07-18, Phase 1)** — token-accurate occurrences (`cursor.identifier_occurrences`); string-literal/comment text never matches, exact columns. Scope-aware locals and cross-file references remain future tiers. |
+| ~~Keyword-only completion~~ | **FIXED (2026-07-18, Phase 1)** — module symbols (functions/structs/enums/interfaces/values/imports) plus `alias.` member completion via module-path resolution |
+| ~~Name-only hover~~ | **FIXED (2026-07-18, Phase 1)** — markdown hover with full signatures (functions incl. async/variadic/return, const/var types, struct fields, enum/variant members) and attached `##` doc comments; definition ranges point at the name token |
+| ~~Lexer-class-only semantic tokens~~ | **FIXED (2026-07-18, Phase 1)** — identifiers classified via Analysis facts: function/type/namespace/parameter/variable, plus builtin type names |
 | Stdio-based editor smoke test | Not performed (all verification via piped fixtures) |
 | 36 remaining Ruby-only capabilities (call hierarchy, inlay hints, etc.) | Out of scope |
