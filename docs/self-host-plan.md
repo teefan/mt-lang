@@ -1,7 +1,7 @@
 # Self-Host Plan
 
-Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP ALL 3 TIERS COMPLETE.**
-Stage2 == stage3 byte-identical. 476 self-tests pass across 9 test files.
+Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP ALL 3 TIERS + 4 QUALITY PHASES COMPLETE. LINT --FIX COMPLETE.**
+Stage2 == stage3 byte-identical. 494 self-tests pass across 10 test files.
 **Raylib parity: 217/219 build and run** (the 2 remaining are non-executable
 support files rejected with byte-identical Ruby messages, §2.4; vendored-library
 subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parity:
@@ -10,25 +10,30 @@ subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parit
 stdout+exit vs Ruby, including two with shared pre-existing runtime bugs
 (§5.3b). Layout attributes, `static_assert`
 evaluation, and the `reinterpret` size rule landed in §2.9. CLI: 17 commands at
-parity (added `cache`, `lsp`). **`mtc lint` has 36 rules** (all 5 CFG/flow rules done,
-incl. `redundant-null-check`; lint double-count bug fixed). `mtc check` on
-`language_baseline.mt`: 0 errors. Bootstrap via `tools/bootstrap.sh`.
+parity (added `cache`, `lsp`). **`mtc lint` has 36 rules plus `--fix`
+(7 auto-fixable rules, byte-identical output vs Ruby) and `.mt-lint.yml`
+config** (§3.4). `mtc check` on `language_baseline.mt`: 0 errors. Bootstrap
+via `tools/bootstrap.sh`.
 
-**LSP: 15 modules, 2,529 lines, valgrind-clean.** All 3 tiers implemented:
-diagnostics + document sync (tier 1), go-to-definition/hover/references/
-formatting/symbols (tier 2), completions/semantic-tokens/signature-help/
-code-actions/rename (tier 3).  13 capabilities advertised, all parity-verified
-via piped JSON-RPC fixtures.  See `docs/lsp-design.md` for details.
+**LSP: 23 modules, ~4,950 lines, 25 capabilities advertised, valgrind-clean.**
+All 3 tiers plus 4 quality phases (§0b): buffer-synced documents, token-accurate
+cursor/occurrence resolution, symbol-precise diagnostic ranges, rich hover with
+signatures + `##` docs, symbol and `alias.` member completion, fact-based
+semantic tokens, cross-file definition/hover into imported modules, folding,
+selection ranges, workspace symbols, inlay parameter hints, onType formatting,
+and fix-engine-backed quickfix code actions.  Verified against a real editor
+(headless Neovim 0.12) and piped JSON-RPC fixtures.  See `docs/lsp-design.md`.
 
 **Ruby compiler nullability crash fixed** (2026-07-18, commit `bf0e6719`):
 parser creates `MatchStmt` with `MatchExprArm` objects when inline match arms
 use single-expression bodies.  Fixed 4 `arm.body` call sites in `nullability.rb`
 to handle both arm types.  Unblocks complex LSP modules.
 
-**Remaining gaps for the next session are consolidated in §5.**
+**Remaining gaps for the next session are consolidated in §5 (see §5.8 for
+the prioritized next-session candidates).**
 
-Last updated: 2026-07-18 (LSP recursive JSON + module-aware field lookup fixed;
-Ruby field-name sanitization fixed; spectrum_visualizer builds under both)
+Last updated: 2026-07-18 (LSP quality phases 0-4 complete; lint --fix +
+.mt-lint.yml landed; fix engine feeds LSP code actions; suite at 494)
 
 ---
 
@@ -75,6 +80,60 @@ examples byte-identical runtime vs Ruby, LSP valgrind-clean.
    field named in `C_KEYWORDS` (e.g. `imaginary`, `complex`) miscompiled. All
    emission sites now sanitize consistently (`type_declaration.rb`,
    `expressions.rb`).
+
+---
+
+## 0b. 2026-07-18 sessions — LSP quality phases 0-4 + linter --fix
+
+Commits `4a90cca6` (Phases 0+1), `b387853d` (Phase 2), `daff01b2` (Phase 3),
+`f52f1343` (Phase 4), `850b9fc5` (--fix + config), `6466627d` (fix-set
+expansion + LSP code actions). All under a held fixed point; suite grew
+476 → 488 → 494 (new fix_engine_test.mt).
+
+**LSP Phase 0 (correctness):** every position-based handler now reads the
+open editor buffer (`Workspace.document_source`, buffer first / disk
+fallback) instead of stale disk content; new shared `lsp/cursor.mt`
+(token-at-position, call-name-at-position, identifier occurrences) replaced
+three duplicated byte scanners; diagnostic ranges point at the offending
+symbol (Ruby `extract_warning_range` parity; sema errors use
+`LoadDiagnostic.column`); fixed an off-by-one that shifted every
+reference/rename match beyond line 1.
+
+**Phase 1 (quality of advertised features):** completion returns real module
+symbols plus `alias.` member completion via module-path resolution; hover
+renders markdown signatures (functions incl. async/variadic, const/var
+types, struct fields from the AST TypeRef so generics show `own[T]?`, enum
+members) with attached `##` docs; references/rename use identifier-token
+occurrences (strings/comments never match); semantic tokens classify through
+Analysis facts (function/type/namespace/parameter + builtin type names).
+
+**Phase 2 (new capabilities, 13 → 19):** documentHighlight, prepareRename,
+foldingRange (indent stack + import/comment runs, Ruby algorithm),
+workspace/symbol (text prefilter, 200-result cap, non-empty query only —
+0.26 s cold on this repo), selectionRange (word/line/statement/block),
+semanticTokens/range.
+
+**Phase 3 (19 → 25):** declaration/typeDefinition/implementation (the
+definition family; typeDefinition reads `alias.Type` annotations straight
+from the AST TypeRef), inlayHint (parameter-name hints, named-arg and
+self-describing-arg suppression), onTypeFormatting (newline indent assist),
+quickfix code actions. Lifecycle verified: shutdown → exit, EOF, and garbage
+input all terminate cleanly.
+
+**Phase 4 (cross-file + editor verification):** definition/hover resolve
+`alias.member` into the imported module's file (signature + docs + exact
+name range); an import alias resolves to its module file. Real-editor smoke
+test via headless Neovim 0.12 passed (attach, cross-file hover/definition,
+diagnostics, completion, clean shutdown, no orphan process). The smoke test
+exposed a latent diagnostics bug: the root module was fetched via
+`modules.last()`, but `modules` fills in DFS pre-order, so lint ranges and
+token-based rules ran against the wrong source for any root with imports —
+now indexed via `order.last()`.
+
+**Linter --fix + .mt-lint.yml:** see §3.4. Fix engine is edit-based and
+shared with LSP code actions ("Fix <code>" quickfixes computed against the
+live buffer). 7 fixable rules, byte-identical output vs Ruby fixtures;
+`unused-import` deliberately not fixable (Ruby rationale).
 
 ---
 
@@ -189,6 +248,13 @@ The `mtc lint` command previously double-counted warnings
 inflating "Found N warnings" 2× and forcing exit 1 when `--ignore`/`--select`
 filtered everything out. Fixed (2026-07-17); `--ignore` now reports
 `clean ...`/exit 0 at parity with Ruby.
+
+`mtc lint --fix` and `.mt-lint.yml` config landed 2026-07-18 (§3.4):
+7 auto-fixable rules through an edit-based multi-pass engine
+(`linter/fix_engine.mt`), config discovery + YAML-subset parsing
+(`linter/config.mt`), `Warning.column`/`length` fields, and
+`lint_source_opts` for configurable line length. The same engine powers the
+LSP's quickfix code actions.
 
 ---
 
@@ -569,16 +635,16 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 | ~~`--sanitize`~~ **DONE (2026-07-17)** | — |
 | ~~`cache` inspection~~ **DONE (2026-07-17)** | — |
 | ~~`run-module`, `new`, `completions`~~ **DONE (§2.8)**; `debug`, `deps`, `toolchain`, `bindgen`, `docs`, `snapshot` | Varies |
-| LSP server | Medium | **DONE (2026-07-18)** — 15 modules, 2,529 lines, 3 tiers complete, valgrind-clean, 13 capabilities advertised |
+| LSP server | Medium | **DONE (2026-07-18)** — 23 modules, ~4,950 lines, 3 tiers + 4 quality phases, valgrind-clean, 25 capabilities advertised, editor-verified (headless Neovim) |
 
 ---
 
 ## 5. Remaining Gaps (new-session context)
 
-The compiler is at a held fixed point (476/476 tests, 13/13 language examples,
-217/219 raylib — the 2 non-builds are correct rejections; 12/13 language
-examples byte-identical at runtime after the §5.2 `dyn` fix, the one exception
-is the pre-existing shared libuv crash).
+The compiler is at a held fixed point (494/494 tests across 10 files, 13/13
+language examples, 217/219 raylib — the 2 non-builds are correct rejections;
+12/13 language examples byte-identical at runtime after the §5.2 `dyn` fix,
+the one exception is the pre-existing shared libuv crash).
 **No known self-host codegen, runtime, or example-parity bug remains.** All
 landed work is recorded in §1 (external-type fixes) and §2 (per-session logs
 §2.1–§2.9). What follows is the complete remaining-gap inventory, prioritized.
@@ -717,7 +783,39 @@ pcre2, steamworks) follow the §2.6 pattern when an example needs them.
   CPS-async scaffolding symbols, format-fallback literals — all confirmed by
   identical runtime output.
 
-### 5.7 Verification checklist for any change
+### 5.7 LSP remaining deltas (quality, not bugs)
+
+25 of Ruby's 49 capabilities are advertised; every advertised feature is at
+functional parity or better. Remaining Ruby-only capabilities (24): call
+hierarchy (3 methods), type hierarchy (3), codeLens + resolve, documentLink +
+resolve, rangeFormatting, linkedEditingRange, executeCommand,
+completionItem/resolve, semanticTokens full/delta, pull diagnostics (2),
+progress/configuration/cancel plumbing, `milkTea/*` custom methods. Quality
+deltas inside shared capabilities: references/rename are token-accurate but
+single-file and not scope-aware (shadowed locals conflate); completion lacks
+method-receiver members and named-argument suggestions; inlay hints skip
+`alias.fn(...)` calls; workspace/symbol requires a non-empty query (no
+workspace index). See `docs/lsp-design.md` §8.
+
+### 5.8 Next-session candidates (prioritized)
+
+1. **`deps` package management** (Large) — the biggest remaining CLI gap;
+   `--locked`/`--frozen` resolution depends on it. Multi-session project;
+   start with `PackageManifest`/`PackageGraph` reading and `deps tree`.
+2. **`bindgen`** (Medium-Large) — C header → binding module generation;
+   unlocks self-serve external bindings.
+3. **Wasm/emcc + preview server** (Large) — platform reach.
+4. **Linter depth** (Medium) — sema-based `redundant-cast` (Ruby finds 42
+   coercion-redundant casts on projects/mtc/src that the AST-level rule
+   cannot), Ruby's line-too-long wrappable-candidate skip-set + "; wrap the
+   expression" suffix (needs formatter wrap-fix machinery), remaining
+   fixable rules (prefer-let-else/var-else, redundant-ignored-match-binding,
+   reserved-primitive-name renames).
+5. **LSP long-tail** (Small-Medium each) — scope-aware references/rename,
+   method-receiver completion, workspace-symbol index, then §5.7's
+   capability list by demand.
+
+### 5.9 Verification checklist for any change
 
 Run before considering a change done:
 
@@ -730,9 +828,11 @@ build/stage2/mtc build examples/language_baseline.mt -I . -o /tmp/lb --no-cache
 # raylib parity sweep (per-file build, compare against the passing baseline)
 ```
 
-A change is safe only if: stage2.c == stage3.c, 476/476 tests pass, 13/13
+A change is safe only if: stage2.c == stage3.c, 494/494 tests pass, 13/13
 language examples build, and the raylib passing set does not shrink (currently
 217; the 2 non-builds must remain clean rejections with Ruby's messages).
+LSP changes additionally require the piped JSON-RPC fixtures + valgrind and,
+for behavior changes, the headless-Neovim smoke test.
 
 For **runtime correctness**, diff against the Ruby compiler on arithmetic / type
 patterns:

@@ -96,16 +96,20 @@ projects/mtc/src/mtc/
     on_type_formatting.mt ← newline indent assist (Phase 3)
 
     # Tier 2
-    navigation.mt   ← go-to-definition, hover, references (combined)
+    navigation.mt   ← definition family (goto/type/implementation), hover
+                      with signatures + ## docs, references; cross-file via
+                      import aliases (Phases 1/3/4)
     formatting.mt   ← format document
     symbols.mt      ← document symbols
 
     # Tier 3
-    completion.mt   ← code completion (keyword-based)
-    semantic_tokens.mt ← syntax highlighting (lexer-based)
-    code_actions.mt ← quick fixes (returns empty list)
-    signature_help.mt ← parameter hints
-    rename.mt       ← rename symbol (text-based)
+    completion.mt   ← keywords + module symbols + `alias.` members (Phase 1)
+    semantic_tokens.mt ← lexer stream + Analysis-fact identifier classes,
+                      full and range (Phases 1/2)
+    code_actions.mt ← quickfixes via the linter fix engine for every
+                      auto-fixable rule + underscore-prefix for unused-*
+    signature_help.mt ← parameter hints (token-accurate callee resolution)
+    rename.mt       ← rename + prepareRename (identifier-token occurrences)
 ```
 
 ### 2.1 Why separate modules?
@@ -263,7 +267,16 @@ resolved: the fn-table approach was bypassed to avoid potential `Map[K,
 fn(...)]` codegen issues (this pattern has zero real-world exercise in
 the codebase).
 
-### 4.5 Source-only — no pre-compiled artifacts
+### 4.5 Code actions — shared fix engine
+
+Quickfix code actions are computed by the linter's fix engine
+(`linter/fix_engine.mt`), the same edit generators behind `mtc lint --fix`:
+`fix_engine.is_fixable(code)` gates the diagnostic, and
+`lsp_edit_for_warning(source, code, line, column)` produces the LSP-space
+TextEdit against the live buffer. One engine, two front ends — CLI batch
+fixes and editor quickfixes cannot drift.
+
+### 4.6 Source-only — no pre-compiled artifacts
 
 The LSP needs no new vendored libraries beyond cJSON (already vendored
 and verified working). The existing compilation pipeline handles `std.json`
@@ -376,11 +389,12 @@ fixed the same day.
 |---------|--------|
 | ~~Recursive JSON object serialization~~ | **FIXED (2026-07-18)** — module-aware struct field lookup in lowering (§7.7); objects and publishDiagnostics params render fully |
 | ~~Editor-buffer document sync~~ | **FIXED (2026-07-18, Phase 0)** — `Workspace.document_source` (buffer first, disk fallback) is now used by every position-based handler; previously they read stale disk content |
-| ~~linter.Warning column info~~ | **BRIDGED (2026-07-18, Phase 0)** — warning ranges are recovered by locating the message's quoted symbol on the warning line (Ruby `extract_warning_range` parity); sema-error ranges use `LoadDiagnostic.column`. True `column`/`length` Warning fields remain future work for `--fix`. |
+| ~~linter.Warning column info~~ | **FIXED (2026-07-18)** — `Warning` carries `column`/`length` (populated by position-tracking rules such as trailing-list-comma and redundant-cast); diagnostics prefer them and fall back to quoted-symbol recovery on the warning line (Ruby `extract_warning_range` parity); sema-error ranges use `LoadDiagnostic.column`. |
 | ~~Text-scan references/rename~~ | **FIXED (2026-07-18, Phase 1)** — token-accurate occurrences (`cursor.identifier_occurrences`); string-literal/comment text never matches, exact columns. Scope-aware locals and cross-file references remain future tiers. |
 | ~~Keyword-only completion~~ | **FIXED (2026-07-18, Phase 1)** — module symbols (functions/structs/enums/interfaces/values/imports) plus `alias.` member completion via module-path resolution |
 | ~~Name-only hover~~ | **FIXED (2026-07-18, Phase 1)** — markdown hover with full signatures (functions incl. async/variadic/return, const/var types, struct fields, enum/variant members) and attached `##` doc comments; definition ranges point at the name token |
 | ~~Lexer-class-only semantic tokens~~ | **FIXED (2026-07-18, Phase 1)** — identifiers classified via Analysis facts: function/type/namespace/parameter/variable, plus builtin type names |
 | ~~Stdio-based editor smoke test~~ | **DONE (2026-07-18, Phase 4)** — headless Neovim 0.12 against `mtc lsp`: attach + capabilities, cross-file hover (`heap.release` signature + docs), cross-file definition (`std/mem/heap.mt`), publishDiagnostics with symbol-precise ranges, completion, clean server shutdown on editor exit |
 | ~~Same-file-only definition/hover~~ | **FIXED (2026-07-18, Phase 4)** — `alias.member` resolves through the import map + module path into the imported module's file (signature, `##` docs, exact name range); an import alias itself resolves to the module file. Phase 4 also fixed a latent diagnostics bug: the root module was taken from `modules.last()` (DFS pre-order → last *dependency*), so lint ranges and token-based rules ran against the wrong source for any root with imports; now indexed via `order.last()`. Generic struct hovers render AST field types (`own[T]?`, not `own[<error>]?`). |
-| 24 remaining Ruby-only capabilities (call hierarchy, code lens, etc.) | Out of scope — Phase 2 (2026-07-18) added documentHighlight, prepareRename, foldingRange, workspace/symbol, selectionRange, semanticTokens/range; Phase 3 added declaration, typeDefinition, implementation, inlayHint (parameter-name hints), onTypeFormatting, and quickfix code actions (underscore-prefix for unused-*, var→let for prefer-let). workspace/symbol requires a non-empty query (no workspace index yet) and caps at 200 results; typeDefinition covers type names and module-level values (locals need the scope walker); implementation and inlay hints are single-file tiers. |
+| ~~Hand-rolled code-action fixes~~ | **FIXED (2026-07-18)** — code actions now run through the linter fix engine (§4.5): every auto-fixable rule (prefer-let, redundant-return, redundant-else, trailing-list-comma, redundant-cast, redundant-bool-compare, redundant-type-annotation) surfaces a "Fix <code>" quickfix identical to `mtc lint --fix` output; the underscore-prefix action for unused-* stays. |
+| 24 remaining Ruby-only capabilities (call hierarchy, code lens, etc.) | Out of scope — Phase 2 (2026-07-18) added documentHighlight, prepareRename, foldingRange, workspace/symbol, selectionRange, semanticTokens/range; Phase 3 added declaration, typeDefinition, implementation, inlayHint (parameter-name hints), and onTypeFormatting; Phase 4 added cross-file navigation and the editor smoke test. workspace/symbol requires a non-empty query (no workspace index yet) and caps at 200 results; typeDefinition covers type names and module-level values (locals need the scope walker); implementation and inlay hints are single-file tiers; references/rename are single-file and not scope-aware. |
