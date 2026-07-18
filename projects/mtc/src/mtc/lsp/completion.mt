@@ -82,6 +82,18 @@ public function handle_completion(
         Option.none:
             pass
 
+    # Call context: suggest parameter names for the innermost call.
+    match cursor.call_name_at(source, line, character):
+        Option.some as callee:
+            var named = named_argument_completions(ref_of(analysis), callee.value)
+            if named != null:
+                proto.write_response_raw(id, unsafe: read(named).as_str())
+                unsafe: read(named).release()
+                heap.release(named)
+                return
+        Option.none:
+            pass
+
     var items_json = build_completions_json(ref_of(analysis))
     proto.write_response_raw(id, items_json.as_str())
     items_json.release()
@@ -380,3 +392,41 @@ function method_kind_for(analysis: ref[analyzer.Analysis], type_name: str, metho
     if sig_ptr == null:
         return KIND_FUNCTION
     return KIND_FUNCTION
+
+
+## Completions for `func(|)` or `func(pos = |)` inside a call's argument
+## list.  Returns parameter names (as "name " label) for the callee, or
+## null when the callee is not found or has no params.
+function named_argument_completions(
+    analysis: ref[analyzer.Analysis],
+    callee_name: str,
+) -> ptr[string.String]?:
+    let sig_ptr = unsafe: read(analysis).functions.get(callee_name)
+    if sig_ptr == null:
+        return null
+
+    let sig = unsafe: read(sig_ptr)
+    if sig.params.len == 0:
+        return null
+
+    var result = string.String.create()
+    result.append("[")
+
+    var first = true
+    var pi: ptr_uint = 0
+    while pi < sig.params.len:
+        let param = unsafe: read(sig.params.data + pi)
+        if param.name != "_":
+            append_item(ref_of(result), param.name, KIND_VARIABLE, ref_of(first))
+            first = false
+        pi += 1
+
+    result.append("]")
+
+    if first:
+        result.release()
+        return null
+
+    let alloc = heap.must_alloc[string.String](1)
+    unsafe: read(alloc) = result
+    return alloc
