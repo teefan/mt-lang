@@ -28,6 +28,12 @@ public struct DiagnosticCache:
     entries: map_mod.Map[string.String, DiagnosticCacheEntry]
 
 
+struct SemanticTokenCacheEntry:
+    source_hash: uint
+    result_id: string.String
+    token_count: ptr_uint
+
+
 public struct Workspace:
     root_path: string.String
     module_roots: vec.Vec[string.String]
@@ -35,6 +41,7 @@ public struct Workspace:
     document_contexts: map_mod.Map[string.String, string.String]
     cancelled_ids: vec.Vec[ptr_uint]
     diagnostic_cache: DiagnosticCache
+    semantic_token_cache: map_mod.Map[string.String, SemanticTokenCacheEntry]
     index_built: bool
     index: idx.Index
 
@@ -50,6 +57,7 @@ extending Workspace:
             document_contexts = map_mod.Map[string.String, string.String].create(),
             cancelled_ids = vec.Vec[ptr_uint].create(),
             diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create()),
+            semantic_token_cache = map_mod.Map[string.String, SemanticTokenCacheEntry].create(),
             index_built = false,
             index = idx.Index(entries = vec.Vec[idx.Entry].create()),
         )
@@ -222,6 +230,20 @@ extending Workspace:
         this.diagnostic_cache.entries.clear()
 
 
+    ## Look up a cached semantic token entry for a file path.
+    public function semantic_token_cache_get(path: str) -> ptr[SemanticTokenCacheEntry]?:
+        var key = string.String.from_str(path)
+        defer key.release()
+        return this.semantic_token_cache.get(key)
+
+
+    ## Store a cached semantic token entry.
+    public editable function semantic_token_cache_set(path: str, source_hash: uint, result_id: string.String, token_count: ptr_uint) -> void:
+        var key = string.String.from_str(path)
+        var entry = SemanticTokenCacheEntry(source_hash = source_hash, result_id = result_id, token_count = token_count)
+        this.semantic_token_cache.set(key, entry)
+
+
     public editable function release() -> void:
         this.root_path.release()
         release_module_roots(ref_of(this.module_roots))
@@ -229,6 +251,7 @@ extending Workspace:
         this.document_contexts.release()
         this.cancelled_ids.release()
         release_diagnostic_cache(ref_of(this.diagnostic_cache))
+        release_semantic_token_cache(ref_of(this.semantic_token_cache))
         if this.index_built:
             idx.release_index(ref_of(this.index))
 
@@ -278,3 +301,13 @@ function release_diagnostic_cache(cache: ref[DiagnosticCache]) -> void:
             entry_value.result_id.release()
             entry_value.diagnostics_json.release()
     cache.entries.release()
+
+
+function release_semantic_token_cache(cache: ref[map_mod.Map[string.String, SemanticTokenCacheEntry]]) -> void:
+    var entries_iter = cache.entries()
+    while entries_iter.next():
+        let entry = entries_iter.current()
+        unsafe:
+            var entry_value = read(entry.value)
+            entry_value.result_id.release()
+    cache.release()

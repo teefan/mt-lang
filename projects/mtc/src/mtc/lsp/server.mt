@@ -214,6 +214,9 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         let uri = extract_text_doc_uri(msg.params)
         var range = extract_range_lines(msg.params)
         semtok.handle_semantic_tokens_range(ws, uri, range.start_line, range.end_line, msg.id)
+    else if method == "textDocument/semanticTokens/full/delta":
+        let uri = extract_text_doc_uri(msg.params)
+        semtok.handle_semantic_tokens_delta(ws, uri, msg.id)
     else if method == "textDocument/signatureHelp":
         var pos = extract_position_params(msg.params)
         sighelp.handle_signature_help(ws, pos.uri, pos.line, pos.character, msg.id)

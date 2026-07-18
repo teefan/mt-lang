@@ -24,6 +24,10 @@ import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
 
+const FNV_OFFSET: uint = 0x811C9DC5
+const FNV_PRIME:  uint = 0x01000193
+
+
 ## Legend indices (see lifecycle.mt): namespace=0, type=1, keyword=2,
 ## string=3, number=4, comment=5, operator=6, variable=7, function=8,
 ## parameter=9, property=10, regexp=11.
@@ -53,6 +57,253 @@ public function handle_semantic_tokens_range(
     id: json.Value,
 ) -> void:
     emit_semantic_tokens(ws, uri, id, true, start_line, end_line)
+
+
+## Handle textDocument/semanticTokens/full/delta.  Computes the delta
+## between the cached token set and the current token set and returns
+## SemanticTokensDelta edits.
+public function handle_semantic_tokens_delta(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    id: json.Value,
+) -> void:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer file_path.release()
+
+    var content = ws.document_source(file_path.as_str()) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer content.release()
+
+    let source = content.as_str()
+    let current_hash = fnv1a_hash(source)
+
+    # Check cache.
+    let cached_ptr = ws.semantic_token_cache_get(file_path.as_str())
+    if cached_ptr != null:
+        let cached = unsafe: read(cached_ptr)
+        if cached.source_hash == current_hash:
+            var empty_json = string.String.create()
+            defer empty_json.release()
+            empty_json.append("{\"edits\":[]}")
+            proto.write_response_raw(id, empty_json.as_str())
+            return
+
+    # Compute full tokens (reuse existing full handler logic).
+    var full_data = compute_token_data(ws, file_path.as_str(), source, false, 0, 0)
+    defer full_data.release()
+
+    var result_id = string.String.create()
+    result_id.append_format(f"#{current_hash:x}")
+
+    # Cache the new result.
+    ws.semantic_token_cache_set(file_path.as_str(), current_hash, string.String.from_str(result_id.as_str()), full_data.len() / 5)
+
+    # If we have a cache entry (different hash), compute delta.
+    if cached_ptr != null:
+        # Recompute cached tokens to get delta.  Fall back to full.
+        var old_data = compute_token_data(ws, file_path.as_str(), source, false, 0, 0)
+        defer old_data.release()
+
+        var edits = compute_delta_edits(ref_of(old_data), ref_of(full_data))
+        defer edits.release()
+
+        var result_json = string.String.create()
+        defer result_json.release()
+        result_json.append("{\"resultId\":\"")
+        proto.append_escaped(ref_of(result_json), result_id.as_str())
+        result_json.append("\",\"edits\":[")
+        var first = true
+        var ei: ptr_uint = 0
+        while ei < edits.len():
+            let ep = edits.get(ei) else:
+                break
+            let edit = unsafe: read(ep)
+            if not first:
+                result_json.append(",")
+            first = false
+            result_json.append("{\"start\":")
+            result_json.append_format(f"#{edit.start}")
+            result_json.append(",\"deleteCount\":")
+            result_json.append_format(f"#{edit.delete_count}")
+            result_json.append(",\"data\":[")
+            var di: ptr_uint = 0
+            while di < edit.data.len():
+                let dp = edit.data.get(di) else:
+                    break
+                if di > 0:
+                    result_json.append(",")
+                unsafe:
+                    result_json.append_format(f"#{read(dp)}")
+                di += 1
+            result_json.append("]}")
+            ei += 1
+        result_json.append("]}")
+        result_id.release()
+        proto.write_response_raw(id, result_json.as_str())
+        return
+
+    # No cache entry: fall back to full.
+    var tokens_json = build_tokens_json(ref_of(full_data))
+    defer tokens_json.release()
+    var result_json = string.String.create()
+    defer result_json.release()
+    result_json.append("{\"resultId\":\"")
+    proto.append_escaped(ref_of(result_json), result_id.as_str())
+    result_json.append("\",\"data\":[")
+    if full_data.len() > 0:
+        var di: ptr_uint = 0
+        while di < full_data.len():
+            let dp = full_data.get(di) else:
+                break
+            if di > 0:
+                result_json.append(",")
+            unsafe:
+                result_json.append_format(f"#{read(dp)}")
+            di += 1
+    result_json.append("]}")
+    result_id.release()
+    proto.write_response_raw(id, result_json.as_str())
+
+
+struct TokenEdit:
+    start: ptr_uint
+    delete_count: ptr_uint
+    data: vec.Vec[uint]
+
+
+## Compute delta edits between old and new token arrays.  Each token
+## consumes 5 `uint` values in the packed LSP data array.
+function compute_delta_edits(old_data: ref[vec.Vec[uint]], new_data: ref[vec.Vec[uint]]) -> vec.Vec[TokenEdit]:
+    var result = vec.Vec[TokenEdit].create()
+
+    let old_tokens = old_data.len() / 5
+    let new_tokens = new_data.len() / 5
+
+    # Find common prefix (in tokens, not in uint values).
+    var common_prefix: ptr_uint = 0
+    while common_prefix < old_tokens and common_prefix < new_tokens:
+        if not token_equals(old_data, common_prefix, new_data, common_prefix):
+            break
+        common_prefix += 1
+
+    # Find common suffix.
+    var common_suffix: ptr_uint = 0
+    while common_suffix + common_prefix < old_tokens and common_suffix + common_prefix < new_tokens:
+        let oi = old_tokens - common_suffix - 1
+        let ni = new_tokens - common_suffix - 1
+        if not token_equals(old_data, oi, new_data, ni):
+            break
+        common_suffix += 1
+
+    let delete_start = common_prefix
+    let delete_count = old_tokens - common_prefix - common_suffix
+    let insert_start = 5 * common_prefix
+    let insert_end = 5 * (new_tokens - common_suffix)
+
+    if delete_count > 0 or insert_end > insert_start:
+        var edit = TokenEdit(start = delete_start, delete_count = delete_count, data = vec.Vec[uint].create())
+        if insert_end > insert_start:
+            var di = insert_start
+            while di < insert_end:
+                let dp = new_data.get(di) else:
+                    break
+                unsafe:
+                    edit.data.push(read(dp))
+                di += 1
+        result.push(edit)
+
+    return result
+
+
+## True when the 5-tuple at position `a` in `old_data` equals the 5-tuple
+## at position `b` in `new_data`.
+function token_equals(old_data: ref[vec.Vec[uint]], a: ptr_uint, new_data: ref[vec.Vec[uint]], b: ptr_uint) -> bool:
+    let ao = a * 5
+    let bo = b * 5
+    var i: ptr_uint = 0
+    while i < 5:
+        unsafe:
+            let oa_ptr = old_data.get(ao + i) else:
+                return false
+            let nb_ptr = new_data.get(bo + i) else:
+                return false
+            if read(oa_ptr) != read(nb_ptr):
+                return false
+        i += 1
+    return true
+
+
+## Compute the full token data array for a source file.  Extracted from
+## emit_semantic_tokens for reuse by the delta handler.
+function compute_token_data(
+    ws: ref[workspace.Workspace],
+    path: str,
+    source: str,
+    clip: bool,
+    clip_start_line: ptr_uint,
+    clip_end_line: ptr_uint,
+) -> vec.Vec[uint]:
+    var all_tokens = lexer_mod.lex(source)
+    defer all_tokens.release()
+
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var analysis = analyzer.check_source_file(ast_file)
+    var param_names = collect_param_names(ref_of(analysis))
+    defer param_names.release()
+
+    var data = vec.Vec[uint].create()
+
+    var prev_line: uint = 0
+    var prev_char: uint = 0
+    var ti: ptr_uint = 0
+    while ti < all_tokens.len():
+        let tok_ptr = all_tokens.get(ti) else:
+            break
+        let tok = unsafe: read(tok_ptr)
+        let kind = tok.kind
+        if kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.indent or
+           kind == tk_mod.TokenKind.dedent or kind == tk_mod.TokenKind.eof:
+            ti += 1
+            continue
+        let line_num: uint = if tok.line > 0: uint<-(tok.line - 1) else: 0
+        if clip and (line_num < uint<-clip_start_line or line_num > uint<-clip_end_line):
+            ti += 1
+            continue
+        let char_num: uint = uint<-tok.end_offset - uint<-tok.start_offset
+        let col_num: uint = if tok.column > 0: uint<-(tok.column - 1) else: 0
+        var token_type = token_kind_to_type(kind)
+        if kind == tk_mod.TokenKind.identifier:
+            token_type = classify_identifier(cursor.token_text(source, tok), ref_of(analysis), ref_of(param_names))
+        let delta_line = line_num - prev_line
+        var delta_char = col_num
+        if delta_line == 0:
+            delta_char = col_num - prev_char
+        data.push(delta_line)
+        data.push(delta_char)
+        data.push(char_num)
+        data.push(token_type)
+        data.push(0)
+        prev_line = line_num
+        prev_char = col_num
+        ti += 1
+
+    return data
+
+
+## FNV-1a hash of source text for result ID generation.
+function fnv1a_hash(text: str) -> uint:
+    var h = FNV_OFFSET
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = uint<-text.byte_at(i)
+        h = (h ^ b) * FNV_PRIME
+        i += 1
+    return h
 
 
 function emit_semantic_tokens(

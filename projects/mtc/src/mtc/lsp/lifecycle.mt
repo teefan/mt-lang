@@ -48,7 +48,7 @@ public function handle_initialize(id: json.Value) -> void:
     r.append(",\"semanticTokensProvider\":{\"legend\":{")
     r.append("\"tokenTypes\":[\"namespace\",\"type\",\"keyword\",\"string\",\"number\",\"comment\",\"operator\",\"variable\",\"function\",\"parameter\",\"property\",\"regexp\"]")
     r.append(",\"tokenModifiers\":[\"declaration\",\"defaultLibrary\"]")
-    r.append("},\"full\":true,\"range\":true}")
+    r.append("},\"full\":true,\"range\":true,\"delta\":true}")
     r.append("}}}")
 
     proto.write_framed_json(r.as_str())
