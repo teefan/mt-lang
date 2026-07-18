@@ -27,7 +27,54 @@ to handle both arm types.  Unblocks complex LSP modules.
 
 **Remaining gaps for the next session are consolidated in §5.**
 
-Last updated: 2026-07-18 (LSP all 3 tiers complete; nullability crash fixed; 476 tests)
+Last updated: 2026-07-18 (LSP recursive JSON + module-aware field lookup fixed;
+Ruby field-name sanitization fixed; spectrum_visualizer builds under both)
+
+---
+
+## 0a. 2026-07-18 session — three bugs fixed (2 self-host, 1 Ruby)
+
+All landed under a held fixed point (stage2.c == stage3.c), 476/476 self-host
+tests, Ruby suites green (1237 compiler + 96 std + 957 tooling), 13/13 language
+examples `--no-cache`, 41-example raylib spot check clean, 8/8 headless
+examples byte-identical runtime vs Ruby, LSP valgrind-clean.
+
+1. **Self-host lowering: order-dependent bare-name struct field lookup**
+   (the `docs/lsp-design.md` §7.7 "const_ptr_as_str" bug). `concrete_field_type`
+   resolved a receiver's field by scanning **all** program analyses in
+   dependency order for the first struct with a matching bare name, ignoring
+   the receiver's owning module. In the mtc program, `std.map.Entry`
+   (`key: const_ptr[K]`) precedes `std.json.Entry` (`key: string.String`), so
+   `entry.key.as_str()` in `lsp/protocol.mt` typed the receiver `const_ptr`
+   and emitted the nonexistent `mtc_lsp_protocol_const_ptr_as_str` — while
+   standalone repros (different module order) worked. Fix in `lowering.mt`:
+   when the base type is `ty_imported`, look the struct up in
+   `find_imported_analysis(owner_module)` first; fall back to the ordered scan.
+   This unblocked recursive JSON object serialization in the LSP
+   (`append_json_value` now renders objects; the `{}` workaround is removed).
+   **Fallout discovered**: `publishDiagnostics` params previously rendered as
+   `{}` over the wire — real diagnostics now reach the editor — and
+   `diagnostic_from_warning` never wrote `line`/`character` into its range
+   positions (invisible while objects rendered as `{}`); both fixed.
+
+2. **Self-host analyzer: `extending` methods on re-exported type aliases**
+   (`unknown method Image.draw_pixel` false positive, sema-gated
+   `spectrum_visualizer`). A receiver typed through `type Image = c.Image`
+   resolves to `ty_imported(std.c.raylib, Image)`, but the `extending Image:`
+   methods live in **std.raylib**'s binding under the alias name. New
+   reverse-alias search (`alias_binding_has_member` in `analyzer.mt`): when the
+   owner binding lacks the member and the forward alias-follow fails, scan
+   visible bindings for a type alias resolving to the same imported type and
+   check its member keys.
+
+3. **Ruby backend: inconsistent C keyword field-name sanitization**
+   (`spectrum_visualizer` failed under Ruby too — `FFTComplex` declared field
+   `imaginary` but member access emitted `imaginary_`). `sanitize_c_identifier`
+   was applied at member-access/arm-name sites but not at struct/union/variant
+   field **declarations**, designated **initializers**, or `offsetof`. Any
+   field named in `C_KEYWORDS` (e.g. `imaginary`, `complex`) miscompiled. All
+   emission sites now sanitize consistently (`type_declaration.rb`,
+   `expressions.rb`).
 
 ---
 

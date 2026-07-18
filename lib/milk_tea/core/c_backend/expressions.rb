@@ -61,7 +61,7 @@ module MilkTea
             when IR::AlignofExpr
               "_Alignof(#{layout_type_expression(expression.target_type)})"
             when IR::OffsetofExpr
-              "offsetof(#{layout_type_expression(expression.target_type)}, #{expression.field})"
+              "offsetof(#{layout_type_expression(expression.target_type)}, #{sanitize_c_identifier(expression.field)})"
             when IR::IntegerLiteral
               expression.value.to_s
             when IR::FloatLiteral
@@ -219,7 +219,7 @@ module MilkTea
             return emit_zero_initializer(expression.type) if expression.fields.empty?
 
             fields = expression.fields.map do |field|
-              ".#{field.name} = #{emit_aggregate_field_initializer(expression.type, field)}"
+              ".#{sanitize_c_identifier(field.name)} = #{emit_aggregate_field_initializer(expression.type, field)}"
             end.join(", ")
             "{ #{fields} }"
           end
@@ -230,7 +230,7 @@ module MilkTea
             if expression.fields.empty?
               "{ .kind = #{kind_constant} }"
             else
-              payload_fields = expression.fields.map { |field| ".#{field.name} = #{emit_variant_field_initializer(expression.type, expression.arm_name, field)}" }.join(", ")
+              payload_fields = expression.fields.map { |field| ".#{sanitize_c_identifier(field.name)} = #{emit_variant_field_initializer(expression.type, expression.arm_name, field)}" }.join(", ")
               "{ .kind = #{kind_constant}, .data.#{sanitize_c_identifier(expression.arm_name)} = { #{payload_fields} } }"
             end
           end
@@ -247,7 +247,7 @@ module MilkTea
             return emit_zero_expression(expression.type) if expression.fields.empty?
 
             fields = expression.fields.map do |field|
-              ".#{field.name} = #{emit_aggregate_field_initializer(expression.type, field)}"
+              ".#{sanitize_c_identifier(field.name)} = #{emit_aggregate_field_initializer(expression.type, field)}"
             end.join(", ")
             "(#{c_type(expression.type)}){ #{fields} }"
           end
@@ -259,7 +259,7 @@ module MilkTea
               "(#{outer_c}){ .kind = #{kind_constant} }"
             else
               arm_c = "#{outer_c}_#{expression.arm_name}"
-              payload_fields = expression.fields.map { |field| ".#{field.name} = #{emit_variant_field_initializer(expression.type, expression.arm_name, field)}" }.join(", ")
+              payload_fields = expression.fields.map { |field| ".#{sanitize_c_identifier(field.name)} = #{emit_variant_field_initializer(expression.type, expression.arm_name, field)}" }.join(", ")
               "(#{outer_c}){ .kind = #{kind_constant}, .data.#{sanitize_c_identifier(expression.arm_name)} = (struct #{arm_c}){ #{payload_fields} } }"
             end
           end

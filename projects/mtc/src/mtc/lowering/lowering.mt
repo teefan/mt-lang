@@ -11184,11 +11184,13 @@ function concrete_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: st
     if types.is_raw_pointer(base) or types.is_ref_type(base) or types.is_own_type(base):
         base = types.pointer_element(base)
     var struct_name: str
+    var owner_module: str = ""
     match base:
         types.Type.ty_named as n:
             struct_name = n.name
         types.Type.ty_imported as im:
             struct_name = im.name
+            owner_module = im.module_name
         _:
             return Option[types.Type].none
     let decl_ptr = ctx.generic_struct_decls.get(struct_name)
@@ -11201,8 +11203,20 @@ function concrete_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: st
                 if f.name == member:
                     return Option[types.Type].some(value = f.ty)
                 i += 1
-    # Non-generic struct: search current and imported module analyses.
-    var raw_fields = ctx.analysis.structs.get(struct_name)
+    # Non-generic struct: search current and imported module analyses.  When
+    # the receiver type names its owning module, resolve the struct in that
+    # module's analysis first — the bare-name program scan below is
+    # order-dependent and can hit an unrelated struct with the same name from
+    # another module (e.g. std.map.Entry shadowing std.json.Entry).
+    var raw_fields: ptr[span[analyzer.FieldEntry]]? = null
+    if owner_module != "" and owner_module != ctx.module_name:
+        match find_imported_analysis(ctx, owner_module):
+            Option.some as owner_a:
+                raw_fields = owner_a.value.structs.get(struct_name)
+            Option.none:
+                pass
+    if raw_fields == null:
+        raw_fields = ctx.analysis.structs.get(struct_name)
     if raw_fields == null:
         var ai: ptr_uint = 0
         while ai < ctx.program_analyses.len and raw_fields == null:

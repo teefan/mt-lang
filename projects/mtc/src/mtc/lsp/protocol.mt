@@ -200,8 +200,8 @@ public function write_framed_json(json_text: str) -> void:
 
 
 ## Write a successful JSON-RPC response where the result is a pre-built
-## JSON string (avoids serialization through append_json_value, which does
-## not recursively render object/array contents).
+## JSON string (avoids building a json.Value tree for handlers that already
+## produce serialized output).
 public function write_response_raw(id: json.Value, result_json: str) -> void:
     var response_text = string.String.create()
     defer response_text.release()
@@ -285,8 +285,24 @@ public function append_json_value(output: ref[string.String], value: json.Value)
             return
         Option.none:
             pass
-    if value.as_object() != null:
-        output.append("{}")
+    var obj_ptr = value.as_object()
+    if obj_ptr != null:
+        output.append("{")
+        var first_entry = true
+        var ei: ptr_uint = 0
+        unsafe:
+            while ei < read(obj_ptr).len():
+                let entry_ptr = read(obj_ptr).entries.get(ei)
+                if entry_ptr == null: break
+                if not first_entry: output.append(",")
+                first_entry = false
+                let entry = read(entry_ptr)
+                output.append("\"")
+                append_escaped(output, entry.key.as_str())
+                output.append("\":")
+                append_json_value(output, entry.value)
+                ei += 1
+        output.append("}")
         return
     var arr_ptr = value.as_array()
     if arr_ptr != null:

@@ -47,7 +47,7 @@ module MilkTea
             lines = []
             lines << "struct #{struct_decl.linkage_name} {"
             struct_decl.fields.each do |field|
-              lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
+              lines << "#{INDENT}#{c_field_declaration(field.type, sanitize_c_identifier(field.name))};"
             end
             lines << "}#{struct_layout_attributes(struct_decl)};"
             lines
@@ -57,7 +57,7 @@ module MilkTea
             lines = []
             lines << "union #{union_decl.linkage_name} {"
             union_decl.fields.each do |field|
-              lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
+              lines << "#{INDENT}#{c_field_declaration(field.type, sanitize_c_identifier(field.name))};"
             end
             lines << "};"
             lines
@@ -79,9 +79,9 @@ module MilkTea
                lines << "struct #{arm.linkage_name} {"
                 arm.fields.each do |field|
                   if variant_self_reference?(field.type, outer_c)
-                    lines << "#{INDENT}#{c_declaration(field.type, "*#{field.name}")};"
+                    lines << "#{INDENT}#{c_declaration(field.type, "*#{sanitize_c_identifier(field.name)}")};"
                   else
-                    lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
+                    lines << "#{INDENT}#{c_field_declaration(field.type, sanitize_c_identifier(field.name))};"
                   end
                 end
                lines << "};"
@@ -190,7 +190,7 @@ module MilkTea
             name = soa_type_name(type)
             lines = ["typedef struct #{name} {"]
             type.fields.each do |field_name, field_type|
-              lines << "#{INDENT}#{c_field_declaration(field_type, field_name)};"
+              lines << "#{INDENT}#{c_field_declaration(field_type, sanitize_c_identifier(field_name))};"
             end
             lines << "} #{name};"
             lines

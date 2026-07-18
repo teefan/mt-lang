@@ -4288,11 +4288,43 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
         Option.none:
             pass
 
+    # Reverse-alias search: `extending` methods on a re-exported type live in
+    # the aliasing module's binding under the local alias name (e.g.
+    # `type Image = c.Image` + `extending Image:` in std.raylib registers
+    # `Image.draw_pixel` there, while the receiver type resolved to the source
+    # module std.c.raylib).  Scan visible bindings for an alias that resolves
+    # to this exact imported type and check its member keys.
+    if alias_binding_has_member(ctx, module_name, type_name, member):
+        return types.Type.ty_error
+
     if is_method_call:
         report(ctx, line, column, unknown_member_message("method", type_name, member))
     else:
         report(ctx, line, column, unknown_member_message("field", type_name, member))
     return types.Type.ty_error
+
+
+## True when any visible module binding re-exports `module_name.type_name`
+## through a type alias and declares `member` on that alias via `extending`.
+function alias_binding_has_member(ctx: ref[Context], module_name: str, type_name: str, member: str) -> bool:
+    let imported = ctx.imported_modules else:
+        return false
+    unsafe:
+        var binding_entries = read(imported).entries()
+        while binding_entries.next():
+            let entry = binding_entries.current()
+            let candidate = read(entry.value)
+            var alias_entries = candidate.type_alias_types.entries()
+            while alias_entries.next():
+                let alias_entry = alias_entries.current()
+                match read(alias_entry.value):
+                    types.Type.ty_imported as im:
+                        if im.module_name == module_name and im.name == type_name:
+                            if binding_has_member(candidate, read(alias_entry.key), member):
+                                return true
+                    _:
+                        pass
+    return false
 
 
 ## When `type_name` is a type alias in the binding, resolve it to its source
