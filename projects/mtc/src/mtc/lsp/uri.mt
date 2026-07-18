@@ -29,25 +29,24 @@ function decode_hex_pair(text: str, index: ptr_uint) -> ubyte:
 ## and percent-decodes the remainder.  Returns none for non-file URIs or
 ## invalid encoding.
 public function file_uri_to_path(uri: str) -> Option[string.String]:
-    var text_view: str = uri
     # Strip "file://" prefix.
     let prefix = "file://"
-    if not text_view.starts_with(prefix):
+    if not uri.starts_with(prefix):
         return Option[string.String].none
 
     var pos = prefix.len
 
     # On Windows, file:///C:/... — the third slash is a host separator.
     # Skip it when present.
-    if text_view.len > pos and text_view.byte_at(pos) == 47:
+    if uri.len > pos and uri.byte_at(pos) == 47:
         pos += 1
 
-    var result = string.String.with_capacity(text_view.len)
-    while pos < text_view.len:
-        let b = text_view.byte_at(pos)
+    var result = string.String.with_capacity(uri.len)
+    while pos < uri.len:
+        let b = uri.byte_at(pos)
         if b == 37:
-            let decoded = decode_hex_pair(text_view, pos + 1)
-            if decoded == 0 and text_view.byte_at(pos + 1) == 37:
+            let decoded = decode_hex_pair(uri, pos + 1)
+            if decoded == 0 and uri.byte_at(pos + 1) == 37:
                 result.push_byte(37)
                 pos += 3
             else:

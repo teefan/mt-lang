@@ -3,6 +3,13 @@
 ## Reads LSP messages from stdin one character at a time via stdio.read_char()
 ## (libc-buffered getchar).  Parses JSON bodies with std.json.  Writes framed
 ## responses via stdio.print_format("%s", cstr) + stdio.file_flush(null).
+##
+## Response rendering (write_response, write_error, write_notification) uses
+## raw string formatting rather than std.json Object construction.  This is
+## deliberate: json.Object.set() copies json.Value structs by value, so both
+## the caller's copy and the entry's copy share the same heap Object pointer.
+## Cascaded release_value across the tree then double-frees.  Raw strings
+## avoid the sharing entirely by serialising directly.
 
 import std.fmt
 import std.json as json
@@ -21,6 +28,7 @@ public struct Message:
     method: string.String
     params: json.Value
     raw_body: string.String
+    parsed_root: json.Value
 
 
 ## Read one header line (terminated by \r\n) from stdin.  Returns false on
@@ -158,12 +166,11 @@ public function read_message() -> Option[Message]:
         if params_opt != null:
             params_val = read(params_opt)
 
-    json.release_value(parsed)
-
     if owned_method.len() == 0:
         raw_body_owned.release()
         owned_method.release()
         owned_jsonrpc.release()
+        json.release_value(parsed)
         return Option[Message].none
 
     return Option[Message].some(value = Message(
@@ -171,13 +178,14 @@ public function read_message() -> Option[Message]:
         id = id_val,
         method = owned_method,
         params = params_val,
-        raw_body = raw_body_owned
+        raw_body = raw_body_owned,
+        parsed_root = parsed
     ))
 
 
-## Write a framed JSON-RPC response to stdout.  Flushes after write so the
+## Write a framed JSON-RPC body to stdout.  Flushes after write so the
 ## editor sees the response immediately.
-function write_framed_json(json_text: str) -> void:
+public function write_framed_json(json_text: str) -> void:
     var storage = arena.create(json_text.len + 64)
     defer storage.release()
 
@@ -236,7 +244,7 @@ public function write_notification(method: str, params: json.Value) -> void:
 
 
 ## Append a json.Value as its JSON representation.
-function append_json_value(output: ref[string.String], value: json.Value) -> void:
+public function append_json_value(output: ref[string.String], value: json.Value) -> void:
     if value.is_null():
         output.append("null")
         return
@@ -272,8 +280,8 @@ function append_json_value(output: ref[string.String], value: json.Value) -> voi
     output.append("null")
 
 
-## Append a str, escaping '"' and '\' characters.
-function append_escaped(output: ref[string.String], text: str) -> void:
+## Append a str, escaping JSON-special characters.
+public function append_escaped(output: ref[string.String], text: str) -> void:
     var i: ptr_uint = 0
     while i < text.len:
         let b = text.byte_at(i)
@@ -297,3 +305,4 @@ extending Message:
         this.jsonrpc.release()
         this.method.release()
         this.raw_body.release()
+        json.release_value(this.parsed_root)

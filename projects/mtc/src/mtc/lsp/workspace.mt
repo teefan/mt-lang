@@ -4,11 +4,12 @@
 ## content is stored by URI using owned string.String keys (not borrowed str)
 ## because URI strings from incoming JSON messages are ephemeral.
 
+import std.fs as fs_mod
 import std.map as map_mod
 import std.path as path_ops
+import std.str
 import std.string as string
 import std.vec as vec
-import std.fs as fs_mod
 
 import mtc.lsp.uri as uri_ops
 
@@ -28,23 +29,6 @@ extending Workspace:
             module_roots = roots,
             open_docs = map_mod.Map[string.String, string.String].create()
         )
-
-
-    public function source_for_uri(uri: str) -> Option[str]:
-        let path_result = uri_ops.file_uri_to_path(uri)
-        match path_result:
-            Option.some as path_payload:
-                var owned_path = path_payload.value
-                let path_str = owned_path.as_str()
-                let content_result = this.open_docs.at(owned_path)
-                match content_result:
-                    Option.some as content_payload:
-                        var owned_content = content_payload.value
-                        return Option[str].some(value = owned_content.as_str())
-                    Option.none:
-                        return Option[str].none
-            Option.none:
-                return Option[str].none
 
 
     public editable function open(uri: str, text: str) -> void:
@@ -96,13 +80,27 @@ extending Workspace:
 
 ## Walk upward from source_path to find the project root (the directory
 ## containing std/ at the top of the source tree).  Pushes discovered roots
-## into `roots`.  Extracted from main.mt for use by both the CLI and the LSP.
-## The ambient-CWD root is added first (soft discover), then the project root
-## is discovered and prepended so it takes priority.
+## into `roots` as owned string.String values.
 public function discover_project_root(source_path: str, roots: ref[vec.Vec[string.String]]) -> void:
-    if fs_mod.exists(source_path) and fs_mod.is_directory(source_path):
-        roots.push(string.String.from_str(source_path))
-    roots.push(string.String.from_str(path_ops.dirname(source_path)))
+    var current = if fs_mod.is_directory(source_path): source_path else: path_ops.dirname(source_path)
+    while true:
+        var joined = path_ops.join(current, "std")
+        defer joined.release()
+        if fs_mod.is_directory(joined.as_str()):
+            var i: ptr_uint = 0
+            while i < roots.len():
+                let ep_ptr = roots.get(i) else:
+                    break
+                unsafe:
+                    if read(ep_ptr).as_str().equal(current):
+                        return
+                i += 1
+            roots.push(string.String.from_str(current))
+            return
+        let parent = path_ops.dirname(current)
+        if parent.equal(current):
+            return
+        current = parent
 
 
 function release_module_roots(roots: ref[vec.Vec[string.String]]) -> void:

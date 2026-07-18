@@ -1,7 +1,6 @@
 ## Text document sync handlers — didOpen, didChange, didClose, didSave.
 
 import std.json as json
-import std.vec as vec
 
 import mtc.lsp.diagnostics as diag
 import mtc.lsp.uri as uri_ops
