@@ -12,12 +12,15 @@ import std.string as string
 import std.vec as vec
 
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.workspace_index as idx
 
 
 public struct Workspace:
     root_path: string.String
     module_roots: vec.Vec[string.String]
     open_docs: map_mod.Map[string.String, string.String]
+    index_built: bool
+    index: idx.Index
 
 
 extending Workspace:
@@ -27,7 +30,9 @@ extending Workspace:
         return Workspace(
             root_path = string.String.from_str(root),
             module_roots = roots,
-            open_docs = map_mod.Map[string.String, string.String].create()
+            open_docs = map_mod.Map[string.String, string.String].create(),
+            index_built = false,
+            index = idx.Index(entries = vec.Vec[idx.Entry].create()),
         )
 
 
@@ -91,10 +96,19 @@ extending Workspace:
         return result
 
 
+    public editable function build_index_if_needed() -> void:
+        if not this.index_built:
+            idx.release_index(ref_of(this.index))
+            this.index = idx.build_index(ref_of(this.module_roots))
+            this.index_built = true
+
+
     public editable function release() -> void:
         this.root_path.release()
         release_module_roots(ref_of(this.module_roots))
         this.open_docs.release()
+        if this.index_built:
+            idx.release_index(ref_of(this.index))
 
 
 ## Walk upward from source_path to find the project root (the directory
@@ -130,4 +144,3 @@ function release_module_roots(roots: ref[vec.Vec[string.String]]) -> void:
         unsafe:
             read(ptr).release()
         i += 1
-    roots.release()
