@@ -7,6 +7,7 @@ import std.fmt
 import std.json as json
 import std.str
 import std.string as string
+import std.vec as vec
 
 import mtc.linter.fix_engine as fix_engine
 import mtc.lsp.cursor as cursor
@@ -28,6 +29,28 @@ public function handle_code_actions(ws: ref[workspace.Workspace], uri: str, para
     defer content.release()
 
     let source = content.as_str()
+    var has_fix_all = context_only_fix_all(params)
+
+    if has_fix_all:
+        var empty_sel = vec.Vec[str].create()
+        defer empty_sel.release()
+        var empty_ign = vec.Vec[str].create()
+        defer empty_ign.release()
+        var empty_own = zero[span[str]]
+        var fixed = fix_engine.fix_source(source, file_path.as_str(), empty_own, ref_of(empty_sel), ref_of(empty_ign))
+        defer fixed.release()
+        let lines = ptr_uint<-(line_count(source))
+        var result = string.String.create()
+        result.append("[{\"title\":\"Fix all issues\",\"kind\":\"source.fixAll\",\"edit\":{\"changes\":{\"")
+        proto.append_escaped(ref_of(result), uri)
+        result.append("\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":")
+        result.append_format(f"#{lines}")
+        result.append(",\"character\":0}},\"newText\":\"")
+        proto.append_escaped(ref_of(result), fixed.as_str())
+        result.append("\"}]}}}]")
+        proto.write_response_raw(id, result.as_str())
+        result.release()
+        return
 
     var json_text = string.String.create()
     defer json_text.release()
@@ -245,3 +268,42 @@ function number_of(obj: ptr[json.Object], name: str) -> ptr_uint:
         if value < 0.0:
             return 0
         return ptr_uint<-int<-value
+
+
+## Check if the code action context only requests source.fixAll.
+function context_only_fix_all(params: json.Value) -> bool:
+    unsafe:
+        let obj = params.as_object()
+        if obj == null:
+            return false
+        let ctx_ptr = read(obj).get("context")
+        if ctx_ptr == null:
+            return false
+        let ctx_obj = read(ctx_ptr).as_object()
+        if ctx_obj == null:
+            return false
+        let only_ptr = read(ctx_obj).get("only")
+        if only_ptr == null:
+            return true
+        let only_arr = read(only_ptr).as_array()
+        if only_arr == null:
+            return true
+        if not read(only_arr).len() == 1:
+            return false
+        let item = read(only_arr).get(0) else:
+            return false
+        let ks = read(item).as_string() else:
+            return false
+        return ks.equal("source.fixAll")
+
+
+function line_count(source: str) -> ptr_uint:
+    var count: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < source.len:
+        if source.byte_at(i) == 10:
+            count += 1
+        i += 1
+    if source.len > 0 and source.byte_at(source.len - 1) != 10:
+        count += 1
+    return count
