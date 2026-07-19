@@ -8,7 +8,7 @@ subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parit
 13/13 build under `--no-cache`**; all 12 examples runnable headless produce
 byte-identical stdout+exit vs Ruby. CLI: 18 commands at parity (added `cache`,
 `lsp`, `dap`). **`mtc lint` has 36 rules plus `--fix`
-(7 auto-fixable rules, byte-identical output vs Ruby) and `.mt-lint.yml`
+(10 auto-fixable rules, byte-identical output vs Ruby) and `.mt-lint.yml`
 config** (§3.4). Bootstrap via `tools/bootstrap.sh`.
 
 **DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**  Process
@@ -173,6 +173,25 @@ utilities.  Total: +1,050 lines.
 
 Lldb-dap bridge assessed as not feasible without multi-threaded I/O or
 `select`/`poll` syscall bindings (§dap-design §9).
+
+---
+
+## 0f. 2026-07-19 session — Linter depth (parser fix + 3 new auto-fix rules)
+
+All landed under a held fixed point (177/177 tests).
+
+Fixable rules: 7 → 10 (Ruby has 11).  Byte-identical vs Ruby on
+prefer-let-else, prefer-var-else, and redundant-ignored-match-binding.
+
+| Commit | What |
+|--------|------|
+| `a8369c5d` | prefer-let-else / prefer-var-else auto-fix: merge declaration + if-guard into single `let x = v else:` line.  Byte-identical to Ruby. |
+| `abba6d9e` | Parser fix: `binding_line` was hardcoded 0 in match-arm parsers — now reads the `as` keyword's source line.  Add redundant-ignored-match-binding fix (delete ` as _` text).  Add reserved-primitive-name fix (rename declaration, e.g. `int` → `int_value`). |
+
+Private fix: `binding_line` in `parse_match_arm_into` and
+`parse_match_expr_arm_into` (parser.mt) was always 0; now captured from
+`pstate.previous().line` after `match_kind(tk_as)`.  This fixes warning
+positions for both statement-match and expression-match arms.
 
 ---
 
@@ -536,7 +555,7 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 
 | Gap | Status |
 |-----|--------|
-| `--fix` | **DONE** — `linter/fix_engine.mt` ports Ruby's multi-pass rule-isolating loop (each pass fixes one rule at a time from a fresh re-lint, bottom-up within a file, until fixpoint or 5 passes). Fixable rules: `prefer-let`, `redundant-return`, `redundant-else`, `trailing-list-comma`. `unused-import` is deliberately NOT fixable, matching Ruby's rationale (removing an import can drop extension methods / canonical hooks invisible to per-file linting). `Warning` gained `column`/`length` fields (populated by trailing-list-comma; other rules remain line-granular). Verified byte-identical fix output vs Ruby on a multi-rule fixture; valgrind-clean; 12 new tests (fix_engine_test.mt, suite now 488). **Expanded (same day)**: `redundant-cast` (drops `Type<-` and an inline `unsafe:` wrapper; rule now also covers let/var initializers and unsafe payloads, and carries the cast column), `redundant-bool-compare` (`x == true` → `x`, `x == false` → `not x`; identifier operands only, expression-first form only — both matching Ruby's fix output), and `redundant-type-annotation` (drops `: T`; rule now reports the real line instead of 0). The fix engine is edit-based (`FixEdit` + `edits_for_warning`/`apply_edit`), and `lsp_edit_for_warning` feeds LSP code actions: every fixable rule surfaces a "Fix <code>" quickfix computed against the live buffer. Suite now 494. Known depth gap: Ruby's redundant-cast is sema-based (widening/own→ptr coercion analysis, 42 findings on projects/mtc/src) while the self-host rule is AST-level (same-name comparisons only). |
+| `--fix` | **DONE** — `linter/fix_engine.mt` ports Ruby's multi-pass rule-isolating loop (each pass fixes one rule at a time from a fresh re-lint, bottom-up within a file, until fixpoint or 5 passes). Fixable rules (10): `prefer-let`, `redundant-return`, `redundant-else`, `trailing-list-comma`, `redundant-cast`, `redundant-bool-compare`, `redundant-type-annotation`, `redundant-ignored-match-binding`, `prefer-let-else`, `prefer-var-else`, `reserved-primitive-name`. `unused-import` is deliberately NOT fixable, matching Ruby's rationale (removing an import can drop extension methods / canonical hooks invisible to per-file linting). `Warning` gained `column`/`length` fields (populated by trailing-list-comma; other rules remain line-granular). Verified byte-identical fix output vs Ruby on multi-rule fixture; valgrind-clean; 12 new tests (fix_engine_test.mt). The fix engine is edit-based (`FixEdit` + `edits_for_warning`/`apply_edit`), and `lsp_edit_for_warning` feeds LSP code actions: every fixable rule surfaces a "Fix <code>" quickfix computed against the live buffer. Known depth gap: Ruby's redundant-cast is sema-based (widening/own→ptr coercion analysis, 42 findings on projects/mtc/src) while the self-host rule is AST-level (same-name comparisons only). Reserved-primitive-name fix renames declarations only (Ruby also renames all use sites). Line-too-long formatter wrap-fix machinery not ported. |
 | `.mt-lint.yml` config | **DONE** — `linter/config.mt`: ancestor-walk discovery (100-level cap, mirroring Ruby `load_config`) + minimal YAML-subset parser for `select:`/`ignore:` (block and inline lists) and `max_line_length:`. CLI flags override config; `max_line_length` threads through new `lint_source_opts`. Verified same warning sets as Ruby under a shared config. Known pre-existing divergence surfaced at tiny limits: Ruby's line-too-long skips non-wrappable lines (imports, simple statements) and appends "; wrap the expression" when a formatter wrap fix exists — the self-host flags all long lines with the plain message (formatter wrap-fix machinery not ported). |
 
 ---
@@ -613,11 +632,11 @@ asymmetry and a shared libuv crash, neither compiler-specific):
 ### 5.3 Linter gaps (§3)
 
 `redundant-null-check` is **DONE** (2026-07-17, §0.5/§3.3). Tooling
-(`--fix`, `.mt-lint.yml`) is **DONE** (2026-07-18, §3.4). Remaining linter
-delta: Ruby's larger auto-fixable set (prefer-let-else/var-else,
-redundant-bool-compare/cast/type-annotation, redundant-ignored-match-binding,
-reserved-primitive-name renames) needs per-rule column tracking and the
-formatter wrap-fix machinery.
+(`--fix`, `.mt-lint.yml`) is **DONE** (2026-07-18, §3.4). Fix engine
+expanded to 10 auto-fixable rules (2026-07-19, §0f). Remaining linter
+delta: sema-based `redundant-cast` (requires analyzer type resolution);
+`reserved-primitive-name` use-site renaming (declaration-only today);
+formatter wrap-fix machinery for `line-too-long`.
 
 ### 5.3a RESOLVED: 5 language examples failed the sema gate (found + fixed 2026-07-17)
 

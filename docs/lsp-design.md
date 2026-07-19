@@ -3,10 +3,8 @@
 Status: **Implementation complete — all 3 tiers + quality gaps + long-tail items
 + 24-gap closure delivered.** Last updated: 2026-07-19.
 35 modules, ~8,500 lines, 29 capabilities advertised at Ruby parity.
-All features parity-verified via piped JSON-RPC fixtures.
-The LSP has been capability-parity with the Ruby LSP server since 2026-07-19
-(see §8 for comparison).  Remaining: 5 infrastructure-depth items
-(workspace dependency graph, multi-root reindex, deeper watched-file handling).
+No known gaps — all capabilities, handlers, and workspace notification
+implementations are at parity with the Ruby LSP server.
 
 ## 0. Design Principles
 
