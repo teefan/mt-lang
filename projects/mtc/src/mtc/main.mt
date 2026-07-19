@@ -34,6 +34,7 @@ import mtc.linter.config as lint_config
 import mtc.linter.fix_engine as fix_engine
 import mtc.lsp.server as lsp
 import mtc.dap.server as dap
+import mtc.bindgen as bindgen
 
 
 function main(args: span[str]) -> int:
@@ -1841,20 +1842,92 @@ function cache_command(args: span[str]) -> int:
 
 
 ## Generate a binding module from a C header.
-## A self-hosted implementation is not yet complete; the command accepts arguments
-## for CLI compatibility.  Use the Ruby compiler's `bin/mtc bindgen` for binding
-## generation in the interim.
+## Usage: mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]
 function bindgen_command(args: span[str]) -> int:
-    var i: ptr_uint = 1
-    while i < args.len:
-        let arg = args[i]
-        if arg == "--help" or arg == "-h":
+    var module_name: Option[str] = Option[str].none
+    var header: Option[str] = Option[str].none
+    var output: Option[str] = Option[str].none
+    var link_libs = vec.Vec[str].create()
+    var includes = vec.Vec[str].create()
+    var clang_str: str = ""
+
+    var ai: ptr_uint = 1
+    while ai < args.len:
+        let arg = args[ai]
+        if arg == "-o" or arg == "--output":
+            ai += 1
+            if ai >= args.len:
+                stdio.print_line("bindgen: -o requires an output path")
+                return 1
+            output = Option[str].some(value = args[ai])
+        else if arg == "--link":
+            ai += 1
+            if ai >= args.len:
+                stdio.print_line("bindgen: --link requires a library name")
+                return 1
+            link_libs.push(args[ai])
+        else if arg == "--include":
+            ai += 1
+            if ai >= args.len:
+                stdio.print_line("bindgen: --include requires a header name")
+                return 1
+            includes.push(args[ai])
+        else if arg == "--clang":
+            ai += 1
+            if ai >= args.len:
+                stdio.print_line("bindgen: --clang requires a path")
+                return 1
+            clang_str = args[ai]
+        else if arg == "--help" or arg == "-h":
             stdio.print_line("usage: mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]")
             return 0
-        i += 1
-    stdio.print_line("bindgen: self-hosted bindgen is not yet implemented")
-    stdio.print_line("use the Ruby compiler `bin/mtc bindgen` for binding generation")
-    return 1
+        else if module_name.is_none():
+            module_name = Option[str].some(value = arg)
+        else if header.is_none():
+            header = Option[str].some(value = arg)
+        else:
+            stdio.print_line("bindgen: unexpected argument")
+            return 1
+        ai += 1
+
+    let mod_name = module_name else:
+        stdio.print_line("bindgen: missing module name")
+        return 1
+    let header_path = header else:
+        stdio.print_line("bindgen: missing header path")
+        return 1
+
+    var opts = bindgen.BindgenOptions(
+        module_name = string.String.from_str(mod_name),
+        header_path = string.String.from_str(header_path),
+        output_path = output,
+        link_libs = link_libs,
+        include_headers = includes,
+        clang_bin = clang_str,
+    )
+
+    match bindgen.generate(ref_of(opts)):
+        Result.success as generated:
+            var source = generated.value
+            defer source.release()
+            match output:
+                Option.some as out_file:
+                    if fs.write_text(out_file.value, source.as_str()).is_success():
+                        stdio.print_format(c"generated %.*s -> %.*s\n",
+                            int<-(header_path.len), header_path.data,
+                            int<-(out_file.value.len), out_file.value.data)
+                    else:
+                        stdio.print_line("bindgen: could not write output file")
+                        return 1
+                Option.none:
+                    let st = source.as_str()
+                    stdio.print_format(c"%.*s", int<-(st.len), st.data)
+            return 0
+        Result.failure as failure:
+            let mt = failure.error.as_str()
+            stdio.print_format(c"bindgen: %.*s\n", int<-(mt.len), mt.data)
+            failure.error.release()
+            return 1
 
 
 ## Manage the native toolchain.
