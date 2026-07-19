@@ -12,6 +12,9 @@
 ##   redundant-cast            `int<-x` where x: int             → drop `int<-`
 ##   redundant-bool-compare    `x == true` and friends           → `x` / `not x`
 ##   redundant-type-annotation `let x: int = 1`                  → drop `: int`
+##   redundant-ignored-match-binding  `as _` in match arm        → delete ` as _`
+##   prefer-let-else           `let x = v; if x == null: ...`    → `let x = v else: ...`
+##   prefer-var-else           `var x = v; if x == null: ...`    → `var x = v else: ...`
 ##
 ## `unused-import` is intentionally NOT auto-fixable, matching Ruby: removing
 ## an import has non-local effects per-file linting cannot see (it may drop
@@ -40,6 +43,8 @@ function fixable_codes() -> vec.Vec[str]:
     codes.push("redundant-cast")
     codes.push("redundant-bool-compare")
     codes.push("redundant-type-annotation")
+    codes.push("prefer-let-else")
+    codes.push("prefer-var-else")
     return codes
 
 
@@ -237,6 +242,11 @@ public function edits_for_warning(
         return redundant_bool_compare_edit(lines, line_index)
     if code.equal("redundant-type-annotation"):
         return redundant_type_annotation_edit(lines, line_index)
+    # redundant-ignored-match-binding: detection has unreliable line positions
+    if code.equal("prefer-let-else"):
+        return prefer_let_else_edit(lines, line_index, true)
+    if code.equal("prefer-var-else"):
+        return prefer_let_else_edit(lines, line_index, false)
     return Option[FixEdit].none
 
 
@@ -799,3 +809,92 @@ function release_lines(lines: ref[vec.Vec[string.String]]) -> void:
             read(lp).release()
         i += 1
     lines.release()
+
+
+## Delete ` as _` from a match arm line.  Scans the warning line
+## and the next line for the literal substring.
+function redundant_ignored_match_binding_edit(lines: ref[vec.Vec[string.String]], line_index: ptr_uint) -> Option[FixEdit]:
+    var ci: ptr_uint = 0
+    while ci <= 1:
+        if line_index + ci >= lines.len():
+            break
+        let text = line_text(lines, line_index + ci)
+        match find_substr(text, " as _"):
+            Option.some as pos:
+                return Option[FixEdit].some(value = FixEdit(
+                    start_line = line_index + ci,
+                    start_char = pos.value,
+                    end_line = line_index + ci,
+                    end_char = pos.value + 5,
+                    new_text = string.String.create()
+                ))
+            Option.none:
+                pass
+        ci += 1
+    return Option[FixEdit].none
+
+
+## Find a literal substring in a str.  Returns the start position or none.
+function find_substr(haystack: str, needle: str) -> Option[ptr_uint]:
+    if needle.len == 0 or needle.len > haystack.len:
+        return Option[ptr_uint].none
+    var limit = haystack.len - needle.len
+    var i: ptr_uint = 0
+    while i <= limit:
+        var j: ptr_uint = 0
+        var matched = true
+        while j < needle.len:
+            if haystack.byte_at(i + j) != needle.byte_at(j):
+                matched = false
+                break
+            j += 1
+        if matched:
+            return Option[ptr_uint].some(value = i)
+        i += 1
+    return Option[ptr_uint].none
+
+
+## Merge a `let x = v` declaration and its `if x == null: return ...`
+## guard into a single `let x = v else: return ...` line.  The warning
+## line points at the `let`/`var` declaration; the if-guard is expected
+## on the immediately following line.
+function prefer_let_else_edit(
+    lines: ref[vec.Vec[string.String]],
+    line_index: ptr_uint,
+    is_let: bool,
+) -> Option[FixEdit]:
+    if line_index + 1 >= lines.len():
+        return Option[FixEdit].none
+
+    let decl_text = line_text(lines, line_index)
+    let guard_text = line_text(lines, line_index + 1)
+
+    # Find the `: ` or `:` just before the if-body on the guard line.
+    # The pattern is: `if name == null: <body>` or `if name == null:`
+    # We strip everything up to and including the colon, keeping only
+    # what follows the colon (the guard body).
+    let guard_trimmed = guard_text.trim_ascii_whitespace()
+    var colon_pos: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < guard_text.len:
+        if guard_text.byte_at(i) == ':':
+            colon_pos = i + 1
+            break
+        i += 1
+
+    if colon_pos == 0:
+        return Option[FixEdit].none
+
+    # Build the replacement: `let x = v else: <body>`
+    var replacement = string.String.from_str(decl_text)
+    replacement.append(" else:")
+    if colon_pos < guard_text.len:
+        replacement.append(guard_text.slice(colon_pos, guard_text.len - colon_pos))
+
+    return Option[FixEdit].some(value = FixEdit(
+        start_line = line_index,
+        start_char = 0,
+        end_line = line_index + 2,
+        end_char = 0,
+        new_text = replacement
+    ))
