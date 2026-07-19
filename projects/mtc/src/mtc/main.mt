@@ -130,6 +130,9 @@ function main(args: span[str]) -> int:
     if cmd == "bindgen":
         return bindgen_command(args)
 
+    if cmd == "toolchain":
+        return toolchain_command(args)
+
     if cmd == "help":
         print_help()
         return 0
@@ -157,6 +160,7 @@ function print_help() -> void:
     stdio.print_line("  new   <path>                                        scaffold a new package")
     stdio.print_line("  format <file> [--check|--write]                     format source and print, check, or write back")
     stdio.print_line("  bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]  generate binding module from C header")
+    stdio.print_line("  toolchain bootstrap|doctor|tools                     manage the native toolchain")
     stdio.print_line("  completions bash|zsh|fish                           print a shell completion script")
     stdio.print_line("  version|--version|-V                                print version and exit")
     stdio.print_line("  help                                                print this help")
@@ -1956,6 +1960,100 @@ function bindgen_command(args: span[str]) -> int:
             return 1
 
 
+## Manage the native toolchain.
+##   doctor    — check build tools (cc, ar, clang, cmake, ninja) availability
+##   bootstrap — delegate to Ruby compiler for submodule bootstrapping
+##   tools     — delegate to Ruby compiler for vendored tool builds
+function toolchain_command(args: span[str]) -> int:
+    if args.len < 2:
+        stdio.print_line("toolchain: missing subcommand")
+        stdio.print_line("")
+        stdio.print_line("subcommands:")
+        stdio.print_line("  bootstrap   bootstrap git submodules (delegates to Ruby)")
+        stdio.print_line("  doctor      check build tool availability")
+        stdio.print_line("  tools       build vendored development tools (delegates to Ruby)")
+        return 1
+
+    let sub = args[1]
+    if sub == "--help" or sub == "-h":
+        stdio.print_line("usage: mtc toolchain <bootstrap|doctor|tools>")
+        return 0
+
+    if sub == "doctor":
+        return toolchain_doctor()
+
+    if sub == "bootstrap":
+        return toolchain_delegate(args)
+
+    if sub == "tools":
+        return toolchain_delegate(args)
+
+    stdio.print_line("toolchain: unknown subcommand")
+    return 1
+
+
+function toolchain_doctor() -> int:
+    var all_ok = true
+    var checks: array[str, 6] = array[str, 6]("cc", "ar", "clang", "cmake", "ninja", "git")
+
+    var i: ptr_uint = 0
+    while i < 6:
+        let tool = checks[i]
+        let found = is_executable_on_path(tool)
+        if found:
+            stdio.print_format(c"ok   %.*s\n", int<-(tool.len), tool.data)
+        else:
+            stdio.print_format(c"fail %.*s (not found on PATH)\n", int<-(tool.len), tool.data)
+            all_ok = false
+        i += 1
+
+    if all_ok:
+        return 0
+    return 1
+
+
+function is_executable_on_path(name: str) -> bool:
+    var which_cmd = vec.Vec[str].create()
+    defer which_cmd.release()
+    which_cmd.push("which")
+    which_cmd.push(name)
+    match process.capture(which_cmd.as_span()):
+        Result.success as captured:
+            var result = captured.value
+            defer result.stdout.release()
+            defer result.stderr.release()
+            return result.status.exit_code == 0
+        Result.failure:
+            return false
+
+
+function toolchain_delegate(args: span[str]) -> int:
+    var cmd = vec.Vec[str].create()
+    defer cmd.release()
+    cmd.push("ruby")
+    cmd.push("-Ilib")
+    cmd.push("bin/mtc")
+    var i: ptr_uint = 0
+    while i < args.len:
+        cmd.push(args[i])
+        i += 1
+    match process.capture(cmd.as_span()):
+        Result.success as captured:
+            var result = captured.value
+            defer result.stdout.release()
+            defer result.stderr.release()
+            let stdout_text = result.stdout.as_str()
+            if stdout_text.len > 0:
+                stdio.print_format(c"%.*s", int<-(stdout_text.len), stdout_text.data)
+            let stderr_text = result.stderr.as_str()
+            if stderr_text.len > 0:
+                stdio.print_format(c"%.*s", int<-(stderr_text.len), stderr_text.data)
+            return int<-result.status.exit_code
+        Result.failure:
+            stdio.print_line("toolchain: could not launch Ruby toolchain command")
+            return 1
+
+
 struct CommandSummary:
     name: str
     summary: str
@@ -1964,7 +2062,7 @@ struct CommandSummary:
 ## The self-host's implemented command set with the same one-line summaries as
 ## Ruby's CLI::COMMANDS (used by the zsh/fish completion scripts).
 function command_summary_count() -> ptr_uint:
-    return 15
+    return 16
 
 
 function command_summary_at(index: ptr_uint) -> CommandSummary:
@@ -1996,6 +2094,8 @@ function command_summary_at(index: ptr_uint) -> CommandSummary:
         return CommandSummary(name = "emit-c", summary = "Compile source to C and print it")
     if index == 13:
         return CommandSummary(name = "bindgen", summary = "Generate a binding module from a C header")
+    if index == 14:
+        return CommandSummary(name = "toolchain", summary = "Manage the native toolchain")
     return CommandSummary(name = "completions", summary = "Print a shell completion script")
 
 
