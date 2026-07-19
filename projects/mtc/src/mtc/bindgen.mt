@@ -352,7 +352,9 @@ function walk(node_obj: ptr[json.Object]?, decls: ref[vec.Vec[CDecl]]) -> void:
         # Only collect declarations with a source location (non-builtin).
         # Builtin/implicit nodes have loc: {}; header decls have offset/line/col.
         let loc_vp = read(node_obj).get("loc")
-        let loc_obj = if loc_vp == null: null else: read(loc_vp).as_object()
+        var loc_obj: ptr[json.Object]? = null
+        if loc_vp != null:
+            loc_obj = read(loc_vp).as_object()
         var has_loc = false
         if loc_obj != null:
             # Check for an offset or line field (empty loc {} has none).

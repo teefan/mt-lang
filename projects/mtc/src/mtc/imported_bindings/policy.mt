@@ -418,23 +418,27 @@ function parse_function_overrides(obj: ptr[json.Object], key: str) -> vec.Vec[Fu
     return r
 
 
-function resolve_include(obj: ptr[json.Object], section_key: str, has_prefixes: bool) -> (IncludeKind, vec.Vec[string.String]):
+function resolve_include(obj: ptr[json.Object], section_key: str, has_prefixes: bool, out_kind: ref[IncludeKind], out_list: ref[vec.Vec[string.String]]) -> void:
     let value_ptr = obj_get(obj, "include") else:
         if has_prefixes:
-            return (IncludeKind.include_list, vec.Vec[string.String].create())
-        return (IncludeKind.include_all, vec.Vec[string.String].create())
+            read(out_kind) = IncludeKind.include_list
+            return
+        read(out_kind) = IncludeKind.include_all
+        return
 
     let str_opt = unsafe: read(value_ptr).as_string()
     if str_opt.is_some():
         let s = str_opt.unwrap()
         if s.equal("all"):
-            return (IncludeKind.include_all, vec.Vec[string.String].create())
-        var l = vec.Vec[string.String].create()
-        l.push(string.String.from_str(s))
-        return (IncludeKind.include_list, l)
+            read(out_kind) = IncludeKind.include_all
+            return
+        read(out_kind) = IncludeKind.include_list
+        read(out_list).push(string.String.from_str(s))
+        return
 
-    let l = parse_str_list(obj, "include")
-    return (IncludeKind.include_list, l)
+    var l = parse_str_list(obj, "include")
+    read(out_kind) = IncludeKind.include_list
+    read(out_list) = l
 
 
 function parse_alias_spec(root_obj: ptr[json.Object], key: str) -> AliasSpec:
@@ -449,7 +453,9 @@ function parse_alias_spec(root_obj: ptr[json.Object], key: str) -> AliasSpec:
             strip_prefix = string.String.create(),
         )
     let prefixes = parse_str_list(section, "include_prefixes")
-    let (kind, list) = resolve_include(section, key, prefixes.len() != 0)
+    var kind: IncludeKind = IncludeKind.include_all
+    var list = vec.Vec[string.String].create()
+    resolve_include(section, key, prefixes.len() != 0, ref_of(kind), ref_of(list))
     return AliasSpec(
         include_kind = kind,
         include_list = list,
@@ -473,10 +479,12 @@ function parse_function_spec(root_obj: ptr[json.Object], key: str) -> FunctionSp
             strip_prefix = string.String.create(),
         )
     let prefixes = parse_str_list(section, "include_prefixes")
-    let (kind, list) = resolve_include(section, key, prefixes.len() != 0)
+    var fkind: IncludeKind = IncludeKind.include_all
+    var flist = vec.Vec[string.String].create()
+    resolve_include(section, key, prefixes.len() != 0, ref_of(fkind), ref_of(flist))
     return FunctionSpec(
-        include_kind = kind,
-        include_list = list,
+        include_kind = fkind,
+        include_list = flist,
         include_prefixes = prefixes,
         exclude = parse_str_list(section, "exclude"),
         overrides = parse_function_overrides(section, "overrides"),
@@ -492,13 +500,15 @@ function parse_method_spec(entry: ptr[json.Object]) -> MethodSpec:
         rtypes.push(string.String.from_str(rtype.as_str()))
 
     let prefixes = parse_str_list(entry, "include_prefixes")
-    let (kind, list) = resolve_include(entry, "method", prefixes.len() != 0)
+    var mkind: IncludeKind = IncludeKind.include_all
+    var mlist = vec.Vec[string.String].create()
+    resolve_include(entry, "method", prefixes.len() != 0, ref_of(mkind), ref_of(mlist))
 
     return MethodSpec(
         receiver_type = rtype,
         receiver_types = rtypes,
-        include_kind = kind,
-        include_list = list,
+        include_kind = mkind,
+        include_list = mlist,
         include_prefixes = prefixes,
         exclude = parse_str_list(entry, "exclude"),
         rename_rules = parse_rename_rules(entry, "rename_rules"),

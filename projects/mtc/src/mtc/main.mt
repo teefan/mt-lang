@@ -1912,13 +1912,14 @@ function bindgen_command(args: span[str]) -> int:
             defer source.release()
             match output:
                 Option.some as out_file:
-                    if fs.write_text(out_file.value, source.as_str()).is_success():
-                        stdio.print_format(c"generated %.*s -> %.*s\n",
-                            int<-(header_path.len), header_path.data,
-                            int<-(out_file.value.len), out_file.value.data)
-                    else:
-                        stdio.print_line("bindgen: could not write output file")
-                        return 1
+                    match fs.write_text(out_file.value, source.as_str()):
+                        Result.success:
+                            stdio.print_format(c"generated %.*s -> %.*s\n",
+                                int<-(header_path.len), header_path.data,
+                                int<-(out_file.value.len), out_file.value.data)
+                        Result.failure:
+                            stdio.print_line("bindgen: could not write output file")
+                            return 1
                 Option.none:
                     let st = source.as_str()
                     stdio.print_format(c"%.*s", int<-(st.len), st.data)
