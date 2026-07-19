@@ -165,6 +165,15 @@ public function parse_float_literal(lexeme: str) -> double:
 public function parse_string_content(lexeme: str, is_cstring: bool) -> str:
     if lexeme.len < 2:
         return lexeme
+
+    # Heredoc detection: the lexeme spans from `<<-` / `c<<-` / `f<<-` to the
+    # end of the terminator line.  The content is everything between the first
+    # newline (after the tag) and the last newline (before the terminator),
+    # with common leading indent stripped.
+    let prefix_len = heredoc_prefix_length(lexeme)
+    if prefix_len > 0:
+        return parse_heredoc_content(lexeme, prefix_len)
+
     var body_start: ptr_uint = 1
     var body_stop = lexeme.len - 1
     if is_cstring:
@@ -182,6 +191,128 @@ public function parse_string_content(lexeme: str, is_cstring: bool) -> str:
         else:
             buf.push_byte(b)
             i += 1
+    return buf.as_str()
+
+
+## Returns the prefix length for a heredoc lexeme: 3 for `<<-TAG`, 4 for
+## `c<<-TAG`/`f<<-TAG`, or 0 when the lexeme is a quoted string.
+function heredoc_prefix_length(lexeme: str) -> ptr_uint:
+    if lexeme.len >= 4 and lexeme.byte_at(0) == '<' and lexeme.byte_at(1) == '<' and lexeme.byte_at(2) == '-':
+        return 3
+    if lexeme.len >= 5:
+        let second = lexeme.byte_at(1)
+        if lexeme.byte_at(0) != '<' or lexeme.byte_at(1) != '<' or lexeme.byte_at(2) != '-':
+            return 0
+        if lexeme.byte_at(0) == 'c' or lexeme.byte_at(0) == 'f':
+            return 4
+    return 0
+
+
+## Parse a heredoc lexeme (from `<<-TAG` through the terminator line) into the
+## content string, stripping the tag, the terminator, and the common leading
+## indent from non-empty content lines.
+function parse_heredoc_content(lexeme: str, prefix_len: ptr_uint) -> str:
+    # Find the end of the tag (next newline).
+    var tag_end = prefix_len
+    while tag_end < lexeme.len:
+        let b = lexeme.byte_at(tag_end)
+        if b == '\n':
+            break
+        tag_end += 1
+
+    # Content starts after the tag line's newline.
+    var content_start = tag_end
+    if content_start < lexeme.len and lexeme.byte_at(content_start) == '\n':
+        content_start += 1
+
+    # Find the terminator: the last newline-bounded segment is the terminator
+    # line.  Walk back from the end to find the last newline.
+    var terminator_line_start = lexeme.len
+    var i = lexeme.len
+    while i > content_start:
+        i -= 1
+        if lexeme.byte_at(i) == '\n':
+            terminator_line_start = i + 1
+            break
+
+    # Content body is between content_start and the line before the terminator.
+    var body_end = lexeme.len
+    if terminator_line_start <= lexeme.len:
+        body_end = terminator_line_start
+
+    # Compute minimum indentation of non-empty content lines.
+    var min_indent: ptr_uint = 0
+    var min_set = false
+    var pos = content_start
+    while pos < body_end:
+        # Find next newline.
+        var line_start = pos
+        var line_len: ptr_uint = 0
+        while pos < body_end:
+            if lexeme.byte_at(pos) == '\n':
+                pos += 1
+                break
+            line_len += 1
+            pos += 1
+        # Check if line is non-empty (non-blank).
+        var j: ptr_uint = 0
+        var blank = true
+        while j < line_len:
+            let b = lexeme.byte_at(line_start + j)
+            if b != ' ' and b != '\t' and b != '\r':
+                blank = false
+                break
+            j += 1
+        if not blank:
+            # Count leading spaces.
+            var indent: ptr_uint = 0
+            while indent < line_len:
+                let b = lexeme.byte_at(line_start + indent)
+                if b == ' ':
+                    indent += 1
+                else:
+                    break
+            if not min_set or indent < min_indent:
+                min_indent = indent
+                min_set = true
+
+    # Build output: each line with min_indent stripped.
+    var buf = string.String.create()
+    pos = content_start
+    var first = true
+    while pos < body_end:
+        var line_start = pos
+        var line_len: ptr_uint = 0
+        while pos < body_end:
+            if lexeme.byte_at(pos) == '\n':
+                pos += 1
+                break
+            line_len += 1
+            pos += 1
+
+        # Strip min_indent from this line.
+        var skip = min_indent
+        if skip > line_len:
+            skip = line_len
+        var write_start = line_start + skip
+        var write_len = line_len - skip
+
+        # Trim trailing carriage return.
+        while write_len > 0 and lexeme.byte_at(write_start + write_len - 1) == '\r':
+            write_len -= 1
+
+        if not first:
+            buf.push_byte('\n')
+        first = false
+
+        var k: ptr_uint = 0
+        while k < write_len:
+            buf.push_byte(lexeme.byte_at(write_start + k))
+            k += 1
+
+    # Trailing newline after the last content line (matches Ruby behavior).
+    buf.push_byte('\n')
+
     return buf.as_str()
 
 
