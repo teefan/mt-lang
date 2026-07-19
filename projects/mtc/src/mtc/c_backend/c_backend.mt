@@ -1505,7 +1505,16 @@ function c_type(t: types.Type) -> str:
                 if im.name == "sockaddr" or im.name == "sockaddr_storage" or im.name == "sockaddr_in" or im.name == "sockaddr_in6" or im.name == "tm":
                     return j2("struct ", im.name)
                 return im.name
-            return naming.qualified_c_name(im.module_name, im.name)
+            var base = naming.qualified_c_name(im.module_name, im.name)
+            if im.args.len == 0:
+                return base
+            var buf = string.String.from_str(base)
+            var ai: ptr_uint = 0
+            while ai < im.args.len:
+                buf.push_byte('_')
+                buf.append(naming.type_c_key(unsafe: read(im.args.data + ai)))
+                ai += 1
+            return buf.as_str()
         types.Type.ty_named as n:
             if n.module_name.len > 0:
                 if n.module_name.starts_with("std.c."):
