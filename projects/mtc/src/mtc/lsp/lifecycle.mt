@@ -16,7 +16,7 @@ public function handle_initialize(id: json.Value) -> void:
 
     # capabilities
     r.append(",\"result\":{\"capabilities\":{")
-    r.append("\"textDocumentSync\":{\"openClose\":true,\"change\":1,\"save\":{\"includeText\":true}}")
+    r.append("\"textDocumentSync\":{\"openClose\":true,\"change\":2,\"save\":{\"includeText\":true}}")
     r.append(",\"definitionProvider\":true")
     r.append(",\"declarationProvider\":true")
     r.append(",\"typeDefinitionProvider\":true")
