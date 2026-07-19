@@ -14,9 +14,8 @@ const CR: ubyte = 13
 const LF: ubyte = 10
 
 
-public struct DapMessage:
+public struct Message:
     raw_body: string.String
-    parsed: json.Value
     seq: ptr_uint
     msg_type: string.String
     command: string.String
@@ -25,7 +24,7 @@ public struct DapMessage:
     request_seq: ptr_uint
     success: bool
     message: string.String
-    dap_event: string.String
+    evt: string.String
 
 
 ## Read one header line (terminated by \r\n) from stdin.
@@ -80,7 +79,7 @@ function read_body_bytes(body: ref[string.String], count: ptr_uint) -> bool:
 
 
 ## Read one DAP message from stdin.  Returns none on EOF / protocol error.
-public function read_message() -> Option[DapMessage]:
+public function read_message() -> Option[Message]:
     var header_line = string.String.create()
     defer header_line.release()
     var body = string.String.create()
@@ -90,7 +89,7 @@ public function read_message() -> Option[DapMessage]:
     var found_length = false
     while true:
         if not read_header_line(ref_of(header_line)):
-            return Option[DapMessage].none
+            return Option[Message].none
         let length = parse_content_length(header_line.as_str())
         match length:
             Option.some as len_payload:
@@ -102,32 +101,33 @@ public function read_message() -> Option[DapMessage]:
             break
 
     if not found_length or content_length == 0:
-        return Option[DapMessage].none
+        return Option[Message].none
     if not read_body_bytes(ref_of(body), content_length):
-        return Option[DapMessage].none
+        return Option[Message].none
 
     let body_text = body.as_str()
     if body_text.len == 0:
-        return Option[DapMessage].none
+        return Option[Message].none
 
     var parsed = json.parse(body_text) else as error:
         var owned_error = error
         owned_error.release()
-        return Option[DapMessage].none
+        return Option[Message].none
 
     let parsed_obj = parsed.as_object() else:
         json.release_value(parsed)
-        return Option[DapMessage].none
+        return Option[Message].none
 
     var raw_body_owned = string.String.from_str(body_text)
-    var msg = build_message(parsed_obj, raw_body_owned, parsed)
-    return Option[DapMessage].some(value = msg)
+    var msg = build_message(parsed_obj, raw_body_owned)
+    json.release_value(parsed)
+    return Option[Message].some(value = msg)
 
 
-function build_message(obj: ptr[json.Object], raw_body: string.String, parsed: json.Value) -> DapMessage:
+function build_message(obj: ptr[json.Object], raw_body: string.String) -> Message:
     var owned_type = string.String.create()
     var owned_command = string.String.create()
-    var owned_dap_event = string.String.create()
+    var owned_evt = string.String.create()
     var owned_message = string.String.create()
     var seq: ptr_uint = 0
     var request_seq: ptr_uint = 0
@@ -161,7 +161,7 @@ function build_message(obj: ptr[json.Object], raw_body: string.String, parsed: j
         let evt_opt = read(obj).get_string("event")
         match evt_opt:
             Option.some as e:
-                owned_dap_event.assign(e.value)
+                owned_evt.assign(e.value)
             Option.none:
                 pass
 
@@ -196,9 +196,8 @@ function build_message(obj: ptr[json.Object], raw_body: string.String, parsed: j
         if body_opt != null:
             body_val = read(body_opt)
 
-    return DapMessage(
+    return Message(
         raw_body = raw_body,
-        parsed = parsed,
         seq = seq,
         msg_type = owned_type,
         command = owned_command,
@@ -207,7 +206,7 @@ function build_message(obj: ptr[json.Object], raw_body: string.String, parsed: j
         request_seq = request_seq,
         success = success,
         message = owned_message,
-        dap_event = owned_dap_event,
+        evt = owned_evt,
     )
 
 

@@ -5,13 +5,11 @@ import std.fmt
 import std.fs as fs_mod
 import std.json as json
 import std.path as path_ops
-import std.process as process
 import std.str
 import std.string as string
 import std.vec as vec
 
 import mtc.dap.protocol as proto
-import mtc.dap.process_backend as backend
 import mtc.dap.session as ses_mod
 import mtc.dap.utilities as util
 import mtc.dap.wire as wire
@@ -23,10 +21,10 @@ const CAPABILITIES: str = "{\"supportsConfigurationDoneRequest\":true,\"supports
 ## Dispatch a DAP request to the appropriate handler based on the command.
 public function dispatch(
     ses: ref[ses_mod.Session],
-    child: ref[process.ChildProcess],
-    has_child: ref[bool],
+    
+    
     command: str,
-    msg: proto.DapMessage,
+    msg: proto.Message,
 ) -> void:
     let seq = ses.reserve_seq()
 
@@ -66,9 +64,9 @@ public function dispatch(
     else if command == "pause":
         handle_pause(ses, seq, msg.seq)
     else if command == "terminate":
-        handle_terminate(ses, child, has_child, seq, msg.seq)
+        handle_terminate(ses,  seq, msg.seq)
     else if command == "disconnect":
-        handle_disconnect(ses, child, has_child, seq, msg.seq)
+        handle_disconnect(ses,  seq, msg.seq)
 
     else if command == "evaluate":
         wire.write_error(seq, msg.seq, "evaluate is not supported by the process backend")
@@ -87,24 +85,15 @@ public function dispatch(
 
 
 ## Initialize — returns capabilities + initialized event.
-function handle_initialize(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.DapMessage) -> void:
-    var r = string.String.create()
-    defer r.release()
-    r.append("{\"seq\":")
-    r.append_format(f"#{seq}")
-    r.append(",\"type\":\"response\",\"request_seq\":")
-    r.append_format(f"#{msg.seq}")
-    r.append(",\"success\":true,\"command\":\"initialize\",\"body\":")
-    r.append(CAPABILITIES)
-    r.append("}")
-    proto.write_framed_json(r.as_str())
+function handle_initialize(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.Message) -> void:
+    wire.write_response(seq, msg.seq, CAPABILITIES)
 
     let init_seq = ses.reserve_seq()
     wire.write_event(init_seq, "initialized", "{}")
 
 
 ## Launch — builds .mt and stores runnable path.
-function handle_launch(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.DapMessage) -> void:
+function handle_launch(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.Message) -> void:
     let program = extract_string_arg(msg.arguments, "program")
     if program.len == 0:
         wire.write_error(seq, msg.seq, "launch requires a non-empty 'program' argument")
@@ -130,7 +119,7 @@ function handle_launch(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.DapM
 
 
 ## setBreakpoints — registers line breakpoints (unverified for process backend).
-function handle_set_breakpoints(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.DapMessage) -> void:
+function handle_set_breakpoints(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.Message) -> void:
     var requested = extract_line_breakpoints(msg.arguments)
     defer requested.release()
 
@@ -143,7 +132,7 @@ function handle_set_breakpoints(ses: ref[ses_mod.Session], seq: ptr_uint, msg: p
         let lp = requested.get(fi)
         if lp == null:
             break
-        let line = unsafe: read_ptr(lp)
+        let line = unsafe: util.read_ptr(lp)
         if fi > 0: r.append(",")
         let bp_id = ses.reserve_breakpoint_id()
         r.append("{\"id\":")
@@ -183,7 +172,7 @@ function handle_threads(seq: ptr_uint, req_seq: ptr_uint) -> void:
 
 
 ## StackTrace — single entry frame.
-function handle_stack_trace(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.DapMessage) -> void:
+function handle_stack_trace(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.Message) -> void:
     let source_path = ses.program_path.as_str()
     let base = path_ops.basename(source_path)
     var r = string.String.create()
@@ -223,30 +212,30 @@ function handle_pause(ses: ref[ses_mod.Session], seq: ptr_uint, req_seq: ptr_uin
 ## Terminate — kills child process.
 function handle_terminate(
     ses: ref[ses_mod.Session],
-    child: ref[process.ChildProcess],
-    has_child: ref[bool],
+    
+    
     seq: ptr_uint,
     req_seq: ptr_uint,
 ) -> void:
-    terminate_process(ses, child, has_child)
+    terminate_process(ses)
     wire.write_response(seq, req_seq, "{}")
 
 
 ## Disconnect — terminates process and exits server.
 function handle_disconnect(
     ses: ref[ses_mod.Session],
-    child: ref[process.ChildProcess],
-    has_child: ref[bool],
+    
+    
     seq: ptr_uint,
     req_seq: ptr_uint,
 ) -> void:
-    terminate_process(ses, child, has_child)
+    terminate_process(ses)
     wire.write_response(seq, req_seq, "{}")
     ses.should_exit = true
 
 
 ## Source — reads a file from disk.
-function handle_source(seq: ptr_uint, msg: proto.DapMessage) -> void:
+function handle_source(seq: ptr_uint, msg: proto.Message) -> void:
     let source_path = extract_nested_arg(msg.arguments, "source", "path")
     if source_path.len == 0:
         wire.write_error(seq, msg.seq, "source missing path")
@@ -268,8 +257,6 @@ function handle_source(seq: ptr_uint, msg: proto.DapMessage) -> void:
 ## Terminate the session gracefully.
 function terminate_process(
     ses: ref[ses_mod.Session],
-    child: ref[process.ChildProcess],
-    has_child: ref[bool],
 ) -> void:
     if not ses.terminated:
         ses.terminated = true
@@ -366,8 +353,4 @@ function extract_nested_arg(args: json.Value, outer: str, inner: str) -> str:
             Option.none:
                 return ""
 
-## Dereference a ptr[ptr_uint] to read a ptr_uint value.  The lp pointer
-## is guaranteed non-null because the caller checked before calling.
-function read_ptr(lp: ptr[ptr_uint]) -> ptr_uint:
-    unsafe: return read(lp)
-
+## Dereference a ptr[

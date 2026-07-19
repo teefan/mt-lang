@@ -2,7 +2,6 @@
 ## the protocol framing.
 
 import std.fmt
-import std.json as json
 import std.string as string
 
 import mtc.dap.protocol as proto

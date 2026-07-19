@@ -1,6 +1,6 @@
-## DAP process backend — launches, monitors, and controls a debuggee
-## child process via std.process primitives.  Non-blocking I/O polling
-## with SIGSTOP/SIGCONT for pause/continue.
+## DAP process backend — I/O helpers for the debuggee child process.
+## Polls stdout and stderr via std.process non-blocking reads and
+## forwards output as DAP events.
 
 import std.process as process
 import std.str
@@ -9,28 +9,6 @@ import std.vec as vec
 
 import mtc.dap.protocol as proto
 import mtc.dap.wire as wire
-
-
-const SIGNAL_STOP:   int = 19
-const SIGNAL_CONT:   int = 18
-const SIGNAL_TERM:   int = 15
-
-
-## Handle child process launch.  Spawns the runnable binary and stores
-## process state in the session.
-public function spawn_process(runnable_path: str, args: span[str], pid: ref[int]) -> Result[process.ChildProcess, process.ProcessError]:
-    var command = vec.Vec[str].create()
-    command.push(runnable_path)
-    var ai: ptr_uint = 0
-    while ai < args.len:
-        unsafe:
-            command.push(read(args.data + ai))
-        ai += 1
-    unsafe:
-        var sp = span[str](data = ptr[str]<-command.data, len = command.len)
-        let result = process.spawn(sp)
-        command.release()
-        return result
 
 
 ## Poll child process stdout for new output.  Returns output text when

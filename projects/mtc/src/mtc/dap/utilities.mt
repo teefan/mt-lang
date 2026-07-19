@@ -45,3 +45,9 @@ public function resolve_launch_program(program: str) -> LaunchResolved:
 public function release_launch_resolved(resolved: ref[LaunchResolved]) -> void:
     resolved.runnable_path.release()
     resolved.error.release()
+
+## Dereference a ptr[ptr_uint] to a ptr_uint value.  The caller must
+## ensure lp is non-null before calling.
+public function read_ptr(lp: ptr[ptr_uint]) -> ptr_uint:
+    unsafe: return read(lp)
+

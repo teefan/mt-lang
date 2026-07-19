@@ -29,7 +29,7 @@ public function run(args: span[str]) -> int:
                 var msg = payload.value
 
                 if msg.command.len() > 0:
-                    handlers.dispatch(ref_of(ses), ref_of(child), ref_of(has_child), msg.command.as_str(), msg)
+                    handlers.dispatch(ref_of(ses), msg.command.as_str(), msg)
 
                 if ses.should_exit:
                     release_msg(ref_of(msg))
@@ -64,11 +64,11 @@ function poll_output(ses: ref[session.Session], child: ref[process.ChildProcess]
         err_text.release()
 
 
-## Release a DapMessage and its owned fields.
-function release_msg(msg: ref[proto.DapMessage]) -> void:
+## Release a Message and its owned fields.  Parsed JSON must be
+## freed before the raw_body string it borrows from.
+function release_msg(msg: ref[proto.Message]) -> void:
     msg.raw_body.release()
     msg.msg_type.release()
     msg.command.release()
     msg.message.release()
-    msg.dap_event.release()
-    json.release_value(msg.parsed)
+    msg.evt.release()
