@@ -83,6 +83,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         lifecycle.handle_initialize(msg.id)
     else if method == "initialized":
         lifecycle.handle_initialized()
+        ws.build_index_if_needed()
         schedule_config_request(ws)
     else if method == "shutdown":
         var result = json.null_value()
