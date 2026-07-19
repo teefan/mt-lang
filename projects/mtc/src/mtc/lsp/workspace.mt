@@ -46,6 +46,10 @@ public struct Workspace:
     config_received: bool
     index_built: bool
     index: idx.Index
+    format_mode: string.String
+    dependency_resolution_mode: string.String
+    platform_override: string.String
+    strict_current_root_diagnostics: bool
 
 
 extending Workspace:
@@ -64,6 +68,10 @@ extending Workspace:
             config_received = false,
             index_built = false,
             index = idx.Index(entries = vec.Vec[idx.Entry].create()),
+            format_mode = string.String.create(),
+            dependency_resolution_mode = string.String.create(),
+            platform_override = string.String.create(),
+            strict_current_root_diagnostics = false,
         )
 
 

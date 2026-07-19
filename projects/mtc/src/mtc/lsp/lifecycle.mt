@@ -39,7 +39,7 @@ public function handle_initialize(id: json.Value) -> void:
     r.append(",\"executeCommandProvider\":{\"commands\":[\"mtc.restartServer\"]}")
     r.append(",\"documentRangeFormattingProvider\":true")
     r.append(",\"linkedEditingRangeProvider\":true")
-    r.append(",\"documentLinkProvider\":{}")
+    r.append(",\"documentLinkProvider\":{\"resolveProvider\":true}")
     r.append(",\"codeLensProvider\":{\"resolveProvider\":true}")
     r.append(",\"typeHierarchyProvider\":true")
     r.append(",\"callHierarchyProvider\":true")

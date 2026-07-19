@@ -6,6 +6,8 @@ import std.json as json
 import std.str
 import std.string as string
 import std.vec as vec
+import std.cjson as cjson
+import std.mem.arena as arena
 
 import mtc.lsp.call_hierarchy as call_hier
 import mtc.lsp.code_actions as code_actions
@@ -476,6 +478,52 @@ function handle_incoming_response(ws: ref[workspace.Workspace], msg: proto.Messa
 function apply_config_response(ws: ref[workspace.Workspace], msg: proto.Message) -> void:
     ws.clear_pending_config_request()
     if msg.error_msg.is_null():
+        parse_and_apply_config(ws, msg.raw_body.as_str())
+
+
+function parse_and_apply_config(ws: ref[workspace.Workspace], raw: str) -> void:
+    var storage = arena.create(raw.len + 1)
+    defer storage.release()
+    let root = cjson.parse(storage.to_cstr(raw)) else:
         ws.config_received = true
-    # Settings from the response are stored in msg.params/result for
-    # future use by didChangeConfiguration and related handlers.
+        return
+    defer cjson.delete(root)
+    let result_obj = cjson.get_object_item(root, c"result") else:
+        ws.config_received = true
+        return
+    let count = cjson.get_array_size(result_obj)
+    if count < 4:
+        ws.config_received = true
+        return
+    # Item 0: format mode
+    let item0 = cjson.get_array_item(result_obj, 0)
+    if item0 != null:
+        let s = cjson.get_string_value(unsafe: item0)
+        if s != null:
+            let val = str.nullable_cstr_as_str(s)
+            if val.is_some():
+                ws.format_mode.clear()
+                ws.format_mode.append(val.unwrap())
+    # Item 1: dependency resolution mode
+    let item1 = cjson.get_array_item(result_obj, 1)
+    if item1 != null:
+        let s = cjson.get_string_value(unsafe: item1)
+        if s != null:
+            let val = str.nullable_cstr_as_str(s)
+            if val.is_some():
+                ws.dependency_resolution_mode.clear()
+                ws.dependency_resolution_mode.append(val.unwrap())
+    # Item 2: platform override
+    let item2 = cjson.get_array_item(result_obj, 2)
+    if item2 != null:
+        let s = cjson.get_string_value(unsafe: item2)
+        if s != null:
+            let val = str.nullable_cstr_as_str(s)
+            if val.is_some():
+                ws.platform_override.clear()
+                ws.platform_override.append(val.unwrap())
+    # Item 3: strict root diagnostics
+    let item3 = cjson.get_array_item(result_obj, 3)
+    if item3 != null:
+        ws.strict_current_root_diagnostics = cjson.is_true(unsafe: item3) != 0
+    ws.config_received = true
