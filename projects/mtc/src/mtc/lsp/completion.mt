@@ -343,69 +343,82 @@ function module_member_completions(
 
 ## Build a JSON array of CompletionItem objects for the general (non-dot)
 ## context: keywords plus the current module's own symbols.
+const MAX_COMPLETION_ITEMS: ptr_uint = 200
+
+
+## Build a JSON array of completion items from the analysis data.
+## Capped at MAX_COMPLETION_ITEMS; returns an empty array when nothing matches.
 function build_completions_json(analysis: ref[analyzer.Analysis]) -> string.String:
     var result = string.String.create()
     result.append("[")
     var first = true
+    var count: ptr_uint = 0
 
     var keywords = collect_keywords()
     var ki: ptr_uint = 0
-    while ki < keywords.len():
+    while ki < keywords.len() and count < MAX_COMPLETION_ITEMS:
         let kw = keywords.get(ki) else:
             break
         unsafe:
             append_item(ref_of(result), read(kw), KIND_KEYWORD, ref_of(first))
+            count += 1
         ki += 1
     keywords.release()
 
     unsafe:
         # Functions
         var fn_keys = read(analysis).functions.keys()
-        while true:
+        while count < MAX_COMPLETION_ITEMS:
             let kp = fn_keys.next() else:
                 break
             append_item(ref_of(result), read(kp), KIND_FUNCTION, ref_of(first))
+            count += 1
 
         # Structs
         var struct_keys = read(analysis).structs.keys()
-        while true:
+        while count < MAX_COMPLETION_ITEMS:
             let kp = struct_keys.next() else:
                 break
             append_item(ref_of(result), read(kp), KIND_CLASS, ref_of(first))
+            count += 1
 
         # Enums, flags, and variants
         var static_keys = read(analysis).static_member_types.keys()
-        while true:
+        while count < MAX_COMPLETION_ITEMS:
             let kp = static_keys.next() else:
                 break
             append_item(ref_of(result), read(kp), KIND_ENUM, ref_of(first))
+            count += 1
 
         # Interfaces
         var iface_keys = read(analysis).interfaces.keys()
-        while true:
+        while count < MAX_COMPLETION_ITEMS:
             let kp = iface_keys.next() else:
                 break
             append_item(ref_of(result), read(kp), KIND_INTERFACE, ref_of(first))
+            count += 1
 
         # Module-level consts and vars
         var value_keys = read(analysis).value_types.keys()
-        while true:
+        while count < MAX_COMPLETION_ITEMS:
             let kp = value_keys.next() else:
                 break
             append_item(ref_of(result), read(kp), KIND_CONSTANT, ref_of(first))
+            count += 1
 
         # Import aliases
         var import_keys = read(analysis).imports.keys()
-        while true:
+        while count < MAX_COMPLETION_ITEMS:
             let kp = import_keys.next() else:
                 break
             append_item(ref_of(result), read(kp), KIND_MODULE, ref_of(first))
+            count += 1
 
     result.append("]")
     return result
 
 
-## Append one CompletionItem `{"label":"<name>","kind":<kind>}`.
+## Append one CompletionItem `{"label":"<name>","kind":<kind>,"sortText":"<label>"}`.
 function append_item(json_out: ref[string.String], label: str, kind: int, first_var: ref[bool]) -> void:
     if label.len == 0:
         return
@@ -416,7 +429,9 @@ function append_item(json_out: ref[string.String], label: str, kind: int, first_
     proto.append_escaped(json_out, label)
     json_out.append("\",\"kind\":")
     json_out.append_format(f"#{kind}")
-    json_out.append("}")
+    json_out.append(",\"sortText\":\"")
+    proto.append_escaped(json_out, label)
+    json_out.append("\"}")
 
 
 function collect_keywords() -> vec.Vec[str]:
