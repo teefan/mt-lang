@@ -308,14 +308,15 @@ function safe_name(s: string.String) -> string.String:
 # =============================================================================
 
 struct CDecl:
-    kind: string.String     # "record", "enum", "function", "typedef", "variable"
+    kind: string.String
     c_name: string.String
     mt_name: string.String
-    tag: string.String      # "struct"/"union"/""
+    tag: string.String
     qual_type: string.String
     is_complete: bool
     fields: vec.Vec[CField]
     members: vec.Vec[CMember]
+    param_names: vec.Vec[string.String]
 
 struct CField:
     f_name: str
@@ -383,6 +384,8 @@ function walk(node_obj: ptr[json.Object]?, decls: ref[vec.Vec[CDecl]]) -> void:
                         let qt = jget_qualtype(qtp)
                         var d = mk_decl("function", name, "")
                         d.qual_type = string.String.from_str(qt)
+                        # Extract parameter names from ParmVarDecl children.
+                        extract_param_names(node_obj, ref_of(d))
                         decls.push(d)
             else if kind == "TypedefDecl":
                 let name = jget_str(node_obj, "name")
@@ -409,7 +412,7 @@ function walk(node_obj: ptr[json.Object]?, decls: ref[vec.Vec[CDecl]]) -> void:
                                 break
             else if kind == "VarDecl":
                 let sc = jget_str(node_obj, "storageClass")
-                if sc != "static":
+                if sc != "static" and sc != "extern":
                     let name = jget_str(node_obj, "name")
                     if name != "":
                         let qtp = read(node_obj).get("type")
@@ -439,6 +442,7 @@ function mk_decl(kind: str, c_name: str, tag: str) -> CDecl:
         qual_type = string.String.create(), is_complete = true,
         fields = vec.Vec[CField].create(),
         members = vec.Vec[CMember].create(),
+        param_names = vec.Vec[string.String].create(),
     )
 
 
@@ -460,6 +464,34 @@ function extract_fields(node: ptr[json.Object], decl: ref[CDecl]) -> void:
                     let ft = jget_qualtype(ftp)
                     if fname != "" and ft != "":
                         decl.fields.push(CField(f_name = fname, f_type = map_type(ft)))
+            i += 1
+
+
+## Guard against reserved-word parameter names (e.g. 'in', 'out').
+function safe_param_name(n: string.String) -> string.String:
+    if is_keyword(n.as_str()):
+        var r = string.String.from_str(n.as_str())
+        r.append("_")
+        return r
+    return string.String.from_str(n.as_str())
+
+## Extract function parameter names from ParmVarDecl inner children.
+function extract_param_names(fn_node: ptr[json.Object], decl: ref[CDecl]) -> void:
+    unsafe:
+        let children = jget_inner(fn_node)
+        if children == null:
+            return
+        var i: ptr_uint = 0
+        while true:
+            let cvp = read(children).get(i) else:
+                break
+            let co = read(cvp).as_object()
+            if co != null:
+                let k = jget_str(co, "kind")
+                if k == "ParmVarDecl":
+                    let pname = jget_str(co, "name")
+                    if pname != "":
+                        decl.param_names.push(safe_param_name(string.String.from_str(pname)))
             i += 1
 
 
@@ -657,8 +689,14 @@ function emit_decl(buf: ref[string.String], d: CDecl) -> void:
                     let arg = str_strip(ps.slice(comma, j - comma))
                     if an > 0:
                         buf.append(", ")
-                    buf.append("arg")
-                    buf.append(uint_to_str(an))
+                    # Use stored param name if available, otherwise synthetic.
+                    var pn = d.param_names.get(an)
+                    if pn == null:
+                        buf.append("arg")
+                        buf.append(uint_to_str(an))
+                    else:
+                        unsafe:
+                            buf.append(read(pn).as_str())
                     buf.append(": ")
                     var mapped = map_type(arg)
                     buf.append(mapped.as_str())
@@ -686,11 +724,97 @@ function emit_decl(buf: ref[string.String], d: CDecl) -> void:
 
     if k == "variable":
         let mt = map_type(d.qual_type.as_str())
-        buf.append("\nconst ")
+        buf.append("const ")
         buf.append(d.mt_name.as_str())
         buf.append(": ")
         buf.append(mt.as_str())
         buf.append("\n")
+
+
+## Run clang -E -dM to extract #define macro constants.
+function extract_macros(header: str, clang_bin: str, decls: ref[vec.Vec[CDecl]]) -> void:
+    var args = vec.Vec[str].create()
+    defer args.release()
+    args.push(clang_bin)
+    args.push("-E")
+    args.push("-dM")
+    args.push("-x")
+    args.push("c")
+    args.push(header)
+
+    match process.capture(args.as_span()):
+        Result.success as captured:
+            var result = captured.value
+            defer result.stdout.release()
+            defer result.stderr.release()
+            if result.status.exit_code != 0:
+                return
+            let text = result.stdout.as_str()
+            var pos: ptr_uint = 0
+            while pos < text.len:
+                var line_start = pos
+                var line_end = pos
+                while line_end < text.len and text.byte_at(line_end) != '\n':
+                    line_end += 1
+                let line = text.slice(line_start, line_end - line_start)
+                pos = line_end + 1
+                if line.len < 9:
+                    continue
+                if line.byte_at(0) != '#' or line.byte_at(1) != 'd':
+                    continue
+                var si: ptr_uint = 8
+                while si < line.len and line.byte_at(si) == ' ':
+                    si += 1
+                if si >= line.len:
+                    continue
+                var name_start = si
+                while si < line.len and is_ident_byte(line.byte_at(si)):
+                    si += 1
+                let name = line.slice(name_start, si - name_start)
+                if name == "":
+                    continue
+                # Skip compiler builtins and system macros.
+                if str_has_prefix(name, "__"):
+                    continue
+                if str_has_prefix(name, "_"):
+                    continue
+                if name == "linux" or name == "unix":
+                    continue
+                if si < line.len and line.byte_at(si) == '(':
+                    continue
+                while si < line.len and line.byte_at(si) == ' ':
+                    si += 1
+                if si >= line.len:
+                    continue
+                let value = line.slice(si, line.len - si)
+                if not is_integer_string(value):
+                    continue
+                var d = mk_decl("variable", name, "")
+                d.qual_type.append("int = ")
+                d.qual_type.append(value)
+                decls.push(d)
+        Result.failure:
+            pass
+
+
+function is_ident_byte(b: ubyte) -> bool:
+    return (b >= 'A' and b <= 'Z') or (b >= 'a' and b <= 'z') or (b >= '0' and b <= '9') or b == '_'
+
+
+function is_integer_string(v: str) -> bool:
+    if v.len == 0:
+        return false
+    var i: ptr_uint = 0
+    if v.byte_at(0) == '-':
+        i = 1
+    if i >= v.len:
+        return false
+    while i < v.len:
+        let b = v.byte_at(i)
+        if b < '0' or b > '9':
+            return false
+        i += 1
+    return true
 
 # =============================================================================
 #  Main entry point
@@ -749,6 +873,9 @@ public function generate(opts: ref[BindgenOptions]) -> Result[string.String, str
                     var decls = vec.Vec[CDecl].create()
                     defer decls.release()
                     walk(parsed.as_object(), ref_of(decls))
+
+                    # Extract #define macros via clang -E -dM.
+                    extract_macros(header, clang, ref_of(decls))
 
                     var src = emit_module(decls, header, opts.link_libs, opts.include_headers)
                     return Result[string.String, string.String].success(value = src)
