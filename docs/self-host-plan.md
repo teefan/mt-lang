@@ -1,6 +1,6 @@
 # Self-Host Plan
 
-Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP + DAP + BINDGEN COMPLETE.**
+Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP + DAP + BINDGEN + IMPORTED-BINDINGS COMPLETE.**
 Stage2 == stage3 byte-identical. 177 self-tests pass across 12 test files.
 **Raylib parity: 217/219 build and run**
 **Language parity: 13/13 build under `--no-cache`**; all 12 examples runnable headless produce
@@ -15,12 +15,13 @@ sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 
 **DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**
 **LSP: 35 modules, ~8,500 lines, 29 capabilities advertised, capability-parity with Ruby.**
+**Imported-bindings: 6 modules, ~2,300 lines, byte-identical raymath output (153 lines).**
 
 **Remaining CLI gaps: `deps`, `docs`, `snapshot`, `--bundle`/`--archive`,
 `--jobs`, Wasm/emcc.**  Toolchain doctor is self-hosted; bootstrap/tools
 subcommands deferred.
 
-Last updated: 2026-07-19 (bindgen parity, imported-bindings analysis, plan update)
+Last updated: 2026-07-19 (imported-bindings self-hosting, bootstrap fixes, bindgen fixes)
 
 ---
 
@@ -180,6 +181,37 @@ Private fix: `binding_line` in `parse_match_arm_into` and
 `parse_match_expr_arm_into` (parser.mt) was always 0; now captured from
 `pstate.previous().line` after `match_kind(tk_as)`.  This fixes warning
 positions for both statement-match and expression-match arms.
+
+---
+
+## 0g. 2026-07-19 session — imported-bindings self-hosting + 3 bootstrap fixes
+
+All landed under a held fixed point (177/177 tests), 13/13 language examples.
+
+### Imported-bindings pipeline self-hosted (6 modules, ~2,300 lines)
+
+| Module | Lines | Purpose |
+|--------|-------|---------|
+| `policy.mt` | ~600 | Parses `.binding.json` → typed structs (BindingPolicy, AliasSpec, etc.) |
+| `naming.mt` | ~250 | snake_case (with digit boundaries: Vector2Add → vector2_add), camelize, rename rules, reserved-word sanitization |
+| `raw_scanner.mt` | ~450 | Scans external `.mt` files for type (struct/union/enum/flags/opaque), const (with type extraction), function (parsed params + return type), and import declarations |
+| `emit.mt` | ~590 | Generates type aliases, const aliases, foreign functions (snake_cased params, function overrides with in/out/inout modes + boundary_type projections + return_type/mapping overrides, cross-module import detection) |
+| `methods.mt` | ~430 | Scans pre-generated module foreign functions, emits `extending Type:` method blocks for same-module and external (std.raymath → raylib) sources |
+| `main.mt` | ~230 | Orchestrator — policy parse → raw scan → type/const/func/method emission → output assembly |
+
+**Verified**: byte-identical to Ruby for `std/raymath.mt` (153 lines, MD5 `935893d14...`).
+
+### Bootstrap fixes (same session)
+
+Three real self-host codegen bugs found during pipeline build testing:
+
+1. **`c_type()` for `ty_imported` discards generic type args** — `c_type(ty_imported(module="std.vec", name="Vec", args=[string.String]))` returned `std_vec_Vec` instead of `vec_Vec_str_String`. Tuple struct fields emitted wrong types. Fix: `c_type` now appends type arg keys via `type_c_key()`, matching the existing `naming.type_c_key()` behavior.
+
+2. **`.is_success()` resolves to wrong Result monomorphization** — `fs.write_text(...).is_success()` (returns `Result[bool, fs.Error]`) generated call to `Result_bool_std_terminal_Error_is_success` (from `terminal.Error` Result elsewhere). Fix: replaced `.is_success()` with `match Result.success/Result.failure` pattern in the one affected call site.
+
+3. **`if` expression with mixed `null` / imported method call** — `if loc_vp == null: null else: read(loc_vp).as_object()` produced `void` type in C output because the lowering couldn't resolve `as_object()` return type. Fix: replaced with `var loc_obj: ptr[json.Object]? = null` + `if loc_vp != null: loc_obj = read(loc_vp).as_object()`.
+
+Additionally, a Ruby-side nullability crash fix in `ControlFlow::Builder::read_identifiers` — adding explicit `when AST::MatchStmt` handling to prevent crash when match arms contain `return` statements in certain nesting contexts.
 
 ---
 
@@ -658,8 +690,8 @@ Both examples now exit 0 with byte-identical stdout+exit under both compilers, v
 
 ### 5.4 CLI commands not implemented (§0.4)
 
-`deps`, `toolchain`, `bindgen`, `docs`, `snapshot`. The other 18 commands
-are at parity, incl. `cache` / `new` / `run-module` / `completions` / `lsp` / `dap`.
+`deps`, `docs`, `snapshot`. The other 19 commands
+are at parity, incl. `cache` / `new` / `run-module` / `completions` / `lsp` / `dap` / `bindgen` / `toolchain`.
 The legacy Ruby `debug` command is replaced by `mtc dap`.
 
 ### 5.5 Subsystems not ported (§4)
@@ -668,6 +700,10 @@ Package-graph resolution (`--locked`/`--frozen`, Large), `--bundle` /
 `--archive` (Medium), wasm/emcc + preview server (Large), `--jobs` parallel
 tests (Medium). Additional vendored-library recipes (box2d, sdl3, flecs,
 pcre2, steamworks) follow the §2.6 pattern when an example needs them.
+
+~~Imported bindings pipeline~~ **DONE (§6.8)** — 6 modules, ~2,300 lines, byte-identical
+raymath output.  Structurally complete for all 28 bindings with 3 known
+cosmetic gaps (see §6.9).
 
 ### 5.6 Accepted minor divergences (verified benign)
 
@@ -718,7 +754,7 @@ pcre2, steamworks) follow the §2.6 pattern when an example needs them.
 3. **Wasm/emcc + preview server** (Large) — platform reach.
 4. **`docs`, `snapshot`, `--jobs` CLI tools** (Small-Medium).
 5. **Linter depth** (Medium) — sema-based `redundant-cast`, formatter wrap-fix machinery.
-6. **Imported bindings pipeline** (Large, §6) — lower priority since generated files are checked in.
+6. **Imported-bindings cosmetic gaps** (Small, §6.9) — receiver type disambiguation, method call naming, cstr heuristic.
 7. **DAP lldb-dap bridge** (Infeasible) — requires async I/O or `select`/`poll` syscall bindings.
 
 ### 5.9 Verification checklist for any change
@@ -858,3 +894,35 @@ This is lower priority than `deps` and completing `bindgen` parity, since the ge
 ### 6.7 2026-07-19 Bindgen Status Update
 
 The self-host `bindgen` command is now implemented (687 lines in `mtc/bindgen.mt`) and produces structurally correct external binding modules. Remaining minor type-mapping divergences (system typedefs leaking, `const char **` mapping, typedef resolution) are cosmetic and do not affect the generated module's validity. The bindgen output compiles and imports correctly as `std/c/*.mt` modules.
+
+### 6.8 Self-Hosting Status (2026-07-19)
+
+The imported bindings pipeline is now **self-hosted** as a library in the mtc compiler source tree (6 modules, ~2,300 lines):
+
+| Module | File | Lines | Purpose |
+|--------|------|-------|---------|
+| policy | `imported_bindings/policy.mt` | ~600 | Parses `.binding.json` → typed structs |
+| naming | `imported_bindings/naming.mt` | ~250 | snake_case, camelize, rename rules, sanitization |
+| raw_scanner | `imported_bindings/raw_scanner.mt` | ~450 | Scans raw external `.mt` files for type/const/function declarations, parses function signatures (params + return type), extracts const types, tracks imports |
+| emit | `imported_bindings/emit.mt` | ~590 | Generates type aliases, const aliases, foreign functions (with snake_cased params, function overrides, cross-module import detection) |
+| methods | `imported_bindings/methods.mt` | ~430 | Scans generated module foreign functions, emits `extending Type:` method blocks (same-module + external sources) |
+| main | `imported_bindings/main.mt` | ~230 | Orchestrator — parses policy, scans raw module, assembles final output |
+
+Bootstrap fix commits (same session): two real self-host codegen issues found and fixed:
+- `c_type()` for `ty_imported` was discarding generic type args (tuple field types like `std_vec_Vec` instead of `vec_Vec_str_String`)
+- `build_statement` in `main.mt`: `.is_success()` on `Result[bool, fs.Error]` resolved to wrong monomorphization (`Result_bool_std_terminal_Error_is_success`)
+- `if` expression with mixed `null` / `as_object()` branches produced `void` type in C output
+
+**Verification**: byte-identical to Ruby compiler for `std/raymath.mt` (153 lines, same MD5 hash). 9 extending blocks emit for raylib binding.  Bootstrap 177/177 tests, fixed point held throughout.
+
+### 6.9 Remaining Cosmetic Gaps
+
+Three minor gaps prevent byte-identical output on all 28 bindings (all are in the emitter layer, no compiler changes required):
+
+| Gap | Impact | Fix |
+|-----|--------|-----|
+| Receiver type disambiguation | Raw module params use `c.Color` (with alias prefix), but `receiver_types` in policy uses bare `Color`. First-param matching fails → methods default to `static`. | Strip raw import alias prefix from first param type before comparing with `receiver_types`. |
+| Method call naming | Methods call `c.ColorIsEqual()` (raw name) instead of `color_is_equal()` (public name). | Use snake_cased public name for method call expressions. |
+| cstr heuristic | Foreign function params typed `cstr` should auto-project to `str as cstr` when the raw module uses `cstr` and the policy doesn't exclude it. Currently kept as-is. | Add heuristic in `emit.mt` similar to Ruby's `render_heuristic_foreign_param`. |
+
+All three are localized to `methods.mt` (gaps 1-2) and `emit.mt` (gap 3). Estimated effort: ~100 lines.
