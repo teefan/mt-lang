@@ -96,7 +96,6 @@ public function release(ses: ref[Session]) -> void:
                 if bp_ptr != null:
                     read(bp_ptr).message.release()
                 bi += 1
-            bps.release()
     ses.breakpoints_by_source.release()
     var fi: ptr_uint = 0
     while fi < ses.function_breakpoints.len():

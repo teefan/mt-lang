@@ -16,6 +16,7 @@ const LF: ubyte = 10
 
 public struct Message:
     raw_body: string.String
+    parsed: json.Value
     seq: ptr_uint
     msg_type: string.String
     command: string.String
@@ -119,12 +120,11 @@ public function read_message() -> Option[Message]:
         return Option[Message].none
 
     var raw_body_owned = string.String.from_str(body_text)
-    var msg = build_message(parsed_obj, raw_body_owned)
-    json.release_value(parsed)
+    var msg = build_message(parsed_obj, raw_body_owned, parsed)
     return Option[Message].some(value = msg)
 
 
-function build_message(obj: ptr[json.Object], raw_body: string.String) -> Message:
+function build_message(obj: ptr[json.Object], raw_body: string.String, parsed: json.Value) -> Message:
     var owned_type = string.String.create()
     var owned_command = string.String.create()
     var owned_evt = string.String.create()
@@ -241,3 +241,14 @@ public function append_escaped(output: ref[string.String], text: str) -> void:
         else:
             output.push_byte(b)
         i += 1
+
+
+## Release a Message and all owned fields, including the parsed JSON tree.
+public function release_message(msg: ref[Message]) -> void:
+    json.release_value(msg.parsed)
+    msg.raw_body.release()
+    msg.msg_type.release()
+    msg.command.release()
+    msg.message.release()
+    msg.evt.release()
+
