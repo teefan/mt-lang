@@ -33,6 +33,7 @@ import mtc.linter.linter as linter
 import mtc.linter.config as lint_config
 import mtc.linter.fix_engine as fix_engine
 import mtc.lsp.server as lsp
+import mtc.lsp.semantic_tokens as sem_tokens
 import mtc.dap.server as dap
 import mtc.bindgen as bindgen
 import mtc.imported_bindings.registry as ib_registry
@@ -139,6 +140,12 @@ function main(args: span[str]) -> int:
     if cmd == "toolchain":
         return toolchain_command(args)
 
+    if cmd == "snapshot":
+        return snapshot_command(args)
+
+    if cmd == "debug":
+        return debug_command(args)
+
     if cmd == "help":
         print_help()
         return 0
@@ -168,6 +175,8 @@ function print_help() -> void:
     stdio.print_line("  bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]  generate binding module from C header")
     stdio.print_line("  imported-bindings <name> [--check] [--all]      regenerate imported binding module(s)")
     stdio.print_line("  toolchain doctor                                   check build tool availability")
+    stdio.print_line("  snapshot <file> [--theme PATH] [-o OUTPUT]         render highlighted HTML snapshot")
+    stdio.print_line("  debug <file>                                       print tokens, AST facts, and diagnostics")
     stdio.print_line("  completions bash|zsh|fish                           print a shell completion script")
     stdio.print_line("  version|--version|-V                                print version and exit")
     stdio.print_line("  help                                                print this help")
@@ -2106,6 +2115,364 @@ function is_executable_on_path(name: str) -> bool:
             return false
 
 
+function snapshot_command(args: span[str]) -> int:
+    var input_path_opt: Option[str] = Option[str].none
+    var theme_path_opt: Option[str] = Option[str].none
+    var output_path_opt: Option[str] = Option[str].none
+    var ai: ptr_uint = 1
+    while ai < args.len:
+        let arg = args[ai]
+        if arg == "--theme" or arg == "-t":
+            if ai + 1 >= args.len:
+                stdio.print_line("snapshot: missing value for --theme")
+                return 1
+            theme_path_opt = Option[str].some(value = args[ai + 1])
+            ai += 2
+            continue
+        if arg == "--output" or arg == "-o":
+            if ai + 1 >= args.len:
+                stdio.print_line("snapshot: missing value for --output")
+                return 1
+            output_path_opt = Option[str].some(value = args[ai + 1])
+            ai += 2
+            continue
+        if arg.starts_with("-"):
+            stdio.print_format(c"snapshot: unknown option %.*s\n", int<-(arg.len), arg.data)
+            return 1
+        if input_path_opt.is_some():
+            stdio.print_format(c"snapshot: unexpected argument %.*s\n", int<-(arg.len), arg.data)
+            return 1
+        input_path_opt = Option[str].some(value = arg)
+        ai += 1
+
+    let input_path = input_path_opt else:
+        stdio.print_line("snapshot: missing source file path")
+        return 1
+
+    if not fs.is_file(input_path):
+        stdio.print_format(c"snapshot: source file not found: %.*s\n", int<-(input_path.len), input_path.data)
+        return 1
+
+    var roots = vec.Vec[str].create()
+    defer roots.release()
+    discover_project_root(input_path, ref_of(roots))
+
+    var project_root: Option[str] = Option[str].none
+    if roots.len() > 0:
+        unsafe:
+            let rp = roots.get(roots.len() - 1) else:
+                fatal(c"snapshot root missing")
+            project_root = Option[str].some(value = read(rp))
+
+    let pr = if project_root.is_some(): project_root.unwrap() else: path_ops.dirname(input_path)
+
+    var snapshot_js = path_ops.join(pr, "bindings/vscode/scripts/snapshot.js")
+    defer snapshot_js.release()
+    if not fs.is_file(snapshot_js.as_str()):
+        stdio.print_format(
+            c"snapshot: internal script not found at %.*s\n",
+            int<-(snapshot_js.as_str().len), snapshot_js.as_str().data,
+        )
+        return 1
+
+    var resolved_theme = string.String.create()
+    defer resolved_theme.release()
+    match theme_path_opt:
+        Option.some as tp:
+            resolved_theme.append(tp.value)
+        Option.none:
+            var default_theme = path_ops.join(pr, "bindings/vscode/themes/2026-dark.json")
+            resolved_theme.append(default_theme.as_str())
+            default_theme.release()
+
+    if not fs.is_file(resolved_theme.as_str()):
+        stdio.print_format(
+            c"snapshot: theme file not found: %.*s\n",
+            int<-(resolved_theme.as_str().len), resolved_theme.as_str().data,
+        )
+        return 1
+
+    var semantic_json_owned: Option[string.String] = Option[string.String].none
+    var semantic_temp_path: Option[string.String] = Option[string.String].none
+    match fs.read_text(input_path):
+        Result.success as src_payload:
+            var source = src_payload.value
+            defer source.release()
+            var entries_json = sem_tokens.snapshot_semantic_entries(source.as_str())
+            if entries_json.len() > 2:
+                match fs.create_temporary_file_in_system_temp("mt_semantic_", ".json"):
+                    Result.success as tmp_payload:
+                        var tmp_path = tmp_payload.value
+                        match fs.write_text(tmp_path.as_str(), entries_json.as_str()):
+                            Result.success:
+                                semantic_json_owned = Option[string.String].some(value = entries_json)
+                                semantic_temp_path = Option[string.String].some(value = tmp_path)
+                            Result.failure as write_err:
+                                write_err.error.release()
+                                tmp_path.release()
+                                entries_json.release()
+                    Result.failure as tmp_err:
+                        tmp_err.error.release()
+                        entries_json.release()
+            else:
+                entries_json.release()
+        Result.failure:
+            pass
+
+    var node_cmd = vec.Vec[str].create()
+    defer node_cmd.release()
+    node_cmd.push("node")
+    node_cmd.push(snapshot_js.as_str())
+    node_cmd.push(input_path)
+    node_cmd.push("-t")
+    node_cmd.push(resolved_theme.as_str())
+    match output_path_opt:
+        Option.some as op:
+            node_cmd.push("-o")
+            node_cmd.push(op.value)
+        Option.none:
+            pass
+    match semantic_temp_path:
+        Option.some as sem_path:
+            node_cmd.push("-s")
+            node_cmd.push(sem_path.value.as_str())
+        Option.none:
+            pass
+
+    var exit_code: int = 1
+    match process.capture(node_cmd.as_span()):
+        Result.success as captured:
+            var result = captured.value
+            defer result.release()
+            let stdout_opt = result.stdout_text()
+            if stdout_opt.is_some():
+                let stdout_text = stdout_opt.unwrap()
+                if output_path_opt.is_none():
+                    stdio.print_format(c"%.*s", int<-(stdout_text.len), stdout_text.data)
+            let stderr_opt = result.stderr_text()
+            if stderr_opt.is_some():
+                let stderr_text = stderr_opt.unwrap()
+                if stderr_text.len > 0:
+                    let _w = terminal.write_stderr(stderr_text)
+            exit_code = int<-(result.status.exit_code)
+        Result.failure:
+            stdio.print_line("snapshot: node execution failed")
+
+    match semantic_temp_path:
+        Option.some as tp:
+            let _ = fs.remove(tp.value.as_str())
+            tp.value.release()
+        Option.none:
+            pass
+    match semantic_json_owned:
+        Option.some as j:
+            j.value.release()
+        Option.none:
+            pass
+
+    return exit_code
+
+
+function debug_command(args: span[str]) -> int:
+    var roots = vec.Vec[str].create()
+    defer roots.release()
+    var platform = resolver.Platform.linux
+
+    var filtered = vec.Vec[str].create()
+    defer filtered.release()
+    filtered.push("debug")
+    var ai: ptr_uint = 1
+    while ai < args.len:
+        let arg = args[ai]
+        if arg == "--root" or arg == "-I":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: -I requires a directory")
+                return 1
+            roots.push(args[ai + 1])
+            ai += 2
+            continue
+        if arg == "--platform":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --platform requires linux, windows, or wasm")
+                return 1
+            match parse_platform_name(args[ai + 1]):
+                Option.some as plat:
+                    platform = plat.value
+                Option.none:
+                    return 1
+            ai += 2
+            continue
+        filtered.push(arg)
+        ai += 1
+
+    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(platform)) else:
+        return 1
+
+    var entry_path_owner = string.String.create()
+    var source_root_owner = string.String.create()
+    let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+        return 1
+
+    var program = loader.check_program(effective, roots.as_span(), platform)
+    defer program.release()
+
+    stdio.print_format(c"File: %.*s\n", int<-(effective.len), effective.data)
+
+    # Source info
+    match fs.read_text(effective):
+        Result.failure:
+            pass
+        Result.success as src_payload:
+            var source_text = src_payload.value
+            defer source_text.release()
+            let source = source_text.as_str()
+            stdio.print_format(c"Content: %d lines, %d bytes\n\n", int<-(line_count(source)), int<-(source.len))
+
+            # Token summary
+            var all_tokens = lexer.lex(source)
+            defer all_tokens.release()
+            print_token_summary(ref_of(all_tokens))
+            stdio.print_line("")
+
+    # Parse diagnostics from program
+    stdio.print_line("── Diagnostics ──")
+    if program.diagnostics.len() == 0:
+        stdio.print_line("  (none)")
+    else:
+        var di: ptr_uint = 0
+        while di < program.diagnostics.len():
+            let dp = program.diagnostics.get(di) else:
+                break
+            let d = unsafe: read(dp)
+            stdio.print_format(c"  %.*s: %.*s\n", int<-(d.path.len), d.path.data, int<-(d.message.len), d.message.data)
+            di += 1
+    stdio.print_line("")
+
+    # Root analysis facts
+    let root_analysis_ptr = program.analyses.last() else:
+        stdio.print_line("── Facts  (no analyses) ──")
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 0
+
+    let analysis = unsafe: read(root_analysis_ptr)
+    let type_count = analysis.types.len()
+    let fn_count = analysis.functions.len()
+    let val_count = analysis.value_types.len()
+    let struct_count = analysis.structs.len()
+    let iface_count = analysis.interfaces.len()
+    let import_count = analysis.imports.len()
+    let alias_count = analysis.type_alias_types.len()
+    let method_count = analysis.method_sigs.len()
+
+    stdio.print_format(c"── Facts  module \"%.*s\"  ", int<-(analysis.module_name.len), analysis.module_name.data)
+    stdio.print_format(c"%d types, %d functions, %d values, %d structs, ", int<-(type_count), int<-(fn_count), int<-(val_count), int<-(struct_count))
+    stdio.print_format(c"%d interfaces, %d imports, %d aliases, %d methods\n", int<-(iface_count), int<-(import_count), int<-(alias_count), int<-(method_count))
+
+    # Functions
+    if fn_count > 0:
+        stdio.print_line("")
+        stdio.print_line("  Functions:")
+        var fn_keys = analysis.functions.keys()
+        while true:
+            let kp = fn_keys.next() else:
+                break
+            let name = unsafe: read(kp)
+            let sig_ptr = analysis.functions.get(name) else:
+                fatal(c"debug missing fn sig")
+            let sig = unsafe: read(sig_ptr)
+            stdio.print_format(c"    %.*s(", int<-(name.len), name.data)
+            var pi2: ptr_uint = 0
+            while pi2 < sig.params.len:
+                let param = unsafe: read(sig.params.data + pi2)
+                if pi2 > 0:
+                    stdio.print_format(c", ")
+                stdio.print_format(c"%.*s", int<-(param.name.len), param.name.data)
+                pi2 += 1
+            stdio.print_format(c")\n")
+
+    # Structs
+    if struct_count > 0:
+        stdio.print_line("")
+        stdio.print_line("  Structs:")
+        var s_keys = analysis.structs.keys()
+        while true:
+            let kp = s_keys.next() else:
+                break
+            let name = unsafe: read(kp)
+            stdio.print_format(c"    %.*s\n", int<-(name.len), name.data)
+
+    # Interfaces
+    if iface_count > 0:
+        stdio.print_line("")
+        stdio.print_line("  Interfaces:")
+        var i_keys = analysis.interfaces.keys()
+        while true:
+            let kp = i_keys.next() else:
+                break
+            let name = unsafe: read(kp)
+            stdio.print_format(c"    %.*s\n", int<-(name.len), name.data)
+
+    # Imports
+    if import_count > 0:
+        stdio.print_line("")
+        stdio.print_line("  Imports:")
+        var imp_keys = analysis.imports.keys()
+        while true:
+            let kp = imp_keys.next() else:
+                break
+            let alias = unsafe: read(kp)
+            let path_ptr = analysis.imports.get(alias) else:
+                fatal(c"debug missing import")
+            let path_val = unsafe: read(path_ptr)
+            stdio.print_format(c"    %.*s → %.*s\n", int<-(alias.len), alias.data, int<-(path_val.len), path_val.data)
+
+    # Type aliases
+    if alias_count > 0:
+        stdio.print_line("")
+        stdio.print_line("  Type Aliases:")
+        var ta_keys = analysis.type_alias_types.keys()
+        while true:
+            let kp = ta_keys.next() else:
+                break
+            let name = unsafe: read(kp)
+            stdio.print_format(c"    %.*s\n", int<-(name.len), name.data)
+
+    entry_path_owner.release()
+    source_root_owner.release()
+    return 0
+
+
+function line_count(source: str) -> ptr_uint:
+    var count: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < source.len:
+        if source.byte_at(i) == 10:
+            count += 1
+        i += 1
+    if source.len > 0 and source.byte_at(source.len - 1) != 10:
+        count += 1
+    return count
+
+
+function print_token_summary(tokens: ref[vec.Vec[token_mod.Token]]) -> void:
+    var ident_count: ptr_uint = 0
+    var nl_count: ptr_uint = 0
+    stdio.print_format(c"── Tokens  %d  (", int<-(tokens.len()))
+    var ti: ptr_uint = 0
+    while ti < tokens.len():
+        let tp = tokens.get(ti) else:
+            break
+        let t = unsafe: read(tp)
+        if t.kind == tk.TokenKind.newline:
+            nl_count += 1
+        if t.kind == tk.TokenKind.identifier:
+            ident_count += 1
+        ti += 1
+    stdio.print_format(c"%d identifier, %d newline", int<-(ident_count), int<-(nl_count))
+    stdio.print_line(c")")
+
+
 struct CommandSummary:
     name: str
     summary: str
@@ -2114,7 +2481,7 @@ struct CommandSummary:
 ## The self-host's implemented command set with the same one-line summaries as
 ## Ruby's CLI::COMMANDS (used by the zsh/fish completion scripts).
 function command_summary_count() -> ptr_uint:
-    return 16
+    return 18
 
 
 function command_summary_at(index: ptr_uint) -> CommandSummary:
@@ -2148,6 +2515,10 @@ function command_summary_at(index: ptr_uint) -> CommandSummary:
         return CommandSummary(name = "bindgen", summary = "Generate a binding module from a C header")
     if index == 14:
         return CommandSummary(name = "toolchain", summary = "Manage the native toolchain")
+    if index == 15:
+        return CommandSummary(name = "snapshot", summary = "Render a highlighted HTML snapshot")
+    if index == 16:
+        return CommandSummary(name = "debug", summary = "Print tokens, AST facts, and diagnostics")
     return CommandSummary(name = "completions", summary = "Print a shell completion script")
 
 

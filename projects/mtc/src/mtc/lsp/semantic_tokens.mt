@@ -383,7 +383,7 @@ function emit_semantic_tokens(
 
 
 ## Classify an identifier lexeme through the Analysis maps.
-function classify_identifier(
+public function classify_identifier(
     lexeme: str,
     analysis: ref[analyzer.Analysis],
     param_names: ref[map_mod.Map[str, bool]],
@@ -410,7 +410,7 @@ function classify_identifier(
 
 ## The set of every parameter name declared by the module's functions and
 ## methods, for parameter classification.
-function collect_param_names(analysis: ref[analyzer.Analysis]) -> map_mod.Map[str, bool]:
+public function collect_param_names(analysis: ref[analyzer.Analysis]) -> map_mod.Map[str, bool]:
     var names = map_mod.Map[str, bool].create()
     unsafe:
         var fn_values = read(analysis).functions.values()
@@ -438,7 +438,7 @@ function add_param_names(names: ref[map_mod.Map[str, bool]], sig: analyzer.FnSig
 
 ## True for primitive type names and built-in type constructors, which lex
 ## as ordinary identifiers but should highlight as types.
-function is_builtin_type_name(lexeme: str) -> bool:
+public function is_builtin_type_name(lexeme: str) -> bool:
     if lexeme.equal("bool") or lexeme.equal("byte") or lexeme.equal("short") or
        lexeme.equal("int") or lexeme.equal("long") or lexeme.equal("ubyte") or
        lexeme.equal("ushort") or lexeme.equal("uint") or lexeme.equal("ulong") or
@@ -458,7 +458,7 @@ function is_builtin_type_name(lexeme: str) -> bool:
 
 
 ## Map a non-identifier TokenKind to an LSP semantic token type index.
-function token_kind_to_type(kind: tk_mod.TokenKind) -> uint:
+public function token_kind_to_type(kind: tk_mod.TokenKind) -> uint:
     if kind == tk_mod.TokenKind.identifier:
         return TOKEN_VARIABLE
     if kind == tk_mod.TokenKind.integer or kind == tk_mod.TokenKind.float_literal:
@@ -482,9 +482,11 @@ function token_kind_to_type(kind: tk_mod.TokenKind) -> uint:
        kind == tk_mod.TokenKind.percent_equal or kind == tk_mod.TokenKind.amp_equal or
        kind == tk_mod.TokenKind.pipe_equal or kind == tk_mod.TokenKind.caret_equal or
        kind == tk_mod.TokenKind.shift_left_equal or kind == tk_mod.TokenKind.shift_right_equal or
-       kind == tk_mod.TokenKind.ellipsis or kind == tk_mod.TokenKind.tilde or
-       kind == tk_mod.TokenKind.lparen or kind == tk_mod.TokenKind.rparen or
-       kind == tk_mod.TokenKind.lbracket or kind == tk_mod.TokenKind.rbracket:
+        kind == tk_mod.TokenKind.ellipsis or kind == tk_mod.TokenKind.tilde or
+        kind == tk_mod.TokenKind.lparen or kind == tk_mod.TokenKind.rparen or
+        kind == tk_mod.TokenKind.lbracket or kind == tk_mod.TokenKind.rbracket or
+        kind == tk_mod.TokenKind.colon or kind == tk_mod.TokenKind.comma or
+        kind == tk_mod.TokenKind.question or kind == tk_mod.TokenKind.at:
         return TOKEN_OPERATOR
     return TOKEN_KEYWORD
 
@@ -506,3 +508,148 @@ function build_tokens_json(data: ref[vec.Vec[uint]]) -> string.String:
         di += 1
     result.append("]}")
     return result
+
+
+const SNAPSHOT_TOKEN_NAMES: array[str, 10] = ("namespace", "type", "keyword", "string", "number", "", "operator", "variable", "function", "parameter")
+
+
+function snapshot_utf8_continuation(b: ubyte) -> bool:
+    return (b & ubyte<-(0xC0)) == ubyte<-(0x80)
+
+
+function snapshot_byte_to_char(line: str, byte_offset: ptr_uint) -> ptr_uint:
+    var char_count: ptr_uint = 0
+    var pos: ptr_uint = 0
+    let limit = if byte_offset < line.len: byte_offset else: line.len
+    while pos < limit:
+        if not snapshot_utf8_continuation(line.byte_at(pos)):
+            char_count += 1
+        pos += 1
+    return char_count
+
+
+function snapshot_token_type_name(token_type: uint) -> str:
+    if token_type >= 10:
+        return "variable"
+    return SNAPSHOT_TOKEN_NAMES[uint<-token_type]
+
+
+public function snapshot_semantic_entries(source: str) -> string.String:
+    var result = string.String.create()
+
+    var all_tokens = lexer_mod.lex(source)
+    defer all_tokens.release()
+
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var analysis = analyzer.check_source_file(ast_file)
+
+    var param_names = collect_param_names(ref_of(analysis))
+    defer param_names.release()
+
+    var lines = vec.Vec[ptr_uint].create()
+    defer lines.release()
+    var pos: ptr_uint = 0
+    while pos < source.len:
+        lines.push(pos)
+        while pos < source.len and source.byte_at(pos) != 10:
+            pos += 1
+        if pos < source.len:
+            pos += 1
+    lines.push(source.len)
+
+    var first_entry = true
+    result.append("[")
+
+    var prev_is_decl: bool = false
+
+    var ti: ptr_uint = 0
+    while ti < all_tokens.len():
+        let tok_ptr = all_tokens.get(ti) else:
+            break
+        let tok = unsafe: read(tok_ptr)
+        let kind = tok.kind
+        if kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.indent or
+           kind == tk_mod.TokenKind.dedent or kind == tk_mod.TokenKind.eof:
+            ti += 1
+            continue
+
+        var is_decl = false
+        if kind == tk_mod.TokenKind.identifier:
+            if prev_is_decl:
+                is_decl = true
+                prev_is_decl = false
+        else:
+            if snapshot_is_decl_kind(kind):
+                prev_is_decl = true
+            else:
+                prev_is_decl = false
+
+        var token_type = token_kind_to_type(kind)
+        if kind == tk_mod.TokenKind.identifier:
+            let lexeme = cursor.token_text(source, tok)
+            token_type = classify_identifier(lexeme, ref_of(analysis), ref_of(param_names))
+
+        if token_type == TOKEN_VARIABLE and not is_decl:
+            ti += 1
+            continue
+        if token_type == TOKEN_PARAMETER:
+            ti += 1
+            continue
+
+        var type_name = snapshot_token_type_name(token_type)
+        if token_type == TOKEN_TYPE:
+            type_name = "namespace"
+
+        let line_num = if tok.line > 0: tok.line - 1 else: 0z
+        let byte_start = if tok.column > 0: tok.column - 1 else: 0z
+        let byte_len = tok.end_offset - tok.start_offset
+
+        var char_start: ptr_uint = 0
+        var char_len: ptr_uint = 0
+        if line_num < lines.len() - 1z:
+            let line_begin_ptr = lines.get(line_num) else:
+                fatal(c"snapshot missing line")
+            let line_end_ptr = lines.get(line_num + 1z) else:
+                fatal(c"snapshot missing line end")
+            let line_begin = unsafe: read(line_begin_ptr)
+            let line_end = unsafe: read(line_end_ptr)
+            let line_len = if line_end > line_begin and source.byte_at(line_end - 1) == 10: line_end - line_begin - 1 else: line_end - line_begin
+            let line_text = unsafe: str(data = source.data + line_begin, len = line_len)
+            char_start = snapshot_byte_to_char(line_text, byte_start)
+            char_len = snapshot_byte_to_char(line_text, byte_start + byte_len) - char_start
+
+        if not first_entry:
+            result.append(",")
+        first_entry = false
+        result.append("{\"line\":")
+        result.append_format(f"#{line_num}")
+        result.append(",\"startChar\":")
+        result.append_format(f"#{char_start}")
+        result.append(",\"length\":")
+        result.append_format(f"#{char_len}")
+        result.append(",\"tokenType\":\"")
+        result.append(type_name)
+        result.append("\",\"modifiers\":[")
+        if is_decl:
+            result.append("\"declaration\"")
+        result.append("]}")
+        ti += 1
+
+    result.append("]")
+    return result
+
+
+function snapshot_is_decl_kind(kind: tk_mod.TokenKind) -> bool:
+    return kind == tk_mod.TokenKind.tk_const or kind == tk_mod.TokenKind.tk_var or
+       kind == tk_mod.TokenKind.tk_let or kind == tk_mod.TokenKind.tk_function or
+       kind == tk_mod.TokenKind.tk_async or kind == tk_mod.TokenKind.tk_struct or
+       kind == tk_mod.TokenKind.tk_enum or kind == tk_mod.TokenKind.tk_union or
+       kind == tk_mod.TokenKind.tk_variant or kind == tk_mod.TokenKind.tk_flags or
+       kind == tk_mod.TokenKind.tk_opaque or kind == tk_mod.TokenKind.tk_interface or
+       kind == tk_mod.TokenKind.tk_type or kind == tk_mod.TokenKind.tk_event or
+       kind == tk_mod.TokenKind.tk_extending or kind == tk_mod.TokenKind.tk_attribute or
+       kind == tk_mod.TokenKind.tk_public or kind == tk_mod.TokenKind.tk_external or
+       kind == tk_mod.TokenKind.tk_foreign or kind == tk_mod.TokenKind.tk_static or
+       kind == tk_mod.TokenKind.tk_editable

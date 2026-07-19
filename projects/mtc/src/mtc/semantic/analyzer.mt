@@ -329,9 +329,9 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 declare_type(ctx, ta.name, ta.line, ta.column)
                 ctx.type_aliases.set(ta.name, ta.target)
                 ctx.type_alias_types.set(ta.name, resolve_type(ctx, ta.target))
+                ctx.types.set(ta.name, resolve_type(ctx, ta.target))
             ast.Decl.decl_event as ev:
                 declare_type(ctx, ev.name, ev.line, ev.column)
-                ctx.types.set(ev.name, types.Type.ty_named(module_name = ctx.module_name, name = ev.name))
                 ctx.event_types.set(ev.name, EventInfo(name = ev.name, capacity = ev.capacity, payload_type = ev.payload_type))
             _:
                 pass
@@ -362,7 +362,6 @@ function register_nested_struct_types(ctx: ref[Context], nested: span[ast.Decl],
                 if not ctx.type_names.contains(s.name):
                     declare_type(ctx, s.name, s.line, s.column)
                 ctx.types.set(qname, types.Type.ty_named(module_name = ctx.module_name, name = qname))
-                ctx.types.set(s.name, types.Type.ty_named(module_name = ctx.module_name, name = s.name))
                 register_nested_struct_types(ctx, s.nested_types, qname)
                 register_struct_events(ctx, s.struct_events)
             _:
@@ -378,7 +377,6 @@ function register_struct_events(ctx: ref[Context], events: span[ast.Decl]) -> vo
         unsafe:
             match read(events.data + i):
                 ast.Decl.decl_event as ev:
-                    ctx.types.set(ev.name, types.Type.ty_named(module_name = ctx.module_name, name = ev.name))
                     ctx.event_types.set(ev.name, EventInfo(name = ev.name, capacity = ev.capacity, payload_type = ev.payload_type))
                 _:
                     pass
@@ -560,14 +558,49 @@ function declare_values_and_functions_extra(ctx: ref[Context], extra: span[ast.D
 ## Runs after declare_named_types so user-declared types of the same name take
 ## priority (the prelude never overrides a local declaration).
 function install_prelude_types(ctx: ref[Context]) -> void:
+    register_builtin_types(ctx)
+    # Prelude imports: ensure std.option and std.result are tracked as import
+    # aliases so classifier_identifier can map Option/Result to TOKEN_NAMESPACE.
+    if not ctx.import_aliases.contains("std.option"):
+        ctx.import_aliases.set("std.option", "std.option")
+    if not ctx.import_aliases.contains("std.result"):
+        ctx.import_aliases.set("std.result", "std.result")
     register_prelude_type(ctx, "Option", "some", "none")
     register_prelude_type(ctx, "Result", "success", "failure")
-    # Program builds seed std.option / std.result (module_loader.check_program),
-    # so their real method surfaces are available as bindings — merge them so
-    # new std methods are known without touching the fallback lists above.
     merge_prelude_binding_methods(ctx, "std.option")
     merge_prelude_binding_methods(ctx, "std.result")
     register_builtin_event_types(ctx)
+
+
+function register_builtin_types(ctx: ref[Context]) -> void:
+    var i: ptr_uint = 0
+    while i < 26:
+        let name = BUILTIN_TYPE_NAMES[i]
+        if not ctx.type_names.contains(name):
+            ctx.types.set(name, types.Type.ty_primitive(name = name))
+            ctx.type_names.set(name, true)
+        i += 1
+    ctx.types.set("struct_handle", types.Type.ty_primitive(name = "struct_handle"))
+    ctx.type_names.set("struct_handle", true)
+    ctx.types.set("field_handle", types.Type.ty_primitive(name = "field_handle"))
+    ctx.type_names.set("field_handle", true)
+    ctx.types.set("callable_handle", types.Type.ty_primitive(name = "callable_handle"))
+    ctx.type_names.set("callable_handle", true)
+    ctx.types.set("attribute_handle", types.Type.ty_primitive(name = "attribute_handle"))
+    ctx.type_names.set("attribute_handle", true)
+    ctx.types.set("member_handle", types.Type.ty_primitive(name = "member_handle"))
+    ctx.type_names.set("member_handle", true)
+    ctx.types.set("type", types.Type.ty_primitive(name = "type"))
+    ctx.type_names.set("type", true)
+
+
+const BUILTIN_TYPE_NAMES: array[str, 26] = array[str, 26](
+    "bool", "byte", "ubyte", "char", "short", "ushort",
+    "int", "uint", "long", "ulong", "ptr_int", "ptr_uint",
+    "float", "double", "void", "str", "cstr",
+    "vec2", "vec3", "vec4", "ivec2", "ivec3", "ivec4",
+    "mat3", "mat4", "quat",
+)
 
 
 ## Copy the exported member/method keys of a seeded prelude module's binding
@@ -1064,7 +1097,6 @@ function declare_struct_event_values(ctx: ref[Context], struct_events: span[ast.
                 ast.Decl.decl_event as ev:
                     if not ctx.value_names.contains(ev.name):
                         ctx.value_names.set(ev.name, true)
-                    ctx.value_types.set(ev.name, types.Type.ty_named(module_name = "", name = ev.name))
                 _:
                     pass
         evi += 1
@@ -1415,7 +1447,6 @@ function collect_interfaces(ctx: ref[Context], file: ast.SourceFile) -> void:
         match d:
             ast.Decl.decl_interface as iface:
                 ctx.interfaces.set(iface.name, iface.interface_methods)
-                ctx.types.set(iface.name, types.Type.ty_named(module_name = "", name = iface.name))
             _:
                 pass
         i += 1
