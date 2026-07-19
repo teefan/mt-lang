@@ -2792,6 +2792,57 @@ function run_sandboxed(binary_path: str, timeout_seconds: ptr_uint, memory_mb: p
     return process.capture(run_cmd.as_span())
 
 
+## Build a runner .mt source file in-process using the self-host compiler.
+## Walks up from the source path to find the project's `src/` directory so
+## imports like `mtc.linter.fix_engine` resolve.
+function build_runner_file(source_path: str, roots: span[str], output_path: str) -> Result[bool, string.String]:
+    var runner_roots = vec.Vec[str].create()
+    defer runner_roots.release()
+    var ri: ptr_uint = 0
+    while ri < roots.len:
+        unsafe:
+            runner_roots.push(read(roots.data + ri))
+        ri += 1
+
+    var package_src_root = find_project_src_root(source_path)
+    if package_src_root.is_some():
+        runner_roots.push(package_src_root.unwrap())
+
+    var program = loader.check_program(source_path, runner_roots.as_span(), resolver.Platform.linux)
+    defer program.release()
+
+    if program.diagnostic_error_count() > 0:
+        print_program_diagnostics(ref_of(program))
+        return Result[bool, string.String].failure(error = string.String.from_str(""))
+
+    let ir_program = lowering.lower(program)
+
+    var c_compiler = "cc"
+    match build_driver.build(program, ir_program, output_path, c_compiler, runner_roots.as_span(), false):
+        Result.success:
+            return Result[bool, string.String].success(value = true)
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+
+
+## Walk up from `source_path` looking for the project's `src/mtc/` directory,
+## returning the `src/` parent.  Returns none when not found.
+function find_project_src_root(source_path: str) -> Option[str]:
+    var current = path_ops.dirname(source_path)
+    while current != "":
+        var src_mtc = path_ops.join(current, "src/mtc")
+        let found = fs.is_directory(src_mtc.as_str())
+        src_mtc.release()
+        if found:
+            var src = path_ops.join(current, "src")
+            return Option[str].some(value = src.as_str())
+        let parent = path_ops.dirname(current)
+        if parent == current or parent == "":
+            break
+        current = parent
+    return Option[str].none
+
+
 ## Synthesize, build, and run the std.testing runner for a file's normal
 ## @[test] functions.  Returns 1 when the runner fails to build, times out,
 ## crashes, or exits non-zero; 0 otherwise.
@@ -2843,37 +2894,17 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
     runner_bin_str.append(runner_num_str)
     defer runner_bin_str.release()
 
-    var build_cmd = vec.Vec[str].create()
-    defer build_cmd.release()
-    build_cmd.push("bin/mtc")
-    build_cmd.push("build")
-    build_cmd.push("--no-cache")
-    build_cmd.push(runner_path_str.as_str())
-    var bri: ptr_uint = 0
-    while bri < roots.len():
-        build_cmd.push("-I")
-        unsafe:
-            build_cmd.push(read(ptr[str]<-roots.data + bri))
-        bri += 1
-    build_cmd.push("-o")
-    build_cmd.push(runner_bin_str.as_str())
-
     var build_failed = false
-    match process.capture(build_cmd.as_span()):
-        Result.success as captured:
-            var build_result = captured.value
-            defer build_result.release()
+    match build_runner_file(runner_path_str.as_str(), roots.as_span(), runner_bin_str.as_str()):
+        Result.failure as build_err:
             if not machine:
-                let build_stdout = build_result.stdout_text()
-                if build_stdout.is_some():
-                    stdio.print_format(c"%.*s", int<-(build_stdout.unwrap().len), build_stdout.unwrap().data)
-                let build_stderr = build_result.stderr_text()
-                if build_stderr.is_some():
-                    stdio.print_format(c"%.*s", int<-(build_stderr.unwrap().len), build_stderr.unwrap().data)
-            if build_result.status.normalized_code() != 0:
-                build_failed = true
-        Result.failure:
+                let be_text = build_err.error.as_str()
+                if be_text.len > 0:
+                    stdio.print_format(c"%.*s", int<-(be_text.len), be_text.data)
+            build_err.error.release()
             build_failed = true
+        Result.success:
+            pass
 
     if build_failed:
         if machine:
@@ -2971,30 +3002,12 @@ function run_death_test(file_path: str, source_text: str, test_name: str, roots:
     runner_bin_str.append(runner_num_str)
     defer runner_bin_str.release()
 
-    var build_cmd = vec.Vec[str].create()
-    defer build_cmd.release()
-    build_cmd.push("bin/mtc")
-    build_cmd.push("build")
-    build_cmd.push("--no-cache")
-    build_cmd.push(runner_path_str.as_str())
-    var bri: ptr_uint = 0
-    while bri < roots.len():
-        build_cmd.push("-I")
-        unsafe:
-            build_cmd.push(read(ptr[str]<-roots.data + bri))
-        bri += 1
-    build_cmd.push("-o")
-    build_cmd.push(runner_bin_str.as_str())
-
-
     var build_ok = false
-    match process.capture(build_cmd.as_span()):
-        Result.success as captured:
-            var build_result = captured.value
-            defer build_result.release()
-            if build_result.status.normalized_code() == 0:
-                build_ok = true
-        Result.failure:
+    match build_runner_file(runner_path_str.as_str(), roots.as_span(), runner_bin_str.as_str()):
+        Result.success:
+            build_ok = true
+        Result.failure as build_err:
+            build_err.error.release()
             build_ok = false
 
     var passed = false
