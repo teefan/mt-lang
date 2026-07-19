@@ -9,11 +9,13 @@ import std.str
 #  Core transforms
 # =============================================================================
 
-## Convert CamelCase to snake_case: "HelloWorld" -> "hello_world".
+## Convert CamelCase to snake_case: "HelloWorld" -> "hello_world",
+## "Vector2Add" -> "vector2_add" (digit after letter is a word boundary).
 public function snake_case(name: str) -> string.String:
     var result = string.String.with_capacity(name.len + 8)
     var i: ptr_uint = 0
-    var prev_lower: bool = false
+    var prev_was_lower: bool = false
+    var prev_was_digit: bool = false
 
     while i < name.len:
         let ch = name.byte_at(i)
@@ -22,20 +24,20 @@ public function snake_case(name: str) -> string.String:
         let is_digit = ch >= 48 and ch <= 57
 
         if is_upper:
-            if prev_lower:
+            if prev_was_lower or prev_was_digit:
                 result.push_byte('_')
-            if ch >= 65 and ch <= 90:
-                result.push_byte(ch + 32)
-            else:
-                result.push_byte(ch)
-        else if is_lower or is_digit:
-            if i > 0 and is_digit and prev_lower:
+            result.push_byte(ch + 32)
+        else if is_lower:
+            if prev_was_digit:
                 result.push_byte('_')
+            result.push_byte(ch)
+        else if is_digit:
             result.push_byte(ch)
         else:
             result.push_byte(ch)
 
-        prev_lower = is_lower
+        prev_was_lower = is_lower
+        prev_was_digit = is_digit
         i += 1
 
     return result

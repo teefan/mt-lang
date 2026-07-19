@@ -30,9 +30,14 @@ public struct RawConstInfo:
     name: string.String
     const_type: string.String
 
+public struct RawFuncParam:
+    name: string.String
+    param_type: string.String
+
 public struct RawFuncInfo:
     name: string.String
-    signature: string.String
+    params: vec.Vec[RawFuncParam]
+    return_type: string.String
     variadic: bool
 
 public struct RawImportInfo:
@@ -66,10 +71,27 @@ extending RawConstInfo:
         this.const_type.release()
 
 
+extending RawFuncParam:
+    public editable function release() -> void:
+        this.name.release()
+        this.param_type.release()
+
+
 extending RawFuncInfo:
     public editable function release() -> void:
         this.name.release()
-        this.signature.release()
+        release_func_params(ref_of(this.params))
+        this.return_type.release()
+
+
+function release_func_params(v: ref[vec.Vec[RawFuncParam]]) -> void:
+    var i: ptr_uint = 0
+    while i < v.len():
+        let p = v.get(i)
+        if p != null:
+            unsafe: read(p).release()
+        i += 1
+    v.release()
 
 
 extending RawImportInfo:
@@ -186,6 +208,109 @@ function extract_identifier_after(line: str, keyword: str) -> string.String:
             break
         i += 1
     return string.String.from_str(rest.slice(name_start, i - name_start))
+
+
+function extract_const_type(line: str, kw: str, name: str) -> str:
+    let trimmed = strip_indent(line)
+    let name_end = kw.len
+    var i = name_end
+    while i < trimmed.len and trimmed.byte_at(i) != ':':
+        i += 1
+    if i >= trimmed.len:
+        return ""
+    i += 1
+    while i < trimmed.len and trimmed.byte_at(i) == ' ':
+        i += 1
+    if i >= trimmed.len:
+        return ""
+    let type_start = i
+    while i < trimmed.len:
+        let ch = trimmed.byte_at(i)
+        if ch == ' ' or ch == '=':
+            break
+        i += 1
+    return trimmed.slice(type_start, i - type_start)
+
+
+function extract_func_sig(line: str, kw: str, name: str) -> (vec.Vec[RawFuncParam], str):
+    var params = parse_func_params_from_line(line, kw)
+    let return_type = extract_return_type(line)
+    return (params, return_type)
+
+
+function extract_return_type(line: str) -> str:
+    let trimmed = strip_indent(line)
+    # Find "->" and extract the return type after it
+    let arrow = trimmed.find_substring("->")
+    let arrow_pos = arrow else:
+        return "void"
+    var i = arrow_pos + 2
+    while i < trimmed.len and trimmed.byte_at(i) == ' ':
+        i += 1
+    if i >= trimmed.len:
+        return "void"
+    let ret_start = i
+    while i < trimmed.len and trimmed.byte_at(i) != ' ':
+        i += 1
+    return trimmed.slice(ret_start, i - ret_start)
+
+
+function parse_func_params_from_line(line: str, kw: str) -> vec.Vec[RawFuncParam]:
+    var params = vec.Vec[RawFuncParam].create()
+    let trimmed = strip_indent(line)
+    # Find opening paren after keyword + name
+    let after_kw = trimmed.slice(kw.len, trimmed.len - kw.len)
+    var i: ptr_uint = 0
+    while i < after_kw.len and after_kw.byte_at(i) != '(':
+        i += 1
+    if i >= after_kw.len:
+        return params
+    i += 1
+    let params_start = i
+    var depth: int = 1
+    while i < after_kw.len and depth > 0:
+        let ch = after_kw.byte_at(i)
+        if ch == '(':
+            depth += 1
+        else if ch == ')':
+            depth -= 1
+        i += 1
+    if params_start < i - 1:
+        let params_text = after_kw.slice(params_start, i - 1 - params_start)
+        var pos: ptr_uint = 0
+        while pos < params_text.len:
+            while pos < params_text.len and params_text.byte_at(pos) == ' ':
+                pos += 1
+            if pos >= params_text.len:
+                break
+            # Extract param name
+            let name_start = pos
+            while pos < params_text.len and params_text.byte_at(pos) != ':' and params_text.byte_at(pos) != ' ' and params_text.byte_at(pos) != ',':
+                pos += 1
+            if pos <= name_start:
+                break
+            let pname = params_text.slice(name_start, pos - name_start)
+            # Skip whitespace and colon
+            while pos < params_text.len and (params_text.byte_at(pos) == ' ' or params_text.byte_at(pos) == ':'):
+                pos += 1
+            # Extract param type
+            let type_start = pos
+            while pos < params_text.len and params_text.byte_at(pos) != ',':
+                pos += 1
+            while pos > type_start and params_text.byte_at(pos - 1) == ' ':
+                pos -= 1
+            let ptype = params_text.slice(type_start, pos - type_start)
+            if pname.len > 0 and ptype.len > 0:
+                params.push(RawFuncParam(
+                    name = string.String.from_str(pname),
+                    param_type = string.String.from_str(ptype),
+                ))
+            # Skip comma
+            while pos < params_text.len and params_text.byte_at(pos) == ' ':
+                pos += 1
+            if pos < params_text.len and params_text.byte_at(pos) == ',':
+                pos += 1
+    return params
 
 
 # =============================================================================
@@ -341,7 +466,8 @@ function scan_line(
         let kw = if starts_with_keyword(line, "public const "): "public const " else: "const "
         var name = extract_identifier_after(line, kw)
         if name.len() > 0:
-            consts.push(RawConstInfo(name = string.String.from_str(name.as_str()), const_type = string.String.create()))
+            let ctype = extract_const_type(line, kw, name.as_str())
+            consts.push(RawConstInfo(name = string.String.from_str(name.as_str()), const_type = string.String.from_str(ctype)))
             const_order.push(string.String.from_str(name.as_str()))
         name.release()
         return
@@ -351,9 +477,11 @@ function scan_line(
         let kw = if starts_with_keyword(line, "public external function "): "public external function " else: "external function "
         var name = extract_identifier_after(line, kw)
         if name.len() > 0:
+            let (params_vec, return_type) = extract_func_sig(line, kw, name.as_str())
             functions.push(RawFuncInfo(
                 name = string.String.from_str(name.as_str()),
-                signature = string.String.from_str(trimmed),
+                params = params_vec,
+                return_type = string.String.from_str(return_type),
                 variadic = line.find_substring("...").is_some(),
             ))
             func_order.push(string.String.from_str(name.as_str()))
