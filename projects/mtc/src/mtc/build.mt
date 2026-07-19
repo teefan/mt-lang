@@ -1,10 +1,8 @@
-## Build driver — the Phase 1 native build path: lower the checked program to
-## IR, generate C, write it to a temporary file, and invoke the C compiler to
-## produce a binary.
-##
-## Mirrors the Ruby Build orchestration (lib/milk_tea/tooling/build.rb) in
-## minimal form: no build cache, no package graph, no platform/profile matrix —
-## those arrive in Phase 7.  Uses std.process to launch the compiler.
+## Build driver — lower the checked program to IR, generate C, write it to a
+## temporary file, compile it, and link it against any required vendored static
+## libraries.  Mirrors the Ruby Build orchestration (lib/milk_tea/tooling/build.rb).
+## Build-cache checks and package-graph resolution are handled by the CLI layer
+## (main.mt).
 
 import std.fs as fs
 import std.path as path_ops
@@ -226,6 +224,12 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
     var uses_glfw = false
     var uses_tracy = false
     var uses_cjson = false
+    var uses_box2d = false
+    var uses_sdl3 = false
+    var uses_flecs = false
+    var uses_pcre2 = false
+    var uses_steamworks = false
+    var uses_libuv = false
     var mi: ptr_uint = 0
     while mi < program.analyses.len():
         let a_ptr = program.analyses.get(mi) else:
@@ -247,6 +251,18 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
             uses_tracy = true
         if analysis.module_name == "std.cjson":
             uses_cjson = true
+        if analysis.module_name == "std.c.box2d":
+            uses_box2d = true
+        if analysis.module_name == "std.c.sdl3":
+            uses_sdl3 = true
+        if analysis.module_name == "std.c.flecs":
+            uses_flecs = true
+        if analysis.module_name == "std.c.pcre2":
+            uses_pcre2 = true
+        if analysis.module_name == "std.c.steamworks":
+            uses_steamworks = true
+        if analysis.module_name == "std.c.libuv":
+            uses_libuv = true
         mi += 1
 
     # Any raylib-family binding compiles against the vendored raylib headers
@@ -308,6 +324,49 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
         defer cjson_include.release()
         if cjson_include.len() > 0:
             result.push(string.String.from_str(j2("-I", cjson_include.as_str())))
+
+    if uses_box2d:
+        var box2d_include = vendored_tree_path(roots, "box2d-upstream/include")
+        defer box2d_include.release()
+        if box2d_include.len() > 0:
+            result.push(string.String.from_str(j2("-I", box2d_include.as_str())))
+
+    if uses_sdl3:
+        var sdl3_include = vendored_tree_path(roots, "sdl3-upstream/include")
+        defer sdl3_include.release()
+        if sdl3_include.len() > 0:
+            result.push(string.String.from_str(j2("-I", sdl3_include.as_str())))
+        result.push(string.String.from_str("-DSDL_MAIN_HANDLED"))
+
+    if uses_flecs:
+        var flecs_include = vendored_tree_path(roots, "flecs-upstream/distr")
+        defer flecs_include.release()
+        if flecs_include.len() > 0:
+            result.push(string.String.from_str(j2("-I", flecs_include.as_str())))
+
+    if uses_pcre2:
+        match vendored_source_root(roots, "pcre2-upstream"):
+            Option.some as pcre2_root:
+                var pcre2_include = path_ops.join(pcre2_root.value, "tmp/vendored-pcre2-prefix/include")
+                var include_flag = string.String.from_str("-I")
+                include_flag.append(pcre2_include.as_str())
+                pcre2_include.release()
+                result.push(include_flag)
+                result.push(string.String.from_str("-DPCRE2_CODE_UNIT_WIDTH=8"))
+            Option.none:
+                pass
+
+    if uses_steamworks:
+        var sw_include = vendored_tree_path(roots, "steamworks-sdk-upstream/public")
+        defer sw_include.release()
+        if sw_include.len() > 0:
+            result.push(string.String.from_str(j2("-I", sw_include.as_str())))
+
+    if uses_libuv:
+        var uv_include = vendored_tree_path(roots, "libuv-upstream/include")
+        defer uv_include.release()
+        if uv_include.len() > 0:
+            result.push(string.String.from_str(j2("-I", uv_include.as_str())))
 
     return result
 
@@ -373,20 +432,11 @@ function uses_binding_module(program: loader.Program, name: str) -> bool:
 
 
 ## Build the vendored static libraries required by the program's raw bindings
-## when their archives are not already present:
-##   - raylib family → `tmp/vendored-raylib-opengl43/libraylib.a` (the six
-##     raylib modules compiled with `-DPLATFORM_DESKTOP_GLFW
-##     -DGRAPHICS_API_OPENGL_43`, linking the system Wayland-capable
-##     `libglfw.so` — the system raylib package embeds its own X11-only GLFW
-##     and fails GL context creation on Wayland sessions)
-##   - `std.c.glfw`  → `tmp/vendored-glfw-prefix/lib/libglfw3.a` (CMake + Ninja
-##     from `third_party/glfw-upstream`; the binding's `link "glfw3"` expects the
-##     vendored archive — system packages ship `libglfw`, not `libglfw3`)
-##   - `std.c.tracy` → `tmp/tracy-lib/libtracyclient.a` (`c++ TracyClient.cpp`
-##     with `-DTRACY_ENABLE`, then `ar rcs`; no system package provides it)
-## The vendored sources are pinned trees, so an existing archive is reused
-## as-is.  Mirrors Ruby's VendoredCLibrary CMake/Archive `prepare!` flow in
-## minimal form.
+## when their archives are not already present.  The vendored sources are pinned
+## trees, so an existing archive is reused as-is.  Supported libraries:
+##   - raylib family, glfw, tracy, cjson, box2d, sdl3, flecs, pcre2, steamworks,
+##     libuv.
+## Mirrors Ruby's VendoredCLibrary CMake/Archive `prepare!` flow in minimal form.
 function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -> Result[bool, string.String]:
     if uses_vendored_raylib(program):
         match prepare_vendored_raylib(roots):
@@ -411,6 +461,48 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
 
     if uses_binding_module(program, "std.cjson"):
         match prepare_vendored_cjson(roots):
+            Result.failure as failure:
+                return Result[bool, string.String].failure(error = failure.error)
+            Result.success:
+                pass
+
+    if uses_binding_module(program, "std.c.box2d"):
+        match prepare_vendored_box2d(roots):
+            Result.failure as failure:
+                return Result[bool, string.String].failure(error = failure.error)
+            Result.success:
+                pass
+
+    if uses_binding_module(program, "std.c.sdl3"):
+        match prepare_vendored_sdl3(roots):
+            Result.failure as failure:
+                return Result[bool, string.String].failure(error = failure.error)
+            Result.success:
+                pass
+
+    if uses_binding_module(program, "std.c.flecs"):
+        match prepare_vendored_flecs(roots):
+            Result.failure as failure:
+                return Result[bool, string.String].failure(error = failure.error)
+            Result.success:
+                pass
+
+    if uses_binding_module(program, "std.c.pcre2"):
+        match prepare_vendored_pcre2(roots):
+            Result.failure as failure:
+                return Result[bool, string.String].failure(error = failure.error)
+            Result.success:
+                pass
+
+    if uses_binding_module(program, "std.c.steamworks"):
+        match prepare_vendored_steamworks(roots):
+            Result.failure as failure:
+                return Result[bool, string.String].failure(error = failure.error)
+            Result.success:
+                pass
+
+    if uses_binding_module(program, "std.c.libuv"):
+        match prepare_vendored_libuv(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
             Result.success:
@@ -709,6 +801,403 @@ function prepare_vendored_cjson(roots: span[str]) -> Result[bool, string.String]
     return Result[bool, string.String].success(value = true)
 
 
+## Build the vendored Box2D static library from third_party/box2d-upstream via
+## CMake + Ninja.  Produces tmp/vendored-box2d-prefix/lib/libbox2d.a.
+function prepare_vendored_box2d(roots: span[str]) -> Result[bool, string.String]:
+    let root = vendored_source_root(roots, "box2d-upstream") else:
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored Box2D source not found: the box2d binding needs third_party/box2d-upstream to build libbox2d"
+        ))
+
+    var prefix = path_ops.join(root, "tmp/vendored-box2d-prefix")
+    defer prefix.release()
+    var archive = path_ops.join(prefix.as_str(), "lib/libbox2d.a")
+    defer archive.release()
+    if fs.is_file(archive.as_str()):
+        return Result[bool, string.String].success(value = true)
+
+    var source_dir = path_ops.join(root, "third_party/box2d-upstream")
+    defer source_dir.release()
+    var build_dir = path_ops.join(root, "tmp/vendored-box2d")
+    defer build_dir.release()
+    var prefix_define = string.String.from_str("-DCMAKE_INSTALL_PREFIX=")
+    prefix_define.append(prefix.as_str())
+    defer prefix_define.release()
+
+    var configure = vec.Vec[str].create()
+    defer configure.release()
+    configure.push("cmake")
+    configure.push("-S")
+    configure.push(source_dir.as_str())
+    configure.push("-B")
+    configure.push(build_dir.as_str())
+    configure.push("-G")
+    configure.push("Ninja")
+    configure.push(prefix_define.as_str())
+    configure.push("-DCMAKE_BUILD_TYPE=Release")
+    configure.push("-DCMAKE_POSITION_INDEPENDENT_CODE=ON")
+    configure.push("-DBUILD_SHARED_LIBS=OFF")
+    configure.push("-DBOX2D_SAMPLES=OFF")
+    configure.push("-DBOX2D_BENCHMARKS=OFF")
+    configure.push("-DBOX2D_DOCS=OFF")
+    configure.push("-DBOX2D_PROFILE=OFF")
+    configure.push("-DBOX2D_VALIDATE=OFF")
+    configure.push("-DBOX2D_UNIT_TESTS=OFF")
+    match run_build_tool(configure.as_span(), "vendored Box2D cmake configure"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    var build_cmd = vec.Vec[str].create()
+    defer build_cmd.release()
+    build_cmd.push("cmake")
+    build_cmd.push("--build")
+    build_cmd.push(build_dir.as_str())
+    build_cmd.push("--target")
+    build_cmd.push("install")
+    match run_build_tool(build_cmd.as_span(), "vendored Box2D build"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    if not fs.is_file(archive.as_str()):
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored Box2D build did not produce lib/libbox2d.a"
+        ))
+
+    return Result[bool, string.String].success(value = true)
+
+
+## Build the vendored SDL3 static library from third_party/sdl3-upstream via
+## CMake + Ninja.  Produces tmp/vendored-sdl3-prefix/lib/libSDL3.a.
+function prepare_vendored_sdl3(roots: span[str]) -> Result[bool, string.String]:
+    let root = vendored_source_root(roots, "sdl3-upstream") else:
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored SDL3 source not found: the sdl3 binding needs third_party/sdl3-upstream to build libSDL3"
+        ))
+
+    var prefix = path_ops.join(root, "tmp/vendored-sdl3-prefix")
+    defer prefix.release()
+    var archive = path_ops.join(prefix.as_str(), "lib/libSDL3.a")
+    defer archive.release()
+    if fs.is_file(archive.as_str()):
+        return Result[bool, string.String].success(value = true)
+
+    var source_dir = path_ops.join(root, "third_party/sdl3-upstream")
+    defer source_dir.release()
+    var build_dir = path_ops.join(root, "tmp/vendored-sdl3")
+    defer build_dir.release()
+    var prefix_define = string.String.from_str("-DCMAKE_INSTALL_PREFIX=")
+    prefix_define.append(prefix.as_str())
+    defer prefix_define.release()
+
+    var configure = vec.Vec[str].create()
+    defer configure.release()
+    configure.push("cmake")
+    configure.push("-S")
+    configure.push(source_dir.as_str())
+    configure.push("-B")
+    configure.push(build_dir.as_str())
+    configure.push("-G")
+    configure.push("Ninja")
+    configure.push(prefix_define.as_str())
+    configure.push("-DCMAKE_BUILD_TYPE=Release")
+    configure.push("-DCMAKE_POSITION_INDEPENDENT_CODE=ON")
+    configure.push("-DSDL_SHARED=OFF")
+    configure.push("-DSDL_STATIC=ON")
+    configure.push("-DSDL_TEST_LIBRARY=OFF")
+    configure.push("-DSDL_TESTS=OFF")
+    configure.push("-DSDL_EXAMPLES=OFF")
+    match run_build_tool(configure.as_span(), "vendored SDL3 cmake configure"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    var build_cmd = vec.Vec[str].create()
+    defer build_cmd.release()
+    build_cmd.push("cmake")
+    build_cmd.push("--build")
+    build_cmd.push(build_dir.as_str())
+    build_cmd.push("--target")
+    build_cmd.push("install")
+    match run_build_tool(build_cmd.as_span(), "vendored SDL3 build"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    if not fs.is_file(archive.as_str()):
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored SDL3 build did not produce lib/libSDL3.a"
+        ))
+
+    return Result[bool, string.String].success(value = true)
+
+
+## Build the vendored Flecs static library from third_party/flecs-upstream.
+## Flecs ships a single-source amalgamation in distr/flecs.c.  Produces
+## tmp/vendored-flecs/libflecs.a.
+function prepare_vendored_flecs(roots: span[str]) -> Result[bool, string.String]:
+    let root = vendored_source_root(roots, "flecs-upstream") else:
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored Flecs source not found: the flecs binding needs third_party/flecs-upstream to build libflecs"
+        ))
+
+    var lib_dir = path_ops.join(root, "tmp/vendored-flecs")
+    defer lib_dir.release()
+    var archive = path_ops.join(lib_dir.as_str(), "libflecs.a")
+    defer archive.release()
+    if fs.is_file(archive.as_str()):
+        return Result[bool, string.String].success(value = true)
+
+    match fs.create_directories(lib_dir.as_str()):
+        Result.failure as dir_failure:
+            var dir_error = dir_failure.error
+            dir_error.release()
+            return Result[bool, string.String].failure(error = string.String.from_str(
+                "could not create tmp/vendored-flecs for the vendored Flecs build"
+            ))
+        Result.success:
+            pass
+
+    var src_dir = path_ops.join(root, "third_party/flecs-upstream/distr")
+    defer src_dir.release()
+    var include_flag = string.String.from_str("-I")
+    include_flag.append(src_dir.as_str())
+    defer include_flag.release()
+
+    var source_file = path_ops.join(src_dir.as_str(), "flecs.c")
+    defer source_file.release()
+    var object_file = path_ops.join(lib_dir.as_str(), "flecs.o")
+    defer object_file.release()
+
+    var compile = vec.Vec[str].create()
+    defer compile.release()
+    compile.push("cc")
+    compile.push("-c")
+    compile.push(source_file.as_str())
+    compile.push(include_flag.as_str())
+    compile.push("-std=gnu99")
+    compile.push("-o")
+    compile.push(object_file.as_str())
+    match run_build_tool(compile.as_span(), "vendored Flecs compile"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    var ar_cmd = vec.Vec[str].create()
+    defer ar_cmd.release()
+    ar_cmd.push("ar")
+    ar_cmd.push("rcs")
+    ar_cmd.push(archive.as_str())
+    ar_cmd.push(object_file.as_str())
+    match run_build_tool(ar_cmd.as_span(), "vendored Flecs archive"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    if not fs.is_file(archive.as_str()):
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored Flecs build did not produce libflecs.a"
+        ))
+
+    return Result[bool, string.String].success(value = true)
+
+
+## Build the vendored PCRE2 static library from third_party/pcre2-upstream via
+## CMake + Ninja.  Produces tmp/vendored-pcre2-prefix/lib/libpcre2-8.a.
+function prepare_vendored_pcre2(roots: span[str]) -> Result[bool, string.String]:
+    let root = vendored_source_root(roots, "pcre2-upstream") else:
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored PCRE2 source not found: the pcre2 binding needs third_party/pcre2-upstream to build libpcre2-8"
+        ))
+
+    var prefix = path_ops.join(root, "tmp/vendored-pcre2-prefix")
+    defer prefix.release()
+    var archive = path_ops.join(prefix.as_str(), "lib/libpcre2-8.a")
+    defer archive.release()
+    if fs.is_file(archive.as_str()):
+        return Result[bool, string.String].success(value = true)
+
+    var source_dir = path_ops.join(root, "third_party/pcre2-upstream")
+    defer source_dir.release()
+    var build_dir = path_ops.join(root, "tmp/vendored-pcre2")
+    defer build_dir.release()
+    var prefix_define = string.String.from_str("-DCMAKE_INSTALL_PREFIX=")
+    prefix_define.append(prefix.as_str())
+    defer prefix_define.release()
+
+    var configure = vec.Vec[str].create()
+    defer configure.release()
+    configure.push("cmake")
+    configure.push("-S")
+    configure.push(source_dir.as_str())
+    configure.push("-B")
+    configure.push(build_dir.as_str())
+    configure.push("-G")
+    configure.push("Ninja")
+    configure.push(prefix_define.as_str())
+    configure.push("-DCMAKE_BUILD_TYPE=Release")
+    configure.push("-DCMAKE_POSITION_INDEPENDENT_CODE=ON")
+    configure.push("-DBUILD_SHARED_LIBS=OFF")
+    configure.push("-DPCRE2_BUILD_PCRE2_8=ON")
+    configure.push("-DPCRE2_BUILD_PCRE2_16=OFF")
+    configure.push("-DPCRE2_BUILD_PCRE2_32=OFF")
+    configure.push("-DPCRE2_BUILD_PCRE2GREP=OFF")
+    configure.push("-DPCRE2_BUILD_PCRE2TEST=OFF")
+    configure.push("-DPCRE2_BUILD_TESTS=OFF")
+    match run_build_tool(configure.as_span(), "vendored PCRE2 cmake configure"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    var build_cmd = vec.Vec[str].create()
+    defer build_cmd.release()
+    build_cmd.push("cmake")
+    build_cmd.push("--build")
+    build_cmd.push(build_dir.as_str())
+    build_cmd.push("--target")
+    build_cmd.push("install")
+    match run_build_tool(build_cmd.as_span(), "vendored PCRE2 build"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    if not fs.is_file(archive.as_str()):
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored PCRE2 build did not produce lib/libpcre2-8.a"
+        ))
+
+    return Result[bool, string.String].success(value = true)
+
+
+## Stage the vendored Steamworks SDK shared library for linking.  Copies
+## libsteam_api.so from third_party/steamworks-sdk-upstream into
+## tmp/vendored-steamworks/.
+function prepare_vendored_steamworks(roots: span[str]) -> Result[bool, string.String]:
+    let root = vendored_source_root(roots, "steamworks-sdk-upstream") else:
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored Steamworks SDK not found: the steamworks binding needs third_party/steamworks-sdk-upstream"
+        ))
+
+    var lib_dir = path_ops.join(root, "tmp/vendored-steamworks")
+    defer lib_dir.release()
+    var archive = path_ops.join(lib_dir.as_str(), "libsteam_api.so")
+    defer archive.release()
+    if fs.is_file(archive.as_str()):
+        return Result[bool, string.String].success(value = true)
+
+    match fs.create_directories(lib_dir.as_str()):
+        Result.failure as dir_failure:
+            var dir_error = dir_failure.error
+            dir_error.release()
+            return Result[bool, string.String].failure(error = string.String.from_str(
+                "could not create tmp/vendored-steamworks for the vendored Steamworks SDK"
+            ))
+        Result.success:
+            pass
+
+    var sdk_dir = path_ops.join(root, "third_party/steamworks-sdk-upstream/redistributable_bin/linux64")
+    defer sdk_dir.release()
+    var source_file = path_ops.join(sdk_dir.as_str(), "libsteam_api.so")
+    defer source_file.release()
+
+    if not fs.is_file(source_file.as_str()):
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "Steamworks SDK libsteam_api.so not found in third_party/steamworks-sdk-upstream/redistributable_bin/linux64"
+        ))
+
+    var copy_cmd = vec.Vec[str].create()
+    defer copy_cmd.release()
+    copy_cmd.push("cp")
+    copy_cmd.push(source_file.as_str())
+    copy_cmd.push(archive.as_str())
+    match run_build_tool(copy_cmd.as_span(), "vendored Steamworks SDK copy"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    if not fs.is_file(archive.as_str()):
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored Steamworks staging did not produce libsteam_api.so"
+        ))
+
+    return Result[bool, string.String].success(value = true)
+
+
+## Build the vendored libuv static library from third_party/libuv-upstream via
+## CMake + Ninja.  Produces tmp/vendored-libuv-prefix/lib/libuv.a.
+function prepare_vendored_libuv(roots: span[str]) -> Result[bool, string.String]:
+    let root = vendored_source_root(roots, "libuv-upstream") else:
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored libuv source not found: the libuv binding needs third_party/libuv-upstream to build libuv"
+        ))
+
+    var prefix = path_ops.join(root, "tmp/vendored-libuv-prefix")
+    defer prefix.release()
+    var archive = path_ops.join(prefix.as_str(), "lib/libuv.a")
+    defer archive.release()
+    if fs.is_file(archive.as_str()):
+        return Result[bool, string.String].success(value = true)
+
+    var source_dir = path_ops.join(root, "third_party/libuv-upstream")
+    defer source_dir.release()
+    var build_dir = path_ops.join(root, "tmp/vendored-libuv")
+    defer build_dir.release()
+    var prefix_define = string.String.from_str("-DCMAKE_INSTALL_PREFIX=")
+    prefix_define.append(prefix.as_str())
+    defer prefix_define.release()
+
+    var configure = vec.Vec[str].create()
+    defer configure.release()
+    configure.push("cmake")
+    configure.push("-S")
+    configure.push(source_dir.as_str())
+    configure.push("-B")
+    configure.push(build_dir.as_str())
+    configure.push("-G")
+    configure.push("Ninja")
+    configure.push(prefix_define.as_str())
+    configure.push("-DCMAKE_BUILD_TYPE=Release")
+    configure.push("-DCMAKE_POSITION_INDEPENDENT_CODE=ON")
+    configure.push("-DBUILD_SHARED_LIBS=OFF")
+    configure.push("-DLIBUV_BUILD_TESTS=OFF")
+    configure.push("-DLIBUV_BUILD_BENCH=OFF")
+    match run_build_tool(configure.as_span(), "vendored libuv cmake configure"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    var build_cmd = vec.Vec[str].create()
+    defer build_cmd.release()
+    build_cmd.push("cmake")
+    build_cmd.push("--build")
+    build_cmd.push(build_dir.as_str())
+    build_cmd.push("--target")
+    build_cmd.push("install")
+    match run_build_tool(build_cmd.as_span(), "vendored libuv build"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    if not fs.is_file(archive.as_str()):
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored libuv build did not produce lib/libuv.a"
+        ))
+
+    return Result[bool, string.String].success(value = true)
+
+
 ## Vendored library link flags: the `-L` search path for each vendored archive
 ## the program's raw bindings need, plus the static-link system dependencies the
 ## vendored pkg-config metadata declares (GLFW's `Libs.private: -lrt -lm -ldl`).
@@ -770,6 +1259,77 @@ function collect_vendored_link_flags(program: loader.Program, roots: span[str]) 
         match vendored_source_root(roots, "cjson-upstream"):
             Option.some as cjson_root:
                 var lib_dir = path_ops.join(cjson_root.value, "tmp/vendored-cjson")
+                var search_flag = string.String.from_str("-L")
+                search_flag.append(lib_dir.as_str())
+                lib_dir.release()
+                result.push(search_flag)
+            Option.none:
+                pass
+
+    if uses_binding_module(program, "std.c.box2d"):
+        match vendored_source_root(roots, "box2d-upstream"):
+            Option.some as box2d_root:
+                var lib_dir = path_ops.join(box2d_root.value, "tmp/vendored-box2d-prefix/lib")
+                var search_flag = string.String.from_str("-L")
+                search_flag.append(lib_dir.as_str())
+                lib_dir.release()
+                result.push(search_flag)
+                result.push(string.String.from_str("-lm"))
+            Option.none:
+                pass
+
+    if uses_binding_module(program, "std.c.sdl3"):
+        match vendored_source_root(roots, "sdl3-upstream"):
+            Option.some as sdl3_root:
+                var lib_dir = path_ops.join(sdl3_root.value, "tmp/vendored-sdl3-prefix/lib")
+                var search_flag = string.String.from_str("-L")
+                search_flag.append(lib_dir.as_str())
+                lib_dir.release()
+                result.push(search_flag)
+            Option.none:
+                pass
+
+    if uses_binding_module(program, "std.c.flecs"):
+        match vendored_source_root(roots, "flecs-upstream"):
+            Option.some as flecs_root:
+                var lib_dir = path_ops.join(flecs_root.value, "tmp/vendored-flecs")
+                var search_flag = string.String.from_str("-L")
+                search_flag.append(lib_dir.as_str())
+                lib_dir.release()
+                result.push(search_flag)
+                result.push(string.String.from_str("-lrt"))
+                result.push(string.String.from_str("-lpthread"))
+                result.push(string.String.from_str("-lm"))
+            Option.none:
+                pass
+
+    if uses_binding_module(program, "std.c.pcre2"):
+        match vendored_source_root(roots, "pcre2-upstream"):
+            Option.some as pcre2_root:
+                var lib_dir = path_ops.join(pcre2_root.value, "tmp/vendored-pcre2-prefix/lib")
+                var search_flag = string.String.from_str("-L")
+                search_flag.append(lib_dir.as_str())
+                lib_dir.release()
+                result.push(search_flag)
+                result.push(string.String.from_str("-lm"))
+            Option.none:
+                pass
+
+    if uses_binding_module(program, "std.c.steamworks"):
+        match vendored_source_root(roots, "steamworks-sdk-upstream"):
+            Option.some as sw_root:
+                var lib_dir = path_ops.join(sw_root.value, "tmp/vendored-steamworks")
+                var search_flag = string.String.from_str("-L")
+                search_flag.append(lib_dir.as_str())
+                lib_dir.release()
+                result.push(search_flag)
+            Option.none:
+                pass
+
+    if uses_binding_module(program, "std.c.libuv"):
+        match vendored_source_root(roots, "libuv-upstream"):
+            Option.some as uv_root:
+                var lib_dir = path_ops.join(uv_root.value, "tmp/vendored-libuv-prefix/lib")
                 var search_flag = string.String.from_str("-L")
                 search_flag.append(lib_dir.as_str())
                 lib_dir.release()
