@@ -113,9 +113,11 @@ function collect_directory(dir: str, output: ref[vec.Vec[Entry]]) -> void:
 function collect_file_symbols(path: str, output: ref[vec.Vec[Entry]]) -> void:
     match fs_mod.canonicalize(path):
         Result.success as canonical:
+            var source = read_file(canonical.value.as_str())
+            defer source.release()
             var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
             defer parse_diags.release()
-            var ast_file = parser.parse_source(read_file(canonical.value.as_str()), ref_of(parse_diags))
+            var ast_file = parser.parse_source(source.as_str(), ref_of(parse_diags))
 
             var di: ptr_uint = 0
             while di < ast_file.declarations.len:
@@ -140,14 +142,14 @@ function collect_file_symbols(path: str, output: ref[vec.Vec[Entry]]) -> void:
             err.release()
 
 
-function read_file(path: str) -> str:
+function read_file(path: str) -> string_mod.String:
     match fs_mod.read_text(path):
         Result.success as payload:
-            return payload.value.as_str()
+            return payload.value
         Result.failure as failure_payload:
             var err = failure_payload.error
             err.release()
-            return ""
+            return string_mod.String.create()
 
 
 function decl_symbol_kind(d: ast.Decl) -> int:
