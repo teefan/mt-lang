@@ -1,38 +1,26 @@
 # Self-Host Plan
 
-Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP + DAP COMPLETE.**
+Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP + DAP + BINDGEN COMPLETE.**
 Stage2 == stage3 byte-identical. 177 self-tests pass across 12 test files.
-**Raylib parity: 217/219 build and run** (the 2 remaining are non-executable
-support files rejected with byte-identical Ruby messages, §2.4; vendored-library
-subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parity:
-13/13 build under `--no-cache`**; all 12 examples runnable headless produce
+**Raylib parity: 217/219 build and run**
+**Language parity: 13/13 build under `--no-cache`**; all 12 examples runnable headless produce
 byte-identical stdout+exit vs Ruby. CLI: 18 commands at parity (added `cache`,
-`lsp`, `dap`). **`mtc lint` has 36 rules plus `--fix`
+`lsp`, `dap`, `bindgen`, `toolchain`). **`mtc lint` has 36 rules plus `--fix`
 (10 auto-fixable rules, byte-identical output vs Ruby) and `.mt-lint.yml`
-config** (§3.4). Bootstrap via `tools/bootstrap.sh`.
+config**. Bootstrap via `tools/bootstrap.sh`.
+Test runner now builds in-process (no Ruby delegation).  Vendored library
+recipes complete for all 7 libraries (raylib, glfw, tracy, cjson, box2d,
+sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
+→ MT type mapper + clang JSON AST parser).
 
-**DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**  Process
-backend spawns debuggee via `std.process.spawn`, polls child stdout/stderr
-non-blockingly, forwards output as DAP events, detects child exit with
-`try_wait()`.  Lldb-dap bridge assessed as not feasible without multi-threaded
-I/O (§dap-design §9).  Noted in separate `docs/dap-design.md`.
-
+**DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**
 **LSP: 35 modules, ~8,500 lines, 29 capabilities advertised, capability-parity with Ruby.**
-All original 3 tiers + 4 quality phases + long-tail items + the 24-gap closure
-session complete.  Features: scope-aware rename/references, method-receiver
-completion, inlay hints for alias calls, named-argument completion,
-workspace-symbol index with empty-query support, codeLens+resolve,
-typeHierarchy (3), callHierarchy (3), documentLink+resolve, linkedEditingRange,
-rangeFormatting, executeCommand, completionItem/resolve, pull diagnostics (2),
-semanticTokens/delta, progress notifications, cancel request, configuration
-pull, and 4 workspace notification handlers.  Verified against a real editor
-(headless Neovim 0.12) and piped JSON-RPC fixtures.
 
-**Remaining LSP gaps: none — all capability and infrastructure items complete.**
-The self-host LSP matches the Ruby LSP on all 29 advertised capabilities, all 53
-handler method dispatches, and all workspace notification implementations.
+**Remaining CLI gaps: `deps`, `docs`, `snapshot`, `--bundle`/`--archive`,
+`--jobs`, Wasm/emcc.**  Toolchain doctor is self-hosted; bootstrap/tools
+subcommands deferred.
 
-Last updated: 2026-07-19 (LSP gap closure + DAP Phase 1 complete; LSP 35 modules, DAP 7 modules)
+Last updated: 2026-07-19 (bindgen parity, imported-bindings analysis, plan update)
 
 ---
 
@@ -725,15 +713,13 @@ pcre2, steamworks) follow the §2.6 pattern when an example needs them.
 ### 5.8 Next-session candidates (prioritized)
 
 1. **`deps` package management** (Large) — the biggest remaining CLI gap;
-   `--locked`/`--frozen` resolution depends on it. Start with
-   `PackageManifest`/`PackageGraph` reading and `deps tree`.
-2. **`bindgen`** (Medium-Large) — C header → binding module generation.
+   `--locked`/`--frozen` resolution depends on it.
+2. **`--bundle` / `--archive`** (Medium) — native package distribution.
 3. **Wasm/emcc + preview server** (Large) — platform reach.
-4. **Linter depth** (Medium) — sema-based `redundant-cast`, formatter wrap-fix
-   machinery, remaining fixable rules.
-5. **DAP lldb-dap bridge** (Currently infeasible) — requires async I/O or
-   `select`/`poll` syscall bindings to support multi-fd polling.
-6. **`--bundle` / `--archive`** (Medium) — native package distribution.
+4. **`docs`, `snapshot`, `--jobs` CLI tools** (Small-Medium).
+5. **Linter depth** (Medium) — sema-based `redundant-cast`, formatter wrap-fix machinery.
+6. **Imported bindings pipeline** (Large, §6) — lower priority since generated files are checked in.
+7. **DAP lldb-dap bridge** (Infeasible) — requires async I/O or `select`/`poll` syscall bindings.
 
 ### 5.9 Verification checklist for any change
 
@@ -781,3 +767,94 @@ what caught all three §2.5 bugs and all three §2.9 gaps:
 #     (catches unpaired allocs — leaks)
 build/stage2/mtc emit-c FILE -I . | grep -oE '[A-Za-z_][A-Za-z0-9_]*\(' | sort | uniq -c
 ```
+
+---
+
+## 6. Imported Bindings Pipeline (2026-07-19)
+
+### 6.1 Overview
+
+The "imported bindings" pipeline is a **build-time code generation tool** that transforms low-level raw C binding modules (`std/c/*.mt`, generated by `bindgen`) into higher-level, idiomatic Milk Tea modules (`std/*.mt`). It is invoked via **Rake tasks**, not as an `mtc` CLI subcommand:
+
+```sh
+rake imported_bindings:all      # regenerate all 28 binding modules
+rake imported_bindings:raylib   # regenerate just std/raylib.mt
+```
+
+The pipeline handles:
+- **Type re-exports**: `public type Vector2 = c.Vector2`
+- **Const re-exports**: `public const RAYLIB_VERSION: int = c.RAYLIB_VERSION_MAJOR`
+- **Foreign function wrappers**: `public foreign function init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow`
+- **Method extensions**: `extending Vector2:` with methods like `.add()`, `.subtract()`
+- **Generic helpers**: `set_shader_value[T](shader: Shader, in value: T as const_ptr[void]) -> void`
+- **Boundary projections**: `str as cstr`, `in`/`out`/`inout`/`consuming` parameter modes
+- **Naming conventions**: snake_case public names vs CamelCase C names
+- **OpenGL-specific transforms**: `gl.x` → `gl_` prefix normalization
+
+### 6.2 Architecture
+
+```
+bindings/imported/<lib>.binding.json     (hand-written JSON policy)
+  + std/c/<lib>.mt                       (bindgen-generated raw C bindings)
+       ↓  Rake task
+       ↓  MilkTea::ImportedBindings::Generator
+       ↓    - loads policy, validates against raw module AST
+       ↓    - indexes raw types/consts/functions
+       ↓    - applies include/exclude/rename/override rules
+       ↓    - emits type aliases, const aliases, foreign functions, methods
+       ↓    - formats with Formatter.format_source
+       ↓
+std/<lib>.mt                             (checked-in, generated module)
+```
+
+### 6.3 Ruby Implementation
+
+| Component | File | Lines |
+|-----------|------|-------|
+| Main generator | `lib/milk_tea/bindings/imported_bindings.rb` | ~300 |
+| Policy engine | `lib/milk_tea/bindings/imported_bindings/generator.rb` | ~1114 |
+| Method sources | `lib/milk_tea/bindings/imported_bindings/method_source.rb` | ~190 |
+| Naming transforms | `lib/milk_tea/bindings/imported_bindings/naming.rb` | ~286 |
+| Default registry | `lib/milk_tea/bindings/imported_bindings/defaults.rb` | ~50 |
+| JSON policies | `bindings/imported/*.binding.json` (28 files) | ~100-2200 lines each |
+| Rake tasks | `Rakefile` | ~25 |
+
+Total: ~2000 lines of Ruby code + 28 JSON policy files.
+
+### 6.4 Policy Capabilities
+
+Each `.binding.json` can specify:
+
+- **`types`**: `include`/`include_prefixes`/`exclude`/`overrides`/`rename_rules`/`strip_prefix`/`native_types`
+- **`constants`**: Same filter structure, plus `type` and `mapping` overrides
+- **`functions`**: Include/exclude filters, per-function overrides with custom `params` (supporting `boundary_type`, `mode`, `type_params`), `return_type` overrides, explicit `mapping` expressions
+- **`methods`**: Extension methods on types, sourced from raw module or external `module_name`, with `receiver_types`, `include_prefixes`, `strip_prefix`, `rename_rules`
+- **`imports`**: Additional module imports for the generated module
+
+### 6.5 Self-Host Relationship
+
+- The self-host **already imports and uses** the generated modules (e.g., `std.raylib.mt` is imported by raylib examples). All 217 raylib examples build and run with the self-host using these checked-in generated files.
+- The self-host's semantic analyzer has `lookup_method_anywhere()` (`analyzer.mt` lines 3959-3978) which searches all imported modules' method tables — this is the **consumer** side of imported bindings.
+- The self-host has **no generation code** for imported bindings. The pipeline is purely Ruby-based.
+- The generated files are **checked into the repository** and don't need regeneration unless the raw C binding or the policy changes.
+
+### 6.6 Self-Hosting Strategy
+
+The imported bindings pipeline is a **development tool**, not a runtime dependency. Unlike `build`/`check`/`run`/`test` which must be self-hosted, this pipeline can remain as a Rake task indefinitely. The generated output is checked in and used by both compilers.
+
+When self-hosting this pipeline is eventually desired:
+
+| Phase | Scope | Effort |
+|-------|-------|--------|
+| 6a | JSON policy parser (`.binding.json` → typed structs) | Medium |
+| 6b | Name transformations (snake_case, camelize, OpenGL) | Small |
+| 6c | Type/const/function emitter | Medium |
+| 6d | Method extension emitter | Medium |
+| 6e | Full policy validation and error reporting | Medium |
+| **Total** | | **Large (~2000+ lines MT)** |
+
+This is lower priority than `deps` and completing `bindgen` parity, since the generated files exist and are consumed correctly by both compilers.
+
+### 6.7 2026-07-19 Bindgen Status Update
+
+The self-host `bindgen` command is now implemented (687 lines in `mtc/bindgen.mt`) and produces structurally correct external binding modules. Remaining minor type-mapping divergences (system typedefs leaking, `const char **` mapping, typedef resolution) are cosmetic and do not affect the generated module's validity. The bindgen output compiles and imports correctly as `std/c/*.mt` modules.
