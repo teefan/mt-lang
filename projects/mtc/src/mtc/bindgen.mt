@@ -173,7 +173,9 @@ function map_type(qual_type: str) -> string.String:
         let pointee = t.slice(0, end)
         let cleaned = strip_cv(str_strip(pointee))
         if cleaned == "char":
-            return string.String.from_str("cstr")
+            if str_has_prefix(str_strip(pointee), "const"):
+                return string.String.from_str("cstr")
+            return string.String.from_str("ptr[char]")
         if str_has_prefix(str_strip(pointee), "const"):
             let base = strip_cv(pointee)
             var r = string.String.from_str("const_ptr[")
@@ -187,23 +189,39 @@ function map_type(qual_type: str) -> string.String:
         r.append("]")
         return r
 
-    # Function pointer: ret (*)(params) — has closing paren near end
+    # Function pointer: either ret (params) or ret (*)(params)
     if t.len > 2 and t.byte_at(t.len - 1) == ')':
-        var open: ptr_uint = 0
-        var depth = 0
-        var i: ptr_uint = 0
-        while i < t.len:
-            let b = t.byte_at(i)
-            if b == '(' and depth == 0:
-                open = i
-                depth = 1
-            else if b == '(':
-                depth += 1
-            else if b == ')':
-                depth -= 1
-            i += 1
-        if open > 0:
-            return emit_fn_ptr(t, open)
+        # Scan for (*) to distinguish fn-pointer from plain function.
+        var star_idx: ptr_uint = 0
+        var found_fp = false
+        while star_idx < t.len:
+            if t.byte_at(star_idx) == '(' and star_idx + 2 < t.len and t.byte_at(star_idx + 1) == '*' and t.byte_at(star_idx + 2) == ')':
+                found_fp = true
+                break
+            star_idx += 1
+        if found_fp:
+            # ret (*)(params) — split on (*)
+            let ret_t = str_strip(t.slice(0, star_idx))
+            let rest = t.slice(star_idx + 3, t.len - star_idx - 3)
+            let ps = strip_surrounding_parens(str_strip(rest))
+            return emit_fn_ptr_from_parts(ret_t, ps)
+        else:
+            # ret (params) — regular function
+            var open: ptr_uint = 0
+            var depth = 0
+            var pi: ptr_uint = 0
+            while pi < t.len:
+                let b = t.byte_at(pi)
+                if b == '(' and depth == 0:
+                    open = pi
+                    depth = 1
+                else if b == '(':
+                    depth += 1
+                else if b == ')':
+                    depth -= 1
+                pi += 1
+            if open > 0:
+                return emit_fn_ptr_from_parts(str_strip(t.slice(0, open)), t.slice(open + 1, t.len - open - 2))
 
     let bare = strip_cv(t)
 
@@ -241,12 +259,7 @@ function map_type(qual_type: str) -> string.String:
     return string.String.from_str(bare)
 
 
-function emit_fn_ptr(t: str, open: ptr_uint) -> string.String:
-    var ret_type = str_strip(t.slice(0, open))
-    if ret_type.len > 0 and ret_type.byte_at(ret_type.len - 1) == '*':
-        ret_type = str_strip(ret_type.slice(0, ret_type.len - 1))
-
-    var params = t.slice(open + 1, t.len - open - 2)
+function emit_fn_ptr_from_parts(ret_type: str, params: str) -> string.String:
     var r = string.String.from_str("fn(")
     if params != "void" and params != "":
         var comma: ptr_uint = 0
@@ -266,10 +279,8 @@ function emit_fn_ptr(t: str, open: ptr_uint) -> string.String:
                 comma = j + 1
                 an += 1
             else if j < params.len:
-                if params.byte_at(j) == '(':
-                    pd += 1
-                if params.byte_at(j) == ')':
-                    pd -= 1
+                if params.byte_at(j) == '(': pd += 1
+                if params.byte_at(j) == ')': pd -= 1
             j += 1
     r.append(") -> ")
     var mr = map_type(ret_type)
@@ -616,8 +627,9 @@ function emit_decl(buf: ref[string.String], d: CDecl) -> void:
             let fp = d.fields.get(fi) else:
                 break
             unsafe:
+                var escaped = safe_name(string.String.from_str(fp.f_name))
                 buf.append("    ")
-                buf.append(fp.f_name)
+                buf.append(escaped.as_str())
                 buf.append(": ")
                 buf.append(fp.f_type.as_str())
                 buf.append("\n")
@@ -891,3 +903,11 @@ public function generate(opts: ref[BindgenOptions]) -> Result[string.String, str
             m.append(err.message.as_str())
             err.message.release()
             return Result[string.String, string.String].failure(error = m)
+
+function strip_surrounding_parens(s: str) -> str:
+    var result = s
+    if result.len > 0 and result.byte_at(0) == '(':
+        result = result.slice(1, result.len - 1)
+    if result.len > 0 and result.byte_at(result.len - 1) == ')':
+        result = result.slice(0, result.len - 1)
+    return result
