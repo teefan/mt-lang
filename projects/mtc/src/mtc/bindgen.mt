@@ -368,6 +368,12 @@ function walk(node_obj: ptr[json.Object]?, decls: ref[vec.Vec[CDecl]]) -> void:
                     var d = mk_decl("enum", name, "")
                     extract_members(node_obj, ref_of(d))
                     decls.push(d)
+                else:
+                    # Anonymous enum (e.g. typedef enum { ... } Name) — queue
+                    # its members to be paired with the following TypedefDecl.
+                    var d = mk_decl("enum", "", "")
+                    extract_members(node_obj, ref_of(d))
+                    decls.push(d)
             else if kind == "FunctionDecl":
                 let sc = jget_str(node_obj, "storageClass")
                 if sc != "static":
@@ -383,11 +389,24 @@ function walk(node_obj: ptr[json.Object]?, decls: ref[vec.Vec[CDecl]]) -> void:
                 if name != "":
                     let qtp = read(node_obj).get("type")
                     let qt = jget_qualtype(qtp)
-                    # Skip self-aliasing typedefs (typedef struct Vec2 {...} Vec2)
+                    # For struct/union self-aliases, skip (RecordDecl handles it).
+                    # For enum self-aliases where an anonymous EnumDecl was just
+                    # collected, steal the anonymous enum's members.
                     if not is_self_alias(name, qt):
                         var d = mk_decl("typedef", name, "")
                         d.qual_type = string.String.from_str(qt)
                         decls.push(d)
+                    else if str_has_prefix(str_strip(qt), "enum "):
+                        # Pair this typedef with the preceding anonymous EnumDecl.
+                        var anon_idx = decls.len()
+                        while anon_idx > 0:
+                            anon_idx -= 1
+                            let adp = decls.get(anon_idx) else:
+                                break
+                            if read(adp).kind.as_str() == "enum" and read(adp).c_name.as_str() == "":
+                                read(adp).c_name = string.String.from_str(name)
+                                read(adp).mt_name = safe_name(string.String.from_str(name))
+                                break
             else if kind == "VarDecl":
                 let sc = jget_str(node_obj, "storageClass")
                 if sc != "static":
@@ -450,6 +469,7 @@ function extract_members(node: ptr[json.Object], decl: ref[CDecl]) -> void:
         if children == null:
             return
         var i: ptr_uint = 0
+        var counter: long = 0
         while true:
             let cvp = read(children).get(i) else:
                 break
@@ -460,10 +480,21 @@ function extract_members(node: ptr[json.Object], decl: ref[CDecl]) -> void:
                     let en = jget_str(co, "name")
                     if en != "":
                         var vt = find_enum_value(co, en)
-                        if vt == "":
-                            vt = "0"
-                        decl.members.push(CMember(ename = en, evalue = string.String.from_str(vt)))
+                        if vt != "":
+                            counter = parse_long(vt)
+                        var val_str = long_to_str(counter)
+                        decl.members.push(CMember(ename = en, evalue = string.String.from_str(val_str)))
+                        counter += 1
             i += 1
+
+
+function long_to_str(n: long) -> str:
+    if n < 0:
+        var u = uint_to_str(ptr_uint<-(-n))
+        var r = string.String.from_str("-")
+        r.append(u)
+        return r.as_str()
+    return uint_to_str(ptr_uint<-n)
 
 
 ## Find the value of an enum constant by looking inside its inner
