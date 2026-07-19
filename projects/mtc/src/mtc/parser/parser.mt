@@ -2034,7 +2034,11 @@ function parse_match_arm_into(s: ref[pstate.ParserState], arms: ref[vec.Vec[ast.
         while match_kind(s, tk.TokenKind.pipe):
             patterns.push(parse_pattern(s))
     var binding_name: Option[str] = Option[str].none
+    var binding_line: ptr_uint = 0
     if match_kind(s, tk.TokenKind.tk_as):
+        let prev = pstate.previous(s) else:
+            fatal(c"parse inner missing previous token")
+        unsafe: binding_line = read(prev).line
         consume_name(s, c"expected binding name after as")
         binding_name = Option[str].some(value = previous_lexeme(s))
     consume(s, tk.TokenKind.colon, c"expected ':' after match pattern")
@@ -2047,7 +2051,7 @@ function parse_match_arm_into(s: ref[pstate.ParserState], arms: ref[vec.Vec[ast.
         unsafe:
             read(body) = ast.Stmt.stmt_block(statements = body_span)
     if is_wild:
-        arms.push(ast.MatchArm(pattern = null, binding_name = binding_name, binding_line = 0, binding_column = 0, body = body))
+        arms.push(ast.MatchArm(pattern = null, binding_name = binding_name, binding_line = binding_line, binding_column = 0, body = body))
         return
     # Expand `p1 | p2 | ...` into one arm per alternative sharing the body.
     var i: ptr_uint = 0
@@ -2055,7 +2059,7 @@ function parse_match_arm_into(s: ref[pstate.ParserState], arms: ref[vec.Vec[ast.
         let pp = patterns.get(i) else:
             break
         unsafe:
-            arms.push(ast.MatchArm(pattern = read(pp), binding_name = binding_name, binding_line = 0, binding_column = 0, body = body))
+            arms.push(ast.MatchArm(pattern = read(pp), binding_name = binding_name, binding_line = binding_line, binding_column = 0, body = body))
         i += 1
 
 
@@ -3204,7 +3208,11 @@ function parse_match_expr_arm_into(s: ref[pstate.ParserState], arms: ref[vec.Vec
         while match_kind(s, tk.TokenKind.pipe):
             patterns.push(parse_pattern(s))
     var binding_name: Option[str] = Option[str].none
+    var binding_line: ptr_uint = 0
     if match_kind(s, tk.TokenKind.tk_as):
+        let prev = pstate.previous(s) else:
+            fatal(c"parse inner missing previous token")
+        unsafe: binding_line = read(prev).line
         consume_name(s, c"expected binding name after as")
         binding_name = Option[str].some(value = previous_lexeme(s))
     consume(s, tk.TokenKind.colon, c"expected ':' after match pattern")
@@ -3212,14 +3220,14 @@ function parse_match_expr_arm_into(s: ref[pstate.ParserState], arms: ref[vec.Vec
     if not block_expression(value):
         consume_end_of_statement(s)
     if is_wild:
-        arms.push(ast.MatchExprArm(pattern = null, binding_name = binding_name, binding_line = 0, binding_column = 0, value = value))
+        arms.push(ast.MatchExprArm(pattern = null, binding_name = binding_name, binding_line = binding_line, binding_column = 0, value = value))
         return
     var i: ptr_uint = 0
     while i < patterns.len():
         let pp = patterns.get(i) else:
             break
         unsafe:
-            arms.push(ast.MatchExprArm(pattern = read(pp), binding_name = binding_name, binding_line = 0, binding_column = 0, value = value))
+            arms.push(ast.MatchExprArm(pattern = read(pp), binding_name = binding_name, binding_line = binding_line, binding_column = 0, value = value))
         i += 1
 
 

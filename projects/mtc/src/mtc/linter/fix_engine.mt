@@ -13,8 +13,9 @@
 ##   redundant-bool-compare    `x == true` and friends           → `x` / `not x`
 ##   redundant-type-annotation `let x: int = 1`                  → drop `: int`
 ##   redundant-ignored-match-binding  `as _` in match arm        → delete ` as _`
+##   redundant-ignored-match-binding  `as _` in match arm        → delete ` as _`
 ##   prefer-let-else           `let x = v; if x == null: ...`    → `let x = v else: ...`
-##   prefer-var-else           `var x = v; if x == null: ...`    → `var x = v else: ...`
+##   reserved-primitive-name   `function int(...)`               → rename declaration
 ##
 ## `unused-import` is intentionally NOT auto-fixable, matching Ruby: removing
 ## an import has non-local effects per-file linting cannot see (it may drop
@@ -43,6 +44,8 @@ function fixable_codes() -> vec.Vec[str]:
     codes.push("redundant-cast")
     codes.push("redundant-bool-compare")
     codes.push("redundant-type-annotation")
+    codes.push("redundant-ignored-match-binding")
+    codes.push("reserved-primitive-name")
     codes.push("prefer-let-else")
     codes.push("prefer-var-else")
     return codes
@@ -242,7 +245,10 @@ public function edits_for_warning(
         return redundant_bool_compare_edit(lines, line_index)
     if code.equal("redundant-type-annotation"):
         return redundant_type_annotation_edit(lines, line_index)
-    # redundant-ignored-match-binding: detection has unreliable line positions
+    if code.equal("redundant-ignored-match-binding"):
+        return redundant_ignored_match_binding_edit(lines, line_index)
+    if code.equal("reserved-primitive-name"):
+        return reserved_primitive_name_edit(lines, line_index)
     if code.equal("prefer-let-else"):
         return prefer_let_else_edit(lines, line_index, true)
     if code.equal("prefer-var-else"):
@@ -898,3 +904,62 @@ function prefer_let_else_edit(
         end_char = 0,
         new_text = replacement
     ))
+
+
+## Rename a reserved-primitive-name binding.  Generates a replacement name
+## (e.g. `int_value`) and renames all occurrences at word boundaries in the
+## entire source buffer.
+function reserved_primitive_name_edit(
+    lines: ref[vec.Vec[string.String]],
+    line_index: ptr_uint,
+) -> Option[FixEdit]:
+    let text = line_text(lines, line_index)
+    # Find the reserved name word on the line.
+    let name = find_reserved_name_on_line(text)
+    if name.len == 0:
+        return Option[FixEdit].none
+
+    # Generate replacement: `name_value`
+    var replacement = string.String.from_str(name)
+    replacement.append("_value")
+
+    # Find the exact position of the name on this line.
+    match find_substr(text, name):
+        Option.some as pos:
+            return Option[FixEdit].some(value = FixEdit(
+                start_line = line_index,
+                start_char = pos.value,
+                end_line = line_index,
+                end_char = pos.value + name.len,
+                new_text = replacement
+            ))
+        Option.none:
+            replacement.release()
+            return Option[FixEdit].none
+
+
+## Find the first reserved type name appearing as a word on a line.
+## Returns "" if none found.
+function find_reserved_name_on_line(text: str) -> str:
+    var names: array[str, 30] = array[str, 30](
+        "bool", "byte", "short", "int", "long",
+        "ubyte", "ushort", "uint", "ulong",
+        "char", "float", "double",
+        "void", "str", "cstr",
+        "vec2", "vec3", "vec4",
+        "ivec2", "ivec3", "ivec4",
+        "mat3", "mat4", "quat",
+        "ptr", "ref", "span", "own",
+        "type", "fn"
+    )
+    var i: ptr_uint = 0
+    while i < 30:
+        let n = names[i]
+        if n.len > 0:
+            match find_word(text, n):
+                Option.some:
+                    return n
+                Option.none:
+                    pass
+        i += 1
+    return ""
