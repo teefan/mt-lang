@@ -372,7 +372,22 @@ function emit_single_raw(
         let fp = func.params.get(0) else:
             return lines
         let first_type = read(fp).param_type.as_str()
-        var method_kind = if spec.receiver_types.len() == 0 or not type_in_list(first_type, spec.receiver_types): "static " else: ""
+        # Strip import alias prefix if present (e.g. "c.Color" -> "Color")
+        var type_to_check = first_type
+        if raw_alias.len > 0 and first_type.starts_with(raw_alias):
+            let after_alias = first_type.slice(raw_alias.len, first_type.len - raw_alias.len)
+            if after_alias.starts_with("."):
+                type_to_check = after_alias.slice(1, after_alias.len - 1)
+        # Default receiver_types to [receiver_type] when empty
+        var receivers = spec.receiver_types
+        var has_default_receivers = false
+        if receivers.len() == 0:
+            receivers = vec.Vec[string.String].create()
+            receivers.push(string.String.from_str(spec.receiver_type.as_str()))
+            has_default_receivers = true
+        var method_kind = if not type_in_list(type_to_check, receivers): "static " else: ""
+        if has_default_receivers:
+            receivers.release()
 
         var method_name = naming.strip_prefix_str(func.name.as_str(), spec.strip_prefix.as_str())
         var snaked = naming.snake_case(method_name)
@@ -384,12 +399,12 @@ function emit_single_raw(
         sig.append("function ")
         sig.append(sanitized.as_str())
         sig.append("(")
-        var spi: ptr_uint = 1
+        var spi: ptr_uint = if method_kind.len == 0: 1 else: 0
         while spi < func.params.len:
             let pp = func.params.get(spi) else:
                 spi += 1
                 continue
-            if spi > 1:
+            if spi != (if method_kind.len == 0: 1 else: 0):
                 sig.append(", ")
             var pname = naming.snake_case(read(pp).name.as_str())
             sig.append(pname.as_str())
@@ -402,23 +417,27 @@ function emit_single_raw(
         sig.append(":")
         lines.push(sig)
 
+        var call_name_snaked = naming.snake_case(func.name.as_str())
+        var call_name = naming.sanitize_binding_name(call_name_snaked.as_str())
+
         var call = string.String.with_capacity(200)
         call.append("        ")
         if not func.return_type.as_str().equal("void"):
             call.append("return ")
-        call.append(raw_alias)
-        call.append(".")
-        call.append(func.name.as_str())
+        call.append(call_name.as_str())
         call.append("(")
-        if method_kind.len > 0:
+        if method_kind.len == 0:
             call.append("this")
-        var ci: ptr_uint = 1
+        var need_comma = method_kind.len == 0
+        var ci: ptr_uint = if method_kind.len == 0: 1 else: 0
         while ci < func.params.len:
             let pp = func.params.get(ci) else:
                 ci += 1
                 continue
-            if ci > 1 or method_kind.len > 0:
+            if need_comma:
                 call.append(", ")
+            else:
+                need_comma = true
             var pname = naming.snake_case(read(pp).name.as_str())
             call.append(pname.as_str())
             pname.release()
@@ -493,20 +512,29 @@ function emit_single_external(
         var snaked = naming.snake_case(method_name)
         var sanitized = naming.sanitize_binding_name(snaked.as_str())
 
-        var method_kind: str
+        var method_kind = "static "
         if func.params.len > 0:
             let fp = func.params.get(0) else:
                 pass
             if fp != null:
                 let first_type = read(fp).param_type.as_str()
-                if not type_in_list(first_type, spec.receiver_types):
-                    method_kind = "static "
-                else:
+                var type_to_check = first_type
+                # Strip any module prefix (e.g. "rl.Vector2" -> "Vector2")
+                var dot_pos_opt = first_type.find_substring(".")
+                if dot_pos_opt.is_some():
+                    let dp = dot_pos_opt.unwrap()
+                    type_to_check = first_type.slice(dp + 1, first_type.len - dp - 1)
+                # Default receiver_types to [receiver_type]
+                var receivers = spec.receiver_types
+                var has_df = false
+                if receivers.len() == 0:
+                    receivers = vec.Vec[string.String].create()
+                    receivers.push(string.String.from_str(spec.receiver_type.as_str()))
+                    has_df = true
+                if type_in_list(type_to_check, receivers):
                     method_kind = ""
-            else:
-                method_kind = "static "
-        else:
-            method_kind = "static "
+                if has_df:
+                    receivers.release()
 
         var sig = string.String.with_capacity(200)
         sig.append("    public ")
@@ -514,12 +542,12 @@ function emit_single_external(
         sig.append("function ")
         sig.append(sanitized.as_str())
         sig.append("(")
-        var spi: ptr_uint = 1
+        var spi: ptr_uint = if method_kind.len == 0: 1 else: 0
         while spi < func.params.len:
             let pp = func.params.get(spi) else:
                 spi += 1
                 continue
-            if spi > 1:
+            if spi != (if method_kind.len == 0: 1 else: 0):
                 sig.append(", ")
             var pname = naming.snake_case(read(pp).name.as_str())
             sig.append(pname.as_str())
@@ -528,7 +556,13 @@ function emit_single_external(
             pname.release()
             spi += 1
         sig.append(") -> ")
-        sig.append(func.return_type.as_str())
+        var rt = func.return_type.as_str()
+        # Strip module prefix (e.g. "rl.Vector2" -> "Vector2")
+        var rt_dot = rt.find_substring(".")
+        if rt_dot.is_some():
+            let dp = rt_dot.unwrap()
+            rt = rt.slice(dp + 1, rt.len - dp - 1)
+        sig.append(rt)
         sig.append(":")
         lines.push(sig)
 
@@ -540,15 +574,18 @@ function emit_single_external(
         call.append(".")
         call.append(pub_name)
         call.append("(")
-        if method_kind.len > 0:
+        if method_kind.len == 0:
             call.append("this")
-        var ci: ptr_uint = 1
+        var need_comma = method_kind.len == 0
+        var ci: ptr_uint = if method_kind.len == 0: 1 else: 0
         while ci < func.params.len:
             let pp = func.params.get(ci) else:
                 ci += 1
                 continue
-            if ci > 1 or method_kind.len > 0:
+            if need_comma:
                 call.append(", ")
+            else:
+                need_comma = true
             var pname = naming.snake_case(read(pp).name.as_str())
             call.append(pname.as_str())
             pname.release()

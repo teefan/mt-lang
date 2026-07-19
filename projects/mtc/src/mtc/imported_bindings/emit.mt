@@ -390,8 +390,12 @@ function build_raw_params(l: ref[string.String], raw_funcs: span[raw.RawFuncInfo
                     l.append(", ")
                 var pname = naming.snake_case(read(param_ptr).name.as_str())
                 l.append(pname.as_str())
-                l.append(": ")
-                l.append(read(param_ptr).param_type.as_str())
+                let ptype = read(param_ptr).param_type.as_str()
+                if ptype.equal("cstr"):
+                    l.append(": str as cstr")
+                else:
+                    l.append(": ")
+                    l.append(ptype)
                 pname.release()
             pi += 1
 
