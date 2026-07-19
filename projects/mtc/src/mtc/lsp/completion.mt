@@ -81,6 +81,14 @@ public function handle_completion(
                 unsafe: read(methods).release()
                 heap.release(methods)
                 return
+
+            # Try enum/variant member completions.
+            var members = enum_member_completions(ref_of(analysis), recv.value)
+            if members != null:
+                proto.write_response_raw(id, unsafe: read(members).as_str())
+                unsafe: read(members).release()
+                heap.release(members)
+                return
         Option.none:
             pass
 
@@ -585,6 +593,41 @@ function named_argument_completions(
             append_item(ref_of(result), param.name, KIND_VARIABLE, ref_of(first))
             first = false
         pi += 1
+
+    result.append("]")
+
+    if first:
+        result.release()
+        return null
+
+    let alloc = heap.must_alloc[string.String](1)
+    unsafe: read(alloc) = result
+    return alloc
+
+
+## Complete enum/variant member names after a dot receiver.
+## When the cursor is after `EnumType.`, return the enum's member names.
+function enum_member_completions(analysis: ref[analyzer.Analysis], name: str) -> ptr[string.String]?:
+    let type_name = resolve_receiver_type_name(analysis, name)
+    if type_name.len == 0:
+        return null
+
+    let members_ptr = unsafe: read(analysis).match_case_names.get(type_name)
+    if members_ptr == null:
+        return null
+
+    var result = string.String.create()
+    result.append("[")
+    var first = true
+    unsafe:
+        let members = read(members_ptr)
+        var mi: ptr_uint = 0
+        while mi < members.len:
+            let mname = read(members.data + mi)
+            if mname.len > 0:
+                append_item(ref_of(result), mname, KIND_ENUM, ref_of(first))
+                first = false
+            mi += 1
 
     result.append("]")
 
