@@ -9,6 +9,7 @@ import std.fs as fs
 import mtc.imported_bindings.policy as policy
 import mtc.imported_bindings.raw_scanner as raw
 import mtc.imported_bindings.emit as emit_mod
+import mtc.imported_bindings.methods as methods_mod
 
 
 ## Generate a complete imported binding module from a policy JSON file and
@@ -70,6 +71,23 @@ public function generate(
                             result.append("\n")
                         cx += 1
                     release_string_vec(ref_of(cross_imports))
+
+                    # Method source imports (e.g. import std.raymath as math)
+                    var msi: ptr_uint = 0
+                    while msi < pol.methods.len():
+                        let mspec = pol.methods.get(msi) else:
+                            msi += 1
+                            continue
+                        unsafe:
+                            let mname = read(mspec).module_name.as_str()
+                            let alias = read(mspec).module_import_alias.as_str()
+                            if mname.len > 0 and alias.len > 0:
+                                result.append("import ")
+                                result.append(mname)
+                                result.append(" as ")
+                                result.append(alias)
+                                result.append("\n")
+                        msi += 1
 
                     # Policy imports
                     var pii: ptr_uint = 0
@@ -137,7 +155,86 @@ public function generate(
                             fi += 1
                     release_string_vec(ref_of(func_lines))
 
+                    # Method extensions
+                    var ext_funcs = vec.Vec[methods_mod.MethodFunc].create()
+                    var ext_alias = string.String.create()
+                    var has_external = load_external_method_sources(ref_of(pol), ref_of(ext_funcs), ref_of(ext_alias))
+
+                    var method_lines = methods_mod.generate(
+                        pol.methods,
+                        raw_info.functions.as_span(),
+                        raw_info.func_order.as_span(),
+                        ext_funcs,
+                        ext_alias.as_str(),
+                        pol.import_alias.as_str(),
+                    )
+                    if method_lines.len() > 0:
+                        var mli: ptr_uint = 0
+                        while mli < method_lines.len():
+                            let line = method_lines.get(mli)
+                            if line != null:
+                                result.append(unsafe: read(line).as_str())
+                                result.append("\n")
+                            mli += 1
+                    release_string_vec(ref_of(method_lines))
+                    ext_funcs.release()
+                    ext_alias.release()
+
                     return Result[string.String, string.String].success(value = result)
+
+
+function load_external_method_sources(
+    pol: ref[policy.BindingPolicy],
+    ext_funcs: ref[vec.Vec[methods_mod.MethodFunc]],
+    ext_alias: ref[string.String],
+) -> bool:
+    var mi: ptr_uint = 0
+    while mi < pol.methods.len():
+        let spec = pol.methods.get(mi) else:
+            mi += 1
+            continue
+        unsafe:
+            let module_name = read(spec).module_name.as_str()
+            if module_name.len > 0:
+                # Resolve module name to file path (std.raymath → std/raymath.mt)
+                var path_buf = string.String.with_capacity(module_name.len + 3)
+                var ci: ptr_uint = 0
+                while ci < module_name.len:
+                    let ch = module_name.byte_at(ci)
+                    if ch == '.':
+                        path_buf.push_byte('/')
+                    else:
+                        path_buf.push_byte(ch)
+                    ci += 1
+                path_buf.append(".mt")
+                let path = path_buf.as_str()
+
+                match fs.read_text(path):
+                    Result.failure:
+                        path_buf.release()
+                        return false
+                    Result.success as rp:
+                        var source = rp.value
+                        defer source.release()
+                        var funcs = methods_mod.scan_generated_module(source.as_str())
+                        # Copy functions to output
+                        var fi: ptr_uint = 0
+                        while fi < funcs.len():
+                            let f = funcs.get(fi)
+                            if f != null:
+                                unsafe: ext_funcs.push(read(f))
+                            fi += 1
+                        funcs.release()
+
+                        # Extract alias from import_alias
+                        let imp_alias = read(spec).module_import_alias.as_str()
+                        ext_alias.release()
+                        read(ext_alias) = string.String.from_str(if imp_alias.len > 0: imp_alias else: module_name)
+                        path_buf.release()
+                        return true
+
+        mi += 1
+    return false
 
 
 function release_string_vec(v: ref[vec.Vec[string.String]]) -> void:
