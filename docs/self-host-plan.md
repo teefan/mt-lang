@@ -1,15 +1,21 @@
 # Self-Host Plan
 
-Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP ALL TIERS + QUALITY GAPS + GAP CLOSURE COMPLETE.**
+Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP + DAP COMPLETE.**
 Stage2 == stage3 byte-identical. 177 self-tests pass across 12 test files.
 **Raylib parity: 217/219 build and run** (the 2 remaining are non-executable
 support files rejected with byte-identical Ruby messages, §2.4; vendored-library
 subsystem §2.6; Wayland run parity via vendored raylib §2.7). **Language parity:
 13/13 build under `--no-cache`**; all 12 examples runnable headless produce
-byte-identical stdout+exit vs Ruby. CLI: 17 commands at parity (added `cache`,
-`lsp`). **`mtc lint` has 36 rules plus `--fix`
+byte-identical stdout+exit vs Ruby. CLI: 18 commands at parity (added `cache`,
+`lsp`, `dap`). **`mtc lint` has 36 rules plus `--fix`
 (7 auto-fixable rules, byte-identical output vs Ruby) and `.mt-lint.yml`
 config** (§3.4). Bootstrap via `tools/bootstrap.sh`.
+
+**DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**  Process
+backend spawns debuggee via `std.process.spawn`, polls child stdout/stderr
+non-blockingly, forwards output as DAP events, detects child exit with
+`try_wait()`.  Lldb-dap bridge assessed as not feasible without multi-threaded
+I/O (§dap-design §9).  Noted in separate `docs/dap-design.md`.
 
 **LSP: 35 modules, ~8,500 lines, 29 capabilities advertised, capability-parity with Ruby.**
 All original 3 tiers + 4 quality phases + long-tail items + the 24-gap closure
@@ -26,7 +32,7 @@ pull, and 4 workspace notification handlers.  Verified against a real editor
 The self-host LSP matches the Ruby LSP on all 29 advertised capabilities, all 53
 handler method dispatches, and all workspace notification implementations.
 
-Last updated: 2026-07-19 (LSP 24-gap closure + infrastructure-depth items complete; 35 modules, 29 caps)
+Last updated: 2026-07-19 (LSP gap closure + DAP Phase 1 complete; LSP 35 modules, DAP 7 modules)
 
 ---
 
@@ -148,6 +154,25 @@ All landed under a held fixed point (177/177 tests), 13/13 language examples,
 New modules (12): execute_command, document_context, debug_info, document_link,
 linked_editing_range, code_lens, type_hierarchy, call_hierarchy, pull_diagnostics,
 workspace_notifications (replaced stubs).  Total: +3,000 lines.
+
+---
+
+## 0e. 2026-07-19 session — DAP process backend (4 phases)
+
+All landed under a held fixed point (177/177 tests).
+
+| Phase | Commit | What |
+|-------|--------|------|
+| 1 | `67a0c536` | DAP protocol (Content-Length framing, JSON parsing, `Message` struct), server loop, 25-command dispatch, 15 full handler implementations, design doc |
+| 2 | `8ca5d65f`→`beaf7f99` | Review cleanup + fix JSON use-after-free (`parsed` released in `release_message` not `read_message`) + fix session double-free |
+| 3 | `d531f1b8` | Functional process backend: launch spawns child via `process.spawn`, poll stdout/stderr non-blockingly between dispatches, exit detection via `try_wait()`, SIGCONT/SIGSTOP/SIGTERM signal forwarding |
+| 4 | `06f3a45a` | Final cleanup: removed dead `release_msg`, unused imports, truncated comments |
+
+New modules (7): protocol, server, session, handlers, process_backend, wire,
+utilities.  Total: +1,050 lines.
+
+Lldb-dap bridge assessed as not feasible without multi-threaded I/O or
+`select`/`poll` syscall bindings (§dap-design §9).
 
 ---
 
@@ -527,8 +552,9 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 | `--jobs` parallel test execution | Medium |
 | ~~`--sanitize`~~ **DONE (2026-07-17)** | — |
 | ~~`cache` inspection~~ **DONE (2026-07-17)** | — |
-| ~~`run-module`, `new`, `completions`~~ **DONE (§2.8)**; `debug`, `deps`, `toolchain`, `bindgen`, `docs`, `snapshot` | Varies |
+| ~~`run-module`, `new`, `completions`~~ **DONE (§2.8)**; `deps`, `toolchain`, `bindgen`, `docs`, `snapshot` | Varies |
 | ~~LSP server~~ **DONE (2026-07-19)** — 35 modules, ~8,500 lines, 29 capabilities at Ruby parity | — |
+| ~~DAP server~~ **DONE (2026-07-19)** — 7 modules, ~1,050 lines, process backend with child I/O polling | — |
 | LSP workspace dependency graph (didChangeWatchedFiles depth) | Medium |
 | LSP multi-root reindex (didChangeWorkspaceFolders depth) | Medium |
 
@@ -625,8 +651,9 @@ Both examples now exit 0 with byte-identical stdout+exit under both compilers, v
 
 ### 5.4 CLI commands not implemented (§0.4)
 
-`debug`, `deps`, `toolchain`, `bindgen`, `docs`, `snapshot`. The other 16 commands
-are at parity, incl. `cache` / `new` / `run-module` / `completions`.
+`deps`, `toolchain`, `bindgen`, `docs`, `snapshot`. The other 18 commands
+are at parity, incl. `cache` / `new` / `run-module` / `completions` / `lsp` / `dap`.
+The legacy Ruby `debug` command is replaced by `mtc dap`.
 
 ### 5.5 Subsystems not ported (§4)
 
@@ -676,39 +703,18 @@ pcre2, steamworks) follow the §2.6 pattern when an example needs them.
   CPS-async scaffolding symbols, format-fallback literals — all confirmed by
   identical runtime output.
 
-### 5.7 LSP remaining deltas (quality, not bugs)
-
-25 of Ruby's 49 capabilities are advertised; every advertised feature is at
-functional parity or better.  All documented quality gaps from §5.8 item 5
-are now closed (2026-07-19): scope-aware references/rename (§5.7.1),
-method-receiver completion (§5.7.2), inlay hints for import-alias calls
-(§5.7.3), named-argument completion (§5.7.4), and workspace-symbol index
-with empty-query support (§5.7.5).
-
-Remaining Ruby-only capabilities (24): call hierarchy (3 methods), type
-hierarchy (3), codeLens + resolve, documentLink + resolve, rangeFormatting,
-linkedEditingRange, executeCommand, completionItem/resolve, semanticTokens
-full/delta, pull diagnostics (2), progress/configuration/cancel plumbing,
-`milkTea/*` custom methods.  These are larger-scope items for a future session.
-
 ### 5.8 Next-session candidates (prioritized)
 
 1. **`deps` package management** (Large) — the biggest remaining CLI gap;
-   `--locked`/`--frozen` resolution depends on it. Multi-session project;
-   start with `PackageManifest`/`PackageGraph` reading and `deps tree`.
-2. **`bindgen`** (Medium-Large) — C header → binding module generation;
-   unlocks self-serve external bindings.
+   `--locked`/`--frozen` resolution depends on it. Start with
+   `PackageManifest`/`PackageGraph` reading and `deps tree`.
+2. **`bindgen`** (Medium-Large) — C header → binding module generation.
 3. **Wasm/emcc + preview server** (Large) — platform reach.
-4. **Linter depth** (Medium) — sema-based `redundant-cast` (Ruby finds 42
-   coercion-redundant casts on projects/mtc/src that the AST-level rule
-   cannot), Ruby's line-too-long wrappable-candidate skip-set + "; wrap the
-   expression" suffix (needs formatter wrap-fix machinery), remaining
-   fixable rules (prefer-let-else/var-else, redundant-ignored-match-binding,
-   reserved-primitive-name renames).
-5. **LSP capabilities** (Large, 24 items) — call hierarchy, type hierarchy,
-   codeLens, documentLink, rangeFormatting, linkedEditingRange, executeCommand,
-   completionItem/resolve, semanticTokens full/delta, pull diagnostics,
-   progress/configuration/cancel plumbing, `milkTea/*` custom methods.
+4. **Linter depth** (Medium) — sema-based `redundant-cast`, formatter wrap-fix
+   machinery, remaining fixable rules.
+5. **DAP lldb-dap bridge** (Currently infeasible) — requires async I/O or
+   `select`/`poll` syscall bindings to support multi-fd polling.
+6. **`--bundle` / `--archive`** (Medium) — native package distribution.
 
 ### 5.9 Verification checklist for any change
 

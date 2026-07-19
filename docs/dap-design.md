@@ -1,9 +1,10 @@
 # Self-Host DAP Architecture
 
-Status: **Phase 1 implementation — process backend (15 handlers).**
+Status: **Phase 1 implementation — functional process backend (25 handlers).**
 Last updated: 2026-07-19.
-7 modules, ~800 lines, 15 of 25 DAP handlers implemented.
-Phase 2 (lldb-dap bridge) deferred.
+7 modules, ~1,050 lines, 25 of 25 DAP handlers dispatched with 15 full
+implementations.
+Phase 2 (lldb-dap bridge) assessed as not feasible without multi-threaded I/O.
 
 ## 0. Design Principles
 
@@ -52,14 +53,14 @@ if cmd == "dap":
 ```
 projects/mtc/src/mtc/
   lsp/              ← existing (35 modules)
-  dap/              ← new (7 modules, ~800 lines)
+  dap/              ← new (7 modules, ~1,050 lines)
     protocol.mt     ← DAP Content-Length framing, read/write
-    server.mt       ← message loop, handler dispatch, entry point
+    server.mt       ← message loop, child I/O polling, exit detection
     session.mt      ← launch state, breakpoints, config tracking
-    handlers.mt     ← 15 request handlers
-    process_backend.mt ← child process launch + I/O polling
+    handlers.mt     ← 25-command dispatch, 15 handlers + 8 error + 2 no-op
+    process_backend.mt ← child process I/O polling + output events
     wire.mt         ← write_response, write_event, write_error
-    utilities.mt    ← path resolution, error helpers
+    utilities.mt    ← path resolution, helper functions
 ```
 
 ### 2.1 Module dependencies
@@ -126,7 +127,7 @@ Client                Server
 | Handler | Implementation |
 |---------|---------------|
 | `initialize` | Returns ADAPTER_CAPABILITIES, sends `initialized` event |
-| `launch` | Builds .mt → binary via `Build.build()`, stores `runnable_path` |
+| `launch` | Resolves program path, spawns child via `std.process.spawn` |
 | `attach` | Error response ("attach requires lldb-dap backend") |
 | `setBreakpoints` | Registers in session, marks unverified for process backend |
 | `setFunctionBreakpoints` | Registers in session |
@@ -193,30 +194,38 @@ of the existing `projects/mtc` package.  No changes to `tools/bootstrap.sh`.
 
 | Aspect | Ruby DAP | Self-Host DAP (Phase 1) |
 |--------|----------|--------------------------|
-| Lines | ~2,800 (10 files) | ~800 (7 modules) |
+| Lines | ~2,800 (10 files) | ~1,050 (7 modules) |
 | Threads | Multi-threaded (reader + runtime + lldb bridge) | Single-threaded |
 | Dispatch | 7 mixin modules | if/else chain |
 | JSON | `JSON.parse` / `JSON.dump` | `std.json.parse` / raw-string rendering |
 | Transport | Stdio Content-Length | Same (`read_char()` loop) |
 | Backends | "process" + "lldb-dap" | "process" only |
-| Handlers | 25 of 25 | 15 full + 8 errors + 2 no-ops |
+| Handlers | 25 of 25 | 25 dispatched (15 full + 8 errors + 2 no-ops) |
+| Child process | Background thread `Open3.popen3` | Non-blocking `read_stdout(0)` polling |
 | Breakpoints | Verified via lldb-dap | Unverified (registered only) |
 | Variable inspection | Via lldb-dap | Empty / unsupported |
+| Signal control | `Process.kill("STOP"/"CONT")` | `child.kill(SIGSTOP/SIGCONT)` |
 
 ---
 
-## 9. Phase 2 — lldb-dap Bridge (Future)
+## 9. Phase 2 — lldb-dap Bridge (Assessed — Not Feasible)
 
-The lldb-dap backend requires bidirectional subprocess communication:
+The lldb-dap backend requires three concurrent I/O operations:
+1. Reading client stdin (blocking `read_char()`)
+2. Reading lldb-dap stdout responses
+3. Reading lldb-dap stdout events (asynchronous)
 
-1. Spawn `lldb-dap` as a child process
-2. Bridge DAP requests from the client to `lldb-dap`
-3. Bridge events (stopped, output, terminated) from `lldb-dap` back to the client
-4. Handle reverse requests (lldb-dap asks the client for things)
+The Ruby DAP solves this with 3 background threads + Mutex/Queue for
+request/response matching.  In the self-host's single-threaded `read_char()`
+model, stdin is blocking — while waiting for client input, lldb-dap events
+cannot be polled.  While spin-reading lldb-dap responses, client messages
+cannot be received.
 
-In the self-host's single-threaded model this requires:
-- A poll/select loop that checks stdin, child stdout, and child stderr
-- A request queue for matching lldb-dap responses to pending client requests
-- The session state machine for tracking backend initialization
+Two paths would make this feasible:
+1. Add async/non-blocking `read_char()` support to `std.stdio` (a stdlib change)
+2. Refactor the server loop to use `select`/`poll` on multiple file descriptors
+   (requires OS-level syscall bindings not yet available in Milk Tea)
 
-This is deferred until the process backend is proven and stable.
+Until one of these is available, the lldb-dap bridge is architecturally
+incompatible with the self-host's I/O model.  The process backend covers the
+core DAP use case (run, view output, terminate).
