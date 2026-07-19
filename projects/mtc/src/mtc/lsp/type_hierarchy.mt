@@ -77,6 +77,9 @@ public function handle_prepare_type_hierarchy(
             else if analysis.interfaces.contains(name):
                 found = true
                 kind = KIND_INTERFACE
+            else if analysis.type_alias_types.contains(name):
+                found = true
+                kind = KIND_CLASS
 
             if not found:
                 proto.write_response(id, json.null_value())

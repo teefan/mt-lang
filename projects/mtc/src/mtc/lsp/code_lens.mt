@@ -20,6 +20,7 @@ import mtc.lsp.workspace_index as idx
 
 ## LSP SymbolKind for codeLens data items.
 const KIND_FUNCTION: int = 12
+const KIND_METHOD:   int = 6
 
 
 ## Handle textDocument/codeLens.  Returns CodeLens entries for every
@@ -59,6 +60,14 @@ public function handle_code_lens(
                 append_lens(ref_of(result), fun.name, fun.line, file_path.as_str(), ref_of(first))
             ast.Decl.decl_foreign_function as ff:
                 append_lens(ref_of(result), ff.name, ff.line, file_path.as_str(), ref_of(first))
+            ast.Decl.decl_extending_block as ext:
+                var mi: ptr_uint = 0
+                while mi < ext.methods.len:
+                    var mfn: ast.Method
+                    unsafe:
+                        mfn = read(ext.methods.data + mi)
+                    append_lens(ref_of(result), mfn.name, mfn.line, file_path.as_str(), ref_of(first))
+                    mi += 1
             _:
                 pass
         di += 1
