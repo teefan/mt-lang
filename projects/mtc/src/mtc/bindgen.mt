@@ -80,12 +80,17 @@ function parse_long(s: str) -> long:
 #  JSON helpers — accept ptr[json.Value]? from Object.get(), handle null
 # =============================================================================
 
-## Extract string from clang JSON: {"kind":"StringLiteral","value":"TEXT"} → "TEXT".
-## `v` is the Value from Object.get(), or null.
+## Extract a string from a clang JSON value.  Handles both plain JSON strings
+## (the common case) and clang wrapped objects.
 function jstr(vp: ptr[json.Value]?) -> str:
     if vp == null:
         return ""
     unsafe:
+        # Plain JSON string — the common case for kind/name/tagUsed.
+        let str_opt = read(vp).as_string()
+        if str_opt.is_some():
+            return str_opt.unwrap()
+        # Try as a clang wrapped StringLiteral object.
         let obj = read(vp).as_object()
         if obj == null:
             return ""
@@ -165,7 +170,7 @@ function map_type(qual_type: str) -> string.String:
         var end = t.len - 1
         while end > 0 and t.byte_at(end - 1) == ' ':
             end -= 1
-        let pointee = t.slice(0, end - 1)
+        let pointee = t.slice(0, end)
         let cleaned = strip_cv(str_strip(pointee))
         if cleaned == "char":
             return string.String.from_str("cstr")
@@ -278,6 +283,19 @@ function emit_fn_ptr(t: str, open: ptr_uint) -> string.String:
 function is_keyword(name: str) -> bool:
     return name == "in" or name == "out" or name == "inout" or name == "async" or name == "function" or name == "external" or name == "foreign" or name == "struct" or name == "union" or name == "enum" or name == "flags" or name == "variant" or name == "interface" or name == "opaque" or name == "let" or name == "var" or name == "const" or name == "type" or name == "public" or name == "static" or name == "and" or name == "or" or name == "not" or name == "is" or name == "if" or name == "else" or name == "while" or name == "for" or name == "match" or name == "return" or name == "break" or name == "continue" or name == "defer" or name == "unsafe" or name == "when" or name == "pass" or name == "true" or name == "false" or name == "null" or name == "void"
 
+
+## True when a typedef's qualType resolves to the same name (self-alias).
+## e.g. `typedef struct Vec2 { ... } Vec2;` has name="Vec2", qualType="struct Vec2".
+function is_self_alias(name: str, qt: str) -> bool:
+    let t = str_strip(qt)
+    if str_has_prefix(t, "struct "):
+        return t.slice(7, t.len - 7) == name
+    if str_has_prefix(t, "union "):
+        return t.slice(6, t.len - 6) == name
+    if str_has_prefix(t, "enum "):
+        return t.slice(5, t.len - 5) == name
+    return t == name
+
 function safe_name(s: string.String) -> string.String:
     if is_keyword(s.as_str()):
         var r = string.String.from_str(s.as_str())
@@ -337,7 +355,7 @@ function walk(node_obj: ptr[json.Object]?, decls: ref[vec.Vec[CDecl]]) -> void:
             if kind == "RecordDecl":
                 let name = jget_str(node_obj, "name")
                 let tag = jget_str(node_obj, "tagUsed")
-                var comp = jget_str(node_obj, "completeDefinition") != ""
+                var comp = read(node_obj).get("completeDefinition") != null
                 if name != "":
                     var d = mk_decl("record", name, tag)
                     d.is_complete = comp
@@ -365,9 +383,11 @@ function walk(node_obj: ptr[json.Object]?, decls: ref[vec.Vec[CDecl]]) -> void:
                 if name != "":
                     let qtp = read(node_obj).get("type")
                     let qt = jget_qualtype(qtp)
-                    var d = mk_decl("typedef", name, "")
-                    d.qual_type = string.String.from_str(qt)
-                    decls.push(d)
+                    # Skip self-aliasing typedefs (typedef struct Vec2 {...} Vec2)
+                    if not is_self_alias(name, qt):
+                        var d = mk_decl("typedef", name, "")
+                        d.qual_type = string.String.from_str(qt)
+                        decls.push(d)
             else if kind == "VarDecl":
                 let sc = jget_str(node_obj, "storageClass")
                 if sc != "static":
@@ -439,12 +459,40 @@ function extract_members(node: ptr[json.Object], decl: ref[CDecl]) -> void:
                 if k == "EnumConstantDecl":
                     let en = jget_str(co, "name")
                     if en != "":
-                        let vp = read(co).get("value")
-                        var vt = jstr(vp)
+                        var vt = find_enum_value(co, en)
                         if vt == "":
                             vt = "0"
                         decl.members.push(CMember(ename = en, evalue = string.String.from_str(vt)))
             i += 1
+
+
+## Find the value of an enum constant by looking inside its inner
+## ConstantExpr child node.
+function find_enum_value(ec_node: ptr[json.Object], name: str) -> str:
+    unsafe:
+        # First try the node's own "value" field (some clang versions).
+        let direct_vp = read(ec_node).get("value")
+        let direct = jstr(direct_vp)
+        if direct != "":
+            return direct
+        # Search inner children for a ConstantExpr with a "value" field.
+        let inner = jget_inner(ec_node)
+        if inner == null:
+            return ""
+        var i: ptr_uint = 0
+        while true:
+            let cvp = read(inner).get(i) else:
+                break
+            let co = read(cvp).as_object()
+            if co != null:
+                let k = jget_str(co, "kind")
+                if k == "ConstantExpr":
+                    let vp = read(co).get("value")
+                    let v = jstr(vp)
+                    if v != "":
+                        return v
+            i += 1
+    return ""
 
 # =============================================================================
 #  Emitter — generates the .mt external module source
