@@ -5,7 +5,6 @@
 import std.process as process
 import std.str
 import std.string as string
-import std.vec as vec
 
 import mtc.dap.protocol as proto
 import mtc.dap.wire as wire

@@ -2,7 +2,6 @@
 ## messages, dispatches to handlers, and polls child process I/O between
 ## dispatches.
 
-import std.json as json
 import std.process as process
 import std.str
 import std.string as string
@@ -91,13 +90,3 @@ function poll_child(
                     pass
         Result.failure:
             pass
-
-
-## Release a Message and its owned fields.
-function release_msg(msg: ref[proto.Message]) -> void:
-    json.release_value(msg.parsed)
-    msg.raw_body.release()
-    msg.msg_type.release()
-    msg.command.release()
-    msg.message.release()
-    msg.evt.release()

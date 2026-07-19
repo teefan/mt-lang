@@ -375,5 +375,3 @@ function extract_nested_arg(args: json.Value, outer: str, inner: str) -> str:
                 return val.value
             Option.none:
                 return ""
-
-## Dereference a ptr[
