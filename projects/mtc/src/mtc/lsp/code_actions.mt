@@ -27,6 +27,8 @@ public function handle_code_actions(ws: ref[workspace.Workspace], uri: str, para
         return
     defer content.release()
 
+    let source = content.as_str()
+
     var json_text = string.String.create()
     defer json_text.release()
     json_text.append("[")
