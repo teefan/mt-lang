@@ -9,11 +9,16 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import std.process as process
 import mtc.dap.protocol as proto
 import mtc.dap.session as ses_mod
 import mtc.dap.utilities as util
 import mtc.dap.wire as wire
 
+
+const SIGNAL_STOP:   int = 19
+const SIGNAL_CONT:   int = 18
+const SIGNAL_TERM:   int = 15
 
 const CAPABILITIES: str = "{\"supportsConfigurationDoneRequest\":true,\"supportsFunctionBreakpoints\":true,\"supportsConditionalBreakpoints\":false,\"supportsHitConditionalBreakpoints\":false,\"supportsEvaluateForHovers\":false,\"supportsSetVariable\":false,\"supportTerminateDebuggee\":true,\"supportsTerminateRequest\":true,\"supportsLoadedSourcesRequest\":true,\"exceptionBreakpointFilters\":[],\"supportsPauseRequest\":true}"
 
@@ -21,8 +26,8 @@ const CAPABILITIES: str = "{\"supportsConfigurationDoneRequest\":true,\"supports
 ## Dispatch a DAP request to the appropriate handler based on the command.
 public function dispatch(
     ses: ref[ses_mod.Session],
-    
-    
+    child: ref[process.ChildProcess],
+    has_child: ref[bool],
     command: str,
     msg: proto.Message,
 ) -> void:
@@ -31,7 +36,7 @@ public function dispatch(
     if command == "initialize":
         handle_initialize(ses, seq, msg)
     else if command == "launch":
-        handle_launch(ses, seq, msg)
+        handle_launch(ses, child, has_child, seq, msg)
     else if command == "attach":
         wire.write_error(seq, msg.seq, "attach requires the lldb-dap backend")
 
@@ -54,7 +59,7 @@ public function dispatch(
         handle_variables(seq, msg.seq)
 
     else if command == "continue":
-        handle_continue(ses, seq, msg.seq)
+        handle_continue(ses, child, has_child, seq, msg.seq)
     else if command == "next":
         wire.write_error(seq, msg.seq, "next is not supported by the process backend")
     else if command == "stepIn":
@@ -62,11 +67,11 @@ public function dispatch(
     else if command == "stepOut":
         wire.write_error(seq, msg.seq, "stepOut is not supported by the process backend")
     else if command == "pause":
-        handle_pause(ses, seq, msg.seq)
+        handle_pause(ses, child, has_child, seq, msg.seq)
     else if command == "terminate":
-        handle_terminate(ses,  seq, msg.seq)
+        handle_terminate(ses, child, has_child, seq, msg.seq)
     else if command == "disconnect":
-        handle_disconnect(ses,  seq, msg.seq)
+        handle_disconnect(ses, child, has_child, seq, msg.seq)
 
     else if command == "evaluate":
         wire.write_error(seq, msg.seq, "evaluate is not supported by the process backend")
@@ -93,7 +98,7 @@ function handle_initialize(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.
 
 
 ## Launch — builds .mt and stores runnable path.
-function handle_launch(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.Message) -> void:
+function handle_launch(ses: ref[ses_mod.Session], child: ref[process.ChildProcess], has_child: ref[bool], seq: ptr_uint, msg: proto.Message) -> void:
     let program = extract_string_arg(msg.arguments, "program")
     if program.len == 0:
         wire.write_error(seq, msg.seq, "launch requires a non-empty 'program' argument")
@@ -115,6 +120,19 @@ function handle_launch(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.Mess
     ses.launched = true
 
     util.release_launch_resolved(ref_of(resolved))
+
+    # Spawn the child process.
+    var cmd_arr = vec.Vec[str].create()
+    cmd_arr.push(ses.runnable_path.as_str())
+    unsafe:
+        let cmd_span = span[str](data = ptr[str]<-cmd_arr.data, len = cmd_arr.len)
+        match process.spawn(cmd_span):
+            Result.success as child_payload:
+                read(child) = child_payload.value
+                read(has_child) = true
+            Result.failure:
+                pass
+    cmd_arr.release()
     wire.write_response(seq, msg.seq, "{}")
 
 
@@ -196,14 +214,14 @@ function handle_variables(seq: ptr_uint, req_seq: ptr_uint) -> void:
 
 
 ## Continue — acknowledges and sends continued event.
-function handle_continue(ses: ref[ses_mod.Session], seq: ptr_uint, req_seq: ptr_uint) -> void:
+function handle_continue(ses: ref[ses_mod.Session], child: ref[process.ChildProcess], has_child: ref[bool], seq: ptr_uint, req_seq: ptr_uint) -> void:
     wire.write_response(seq, req_seq, "{\"allThreadsContinued\":true}")
     let cont_seq = ses.reserve_seq()
     wire.write_event(cont_seq, "continued", "{\"threadId\":1,\"allThreadsContinued\":true}")
 
 
 ## Pause — acknowledges and sends stopped event.
-function handle_pause(ses: ref[ses_mod.Session], seq: ptr_uint, req_seq: ptr_uint) -> void:
+function handle_pause(ses: ref[ses_mod.Session], child: ref[process.ChildProcess], has_child: ref[bool], seq: ptr_uint, req_seq: ptr_uint) -> void:
     wire.write_response(seq, req_seq, "{}")
     let stop_seq = ses.reserve_seq()
     wire.write_event(stop_seq, "stopped", "{\"reason\":\"pause\",\"threadId\":1,\"allThreadsStopped\":true}")
@@ -212,24 +230,24 @@ function handle_pause(ses: ref[ses_mod.Session], seq: ptr_uint, req_seq: ptr_uin
 ## Terminate — kills child process.
 function handle_terminate(
     ses: ref[ses_mod.Session],
-    
-    
+    child: ref[process.ChildProcess],
+    has_child: ref[bool],
     seq: ptr_uint,
     req_seq: ptr_uint,
 ) -> void:
-    terminate_process(ses)
+    terminate_process(ses, child, has_child)
     wire.write_response(seq, req_seq, "{}")
 
 
 ## Disconnect — terminates process and exits server.
 function handle_disconnect(
     ses: ref[ses_mod.Session],
-    
-    
+    child: ref[process.ChildProcess],
+    has_child: ref[bool],
     seq: ptr_uint,
     req_seq: ptr_uint,
 ) -> void:
-    terminate_process(ses)
+    terminate_process(ses, child, has_child)
     wire.write_response(seq, req_seq, "{}")
     ses.should_exit = true
 
@@ -257,7 +275,12 @@ function handle_source(seq: ptr_uint, msg: proto.Message) -> void:
 ## Terminate the session gracefully.
 function terminate_process(
     ses: ref[ses_mod.Session],
+    child: ref[process.ChildProcess],
+    has_child: ref[bool],
 ) -> void:
+    let _ = child.kill(SIGNAL_TERM)
+    child.release()
+    unsafe: read(has_child) = false
     if not ses.terminated:
         ses.terminated = true
         let tseq = ses.reserve_seq()
