@@ -4,10 +4,9 @@
 ## variant: primitives, str, nullable, named (struct/enum/…), generic
 ## instances (ptr/span/array/Option/…), function/proc, and the `type` meta.
 ##
-## Phase 1 is deliberately conservative: anything the analyzer cannot resolve
+## The analyzer is deliberately conservative: anything it cannot resolve
 ## concretely becomes `ty_error`, which is compatible with everything so it
-## never produces a false-positive diagnostic (mirroring Ruby's Error type,
-## which suppresses cascading errors).
+## never produces a false-positive diagnostic.
 
 import std.string as string
 import std.str

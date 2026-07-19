@@ -7,10 +7,10 @@
 ## its C-name mangling (lowering/utils.rb), and root-main entry-point synthesis
 ## (lowering/async.rb `build_root_main_entrypoint`).
 ##
-## Because the self-host analyzer does not yet produce Ruby's rich
-## FunctionBinding objects (plan prerequisite #3), lowering here walks the AST
-## directly and resolves types from the retained `Analysis` (`functions` sigs and
-## `resolved_expr_types`).
+## The lowering walks the AST directly and resolves types from the retained
+## `Analysis` (`functions` sigs and `resolved_expr_types`), falling back to
+## structural type resolution when the analyzer's recorded types are permissive
+## (`ty_error`).
 
 import std.vec as vec
 import std.map as map_mod
@@ -29,8 +29,9 @@ import mtc.lowering.async as async_mod
 import mtc.lowering.utils as utils
 
 
-## A lowering-stage error.  Placeholder for Phase 1+, where lowering will fail
-## loudly on unresolved (`ty_error`) nodes rather than emit a guessed type.
+## A lowering-stage error.  The lowering resolves types structurally and
+## uses `ty_error` as a permissive fallback; `LoweringError` is raised for
+## truly unrecoverable situations.
 public struct LoweringError:
     message: str
     line: ptr_uint
@@ -935,8 +936,8 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                                 functions.push(entry.value)
                             Option.none:
                                 pass
-                else if lowerable_function(fun.is_async, fun.is_const, fun.type_params, fun.body):
-                    functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, fun.is_async))
+                else if lowerable_function(fun.type_params, fun.body):
+                    functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, false))
                     if is_root and fun.name == "main":
                         match build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
                             Option.some as entry:
@@ -1060,8 +1061,8 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             dd = read(w_ptr)
         match dd:
             ast.Decl.decl_function as fun:
-                if lowerable_function(fun.is_async, fun.is_const, fun.type_params, fun.body):
-                    functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, fun.is_async))
+                if lowerable_function(fun.type_params, fun.body):
+                    functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, false))
                     if is_root and fun.name == "main":
                         match build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
                             Option.some as entry:
@@ -1201,8 +1202,10 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
     )
 
 
-## Phase 1 lowers only plain, non-generic, non-async functions that have a body.
-function lowerable_function(is_async: bool, is_const: bool, type_params: span[ast.TypeParam], body: ptr[ast.Stmt]?) -> bool:
+## Returns true for functions that can be lowered directly (non-generic and
+## not an external/foreign/async declaration — async functions take the CPS
+## path in `lower_async_fn`).
+function lowerable_function(type_params: span[ast.TypeParam], body: ptr[ast.Stmt]?) -> bool:
     if type_params.len > 0:
         return false
     if body == null:
@@ -1210,11 +1213,6 @@ function lowerable_function(is_async: bool, is_const: bool, type_params: span[as
     return true
 
 
-## The base C runtime includes for an ordinary module.  `<stdio.h>` is always
-## present because the Ruby compiler's prelude (Option/Result) references
-## `fatal`, making it universal there; the self-host matches that for byte
-## parity.  Conditional `<stddef.h>` (offsetof) / `<stdlib.h>` (fatal) arrive in
-## later phases.
 ## Collect the full include set: the base C runtime headers plus every `include`
 ## directive from raw (`external`) module analyses (e.g. `std.c.fs` →
 ## `fs_support.h`).  Mirrors Ruby's `collect_includes` so external ABI struct
@@ -3406,8 +3404,8 @@ function imported_member_c_name(ctx: ref[LowerCtx], imported: analyzer.Analysis,
 ## Resolve a syntactic `ast.TypeRef` to a `types.Type`, producing module-
 ## qualified named types and modelling `array[T, N]` (N as `ty_literal_int`) and
 ## `span[T]` / `ptr[T]` / `const_ptr[T]` / `ref[T]` as generic instances.  Returns
-## `ty_error` for forms not yet handled (callable/dyn/tuple/nullable), letting
-## callers fall back to the analyzer's inferred type.
+## `ty_error` only for truly unresolvable forms, and `dyn`/`ty_error` for scalar
+## type refs; callers should fall back to the analyzer's inferred type.
 function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Type:
     unsafe:
         let t = read(tp)
@@ -6052,9 +6050,10 @@ function is_cross_module_function_async(ctx: ref[LowerCtx], c_name: str) -> bool
     return false
 
 
-## Lower a specialized call `Name[TypeArgs](args)`.  Phase 3 handles the builtin
-## `span[T](data = ..., len = ...)` constructor as an aggregate literal; generic
-## function-call monomorphization arrives in Phase 4.
+## Lower a specialized call `Name[TypeArgs](args)`, including the built-in
+## `span[T](data = ..., len = ...)` constructor, `adapt[I](value)`, and generic
+## aggregate literals.  Generic function-call monomorphization is handled in
+## `lower_monomorphized_call`.
 function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], call_args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(spec_callee):
@@ -10880,7 +10879,9 @@ function foreign_mapping_is_simple(mapping: ptr[ast.Expr]) -> bool:
 ## (handled by the recorded type) and non-struct receivers.
 ## Member access: enum / flags member constants on a type-name receiver
 ## (`State.running` -> `en_State_running`), otherwise a struct field access
-## (`p.x`).  Method calls and other member forms arrive in later phases.
+## (`p.x`).  Method calls are resolved through `lower_method_resolved` and
+## `lower_dyn_method_call`; other member forms (atomic, str_buffer, event) are
+## dispatched by their type.
 function imported_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[types.Type]:
     var base = recv_ty
     if types.is_nullable_type(base):
@@ -11478,7 +11479,7 @@ function sp_str_type(name: str) -> span[types.Type]:
 
 ## Pre-scan variant declarations into the registry so arm constructors and match
 ## arms can resolve discriminant indices and payload fields.  Generic variants
-## (Option/Result and user generics) are deferred to Phase 4c.
+## are registered through the specialization cache at monomorphization time.
 function collect_variants(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
     var i: ptr_uint = 0
     while i < decls.len:
@@ -12070,7 +12071,8 @@ function lower_static_assert(ctx: ref[LowerCtx], condition: ptr[ast.Expr], messa
 ## Lower a `match` over an enum/flags scrutinee into an IR `stmt_switch`.  Each
 ## `EnumType.member` arm becomes a `case`; a `_` arm becomes the `default`.  With
 ## no `_` arm the switch is exhaustive (the backend adds `__builtin_unreachable`).
-## Integer/str/variant/tuple scrutinees arrive in later phases.
+## Integer, string, variant, and tuple scrutinees are handled by the
+## type-dispatch branches within `lower_match`.
 function enum_source_module(ctx: ref[LowerCtx], ty: types.Type, default_module: str) -> str:
     match ty:
         types.Type.ty_imported as im:
@@ -13411,10 +13413,9 @@ function resolve_return_type(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], re
     return qualify_type(ctx, fn_sig_return_type(sig))
 
 
-## The resolved type of an AST expression: the analyzer's recorded type (keyed by
-## node pointer identity, matching `record_expr_type`), or a structural fallback.
-## A recorded `ty_error` is treated as unresolved so lowering can recover it
-## (e.g. foreign-function call return types the analyzer does not track).
+## The resolved type of an AST expression, preferring the analyzer's recorded
+## type (keyed by node pointer identity).  A recorded `ty_error` is permissive
+## — the lowering recovers via `fallback_type`.
 function expr_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
     let key = unsafe: reinterpret[ptr_uint](ep)
     let tp = ctx.analysis.resolved_expr_types.get(key)
@@ -13990,8 +13991,9 @@ function alloc_stmt(value: ir.Stmt) -> ptr[ir.Stmt]:
 
 
 ## Resolve a scalar type annotation (primitive or `str`) to a `types.Type`.
-## Returns `ty_error` for compound/nullable/callable forms not handled in the
-## current phase, signalling the caller to fall back to the initializer type.
+## Returns `ty_error` for compound/nullable/callable/tuple forms (which must
+## be resolved by their initializer instead), signalling the caller to fall
+## back.  `dyn[...]` resolves to `ty_dyn`.
 function resolve_scalar_type_ref(declared: ptr[ast.TypeRef]) -> types.Type:
     unsafe:
         let t = read(declared)

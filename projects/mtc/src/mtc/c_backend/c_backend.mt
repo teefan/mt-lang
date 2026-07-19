@@ -6,10 +6,11 @@
 ## type_system / type_declaration / statements / expressions / feature_detection
 ## modules).
 ##
-## Scope (through Phase 2b): includes (+ conditional `mt_str` string-view type and
-## `mt_str_equal` helper), enum/flags declarations, function forward declarations,
-## deduplicated `mt_str` string-literal constants, and function bodies over
-## scalars, `str`/`cstr`, control flow, and enum `match`→`switch`.
+## Full scope: type declarations (enum, flags, struct, union, variant, opaque,
+## type alias), constant and global emission, function bodies (scalars, arrays,
+## spans, str/cstr, proc/fn, dyn dispatch, CPS async frames, events, atomic
+## intrinsics, foreign/external calls, format strings, inline/meta constructs),
+## and all control-flow forms (if/while/for/switch/match/parallel).
 
 import std.string as string
 import std.str
@@ -24,7 +25,7 @@ import mtc.c_naming as naming
 import mtc.lowering.utils as utils
 
 
-## A backend-stage error.  Placeholder for Phase 1+.
+## A backend-stage error raised for unrecoverable code-generation failures.
 public struct CBackendError:
     message: str
     line: ptr_uint
@@ -398,21 +399,29 @@ public function generate_c(program: ir.Program) -> string.String:
         emit_line(ref_of(e), "")
 
     i = 0
+    var emitted_helpers = map_mod.Map[str, bool].create()
     while i < checked_index_types.len():
         let ty_ptr = checked_index_types.get(i) else:
             break
         unsafe:
-            emit_checked_index_helper(ref_of(e), read(ty_ptr))
-        emit_line(ref_of(e), "")
+            let name = checked_array_index_helper_name(read(ty_ptr))
+            if not emitted_helpers.contains(name):
+                emitted_helpers.set(name, true)
+                emit_checked_index_helper(ref_of(e), read(ty_ptr))
+                emit_line(ref_of(e), "")
         i += 1
 
     i = 0
+    var emitted_span_helpers = map_mod.Map[str, bool].create()
     while i < checked_span_index_types.len():
         let ty_ptr = checked_span_index_types.get(i) else:
             break
         unsafe:
-            emit_checked_span_index_helper(ref_of(e), read(ty_ptr))
-        emit_line(ref_of(e), "")
+            let name = checked_span_index_helper_name(read(ty_ptr))
+            if not emitted_span_helpers.contains(name):
+                emitted_span_helpers.set(name, true)
+                emit_checked_span_index_helper(ref_of(e), read(ty_ptr))
+                emit_line(ref_of(e), "")
         i += 1
 
     if has_str_literals:

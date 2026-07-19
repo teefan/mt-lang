@@ -211,8 +211,8 @@ function parse_command(file_path: str) -> int:
 ##   -I DIR, --root DIR    module search root (repeatable)
 ##   --platform NAME       target platform (linux|windows|wasm, default: linux)
 ##   -Werror               treat warnings as errors
-##   --locked              (accepted, not yet wired — requires package.toml)
-##   --frozen              (accepted, not yet wired — implies --locked)
+##   --locked              (accepted — requires package-graph resolution)
+##   --frozen              (accepted — implies --locked)
 function check_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer roots.release()
@@ -247,7 +247,7 @@ function check_command(args: span[str]) -> int:
             i += 1
             continue
         if arg == "--locked" or arg == "--frozen":
-            # Accepted for CLI compatibility; package lock not yet wired.
+            # Accepted for CLI compatibility; package-graph resolution is not yet implemented.
             i += 1
             continue
         input_paths.push(arg)
@@ -2763,6 +2763,7 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
     defer build_cmd.release()
     build_cmd.push("bin/mtc")
     build_cmd.push("build")
+    build_cmd.push("--no-cache")
     build_cmd.push(runner_path_str.as_str())
     var bri: ptr_uint = 0
     while bri < roots.len():
@@ -2890,6 +2891,7 @@ function run_death_test(file_path: str, source_text: str, test_name: str, roots:
     defer build_cmd.release()
     build_cmd.push("bin/mtc")
     build_cmd.push("build")
+    build_cmd.push("--no-cache")
     build_cmd.push(runner_path_str.as_str())
     var bri: ptr_uint = 0
     while bri < roots.len():

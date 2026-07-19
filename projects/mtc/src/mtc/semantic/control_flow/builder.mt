@@ -18,9 +18,10 @@ import std.vec as vec
 import mtc.parser.ast as ast
 
 
-## A basic-block node in the CFG.  Currently a placeholder; the full graph
-## with edges, read/write sets, and successor links will be built in a later
-## phase.  Callers only need `Cfg.binding_map` for name→ID lookup.
+## A basic-block node in the CFG.  The current pass only builds the
+## `binding_map` (name→ID) for the linter's dead-assignment analysis; a
+## full graph with edges, read/write sets, and successor links is not needed
+## by the existing lint rules.
 public struct CfgNode:
     id: ptr_uint
 

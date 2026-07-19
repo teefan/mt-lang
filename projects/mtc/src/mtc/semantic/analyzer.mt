@@ -1,17 +1,14 @@
-## Semantic analyzer (phase 1) — mirrors the structure of Ruby's
-## SemanticAnalyzer (lib/milk_tea/core/semantic_analyzer.rb): a structural
-## collection pass over top-level declarations followed by per-function body
-## checking.
+## Semantic analyzer — mirrors the structure of Ruby's SemanticAnalyzer
+## (lib/milk_tea/core/semantic_analyzer.rb): a structural collection pass over
+## top-level declarations followed by per-function body checking.
 ##
-## Scope of phase 1 (sound but intentionally incomplete — like Ruby it uses a
-## permissive Error type so it never emits a false positive):
-##   * duplicate top-level value / type declarations
-##   * return-type compatibility (concrete scalar mismatches)
-##   * let/var initializer vs declared-type compatibility
-## Anything the analyzer cannot resolve concretely degrades to `ty_error`,
-## which is compatible with everything, so valid programs are never flagged.
-## Module loading, generics, interfaces, flow analysis, and full type
-## compatibility are later phases.
+## The analyzer is intentionally conservative — anything it cannot resolve
+## concretely degrades to `ty_error` (permissive — compatible with everything),
+## so valid programs are never flagged.  Type resolution for the C backend is
+## handled by the lowering, which walks the AST directly.  The analyzer catches
+## structural errors: duplicate declarations, return-type mismatches on
+## concrete types, immutable-assignment violations, and module-import
+## inconsistencies.
 
 import std.map as map_mod
 import std.str
