@@ -352,6 +352,8 @@ module MilkTea
             read_identifiers(arm.pattern, names, reads_info)
             read_identifiers(arm.value, names, reads_info)
           end
+        when AST::MatchStmt
+          read_identifiers(expression.expression, names, reads_info)
         when AST::UnsafeExpr
           read_identifiers(expression.expression, names, reads_info)
         when AST::FormatString
