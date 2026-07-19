@@ -25,7 +25,6 @@ import std.hash
 
 # A test outcome: success carries no meaningful value; failure carries a
 # `Failure`. `Result` is used (not a bespoke variant) so `?` propagation works.
-public type Check = Result[bool, Failure]
 
 # A failed (or skipped) expectation. `message` is owned and must be released by
 # whoever consumes it (the runner does this in `record`). `is_skip` distinguishes
@@ -33,6 +32,8 @@ public type Check = Result[bool, Failure]
 public struct Failure:
     message: string.String
     is_skip: bool
+
+public type Check = Result[bool, Failure]
 
 
 # Tally of outcomes for a run. Value type; `record` returns an updated copy.

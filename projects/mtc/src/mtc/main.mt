@@ -160,7 +160,7 @@ function print_help() -> void:
     stdio.print_line("  new   <path>                                        scaffold a new package")
     stdio.print_line("  format <file> [--check|--write]                     format source and print, check, or write back")
     stdio.print_line("  bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]  generate binding module from C header")
-    stdio.print_line("  toolchain bootstrap|doctor|tools                     manage the native toolchain")
+    stdio.print_line("  toolchain doctor                                   check build tool availability")
     stdio.print_line("  completions bash|zsh|fish                           print a shell completion script")
     stdio.print_line("  version|--version|-V                                print version and exit")
     stdio.print_line("  help                                                print this help")
@@ -1840,153 +1840,39 @@ function cache_command(args: span[str]) -> int:
     return 1
 
 
-## Generate a binding module from a C header by delegating to the Ruby compiler.
-## Usage: mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]
+## Generate a binding module from a C header.
+## A self-hosted implementation is not yet complete; the command accepts arguments
+## for CLI compatibility.  Use the Ruby compiler's `bin/mtc bindgen` for binding
+## generation in the interim.
 function bindgen_command(args: span[str]) -> int:
-    var module_name: str = ""
-    var header_path: str = ""
-    var output_path: Option[str] = Option[str].none
-    var link_libs = vec.Vec[str].create()
-    defer link_libs.release()
-    var includes = vec.Vec[str].create()
-    defer includes.release()
-    var clang_path: Option[str] = Option[str].none
-
     var i: ptr_uint = 1
     while i < args.len:
         let arg = args[i]
-        if arg == "-o" or arg == "--output":
-            i += 1
-            if i >= args.len:
-                stdio.print_line("bindgen: -o requires an output path")
-                return 1
-            output_path = Option[str].some(value = args[i])
-        else if arg == "--link":
-            i += 1
-            if i >= args.len:
-                stdio.print_line("bindgen: --link requires a library name")
-                return 1
-            link_libs.push(args[i])
-        else if arg == "--include":
-            i += 1
-            if i >= args.len:
-                stdio.print_line("bindgen: --include requires a header name")
-                return 1
-            includes.push(args[i])
-        else if arg == "--clang":
-            i += 1
-            if i >= args.len:
-                stdio.print_line("bindgen: --clang requires a path")
-                return 1
-            clang_path = Option[str].some(value = args[i])
-        else if arg == "--help" or arg == "-h":
+        if arg == "--help" or arg == "-h":
             stdio.print_line("usage: mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]")
             return 0
-        else if arg == "--":
-            i += 1
-        else if module_name == "":
-            module_name = arg
-        else if header_path == "":
-            header_path = arg
-        else:
-            stdio.print_line("bindgen: unexpected argument")
-            return 1
         i += 1
-
-    if module_name == "":
-        stdio.print_line("bindgen: missing module name")
-        return 1
-    if header_path == "":
-        stdio.print_line("bindgen: missing header path")
-        return 1
-
-    var cmd = vec.Vec[str].create()
-    defer cmd.release()
-    cmd.push("ruby")
-    cmd.push("-Ilib")
-    cmd.push("bin/mtc")
-    cmd.push("bindgen")
-    cmd.push(module_name)
-    cmd.push(header_path)
-
-    var li: ptr_uint = 0
-    while li < link_libs.len():
-        let lib_ptr = link_libs.get(li) else:
-            break
-        cmd.push("--link")
-        unsafe:
-            cmd.push(read(lib_ptr))
-        li += 1
-
-    var ii: ptr_uint = 0
-    while ii < includes.len():
-        let inc_ptr = includes.get(ii) else:
-            break
-        cmd.push("--include")
-        unsafe:
-            cmd.push(read(inc_ptr))
-        ii += 1
-
-    match clang_path:
-        Option.some as clang:
-            cmd.push("--clang")
-            cmd.push(clang.value)
-        Option.none:
-            pass
-
-    match output_path:
-        Option.some as out_path:
-            cmd.push("-o")
-            cmd.push(out_path.value)
-        Option.none:
-            pass
-
-    match process.capture(cmd.as_span()):
-        Result.success as captured:
-            var result = captured.value
-            defer result.stdout.release()
-            defer result.stderr.release()
-            let stdout_text = result.stdout.as_str()
-            if stdout_text.len > 0:
-                stdio.print_format(c"%.*s", int<-(stdout_text.len), stdout_text.data)
-            let stderr_text = result.stderr.as_str()
-            if stderr_text.len > 0:
-                stdio.print_format(c"%.*s", int<-(stderr_text.len), stderr_text.data)
-            return int<-result.status.exit_code
-        Result.failure as fail:
-            var err = fail.error
-            stdio.print_format(c"bindgen: could not launch Ruby bindgen\n")
-            err.release()
-            return 1
+    stdio.print_line("bindgen: self-hosted bindgen is not yet implemented")
+    stdio.print_line("use the Ruby compiler `bin/mtc bindgen` for binding generation")
+    return 1
 
 
 ## Manage the native toolchain.
-##   doctor    — check build tools (cc, ar, clang, cmake, ninja) availability
-##   bootstrap — delegate to Ruby compiler for submodule bootstrapping
-##   tools     — delegate to Ruby compiler for vendored tool builds
 function toolchain_command(args: span[str]) -> int:
     if args.len < 2:
         stdio.print_line("toolchain: missing subcommand")
         stdio.print_line("")
         stdio.print_line("subcommands:")
-        stdio.print_line("  bootstrap   bootstrap git submodules (delegates to Ruby)")
         stdio.print_line("  doctor      check build tool availability")
-        stdio.print_line("  tools       build vendored development tools (delegates to Ruby)")
         return 1
 
     let sub = args[1]
     if sub == "--help" or sub == "-h":
-        stdio.print_line("usage: mtc toolchain <bootstrap|doctor|tools>")
+        stdio.print_line("usage: mtc toolchain <doctor>")
         return 0
 
     if sub == "doctor":
         return toolchain_doctor()
-
-    if sub == "bootstrap":
-        return toolchain_delegate(args)
-
-    if sub == "tools":
-        return toolchain_delegate(args)
 
     stdio.print_line("toolchain: unknown subcommand")
     return 1
@@ -1999,8 +1885,7 @@ function toolchain_doctor() -> int:
     var i: ptr_uint = 0
     while i < 6:
         let tool = checks[i]
-        let found = is_executable_on_path(tool)
-        if found:
+        if is_executable_on_path(tool):
             stdio.print_format(c"ok   %.*s\n", int<-(tool.len), tool.data)
         else:
             stdio.print_format(c"fail %.*s (not found on PATH)\n", int<-(tool.len), tool.data)
@@ -2025,33 +1910,6 @@ function is_executable_on_path(name: str) -> bool:
             return result.status.exit_code == 0
         Result.failure:
             return false
-
-
-function toolchain_delegate(args: span[str]) -> int:
-    var cmd = vec.Vec[str].create()
-    defer cmd.release()
-    cmd.push("ruby")
-    cmd.push("-Ilib")
-    cmd.push("bin/mtc")
-    var i: ptr_uint = 0
-    while i < args.len:
-        cmd.push(args[i])
-        i += 1
-    match process.capture(cmd.as_span()):
-        Result.success as captured:
-            var result = captured.value
-            defer result.stdout.release()
-            defer result.stderr.release()
-            let stdout_text = result.stdout.as_str()
-            if stdout_text.len > 0:
-                stdio.print_format(c"%.*s", int<-(stdout_text.len), stdout_text.data)
-            let stderr_text = result.stderr.as_str()
-            if stderr_text.len > 0:
-                stdio.print_format(c"%.*s", int<-(stderr_text.len), stderr_text.data)
-            return int<-result.status.exit_code
-        Result.failure:
-            stdio.print_line("toolchain: could not launch Ruby toolchain command")
-            return 1
 
 
 struct CommandSummary:
