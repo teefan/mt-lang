@@ -5,6 +5,7 @@
 import std.string as string
 import std.vec as vec
 import std.fs as fs
+import std.str
 
 import mtc.imported_bindings.policy as policy
 import mtc.imported_bindings.raw_scanner as raw

@@ -35,6 +35,8 @@ import mtc.linter.fix_engine as fix_engine
 import mtc.lsp.server as lsp
 import mtc.dap.server as dap
 import mtc.bindgen as bindgen
+import mtc.imported_bindings.registry as ib_registry
+import mtc.imported_bindings.main as ib_main
 
 
 function main(args: span[str]) -> int:
@@ -131,6 +133,9 @@ function main(args: span[str]) -> int:
     if cmd == "bindgen":
         return bindgen_command(args)
 
+    if cmd == "imported-bindings":
+        return imported_bindings_command(args)
+
     if cmd == "toolchain":
         return toolchain_command(args)
 
@@ -161,6 +166,7 @@ function print_help() -> void:
     stdio.print_line("  new   <path>                                        scaffold a new package")
     stdio.print_line("  format <file> [--check|--write]                     format source and print, check, or write back")
     stdio.print_line("  bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]  generate binding module from C header")
+    stdio.print_line("  imported-bindings <name> [--check] [--all]      regenerate imported binding module(s)")
     stdio.print_line("  toolchain doctor                                   check build tool availability")
     stdio.print_line("  completions bash|zsh|fish                           print a shell completion script")
     stdio.print_line("  version|--version|-V                                print version and exit")
@@ -1931,7 +1937,121 @@ function bindgen_command(args: span[str]) -> int:
             return 1
 
 
-## Manage the native toolchain.
+## Regenerate imported binding modules from raw C bindings and JSON policies.
+function imported_bindings_command(args: span[str]) -> int:
+    var do_all = false
+    var do_check = false
+    var lib_name: str = ""
+
+    var ai: ptr_uint = 1
+    while ai < args.len:
+        let arg = args[ai]
+        if arg == "--all":
+            do_all = true
+        else if arg == "--check":
+            do_check = true
+        else if arg == "--help" or arg == "-h":
+            stdio.print_line("usage: mtc imported-bindings <name> [--check] [--all]")
+            return 0
+        else if lib_name.len == 0:
+            lib_name = arg
+        else:
+            stdio.print_format(c"imported-bindings: unexpected argument '%.*s'\n", int<-(arg.len), arg.data)
+            return 1
+        ai += 1
+
+    if do_all:
+        var failed: ptr_uint = 0
+        var i: ptr_uint = 0
+        while i < 28:
+            let entry_ptr = get(ib_registry.ALL, i) else:
+                break
+            let entry = unsafe: read(entry_ptr)
+            if regenerate_one(entry.policy_path, entry.binding_path, entry.raw_module_name, do_check) != 0:
+                failed += 1
+            i += 1
+        if failed == 0:
+            stdio.print_line("all 28 imported bindings generated")
+        else:
+            stdio.print_format(c"%d binding(s) failed\n", int<-(failed))
+            return 1
+        return 0
+
+    if lib_name.len == 0:
+        stdio.print_line("imported-bindings: missing library name or --all")
+        return 1
+
+    let entry = find_ib_entry(lib_name) else:
+        stdio.print_format(c"imported-bindings: unknown library '%.*s'\n", int<-(lib_name.len), lib_name.data)
+        return 1
+
+    return regenerate_one(entry.policy_path, entry.binding_path, entry.raw_module_name, do_check)
+
+
+function find_ib_entry(name: str) -> Option[ib_registry.BindingEntry]:
+    var i: ptr_uint = 0
+    while i < 28:
+        let entry_ptr = get(ib_registry.ALL, i) else:
+            break
+        let entry = unsafe: read(entry_ptr)
+        if entry.name.equal(name):
+            return Option[ib_registry.BindingEntry].some(value = entry)
+        i += 1
+    return Option[ib_registry.BindingEntry].none
+
+
+function regenerate_one(policy_path: str, output_path: str, raw_module_name: str, do_check: bool) -> int:
+    # Resolve raw module path: std.c.raymath -> std/c/raymath.mt
+    var raw_buf = string.String.with_capacity(raw_module_name.len + 3)
+    var ri: ptr_uint = 0
+    while ri < raw_module_name.len:
+        let ch = raw_module_name.byte_at(ri)
+        if ch == '.':
+            raw_buf.push_byte('/')
+        else:
+            raw_buf.push_byte(ch)
+        ri += 1
+    raw_buf.append(".mt")
+    let raw_path = raw_buf.as_str()
+
+    match ib_main.generate(policy_path, raw_path):
+        Result.failure as p:
+            stdio.print_format(c"imported-bindings: %.*s\n", int<-(p.error.as_str().len), p.error.as_str().data)
+            p.error.release()
+            raw_buf.release()
+            return 1
+        Result.success as p:
+            if do_check:
+                match fs.read_text(output_path):
+                    Result.failure:
+                        stdio.print_format(c"(new) %.*s would be generated\n", int<-(output_path.len), output_path.data)
+                        p.value.release()
+                        raw_buf.release()
+                        return 0
+                    Result.success as existing:
+                        let new_src = p.value.as_str()
+                        let old_src = existing.value.as_str()
+                        if new_src.equal(old_src):
+                            stdio.print_format(c"verified %.*s\n", int<-(output_path.len), output_path.data)
+                        else:
+                            stdio.print_format(c"changed %.*s\n", int<-(output_path.len), output_path.data)
+                        existing.value.release()
+                p.value.release()
+            else:
+                match fs.write_text(output_path, p.value.as_str()):
+                    Result.failure:
+                        stdio.print_format(c"imported-bindings: could not write %.*s\n", int<-(output_path.len), output_path.data)
+                        p.value.release()
+                        raw_buf.release()
+                        return 1
+                    Result.success:
+                        stdio.print_format(c"generated %.*s + %.*s -> %.*s\n",
+                            int<-(raw_module_name.len), raw_module_name.data,
+                            int<-(policy_path.len), policy_path.data,
+                            int<-(output_path.len), output_path.data)
+                p.value.release()
+            raw_buf.release()
+            return 0
 function toolchain_command(args: span[str]) -> int:
     if args.len < 2:
         stdio.print_line("toolchain: missing subcommand")

@@ -193,9 +193,10 @@ function type_selected(raw_name: str, spec: policy.AliasSpec) -> bool:
 function find_type_info(raw_types: span[raw.RawTypeInfo], name: str) -> ptr[raw.RawTypeInfo]?:
     var i: ptr_uint = 0
     while i < raw_types.len:
-        let ti = unsafe: raw_types.data + i
-        if ti.name.as_str().equal(name):
-            return ti
+        unsafe:
+            let ti = raw_types.data + i
+            if ti.name.as_str().equal(name):
+                return ti
         i += 1
     return null
 
@@ -282,9 +283,10 @@ function const_selected(raw_name: str, spec: policy.AliasSpec) -> bool:
 function find_const_info(raw_consts: span[raw.RawConstInfo], name: str) -> ptr[raw.RawConstInfo]?:
     var i: ptr_uint = 0
     while i < raw_consts.len:
-        let ci = unsafe: raw_consts.data + i
-        if ci.name.as_str().equal(name):
-            return ci
+        unsafe:
+            let ci = raw_consts.data + i
+            if ci.name.as_str().equal(name):
+                return ci
         i += 1
     return null
 
@@ -458,9 +460,10 @@ function func_selected(raw_name: str, spec: policy.FunctionSpec) -> bool:
 function find_func_info(raw_funcs: span[raw.RawFuncInfo], name: str) -> ptr[raw.RawFuncInfo]?:
     var i: ptr_uint = 0
     while i < raw_funcs.len:
-        let fi = unsafe: raw_funcs.data + i
-        if fi.name.as_str().equal(name):
-            return fi
+        unsafe:
+            let fi = raw_funcs.data + i
+            if fi.name.as_str().equal(name):
+                return fi
         i += 1
     return null
 
@@ -540,15 +543,16 @@ function add_module_import_for_type(
     # Find the raw module import matching this alias
     var ri: ptr_uint = 0
     while ri < raw_imports.len:
-        let imp = unsafe: raw_imports.data + ri
-        if imp.alias.as_str().equal(alias):
-            var il = string.String.with_capacity(80)
-            il.append("import ")
-            il.append(imp.module_name.as_str())
-            il.append(" as ")
-            il.append(alias)
-            import_lines.push(il)
-            return
+        unsafe:
+            let imp = raw_imports.data + ri
+            if imp.alias.as_str().equal(alias):
+                var il = string.String.with_capacity(80)
+                il.append("import ")
+                il.append(imp.module_name.as_str())
+                il.append(" as ")
+                il.append(alias)
+                import_lines.push(il)
+                return
         ri += 1
 
 
@@ -597,3 +601,4 @@ function collect_rule_replacements(rules: vec.Vec[policy.RenameRule]) -> vec.Vec
             unsafe: r.push(string.String.from_str(read(rp).replace_with.as_str()))
         i += 1
     return r
+

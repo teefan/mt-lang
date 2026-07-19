@@ -257,9 +257,10 @@ function type_in_list(type_str: str, list: vec.Vec[string.String]) -> bool:
 function find_func_in_span(funcs: span[raw.RawFuncInfo], name: str) -> ptr[raw.RawFuncInfo]?:
     var i: ptr_uint = 0
     while i < funcs.len:
-        let fi = unsafe: funcs.data + i
-        if fi.name.as_str().equal(name):
-            return fi
+        unsafe:
+            let fi = funcs.data + i
+            if fi.name.as_str().equal(name):
+                return fi
         i += 1
     return null
 
@@ -514,8 +515,7 @@ function emit_single_external(
 
         var method_kind = "static "
         if func.params.len > 0:
-            let fp = func.params.get(0) else:
-                pass
+            let fp = func.params.get(0)
             if fp != null:
                 let first_type = read(fp).param_type.as_str()
                 var type_to_check = first_type
