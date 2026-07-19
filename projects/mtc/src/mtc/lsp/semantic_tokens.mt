@@ -575,6 +575,7 @@ public function snapshot_semantic_entries(source: str) -> string.String:
     var enum_depth: ptr_uint = 0
     var in_extending: bool = false
     var extending_depth: ptr_uint = 0
+    var prev_was_dot: bool = false
 
     var ti: ptr_uint = 0
     while ti < all_tokens.len():
@@ -637,16 +638,25 @@ public function snapshot_semantic_entries(source: str) -> string.String:
             if in_decorator:
                 token_type = TOKEN_DECORATOR
             else:
+                var raw_type = classify_identifier(lexeme, ref_of(analysis), ref_of(param_names))
                 if in_enum_body and enum_depth == 1:
-                    let raw_type = classify_identifier(lexeme, ref_of(analysis), ref_of(param_names))
                     if raw_type == TOKEN_VARIABLE:
                         token_type = TOKEN_ENUM_MEMBER
                     else:
                         token_type = raw_type
                 else:
-                    token_type = classify_identifier(lexeme, ref_of(analysis), ref_of(param_names))
-                    if in_extending and extending_depth >= 1 and is_decl:
+                    token_type = raw_type
+                    if prev_was_dot and raw_type != TOKEN_FUNCTION and raw_type != TOKEN_NAMESPACE and raw_type != TOKEN_TYPE:
                         token_type = TOKEN_METHOD
+                    else:
+                        if in_extending and extending_depth >= 1 and is_decl:
+                            token_type = TOKEN_METHOD
+            prev_was_dot = false
+        else:
+            if kind == tk_mod.TokenKind.dot:
+                prev_was_dot = true
+            else:
+                prev_was_dot = false
 
         if token_type == TOKEN_VARIABLE and not is_decl:
             ti += 1
