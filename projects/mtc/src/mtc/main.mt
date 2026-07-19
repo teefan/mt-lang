@@ -2478,8 +2478,8 @@ function run_compile_fail_file(file_path: str, source_text: str, roots: ref[vec.
 
 
 ## Discover and run @[test] functions under a directory.  Scans all .mt files,
-## synthesizes a std.testing runner per file, builds it via bin/mtc, and runs
-## it under a timeout/memory sandbox.  With --format tap|junit the per-test
+## synthesizes a std.testing runner per file, builds and runs it in-process
+## under a timeout/memory sandbox.  With --format tap|junit the per-test
 ## outcomes are parsed and re-emitted in the machine-readable format instead of
 ## the human summary.
 function test_command(args: span[str]) -> int:
