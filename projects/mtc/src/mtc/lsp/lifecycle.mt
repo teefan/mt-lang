@@ -46,7 +46,7 @@ public function handle_initialize(id: json.Value) -> void:
     r.append(",\"diagnosticProvider\":{\"identifier\":\"mtc\",\"interFileDependencies\":true,\"workspaceDiagnostics\":true}")
     # semantic tokens: legend + full + range + delta
     r.append(",\"semanticTokensProvider\":{\"legend\":{")
-    r.append("\"tokenTypes\":[\"namespace\",\"type\",\"keyword\",\"string\",\"number\",\"comment\",\"operator\",\"variable\",\"function\",\"parameter\",\"property\",\"regexp\"]")
+    r.append("\"tokenTypes\":[\"namespace\",\"type\",\"keyword\",\"string\",\"number\",\"comment\",\"operator\",\"variable\",\"function\",\"parameter\",\"property\",\"regexp\",\"enumMember\",\"method\",\"decorator\"]")
     r.append(",\"tokenModifiers\":[\"declaration\",\"defaultLibrary\"]")
     r.append("},\"full\":{\"delta\":true},\"range\":true}")
     # workspace: folders + file operations + watched files

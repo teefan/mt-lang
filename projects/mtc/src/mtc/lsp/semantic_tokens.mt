@@ -30,16 +30,21 @@ const FNV_PRIME:  uint = 0x01000193
 
 ## Legend indices (see lifecycle.mt): namespace=0, type=1, keyword=2,
 ## string=3, number=4, comment=5, operator=6, variable=7, function=8,
-## parameter=9, property=10, regexp=11.
-const TOKEN_NAMESPACE: uint = 0
-const TOKEN_TYPE:      uint = 1
-const TOKEN_KEYWORD:   uint = 2
-const TOKEN_STRING:    uint = 3
-const TOKEN_NUMBER:    uint = 4
-const TOKEN_OPERATOR:  uint = 6
-const TOKEN_VARIABLE:  uint = 7
-const TOKEN_FUNCTION:  uint = 8
-const TOKEN_PARAMETER: uint = 9
+## parameter=9, property=10, regexp=11, enumMember=12, method=13,
+## decorator=14.
+const TOKEN_NAMESPACE:    uint = 0
+const TOKEN_TYPE:         uint = 1
+const TOKEN_KEYWORD:      uint = 2
+const TOKEN_STRING:       uint = 3
+const TOKEN_NUMBER:       uint = 4
+const TOKEN_OPERATOR:     uint = 6
+const TOKEN_VARIABLE:     uint = 7
+const TOKEN_FUNCTION:     uint = 8
+const TOKEN_PARAMETER:    uint = 9
+const TOKEN_PROPERTY:     uint = 10
+const TOKEN_ENUM_MEMBER:  uint = 12
+const TOKEN_METHOD:       uint = 13
+const TOKEN_DECORATOR:    uint = 14
 
 
 ## Handle textDocument/semanticTokens/full.
@@ -393,6 +398,8 @@ public function classify_identifier(
     unsafe:
         if read(analysis).functions.contains(lexeme):
             return TOKEN_FUNCTION
+        if read(analysis).method_sigs.contains(lexeme):
+            return TOKEN_METHOD
         if read(analysis).structs.contains(lexeme):
             return TOKEN_TYPE
         if read(analysis).static_member_types.contains(lexeme):
@@ -510,7 +517,7 @@ function build_tokens_json(data: ref[vec.Vec[uint]]) -> string.String:
     return result
 
 
-const SNAPSHOT_TOKEN_NAMES: array[str, 10] = ("namespace", "type", "keyword", "string", "number", "", "operator", "variable", "function", "parameter")
+const SNAPSHOT_TOKEN_NAMES: array[str, 15] = ("namespace", "type", "keyword", "string", "number", "", "operator", "variable", "function", "parameter", "property", "", "enumMember", "method", "decorator")
 
 
 function snapshot_utf8_continuation(b: ubyte) -> bool:
@@ -529,7 +536,7 @@ function snapshot_byte_to_char(line: str, byte_offset: ptr_uint) -> ptr_uint:
 
 
 function snapshot_token_type_name(token_type: uint) -> str:
-    if token_type >= 10:
+    if token_type >= 15:
         return "variable"
     return SNAPSHOT_TOKEN_NAMES[uint<-token_type]
 
@@ -563,6 +570,11 @@ public function snapshot_semantic_entries(source: str) -> string.String:
     result.append("[")
 
     var prev_is_decl: bool = false
+    var in_decorator: bool = false
+    var in_enum_body: bool = false
+    var enum_depth: ptr_uint = 0
+    var in_extending: bool = false
+    var extending_depth: ptr_uint = 0
 
     var ti: ptr_uint = 0
     while ti < all_tokens.len():
@@ -570,10 +582,33 @@ public function snapshot_semantic_entries(source: str) -> string.String:
             break
         let tok = unsafe: read(tok_ptr)
         let kind = tok.kind
-        if kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.indent or
-           kind == tk_mod.TokenKind.dedent or kind == tk_mod.TokenKind.eof:
+
+        if kind == tk_mod.TokenKind.dedent:
+            if in_enum_body:
+                enum_depth -= 1
+                if enum_depth == 0:
+                    in_enum_body = false
+            if in_extending:
+                extending_depth -= 1
+                if extending_depth == 0:
+                    in_extending = false
             ti += 1
             continue
+        if kind == tk_mod.TokenKind.indent:
+            if in_enum_body:
+                enum_depth += 1
+            if in_extending:
+                extending_depth += 1
+            ti += 1
+            continue
+        if kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.eof:
+            ti += 1
+            continue
+
+        if kind == tk_mod.TokenKind.rbracket:
+            in_decorator = false
+        if kind == tk_mod.TokenKind.at:
+            in_decorator = true
 
         var is_decl = false
         if kind == tk_mod.TokenKind.identifier:
@@ -581,15 +616,37 @@ public function snapshot_semantic_entries(source: str) -> string.String:
                 is_decl = true
                 prev_is_decl = false
         else:
-            if snapshot_is_decl_kind(kind):
+            if kind == tk_mod.TokenKind.tk_enum:
+                in_enum_body = true
+                enum_depth = 0
                 prev_is_decl = true
             else:
-                prev_is_decl = false
+                if kind == tk_mod.TokenKind.tk_extending:
+                    in_extending = true
+                    extending_depth = 0
+                    prev_is_decl = true
+                else:
+                    if snapshot_is_decl_kind(kind):
+                        prev_is_decl = true
+                    else:
+                        prev_is_decl = false
 
         var token_type = token_kind_to_type(kind)
         if kind == tk_mod.TokenKind.identifier:
             let lexeme = cursor.token_text(source, tok)
-            token_type = classify_identifier(lexeme, ref_of(analysis), ref_of(param_names))
+            if in_decorator:
+                token_type = TOKEN_DECORATOR
+            else:
+                if in_enum_body and enum_depth == 1:
+                    let raw_type = classify_identifier(lexeme, ref_of(analysis), ref_of(param_names))
+                    if raw_type == TOKEN_VARIABLE:
+                        token_type = TOKEN_ENUM_MEMBER
+                    else:
+                        token_type = raw_type
+                else:
+                    token_type = classify_identifier(lexeme, ref_of(analysis), ref_of(param_names))
+                    if in_extending and extending_depth >= 1 and is_decl:
+                        token_type = TOKEN_METHOD
 
         if token_type == TOKEN_VARIABLE and not is_decl:
             ti += 1
