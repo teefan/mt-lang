@@ -127,6 +127,9 @@ function main(args: span[str]) -> int:
     if cmd == "cache":
         return cache_command(args)
 
+    if cmd == "bindgen":
+        return bindgen_command(args)
+
     if cmd == "help":
         print_help()
         return 0
@@ -153,6 +156,7 @@ function print_help() -> void:
     stdio.print_line("  test  <dir> [-I DIR]... [-n NAME] [--timeout SECONDS] [--mem MB] [--format human|tap|junit]  discover and run @[test] functions")
     stdio.print_line("  new   <path>                                        scaffold a new package")
     stdio.print_line("  format <file> [--check|--write]                     format source and print, check, or write back")
+    stdio.print_line("  bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]  generate binding module from C header")
     stdio.print_line("  completions bash|zsh|fish                           print a shell completion script")
     stdio.print_line("  version|--version|-V                                print version and exit")
     stdio.print_line("  help                                                print this help")
@@ -1832,6 +1836,126 @@ function cache_command(args: span[str]) -> int:
     return 1
 
 
+## Generate a binding module from a C header by delegating to the Ruby compiler.
+## Usage: mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]
+function bindgen_command(args: span[str]) -> int:
+    var module_name: str = ""
+    var header_path: str = ""
+    var output_path: Option[str] = Option[str].none
+    var link_libs = vec.Vec[str].create()
+    defer link_libs.release()
+    var includes = vec.Vec[str].create()
+    defer includes.release()
+    var clang_path: Option[str] = Option[str].none
+
+    var i: ptr_uint = 1
+    while i < args.len:
+        let arg = args[i]
+        if arg == "-o" or arg == "--output":
+            i += 1
+            if i >= args.len:
+                stdio.print_line("bindgen: -o requires an output path")
+                return 1
+            output_path = Option[str].some(value = args[i])
+        else if arg == "--link":
+            i += 1
+            if i >= args.len:
+                stdio.print_line("bindgen: --link requires a library name")
+                return 1
+            link_libs.push(args[i])
+        else if arg == "--include":
+            i += 1
+            if i >= args.len:
+                stdio.print_line("bindgen: --include requires a header name")
+                return 1
+            includes.push(args[i])
+        else if arg == "--clang":
+            i += 1
+            if i >= args.len:
+                stdio.print_line("bindgen: --clang requires a path")
+                return 1
+            clang_path = Option[str].some(value = args[i])
+        else if arg == "--help" or arg == "-h":
+            stdio.print_line("usage: mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]")
+            return 0
+        else if arg == "--":
+            i += 1
+        else if module_name == "":
+            module_name = arg
+        else if header_path == "":
+            header_path = arg
+        else:
+            stdio.print_line("bindgen: unexpected argument")
+            return 1
+        i += 1
+
+    if module_name == "":
+        stdio.print_line("bindgen: missing module name")
+        return 1
+    if header_path == "":
+        stdio.print_line("bindgen: missing header path")
+        return 1
+
+    var cmd = vec.Vec[str].create()
+    defer cmd.release()
+    cmd.push("ruby")
+    cmd.push("-Ilib")
+    cmd.push("bin/mtc")
+    cmd.push("bindgen")
+    cmd.push(module_name)
+    cmd.push(header_path)
+
+    var li: ptr_uint = 0
+    while li < link_libs.len():
+        let lib_ptr = link_libs.get(li) else:
+            break
+        cmd.push("--link")
+        unsafe:
+            cmd.push(read(lib_ptr))
+        li += 1
+
+    var ii: ptr_uint = 0
+    while ii < includes.len():
+        let inc_ptr = includes.get(ii) else:
+            break
+        cmd.push("--include")
+        unsafe:
+            cmd.push(read(inc_ptr))
+        ii += 1
+
+    match clang_path:
+        Option.some as clang:
+            cmd.push("--clang")
+            cmd.push(clang.value)
+        Option.none:
+            pass
+
+    match output_path:
+        Option.some as out_path:
+            cmd.push("-o")
+            cmd.push(out_path.value)
+        Option.none:
+            pass
+
+    match process.capture(cmd.as_span()):
+        Result.success as captured:
+            var result = captured.value
+            defer result.stdout.release()
+            defer result.stderr.release()
+            let stdout_text = result.stdout.as_str()
+            if stdout_text.len > 0:
+                stdio.print_format(c"%.*s", int<-(stdout_text.len), stdout_text.data)
+            let stderr_text = result.stderr.as_str()
+            if stderr_text.len > 0:
+                stdio.print_format(c"%.*s", int<-(stderr_text.len), stderr_text.data)
+            return int<-result.status.exit_code
+        Result.failure as fail:
+            var err = fail.error
+            stdio.print_format(c"bindgen: could not launch Ruby bindgen\n")
+            err.release()
+            return 1
+
+
 struct CommandSummary:
     name: str
     summary: str
@@ -1840,7 +1964,7 @@ struct CommandSummary:
 ## The self-host's implemented command set with the same one-line summaries as
 ## Ruby's CLI::COMMANDS (used by the zsh/fish completion scripts).
 function command_summary_count() -> ptr_uint:
-    return 14
+    return 15
 
 
 function command_summary_at(index: ptr_uint) -> CommandSummary:
@@ -1870,6 +1994,8 @@ function command_summary_at(index: ptr_uint) -> CommandSummary:
         return CommandSummary(name = "lower", summary = "Lower source to IR and print it")
     if index == 12:
         return CommandSummary(name = "emit-c", summary = "Compile source to C and print it")
+    if index == 13:
+        return CommandSummary(name = "bindgen", summary = "Generate a binding module from a C header")
     return CommandSummary(name = "completions", summary = "Print a shell completion script")
 
 
