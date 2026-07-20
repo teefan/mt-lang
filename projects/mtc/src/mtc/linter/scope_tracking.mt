@@ -215,7 +215,7 @@ function emit_scope_flat(path: str, warnings: ref[vec.Vec[ScopeWarning]], buf: p
     while i < count:
         unsafe:
             let bd = read(buf + start + i).binding
-            if not bd.used and not bd.name.starts_with("_"):
+            if not bd.used and bd.name.len > 0 and not bd.name.starts_with("_"):
                 let code = if bd.binding_kind == BINDING_PARAM: "unused-param" else: "unused-local"
                 let kind = if bd.binding_kind == BINDING_PARAM: "parameter" else: "local"
                 warn_unused(warnings, path, code, kind, bd.name, bd.line)
@@ -258,7 +258,7 @@ function check_unused_imports(file: ast.SourceFile, path: str, warnings: ref[vec
                         Option.some as an:
                             ln = an.value
                         Option.none:
-                            ln = read(parts.data + 0)
+                            ln = read(parts.data + parts.len - 1)
                     var used = false
                     var j: ptr_uint = 0
                     while j < file.declarations.len:
@@ -471,7 +471,18 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[ScopeW
                     i += 1
             ast.Stmt.stmt_local as loc:
                 visit_expr_opt(loc.value, path, warnings, ctx)
-                ctx_declare_local(ctx, loc.name, loc.line, loc.column, not loc.is_let, path, warnings)
+                if loc.name.len > 0:
+                    ctx_declare_local(ctx, loc.name, loc.line, loc.column, not loc.is_let, path, warnings)
+                match loc.destructure_bindings:
+                    Option.some as bindings:
+                        var di: ptr_uint = 0
+                        while di < bindings.value.len:
+                            let dname = unsafe: read(bindings.value.data + di)
+                            if dname.len > 0:
+                                ctx_declare_local(ctx, dname, loc.line, loc.column, not loc.is_let, path, warnings)
+                            di += 1
+                    Option.none:
+                        pass
                 visit_stmt_opt(loc.else_body, path, warnings, ctx)
             ast.Stmt.stmt_assignment as asgn:
                 visit_expr(asgn.value, path, warnings, ctx)
