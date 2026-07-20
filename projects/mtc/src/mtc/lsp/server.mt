@@ -10,6 +10,8 @@ import std.cjson as cjson
 import std.mem.arena as arena
 import std.log as log
 
+import mtc.version_info as version_info
+
 import mtc.lsp.call_hierarchy as call_hier
 import mtc.lsp.code_actions as code_actions
 import mtc.lsp.code_lens as code_lens
@@ -49,7 +51,12 @@ public function run(args: span[str]) -> int:
     var ws = workspace.Workspace.create(root)
     defer ws.release()
 
-    log.info("lsp: starting server")
+    var startup_msg = string.String.create()
+    startup_msg.append("lsp: starting server  mtc 0.1.0 (")
+    startup_msg.append(version_info.GIT_REVISION)
+    startup_msg.append(")")
+    log.info(startup_msg.as_str())
+    startup_msg.release()
 
     var running = true
     while running:
