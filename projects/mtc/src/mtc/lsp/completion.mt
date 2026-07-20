@@ -651,7 +651,14 @@ function build_completions_json(analysis: ref[analyzer.Analysis], prefix: str) -
                     if sig.has_return_type:
                         detail.append(" -> ")
                         detail.append(types.type_to_string(sig.return_type))
-                append_item(ref_of(items_json), name, KIND_FUNCTION, detail.as_str(), name, ref_of(first))
+                    if sig.params.len > 0:
+                        var snippet = function_snippet(name, sig)
+                        append_snippet_item(ref_of(items_json), name, KIND_FUNCTION, detail.as_str(), snippet.as_str(), ref_of(first))
+                        snippet.release()
+                    else:
+                        append_item(ref_of(items_json), name, KIND_FUNCTION, detail.as_str(), name, ref_of(first))
+                else:
+                    append_item(ref_of(items_json), name, KIND_FUNCTION, detail.as_str(), name, ref_of(first))
                 detail.release()
                 count += 1
                 if count >= MAX_COMPLETION_ITEMS:
@@ -761,6 +768,47 @@ function append_item(json_out: ref[string.String], label: str, kind: int, detail
     json_out.append("\",\"sortText\":\"")
     proto.append_escaped(json_out, label)
     json_out.append("\"}")
+
+
+## Append a CompletionItem with snippet insertTextFormat for function calls.
+function append_snippet_item(json_out: ref[string.String], label: str, kind: int, detail: str, snippet: str, first_var: ref[bool]) -> void:
+    if label.len == 0:
+        return
+    if not unsafe: read(first_var):
+        json_out.append(",")
+    unsafe: read(first_var) = false
+    json_out.append("{\"label\":\"")
+    proto.append_escaped(json_out, label)
+    json_out.append("\",\"kind\":")
+    json_out.append_format(f"#{kind}")
+    json_out.append(",\"detail\":\"")
+    proto.append_escaped(json_out, detail)
+    json_out.append("\",\"insertTextFormat\":2")
+    json_out.append(",\"insertText\":\"")
+    proto.append_escaped(json_out, snippet)
+    json_out.append("\",\"sortText\":\"")
+    proto.append_escaped(json_out, label)
+    json_out.append("\"}")
+
+
+## Build a snippet-like insertText for a function call: `name(${1:p1}, ${2:p2})`.
+function function_snippet(name: str, sig: analyzer.FnSig) -> string.String:
+    var result = string.String.create()
+    result.append(name)
+    result.append("(")
+    var pi: ptr_uint = 0
+    while pi < sig.params.len:
+        let param = unsafe: read(sig.params.data + pi)
+        if pi > 0:
+            result.append(", ")
+        result.append("${")
+        result.append_format(f"#{pi + 1}")
+        result.append(":")
+        result.append(param.name)
+        result.append("}")
+        pi += 1
+    result.append(")")
+    return result
 
 
 

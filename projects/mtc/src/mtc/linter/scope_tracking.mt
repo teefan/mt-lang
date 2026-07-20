@@ -215,7 +215,7 @@ function emit_scope_flat(path: str, warnings: ref[vec.Vec[ScopeWarning]], buf: p
     while i < count:
         unsafe:
             let bd = read(buf + start + i).binding
-            if not bd.used:
+            if not bd.used and not bd.name.starts_with("_"):
                 let code = if bd.binding_kind == BINDING_PARAM: "unused-param" else: "unused-local"
                 let kind = if bd.binding_kind == BINDING_PARAM: "parameter" else: "local"
                 warn_unused(warnings, path, code, kind, bd.name, bd.line)
