@@ -206,13 +206,20 @@ extending str:
         if len > this.len - start:
             fatal(c"str slice length out of bounds")
 
-        let stop = start + len
         if not utf8_boundary(this, start):
             fatal(c"str slice start must be a UTF-8 boundary")
-        if not utf8_boundary(this, stop):
-            fatal(c"str slice end must be a UTF-8 boundary")
+        var actual_stop = start + len
+        if not utf8_boundary(this, actual_stop):
+            var adj = actual_stop
+            while adj > start:
+                adj -= 1
+                if utf8_boundary(this, adj):
+                    break
+            if adj <= start:
+                return unsafe: str(data = this.data + start, len = 0)
+            actual_stop = adj
 
-        return unsafe: str(data = this.data + start, len = len)
+        return unsafe: str(data = this.data + start, len = actual_stop - start)
 
 
     public function find_substring(needle: str) -> Option[ptr_uint]:
