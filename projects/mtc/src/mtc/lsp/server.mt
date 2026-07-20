@@ -103,6 +103,18 @@ function parse_log_level(args: span[str]) -> void:
     log.set_level(log.Level.warn)
 
 
+function apply_trace_level(params: json.Value) -> void:
+    let level_str = unsafe: params.as_string()
+    if level_str.is_some():
+        let level = level_str.unwrap()
+        if level == "verbose" or level == "messages":
+            log.set_level(log.Level.trace)
+        else if level == "off":
+            log.set_level(log.Level.warn)
+        else:
+            log.set_level(log.Level.info)
+
+
 ## Dispatch handler for a known method.  Returns false when the server
 ## should exit (e.g. after a restart command).
 function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.Message) -> bool:
@@ -271,6 +283,10 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
     else if method == "textDocument/onTypeFormatting":
         var pos = extract_position_params(msg.params)
         on_type.handle_on_type_formatting(ws, pos.uri, pos.line, extract_trigger_character(msg.params), msg.id)
+
+    else if method == "$/setTrace":
+        apply_trace_level(msg.params)
+        return true
 
     else:
         var msg_text = string.String.create()
