@@ -55,6 +55,33 @@ public function handle_signature_help(
         if sig_ptr != null:
             sig_opt = Option[analyzer.FnSig].some(value = read(sig_ptr))
 
+    # Method call on a receiver: try dot-receiver method resolution.
+    if sig_opt.is_none():
+        match cursor.dot_receiver_at(source, line, character):
+            Option.some as recv:
+                let qualified = analyzer.method_key(recv.value, func_name)
+                unsafe:
+                    let msig_ptr = analysis.method_sigs.get(qualified)
+                    if msig_ptr != null:
+                        sig_opt = Option[analyzer.FnSig].some(value = read(msig_ptr))
+            Option.none:
+                pass
+
+    # Extending-block method: search method_keys for "*.name" suffix.
+    if sig_opt.is_none():
+        var mentries = analysis.method_keys.entries()
+        var mnext = mentries.next()
+        while mnext:
+            let me = mentries.current()
+            let mk = unsafe: read(me.key)
+            if mk.ends_with(func_name) and mk.len > func_name.len:
+                unsafe:
+                    let msig_ptr = analysis.method_sigs.get(mk)
+                    if msig_ptr != null:
+                        sig_opt = Option[analyzer.FnSig].some(value = read(msig_ptr))
+                        break
+            mnext = mentries.next()
+
     match sig_opt:
         Option.some as sig_payload:
             var sig = sig_payload.value
