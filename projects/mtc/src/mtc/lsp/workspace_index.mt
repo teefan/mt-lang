@@ -136,6 +136,24 @@ function collect_file_symbols(path: str, output: ref[vec.Vec[Entry]]) -> void:
                             line = info.line,
                             column = 0,
                         ))
+                match decl:
+                    ast.Decl.decl_extending_block as ext:
+                        var mi: ptr_uint = 0
+                        while mi < ext.methods.len:
+                            var mfn: ast.Method
+                            unsafe:
+                                mfn = read(ext.methods.data + mi)
+                            if mfn.name.len > 0:
+                                output.push(Entry(
+                                    name = string_mod.String.from_str(mfn.name),
+                                    kind = 6,
+                                    path = string_mod.String.from_str(canonical.value.as_str()),
+                                    line = mfn.line,
+                                    column = 0,
+                                ))
+                            mi += 1
+                    _:
+                        pass
                 di += 1
             canonical.value.release()
         Result.failure as failure_payload:
