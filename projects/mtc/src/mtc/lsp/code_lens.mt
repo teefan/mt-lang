@@ -6,6 +6,7 @@ import std.fmt
 import std.fs as fs_mod
 import std.json as json
 import std.log as log
+import std.map as map_mod
 import std.str
 import std.string as string
 import std.vec as vec
@@ -113,6 +114,9 @@ function count_references(name: str, ws: ref[workspace.Workspace]) -> ptr_uint:
     var results = idx.query_index(ref_of(ws.index), "", max_results)
     defer results.release()
 
+    var seen = map_mod.Map[str, bool].create()
+    defer seen.release()
+
     var ri: ptr_uint = 0
     while ri < results.len():
         let rp = results.get(ri) else:
@@ -123,13 +127,15 @@ function count_references(name: str, ws: ref[workspace.Workspace]) -> ptr_uint:
         let entry = unsafe: read(ep)
         if entry.name.as_str().equal(name):
             let path = entry.path.as_str()
-            match fs_mod.read_text(path):
-                Result.success as payload:
-                    var content = payload.value
-                    total += count_occurrences(content.as_str(), name)
-                    content.release()
-                Result.failure:
-                    pass
+            if not seen.contains(path):
+                seen.set(path, true)
+                match fs_mod.read_text(path):
+                    Result.success as payload:
+                        var content = payload.value
+                        total += count_occurrences(content.as_str(), name)
+                        content.release()
+                    Result.failure:
+                        pass
         ri += 1
 
     return total
