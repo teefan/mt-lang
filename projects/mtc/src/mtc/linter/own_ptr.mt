@@ -5,7 +5,6 @@
 
 import std.map as map_mod
 import std.str
-import std.hash
 import std.vec as vec
 
 import mtc.parser.ast as ast
@@ -41,7 +40,7 @@ function check_body(body: ptr[ast.Stmt]?, diags: ref[vec.Vec[Diag]]) -> void:
     unsafe:
         match read(bp):
             ast.Stmt.stmt_block as blk:
-                var candidates = map_mod.Map[str, bool].create()
+                var candidates = map_mod.Map[str, ptr_uint].create()
                 defer candidates.release()
                 collect_locals(blk.statements, candidates)
                 track_uses(blk.statements, candidates)
@@ -60,20 +59,20 @@ function is_ptr_type(tr: ptr[ast.TypeRef]?) -> bool:
         return first.equal("ptr") or first.equal("const_ptr")
 
 
-function collect_locals(stmts: span[ast.Stmt], c: ref[map_mod.Map[str, bool]]) -> void:
+function collect_locals(stmts: span[ast.Stmt], c: ref[map_mod.Map[str, ptr_uint]]) -> void:
     var si: ptr_uint = 0
     while si < stmts.len:
         unsafe:
             match read(stmts.data + si):
                 ast.Stmt.stmt_local as loc:
                     if loc.name != "_" and is_ptr_type(loc.stmt_type):
-                        c.set(loc.name, false)
+                        c.set(loc.name, loc.line)
                 _:
                     pass
         si += 1
 
 
-function track_uses(stmts: span[ast.Stmt], c: ref[map_mod.Map[str, bool]]) -> void:
+function track_uses(stmts: span[ast.Stmt], c: ref[map_mod.Map[str, ptr_uint]]) -> void:
     var si: ptr_uint = 0
     while si < stmts.len:
         unsafe:
@@ -92,25 +91,26 @@ function track_uses(stmts: span[ast.Stmt], c: ref[map_mod.Map[str, bool]]) -> vo
         si += 1
 
 
-function mark_use(ep: ptr[ast.Expr]?, c: ref[map_mod.Map[str, bool]]) -> void:
+function mark_use(ep: ptr[ast.Expr]?, c: ref[map_mod.Map[str, ptr_uint]]) -> void:
     let p = ep else:
         return
     unsafe:
         match read(p):
             ast.Expr.expr_identifier as id:
                 if c.contains(id.name):
-                    c.set(id.name, true)
+                    c.set(id.name, 0)
             _:
                 pass
 
 
-function emit_leaks(candidates: map_mod.Map[str, bool], diags: ref[vec.Vec[Diag]]) -> void:
+function emit_leaks(candidates: map_mod.Map[str, ptr_uint], diags: ref[vec.Vec[Diag]]) -> void:
     var keys = candidates.keys()
     while true:
         let kp = keys.next() else:
             break
         let nm = unsafe: read(kp)
-        let usedp = candidates.get(nm) else:
+        let line_ptr = candidates.get(nm) else:
             continue
-        if not unsafe: read(usedp):
-            diags.push(Diag(name = nm, line = 1))
+        let decl_line = unsafe: read(line_ptr)
+        if decl_line > 0:
+            diags.push(Diag(name = nm, line = decl_line))
