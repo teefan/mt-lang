@@ -14,9 +14,14 @@ sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 → MT type mapper + clang JSON AST parser).
 
 **DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**
-**LSP: 35 modules, ~9,000 lines, 29 capabilities advertised, capability-parity with Ruby.**
-**Semantic token parity: 15-type legend (decorator, enumMember, method added).**
-**LSP stability: use-after-free fix, URI-to-path mismatch fix, logging infrastructure.**
+**LSP: 35 modules, ~9,500 lines, 29 capabilities advertised, capability-parity with Ruby.**
+**Hover: 18/25 declaration types covered (up from 5/25).**
+**LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
+**LSP logging: structured stderr, version+revision announcement, blank-line filtering.**
+**Diagnostic positions: lexer-based token matching; buffer-overflow warning fix (MAX_ENTRIES 16→128).**
+**Code lens: reference counts with deduplication; all index entries queried.**
+**References: cross-file via workspace index; definition: local variables supported.**
+**Signature help: method calls and extending-block methods resolved.**
 **Imported-bindings: 7 modules (incl. registry + methods), ~2,700 lines.  `mtc imported-bindings` CLI command with --all/--check.
 Byte-identical raymath output. 3 verified / 25 changed across all 28 bindings (remaining deltas from cosmetic emitter gaps).**
 
@@ -25,7 +30,100 @@ Byte-identical raymath output. 3 verified / 25 changed across all 28 bindings (r
 ~~`docs`, `snapshot`~~ **`snapshot` DONE (§5.8a).  `debug` DONE (§5.8a).**
 Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
-Last updated: 2026-07-20 (LSP crash-fixes, debug/snapshot commands, logging, semantic token parity)
+Last updated: 2026-07-20 (LSP hover/resilience/warning-positions/references/definition/signature-help session)
+
+---
+
+## 0h. 2026-07-20 session — LSP resilience, hover parity, diagnostics, and QoL
+
+All landed under a held fixed point (stage2.c == stage3.c), 177/177 tests,
+13/13 language examples.  15 commits.
+
+### Compiler resilience
+1. **Lexer recoverability** — `session_fatal` no longer calls `fatal()` when
+   `diags` is null; silently returns, making the lexer recoverable in all
+   contexts (not just `lex_reporting`).
+2. **Parser loop guard** — two-level guard: per-declaration reset at 500K
+   steps with token skipping, hard 50M total-step cap with descriptive `fatal()`.
+3. **`str.slice` UTF-8 auto-adjust** — instead of `fatal()` on non-UTF-8-boundary
+   positions, walks backward to the nearest valid code-point start.  Fixes all
+   callers that iterate source byte-by-byte (completion, code_lens, hover).
+
+### LSP stability
+| Fix | Impact |
+|-----|--------|
+| `session_fatal` never aborts | Lexer survives unclosed parens |
+| Parser `step()` skips stuck tokens | No infinite-loop OOM |
+| `str.slice` auto-adjusts boundaries | No more UTF-8-boundary SIGABRT |
+| Column off-by-one fix in `resolve_non_decl_hover` | Builtin/keyword hover works |
+| `find_token_str` 0-indexed column matching | Local hover works |
+
+### Hover parity — 5/25 → 18/25 cases
+| P0-P1: 7 new cases | P2: 4 new cases | Phase 1: 2 new cases |
+|--------------------|-----------------|---------------------|
+| Methods (extending blocks) | Keywords (size_of, align_of) | Local let/var |
+| Interfaces | Builtins (fatal, ref_of, etc.) | Lexical fallback |
+| Type aliases | Specializations (zero[T], etc.) | |
+| Opaques | Field declarations | |
+| const functions | | |
+| Doc comments (already active) | | |
+| Enum member dot-access | | |
+
+### Cross-file features
+- **References**: `handle_references` now queries workspace index for all files
+  containing the symbol, scans each for identifier occurrences.  Previously
+  same-file only.
+- **Definition**: `handle_definition` falls back to `resolve_local_hover` for
+  local variables.  Ctrl+Click on `let x` now jumps to the declaration.
+
+### Signature help
+- Method calls (`obj.method`) resolve via dot-receiver analysis
+- Extending-block methods found by scanning `method_keys` for `*.name` suffix
+- Previously only top-level functions
+
+### Hover source location links
+- Every hover popup now shows `*Defined at line N*` in italic markdown
+
+### LSP logging
+- `std/log.mt` stderr flush ensures server messages reach VSCode output channel
+- Server startup announces version + git revision (`mtc 0.1.0 (c92a4bd)`)
+- `mtc-lsp` wrapper fixed to forward `--log-level` args; or use `mtc lsp` directly
+- VS Code extension `emitStderr` filters trailing blank lines from pipe reads
+
+### Diagnostic position accuracy
+- `diagnostic_from_warning` now uses `lex_reporting()` token stream instead of
+  byte-scanning — no more false matches in comments/string-literals/doc-comments
+- Line=0 clamp: when `w.line == 0`, searches line 1 for the quoted token name
+- Linter: `missing-return` now uses AST node line; `borrow-and-mutate`,
+  `owning-release-leak`, `prefer-own-ptr` use line=1 anchor
+
+### Linter buffer overflow fix
+- `MAX_ENTRIES` 16→128 per scope, buffer 512→4096 entries.  Functions with
+  37+ locals (e.g. `statements_demo`) no longer overflow scope entries, eliminating
+  59 fake empty-name `unused-local` warnings
+
+### Code lens fixes
+- `count_references` queries all index entries (not capped at 500)
+- File reads deduplicated — methods defined in multiple extending blocks in
+  the same file counted once, not 6×
+- Un-resolved code lens entries omit `command` field so VSCode calls `codeLens/resolve`
+
+### Git revision injection fix
+- `version_info.mt` restored to `__PLACEHOLDER__`; bootstrap script's `sed`
+  now correctly injects `git rev-parse --short=7 HEAD` each build
+
+### Known gaps (not yet fixed)
+- `completion`: prefix filtering written but blocked by C backend const-correctness
+  bug in `std/imported_bindings/registry.mt`
+- `dead-assignment` at line 0 (15 warnings): cfg module produces DeadWrite
+  entries with line=0 for assignments in nested scopes
+- `prefer-own-ptr` at line 1 (1 warning): scope-based rule, line tracking not stored
+
+### DAP status
+- 7 modules, ~1,050 lines, process backend with child I/O polling
+- Lldb-dap bridge not feasible without multi-threaded I/O (§dap-design §9)
+
+
 
 ---
 

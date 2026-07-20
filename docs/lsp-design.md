@@ -1,11 +1,14 @@
 # Self-Host LSP Architecture
 
 Status: **Implementation complete — all capabilities + long-tail items + 2026-07-20
-stability/crash-fix session delivered.** Last updated: 2026-07-20.
-35 modules, ~9,000 lines, 29 capabilities advertised at Ruby parity.
-Semantic token legend extended to 15 types (decorator, enumMember, method added).
-LSP server now has structured logging (std/log), per-request tracing,
-incremental text sync (change:2), and configuration application.
+stability/hover/resilience session delivered.** Last updated: 2026-07-20.
+35 modules, ~9,500 lines, 29 capabilities advertised at Ruby parity.
+Hover coverage: 18/25 declaration types (up from 5/25).
+References: cross-file via workspace index.
+Definition: local variables supported.
+Signature help: methods and extending-block methods resolved.
+Diagnostic positions: lexer-based token matching, buffer-overflow fix.
+LSP logging: structured stderr with version+revision announcement.
 
 ## 0. Design Principles
 
