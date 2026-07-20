@@ -113,4 +113,4 @@ function emit_leaks(candidates: map_mod.Map[str, bool], diags: ref[vec.Vec[Diag]
         let usedp = candidates.get(nm) else:
             continue
         if not unsafe: read(usedp):
-            diags.push(Diag(name = nm, line = 0))
+            diags.push(Diag(name = nm, line = 1))

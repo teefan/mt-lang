@@ -1563,14 +1563,14 @@ function visit_decl(decl: ptr[ast.Decl], path: str, warnings: ref[vec.Vec[Warnin
             ast.Decl.decl_function as fun:
                 visit_stmt_opt(fun.body, path, warnings)
                 check_redundant_return(fun.return_type, fun.body, path, warnings)
-                check_missing_return(fun.name, fun.return_type, fun.body, path, warnings)
+                check_missing_return(fun.name, fun.line, fun.return_type, fun.body, path, warnings)
             ast.Decl.decl_extending_block as ex:
                 var j: ptr_uint = 0
                 while j < ex.methods.len:
                     let m = read(ex.methods.data + j)
                     visit_stmt(m.body, path, warnings)
                     check_redundant_return(m.return_type, m.body, path, warnings)
-                    check_missing_return(m.name, m.return_type, m.body, path, warnings)
+                    check_missing_return(m.name, m.line, m.return_type, m.body, path, warnings)
                     j += 1
             ast.Decl.decl_const as c:
                 visit_expr_opt(c.value, path, warnings)
@@ -1969,16 +1969,16 @@ function identifier_name_of(expr: ptr[ast.Expr]) -> Option[str]:
 #  missing-return — non-void function whose body does not always return.
 # =============================================================================
 
-function check_missing_return(name: str, return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_missing_return(name: str, line: ptr_uint, return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     if return_type == null:
         return
     if is_void_type(return_type):
         return
     let bp = body else:
-        push_warning(warnings, path, 0, "missing-return", mk_missing_return_msg(name), "error")
+        push_warning(warnings, path, line, "missing-return", mk_missing_return_msg(name), "error")
         return
     if not always_returns_body(body):
-        push_warning(warnings, path, 0, "missing-return", mk_missing_return_msg(name), "error")
+        push_warning(warnings, path, line, "missing-return", mk_missing_return_msg(name), "error")
 
 
 function mk_missing_return_msg(name: str) -> str:
@@ -2925,7 +2925,7 @@ function ownership_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[ve
             buf.append("owning binding '")
             buf.append(name)
             buf.append("' is never released")
-            push_warning(warnings, path, 0, "owning-release-leak", buf.as_str(), "warning")
+            push_warning(warnings, path, 1, "owning-release-leak", buf.as_str(), "warning")
         si += 1
 
 
@@ -3405,7 +3405,7 @@ function borrow_check_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Ve
             buf.append("'")
             buf.append(name)
             buf.append("' is borrowed via ref_of/ptr_of and also mutated in the same scope — potential aliasing hazard")
-            push_warning(warnings, path, 0, "borrow-and-mutate", buf.as_str(), "warning")
+            push_warning(warnings, path, 1, "borrow-and-mutate", buf.as_str(), "warning")
         i += 1
 
 
