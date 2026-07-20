@@ -29,28 +29,28 @@ public function handle_did_change(ws: ref[workspace.Workspace], params: json.Val
     match ws.document_source(uri):
         Option.some as src:
             var updated = apply_content_changes(src.value.as_str(), params)
-            ws.change(uri, updated)
+            ws.change(uri, updated.as_str())
+            updated.release()
         Option.none:
             var updated = apply_content_changes("", params)
-            ws.change(uri, updated)
+            ws.change(uri, updated.as_str())
+            updated.release()
 
 
 ## Apply contentChanges from a didChange notification to a document string.
-## Handles both full-sync (change:1, full text replacement) and incremental
-## (change:2, range-based edits).
-function apply_content_changes(current: str, params: json.Value) -> str:
+## Returns the updated document as an owned String.
+function apply_content_changes(current: str, params: json.Value) -> string.String:
     let obj_ptr = params.as_object()
     if obj_ptr == null:
-        return current
+        return string.String.from_str(current)
     var result = string.String.from_str(current)
-    defer result.release()
     unsafe:
         let changes_ptr = read(obj_ptr).get("contentChanges")
         if changes_ptr == null:
-            return current
+            return string.String.from_str(current)
         let changes_arr_ptr = read(changes_ptr).as_array()
         if changes_arr_ptr == null:
-            return current
+            return string.String.from_str(current)
         var index: ptr_uint = 0
         while true:
             let change_ptr = read(changes_arr_ptr).get(index)
@@ -104,7 +104,7 @@ function apply_content_changes(current: str, params: json.Value) -> str:
             result.append(updated.as_str())
             updated.release()
             index += 1
-    return result.as_str()
+    return result
 
 
 function apply_utf8_range_edit(
