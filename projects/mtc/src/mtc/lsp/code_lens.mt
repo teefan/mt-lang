@@ -198,4 +198,4 @@ function append_lens(
     output.append_format(f"#{lz}")
     output.append(",\"character\":0}},\"data\":\"")
     proto.append_escaped(output, name)
-    output.append("\",\"command\":{\"title\":\"references\",\"command\":\"\"}}")
+    output.append("\"}")
