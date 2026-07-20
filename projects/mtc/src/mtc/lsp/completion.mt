@@ -10,6 +10,7 @@
 import std.fmt
 import std.fs as fs_mod
 import std.json as json
+import std.map as map_mod
 import std.mem.heap as heap
 import std.str
 import std.string as string
@@ -339,11 +340,13 @@ function import_completions(
         let last_ptr = segments.get(segments.len() - 1) else:
             return null
         filter = unsafe: read(last_ptr)
-
     var items_json = string.String.create()
     items_json.append("[")
     var first = true
     var count: ptr_uint = 0
+
+    var seen = map_mod.Map[str, bool].create()
+    defer seen.release()
 
     var roots = ws.effective_module_roots_for("")
     defer roots.release()
@@ -380,9 +383,21 @@ function import_completions(
                             if entry_name.starts_with("."):
                                 ci += 1
                                 continue
-                            if not prefix_matches(entry_name, prefix) and not prefix_matches(entry_name, filter):
+
+                            # Skip platform-specific files (auto-resolved by compiler)
+                            if entry_name.ends_with(".linux.mt") or entry_name.ends_with(".windows.mt"):
                                 ci += 1
                                 continue
+
+                            # Filter by current word prefix (if non-empty) or by path segment
+                            if prefix.len > 0:
+                                if not entry_name.starts_with(prefix):
+                                    ci += 1
+                                    continue
+                            else if filter.len > 0:
+                                if not entry_name.starts_with(filter):
+                                    ci += 1
+                                    continue
 
                             var full_path = string.String.create()
                             defer full_path.release()
@@ -392,13 +407,11 @@ function import_completions(
 
                             if fs_mod.is_directory(full_path.as_str()):
                                 if dir_contains_mt(full_path.as_str()):
-                                    append_item(ref_of(items_json), entry_name, KIND_MODULE, "module", entry_name, ref_of(first))
-                                    count += 1
+                                    add_import_item(ref_of(items_json), entry_name, ref_of(seen), ref_of(count), ref_of(first))
                             else if entry_name.ends_with(".mt"):
                                 let mod_name = entry_name.slice(0, entry_name.len - 3)
-                                if mod_name.len > 0 and (filter.len == 0 or mod_name.starts_with(filter)):
-                                    append_item(ref_of(items_json), mod_name, KIND_MODULE, "module", mod_name, ref_of(first))
-                                    count += 1
+                                if mod_name.len > 0:
+                                    add_import_item(ref_of(items_json), mod_name, ref_of(seen), ref_of(count), ref_of(first))
                         Option.none:
                             pass
                     ci += 1
@@ -408,8 +421,8 @@ function import_completions(
 
         search_dir.release()
         ri += 1
-    items_json.append("]")
 
+    items_json.append("]")
     if count == 0:
         items_json.release()
         return null
@@ -417,6 +430,23 @@ function import_completions(
     let alloc = heap.must_alloc[string.String](1)
     unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
     return alloc
+
+
+## Add a deduplicated import completion item.
+function add_import_item(
+    json_out: ref[string.String],
+    name: str,
+    seen: ref[map_mod.Map[str, bool]],
+    count: ref[ptr_uint],
+    first: ref[bool],
+) -> void:
+    if seen.contains(name) or unsafe: read(count) >= MAX_COMPLETION_ITEMS:
+        return
+    seen.set(name, true)
+    append_item(json_out, name, KIND_MODULE, "module", name, first)
+    unsafe:
+        read(count) = read(count) + 1
+
 
 
 ## Completions for local variables and parameters visible at the cursor.
