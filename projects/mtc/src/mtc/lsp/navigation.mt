@@ -38,7 +38,10 @@ public function handle_definition(
     character: ptr_uint,
     id: json.Value,
 ) -> void:
+    # Try module-level resolution first, then fall back to local variables.
     var result = resolve_cursor(ws, uri, line, character)
+    if result.is_none():
+        result = resolve_local_hover(ws, uri, line, character)
     match result:
         Option.some as res:
             var payload = res.value
