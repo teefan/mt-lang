@@ -141,6 +141,15 @@ resolve_stage0() {
 
 MTC_STAGE0="$(resolve_stage0)"
 
+# ── git revision stamp ────────────────────────────────────────────────────────
+
+GIT_REV="$(git -C "$PROJECT_ROOT" rev-parse --short=7 HEAD 2>/dev/null || echo "unknown")"
+VERSION_FILE="$PROJECT_ROOT/projects/mtc/src/mtc/version_info.mt"
+# Save original for restoration
+ORIG_CONTENT="$(cat "$VERSION_FILE")"
+sed -i "s/__PLACEHOLDER__/$GIT_REV/" "$VERSION_FILE"
+trap 'echo "$ORIG_CONTENT" > "$VERSION_FILE"' EXIT
+
 # ── build flags ──────────────────────────────────────────────────────────────
 
 FLAGS=(-I . --no-cache)

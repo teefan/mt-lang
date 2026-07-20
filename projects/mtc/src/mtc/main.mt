@@ -38,6 +38,7 @@ import mtc.dap.server as dap
 import mtc.bindgen as bindgen
 import mtc.imported_bindings.registry as ib_registry
 import mtc.imported_bindings.main as ib_main
+import mtc.version_info as ver
 
 
 function main(args: span[str]) -> int:
@@ -48,7 +49,7 @@ function main(args: span[str]) -> int:
     let cmd = args[0]
 
     if cmd == "version" or cmd == "--version" or cmd == "-V":
-        stdio.print_line("mtc 0.1.0")
+        stdio.print_format(c"mtc 0.1.0 (%.*s)\n", int<-(ver.GIT_REVISION.len), ver.GIT_REVISION.data)
         return 0
 
     if cmd == "lex":
