@@ -104,6 +104,10 @@ public function handle_hover(
                 if payload.docs.len() > 0:
                     value_text.append("\n")
                     value_text.append(payload.docs.as_str())
+                if payload.line > 0:
+                    value_text.append("\n\n*Defined at line ")
+                    value_text.append_format(f"#{payload.line}")
+                    value_text.append("*")
 
                 var json_text = string.String.create()
                 defer json_text.release()
@@ -1586,6 +1590,10 @@ function write_hover_result(id: json.Value, res: CursorResult) -> void:
         if payload.docs.len() > 0:
             value_text.append("\n")
             value_text.append(payload.docs.as_str())
+        if payload.line > 0:
+            value_text.append("\n\n*Defined at line ")
+            value_text.append_format(f"#{payload.line}")
+            value_text.append("*")
         var json_text = string.String.create()
         defer json_text.release()
         json_text.append("{\"contents\":{\"kind\":\"markdown\",\"value\":\"")
