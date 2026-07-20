@@ -31,7 +31,9 @@ public struct CursorToken:
 ## A cursor immediately after the last character of an identifier still
 ## resolves to that identifier, matching editor conventions.
 public function identifier_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[CursorToken]:
-    var tokens = lexer_mod.lex(source)
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer tokens.release()
 
     let target_line = line + 1
@@ -68,7 +70,9 @@ public function identifier_at(source: str, line: ptr_uint, character: ptr_uint) 
 ## position: `foo(a, |)` resolves to "foo", `mod.method(|)` to "method",
 ## and `name[T](|)` to "name" (specialization brackets are skipped).
 public function call_name_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[str]:
-    var tokens = lexer_mod.lex(source)
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer tokens.release()
 
     let target_line = line + 1
@@ -169,7 +173,9 @@ public function identifier_occurrences(source: str, name: str) -> vec.Vec[Cursor
     if name.len == 0:
         return result
 
-    var tokens = lexer_mod.lex(source)
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer tokens.release()
 
     var ti: ptr_uint = 0

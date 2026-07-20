@@ -687,6 +687,7 @@ function parse_embedded_expr(s: ref[pstate.ParserState], source: str) -> ptr[ast
         known_generic_callable_names = s.known_generic_callable_names,
         current_type_param_names = s.current_type_param_names,
         suppress_errors = s.suppress_errors,
+        total_steps = 0,
         error_suppressed = false,
     )
     return parse_expression(ref_of(sub))
@@ -727,6 +728,7 @@ public function parse(source: str) -> bool:
         known_generic_callable_names = map_mod.Map[str, bool].create(),
         current_type_param_names = vec.Vec[str].create(),
         suppress_errors = false,
+        total_steps = 0,
         error_suppressed = false,
     )
     lex_diags.release()
@@ -748,6 +750,7 @@ public function parse_reporting(source: str, errors: ref[vec.Vec[pstate.ParseDia
         known_generic_callable_names = map_mod.Map[str, bool].create(),
         current_type_param_names = vec.Vec[str].create(),
         suppress_errors = false,
+        total_steps = 0,
         error_suppressed = false,
     )
     lex_diags.release()
@@ -773,6 +776,7 @@ public function parse_source(source: str, errors: ref[vec.Vec[pstate.ParseDiagno
         known_generic_callable_names = map_mod.Map[str, bool].create(),
         current_type_param_names = vec.Vec[str].create(),
         suppress_errors = false,
+        total_steps = 0,
         error_suppressed = false,
     )
     lex_diags.release()

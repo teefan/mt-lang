@@ -9,6 +9,7 @@ import std.json as json
 import std.path as path_ops
 import std.str
 import std.string as string
+import std.vec as vec
 
 import mtc.lexer.lexer as lexer
 import mtc.lexer.token as tok
@@ -44,7 +45,9 @@ public function handle_document_link(
     let source = content.as_str()
     let dir = path_ops.dirname(file_path.as_str())
 
-    var tokens = lexer.lex(source)
+    var lex_diags = vec.Vec[tok.LexDiagnostic].create()
+    defer lex_diags.release()
+    var tokens = lexer.lex_reporting(source, ref_of(lex_diags))
     defer tokens.release()
 
     var result = string.String.create()

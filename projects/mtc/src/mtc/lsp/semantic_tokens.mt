@@ -251,7 +251,9 @@ function compute_token_data(
     clip_start_line: ptr_uint,
     clip_end_line: ptr_uint,
 ) -> vec.Vec[uint]:
-    var all_tokens = lexer_mod.lex(source)
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer lex_diags.release()
+    var all_tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer all_tokens.release()
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
@@ -330,7 +332,9 @@ function emit_semantic_tokens(
     defer content.release()
 
     let source = content.as_str()
-    var all_tokens = lexer_mod.lex(source)
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer lex_diags.release()
+    var all_tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer all_tokens.release()
 
     # Semantic classification facts for identifier tokens.
@@ -544,7 +548,9 @@ function snapshot_token_type_name(token_type: uint) -> str:
 public function snapshot_semantic_entries(source: str) -> string.String:
     var result = string.String.create()
 
-    var all_tokens = lexer_mod.lex(source)
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer lex_diags.release()
+    var all_tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer all_tokens.release()
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()

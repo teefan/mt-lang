@@ -144,7 +144,7 @@ function session_fatal(session: ref[LexSession], msg: cstr, line: ptr_uint, col:
     unsafe:
         let diag_ptr = read(session).diags
         if diag_ptr == null:
-            fatal(msg)
+            return
         var diags = read(diag_ptr)
         let diag = tok.LexDiagnostic(message = msg, line = line, column = col)
         diags.push(diag)

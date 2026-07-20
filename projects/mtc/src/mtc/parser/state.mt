@@ -21,13 +21,14 @@ public struct ParseDiagnostic:
     lexeme: str
     kind: str
 
-const MAX_LOOP_STEPS: ptr_uint = 5000
-
+const MAX_LOOP_STEPS: ptr_uint = 500000
+const MAX_TOTAL_STEPS: ptr_uint = 50000000
 
 public struct ParserState:
     stream: ts.TokenStream
     source: str
     step_counter: ptr_uint
+    total_steps: ptr_uint
     in_inline_block_body: bool
     recovery_errors: ptr[vec.Vec[ParseDiagnostic]]?
     known_type_names: map_mod.Map[str, bool]
@@ -48,24 +49,42 @@ public struct ParserState:
 
 public function step(s: ref[ParserState]) -> void:
     s.step_counter += 1
+    s.total_steps += 1
+    if s.total_steps > MAX_TOTAL_STEPS:
+        record_loop_guard_diagnostic(s, 0, 0)
+        fatal(c"parser step limit exceeded: the source file is too large or the parser entered an unrecoverable loop")
+        return
     if s.step_counter > MAX_LOOP_STEPS:
-        let tok = peek(s) else:
-            fatal(c"internal parser error: loop guard triggered — this is a compiler bug, please report it")
-        unsafe:
-            let t = read(tok)
-            let lexeme = token_mod.token_lexeme(t, s.source)
-            let kn = token_mod.kind_name(t.kind)
-            var buf: str_buffer[256]
-            buf.assign("internal parser error: loop guard triggered at L")
-            buf.append_format(f"#{int<-(t.line)}")
-            buf.append(":C")
-            buf.append_format(f"#{int<-(t.column)}")
-            buf.append(" lexeme='")
-            buf.append(lexeme)
-            buf.append("' kind=")
-            buf.append(kn)
-            buf.append(" — this is a compiler bug, please report it")
-            fatal(buf.as_cstr())
+        if not s.error_suppressed:
+            let tok = peek(s) else:
+                record_loop_guard_diagnostic(s, 0, 0)
+                s.error_suppressed = true
+                return
+            unsafe:
+                let t = read(tok)
+                record_loop_guard_diagnostic(s, t.line, t.column)
+                s.error_suppressed = true
+                return
+        ts.advance(ref_of(s.stream))
+        s.step_counter = 0
+        return
+
+
+function record_loop_guard_diagnostic(s: ref[ParserState], line: ptr_uint, col: ptr_uint) -> void:
+    unsafe:
+        let diags_ptr = read(s).recovery_errors
+        if diags_ptr == null:
+            return
+        var diags = read(diags_ptr)
+        let diag = ParseDiagnostic(
+            line = line,
+            column = col,
+            message = c"internal parser error: loop guard triggered — this is a compiler bug, please report it",
+            lexeme = "",
+            kind = ""
+        )
+        diags.push(diag)
+        read(diags_ptr) = diags
 
 
 # =============================================================================

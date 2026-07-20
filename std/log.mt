@@ -41,6 +41,7 @@ public function log(level: Level, message: str) -> void:
     output.append(message)
     output.push_byte(10)
     let _ = terminal.write_stderr(output.as_str())
+    terminal.flush_stderr()
 
 
 public function trace(message: str) -> void:

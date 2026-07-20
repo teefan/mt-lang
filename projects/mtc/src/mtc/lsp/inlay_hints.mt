@@ -44,7 +44,9 @@ public function handle_inlay_hint(
     defer content.release()
 
     let source = content.as_str()
-    var tokens = lexer_mod.lex(source)
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer tokens.release()
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()

@@ -192,7 +192,7 @@ function collect_doc_text(path: str, name: str) -> string.String:
                     continue
                 # Check if this line starts with the name followed by
                 # a non-word character or at end of line.
-                if source.as_str().slice(li, name.len).equal(name):
+                if li + name.len <= source.as_str().len and source.as_str().slice(li, name.len).equal(name):
                     let after = li + name.len
                     var is_decl = false
                     if after >= source.as_str().len:
@@ -214,18 +214,20 @@ function collect_doc_text(path: str, name: str) -> string.String:
             current_line = 1
             li = 0
             while li < source.as_str().len and current_line < target_line:
-                let line_start = li
-                while li < source.as_str().len and source.as_str().byte_at(li) != '\n':
-                    li += 1
-                let line_text = source.as_str().slice(line_start, li - line_start)
-                if line_text.starts_with("##"):
-                    let doc_content = line_text.slice(2, line_text.len - 2)
-                    var trimmed = trim_left(doc_content)
-                    doc_lines.push(trimmed)
-                else:
-                    doc_lines.clear()
-                if li < source.as_str().len:
-                    li += 1
+                let remaining = source.as_str().slice(li, source.as_str().len - li)
+                match remaining.find_byte(10):
+                    Option.some as nl_pos:
+                        let nl_end = nl_pos.value + li
+                        let line_text = source.as_str().slice(li, nl_end - li)
+                        if line_text.len >= 2 and line_text.starts_with("##"):
+                            var doc_content = line_text.slice(2, line_text.len - 2)
+                            var trimmed = trim_left(doc_content)
+                            doc_lines.push(trimmed)
+                        else:
+                            doc_lines.clear()
+                        li = nl_end + 1
+                    Option.none:
+                        break
                 current_line += 1
 
             var di: ptr_uint = 0
