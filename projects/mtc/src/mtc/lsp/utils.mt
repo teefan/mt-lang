@@ -50,7 +50,7 @@ public function current_word_prefix(source: str, line: ptr_uint, character: ptr_
 
 
 ## The text of 1-based line `line_no` in `source`, without the newline.
-function source_line(source: str, line_no: ptr_uint) -> str:
+public function source_line(source: str, line_no: ptr_uint) -> str:
     if line_no == 0:
         return ""
     var current: ptr_uint = 1

@@ -24,6 +24,7 @@ import mtc.semantic.types as types
 import mtc.loader.path_resolver as resolver
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
+import mtc.lsp.scope as scope
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
@@ -61,6 +62,14 @@ public function handle_completion(
 
     let source = content.as_str()
     var prefix = utils.current_word_prefix(source, line, character)
+
+    # Import context: filesystem-based module path completion before parsing.
+    var import_items = import_completions(ws, source, line, character, prefix)
+    if import_items != null:
+        proto.write_response_raw(id, unsafe: read(import_items).as_str())
+        unsafe: read(import_items).release()
+        heap.release(import_items)
+        return
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer parse_diags.release()
@@ -107,6 +116,14 @@ public function handle_completion(
                 return
         Option.none:
             pass
+
+    # Scope/local context: local variables and parameters visible at cursor.
+    var scope_items = scope_completions(source, line + 1, prefix)
+    if scope_items != null:
+        proto.write_response_raw(id, unsafe: read(scope_items).as_str())
+        unsafe: read(scope_items).release()
+        heap.release(scope_items)
+        return
 
     var items_json = build_completions_json(ref_of(analysis), prefix)
     proto.write_response_raw(id, items_json.as_str())
@@ -272,6 +289,199 @@ function trim_left(text: str) -> str:
     if start >= text.len:
         return ""
     return text.slice(start, text.len - start)
+
+
+## Completions for `import ` — walk the filesystem under module roots to
+## find .mt files and sub-directories matching the typed path prefix.
+## Returns a heap-allocated JSON completion result, or null when the cursor
+## is not inside an import statement.
+function import_completions(
+    ws: ref[workspace.Workspace],
+    source: str,
+    line: ptr_uint,
+    character: ptr_uint,
+    prefix: str,
+) -> ptr[string.String]?:
+    let line_text = utils.source_line(source, line + 1)
+    let trimmed = line_text.trim_ascii_whitespace()
+    if not trimmed.starts_with("import "):
+        return null
+
+    let import_pos = line_text.find_substring("import ") else:
+        return null
+    let after_import = import_pos + 7
+
+    if character < after_import:
+        return null
+
+    # Cursor must be before ` as ` if present.
+    match line_text.slice(after_import, line_text.len - after_import).find_substring(" as "):
+        Option.some as as_pos:
+            if character >= after_import + as_pos.value:
+                return null
+        Option.none:
+            pass
+
+    # Split path typed so far by '.' into dir-segments + final filter segment.
+    var path_typed = line_text.slice(after_import, character - after_import)
+    var segments = vec.Vec[str].create()
+    defer segments.release()
+    var seg_start: ptr_uint = 0
+    var si: ptr_uint = 0
+    while si <= path_typed.len:
+        if si == path_typed.len or path_typed.byte_at(si) == '.':
+            segments.push(path_typed.slice(seg_start, si - seg_start))
+            seg_start = si + 1
+        si += 1
+
+    var filter: str = ""
+    if segments.len() > 0:
+        let last_ptr = segments.get(segments.len() - 1) else:
+            return null
+        filter = unsafe: read(last_ptr)
+
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
+
+    var roots = ws.effective_module_roots_for("")
+    defer roots.release()
+    var ri: ptr_uint = 0
+    while ri < roots.len():
+        let rp = roots.get(ri) else:
+            break
+        let root = unsafe: read(rp)
+
+        # Build search directory: root/seg0/seg1/.../ (all except filter segment)
+        var search_dir = string.String.create()
+        search_dir.append(root)
+        var seg_i: ptr_uint = 0
+        while seg_i + 1 < segments.len():
+            let sp = segments.get(seg_i) else:
+                break
+            search_dir.push_byte(47)
+            search_dir.append(unsafe: read(sp))
+            seg_i += 1
+
+        if not fs_mod.is_directory(search_dir.as_str()):
+            search_dir.release()
+            ri += 1
+            continue
+
+        match fs_mod.list_entries(search_dir.as_str()):
+            Result.success as dir_entries:
+                let entries_count = dir_entries.value.len()
+                var ci: ptr_uint = 0
+                while ci < entries_count and count < MAX_COMPLETION_ITEMS:
+                    match dir_entries.value.get(ci):
+                        Option.some as entry_payload:
+                            let entry_name = entry_payload.value
+                            if entry_name.starts_with("."):
+                                ci += 1
+                                continue
+                            if not prefix_matches(entry_name, prefix) and not prefix_matches(entry_name, filter):
+                                ci += 1
+                                continue
+
+                            var full_path = string.String.create()
+                            defer full_path.release()
+                            full_path.append(search_dir.as_str())
+                            full_path.push_byte(47)
+                            full_path.append(entry_name)
+
+                            if fs_mod.is_directory(full_path.as_str()):
+                                if dir_contains_mt(full_path.as_str()):
+                                    append_item(ref_of(items_json), entry_name, KIND_MODULE, "module", entry_name, ref_of(first))
+                                    count += 1
+                            else if entry_name.ends_with(".mt"):
+                                let mod_name = entry_name.slice(0, entry_name.len - 3)
+                                if mod_name.len > 0 and (filter.len == 0 or mod_name.starts_with(filter)):
+                                    append_item(ref_of(items_json), mod_name, KIND_MODULE, "module", mod_name, ref_of(first))
+                                    count += 1
+                        Option.none:
+                            pass
+                    ci += 1
+            Result.failure as failure_payload:
+                var err = failure_payload.error
+                err.release()
+
+        search_dir.release()
+        ri += 1
+    items_json.append("]")
+
+    if count == 0:
+        items_json.release()
+        return null
+
+    let alloc = heap.must_alloc[string.String](1)
+    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+    return alloc
+
+
+## Completions for local variables and parameters visible at the cursor.
+## Collects all scoped bindings via scope.collect_bindings and filters to
+## those whose line range covers the cursor line and whose name matches the
+## prefix.  Only activates when the user has typed at least one character.
+function scope_completions(
+    source: str,
+    target_line: ptr_uint,
+    prefix: str,
+) -> ptr[string.String]?:
+    if prefix.len == 0:
+        return null
+
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var bindings = scope.collect_bindings(source, ast_file)
+    defer bindings.release()
+
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
+
+    var bi: ptr_uint = 0
+    while bi < bindings.len() and count < MAX_COMPLETION_ITEMS:
+        let bp = bindings.get(bi) else:
+            break
+        let b = unsafe: read(bp)
+        if b.name.len > 0 and b.name != "_" and not b.name.starts_with("_") and b.name.starts_with(prefix):
+            if target_line >= b.line and target_line <= b.scope_end:
+                append_item(ref_of(items_json), b.name, KIND_VARIABLE, b.name, b.name, ref_of(first))
+                count += 1
+        bi += 1
+
+    items_json.append("]")
+
+    if count == 0:
+        items_json.release()
+        return null
+
+    let alloc = heap.must_alloc[string.String](1)
+    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+    return alloc
+
+
+## True when `dir_path` is a directory and contains at least one `.mt` file.
+function dir_contains_mt(dir_path: str) -> bool:
+    match fs_mod.list_entries(dir_path):
+        Result.success as dir_entries:
+            let entries_count = dir_entries.value.len()
+            var ci: ptr_uint = 0
+            while ci < entries_count:
+                match dir_entries.value.get(ci):
+                    Option.some as entry_payload:
+                        if entry_payload.value.ends_with(".mt"):
+                            return true
+                    Option.none:
+                        pass
+                ci += 1
+        Result.failure as failure_payload:
+            var err = failure_payload.error
+            err.release()
+    return false
 
 
 ## Completions for `alias.` — the public declarations of the module the
