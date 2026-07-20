@@ -63,6 +63,7 @@ public function run(args: span[str]) -> int:
                 else:
                     let method = msg.method.as_str()
                     if method == "exit":
+                        log.debug("lsp: → exit")
                         running = false
                     else if method == "$/cancelRequest":
                         handle_cancel_request(ws, msg.params)
@@ -118,6 +119,14 @@ function apply_trace_level(params: json.Value) -> void:
 ## Dispatch handler for a known method.  Returns false when the server
 ## should exit (e.g. after a restart command).
 function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.Message) -> bool:
+    let req_id = extract_request_id(msg.id)
+    var trace_msg = string.String.create()
+    if req_id > 0:
+        trace_msg.append_format(f"lsp: -> #{req_id} #{method}")
+    else:
+        trace_msg.append_format(f"lsp: -> #{method}")
+    log.debug(trace_msg.as_str())
+    trace_msg.release()
     # Lifecycle
     if method == "initialize":
         lifecycle.handle_initialize(msg.id)
