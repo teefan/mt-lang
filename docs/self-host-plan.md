@@ -932,10 +932,15 @@ All landed under a held fixed point (177/177 tests), 13/13 language examples.
 | `only_kinds` filtering | `context.only` is now respected: `quickfix` and `source.fixAll` are emitted only when requested |
 
 #### Remaining LSP gaps
-- **Import completions** — filesystem-based, blocked by missing `std.fs.read_dir`
-- **Scope/local completions** — requires AST walk for local variable scope tracking
-- **Attribute/format-string/specialization contexts** — specialized completion contexts
+- **Format-string completions** — `f"...#{...}"` interpolation context
+- **Snippet completions** — `funcName(${1:arg1}, ${2:arg2})` parameter insertion
 - **Value-chain completions** — chained dot access (`a.b.c.|`)
+- **Specialization completions** — `name[...]` generic arg context
+- **Type-cast insertion code action** — parse expected type from diagnostic data
+- **Linter: sema-based `redundant-cast`** — needs analyzer type resolution
+- **Linter: `line-too-long` wrap-fix** — needs formatter CST builder
+- **Import completions filtering** — minor: filter adjustment for prefix-match when filter is non-empty but shorter than prefix (currently uses OR logic; should AND for non-empty prefix)
+- **Sporadic SIGSEGV** — crash-guards in place; no reliable repro
 
 ### 5.9 Verification checklist for any change
 

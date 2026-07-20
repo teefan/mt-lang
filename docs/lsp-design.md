@@ -426,7 +426,7 @@ fixed the same day.
 | LSP logging (std/log) | **DONE** — `--log-level trace|debug|info|warn|error` |
 | $/setTrace handler | **DONE** — VSCode trace-level changes at runtime |
 | Semantic token legend | **EXTENDED** — 15 types (added enumMember, method, decorator) |
-| Completion depth | **IMPROVED** — prefix filtering, detail, insertText, isIncomplete, proper response format. Free-form completions now filter by what the user typed. Missing: import/scope/fstring/snippet/value-chain contexts. |
+| Completion depth | **DONE** — prefix filtering, detail, insertText, isIncomplete, proper response format, import completions via filesystem enumeration, scope/local completions via AST binding collection. Missing: format-string/snippet/value-chain/specialization contexts. |
 | Code actions depth | **IMPROVED** — unused-param, dead-assignment, shadow, unsafe-wrap, match-missing-arms quickfixes added. `only_kinds` filtering respected. Missing: type-cast-insertion, line-too-long wrap. |
 | Document link resolveProvider | **DONE** — advertised correctly |
 | ENUM SymbolKind | **DONE** — fixed from 10 (Method) to 13 (Enum) |
