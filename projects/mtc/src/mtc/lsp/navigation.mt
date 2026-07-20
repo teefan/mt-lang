@@ -77,6 +77,13 @@ public function handle_hover(
         Option.none:
             pass
 
+    match resolve_local_hover(ws, uri, line, character):
+        Option.some as loc_result:
+            write_hover_result(id, loc_result.value)
+            return
+        Option.none:
+            pass
+
     var result = resolve_cursor(ws, uri, line, character)
     match result:
         Option.some as res:
@@ -1255,6 +1262,89 @@ function field_declaration_hover(source: str, line: ptr_uint, character: ptr_uin
         di += 1
 
     return Option[CursorResult].none
+
+function resolve_local_hover(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+) -> Option[CursorResult]:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        return Option[CursorResult].none
+    defer file_path.release()
+    var cw = ws.document_source(file_path.as_str()) else:
+        return Option[CursorResult].none
+    defer cw.release()
+    let source = cw.as_str()
+    if source.len == 0:
+        return Option[CursorResult].none
+
+    let target = cursor.identifier_at(source, line, character) else:
+        return Option[CursorResult].none
+    let target_line = line + 1
+    let name = target.text
+
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+
+    # Scan top-level functions for one containing the cursor line,
+    # then walk its direct body statements looking for let/var declarations.
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_function as fun:
+                if fun.line <= target_line and fun.body != null:
+                    var body_loc = find_local_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name)
+                    match body_loc:
+                        Option.some as loc:
+                            return Option[CursorResult].some(value = loc.value)
+                        Option.none:
+                            pass
+            _:
+                pass
+        di += 1
+
+    return Option[CursorResult].none
+
+
+## Walk the top-level statements in a stmt_block body looking for a
+## local declaration of `name`.
+function find_local_in_block(
+    block_stmt: ast.Stmt,
+    name: str,
+) -> Option[CursorResult]:
+    match block_stmt:
+        ast.Stmt.stmt_block as blk:
+            var si: ptr_uint = 0
+            while si < blk.statements.len:
+                var s = unsafe: read(blk.statements.data + si)
+                match s:
+                    ast.Stmt.stmt_local as loc:
+                        if loc.name == name:
+                            var hover = string.String.create()
+                            if loc.is_let:
+                                hover.append("let ")
+                            else:
+                                hover.append("var ")
+                            hover.append(name)
+                            if loc.stmt_type != null:
+                                hover.append(": ")
+                                let ty = unsafe: read(ptr[ast.TypeRef]<-loc.stmt_type)
+                                if ty.name.parts.len > 0:
+                                    hover.append(unsafe: read(ty.name.parts.data))
+                            return Option[CursorResult].some(value = make_result(loc.line, name, "", hover))
+                    _:
+                        pass
+                si += 1
+        _:
+            pass
+    return Option[CursorResult].none
+
+
 
 ## Write a CursorResult as a hover JSON-RPC response.
 function write_hover_result(id: json.Value, res: CursorResult) -> void:
