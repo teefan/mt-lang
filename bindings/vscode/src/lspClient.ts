@@ -33,6 +33,14 @@ export class MilkTeaLspClient {
     this.traceChannel = traceChannel;
   }
 
+  // Write server stderr to the output channel, stripping trailing blank lines.
+  private emitStderr(value: string): void {
+    const trimmed = value.replace(/\n+$/, '');
+    if (trimmed.length > 0) {
+      this.log.channel.appendLine(trimmed);
+    }
+  }
+
   get isRunning(): boolean {
     return this.client !== undefined;
   }
@@ -63,14 +71,14 @@ export class MilkTeaLspClient {
         { scheme: 'file',      language: 'milk-tea' },
         { scheme: 'untitled',  language: 'milk-tea' },
       ],
-      // Main output channel — used for server stderr and our own log messages.
+      // Main output channel — receives both server stderr and client messages.
       outputChannel: {
-        name:        'Milk Tea LSP',
-        append:      (value: string) => this.log.appendLine(value),
-        appendLine:  (value: string) => this.log.appendLine(value),
+        get name() { return 'Milk Tea LSP'; },
+        append:      (value: string) => this.emitStderr(value),
+        appendLine:  (value: string) => this.emitStderr(value),
         clear:       () => { /* no-op */ },
         replace:     () => { /* no-op */ },
-        show:        () => this.log.show(),
+        show:        () => this.log.channel.show(),
         hide:        () => { /* no-op */ },
         dispose:     () => { /* no-op */ },
       } satisfies vscode.OutputChannel,

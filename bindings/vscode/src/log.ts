@@ -11,7 +11,7 @@ const LEVEL_RANK: Record<LogLevel, number> = {
 };
 
 export class Logger {
-  private readonly channel: vscode.OutputChannel;
+  public readonly channel: vscode.OutputChannel;
   private level: LogLevel;
 
   constructor(channel: vscode.OutputChannel, level: LogLevel = 'info') {
