@@ -5,6 +5,7 @@
 import std.fmt
 import std.fs as fs_mod
 import std.json as json
+import std.log as log
 import std.str
 import std.string as string
 import std.vec as vec
@@ -90,6 +91,7 @@ public function handle_code_lens_resolve(
 
     ws.build_index_if_needed()
     var count = count_references(name, ws)
+    log.info(f"code_lens resolve: name=#{name} count=#{count}")
     if count == 0:
         proto.write_response(id, params)
         return
@@ -107,7 +109,7 @@ public function handle_code_lens_resolve(
 ## Searches all indexed .mt files for occurrences of the name.
 function count_references(name: str, ws: ref[workspace.Workspace]) -> ptr_uint:
     var total: ptr_uint = 0
-    var max_results: ptr_uint = 500
+    var max_results = ws.index.entries.len()
     var results = idx.query_index(ref_of(ws.index), "", max_results)
     defer results.release()
 
