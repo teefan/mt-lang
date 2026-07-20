@@ -1,2 +1,3 @@
 build/
+tmp/
 src/mtc/version_info.mt
