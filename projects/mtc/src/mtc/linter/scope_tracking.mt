@@ -27,7 +27,7 @@ public struct ScopeWarning:
 const BINDING_LOCAL: ptr_uint = 0
 const BINDING_PARAM: ptr_uint = 1
 const MAX_SCOPES: ptr_uint = 32
-const MAX_ENTRIES: ptr_uint = 16
+const MAX_ENTRIES: ptr_uint = 128
 
 struct Binding:
     name: str
@@ -184,7 +184,7 @@ function ctx_mark_mutated(ctx: ref[ScopeCtx], target: ptr[ast.Expr]) -> void:
 
 
 function scope_add_entry_buf(buf: ptr[ScopeEntry], start: ptr_uint, count: ptr_uint, name: str, bd: Binding) -> void:
-    if count >= 16:
+    if count >= MAX_ENTRIES:
         return
     unsafe:
         read(buf + start + count) = ScopeEntry(name = name, binding = bd)
@@ -230,7 +230,7 @@ function emit_scope_flat(path: str, warnings: ref[vec.Vec[ScopeWarning]], buf: p
 # =============================================================================
 
 public function lint_scope_pass(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[ScopeWarning]]) -> void:
-    var entries_buf: array[ScopeEntry, 512]
+    var entries_buf: array[ScopeEntry, 4096]
     var sc: ScopeCtx
     ctx_init(ref_of(sc), ptr_of(entries_buf[0]))
     check_unused_imports(file, path, warnings)
