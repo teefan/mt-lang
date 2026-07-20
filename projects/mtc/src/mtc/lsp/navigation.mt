@@ -501,7 +501,7 @@ function resolve_non_decl_hover(
         let t = unsafe: read(tp)
         if t.line > target_line:
             break
-        if t.line == target_line and t.column <= character and t.column + t.end_offset - t.start_offset > character:
+        if t.line == target_line and t.column - 1 <= character and t.column + t.end_offset - t.start_offset > character:
             let lexeme = unsafe: token_mod.token_lexeme(t, source)
 
             match keyword_hover_text(lexeme):
@@ -1159,6 +1159,30 @@ function find_declaration_line(file: ast.SourceFile, name: str, kind: str) -> pt
     return 0
 
 
+
+## Return the string text of the identifier or keyword token at the given
+## 0-based cursor position, or none if no token covers the position.
+function find_token_str(source: str, line: ptr_uint, character: ptr_uint) -> Option[string.String]:
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    defer tokens.release()
+
+    let target_line = line + 1
+    var ti: ptr_uint = 0
+    while ti < tokens.len:
+        let tp = tokens.get(ti) else:
+            break
+        let t = unsafe: read(tp)
+        if t.line > target_line:
+            break
+        if t.line == target_line and t.column - 1 <= character and t.column - 1 + (t.end_offset - t.start_offset) > character:
+            let lexeme = unsafe: token_mod.token_lexeme(t, source)
+            return Option[string.String].some(value = string.String.from_str(lexeme))
+        ti += 1
+    return Option[string.String].none
+
+
 # =============================================================================
 #  Builtin and keyword hover tables
 # =============================================================================
@@ -1279,17 +1303,31 @@ function resolve_local_hover(
     if source.len == 0:
         return Option[CursorResult].none
 
-    let target = cursor.identifier_at(source, line, character) else:
+    var name_opt = find_token_str(source, line, character)
+    var name = name_opt else:
         return Option[CursorResult].none
+    defer name.release()
     let target_line = line + 1
-    let name = target.text
+
+    # 1. Token-level: for-loop binding ("for item in ...")
+    match for_binding_hover(source, line, character, name.as_str()):
+        Option.some as fb:
+            return Option[CursorResult].some(value = fb.value)
+        Option.none:
+            pass
+
+    # 2. Token-level: match-arm "as name" binding
+    match as_binding_hover(source, line, character, name.as_str()):
+        Option.some as ab:
+            return Option[CursorResult].some(value = ab.value)
+        Option.none:
+            pass
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer parse_diags.release()
     var ast_file = parser.parse_source(source, ref_of(parse_diags))
 
-    # Scan top-level functions for one containing the cursor line,
-    # then walk its direct body statements looking for let/var declarations.
+    # 3. AST walk: let/var declarations in enclosing function body.
     var di: ptr_uint = 0
     while di < ast_file.declarations.len:
         var decl: ast.Decl
@@ -1298,7 +1336,7 @@ function resolve_local_hover(
         match decl:
             ast.Decl.decl_function as fun:
                 if fun.line <= target_line and fun.body != null:
-                    var body_loc = find_local_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name)
+                    var body_loc = find_local_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name.as_str())
                     match body_loc:
                         Option.some as loc:
                             return Option[CursorResult].some(value = loc.value)
@@ -1308,6 +1346,98 @@ function resolve_local_hover(
                 pass
         di += 1
 
+    # 4. Lexical fallback: search source text for any "let/var/const name"
+    #    declaration (including module-level) appearing before the cursor.
+    match lexical_local_hover(source, target_line, character, name.as_str()):
+        Option.some as lh:
+            return Option[CursorResult].some(value = lh.value)
+        Option.none:
+            pass
+
+    return Option[CursorResult].none
+
+
+## Token-level heuristic: is this identifier a for-loop binding?
+## Walks backward from the cursor line to find a `for` keyword at the
+## start of the same line, indicating an iteration variable.
+function for_binding_hover(source: str, line: ptr_uint, character: ptr_uint, name: str) -> Option[CursorResult]:
+    let cursor_line_text = cursor.source_line(source, line + 1)
+    if cursor_line_text.len == 0:
+        return Option[CursorResult].none
+
+    # Look for "for " then the name then " in" on the same line.
+    let ft = cursor_line_text.find_substring("for ")
+    let fo = ft else:
+        return Option[CursorResult].none
+    let after_for = fo + 4
+    if after_for + name.len > cursor_line_text.len:
+        return Option[CursorResult].none
+    if not cursor_line_text.slice(after_for, name.len).equal(name):
+        return Option[CursorResult].none
+    var hover = string.String.create()
+    hover.append("for binding ")
+    hover.append(name)
+    return Option[CursorResult].some(value = quick_hover(hover.as_str()))
+
+
+## Token-level heuristic: is this identifier a match-arm "as" binding?
+## Checks whether the identifier is preceded by `as ` on the same line.
+function as_binding_hover(source: str, line: ptr_uint, character: ptr_uint, name: str) -> Option[CursorResult]:
+    let cursor_line_text = cursor.source_line(source, line + 1)
+    if cursor_line_text.len == 0:
+        return Option[CursorResult].none
+    if name.len + 4 > cursor_line_text.len:
+        return Option[CursorResult].none
+
+    # Check if preceded by "as " on the same line.
+    let lt = cursor_line_text.slice(0, character)
+    if lt.len < 3:
+        return Option[CursorResult].none
+    let end = lt.len
+    if lt.byte_at(end - 1) == ' ':
+        # Walk back past whitespace before the name
+        var p = end - 1
+        while p > 0 and lt.byte_at(p - 1) == ' ':
+            p -= 1
+        if p >= 2 and lt.byte_at(p - 2) == 'a' and lt.byte_at(p - 1) == 's':
+            var hover = string.String.create()
+            hover.append("match binding ")
+            hover.append(name)
+            return Option[CursorResult].some(value = quick_hover(hover.as_str()))
+            hover.release()
+    return Option[CursorResult].none
+
+
+## Lexical fallback: search source text for any `let`/`var`/`const`
+## declaration matching `name` before the cursor line.
+function lexical_local_hover(source: str, target_line: ptr_uint, character: ptr_uint, name: str) -> Option[CursorResult]:
+    var current_line: ptr_uint = target_line
+    while current_line >= 1:
+        let lt = cursor.source_line(source, current_line)
+        let trimmed = lt.trim_ascii_whitespace()
+        var prefix: str = ""
+        if trimmed.starts_with("let "):
+            prefix = "let "
+        else if trimmed.starts_with("var "):
+            prefix = "var "
+        else if trimmed.starts_with("const "):
+            prefix = "const "
+        else:
+            if current_line == 1:
+                break
+            current_line -= 1
+            continue
+        let after_prefix = prefix.len
+        if after_prefix + name.len <= trimmed.len and trimmed.slice(after_prefix, name.len).equal(name):
+            var hover = string.String.create()
+            hover.append(prefix)
+            hover.append(name)
+            hover.append(" (lexical)")
+            return Option[CursorResult].some(value = quick_hover(hover.as_str()))
+            hover.release()
+        if current_line == 1:
+            break
+        current_line -= 1
     return Option[CursorResult].none
 
 
