@@ -9,6 +9,7 @@ import std.path as path_ops
 import std.str
 import std.string as string_mod
 import std.vec as vec
+import std.log as log
 
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser

@@ -10,6 +10,7 @@ import std.path as path_ops
 import std.str
 import std.string as string
 import std.vec as vec
+import std.log as log
 
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace_index as idx
@@ -137,9 +138,11 @@ extending Workspace:
 
     public editable function build_index_if_needed() -> void:
         if not this.index_built:
+            log.info("lsp: building workspace index")
             idx.release_index(ref_of(this.index))
             this.index = idx.build_index(ref_of(this.module_roots))
             this.index_built = true
+            log.info("lsp: workspace index ready")
 
 
     ## Number of currently open documents.

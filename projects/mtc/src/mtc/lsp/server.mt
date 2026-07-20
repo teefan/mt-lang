@@ -8,6 +8,7 @@ import std.string as string
 import std.vec as vec
 import std.cjson as cjson
 import std.mem.arena as arena
+import std.log as log
 
 import mtc.lsp.call_hierarchy as call_hier
 import mtc.lsp.code_actions as code_actions
@@ -42,9 +43,13 @@ import mtc.lsp.workspace_symbols as wsym
 
 ## Start the LSP server on stdio.  Blocks until shutdown or EOF.
 public function run(args: span[str]) -> int:
+    parse_log_level(args)
+
     let root = workspace_root_from_args(args)
     var ws = workspace.Workspace.create(root)
     defer ws.release()
+
+    log.info("lsp: starting server")
 
     var running = true
     while running:
@@ -62,17 +67,40 @@ public function run(args: span[str]) -> int:
                     else if method == "$/cancelRequest":
                         handle_cancel_request(ws, msg.params)
                     else if method.len > 0:
-                        # Check cancellation before processing requests.
                         let req_id = extract_request_id(msg.id)
                         if req_id > 0 and ws.is_request_cancelled(req_id):
+                            log.debug("lsp: cancelled request")
                             proto.write_error(msg.id, -32800, "Request cancelled")
                             ws.clear_cancelled(req_id)
                         else:
                             running = dispatch_method(ws, method, msg)
             Option.none:
+                log.info("lsp: EOF, shutting down")
                 running = false
 
+    log.info("lsp: server stopped")
     return 0
+
+
+function parse_log_level(args: span[str]) -> void:
+    var i: ptr_uint = 1
+    while i < args.len:
+        if args[i] == "--log-level":
+            if i + 1 < args.len:
+                let level_str = args[i + 1]
+                if level_str == "trace":
+                    log.set_level(log.Level.trace)
+                else if level_str == "debug":
+                    log.set_level(log.Level.debug)
+                else if level_str == "info":
+                    log.set_level(log.Level.info)
+                else if level_str == "warn":
+                    log.set_level(log.Level.warn)
+                else if level_str == "error":
+                    log.set_level(log.Level.error)
+                return
+        i += 1
+    log.set_level(log.Level.warn)
 
 
 ## Dispatch handler for a known method.  Returns false when the server
@@ -245,6 +273,11 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         on_type.handle_on_type_formatting(ws, pos.uri, pos.line, extract_trigger_character(msg.params), msg.id)
 
     else:
+        var msg_text = string.String.create()
+        msg_text.append("lsp: unhandled method ")
+        msg_text.append(method)
+        log.warn(msg_text.as_str())
+        msg_text.release()
         if not msg.id.is_null():
             proto.write_error(msg.id, -32601, "method not found")
 
