@@ -27,11 +27,14 @@ public function handle_did_change(ws: ref[workspace.Workspace], params: json.Val
     let uri = text_doc_uri(params)
     if uri.len == 0:
         return
-    match ws.document_source(uri):
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        return
+    defer file_path.release()
+    match ws.document_source(file_path.as_str()):
         Option.some as src:
             var buf_len = src.value.len()
             var debug_msg = string.String.create()
-            debug_msg.append_format(f"lsp: didChange buflen={buf_len}")
+            debug_msg.append_format(f"lsp: didChange buflen=#{buf_len}")
             log.debug(debug_msg.as_str())
             debug_msg.release()
             var updated = apply_content_changes(src.value.as_str(), params)
