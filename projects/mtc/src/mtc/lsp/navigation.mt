@@ -481,6 +481,9 @@ function resolve_cursor(
                 let module_ptr = analysis.imports.get(recv.value)
                 if module_ptr != null:
                     return resolve_module_member(ws, read(module_ptr), target.text)
+            # `EnumType.member`: render the enum member.
+            if analysis.static_member_types.contains(recv.value):
+                return resolve_enum_member(recv.value, target.text, source, ref_of(analysis))
         Option.none:
             pass
 
@@ -570,6 +573,37 @@ function file_uri_for_path(path: str) -> string.String:
     return result
 
 
+## Render hover for an enum type member access like `Color.red` or
+## `State.running`.  Receives the enum type name and the member identifier.
+function resolve_enum_member(type_name: str, member: str, source: str, analysis: ref[analyzer.Analysis]) -> Option[CursorResult]:
+    let matches_ptr = unsafe: read(analysis).match_case_names.get(type_name)
+    if matches_ptr == null:
+        return Option[CursorResult].none
+    let members = unsafe: read(matches_ptr)
+    var mi: ptr_uint = 0
+    var found = false
+    while mi < members.len:
+        if unsafe: read(members.data + mi) == member:
+            found = true
+            break
+        mi += 1
+    if not found:
+        return Option[CursorResult].none
+
+    var hover = string.String.create()
+    hover.append(type_name)
+    hover.append(".")
+    hover.append(member)
+    return Option[CursorResult].some(value = CursorResult(
+        line = 1,
+        column = 0,
+        name_len = member.len,
+        hover_text = hover,
+        docs = string.String.create(),
+        target_uri = string.String.create()
+    ))
+
+
 ## Resolve `name` against the semantic analysis maps.  Returns the definition
 ## location, rendered signature, and attached docs, or none if unresolvable.
 function resolve_name_in_analysis(
@@ -590,6 +624,43 @@ function resolve_name_in_analysis(
                     source,
                     format_fn_signature(read(sig_ptr), name)
                 ))
+
+        # Extending-block or interface method: search method_keys for "*.name".
+        var method_entries = read(analysis).method_keys.entries()
+        var m_next = method_entries.next()
+        while m_next:
+            let m_entry = method_entries.current()
+            let method_key = unsafe: read(m_entry.key)
+            if method_key.ends_with(name) and method_key.len > name.len:
+                let sig_p = read(analysis).method_sigs.get(method_key)
+                if sig_p != null:
+                    let mline = find_method_line(file, name)
+                    if mline > 0:
+                        var m_sig = read(sig_p)
+                        var full = string.String.create()
+                        match classify_method(file, name):
+                            Option.some as prefix:
+                                full.append(prefix.value)
+                            Option.none:
+                                full.append("function")
+                        full.append(" ")
+                        full.append(name)
+                        full.append("(")
+                        var pi: ptr_uint = 0
+                        while pi < m_sig.params.len:
+                            let p = unsafe: read(m_sig.params.data + pi)
+                            if pi > 0:
+                                full.append(", ")
+                            full.append(p.name)
+                            full.append(": ")
+                            full.append(types.type_to_string(p.ty))
+                            pi += 1
+                        full.append(")")
+                        if m_sig.has_return_type:
+                            full.append(" -> ")
+                            full.append(types.type_to_string(m_sig.return_type))
+                        return Option[CursorResult].some(value = make_result(mline, name, source, full))
+            m_next = method_entries.next()
 
         # Module-level const or var: render name and type.
         let value_ptr = read(analysis).value_types.get(name)
@@ -645,6 +716,63 @@ function resolve_name_in_analysis(
                         hover.append(read(members.data + mi))
                         mi += 1
                 return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
+
+        # Type alias: render the type and its target.
+        if read(analysis).types.contains(name):
+            let decl_line = find_declaration_line(file, name, "alias")
+            if decl_line > 0:
+                var hover = string.String.create()
+                hover.append("type ")
+                hover.append(name)
+                let aliased_ptr = read(analysis).type_alias_types.get(name)
+                if aliased_ptr != null:
+                    hover.append(" = ")
+                    hover.append(types.type_to_string(read(aliased_ptr)))
+                return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
+
+        # Interface: render member signatures.
+        if read(analysis).interfaces.contains(name):
+            let decl_line = find_declaration_line(file, name, "struct")
+            if decl_line > 0:
+                var hover = string.String.create()
+                hover.append("interface ")
+                hover.append(name)
+                let methods_ptr = read(analysis).interfaces.get(name)
+                if methods_ptr != null:
+                    hover.append(":")
+                    let methods = read(methods_ptr)
+                    var mi: ptr_uint = 0
+                    while mi < methods.len:
+                        var m = unsafe: read(methods.data + mi)
+                        hover.append("\n    ")
+                        hover.append(m.name)
+                        hover.append("(")
+                        var pi: ptr_uint = 0
+                        while pi < m.method_params.len:
+                            var p = unsafe: read(m.method_params.data + pi)
+                            if pi > 0:
+                                hover.append(", ")
+                            hover.append(p.name)
+                            hover.append(": ")
+                            if p.param_type.name.parts.len > 0:
+                                hover.append(unsafe: read(p.param_type.name.parts.data))
+                            pi += 1
+                        hover.append(")")
+                        if m.return_type != null:
+                            let rt = unsafe: read(ptr[ast.TypeRef]<-m.return_type)
+                            hover.append(" -> ")
+                            if rt.name.parts.len > 0:
+                                hover.append(unsafe: read(rt.name.parts.data))
+                        mi += 1
+                return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
+
+        # Opaque type.
+        let decl_line_o = find_declaration_line(file, name, "opaque")
+        if decl_line_o > 0:
+            var hover = string.String.create()
+            hover.append("opaque ")
+            hover.append(name)
+            return Option[CursorResult].some(value = make_result(decl_line_o, name, source, hover))
 
     return Option[CursorResult].none
 
@@ -781,6 +909,61 @@ function static_type_keyword(file: ast.SourceFile, name: str) -> str:
     return "enum"
 
 
+## Find the line number of a method named `name` inside any `extending` block.
+function find_method_line(file: ast.SourceFile, name: str) -> ptr_uint:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_extending_block as ext:
+                var mi: ptr_uint = 0
+                while mi < ext.methods.len:
+                    var mfn: ast.Method
+                    unsafe:
+                        mfn = read(ext.methods.data + mi)
+                    if mfn.name == name:
+                        return mfn.line
+                    mi += 1
+            _:
+                pass
+        di += 1
+    return 0
+
+
+## The classification prefix for a method: "static function", "editable function",
+## or "function".
+function classify_method(file: ast.SourceFile, name: str) -> Option[str]:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_extending_block as ext:
+                var mi: ptr_uint = 0
+                while mi < ext.methods.len:
+                    var mfn: ast.Method
+                    unsafe:
+                        mfn = read(ext.methods.data + mi)
+                    if mfn.name == name:
+                        match mfn.method_kind:
+                            ast.MethodKind.mk_static:
+                                return Option[str].some(value = "static function")
+                            ast.MethodKind.mk_editable:
+                                return Option[str].some(value = "editable function")
+                            ast.MethodKind.mk_plain:
+                                return Option[str].some(value = "function")
+                            _:
+                                return Option[str].some(value = "function")
+                    mi += 1
+            _:
+                pass
+        di += 1
+    return Option[str].none
+
+
 ## Contiguous `##` documentation lines directly above 1-based `decl_line`,
 ## with the comment markers stripped, joined by newlines.
 function doc_lines_above(source: str, decl_line: ptr_uint) -> string.String:
@@ -863,6 +1046,20 @@ function find_declaration_line(file: ast.SourceFile, name: str, kind: str) -> pt
                 ast.Decl.decl_interface as iface:
                     if iface.name == name:
                         return iface.line
+                _:
+                    pass
+        else if kind == "opaque":
+            match decl:
+                ast.Decl.decl_opaque as op:
+                    if op.name == name:
+                        return op.line
+                _:
+                    pass
+        else if kind == "alias":
+            match decl:
+                ast.Decl.decl_type_alias as ta:
+                    if ta.name == name:
+                        return ta.line
                 _:
                     pass
         di += 1
