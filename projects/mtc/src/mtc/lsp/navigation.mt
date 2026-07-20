@@ -6,6 +6,7 @@
 
 import std.fmt
 import std.fs as fs_mod
+import std.map as map_mod
 import std.json as json
 import std.str
 import std.string as string
@@ -26,6 +27,7 @@ import mtc.lsp.protocol as proto
 import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
+import mtc.lsp.workspace_index as ws_idx
 import mtc.pretty_printer.ast_formatter as ast_formatter
 
 
@@ -142,7 +144,8 @@ public function handle_references(
         proto.write_response(id, json.null_value())
         return
 
-    var refs_json = build_references_json(source, target.text, target.line, uri)
+    ws.build_index_if_needed()
+    var refs_json = build_references_json_cross_file(ws, target.text, uri)
     proto.write_response_raw(id, refs_json.as_str())
     refs_json.release()
 
@@ -404,6 +407,98 @@ function append_location(json_text: ref[string.String], uri: str, source: str, d
 ## `source` that are in the same scope as the declaration at `target_line`.
 ## Occurrences are identifier tokens, so text inside string literals and
 ## comments never matches.  Scope-aware via lsp.scope.
+## Cross-file reference search using the workspace index.
+function build_references_json_cross_file(ws: ref[workspace.Workspace], name: str, uri: str) -> string.String:
+    var result = string.String.create()
+    result.append("[")
+    var first = true
+    var seen = map_mod.Map[str, bool].create()
+    defer seen.release()
+
+    # Always include the current file first (open editor buffer).
+    match include_refs_from_file(ws, uri, name, ref_of(result), ref_of(first)):
+        Option.some as u:
+            seen.set(u.value.as_str(), true)
+        Option.none:
+            pass
+
+    # Search the workspace index for all matching entries.
+    var max_results = ws.index.entries.len()
+    var results = ws_idx.query_index(ref_of(ws.index), name, max_results)
+    defer results.release()
+
+    var ri: ptr_uint = 0
+    while ri < results.len():
+        let rp = results.get(ri) else:
+            break
+        let ei = unsafe: read(rp)
+        let ep = ws.index.entries.get(ei) else:
+            break
+        let entry = unsafe: read(ep)
+        if entry.name.as_str().equal(name):
+            let path = entry.path.as_str()
+            if not seen.contains(path):
+                match include_refs_from_file(ws, path, name, ref_of(result), ref_of(first)):
+                    Option.some as u2:
+                        seen.set(u2.value.as_str(), true)
+                    Option.none:
+                        pass
+        ri += 1
+
+    result.append("]")
+    return result
+
+
+## Scan a single file for identifier occurrences of `name` and append
+## location JSON to `output`. Returns the file path for dedup tracking.
+function include_refs_from_file(
+    ws: ref[workspace.Workspace],
+    file_ref: str,
+    name: str,
+    output: ref[string.String],
+    first_ref: ref[bool],
+) -> Option[string.String]:
+    var cw = ws.document_source(file_ref) else:
+        return Option[string.String].none
+    defer cw.release()
+    let source = cw.as_str()
+    if source.len == 0:
+        return Option[string.String].none
+
+    var occurrences = cursor.identifier_occurrences(source, name)
+    defer occurrences.release()
+
+    var file_uri = string.String.create()
+    file_uri.append("file://")
+    file_uri.append(file_ref)
+
+    var oi: ptr_uint = 0
+    while oi < occurrences.len():
+        let op = occurrences.get(oi) else:
+            break
+        let occ = unsafe: read(op)
+        if not unsafe: read(first_ref):
+            output.append(",")
+        unsafe: read(first_ref) = false
+        let lz = if occ.line > 0: occ.line - 1 else: 0z
+        let col = if occ.column > 0: occ.column - 1 else: 0z
+        output.append("{\"uri\":\"")
+        proto.append_escaped(output, file_uri.as_str())
+        output.append("\",\"range\":{\"start\":{\"line\":")
+        output.append_format(f"#{lz}")
+        output.append(",\"character\":")
+        output.append_format(f"#{col}")
+        output.append("},\"end\":{\"line\":")
+        output.append_format(f"#{lz}")
+        output.append(",\"character\":")
+        output.append_format(f"#{col + occ.length}")
+        output.append("}}")
+        oi += 1
+
+    file_uri.release()
+    return Option[string.String].some(value = string.String.from_str(file_ref))
+
+
 function build_references_json(source: str, name: str, target_line: ptr_uint, uri: str) -> string.String:
     var result = string.String.create()
     result.append("[")
