@@ -1,10 +1,11 @@
 # Self-Host LSP Architecture
 
-Status: **Implementation complete — all 3 tiers + quality gaps + long-tail items
-+ 24-gap closure delivered.** Last updated: 2026-07-19.
-35 modules, ~8,500 lines, 29 capabilities advertised at Ruby parity.
-No known gaps — all capabilities, handlers, and workspace notification
-implementations are at parity with the Ruby LSP server.
+Status: **Implementation complete — all capabilities + long-tail items + 2026-07-20
+stability/crash-fix session delivered.** Last updated: 2026-07-20.
+35 modules, ~9,000 lines, 29 capabilities advertised at Ruby parity.
+Semantic token legend extended to 15 types (decorator, enumMember, method added).
+LSP server now has structured logging (std/log), per-request tracing,
+incremental text sync (change:2), and configuration application.
 
 ## 0. Design Principles
 
@@ -288,7 +289,21 @@ Quickfix code actions are computed by the linter's fix engine
 TextEdit against the live buffer. One engine, two front ends — CLI batch
 fixes and editor quickfixes cannot drift.
 
-### 4.6 Source-only — no pre-compiled artifacts
+### 4.7 LSP logging and crash diagnostics (2026-07-20)
+
+The LSP server uses `std/log.mt` for structured logging. Levels:
+- `error` — crash-guard OOB violations (start_byte > source.len, etc.)
+- `warn` — unhandled methods, config parse failures
+- `info` — server start/stop, EOF, index building
+- `debug` — per-request tracing (`[DEBUG] lsp: → id method`), didChange buffer length, range_edit byte-offset mapping
+- `trace` — cancelled requests
+
+Crash-guards protect all `str.slice`/`str.byte_at` calls in the incremental sync path:
+- `apply_utf8_range_edit` checks `start_byte <= source.len` and `end_byte <= source.len` before slicing
+- OOB violations are logged at ERROR level and skipped (no `fatal()`)
+- `handle_did_change` logs buffer length before applying edits
+
+Logs display in VSCode via `View → Output → Milk Tea LSP` (channel #1-Milk Tea LSP.log).
 
 The LSP needs no new vendored libraries beyond cJSON (already vendored
 and verified working). The existing compilation pipeline handles `std.json`
@@ -398,13 +413,24 @@ fixed the same day.
 | Progress | Begin/report/end three-phase | Same via `$/progress` notifications |
 | Configuration | Pull on `initialized` | Same via `workspace/configuration` after `initialized` |
 
-### Known gaps (self-host vs Ruby) — as of 2026-07-19
-
-No known gaps.  All capabilities, handlers, and workspace notification
-implementations are at parity with the Ruby LSP server.
+### Known gaps (self-host vs Ruby) — as of 2026-07-20
 
 | Feature | Status |
 |---------|--------|
+| Incremental text sync (change:2) | **DONE** — range-based edits, UTF-8 line/char→byte conversion |
+| Config application | **DONE** — parse workspace/configuration response |
+| Per-request tracing | **DONE** — `[DEBUG] lsp: → <id> <method>` |
+| LSP logging (std/log) | **DONE** — `--log-level trace|debug|info|warn|error` |
+| $/setTrace handler | **DONE** — VSCode trace-level changes at runtime |
+| Semantic token legend | **EXTENDED** — 15 types (added enumMember, method, decorator) |
+| Completion depth | **PARTIAL** — missing import/scope/fstring/snippet contexts, `isIncomplete` |
+| Code actions depth | **PARTIAL** — `source.fixAll` done; missing specific quickfixes |
+| Document link resolveProvider | **DONE** — advertised correctly |
+| ENUM SymbolKind | **DONE** — fixed from 10 (Method) to 13 (Enum) |
+| Type alias hierarchy | **DONE** — type_alias_types added |
+| code_lens method support | **DONE** — extending block methods included |
+| Enum/variant member completions | **DONE** — dot-receiver context |
 | Workspace dependency graph (didChangeWatchedFiles) | **DONE** — broad cache invalidation with per-URI clearing for renames |
 | Multi-root workspace reindex (didChangeWorkspaceFolders) | **DONE** — cache clear + index stale flag |
 | Workspace index rename (willRenameFiles) | **DONE** — per-oldUri cache clearing + index stale flag |
+| Sporadic SIGSEGV | **INVESTIGATING** — crash-guards added; per-request tracing helps isolate |

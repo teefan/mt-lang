@@ -14,15 +14,18 @@ sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 → MT type mapper + clang JSON AST parser).
 
 **DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**
-**LSP: 35 modules, ~8,500 lines, 29 capabilities advertised, capability-parity with Ruby.**
+**LSP: 35 modules, ~9,000 lines, 29 capabilities advertised, capability-parity with Ruby.**
+**Semantic token parity: 15-type legend (decorator, enumMember, method added).**
+**LSP stability: use-after-free fix, URI-to-path mismatch fix, logging infrastructure.**
 **Imported-bindings: 7 modules (incl. registry + methods), ~2,700 lines.  `mtc imported-bindings` CLI command with --all/--check.
 Byte-identical raymath output. 3 verified / 25 changed across all 28 bindings (remaining deltas from cosmetic emitter gaps).**
 
-**Remaining CLI gaps: `deps`, `docs`, `snapshot`, `--bundle`/`--archive`,
+**Remaining CLI gaps: `deps`, `docs`, `--bundle`/`--archive`,
 `--jobs`, Wasm/emcc, formatter CST modes (`--tidy`, `--preserve`).**
+~~`docs`, `snapshot`~~ **`snapshot` DONE (§5.8a).  `debug` DONE (§5.8a).**
 Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
-Last updated: 2026-07-19 (imported-bindings CLI, cosmetic gap closures, formatter gap analysis)
+Last updated: 2026-07-20 (LSP crash-fixes, debug/snapshot commands, logging, semantic token parity)
 
 ---
 
@@ -709,6 +712,54 @@ pcre2, steamworks) follow the §2.6 pattern when an example needs them.
 raymath output.  Structurally complete for all 28 bindings with 3 known
 cosmetic gaps (see §6.9).
 
+### 5.5a RESOLVED: CBackend nullable value type naming mismatch (2026-07-20)
+
+`nullable_and_variant_test.mt` failed with `unknown type name mt_opt_examples_nullable_and_variant_test_int`
+because `resolve_field_type_ref` (used for variant arm payload types and function
+param/return types) checked `ctx.analysis.type_names.contains()` before
+`is_builtin_type_name()`. After builtin registration added primitives to
+type_names, this resolved `int` as `ty_imported(module, name)` instead of
+`ty_primitive("int")`. The struct field pathway (`resolve_type_ref`) had the
+correct order. Fix: add `is_builtin_type_name` check before `type_names.contains`
+in `resolve_field_type_ref`. All 13/13 language examples now build.
+
+### 5.6a Accepted minor divergences (2026-07-20 additions)
+
+- **Bare nested struct names** in `ctx.types` removed for facts parity.  Nested
+  struct names are still available through the `structs` map for classification.
+- **Interface names** and **struct event names** removed from `ctx.types` —
+  interfaces/events are tracked in their own maps (`interfaces`, `event_types`).
+- **Top-level event names in types** — parser convention alignment: events are
+  tracked in `event_types`, not `types`.
+- **Type aliases in `types`** — added for facts parity; Ruby counts aliases in
+  the type count.
+
+### 5.8a 2026-07-20 session — LSP crash fixes, CLI additions, semantic token parity
+
+All landed under a held fixed point (177/177 tests), 13/13 language examples.
+
+| Fix / Addition | What |
+|---|---|
+| `mtc snapshot` command | Delegates to `snapshot.js` via Node, passes self-host LSP semantic tokens via `-s` flag. |
+| `mtc debug` command | Prints tokens, analysis facts (types, functions, structs, interfaces, imports, diagnostics). Uses `loader.check_program` for import resolution. |
+| Git revision stamp | `mtc --version` shows `mtc 0.1.0 (30819bc)`. Bootstrap injects `git rev-parse --short` into `version_info.mt`. |
+| LSP logging infrastructure | Integrated `std/log.mt`: `[LEVEL] message` to stderr. `--log-level` flag (trace/debug/info/warn/error, default warn). VSCode Output panel shows all LSP logs. |
+| Per-request tracing | Every incoming LSP method logged at DEBUG level: `[DEBUG] lsp: → 1 initialize`. |
+| `$/setTrace` handler | VSCode trace-level changes applied at runtime. |
+| **Incremental text sync** | `textDocumentSync.change:2`. Range-based edits with UTF-8 line/char→byte conversion. |
+| **Configuration application** | Parse `workspace/configuration` response; store `format_mode`, `dependency_resolution`, `platform_override`, `strict_current_root_diagnostics`. |
+| **Use-after-free crash fix** | `apply_content_changes()` returned `result.as_str()` with `defer result.release()` — dangling str. Changed to return owned `string.String`. |
+| **URI-to-path mismatch fix** | `didChange` passed raw URI to `ws.document_source()` which expects file paths; always got empty buffer. Convert URI→path before lookup. |
+| **Semantic token types** | Legend extended to 15 types: added `enumMember`, `method`, `decorator`. `token_kind_to_type` now includes `colon/comma/question/at`. |
+| **Method detection** | Dot-heuristic for call-site method detection (`target.method()`). Extending-block depth tracking for declaration detection. |
+| **Enum member detection** | Enum body depth tracking identifies member names. |
+| **Decorator detection** | `@[...]` context tracking classifies attribute names as `decorator`. |
+| **Declaration modifiers** | Function/type/variable declarations marked with `declaration` modifier (bold in snapshot). |
+| **Completion improvements** | `sortText` field, 200-item max cap. |
+| **Snapshot CSS parity** | 10→3 RB-only CSS gaps closed (decorator, enumMember, method, function/type/variable decls). |
+| **Debug facts parity** | 13/13 language examples: types, functions, imports counts match Ruby at 100%. |
+| **Analyzer builtin types** | Register 26 primitives + 5 handle types + `type` in `ctx.types`; register prelude imports in `ctx.import_aliases`. |
+
 ### 5.6 Accepted minor divergences (verified benign)
 
 - **Inline-while compile-time unrolling** — **FIXED (2026-07-17).** The self-host
@@ -750,16 +801,19 @@ cosmetic gaps (see §6.9).
   CPS-async scaffolding symbols, format-fallback literals — all confirmed by
   identical runtime output.
 
-### 5.8 Next-session candidates (prioritized)
+### 5.8 Next-session candidates (updated 2026-07-20)
 
 1. **`deps` package management** (Large) — the biggest remaining CLI gap;
    `--locked`/`--frozen` resolution depends on it.
 2. **`--bundle` / `--archive`** (Medium) — native package distribution.
 3. **Wasm/emcc + preview server** (Large) — platform reach.
-4. **Formatter CST modes** (Large, §7) — `--tidy` (CST normalize + wrap + blank lines) and `--preserve` (CST-based, keeps original style). Requires a CST builder (the self-host currently has only AST-based canonical formatting).
-5. **`docs`, `snapshot`, `--jobs` CLI tools** (Small-Medium).
-6. **Linter depth** (Medium) — sema-based `redundant-cast`, formatter wrap-fix machinery for `line-too-long`, `:fast` lint tier.
-7. **DAP lldb-dap bridge** (Infeasible) — requires async I/O or `select`/`poll` syscall bindings.
+4. **Formatter CST modes** (Large, §7) — `--tidy` (CST normalize + wrap + blank lines) and `--preserve` (CST-based, keeps original style).
+5. **`docs` CLI tool** (Medium) — documentation site serving.
+6. **Linter depth** (Medium) — sema-based `redundant-cast`, formatter wrap-fix for `line-too-long`, `:fast` lint tier.
+7. **LSP completion depth** (Medium) — import/scope/format/snippet contexts, `isIncomplete` flag.
+8. **LSP code actions depth** (Medium) — `source.fixAll` wiring, `only_kinds` filtering.
+9. **LSP SIGSEGV stability** (HIGH) — remaining sporadic crashes under VSCode; add crash-guards at all `str.slice`/`str.byte_at` calls.
+10. **`tk-constant-character` snapshot gap** (Low) — char escape sequence classification.
 
 ### 5.9 Verification checklist for any change
 
