@@ -3625,7 +3625,7 @@ function lint_dead_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Ve
             buf.append("assigned value '")
             buf.append(dw.name)
             buf.append("' is never read")
-            push_warning(warnings, path, dw.line, "dead-assignment", buf.as_str(), "hint")
+            push_warning(warnings, path, if dw.line > 0: dw.line else: 1, "dead-assignment", buf.as_str(), "hint")
         di += 1
 
 

@@ -204,9 +204,7 @@ function diagnostic_from_warning(w: linter_mod.Warning, source: str) -> json.Val
     else:
         let name = extract_quoted_name(w.message)
         if name.len > 0 and source.len > 0:
-            # Use the lexer to find the token on the warning's line that
-            # matches the quoted name, avoiding false matches inside
-            # comments or string literals.
+            let search_line = if w.line > 0: w.line else: ptr_uint<-1
             var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
             defer lex_diags.release()
             var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
@@ -216,9 +214,9 @@ function diagnostic_from_warning(w: linter_mod.Warning, source: str) -> json.Val
                 let tp = tokens.get(ti) else:
                     break
                 let tok = unsafe: read(tp)
-                if tok.line > w.line:
+                if tok.line > search_line:
                     break
-                if tok.line == w.line:
+                if tok.line == search_line:
                     let lexeme = unsafe: token_mod.token_lexeme(tok, source)
                     if lexeme.equal(name):
                         start_char = tok.column - 1
