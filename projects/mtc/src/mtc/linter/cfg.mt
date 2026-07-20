@@ -8,6 +8,7 @@
 ## in the AST structure.
 
 import std.map as map_mod
+import std.str
 import std.vec as vec
 
 import mtc.parser.ast as ast
@@ -58,14 +59,14 @@ function walk_stmt_backward(sp: ptr[ast.Stmt], result: ref[vec.Vec[DeadWrite]], 
         match read(sp):
             ast.Stmt.stmt_local as l:
                 add_expr_reads(l.value, live)
-                if l.name.len > 0 and l.name != "_" and l.line > 0 and l.value != null and not is_live(live, l.name):
+                if l.name.len > 0 and not l.name.starts_with("_") and l.line > 0 and l.value != null and not is_live(live, l.name):
                     result.push(DeadWrite(name = l.name, line = l.line))
                 remove_from_live(live, l.name)
             ast.Stmt.stmt_assignment as a:
                 add_expr_reads(a.value, live)
                 match read(a.target):
                     ast.Expr.expr_identifier as id:
-                        if id.name.len > 0 and id.name != "_":
+                        if id.name.len > 0 and not id.name.starts_with("_"):
                             if a.line > 0 and not is_live(live, id.name) and a.operator == "=":
                                 result.push(DeadWrite(name = id.name, line = a.line))
                             remove_from_live(live, id.name)

@@ -132,7 +132,9 @@ function append_fix_for_diagnostic(
         Option.some as info_payload:
             let info = info_payload.value
             if info.code.equal("unused-local") or info.code.equal("unused-param"):
-                append_underscore_fix(json_text, emitted, uri, source, info)
+                # Skip _-prefixed names — already intentional discards
+                if not is_discard_diagnostic(diag):
+                    append_underscore_fix(json_text, emitted, uri, source, info)
             else if info.code.equal("dead-assignment"):
                 append_dead_assignment_fix(json_text, emitted, uri, source, info)
             else if info.code.equal("shadow"):
@@ -263,6 +265,22 @@ function append_match_arms_fix(
     json_text.append(",\"character\":0}},\"newText\":\"")
     proto.append_escaped(json_text, new_text.as_str())
     json_text.append("\"}]}}}")
+
+
+## True when the diagnostic's message references a name starting with `_`,
+## meaning the user intentionally discarded or shadow-suppressed it.
+function is_discard_diagnostic(diag: json.Value) -> bool:
+    match extract_diagnostic_message(diag):
+        Option.some as msg:
+            let text = msg.value
+            var qi = text.find_substring("'") else:
+                return false
+            let after_quote = text.slice(qi + 1, text.len - qi - 1)
+            if after_quote.len > 0 and after_quote.starts_with("_"):
+                return true
+            return false
+        Option.none:
+            return false
 
 
 ## Extract the message string from a diagnostic JSON object.
