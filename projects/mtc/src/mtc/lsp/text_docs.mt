@@ -120,14 +120,14 @@ function apply_utf8_range_edit(
     let start_byte = line_char_to_byte(source, start_line, start_char)
     let end_byte = line_char_to_byte(source, end_line, end_char)
     var diag_msg = string.String.create()
-    diag_msg.append_format(f"lsp: range_edit src={source.len} L{start_line}:{start_char}→b{start_byte} L{end_line}:{end_char}→b{end_byte}")
+    diag_msg.append_format(f"lsp: range_edit src=#{source.len} L#{start_line}:#{start_char}->b#{start_byte} L#{end_line}:#{end_char}->b#{end_byte}")
     log.debug(diag_msg.as_str())
     diag_msg.release()
     var result = string.String.with_capacity(source.len + new_text.len)
     if start_byte > 0:
         if start_byte > source.len:
             var err = string.String.create()
-            err.append_format(f"lsp: slice prefix OOB src={source.len} start_byte={start_byte}")
+            err.append_format(f"lsp: slice prefix OOB src=#{source.len} sb=#{start_byte}")
             log.error(err.as_str())
             err.release()
         else:
@@ -138,7 +138,7 @@ function apply_utf8_range_edit(
     else:
         if end_byte > source.len:
             var err2 = string.String.create()
-            err2.append_format(f"lsp: slice suffix OOB src={source.len} end_byte={end_byte}")
+            err2.append_format(f"lsp: slice suffix OOB src=#{source.len} eb=#{end_byte}")
             log.error(err2.as_str())
             err2.release()
     return result
