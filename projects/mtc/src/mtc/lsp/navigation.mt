@@ -11,6 +11,8 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.lexer.lexer as lexer_mod
+import mtc.lexer.token as token_mod
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
@@ -68,6 +70,13 @@ public function handle_hover(
     character: ptr_uint,
     id: json.Value,
 ) -> void:
+    match resolve_non_decl_hover(ws, uri, line, character):
+        Option.some as kw_result:
+            write_hover_result(id, kw_result.value)
+            return
+        Option.none:
+            pass
+
     var result = resolve_cursor(ws, uri, line, character)
     match result:
         Option.some as res:
@@ -439,6 +448,83 @@ struct CursorResult:
     hover_text: string.String
     docs: string.String
     target_uri: string.String
+
+
+## Quick hover result — no declaration source line, no docs.
+function quick_hover(text: str) -> CursorResult:
+    return CursorResult(
+        line = 1,
+        column = 0,
+        name_len = 0,
+        hover_text = string.String.from_str(text),
+        docs = string.String.create(),
+        target_uri = string.String.create()
+    )
+
+
+## Resolve hover for builtin keywords, builtin callables, and field
+## declarations — cases that do not involve named declarations.
+## Returns `none` to fall through to `resolve_cursor`.
+function resolve_non_decl_hover(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+) -> Option[CursorResult]:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        return Option[CursorResult].none
+    defer file_path.release()
+    var content = ws.document_source(file_path.as_str()) else:
+        return Option[CursorResult].none
+    defer content.release()
+    let source = content.as_str()
+    if source.len == 0:
+        return Option[CursorResult].none
+
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    defer tokens.release()
+
+    var ti: ptr_uint = 0
+    let target_line = line + 1
+    while ti < tokens.len:
+        let tp = tokens.get(ti) else:
+            break
+        let t = unsafe: read(tp)
+        if t.line > target_line:
+            break
+        if t.line == target_line and t.column <= character and t.column + t.end_offset - t.start_offset > character:
+            let lexeme = unsafe: token_mod.token_lexeme(t, source)
+
+            match keyword_hover_text(lexeme):
+                Option.some as kw:
+                    return Option[CursorResult].some(value = quick_hover(kw.value))
+                Option.none:
+                    pass
+
+            match builtin_hover_text(lexeme):
+                Option.some as bu:
+                    return Option[CursorResult].some(value = quick_hover(bu.value))
+                Option.none:
+                    pass
+
+            match builtin_specialization_hover(tokens, ti, lexeme):
+                Option.some as bs:
+                    return Option[CursorResult].some(value = quick_hover(bs.value))
+                Option.none:
+                    pass
+
+            break
+        ti += 1
+
+    match field_declaration_hover(source, line, character):
+        Option.some as fd:
+            return Option[CursorResult].some(value = fd.value)
+        Option.none:
+            pass
+
+    return Option[CursorResult].none
 
 
 ## Resolve the symbol at the given cursor position.  Parses the file, runs
@@ -1064,3 +1150,132 @@ function find_declaration_line(file: ast.SourceFile, name: str, kind: str) -> pt
                     pass
         di += 1
     return 0
+
+
+# =============================================================================
+#  Builtin and keyword hover tables
+# =============================================================================
+
+function keyword_hover_text(lexeme: str) -> Option[str]:
+    if lexeme.equal("size_of"):
+        return Option[str].some(value = "builtin size_of(T) -> ptr_uint")
+    if lexeme.equal("align_of"):
+        return Option[str].some(value = "builtin align_of(T) -> ptr_uint")
+    if lexeme.equal("offset_of"):
+        return Option[str].some(value = "builtin offset_of(T, field) -> ptr_uint")
+    return Option[str].none
+
+
+function builtin_hover_text(lexeme: str) -> Option[str]:
+    if lexeme.equal("fatal"):
+        return Option[str].some(value = "builtin fatal(message: cstr) -> void")
+    if lexeme.equal("ref_of"):
+        return Option[str].some(value = "builtin ref_of(x: T) -> ref[T]")
+    if lexeme.equal("const_ptr_of"):
+        return Option[str].some(value = "builtin const_ptr_of(x: T) -> const_ptr[T]")
+    if lexeme.equal("ptr_of"):
+        return Option[str].some(value = "builtin ptr_of(x: T) -> ptr[T]")
+    if lexeme.equal("read"):
+        return Option[str].some(value = "builtin read(r: ref[T]) -> T\n\nProjects the referent value from a ref[T] or ptr[T].")
+    if lexeme.equal("adapt"):
+        return Option[str].some(value = "builtin adapt[I](value: ref[T]) -> dyn[I]\n\nConstructs a runtime interface value.")
+    if lexeme.equal("get"):
+        return Option[str].some(value = "builtin get(coll, index) -> ptr[T]?\n\nBounds-checked collection access returning a nullable pointer.")
+    if lexeme.equal("field_of"):
+        return Option[str].some(value = "builtin field_of(T, name) -> field_handle\n\nCompile-time reflection for struct fields.")
+    if lexeme.equal("callable_of"):
+        return Option[str].some(value = "builtin callable_of(T, name) -> callable_handle\n\nCompile-time reflection for callables.")
+    if lexeme.equal("has_attribute"):
+        return Option[str].some(value = "builtin has_attribute(T, name) -> bool\n\nTrue if T has the named attribute applied.")
+    if lexeme.equal("attribute_of"):
+        return Option[str].some(value = "builtin attribute_of(T, name) -> attribute_handle\n\nCompile-time reflection for attributes.")
+    if lexeme.equal("attribute_arg"):
+        return Option[str].some(value = "builtin attribute_arg[T](h, name) -> T\n\nReturns the T-typed argument of a resolved attribute handle.")
+    if lexeme.equal("members_of"):
+        return Option[str].some(value = "builtin members_of(E) -> array[member_handle, N]\n\nCompile-time enumeration of an enum or variant.")
+    if lexeme.equal("fields_of"):
+        return Option[str].some(value = "builtin fields_of(T) -> array[field_handle, N]\n\nCompile-time enumeration of struct fields.")
+    if lexeme.equal("attributes_of"):
+        return Option[str].some(value = "builtin attributes_of(T) -> array[attribute_handle, N]\n\nCompile-time enumeration of attributes.")
+    return Option[str].none
+
+
+function builtin_specialization_hover(tokens: vec.Vec[token_mod.Token], ti: ptr_uint, lexeme: str) -> Option[str]:
+    var is_spec = false
+    if lexeme.equal("zero") or lexeme.equal("default") or lexeme.equal("reinterpret") or lexeme.equal("array") or lexeme.equal("span"):
+        is_spec = true
+    if not is_spec:
+        return Option[str].none
+
+    # Look ahead for a `[` specialization token after this identifier.
+    var next_idx = ti + 1
+    if next_idx < tokens.len:
+        let np = tokens.get(next_idx) else:
+            return Option[str].none
+        let nt = unsafe: read(np)
+        if int<-(nt.kind) == 19:
+            return Option[str].some(value = f"builtin {lexeme}[...]")
+        return Option[str].some(value = f"builtin {lexeme}[...]")
+    return Option[str].none
+
+
+function field_declaration_hover(source: str, line: ptr_uint, character: ptr_uint) -> Option[CursorResult]:
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    if parse_diags.len() > 0:
+        return Option[CursorResult].none
+
+    let target_line = line + 1
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_struct as s:
+                var fi: ptr_uint = 0
+                while fi < s.struct_fields.len:
+                    var f = unsafe: read(s.struct_fields.data + fi)
+                    if f.line == target_line and f.column <= character and f.column + f.name.len > character:
+                        var hover = string.String.create()
+                        hover.append("field ")
+                        hover.append(f.name)
+                        hover.append(": ")
+                        if true:
+                            let ty = f.field_type
+                            if ty.name.parts.len > 0:
+                                hover.append(unsafe: read(ty.name.parts.data))
+                            if ty.nullable:
+                                hover.append("?")
+                        return Option[CursorResult].some(value = make_result(target_line, f.name, source, hover))
+                    fi += 1
+            _:
+                pass
+        di += 1
+
+    return Option[CursorResult].none
+
+## Write a CursorResult as a hover JSON-RPC response.
+function write_hover_result(id: json.Value, res: CursorResult) -> void:
+    var payload = res
+    if payload.hover_text.len() > 0:
+        var value_text = string.String.create()
+        defer value_text.release()
+        value_text.append("```milk-tea\n")
+        value_text.append(payload.hover_text.as_str())
+        value_text.append("\n```")
+        if payload.docs.len() > 0:
+            value_text.append("\n")
+            value_text.append(payload.docs.as_str())
+        var json_text = string.String.create()
+        defer json_text.release()
+        json_text.append("{\"contents\":{\"kind\":\"markdown\",\"value\":\"")
+        proto.append_escaped(ref_of(json_text), value_text.as_str())
+        json_text.append("\"}}")
+        proto.write_response_raw(id, json_text.as_str())
+    else:
+        proto.write_response(id, json.null_value())
+    payload.hover_text.release()
+    payload.docs.release()
+    payload.target_uri.release()
