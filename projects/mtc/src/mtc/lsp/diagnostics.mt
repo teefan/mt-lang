@@ -7,6 +7,8 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.lexer.lexer as lexer_mod
+import mtc.lexer.token as token_mod
 import mtc.loader.module_loader as loader
 import mtc.loader.path_resolver as resolver
 import mtc.linter.linter as linter_mod
@@ -202,13 +204,27 @@ function diagnostic_from_warning(w: linter_mod.Warning, source: str) -> json.Val
     else:
         let name = extract_quoted_name(w.message)
         if name.len > 0 and source.len > 0:
-            let line_text = cursor.source_line(source, w.line)
-            match cursor.token_start_in_line(line_text, name):
-                Option.some as pos:
-                    start_char = pos.value
-                    end_char = pos.value + name.len
-                Option.none:
-                    pass
+            # Use the lexer to find the token on the warning's line that
+            # matches the quoted name, avoiding false matches inside
+            # comments or string literals.
+            var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+            defer lex_diags.release()
+            var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+            defer tokens.release()
+            var ti: ptr_uint = 0
+            while ti < tokens.len:
+                let tp = tokens.get(ti) else:
+                    break
+                let tok = unsafe: read(tp)
+                if tok.line > w.line:
+                    break
+                if tok.line == w.line:
+                    let lexeme = unsafe: token_mod.token_lexeme(tok, source)
+                    if lexeme.equal(name):
+                        start_char = tok.column - 1
+                        end_char = start_char + (tok.end_offset - tok.start_offset)
+                        break
+                ti += 1
 
     var range = json.create_object_value()
     let range_obj = range.as_object() else:
