@@ -13,6 +13,7 @@ import mtc.linter.fix_engine as fix_engine
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
 
@@ -29,9 +30,24 @@ public function handle_code_actions(ws: ref[workspace.Workspace], uri: str, para
     defer content.release()
 
     let source = content.as_str()
-    var has_fix_all = context_only_fix_all(params)
 
-    if has_fix_all:
+    var only_kinds = extract_only_kinds(params)
+    var want_quickfix = only_kinds.len == 0
+    var want_fixall = only_kinds.len > 0
+    if only_kinds.len > 0:
+        var ki: ptr_uint = 0
+        while ki < only_kinds.len:
+            let kp = only_kinds.get(ki) else:
+                break
+            let k = unsafe: read(kp)
+            if k.starts_with("quickfix") or k.starts_with("quickFix"):
+                want_quickfix = true
+            if k.starts_with("source"):
+                want_fixall = true
+            ki += 1
+
+    # source.fixAll: apply all lint auto-fixes at once.
+    if want_fixall:
         var empty_sel = vec.Vec[str].create()
         defer empty_sel.release()
         var empty_ign = vec.Vec[str].create()
@@ -39,17 +55,22 @@ public function handle_code_actions(ws: ref[workspace.Workspace], uri: str, para
         var empty_own = zero[span[str]]
         var fixed = fix_engine.fix_source(source, file_path.as_str(), empty_own, ref_of(empty_sel), ref_of(empty_ign))
         defer fixed.release()
-        let lines = ptr_uint<-(line_count(source))
-        var result = string.String.create()
-        result.append("[{\"title\":\"Fix all issues\",\"kind\":\"source.fixAll\",\"edit\":{\"changes\":{\"")
-        proto.append_escaped(ref_of(result), uri)
-        result.append("\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":")
-        result.append_format(f"#{lines}")
-        result.append(",\"character\":0}},\"newText\":\"")
-        proto.append_escaped(ref_of(result), fixed.as_str())
-        result.append("\"}]}}}]")
-        proto.write_response_raw(id, result.as_str())
-        result.release()
+        if not fixed.as_str().equal(source):
+            let lines = ptr_uint<-(line_count(source))
+            var result = string.String.create()
+            result.append("[{\"title\":\"Fix all issues\",\"kind\":\"source.fixAll\",\"edit\":{\"changes\":{\"")
+            proto.append_escaped(ref_of(result), uri)
+            result.append("\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":")
+            result.append_format(f"#{lines}")
+            result.append(",\"character\":0}},\"newText\":\"")
+            proto.append_escaped(ref_of(result), fixed.as_str())
+            result.append("\"}]}}}]")
+            proto.write_response_raw(id, result.as_str())
+            result.release()
+            return
+
+    if not want_quickfix:
+        proto.write_response_raw(id, "[]")
         return
 
     var json_text = string.String.create()
@@ -112,8 +133,177 @@ function append_fix_for_diagnostic(
             let info = info_payload.value
             if info.code.equal("unused-local") or info.code.equal("unused-param"):
                 append_underscore_fix(json_text, emitted, uri, source, info)
+            else if info.code.equal("dead-assignment"):
+                append_dead_assignment_fix(json_text, emitted, uri, source, info)
+            else if info.code.equal("shadow"):
+                append_underscore_fix(json_text, emitted, uri, source, info)
             else if fix_engine.is_fixable(info.code):
                 append_engine_fix(json_text, emitted, uri, source, info)
+            else:
+                match extract_diagnostic_message(diag):
+                    Option.some as msg:
+                        if msg.value.equal("pointer cast requires unsafe") or msg.value.equal("ref to pointer cast requires unsafe"):
+                            append_unsafe_wrap_fix(json_text, emitted, uri, source, info)
+                        else if msg.value.starts_with("match on "):
+                            append_match_arms_fix(json_text, emitted, uri, source, info, msg.value)
+                    Option.none:
+                        pass
+
+
+## Wrap a statement in `unsafe:` / `unsafe:\n    ...` block.
+function append_unsafe_wrap_fix(
+    json_text: ref[string.String],
+    emitted: ref[ptr_uint],
+    uri: str,
+    source: str,
+    info: DiagnosticInfo,
+) -> void:
+    let line_text = cursor.source_line(source, info.line + 1)
+    if line_text.len == 0:
+        return
+    # Skip lines that are already `unsafe:` blocks.
+    if line_text.trim_ascii_whitespace().starts_with("unsafe:"):
+        return
+    let indent = utils.indent_of(line_text)
+    var new_text = string.String.create()
+    defer new_text.release()
+    var qi: ptr_uint = 0
+    while qi < indent:
+        new_text.push_byte(' ')
+        qi += 1
+    new_text.append("unsafe: ")
+    let body = line_text.trim_ascii_whitespace()
+    new_text.append(body)
+    new_text.append("\n")
+
+    if unsafe: read(emitted) > 0:
+        json_text.append(",")
+    unsafe:
+        read(emitted) = read(emitted) + 1
+
+    json_text.append("{\"title\":\"Wrap in unsafe block\",\"kind\":\"quickfix\",")
+    json_text.append("\"edit\":{\"changes\":{\"")
+    proto.append_escaped(json_text, uri)
+    json_text.append("\":[{\"range\":{\"start\":{\"line\":")
+    json_text.append_format(f"#{info.line}")
+    json_text.append(",\"character\":0},\"end\":{\"line\":")
+    json_text.append_format(f"#{info.line + 1}")
+    json_text.append(",\"character\":0}},\"newText\":\"")
+    proto.append_escaped(json_text, new_text.as_str())
+    json_text.append("\"}]}}}")
+
+
+## Add missing match arm stubs for each case named in the message.
+## Message format: "match on <type> is missing cases: A, B, C"
+function append_match_arms_fix(
+    json_text: ref[string.String],
+    emitted: ref[ptr_uint],
+    uri: str,
+    source: str,
+    info: DiagnosticInfo,
+    msg: str,
+) -> void:
+    let cases_start = msg.find_substring("missing cases: ") else:
+        return
+    let cases_str = msg.slice(cases_start + 15, msg.len - cases_start - 15)
+    if cases_str.len == 0:
+        return
+
+    let line_text = cursor.source_line(source, info.line + 1)
+    if line_text.len == 0:
+        return
+    let indent_len = utils.indent_of(line_text)
+    let arm_indent = indent_len + 4
+    let body_indent = arm_indent + 4
+
+    var new_text = string.String.create()
+    defer new_text.release()
+
+    # Build the new arm text.
+    var si: ptr_uint = 0
+    var seg_start: ptr_uint = 0
+    while si <= cases_str.len:
+        if si == cases_str.len or cases_str.byte_at(si) == ',':
+            let arm_name = cases_str.slice(seg_start, si - seg_start).trim_ascii_whitespace()
+            if arm_name.len > 0:
+                var ti: ptr_uint = 0
+                while ti < arm_indent:
+                    new_text.push_byte(' ')
+                    ti += 1
+                new_text.append(arm_name)
+                new_text.append(":\n")
+                ti = 0
+                while ti < body_indent:
+                    new_text.push_byte(' ')
+                    ti += 1
+                new_text.append("return\n")
+            seg_start = si + 1
+        si += 1
+
+    if new_text.len() == 0:
+        return
+
+    var title = string.String.create()
+    title.append("Add missing match arms")
+    if unsafe: read(emitted) > 0:
+        json_text.append(",")
+    unsafe:
+        read(emitted) = read(emitted) + 1
+
+    json_text.append("{\"title\":\"")
+    proto.append_escaped(json_text, title.as_str())
+    title.release()
+    json_text.append("\",\"kind\":\"quickfix\",")
+    json_text.append("\"edit\":{\"changes\":{\"")
+    proto.append_escaped(json_text, uri)
+    json_text.append("\":[{\"range\":{\"start\":{\"line\":")
+    json_text.append_format(f"#{info.line}")
+    json_text.append(",\"character\":0},\"end\":{\"line\":")
+    json_text.append_format(f"#{info.line}")
+    json_text.append(",\"character\":0}},\"newText\":\"")
+    proto.append_escaped(json_text, new_text.as_str())
+    json_text.append("\"}]}}}")
+
+
+## Extract the message string from a diagnostic JSON object.
+function extract_diagnostic_message(diag: json.Value) -> Option[str]:
+    unsafe:
+        let diag_obj = diag.as_object()
+        if diag_obj == null:
+            return Option[str].none
+        let msg_ptr = read(diag_obj).get("message")
+        if msg_ptr == null:
+            return Option[str].none
+        let msg = read(msg_ptr).as_string() else:
+            return Option[str].none
+        return Option[str].some(value = msg)
+
+
+## Remove the entire line of a dead assignment.
+function append_dead_assignment_fix(
+    json_text: ref[string.String],
+    emitted: ref[ptr_uint],
+    uri: str,
+    source: str,
+    info: DiagnosticInfo,
+) -> void:
+    if unsafe: read(emitted) > 0:
+        json_text.append(",")
+    unsafe:
+        read(emitted) = read(emitted) + 1
+
+    var title = string.String.create()
+    title.append("Remove dead assignment")
+    json_text.append("{\"title\":\"")
+    proto.append_escaped(json_text, title.as_str())
+    title.release()
+    json_text.append("\",\"kind\":\"quickfix\",\"edit\":{\"changes\":{\"")
+    proto.append_escaped(json_text, uri)
+    json_text.append("\":[{\"range\":{\"start\":{\"line\":")
+    json_text.append_format(f"#{info.line}")
+    json_text.append(",\"character\":0},\"end\":{\"line\":")
+    json_text.append_format(f"#{info.line + 1}")
+    json_text.append(",\"character\":0}},\"newText\":\"\"}]}}}")
 
 
 ## `unused-*` fix: insert `_` before the binding name.
@@ -270,31 +460,36 @@ function number_of(obj: ptr[json.Object], name: str) -> ptr_uint:
         return ptr_uint<-int<-value
 
 
-## Check if the code action context only requests source.fixAll.
-function context_only_fix_all(params: json.Value) -> bool:
+## Extract the context.only array from the code action params.  Returns an
+## empty Vec when absent or empty, meaning all kinds are requested.
+function extract_only_kinds(params: json.Value) -> vec.Vec[str]:
+    var result = vec.Vec[str].create()
     unsafe:
         let obj = params.as_object()
         if obj == null:
-            return false
+            return result
         let ctx_ptr = read(obj).get("context")
         if ctx_ptr == null:
-            return false
+            return result
         let ctx_obj = read(ctx_ptr).as_object()
         if ctx_obj == null:
-            return false
+            return result
         let only_ptr = read(ctx_obj).get("only")
         if only_ptr == null:
-            return true
+            return result
         let only_arr = read(only_ptr).as_array()
         if only_arr == null:
-            return true
-        if not read(only_arr).len() == 1:
-            return false
-        let item = read(only_arr).get(0) else:
-            return false
-        let ks = read(item).as_string() else:
-            return false
-        return ks.equal("source.fixAll")
+            return result
+        var i: ptr_uint = 0
+        while i < read(only_arr).len():
+            let item_ptr = read(only_arr).get(i) else:
+                break
+            let ks = read(item_ptr).as_string() else:
+                i += 1
+                continue
+            result.push(ks)
+            i += 1
+    return result
 
 
 function line_count(source: str) -> ptr_uint:

@@ -25,6 +25,7 @@ import mtc.loader.path_resolver as resolver
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 import mtc.lsp.workspace_index as workspace_index
 
@@ -59,6 +60,8 @@ public function handle_completion(
     defer content.release()
 
     let source = content.as_str()
+    var prefix = utils.current_word_prefix(source, line, character)
+
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer parse_diags.release()
     var ast_file = parser.parse_source(source, ref_of(parse_diags))
@@ -70,13 +73,13 @@ public function handle_completion(
             # Import alias: complete the module's exports.
             let module_ptr = analysis.imports.get(recv.value)
             if module_ptr != null:
-                var items = module_member_completions(ws, ref_of(analysis), recv.value)
+                var items = module_member_completions(ws, ref_of(analysis), recv.value, prefix)
                 defer items.release()
                 proto.write_response_raw(id, items.as_str())
                 return
 
             # Not an import alias — try method completions.
-            var methods = type_method_completions(ref_of(analysis), recv.value)
+            var methods = type_method_completions(ref_of(analysis), recv.value, prefix)
             if methods != null:
                 proto.write_response_raw(id, unsafe: read(methods).as_str())
                 unsafe: read(methods).release()
@@ -84,7 +87,7 @@ public function handle_completion(
                 return
 
             # Try enum/variant member completions.
-            var members = enum_member_completions(ref_of(analysis), recv.value)
+            var members = enum_member_completions(ref_of(analysis), recv.value, prefix)
             if members != null:
                 proto.write_response_raw(id, unsafe: read(members).as_str())
                 unsafe: read(members).release()
@@ -96,7 +99,7 @@ public function handle_completion(
     # Call context: suggest parameter names for the innermost call.
     match cursor.call_name_at(source, line, character):
         Option.some as callee:
-            var named = named_argument_completions(ref_of(analysis), callee.value)
+            var named = named_argument_completions(ref_of(analysis), callee.value, prefix)
             if named != null:
                 proto.write_response_raw(id, unsafe: read(named).as_str())
                 unsafe: read(named).release()
@@ -105,7 +108,7 @@ public function handle_completion(
         Option.none:
             pass
 
-    var items_json = build_completions_json(ref_of(analysis))
+    var items_json = build_completions_json(ref_of(analysis), prefix)
     proto.write_response_raw(id, items_json.as_str())
     items_json.release()
 
@@ -278,14 +281,17 @@ function module_member_completions(
     ws: ref[workspace.Workspace],
     analysis: ref[analyzer.Analysis],
     alias_name: str,
+    prefix: str,
 ) -> string.String:
-    var result = string.String.create()
-    result.append("[")
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
 
     let module_ptr = unsafe: read(analysis).imports.get(alias_name)
     if module_ptr == null:
-        result.append("]")
-        return result
+        items_json.append("]")
+        return wrap_completion_result(ref_of(items_json), false)
     let module_name = unsafe: read(module_ptr)
 
     var roots = ws.effective_module_roots_for("")
@@ -294,15 +300,15 @@ function module_member_completions(
         Result.failure as failure_payload:
             var err = failure_payload.error
             err.release()
-            result.append("]")
-            return result
+            items_json.append("]")
+            return wrap_completion_result(ref_of(items_json), false)
         Result.success as path_payload:
             var module_path = path_payload.value
             defer module_path.release()
 
             var module_source = ws.document_source(module_path.as_str()) else:
-                result.append("]")
-                return result
+                items_json.append("]")
+                return wrap_completion_result(ref_of(items_json), false)
             defer module_source.release()
 
             var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
@@ -310,57 +316,70 @@ function module_member_completions(
             var module_file = parser.parse_source(module_source.as_str(), ref_of(parse_diags))
 
             let exports_all = module_file.module_kind == ast.ModuleKind.module_raw
-            var first = true
             var di: ptr_uint = 0
-            while di < module_file.declarations.len:
+            while di < module_file.declarations.len and count < MAX_COMPLETION_ITEMS:
                 var d: ast.Decl
                 unsafe:
                     d = read(module_file.declarations.data + di)
                 match d:
                     ast.Decl.decl_function as f:
-                        if exports_all or f.visibility:
-                            append_item(ref_of(result), f.name, KIND_FUNCTION, ref_of(first))
+                        if (exports_all or f.visibility) and prefix_matches(f.name, prefix):
+                            append_item(ref_of(items_json), f.name, KIND_FUNCTION, f.name, f.name, ref_of(first))
+                            count += 1
                     ast.Decl.decl_foreign_function as ff:
-                        if exports_all or ff.visibility:
-                            append_item(ref_of(result), ff.name, KIND_FUNCTION, ref_of(first))
+                        if (exports_all or ff.visibility) and prefix_matches(ff.name, prefix):
+                            append_item(ref_of(items_json), ff.name, KIND_FUNCTION, ff.name, ff.name, ref_of(first))
+                            count += 1
                     ast.Decl.decl_extern_function as ef:
-                        append_item(ref_of(result), ef.name, KIND_FUNCTION, ref_of(first))
+                        if prefix_matches(ef.name, prefix):
+                            append_item(ref_of(items_json), ef.name, KIND_FUNCTION, ef.name, ef.name, ref_of(first))
+                            count += 1
                     ast.Decl.decl_struct as s:
-                        if exports_all or s.visibility:
-                            append_item(ref_of(result), s.name, KIND_CLASS, ref_of(first))
+                        if (exports_all or s.visibility) and prefix_matches(s.name, prefix):
+                            append_item(ref_of(items_json), s.name, KIND_CLASS, "type", s.name, ref_of(first))
+                            count += 1
                     ast.Decl.decl_union as u:
-                        if exports_all or u.visibility:
-                            append_item(ref_of(result), u.name, KIND_CLASS, ref_of(first))
+                        if (exports_all or u.visibility) and prefix_matches(u.name, prefix):
+                            append_item(ref_of(items_json), u.name, KIND_CLASS, "type", u.name, ref_of(first))
+                            count += 1
                     ast.Decl.decl_enum as e:
-                        if exports_all or e.visibility:
-                            append_item(ref_of(result), e.name, KIND_ENUM, ref_of(first))
+                        if (exports_all or e.visibility) and prefix_matches(e.name, prefix):
+                            append_item(ref_of(items_json), e.name, KIND_ENUM, "enum", e.name, ref_of(first))
+                            count += 1
                     ast.Decl.decl_flags as fl:
-                        if exports_all or fl.visibility:
-                            append_item(ref_of(result), fl.name, KIND_ENUM, ref_of(first))
+                        if (exports_all or fl.visibility) and prefix_matches(fl.name, prefix):
+                            append_item(ref_of(items_json), fl.name, KIND_ENUM, "flags", fl.name, ref_of(first))
+                            count += 1
                     ast.Decl.decl_variant as vr:
-                        if exports_all or vr.visibility:
-                            append_item(ref_of(result), vr.name, KIND_ENUM, ref_of(first))
+                        if (exports_all or vr.visibility) and prefix_matches(vr.name, prefix):
+                            append_item(ref_of(items_json), vr.name, KIND_ENUM, "variant", vr.name, ref_of(first))
+                            count += 1
                     ast.Decl.decl_interface as iface:
-                        if exports_all or iface.visibility:
-                            append_item(ref_of(result), iface.name, KIND_INTERFACE, ref_of(first))
+                        if (exports_all or iface.visibility) and prefix_matches(iface.name, prefix):
+                            append_item(ref_of(items_json), iface.name, KIND_INTERFACE, "interface", iface.name, ref_of(first))
+                            count += 1
                     ast.Decl.decl_type_alias as ta:
-                        if exports_all or ta.visibility:
-                            append_item(ref_of(result), ta.name, KIND_CLASS, ref_of(first))
+                        if (exports_all or ta.visibility) and prefix_matches(ta.name, prefix):
+                            append_item(ref_of(items_json), ta.name, KIND_CLASS, "type", ta.name, ref_of(first))
+                            count += 1
                     ast.Decl.decl_opaque as op:
-                        if exports_all or op.visibility:
-                            append_item(ref_of(result), op.name, KIND_CLASS, ref_of(first))
+                        if (exports_all or op.visibility) and prefix_matches(op.name, prefix):
+                            append_item(ref_of(items_json), op.name, KIND_CLASS, "opaque", op.name, ref_of(first))
+                            count += 1
                     ast.Decl.decl_const as c:
-                        if exports_all or c.visibility:
-                            append_item(ref_of(result), c.name, KIND_CONSTANT, ref_of(first))
+                        if (exports_all or c.visibility) and prefix_matches(c.name, prefix):
+                            append_item(ref_of(items_json), c.name, KIND_CONSTANT, c.name, c.name, ref_of(first))
+                            count += 1
                     ast.Decl.decl_var as v:
-                        if exports_all or v.visibility:
-                            append_item(ref_of(result), v.name, KIND_VARIABLE, ref_of(first))
+                        if (exports_all or v.visibility) and prefix_matches(v.name, prefix):
+                            append_item(ref_of(items_json), v.name, KIND_VARIABLE, v.name, v.name, ref_of(first))
+                            count += 1
                     _:
                         pass
                 di += 1
 
-            result.append("]")
-            return result
+            items_json.append("]")
+            return wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
 
 
 ## Build a JSON array of CompletionItem objects for the general (non-dot)
@@ -370,19 +389,22 @@ const MAX_COMPLETION_ITEMS: ptr_uint = 200
 
 ## Build a JSON array of completion items from the analysis data.
 ## Capped at MAX_COMPLETION_ITEMS; returns an empty array when nothing matches.
-function build_completions_json(analysis: ref[analyzer.Analysis]) -> string.String:
-    var result = string.String.create()
-    result.append("[")
+function build_completions_json(analysis: ref[analyzer.Analysis], prefix: str) -> string.String:
     var first = true
     var count: ptr_uint = 0
+    var truncated = false
+
+    var items_json = string.String.create()
+    items_json.append("[")
 
     var keywords = collect_keywords()
     var ki: ptr_uint = 0
     while ki < keywords.len() and count < MAX_COMPLETION_ITEMS:
         let kw = keywords.get(ki) else:
             break
-        unsafe:
-            append_item(ref_of(result), read(kw), KIND_KEYWORD, ref_of(first))
+        let name = unsafe: read(kw)
+        if prefix_matches(name, prefix):
+            append_item(ref_of(items_json), name, KIND_KEYWORD, "keyword", name, ref_of(first))
             count += 1
         ki += 1
     keywords.release()
@@ -393,55 +415,126 @@ function build_completions_json(analysis: ref[analyzer.Analysis]) -> string.Stri
         while count < MAX_COMPLETION_ITEMS:
             let kp = fn_keys.next() else:
                 break
-            append_item(ref_of(result), read(kp), KIND_FUNCTION, ref_of(first))
-            count += 1
+            let name = read(kp)
+            if prefix_matches(name, prefix):
+                var detail = string.String.create()
+                detail.append("function ")
+                detail.append(name)
+                let sig_ptr = read(analysis).functions.get(name)
+                if sig_ptr != null:
+                    let sig = read(sig_ptr)
+                    detail.append("(")
+                    var pi: ptr_uint = 0
+                    while pi < sig.params.len:
+                        let param = read(sig.params.data + pi)
+                        if pi > 0:
+                            detail.append(", ")
+                        detail.append(param.name)
+                        detail.append(": ")
+                        detail.append(types.type_to_string(param.ty))
+                        pi += 1
+                    if sig.is_variadic:
+                        if sig.params.len > 0:
+                            detail.append(", ")
+                        detail.append("...")
+                    detail.append(")")
+                    if sig.has_return_type:
+                        detail.append(" -> ")
+                        detail.append(types.type_to_string(sig.return_type))
+                append_item(ref_of(items_json), name, KIND_FUNCTION, detail.as_str(), name, ref_of(first))
+                detail.release()
+                count += 1
+                if count >= MAX_COMPLETION_ITEMS:
+                    truncated = true
 
         # Structs
         var struct_keys = read(analysis).structs.keys()
         while count < MAX_COMPLETION_ITEMS:
             let kp = struct_keys.next() else:
                 break
-            append_item(ref_of(result), read(kp), KIND_CLASS, ref_of(first))
-            count += 1
+            let name = read(kp)
+            if prefix_matches(name, prefix):
+                append_item(ref_of(items_json), name, KIND_CLASS, "type", name, ref_of(first))
+                count += 1
+                if count >= MAX_COMPLETION_ITEMS:
+                    truncated = true
 
         # Enums, flags, and variants
         var static_keys = read(analysis).static_member_types.keys()
         while count < MAX_COMPLETION_ITEMS:
             let kp = static_keys.next() else:
                 break
-            append_item(ref_of(result), read(kp), KIND_ENUM, ref_of(first))
-            count += 1
+            let name = read(kp)
+            if prefix_matches(name, prefix):
+                append_item(ref_of(items_json), name, KIND_ENUM, "type", name, ref_of(first))
+                count += 1
+                if count >= MAX_COMPLETION_ITEMS:
+                    truncated = true
 
         # Interfaces
         var iface_keys = read(analysis).interfaces.keys()
         while count < MAX_COMPLETION_ITEMS:
             let kp = iface_keys.next() else:
                 break
-            append_item(ref_of(result), read(kp), KIND_INTERFACE, ref_of(first))
-            count += 1
+            let name = read(kp)
+            if prefix_matches(name, prefix):
+                append_item(ref_of(items_json), name, KIND_INTERFACE, "interface", name, ref_of(first))
+                count += 1
+                if count >= MAX_COMPLETION_ITEMS:
+                    truncated = true
 
         # Module-level consts and vars
         var value_keys = read(analysis).value_types.keys()
         while count < MAX_COMPLETION_ITEMS:
             let kp = value_keys.next() else:
                 break
-            append_item(ref_of(result), read(kp), KIND_CONSTANT, ref_of(first))
-            count += 1
+            let name = read(kp)
+            if prefix_matches(name, prefix):
+                let tp = read(analysis).value_types.get(name)
+                if tp == null:
+                    append_item(ref_of(items_json), name, KIND_CONSTANT, name, name, ref_of(first))
+                else:
+                    var detail = string.String.create()
+                    detail.append(name)
+                    detail.append(": ")
+                    detail.append(types.type_to_string(read(tp)))
+                    append_item(ref_of(items_json), name, KIND_CONSTANT, detail.as_str(), name, ref_of(first))
+                    detail.release()
+                count += 1
+                if count >= MAX_COMPLETION_ITEMS:
+                    truncated = true
 
         # Import aliases
         var import_keys = read(analysis).imports.keys()
         while count < MAX_COMPLETION_ITEMS:
             let kp = import_keys.next() else:
                 break
-            append_item(ref_of(result), read(kp), KIND_MODULE, ref_of(first))
-            count += 1
+            let name = read(kp)
+            if prefix_matches(name, prefix):
+                var detail = string.String.create()
+                detail.append("module ")
+                let mod_ptr = read(analysis).imports.get(name)
+                if mod_ptr != null:
+                    detail.append(read(mod_ptr))
+                append_item(ref_of(items_json), name, KIND_MODULE, detail.as_str(), name, ref_of(first))
+                detail.release()
+                count += 1
+                if count >= MAX_COMPLETION_ITEMS:
+                    truncated = true
 
-    result.append("]")
-    return result
+    items_json.append("]")
+    return wrap_completion_result(ref_of(items_json), truncated)
 
 
-## Append one CompletionItem `{"label":"<name>","kind":<kind>,"sortText":"<label>"}`.
-function append_item(json_out: ref[string.String], label: str, kind: int, first_var: ref[bool]) -> void:
+## True when `name` starts with `prefix`, or when prefix is empty.
+function prefix_matches(name: str, prefix: str) -> bool:
+    if prefix.len == 0:
+        return true
+    return name.starts_with(prefix)
+
+
+## Append one CompletionItem with label, kind, detail, insertText, and sortText.
+function append_item(json_out: ref[string.String], label: str, kind: int, detail: str, insert: str, first_var: ref[bool]) -> void:
     if label.len == 0:
         return
     if not unsafe: read(first_var):
@@ -451,9 +544,14 @@ function append_item(json_out: ref[string.String], label: str, kind: int, first_
     proto.append_escaped(json_out, label)
     json_out.append("\",\"kind\":")
     json_out.append_format(f"#{kind}")
-    json_out.append(",\"sortText\":\"")
+    json_out.append(",\"detail\":\"")
+    proto.append_escaped(json_out, detail)
+    json_out.append("\",\"insertText\":\"")
+    proto.append_escaped(json_out, insert)
+    json_out.append("\",\"sortText\":\"")
     proto.append_escaped(json_out, label)
     json_out.append("\"}")
+
 
 
 function collect_keywords() -> vec.Vec[str]:
@@ -496,6 +594,21 @@ function collect_keywords() -> vec.Vec[str]:
     return result
 
 
+## Wrap a JSON items array in the LSP completion result object.
+function wrap_completion_result(items_json: ref[string.String], truncated: bool) -> string.String:
+    var result = string.String.create()
+    result.append("{\"isIncomplete\":")
+    if truncated:
+        result.append("true")
+    else:
+        result.append("false")
+    result.append(",\"items\":")
+    result.append(items_json.as_str())
+    result.append("}")
+    items_json.release()
+    return result
+
+
 ## Completions for `receiver.` when the receiver is a value or type name.
 ## Resolves the receiver name via analysis.types and analysis.type_names,
 ## then looks up methods declared for that type in analysis.method_keys.
@@ -503,39 +616,83 @@ function collect_keywords() -> vec.Vec[str]:
 function type_method_completions(
     analysis: ref[analyzer.Analysis],
     receiver_name: str,
+    prefix: str,
 ) -> ptr[string.String]?:
     let type_name = resolve_receiver_type_name(analysis, receiver_name)
     if type_name.len == 0:
         return null
 
-    var result = string.String.create()
-    result.append("[")
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
 
     var prefix_buf = string.String.create()
     prefix_buf.append(type_name)
     prefix_buf.append(".")
-    let prefix = prefix_buf.as_str()
-    let prefix_len = prefix.len
-    var first = true
+    let type_prefix = prefix_buf.as_str()
+    let type_prefix_len = type_prefix.len
 
     var method_entries = unsafe: read(analysis).method_keys.entries()
-    while method_entries.next():
+    while method_entries.next() and count < MAX_COMPLETION_ITEMS:
         let entry = method_entries.current()
         let whole_key = unsafe: read(entry.key)
-        if whole_key.starts_with(prefix):
-            let method_name = whole_key.slice(prefix_len, whole_key.len - prefix_len)
-            if method_name.len > 0:
-                append_item(ref_of(result), method_name, method_kind_for(analysis, type_name, method_name), ref_of(first))
-                first = false
+        if whole_key.starts_with(type_prefix):
+            let method_name = whole_key.slice(type_prefix_len, whole_key.len - type_prefix_len)
+            if method_name.len > 0 and prefix_matches(method_name, prefix):
+                append_item(ref_of(items_json), method_name, KIND_FUNCTION, method_name, method_name, ref_of(first))
+                count += 1
 
-    result.append("]")
+    items_json.append("]")
+    prefix_buf.release()
 
-    if first:
-        result.release()
+    if count == 0:
+        items_json.release()
         return null
 
     let alloc = heap.must_alloc[string.String](1)
-    unsafe: read(alloc) = result
+    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+    return alloc
+
+
+
+## Complete enum/variant member names after a dot receiver.
+## When the cursor is after `EnumType.`, return the enum's member names.
+function enum_member_completions(
+    analysis: ref[analyzer.Analysis],
+    name: str,
+    prefix: str,
+) -> ptr[string.String]?:
+    let type_name = resolve_receiver_type_name(analysis, name)
+    if type_name.len == 0:
+        return null
+
+    let members_ptr = unsafe: read(analysis).match_case_names.get(type_name)
+    if members_ptr == null:
+        return null
+
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
+    unsafe:
+        let members = read(members_ptr)
+        var mi: ptr_uint = 0
+        while mi < members.len and count < MAX_COMPLETION_ITEMS:
+            let mname = read(members.data + mi)
+            if mname.len > 0 and prefix_matches(mname, prefix):
+                append_item(ref_of(items_json), mname, KIND_ENUM, mname, mname, ref_of(first))
+                count += 1
+            mi += 1
+
+    items_json.append("]")
+
+    if count == 0:
+        items_json.release()
+        return null
+
+    let alloc = heap.must_alloc[string.String](1)
+    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
     return alloc
 
 
@@ -572,21 +729,13 @@ function type_to_key_name(t: types.Type) -> str:
             return ""
 
 
-## LSP CompletionItemKind for a method on `type_name`.
-function method_kind_for(analysis: ref[analyzer.Analysis], type_name: str, method_name: str) -> int:
-    let key = analyzer.method_key(type_name, method_name)
-    let sig_ptr = unsafe: read(analysis).method_sigs.get(key)
-    if sig_ptr == null:
-        return KIND_FUNCTION
-    return KIND_FUNCTION
-
-
 ## Completions for `func(|)` or `func(pos = |)` inside a call's argument
 ## list.  Returns parameter names (as "name " label) for the callee, or
 ## null when the callee is not found or has no params.
 function named_argument_completions(
     analysis: ref[analyzer.Analysis],
     callee_name: str,
+    prefix: str,
 ) -> ptr[string.String]?:
     let sig_ptr = unsafe: read(analysis).functions.get(callee_name)
     if sig_ptr == null:
@@ -596,59 +745,30 @@ function named_argument_completions(
     if sig.params.len == 0:
         return null
 
-    var result = string.String.create()
-    result.append("[")
-
+    var items_json = string.String.create()
+    items_json.append("[")
     var first = true
+    var count: ptr_uint = 0
+
     var pi: ptr_uint = 0
-    while pi < sig.params.len:
+    while pi < sig.params.len and count < MAX_COMPLETION_ITEMS:
         let param = unsafe: read(sig.params.data + pi)
-        if param.name != "_":
-            append_item(ref_of(result), param.name, KIND_VARIABLE, ref_of(first))
-            first = false
+        if param.name != "_" and prefix_matches(param.name, prefix):
+            var detail = string.String.create()
+            detail.append(param.name)
+            detail.append(": ")
+            detail.append(types.type_to_string(param.ty))
+            append_item(ref_of(items_json), param.name, KIND_VARIABLE, detail.as_str(), param.name, ref_of(first))
+            detail.release()
+            count += 1
         pi += 1
 
-    result.append("]")
+    items_json.append("]")
 
-    if first:
-        result.release()
+    if count == 0:
+        items_json.release()
         return null
 
     let alloc = heap.must_alloc[string.String](1)
-    unsafe: read(alloc) = result
-    return alloc
-
-
-## Complete enum/variant member names after a dot receiver.
-## When the cursor is after `EnumType.`, return the enum's member names.
-function enum_member_completions(analysis: ref[analyzer.Analysis], name: str) -> ptr[string.String]?:
-    let type_name = resolve_receiver_type_name(analysis, name)
-    if type_name.len == 0:
-        return null
-
-    let members_ptr = unsafe: read(analysis).match_case_names.get(type_name)
-    if members_ptr == null:
-        return null
-
-    var result = string.String.create()
-    result.append("[")
-    var first = true
-    unsafe:
-        let members = read(members_ptr)
-        var mi: ptr_uint = 0
-        while mi < members.len:
-            let mname = read(members.data + mi)
-            if mname.len > 0:
-                append_item(ref_of(result), mname, KIND_ENUM, ref_of(first))
-                first = false
-            mi += 1
-
-    result.append("]")
-
-    if first:
-        result.release()
-        return null
-
-    let alloc = heap.must_alloc[string.String](1)
-    unsafe: read(alloc) = result
+    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
     return alloc

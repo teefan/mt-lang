@@ -906,12 +906,36 @@ All landed under a held fixed point (177/177 tests), 13/13 language examples.
 2. **`--bundle` / `--archive`** (Medium) — native package distribution.
 3. **Wasm/emcc + preview server** (Large) — platform reach.
 4. **Formatter CST modes** (Large, §7) — `--tidy` (CST normalize + wrap + blank lines) and `--preserve` (CST-based, keeps original style).
-5. **`docs` CLI tool** (Medium) — documentation site serving.
-6. **Linter depth** (Medium) — sema-based `redundant-cast`, formatter wrap-fix for `line-too-long`, `:fast` lint tier.
-7. **LSP completion depth** (Medium) — import/scope/format/snippet contexts, `isIncomplete` flag.
-8. **LSP code actions depth** (Medium) — `source.fixAll` wiring, `only_kinds` filtering.
-9. **LSP SIGSEGV stability** (HIGH) — remaining sporadic crashes under VSCode; add crash-guards at all `str.slice`/`str.byte_at` calls.
-10. **`tk-constant-character` snapshot gap** (Low) — char escape sequence classification.
+5. **Linter depth** (Medium) — sema-based `redundant-cast`, formatter wrap-fix for `line-too-long`, `:fast` lint tier.
+
+### 5.8b 2026-07-20 session — LSP completion depth + code actions
+
+All landed under a held fixed point (177/177 tests), 13/13 language examples.
+
+#### Completion improvements
+| Change | What |
+|--------|------|
+| **Prefix filtering** | `current_word_prefix` extracts the identifier fragment the user is typing; all completion branches filter results by it. No more unfiltered full symbol lists. |
+| **detail field** | Every completion item now carries a `detail` string: function signatures with param types, `"type"` for struct variants, `"name: T"` for values, `"module name"` for imports. |
+| **insertText field** | Items now specify `insertText` alongside `label`, so editors can replace the prefix correctly. |
+| **isIncomplete flag** | Results capping at MAX_COMPLETION_ITEMS (200) sets `isIncomplete: true` so editors keep querying. |
+| **Response format** | All completion branches now return the proper LSP `{"isIncomplete":...,"items":[...]}` object, not a bare array. |
+
+#### Code action quickfixes added
+| Rule | Fix |
+|------|-----|
+| `unused-param` | Prefix with `_` (same as unused-local) |
+| `dead-assignment` | Remove the entire source line |
+| `shadow` | Prefix with `_` to suppress the warning |
+| `unsafe-required` | Wrap the statement in `unsafe:` (pointer cast requires unsafe, ref-to-ptr requires unsafe) |
+| `match-missing-arms` | Insert stub arms with `return` for each missing case |
+| `only_kinds` filtering | `context.only` is now respected: `quickfix` and `source.fixAll` are emitted only when requested |
+
+#### Remaining LSP gaps
+- **Import completions** — filesystem-based, blocked by missing `std.fs.read_dir`
+- **Scope/local completions** — requires AST walk for local variable scope tracking
+- **Attribute/format-string/specialization contexts** — specialized completion contexts
+- **Value-chain completions** — chained dot access (`a.b.c.|`)
 
 ### 5.9 Verification checklist for any change
 

@@ -32,6 +32,42 @@ public function line_at(lines: ref[vec.Vec[str]], index: ptr_uint) -> str:
     return unsafe: read(lp)
 
 
+## The identifier prefix the user is currently typing, by walking
+## backward on the cursor line from the character position to the start
+## of the word (letters, digits, underscore).  Returns "" when there is
+## no word immediately at/before the cursor.
+public function current_word_prefix(source: str, line: ptr_uint, character: ptr_uint) -> str:
+    var line_text = source_line(source, line + 1)
+    var pos = character
+    if pos > line_text.len:
+        pos = line_text.len
+    var start = pos
+    while start > 0 and is_word_byte(line_text.byte_at(start - 1)):
+        start -= 1
+    if start >= pos:
+        return ""
+    return line_text.slice(start, pos - start)
+
+
+## The text of 1-based line `line_no` in `source`, without the newline.
+function source_line(source: str, line_no: ptr_uint) -> str:
+    if line_no == 0:
+        return ""
+    var current: ptr_uint = 1
+    var start: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < source.len:
+        if source.byte_at(i) == '\n':
+            if current == line_no:
+                return source.slice(start, i - start)
+            current += 1
+            start = i + 1
+        i += 1
+    if current == line_no:
+        return source.slice(start, source.len - start)
+    return ""
+
+
 ## Split `source` at LF newlines into a vector of lines (without the
 ## trailing newline characters).
 public function split_lines(source: str) -> vec.Vec[str]:
