@@ -11,6 +11,8 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import std.log as log
+
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.parser.ast as ast
@@ -501,7 +503,7 @@ function resolve_non_decl_hover(
         let t = unsafe: read(tp)
         if t.line > target_line:
             break
-        if t.line == target_line and t.column - 1 <= character and t.column + t.end_offset - t.start_offset > character:
+        if t.line == target_line and t.column - 1 <= character and t.column - 1 + t.end_offset - t.start_offset > character:
             let lexeme = unsafe: token_mod.token_lexeme(t, source)
 
             match keyword_hover_text(lexeme):
@@ -1404,7 +1406,6 @@ function as_binding_hover(source: str, line: ptr_uint, character: ptr_uint, name
             hover.append("match binding ")
             hover.append(name)
             return Option[CursorResult].some(value = quick_hover(hover.as_str()))
-            hover.release()
     return Option[CursorResult].none
 
 
@@ -1433,7 +1434,6 @@ function lexical_local_hover(source: str, target_line: ptr_uint, character: ptr_
             hover.append(prefix)
             hover.append(name)
             hover.append(" (lexical)")
-            return Option[CursorResult].some(value = quick_hover(hover.as_str()))
             hover.release()
         if current_line == 1:
             break
