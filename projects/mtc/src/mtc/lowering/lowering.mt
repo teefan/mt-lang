@@ -11768,7 +11768,9 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
             resolved = types.Type.ty_imported(module_name = target_module, name = type_name, args = span[types.Type]())
     else if tref.name.parts.len == 1:
         let name = unsafe: read(tref.name.parts.data + 0)
-        if ctx.analysis.type_names.contains(name):
+        if is_builtin_type_name(name):
+            resolved = types.primitive(name)
+        else if ctx.analysis.type_names.contains(name):
             resolved = types.Type.ty_imported(module_name = ctx.module_name, name = name, args = span[types.Type]())
         else:
             let concrete_ptr = ctx.type_substitution.get(name)
