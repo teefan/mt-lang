@@ -138,6 +138,10 @@ function count_occurrences(source: str, name: str) -> ptr_uint:
     var count: ptr_uint = 0
     var i: ptr_uint = 0
     while i + name.len <= source.len:
+        let b = source.byte_at(i)
+        if (b & ubyte<-(0xC0)) == ubyte<-(0x80):
+            i += 1
+            continue
         if source.slice(i, name.len).equal(name):
             # Check word boundaries.
             var is_start = i == 0

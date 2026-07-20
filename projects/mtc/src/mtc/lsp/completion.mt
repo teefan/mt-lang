@@ -14,6 +14,7 @@ import std.mem.heap as heap
 import std.str
 import std.string as string
 import std.vec as vec
+import std.log as log
 
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
@@ -137,6 +138,7 @@ public function handle_completion_resolve(
         return
     let entry = unsafe: workspace_index.read_entry(ref_of(ws.index), read(ei))
     let path = unsafe: read(entry).path.as_str()
+    log.info(f"resolve: resolving label=#{label} in path=#{path}")
 
     # Read doc comments from the target file above the declaration.
     var doc_text = collect_doc_text(path, label)
@@ -175,35 +177,45 @@ function extract_string_field(value: json.Value, field: str) -> str:
 function collect_doc_text(path: str, name: str) -> string.String:
     var result = string.String.create()
 
+    log.info(f"collect_doc_text: path=#{path} name=#{name}")
     match fs_mod.read_text(path):
         Result.success as payload:
             var source = payload.value
             defer source.release()
 
-            # Find the declaration line.
+            # Find the declaration line — scan line by line, checking
+            # whether each line starts with the target name followed by
+            # a non-word character.  Byte-counter `li` stays at valid
+            # UTF-8 boundaries (start of file, after each LF).
             var target_line: ptr_uint = 0
             var current_line: ptr_uint = 1
             var li: ptr_uint = 0
             while li < source.as_str().len:
-                let ch = source.as_str().byte_at(li)
-                if ch == '\n':
-                    current_line += 1
-                    li += 1
-                    continue
-                # Check if this line starts with the name followed by
-                # a non-word character or at end of line.
-                if li + name.len <= source.as_str().len and source.as_str().slice(li, name.len).equal(name):
-                    let after = li + name.len
-                    var is_decl = false
-                    if after >= source.as_str().len:
-                        is_decl = true
-                    else:
-                        let c = source.as_str().byte_at(after)
-                        is_decl = c == '(' or c == ':' or c == '<' or
-                            c == ' ' or c == '\n' or c == '{'
-                    if is_decl:
-                        target_line = current_line
-                li += 1
+                let remaining = source.as_str().slice(li, source.as_str().len - li)
+                match remaining.find_byte(10):
+                    Option.some as nl_pos:
+                        let nl_end = nl_pos.value + li
+                        if nl_end - li >= name.len:
+                            let line_start_text = source.as_str().slice(li, name.len)
+                            if line_start_text.equal(name):
+                                let after = li + name.len
+                                var is_decl = false
+                                if after >= source.as_str().len:
+                                    is_decl = true
+                                else:
+                                    let c = source.as_str().byte_at(after)
+                                    is_decl = c == '(' or c == ':' or c == '<' or
+                                        c == ' ' or c == '\n' or c == '{'
+                                if is_decl:
+                                    target_line = current_line
+                        li = nl_end + 1
+                        current_line += 1
+                    Option.none:
+                        if source.as_str().len - li >= name.len:
+                            let last_line = source.as_str().slice(li, name.len)
+                            if last_line.equal(name):
+                                target_line = current_line
+                        li = source.as_str().len
 
             if target_line == 0:
                 return result
